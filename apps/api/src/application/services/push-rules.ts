@@ -168,6 +168,9 @@ export function defaultLevelFor(
   // The level is still stated here so anything reading a level directly agrees
   // with the decision the chain makes.
   if (messageKind === 'imported') return 'off';
+  // An Ask Frapp answer posted to the channel (#4713) is absolute the same
+  // way: it notifies nobody, whatever the channel or the member chose.
+  if (messageKind === 'ask_answer') return 'off';
   if (isDirectChannel(channel)) return 'all';
   if (channel.default_notification_level) {
     return channel.default_notification_level;
@@ -199,13 +202,22 @@ export type PushOutcome =
  * setting anyone wants, and `ChatPushWorkerService.handleMessage` already exits
  * before it gets here.
  *
+ * A posted Ask Frapp answer (`ask_answer`, #4713) is refused the same way and
+ * for a plainer reason: the member who asked chose to put it in the channel,
+ * and nobody else asked for it (`spec/behavior/ai.md` § Posting an answer to the channel). A
+ * name in the answer is not a mention; the row is written with none.
+ *
  * An audit mirror is refused the same way (owner decision 2026-11-06: audit
  * entries arrive silently). A member's `all` on `#chapter-audit`, or the
  * `system_audit` kind opt-in, would otherwise page them for every settings
  * save. The kind opt-in still reaches the server's own `system_audit` notices.
  */
 export function decidePush(input: PushDecisionInput): PushOutcome {
-  if (input.messageKind === 'imported' || input.isAuditMirror) {
+  if (
+    input.messageKind === 'imported' ||
+    input.messageKind === 'ask_answer' ||
+    input.isAuditMirror
+  ) {
     return 'skip-level';
   }
   if (input.recipientIsPresent) return 'skip-presence';

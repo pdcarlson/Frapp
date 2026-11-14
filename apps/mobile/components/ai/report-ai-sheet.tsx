@@ -103,10 +103,15 @@ export interface ReportAiSheetProps {
   target: AiReportTarget | null;
   /** The server has the report, new or already there. */
   onReported: (target: AiReportTarget) => void;
+  /**
+   * The reason it opens on, when the member already gave one: a thumbs down
+   * on an Ask answer (`ask-turn.tsx`, #4904), so they do not pick twice.
+   */
+  initialReason?: AiReportReason | null;
 }
 
 const ReportAiSheet = forwardRef<BottomSheetModal, ReportAiSheetProps>(
-  function ReportAiSheet({ target, onReported }, ref) {
+  function ReportAiSheet({ target, onReported, initialReason = null }, ref) {
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();
     const styles = createStyles(tokens, accent);
@@ -115,7 +120,16 @@ const ReportAiSheet = forwardRef<BottomSheetModal, ReportAiSheetProps>(
     const { onAnimate, markClosed, visit, isSameVisit } = useSheetVisit(ref);
     const policy = useAiReportPolicy({ enabled: target !== null });
     const report = useReportAi();
-    const [reason, setReason] = useState<AiReportReason | null>(null);
+    // The member's pick, held against the target it was made for: a new
+    // thing to report opens on its own starting reason, never the last one's.
+    const [picked, setPicked] = useState<{
+      target: AiReportTarget | null;
+      reason: AiReportReason;
+    } | null>(null);
+    const reason =
+      picked && picked.target === target ? picked.reason : initialReason;
+    const setReason = (next: AiReportReason) =>
+      setPicked({ target, reason: next });
     const [note, setNote] = useState("");
     const [focused, setFocused] = useState(false);
     const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -177,7 +191,7 @@ const ReportAiSheet = forwardRef<BottomSheetModal, ReportAiSheetProps>(
         onDismiss={() => {
           markClosed();
           // The next thing reported never opens on this one's reason.
-          setReason(null);
+          setPicked(null);
           setNote("");
           setOutcome(null);
           setFailure(null);
@@ -323,13 +337,15 @@ const ReportAiSheet = forwardRef<BottomSheetModal, ReportAiSheetProps>(
 export function useAiReport(): {
   offered: boolean;
   isReported: (target: AiReportTarget) => boolean;
-  report: (target: AiReportTarget) => void;
+  /** `reason` is what the sheet opens on; left out, nothing is picked. */
+  report: (target: AiReportTarget, reason?: AiReportReason | null) => void;
   reportSheet: ReactNode;
 } {
   const permissions = useMyPermissions().data?.permissions;
   const offered = Array.isArray(permissions) && can("ai:use", permissions);
   const sheetRef = useRef<BottomSheetModal>(null);
   const [target, setTarget] = useState<AiReportTarget | null>(null);
+  const [startOn, setStartOn] = useState<AiReportReason | null>(null);
   const [reported, setReported] = useState<ReadonlySet<string>>(new Set());
   // Presented once the sheet has the target it was asked to report.
   const asked = useRef(false);
@@ -339,12 +355,16 @@ export function useAiReport(): {
     sheetRef.current?.present();
   }, [target]);
 
-  const report = useCallback((next: AiReportTarget) => {
-    asked.current = true;
-    // A new object each time, so reporting the same thing again after a
-    // failure presents again.
-    setTarget({ ...next });
-  }, []);
+  const report = useCallback(
+    (next: AiReportTarget, reason?: AiReportReason | null) => {
+      asked.current = true;
+      setStartOn(reason ?? null);
+      // A new object each time, so reporting the same thing again after a
+      // failure presents again.
+      setTarget({ ...next });
+    },
+    [],
+  );
   const onReported = useCallback((done: AiReportTarget) => {
     setReported((previous) => new Set(previous).add(keyOf(done)));
   }, []);
@@ -358,7 +378,12 @@ export function useAiReport(): {
     isReported,
     report,
     reportSheet: offered ? (
-      <ReportAiSheet ref={sheetRef} target={target} onReported={onReported} />
+      <ReportAiSheet
+        ref={sheetRef}
+        target={target}
+        onReported={onReported}
+        initialReason={startOn}
+      />
     ) : null,
   };
 }

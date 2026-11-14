@@ -8,6 +8,7 @@ import {
   type NameResolver,
 } from "@repo/hooks";
 import { replyPreviewText } from "@repo/chat-core/reply-preview";
+import { forwardedFromOf } from "@repo/chat-core/types";
 import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -168,7 +169,13 @@ export function PinnedRows({
         threadRootId: message.thread_root_id ?? null,
         author: resolveAuthorLabel(message, nameFor, null),
         sentAt: message.created_at,
-        preview: blocked ? TOMBSTONE_TEXT : replyPreviewText(message),
+        preview: blocked
+          ? TOMBSTONE_TEXT
+          : // The API's copy read as the cache reads it (#4864).
+            replyPreviewText({
+              ...message,
+              forwarded_from: forwardedFromOf(message.forwarded_from),
+            }),
         muted: blocked || message.is_deleted,
         openable: true,
       };
@@ -218,7 +225,13 @@ export function SavedRows({
           sentAt: bookmark.message.created_at,
           preview: blocked
             ? TOMBSTONE_TEXT
-            : replyPreviewText(bookmark.message),
+            : // A forward with no comment previews its copy (#4875).
+              replyPreviewText({
+                ...bookmark.message,
+                forwarded_from: forwardedFromOf(
+                  bookmark.message.forwarded_from,
+                ),
+              }),
           muted: blocked || bookmark.message.is_deleted || !available,
           openable: available,
         };

@@ -65,6 +65,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
   const memberServiceMock = {
     searchByChapterAndName: jest.fn().mockResolvedValue([]),
     findRosterByChapter: jest.fn().mockResolvedValue([]),
+    findBirthdaysByChapter: jest.fn().mockResolvedValue([]),
     findProfileById: jest.fn().mockResolvedValue({ id: 'wrong-handler' }),
   };
 
@@ -280,6 +281,19 @@ describe('Route declaration order — a literal route must not be swallowed by :
       .expect(200);
 
     expect(memberServiceMock.findRosterByChapter).toHaveBeenCalledWith(
+      CHAPTER_ID,
+    );
+    expect(memberServiceMock.findProfileById).not.toHaveBeenCalled();
+  });
+
+  it('GET /v1/members/birthdays reaches findBirthdaysByChapter, not getOne', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/members/birthdays`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(memberServiceMock.findBirthdaysByChapter).toHaveBeenCalledWith(
       CHAPTER_ID,
     );
     expect(memberServiceMock.findProfileById).not.toHaveBeenCalled();

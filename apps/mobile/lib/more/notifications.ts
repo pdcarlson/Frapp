@@ -13,6 +13,7 @@
  */
 import {
   groupNotificationsBySource,
+  notificationConversation,
   notificationEntryCount,
   notificationWhen,
   type NotificationFilter,
@@ -56,6 +57,16 @@ export interface NotificationRow {
    * means just `id` when `isUnread`.
    */
   unreadIds?: string[];
+  /**
+   * Every row id the entry stands for, newest first, which a clear removes
+   * (#3948); absent means just `id`.
+   */
+  ids?: string[];
+  /**
+   * The conversation a clear deletes on the server (#3948), rows the list
+   * didn't load or hid under Unread included; absent for a row on its own.
+   */
+  conversation?: { channelId: string; threadRootId?: string } | null;
 }
 
 export interface NotificationGroup {
@@ -88,7 +99,9 @@ function toRow(
     title,
     body: str(row, "body"),
     data: row.data,
-    target: resolveNotificationTarget(row.data),
+    // A reminder's row opens chat at its message (#4957), which the row
+    // names in `chat_message_id` rather than in its `data`.
+    target: resolveNotificationTarget(row.data, str(row, "chat_message_id")),
     time: when.time,
     createdAt,
     // `read_at` is nullable and set on read; absent means unread.
@@ -124,6 +137,8 @@ export function selectNotificationGroups(
     isUnread: entry.unreadIds.length > 0,
     count: notificationEntryCount(entry),
     unreadIds: entry.unreadIds,
+    ids: entry.rows.map((row) => row.id),
+    conversation: notificationConversation(entry.lead.data),
   }));
 
   const groups: NotificationGroup[] = [

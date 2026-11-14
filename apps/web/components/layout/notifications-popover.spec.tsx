@@ -42,6 +42,7 @@ const {
   mockInvalidateReports,
   mockMarkRead,
   mockMarkManyRead,
+  mockClear,
   mockScreensSeen,
   mockRefetch,
   pathname,
@@ -58,6 +59,7 @@ const {
   },
   now: { value: new Date("2026-09-22T12:00:00Z") },
   mockMarkManyRead: vi.fn(),
+  mockClear: vi.fn(),
   mockScreensSeen: vi.fn(),
   pathname: { value: "/chat" },
   notifications: { value: [] as unknown[] },
@@ -93,6 +95,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       isPending: false,
     }),
     useMarkNotificationScreensSeen: mockScreensSeen,
+    useClearNotifications: () => ({ mutate: mockClear, isPending: false }),
     useInvalidateChatReports: () => mockInvalidateReports,
     memberAvatarTint: actual.memberAvatarTint,
     useNowDate: () => now.value,
@@ -782,6 +785,43 @@ describe("deepLinkFor: task notifications", () => {
   });
 });
 
+describe("deepLinkFor: message reminders (#4957)", () => {
+  const chat = (
+    target: Record<string, string>,
+    extra: { reminder?: boolean; chat_message_id?: string | null } = {},
+  ) => ({
+    ...notification("n-chat", "chat", "2026-11-13T01:00:00Z"),
+    data: {
+      target: { screen: "chat", channelId: "c1", ...target },
+      ...(extra.reminder ? { reminder: true } : {}),
+    },
+    chat_message_id: extra.chat_message_id ?? null,
+  });
+
+  it("opens a reminder on the message it was set on", () => {
+    expect(
+      deepLinkFor(chat({}, { reminder: true, chat_message_id: "m1" })),
+    ).toBe("/chat?channel=c1&message=m1");
+  });
+
+  it("opens a reminder on a thread reply at the thread's first message", () => {
+    expect(
+      deepLinkFor(
+        chat(
+          { threadRootId: "root-1" },
+          { reminder: true, chat_message_id: "reply-1" },
+        ),
+      ),
+    ).toBe("/chat?channel=c1&message=root-1");
+  });
+
+  it("opens any other chat row on its channel", () => {
+    expect(deepLinkFor(chat({}, { chat_message_id: "m1" }))).toBe(
+      "/chat?channel=c1",
+    );
+  });
+});
+
 describe("NotificationsPopover: grouped by conversation, Unread / All (#3948)", () => {
   const inGeneral = (id: string, createdAt: string, read = false) => ({
     ...notification(id, "chat", createdAt, "Ryan in #general"),
@@ -855,5 +895,52 @@ describe("NotificationsPopover: grouped by conversation, Unread / All (#3948)", 
     await userEvent.click(screen.getByRole("radio", { name: "Unread" }));
     expect(screen.queryAllByRole("link")).toHaveLength(0);
     expect(screen.getByText(/all caught up/)).toBeInTheDocument();
+  });
+});
+
+describe("NotificationsPopover: clearing a row (#3948)", () => {
+  it("clears every row a conversation's entry stands for, without opening it", async () => {
+    const inGeneral = (id: string, createdAt: string) => ({
+      ...notification(id, "chat", createdAt, "Ryan in #general"),
+      data: {
+        target: { screen: "chat", channelId: "c-general" },
+        senderId: "u-ryan",
+      },
+    });
+    notifications.value = [
+      inGeneral("g1", "2026-09-22T08:00:00Z"),
+      inGeneral("g2", "2026-09-22T10:00:00Z"),
+      EVENT,
+    ];
+    mockClear.mockClear();
+    mockMarkRead.mockClear();
+    mockMarkManyRead.mockClear();
+    const onOpenChange = vi.fn();
+    render(
+      <NotificationsPopover open onOpenChange={onOpenChange}>
+        {BELL}
+      </NotificationsPopover>,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Clear: Ryan in #general" }),
+    );
+    // The whole conversation, so its rows past the page go too.
+    expect(mockClear).toHaveBeenCalledWith({
+      ids: ["g2", "g1"],
+      conversation: { channelId: "c-general" },
+    });
+    // Clearing is not opening: nothing is read and the list stays open.
+    expect(mockMarkRead).not.toHaveBeenCalled();
+    expect(mockMarkManyRead).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Clear: Notice" }),
+    );
+    expect(mockClear).toHaveBeenLastCalledWith({
+      ids: ["n-event"],
+      conversation: undefined,
+    });
   });
 });

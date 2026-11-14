@@ -398,6 +398,7 @@ describe("thread fields (#3785)", () => {
       content: "grill is in my garage",
       kind: "text",
       attachment_count: 1,
+      has_gif: false,
       created_at: "2026-11-10T12:05:00.000Z",
       sender_blocked: false,
     });
@@ -421,6 +422,7 @@ describe("thread fields (#3785)", () => {
       content: "",
       kind: "text",
       attachment_count: 0,
+      has_gif: false,
       created_at: "",
       sender_blocked: false,
     });

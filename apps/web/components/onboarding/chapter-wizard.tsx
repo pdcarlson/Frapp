@@ -74,6 +74,7 @@ import {
   DISPLAY_STEP_TITLE,
 } from "@/components/onboarding/display-step";
 import { inspectLogoFile } from "@/lib/chapter-logo";
+import { downscaleImage } from "@/lib/downscale-image";
 import { FERPA_URL } from "@/lib/legal-links";
 import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confirm-drop-bulk-uploads";
 
@@ -252,7 +253,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       let logoFailed = false;
       if (id && logo) {
         try {
-          await uploadLogo.mutateAsync(logo);
+          // Stored at 512px for the crests that draw it (#2912).
+          await uploadLogo.mutateAsync(
+            await downscaleImage(logo, { keepAlpha: true }),
+          );
         } catch {
           logoFailed = true;
         }

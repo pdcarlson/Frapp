@@ -40,7 +40,7 @@ The root has no `test` script and `turbo.json` has no `test` task, so `npm run l
 | Node only | `npm install` | Lint, type-check, `nest build`, every unit suite, API E2E (mocked Supabase), `check:api-contract`, `check:migration-safety`, `check:pglite-migrations` (Postgres in WASM), `test:ci-scripts`, `check:dep-cruiser` (after `packages/*` are built) |
 | + Chromium | `npx playwright install chromium` | `test:floor -w apps/web`, `test:fold -w apps/landing`. Each starts its own app server with stand-in env |
 | + Docker | A running Docker daemon | `docker build -f apps/api/Dockerfile .` |
-| + local Supabase | Docker, then `npm run supabase -- start` and `npm run supabase -- db push --local` | `test:integration -w apps/api` (skips cleanly without a stack, and no CI job runs it), manual API testing, running the apps |
+| + local Supabase | Docker, then `npm run supabase -- start` and `npm run supabase -- db push --local` | `test:integration -w apps/api` (skips cleanly without a stack, and no CI job runs it), `check:role-lock-race` (two real connections; or point `DATABASE_URL` at a bare Postgres and add `-- --apply-migrations`, as CI does), manual API testing, running the apps |
 | Staging | none locally | The [`live-verification`](../live-verification/SKILL.md) skill |
 
 To run the apps, prefer Infisical-injected env: `npm run dev:api` (port 3001) and `npm run dev:web`
@@ -75,7 +75,7 @@ in the last row; path-gated jobs are still required.
 | `chapter-directory-seed` | `npm run check:chapter-directory-seed` |
 | `web-responsive-floor` (path-gated) | `npm run test:floor -w apps/web` (every dashboard route at 375px without horizontal scroll) |
 | `landing-fold` (path-gated) | `npm run test:fold -w apps/landing` (fold geometry; the widths each check measures are in [`fold.spec.ts`](../../../apps/landing/tests/visual/fold.spec.ts)'s header) |
-| `pglite-migrations` (path-gated) | `npm run check:pglite-migrations` (every migration from empty, plus the RLS posture), then `npx vitest run lib/realtime/change-topics.spec.ts` in `apps/web` (the change-ping contract against the applied migrations) |
+| `pglite-migrations` (path-gated) | `npm run check:pglite-migrations` (every migration from empty, plus the RLS posture), then `npm run check:role-lock-race` against local Supabase (role delete vs member-roles save on two real connections; CI applies the migrations to a `pgvector/pgvector:pg17` service container with `-- --apply-migrations`), then `npx vitest run lib/realtime/change-topics.spec.ts` in `apps/web` (the change-ping contract against the applied migrations) |
 | `web-production-build` | The Vercel-parity build below |
 | `packages-build` | `npx turbo run build --filter='./packages/*'` |
 | `changes` | Nothing to run locally. It computes the path filter for the path-gated jobs and is required because `web-tests` needs it |

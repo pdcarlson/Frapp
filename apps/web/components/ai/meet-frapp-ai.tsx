@@ -9,11 +9,7 @@ import {
 } from "react";
 import { Sparkles } from "lucide-react";
 import { errorCopy, useFrappAiChoice } from "@repo/hooks";
-import {
-  FRAPP_AI_COPY,
-  joinNames,
-  type FrappAiPoint,
-} from "@repo/validation";
+import { FRAPP_AI_COPY, joinNames, type FrappAiPoint } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,9 +20,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ChatGlyph, TasksGlyph } from "@/components/layout/nav-glyphs";
-import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
+import { QUIET_LINK } from "@/components/ui/quiet-link";
 import { PRIVACY_URL } from "@/lib/legal-links";
-import { cn } from "@/lib/utils";
 
 /**
  * Meet Frapp AI on web (#4790, Paul 2026-11-13): the one screen where a
@@ -109,7 +104,11 @@ type DialogProps = {
  * Meet Frapp AI as a dialog. Closing it is not an answer: the next AI entry
  * point, or the next visit, asks again.
  */
-export function MeetFrappAiDialog({ open, onAnswered, onDismiss }: DialogProps) {
+export function MeetFrappAiDialog({
+  open,
+  onAnswered,
+  onDismiss,
+}: DialogProps) {
   const choice = useFrappAiChoice();
   const [error, setError] = useState<string | null>(null);
   // Which answer was pressed, so only Continue says it is saving.
@@ -155,11 +154,7 @@ export function MeetFrappAiDialog({ open, onAnswered, onDismiss }: DialogProps) 
         <DialogFooter className="items-center gap-3 sm:space-x-0">
           <button
             type="button"
-            className={cn(
-              "rounded-sm text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground",
-              FOCUS_RING_OFFSET,
-              "disabled:pointer-events-none disabled:opacity-50",
-            )}
+            className={QUIET_LINK}
             disabled={pending !== null}
             onClick={() => void submit(false)}
           >

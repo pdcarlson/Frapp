@@ -37,6 +37,7 @@ describe('ChatController', () => {
       | 'addPrivateChannelMember'
       | 'removePrivateChannelMember'
       | 'sendMessage'
+      | 'forwardMessage'
     >
   >;
   let attachments: jest.Mocked<
@@ -74,6 +75,7 @@ describe('ChatController', () => {
       addPrivateChannelMember: jest.fn(),
       removePrivateChannelMember: jest.fn(),
       sendMessage: jest.fn(),
+      forwardMessage: jest.fn(),
     };
 
     mentions = {
@@ -255,6 +257,38 @@ describe('ChatController', () => {
         );
       },
     );
+  });
+
+  // #4864: the caller, chapter and source come from the route and the guards,
+  // never the body; the body names only the destination and the comment.
+  describe('forwardMessage', () => {
+    it('passes the source, the caller and the body through', async () => {
+      const forwarded = { id: 'fwd-1' };
+      service.forwardMessage.mockResolvedValue(forwarded as never);
+
+      const result = await controller.forwardMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        {
+          channel_id: 'chan-dest',
+          content: 'look',
+          client_message_id: 'cm-1',
+          mention_picks: [{ user_id: 'user-2', label: 'Sam' }],
+        },
+      );
+
+      expect(service.forwardMessage).toHaveBeenCalledWith({
+        message_id: 'msg-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        channel_id: 'chan-dest',
+        content: 'look',
+        client_message_id: 'cm-1',
+        mention_picks: [{ user_id: 'user-2', label: 'Sam' }],
+      });
+      expect(result).toBe(forwarded);
+    });
   });
 
   // Always formal (#3787): open to members at the route so a creator without

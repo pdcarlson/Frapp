@@ -19,12 +19,12 @@ afterEach(() => {
 const dismissMutate = vi.fn();
 
 let chapters: { data: unknown } = { data: [] };
-let orgConfig: { data: unknown } = { data: undefined };
+let currentChapter: { data: unknown } = { data: undefined };
 let permissions: { data: unknown } = { data: undefined };
 
 vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => chapters,
-  useOrgConfig: () => orgConfig,
+  useCurrentChapter: () => currentChapter,
   useMyPermissions: () => permissions,
   useDismissOpsNudge: () => ({ mutate: dismissMutate }),
 }));
@@ -64,7 +64,7 @@ function setUpEligible(
       },
     ],
   };
-  orgConfig = {
+  currentChapter = {
     data: { enabled_modules: overrides.enabledModules ?? { dues: false } },
   };
   permissions = {
@@ -155,9 +155,9 @@ describe("OpsSetupNudge", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("renders nothing while the chapter config is still resolving", () => {
+  it("renders nothing while the current chapter is still resolving", () => {
     setUpEligible();
-    orgConfig = { data: undefined };
+    currentChapter = { data: undefined };
     const { container } = render(<OpsSetupNudge />);
     expect(container).toBeEmptyDOMElement();
   });

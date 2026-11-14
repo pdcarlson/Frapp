@@ -10,6 +10,7 @@ import {
   mentionPickLabel,
   mentionPicksIn,
   readMentionPicks,
+  withMentionPick,
   MAX_MENTION_PICKS,
   sendMentionReading,
   spacedMentionNames,
@@ -1279,6 +1280,27 @@ describe("picked mentions (#3835)", () => {
         sendMentionReading([JANE_SMITH], []),
       ),
     ).toEqual(["Jane"]);
+  });
+
+  describe("withMentionPick (#4907)", () => {
+    it("puts the newest pick first and keeps one per label", () => {
+      const jane = { user_id: "u1", label: "Jane" };
+      const jane2 = { user_id: "u2", label: "Jane" };
+      const sam = { user_id: "u3", label: "Sam" };
+      expect(withMentionPick(withMentionPick([jane], sam), jane2)).toEqual([
+        jane2,
+        sam,
+      ]);
+    });
+
+    it("holds no more than MAX_MENTION_PICKS", () => {
+      let held: { user_id: string; label: string }[] = [];
+      for (let i = 0; i <= MAX_MENTION_PICKS; i++) {
+        held = withMentionPick(held, { user_id: `u${i}`, label: `m${i}` });
+      }
+      expect(held).toHaveLength(MAX_MENTION_PICKS);
+      expect(held[0]!.label).toBe(`m${MAX_MENTION_PICKS}`);
+    });
   });
 
   describe("mentionPicksIn", () => {

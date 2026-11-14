@@ -38,6 +38,9 @@ export const CLIENT_CONTRACT_ERROR_CODES = [
   // these is a client sending what its own validation should have stopped,
   // or contract drift between a shipped build and the API.
   "request.validation_failed",
+  // A reason sent with a thumbs up on an Ask answer (#4902), which the
+  // shared schema (`AskFeedbackRequestSchema`) refuses before it is sent.
+  "ai.ask.feedback.reason_needs_down",
   // An invite with no role named, no default invite role configured, and no
   // seeded Everyone role (once Member): the chapter's rows are missing what every chapter is
   // created with.
@@ -72,6 +75,9 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "chapter.subscription.canceled",
   "chapter.subscription.write_locked",
   "chapter.subscription.invite_blocked",
+  // The officer picked a birthday post channel another officer archived or
+  // made private meanwhile (#4959).
+  "chapter.config.invalid_birthday_channel",
   // The officer picked a role another officer deleted meanwhile.
   "chapter.config.invalid_default_invite_role",
   // An officer named a role so it reads as @everyone (#4191) or @here.
@@ -82,6 +88,15 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   // The New Member or Alumni role moved into a tier above Everyone's
   // (#4548). A role page's tier picker offers every tier below the officer.
   "role.below_everyone",
+  // Self-assignable roles (#4958). Marking a role members can't safely pick
+  // (keyed, in a tier, or holding a real permission), or editing a picked
+  // role so it would be; the Roles page explains and lets the officer try.
+  "role.self_assignable_keyed",
+  "role.self_assignable_tiered",
+  "role.self_assignable_permissions",
+  // Joining or leaving a role an officer unmarked or changed since the
+  // picker loaded it.
+  "role.not_self_assignable",
   "chat.since_not_found",
   // An AI route while `AI_ENABLED` is off on the server (#4310, and
   // `AiEnabledGuard`, ADR-28). A state the deployment is in, and how a
@@ -155,6 +170,9 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "ai.report.not_found",
   "ai.report.too_old",
   "ai.report.receipt_invalid",
+  // A thumbs or a tap on an Ask answer (#4902) whose trace is gone: past its
+  // 90 days, or the member answered No on the AI sheet since it was drawn.
+  "ai.ask.feedback.not_found",
   // Start pressed away from the study zone, or on a zone an officer turned
   // off. The study screen says which.
   "study.outside_zone",

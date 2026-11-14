@@ -1,22 +1,31 @@
 "use client";
 
-import type { MouseEvent } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Check, Copy } from "lucide-react";
-import type {
-  ActResponse,
-  AskExchange,
-  AskProposalResolution,
+import { Check, Copy, Lightbulb } from "lucide-react";
+import {
+  useAskSignal,
+  useAskThumbs,
+  type ActResponse,
+  type AskExchange,
+  type AskCardEnd,
+  type AskProposalResolution,
 } from "@repo/hooks";
 import {
   ASK_COPY,
+  ASK_EFFORT_COPY,
+  ASK_POST_COPY,
+  askAnswerEntities,
   askAnswerSegments,
   askLeftOutLine,
+  askOffersThinkHarder,
+  askPostedSourceTitle,
   askReadLine,
-  askSourceMetaLine,
+  askSourceChip,
   askStepLine,
   askUnavailableLine,
   type AskAnswer,
+  type AskPostedAnswer,
   type AskSource,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -24,12 +33,21 @@ import { FOCUS_RING } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { cn } from "@/lib/utils";
-import { AskProposal } from "@/components/ask/ask-proposal";
+import {
+  AskEntityText,
+  AskChannelOpens,
+  onPlainClick,
+} from "@/components/ask/ask-entity-text";
+import { AskAnswerCards, AskProposal } from "@/components/ask/ask-proposal";
 import {
   askSourceHref,
   askSourceIsMessage,
 } from "@/components/ask/ask-source-link";
 import { ReportAiButton } from "@/components/ai/report-ai";
+import {
+  AskThumbButtons,
+  AskThumbsFollowUp,
+} from "@/components/ask/ask-thumbs";
 
 /**
  * One turn of the Ask conversation: what the member typed, then what Frapp
@@ -72,9 +90,11 @@ export function AskTurn({
   busy = false,
   onFollowMessage,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   onProposal,
   onResolved,
+  onCardEnded,
 }: {
   exchange: AskExchange;
   /**
@@ -89,12 +109,19 @@ export function AskTurn({
   busy?: boolean;
   /** Asks the same thing again, after a failure that may not repeat. */
   onRetry: () => void;
+  /**
+   * Asks the same thing again in this turn's place with more effort (#4904).
+   * Left out, the answer offers no Think harder.
+   */
+  onThinkHarder?: () => void;
   /** Opens the AI sheet, for a turn refused because it is unanswered. */
   onAnswerConsent: () => void;
   /** An event pick answered with a new proposal for this turn. */
   onProposal: (proposal: ActResponse) => void;
   /** This turn's card was confirmed or dismissed. */
   onResolved: (resolution: AskProposalResolution) => void;
+  /** One of the cards under this turn's answer was confirmed or dismissed. */
+  onCardEnded: (suggestionId: string, end: AskCardEnd) => void;
 }) {
   return (
     <article className="space-y-3">
@@ -106,9 +133,11 @@ export function AskTurn({
         busy={busy}
         onFollowMessage={onFollowMessage}
         onRetry={onRetry}
+        onThinkHarder={onThinkHarder}
         onAnswerConsent={onAnswerConsent}
         onProposal={onProposal}
         onResolved={onResolved}
+        onCardEnded={onCardEnded}
       />
     </article>
   );
@@ -127,17 +156,22 @@ export function AskReply({
   busy = false,
   onFollowMessage,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   onProposal,
   onResolved,
+  onCardEnded,
 }: {
   exchange: AskExchange;
   busy?: boolean;
   onFollowMessage?: () => void;
   onRetry: () => void;
+  onThinkHarder?: () => void;
   onAnswerConsent: () => void;
   onProposal: (proposal: ActResponse) => void;
   onResolved: (resolution: AskProposalResolution) => void;
+  /** One of the cards under this turn's answer was confirmed or dismissed. */
+  onCardEnded: (suggestionId: string, end: AskCardEnd) => void;
 }) {
   return (
     <div aria-live="polite" className="space-y-3">
@@ -188,28 +222,60 @@ export function AskReply({
             onAnswerConsent={onAnswerConsent}
             onFollowMessage={onFollowMessage}
           />
+          {exchange.answer.proposals?.length ? (
+            <CountedAnswerCards
+              askId={exchange.answer.ask_id ?? null}
+              ids={exchange.answer.proposals}
+              ended={exchange.cards ?? NO_CARDS_ENDED}
+              onEnded={onCardEnded}
+            />
+          ) : null}
           {/* Anything Ask wrote, or chose not to, can be reported. An
                 answer that was never attempted has nothing AI-made in it. */}
           {exchange.answer.status !== "unavailable" && exchange.askId ? (
-            <div className="-ml-2 flex items-center">
-              {exchange.answer.status === "answered" && exchange.answer.text ? (
-                <CopyAnswer text={exchange.answer.text} />
-              ) : null}
-              <ReportAiButton
-                key={exchange.askId}
-                iconOnly
-                className={QUIET_ACTION}
-                target={{
-                  subject: "ask_answer",
-                  subjectId: exchange.askId,
-                  receipt: exchange.answer.report_receipt ?? null,
-                }}
-              />
-            </div>
+            <AnswerActions
+              key={exchange.askId}
+              askId={exchange.askId}
+              answer={exchange.answer}
+              busy={busy}
+              onThinkHarder={
+                onThinkHarder &&
+                askOffersThinkHarder(exchange.answer, exchange.effort)
+                  ? onThinkHarder
+                  : undefined
+              }
+            />
           ) : null}
         </>
       ) : null}
     </div>
+  );
+}
+
+const NO_CARDS_ENDED: Readonly<Record<string, AskCardEnd>> = {};
+
+/**
+ * The cards under an answer, each one's end counted against the answer that
+ * proposed it (`card_confirmed`, `card_dismissed`). A card that had stopped
+ * waiting was neither.
+ */
+function CountedAnswerCards({
+  askId,
+  onEnded,
+  ...cards
+}: Parameters<typeof AskAnswerCards>[0] & { askId: string | null }) {
+  const signal = useAskSignal();
+  return (
+    <AskAnswerCards
+      {...cards}
+      onEnded={(suggestionId, end) => {
+        if (end.resolution.kind === "done") signal(askId, "card_confirmed");
+        else if (end.resolution.kind === "cancelled") {
+          signal(askId, "card_dismissed");
+        }
+        onEnded(suggestionId, end);
+      }}
+    />
   );
 }
 
@@ -220,6 +286,79 @@ export function AskReply({
  */
 const QUIET_ACTION =
   "h-8 w-8 text-muted-foreground/70 hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11";
+
+/**
+ * Copy, the thumbs, Think harder and Report under a finished answer, and under them what a
+ * thumbs down opens (`ask-thumbs.tsx`). The thumbs are drawn only for an
+ * answer whose turn the server kept a trace of (`answer.ask_id`): a rating
+ * has nothing to be recorded against otherwise.
+ */
+function AnswerActions({
+  askId,
+  answer,
+  busy = false,
+  onThinkHarder,
+}: {
+  /** The turn's id, which Report this names. */
+  askId: string;
+  answer: AskAnswer;
+  /** Another turn is being answered, so asking this one again waits. */
+  busy?: boolean;
+  /** Set where this answer offers Think harder (`askOffersThinkHarder`). */
+  onThinkHarder?: () => void;
+}) {
+  const target = {
+    subject: "ask_answer" as const,
+    subjectId: askId,
+    receipt: answer.report_receipt ?? null,
+  };
+  const thumbs = useAskThumbs(answer.ask_id);
+  // One answer, two ways to report it: the flag and a thumbs down's offer.
+  const [reported, setReported] = useState(false);
+  return (
+    <div className="space-y-2">
+      <div className="-ml-2 flex items-center">
+        {answer.status === "answered" && answer.text ? (
+          <CopyAnswer text={answer.text} />
+        ) : null}
+        {answer.ask_id ? (
+          <AskThumbButtons
+            rating={thumbs.state.rating}
+            onRate={thumbs.rate}
+            className={QUIET_ACTION}
+          />
+        ) : null}
+        {onThinkHarder ? (
+          <IconButton
+            label={ASK_EFFORT_COPY.action}
+            className={QUIET_ACTION}
+            disabled={busy}
+            onClick={onThinkHarder}
+          >
+            <Lightbulb className="h-3.5 w-3.5" aria-hidden="true" />
+          </IconButton>
+        ) : null}
+        <ReportAiButton
+          iconOnly
+          className={QUIET_ACTION}
+          target={target}
+          reported={reported}
+        />
+      </div>
+      {answer.ask_id ? (
+        <AskThumbsFollowUp
+          key={thumbs.state.rating ?? "none"}
+          state={thumbs.state}
+          failed={thumbs.failed}
+          onReason={thumbs.giveReason}
+          target={target}
+          reported={reported}
+          onReported={() => setReported(true)}
+        />
+      ) : null}
+    </div>
+  );
+}
 
 /** Copies the answer's words, without the markers. */
 function CopyAnswer({ text }: { text: string }) {
@@ -289,23 +428,12 @@ function AskAnswerBody({
       </div>
     );
   }
-  return (
+  const body = (
     <>
-      <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
-        {askAnswerSegments(answer).map((segment, position) =>
-          segment.type === "text" ? (
-            <span key={position}>{segment.text}</span>
-          ) : (
-            <CitationMarker
-              key={position}
-              number={segment.citation.source + 1}
-              source={answer.sources[segment.citation.source]}
-              quote={segment.citation.quote}
-              onFollowMessage={onFollowMessage}
-            />
-          ),
-        )}
-      </p>
+      {/* An answer that is cards and nothing else has no words to draw. */}
+      {answer.text ? (
+        <AnswerText answer={answer} onFollowMessage={onFollowMessage} />
+      ) : null}
       {/* Where the step line was while it worked, in the same tone. */}
       {readLine ? (
         <p className="text-caption text-muted-foreground">{readLine}</p>
@@ -324,6 +452,109 @@ function AskAnswerBody({
         </ol>
       ) : null}
     </>
+  );
+  return answer.ask_id ? (
+    <CountSourceOpens askId={answer.ask_id}>{body}</CountSourceOpens>
+  ) : (
+    body
+  );
+}
+
+/**
+ * Called when a source under this answer is opened, by its chip or by a
+ * marker; null where there is nothing to count against.
+ */
+const SourceOpened = createContext<(() => void) | null>(null);
+
+/**
+ * Counts each source opened under an answer the server kept a trace of
+ * (`source_opened`, `spec/behavior/ai.md` § Feedback on an answer). One word
+ * against the answer's id; which source, and what it says, are not sent.
+ */
+function CountSourceOpens({
+  askId,
+  children,
+}: {
+  askId: string;
+  children: ReactNode;
+}) {
+  const signal = useAskSignal();
+  return (
+    <SourceOpened.Provider value={() => signal(askId, "source_opened")}>
+      {children}
+    </SourceOpened.Provider>
+  );
+}
+
+/**
+ * An answer its asker posted to a channel (#4713), for everyone who reads
+ * it: the same words, markers and chips the asker saw, so an answer reads
+ * one way wherever it is. What differs is what the channel is owed. A marker
+ * shows its source's name and not the quoted passage, which stays with the
+ * asker; the asker's own records are named as theirs and open nothing, since
+ * a reader's Tasks page is their own; and a line says so when some sources
+ * were not open to everyone when it was posted.
+ */
+export function AskPostedBody({
+  text,
+  posted,
+  askerName,
+}: {
+  /** The row's `content`: the answer's words, which the markers count into. */
+  text: string;
+  posted: AskPostedAnswer;
+  /** The asker's roster name, or null when the roster can't name them. */
+  askerName: string | null;
+}) {
+  const sources: AskSource[] = posted.sources.map((source, index) => ({
+    id: String(index),
+    kind: source.kind,
+    title: askPostedSourceTitle(source, askerName),
+    detail: source.detail,
+    date: source.date,
+    target: source.target,
+  }));
+  const segments = askAnswerSegments({
+    text,
+    citations: posted.citations.map((citation) => ({ ...citation, quote: "" })),
+  });
+  const notes: string[] = [
+    ...(posted.truncated ? [ASK_COPY.truncated] : []),
+    ...(posted.sources.some((source) => source.limited)
+      ? [ASK_POST_COPY.limited]
+      : []),
+  ];
+  return (
+    <div className="space-y-2">
+      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+        {segments.map((segment, position) =>
+          segment.type === "text" ? (
+            <span key={position}>{segment.text}</span>
+          ) : (
+            <CitationMarker
+              key={position}
+              number={segment.citation.source + 1}
+              source={sources[segment.citation.source]}
+              quote=""
+            />
+          ),
+        )}
+      </p>
+      {sources.length > 0 ? (
+        <ol aria-label={ASK_COPY.sources} className="flex flex-wrap gap-1.5">
+          {sources.map((source, index) => (
+            <SourceChip key={source.id} number={index + 1} source={source} />
+          ))}
+        </ol>
+      ) : null}
+      {notes.length > 0 ? (
+        <ul className="space-y-1 text-caption text-muted-foreground">
+          {notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -347,16 +578,49 @@ function AnswerNotes({ answer }: { answer: AskAnswer }) {
 }
 
 /**
- * Runs on a click that follows the link here. A click that opens it in a new
- * tab or window leaves this page, and so the conversation, as it was.
+ * The answer's own words: each cited sentence ends in its marker, and a
+ * person or channel the server named is drawn as chat draws a mention
+ * (`ask-entity-text.tsx`). With no names listed, as from a server before the
+ * agent build, it is the text and its markers, as it was.
  */
-function onPlainClick(run: (() => void) | undefined) {
-  if (!run) return undefined;
-  return (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-      return;
-    run();
-  };
+function AnswerText({
+  answer,
+  onFollowMessage,
+}: {
+  answer: AskAnswer;
+  onFollowMessage?: () => void;
+}) {
+  const entities = askAnswerEntities(answer);
+  const draw = (canOpenChannel: (channelId: string) => boolean) => (
+    <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+      {askAnswerSegments(answer).map((segment, position) =>
+        segment.type === "text" ? (
+          <span key={position}>
+            <AskEntityText
+              text={segment.text}
+              entities={entities}
+              canOpenChannel={canOpenChannel}
+              onFollow={onFollowMessage}
+            />
+          </span>
+        ) : (
+          <CitationMarker
+            key={position}
+            number={segment.citation.source + 1}
+            source={answer.sources[segment.citation.source]}
+            quote={segment.citation.quote}
+            onFollowMessage={onFollowMessage}
+          />
+        ),
+      )}
+    </p>
+  );
+  // The reader's channel list is only read for an answer that names one.
+  return entities.some((entity) => entity.type === "channel") ? (
+    <AskChannelOpens>{draw}</AskChannelOpens>
+  ) : (
+    draw(() => false)
+  );
 }
 
 /**
@@ -378,12 +642,14 @@ function CitationMarker({
   quote: string;
   onFollowMessage?: () => void;
 }) {
+  const opened = useContext(SourceOpened);
   if (!source) return null;
   const href = askSourceHref(source);
-  const label = `Source ${number}: ${source.title}`;
+  const { name } = askSourceChip(source);
+  const label = `Source ${number}: ${name}`;
   // The words the server found in the source, on hover, so the member can
   // check the claim before opening anything.
-  const title = quote ? `${source.title}: "${quote}"` : source.title;
+  const title = quote ? `${name}: "${quote}"` : name;
   if (!href) {
     return (
       <span className={MARKER} aria-label={label} title={title}>
@@ -397,9 +663,10 @@ function CitationMarker({
       className={cn(MARKER, "hover:bg-gold-ask-border/30", FOCUS_RING)}
       aria-label={label}
       title={title}
-      onClick={
-        askSourceIsMessage(source) ? onPlainClick(onFollowMessage) : undefined
-      }
+      onClick={(event) => {
+        opened?.();
+        if (askSourceIsMessage(source)) onPlainClick(onFollowMessage)?.(event);
+      }}
     >
       {number}
     </Link>
@@ -420,11 +687,11 @@ function SourceChip({
   source: AskSource;
   onFollowMessage?: () => void;
 }) {
+  const opened = useContext(SourceOpened);
   const href = askSourceHref(source);
-  const meta = askSourceMetaLine(source);
-  const name = [`Source ${number}: ${source.title}`, meta]
-    .filter(Boolean)
-    .join(", ");
+  // A quoted message says whose it is and when (`askSourceChip`, #4904).
+  const { name: words, when, meta } = askSourceChip(source);
+  const name = [`Source ${number}: ${words}`, meta].filter(Boolean).join(", ");
   const chip =
     "inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-1 pl-2.5 pr-3 text-caption pointer-coarse:h-11";
   const body = (
@@ -436,8 +703,11 @@ function SourceChip({
         {number}
       </span>
       <span className="min-w-0 truncate font-medium text-foreground">
-        {source.title}
+        {words}
       </span>
+      {when ? (
+        <span className="shrink-0 text-muted-foreground">{when}</span>
+      ) : null}
     </>
   );
   return (
@@ -447,11 +717,12 @@ function SourceChip({
           href={href}
           aria-label={name}
           title={meta}
-          onClick={
-            askSourceIsMessage(source)
-              ? onPlainClick(onFollowMessage)
-              : undefined
-          }
+          onClick={(event) => {
+            opened?.();
+            if (askSourceIsMessage(source)) {
+              onPlainClick(onFollowMessage)?.(event);
+            }
+          }}
           className={cn(
             chip,
             "transition-colors hover:bg-card-hover",

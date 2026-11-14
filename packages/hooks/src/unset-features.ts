@@ -125,9 +125,7 @@ export function selectHiddenUnsetFeatures({
   const hidden = new Set<UnsetFeatureKey>();
   for (const key of UNSET_FEATURE_KEYS) {
     if (!canHide(key, permissions, isModuleEnabled)) continue;
-    const count = isModuleEnabled(UNSET_FEATURES[key].module)
-      ? counts[key]
-      : 0;
+    const count = isModuleEnabled(UNSET_FEATURES[key].module) ? counts[key] : 0;
     if (count === 0) hidden.add(key);
   }
   return hidden;

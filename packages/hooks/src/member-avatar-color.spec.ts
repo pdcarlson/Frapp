@@ -111,7 +111,13 @@ describe("memberAvatarTint contrast", () => {
     // #3860 measured 18% over the old `--popover`: Orange `#443426` at 5.34:1,
     // Violet 4.79:1. 14% over the new `--card` paints nearly the same fill.
     expect(memberAvatarTint("#F2994A").fill).toBe("#43362B");
-    expect(ratio("#F2994A", memberAvatarTint("#F2994A").fill)).toBeCloseTo(5.24, 1);
-    expect(ratio("#B392F0", memberAvatarTint("#B392F0").fill)).toBeCloseTo(4.69, 1);
+    expect(ratio("#F2994A", memberAvatarTint("#F2994A").fill)).toBeCloseTo(
+      5.24,
+      1,
+    );
+    expect(ratio("#B392F0", memberAvatarTint("#B392F0").fill)).toBeCloseTo(
+      4.69,
+      1,
+    );
   });
 });

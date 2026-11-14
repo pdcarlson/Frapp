@@ -67,7 +67,7 @@ export interface RunOptions {
   date?: string;
 }
 
-function percentile(values: number[], fraction: number): number | null {
+export function percentile(values: number[], fraction: number): number | null {
   if (values.length === 0) return null;
   const sorted = [...values].sort((a, b) => a - b);
   const index = Math.min(

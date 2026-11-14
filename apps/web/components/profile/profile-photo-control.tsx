@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { useToast } from "@/lib/hooks/use-toast";
+import { downscaleImage } from "@/lib/downscale-image";
 import { getErrorMessage } from "@/lib/utils";
 
 /** The `image` kind's list, in the words a member reads. */
@@ -71,16 +72,25 @@ export function ProfilePhotoControl({
 
     setBusy("upload");
     try {
+      // Every avatar draws it at 84px or less, so it is stored at 512 (#2912).
+      const image = await downscaleImage(
+        {
+          body: file,
+          filename: file.name,
+          contentType: inspected.contentType,
+        },
+        { keepAlpha: false },
+      );
       const ticket = await requestUrl.mutateAsync({
-        filename: file.name,
-        content_type: inspected.contentType,
-        size_bytes: file.size,
+        filename: image.filename,
+        content_type: image.contentType,
+        size_bytes: image.body.size,
       });
       const { signedUrl, storagePath } = readSignedUpload(ticket);
       await putSignedUpload({
         signedUrl,
-        body: file,
-        contentType: inspected.contentType,
+        body: image.body,
+        contentType: image.contentType,
       });
       await confirm.mutateAsync(storagePath);
       toast({

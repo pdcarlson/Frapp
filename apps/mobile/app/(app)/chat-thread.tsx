@@ -1,6 +1,13 @@
 import { firstParam } from "@/lib/route-params";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   useFocusEffect,
   useIsFocused,
@@ -29,8 +36,10 @@ import {
 import {
   isBlockableSender,
   visibleTypingUsers,
+  withForwardedMasked,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
+import { forwardTargetOf } from "@repo/chat-core/forward";
 import {
   channelAllowsReplies,
   channelAllowsThreads,
@@ -41,7 +50,7 @@ import { typingLabel } from "@repo/chat-core/typing-label";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import { canFlagMessage } from "@repo/chat-core/flags";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LIST_KEY,
   CHANNEL_UNREAD_COUNTS_KEY,
@@ -55,9 +64,13 @@ import {
   useChapterRoster,
   useMentionRoles,
   useChannelNotificationPreferences,
+  useChannelUnreadCounts,
   useCurrentUser,
   claimViewedChannel,
   useMarkChannelRead,
+  useMarkMessageUnread,
+  holdChannelUnread,
+  releaseChannelUnread,
   useMemberDisplayNames,
   usePermissionList,
   useRosterCatchUp,
@@ -68,6 +81,7 @@ import {
   placeAskTurns,
 } from "@repo/hooks";
 import { useSaveMessage } from "@/lib/chat/save-message";
+import { useRemindMessage } from "@/lib/chat/message-reminder";
 import {
   ASK_COPY,
   CHAT_CATCH_UP_COPY,
@@ -97,6 +111,8 @@ import { useAiSurfaces } from "@/lib/ai/availability";
 import { arrivalUnread } from "@/lib/chat/catch-up-arrival";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { useComposerPlus } from "@/components/chat/use-composer-plus";
+import { useScheduleSend } from "@/components/chat/use-schedule-send";
+import { scheduleRefusal } from "@/lib/chat/schedule-send";
 import {
   ImageViewer,
   ImageViewerContext,
@@ -370,6 +386,7 @@ function ChannelThreadScreen() {
     retryPhoto,
     draft,
     setDraft,
+    restoreDraftFor,
     sendError,
     reactionError,
     clearReactionError,
@@ -531,8 +548,8 @@ function ChannelThreadScreen() {
   );
 
   // Opening a channel stamps the read cursor to server `now()`; there is no
-  // mark-read-to-a-message API. Its invalidation of `["channels"]` refreshes the
-  // s04 badges by prefix.
+  // mark-read-to-a-message API. It re-reads the unread counts and previews the
+  // s04 badges draw from (`useMarkChannelRead`).
   //
   // This is a **focus** effect, not a mount effect, and it stamps on the way out
   // as well as the way in. Both halves are load-bearing:
@@ -550,16 +567,28 @@ function ChannelThreadScreen() {
   //    Focus, not mount: this screen stays mounted under one pushed over it.
   const requestUploadUrl = useRequestChatUploadUrl();
 
+  //
+  // Mark unread (#3723) holds both stamps for the rest of the visit
+  // (`unreadHeldFor`): it drops the claim so the activity handler stops
+  // re-stamping, and the blur skips its stamp, or leaving would read the
+  // channel straight back. The next focus clears the hold, so opening the
+  // channel again reads it, as on Discord.
   const markRead = useMarkChannelRead();
   const markReadMutate = markRead.mutate;
+  const unreadHeldFor = useRef<string | null>(null);
+  const releaseViewedRef = useRef<(() => void) | null>(null);
   useFocusEffect(
     useCallback(() => {
       if (!channelId) return;
+      unreadHeldFor.current = null;
+      releaseChannelUnread(channelId);
       markReadMutate(channelId);
       const releaseViewed = claimViewedChannel(channelId);
+      releaseViewedRef.current = releaseViewed;
       return () => {
         releaseViewed();
-        markReadMutate(channelId);
+        releaseViewedRef.current = null;
+        if (unreadHeldFor.current !== channelId) markReadMutate(channelId);
       };
     }, [channelId, markReadMutate]),
   );
@@ -811,9 +840,12 @@ function ChannelThreadScreen() {
   }
   // The counts can land after the channel does: a cold launch opens the last
   // channel while Chat home's read is still out. Taken once, as web does;
-  // never asked for from here.
+  // never asked for from here. Observed through the shared hook, disabled,
+  // so the observer carries the fetch function: TanStack console.errors on
+  // every render of one without, which a development build shows as a red
+  // toast (#4885).
   const liveUnread = arrivalUnread(
-    useQuery({ queryKey: CHANNEL_UNREAD_COUNTS_KEY, enabled: false }).data,
+    useChannelUnreadCounts({ enabled: false }).data,
     channelId,
   );
   if (
@@ -1164,6 +1196,8 @@ function ChannelThreadScreen() {
   );
   // Save message / Remove from Saved (#3723): the viewer's own bookmark.
   const { savedIds, setSaved: handleSetSaved } = useSaveMessage();
+  // "Remind me about this" (#4957): the viewer's own reminder.
+  const handleRemind = useRemindMessage();
   // A Pinned or Saved row (#3723). A reply opens its thread, since it is never
   // on the timeline. Otherwise this channel's scrolls to it, paging older
   // history as the Important strip's jump does, and another channel's opens
@@ -1190,6 +1224,31 @@ function ChannelThreadScreen() {
       });
     },
     [channelId, jumpToImportant, openThreadFor, router],
+  );
+
+  // Mark unread (#3723): hold the channel so no read stamp follows (the blur
+  // one, and the activity handler's, queued ones included), move the cursor
+  // back, and leave at once, as Slack's phone app does, so the screen below
+  // shows the badge. The write is ordered after any stamp still pending
+  // (`useMarkMessageUnread`). A failure is an alert wherever the member is by
+  // then; nothing is re-claimed, since the screen has gone.
+  const markUnread = useMarkMessageUnread();
+  const markUnreadAsync = markUnread.mutateAsync;
+  const handleMarkUnread = useCallback(
+    (messageId: string) => {
+      if (!channelId) return;
+      selectionHaptic();
+      unreadHeldFor.current = channelId;
+      holdChannelUnread(channelId);
+      releaseViewedRef.current?.();
+      releaseViewedRef.current = null;
+      markUnreadAsync(messageId).catch((error: unknown) => {
+        Alert.alert("Couldn't mark unread", errorCopy(error));
+      });
+      if (below) below.goBack();
+      else goBackTo(router, "/");
+    },
+    [below, channelId, markUnreadAsync, router],
   );
 
   // A poll card's Close poll (#3794), asked first like Delete.
@@ -1336,7 +1395,15 @@ function ChannelThreadScreen() {
       }
       setActionTarget({
         messageId: message.id,
-        copyText: copyableText(message),
+        // A forward's copy is copied only where the block list clears its
+        // author, as its card draws it (#4864).
+        copyText: copyableText(
+          withForwardedMasked(message, blockState, viewerId),
+        ),
+        // Mark unread (#3723): someone else's message. The unread count never
+        // counts the viewer's own, an imported row or a blocked member's, so
+        // moving the cursor before one of those would change nothing.
+        canMarkUnread: actions.canReport && message.kind !== "imported",
         // Copy message link (#3723). A channel message only: this sheet never
         // holds a thread reply, whose link would open on a timeline it's not in.
         link: channelId
@@ -1345,6 +1412,12 @@ function ChannelThreadScreen() {
         canReply: actions.canReply,
         // The rule web's row uses (`messageCanStartThread`).
         canStartThread: canThreadHere && messageCanStartThread(message),
+        forward: forwardTargetOf(
+          message,
+          actions.canForward,
+          blockState,
+          viewerId,
+        ),
         canEdit: actions.canEdit,
         // Someone else's message from a real member, where the viewer can
         // post: the system actor and an imported author have nobody to ping.
@@ -1374,6 +1447,7 @@ function ChannelThreadScreen() {
       actionsSheetRef.current?.present();
     },
     [
+      blockState,
       canManageChannel,
       channelId,
       canReplyHere,
@@ -1529,6 +1603,57 @@ function ChannelThreadScreen() {
     replying: staging.context?.kind === "reply",
     offline: appOffline,
     onPhoto: handleAttach,
+  });
+
+  // The channel and reply on screen when a schedule settles, which may not
+  // be the ones it was opened on.
+  const scheduledReplyRef = useRef({
+    channelId,
+    replyToId: staging.replyToId,
+  });
+  useLayoutEffect(() => {
+    scheduledReplyRef.current = { channelId, replyToId: staging.replyToId };
+  }, [channelId, staging.replyToId]);
+  const cancelReply = replyContext?.onCancel;
+  const handleScheduled = useCallback(
+    (done: {
+      channelId: string;
+      photoKeys: string[];
+      replyToId: string | null;
+    }) => {
+      const shown = scheduledReplyRef.current;
+      if (shown.channelId !== done.channelId) return;
+      for (const key of done.photoKeys) removePhoto(key);
+      if (done.replyToId && shown.replyToId === done.replyToId) cancelReply?.();
+    },
+    [cancelReply, removePhoto],
+  );
+
+  // Scheduling the draft to post later (#4956): a long press on Send, and
+  // the line above the composer that opens the member's Scheduled list.
+  // Scheduling needs posting here; the list of what the member scheduled
+  // needs only reading, so a message that failed for lost posting can still
+  // be seen and deleted. The draft is set without a typing ping: it is not
+  // the member typing.
+  const scheduleSend = useScheduleSend({
+    channelId: channelId ?? null,
+    canSchedule: !postCapability.isAuditLog && channelCanPost,
+    showList: !postCapability.isAuditLog,
+    draft,
+    refusal: scheduleRefusal({
+      text: draft,
+      photos,
+      asksFrapp: namesFrapp(draft),
+      writeBlocked: writeBlockedReason,
+    }),
+    picksFor: staging.picksFor,
+    setDraft,
+    restoreDraftFor,
+    // The photos and the reply go with it (#4971), and leave the tray and
+    // the strip once it is scheduled, if they are still the ones on screen.
+    photos,
+    replyToId: staging.replyToId,
+    onScheduled: handleScheduled,
   });
 
   const notificationPrefsQuery = useChannelNotificationPreferences();
@@ -2054,6 +2179,12 @@ function ChannelThreadScreen() {
               onRemovePhoto={removePhoto}
               onRetryPhoto={retryPhoto}
               isPicking={isPicking}
+              onSchedule={
+                canSend && !staging.isSavingEdit
+                  ? scheduleSend.openSchedule
+                  : undefined
+              }
+              scheduled={scheduleSend.scheduled}
             />
           )}
         </View>
@@ -2090,22 +2221,27 @@ function ChannelThreadScreen() {
         openChannelId={channelId ?? null}
       />
       {composerPlus.sheets}
+      {scheduleSend.sheets}
       {catchUp.sheets}
       {channelAsk?.sheets}
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}
+        nameFor={nameFor}
+        viewerId={viewerId}
         onSenderDeparted={markDeparted}
         onReply={staging.startReply}
         onStartThread={openThreadFor}
         onEdit={staging.startEdit}
         onDelete={handleDelete}
         onMention={handleMention}
+        onMarkUnread={handleMarkUnread}
         onReact={handleReact}
         onUnreact={handleUnreact}
         onFlag={handleFlag}
         onSetPinned={handleSetPinned}
         onSetSaved={handleSetSaved}
+        onRemind={handleRemind}
       />
       <MessageListSheet
         ref={listSheetRef}

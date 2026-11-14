@@ -148,6 +148,8 @@ vi.mock("expo-router", () => {
     navigate: vi.fn(),
     dismissTo: vi.fn(),
     back: vi.fn(),
+    // s18's Scan code hands a code it read to the screen as its own params.
+    setParams: vi.fn(),
     // Nothing behind the screen unless a spec says otherwise
     // (`mockReturnValue(true)`, as the chapter picker's does).
     canGoBack: vi.fn(() => false),

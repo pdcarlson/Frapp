@@ -84,9 +84,9 @@ export function calendarAppLinks(link: CalendarFeedLink): {
     apple: link.webcal_url,
     // Google reads `cid` as a calendar to add; a webcal:// address makes it a
     // subscription by URL rather than a calendar id.
-    google: `https://calendar.google.com/calendar/r?${new URLSearchParams(
-      { cid: link.webcal_url },
-    ).toString()}`,
+    google: `https://calendar.google.com/calendar/r?${new URLSearchParams({
+      cid: link.webcal_url,
+    }).toString()}`,
     outlook: `https://outlook.live.com/calendar/0/addfromweb?${outlookQuery}`,
     outlookWork: `https://outlook.office.com/calendar/0/addfromweb?${outlookQuery}`,
   };

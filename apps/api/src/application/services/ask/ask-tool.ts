@@ -21,10 +21,12 @@ import { WILDCARD } from '#domain/constants/permissions';
  * - **It reads through the same application service the route calls,** with
  *   the chapter and the user from the request's guards. A tool never takes a
  *   chapter, a user or any other argument from a model.
- * - **`effect` is `read` for every tool Ask runs.** The acting agent (#718,
- *   `../act/act-tool.ts`) has `propose` tools, whose result is a saved
- *   proposal a person accepts (`ai.md` § Suggestions). Ask's loop refuses
- *   to run anything but `read`, so a question can never change anything.
+ * - **`effect` is `read` for every tool the one-shot path runs.** The
+ *   acting agent (#718, `../act/act-tool.ts`) has `propose` tools, whose
+ *   result is a saved proposal a person accepts (`ai.md` § Suggestions).
+ *   The tool loop runs a read or a propose and refuses anything else
+ *   (`agent/agent-loop.service.ts`), so a question can never change
+ *   anything.
  * - **Its result says which chapter it read,** and Ask drops a result whose
  *   chapter is not the request's.
  *
@@ -47,7 +49,27 @@ export interface AskToolResult {
   chapterId: string;
   /** One fact per line. */
   text: string;
+  /**
+   * For a tool whose `reach` is `events`: the ids of the listed events that
+   * leave some member out (`eventLimitsAudience`). Ids only, for the check
+   * made when an answer is posted to a channel (#4713).
+   */
+  limitedEventIds?: string[];
 }
+
+/**
+ * Who else could read what a tool returned, which decides whether an answer
+ * built on it can go to a channel without a warning (#4713,
+ * `spec/behavior/ai.md` § Posting an answer to the channel):
+ *
+ * - `chapter`: the same for every member who holds the tool's permission
+ *   (the roster, the standings).
+ * - `asker`: the asker's own records (their points, dues, tasks). Nobody
+ *   else can open them, so it always warns.
+ * - `events`: the calendar as the asker sees it. Open to all unless it
+ *   listed an event that leaves someone in the channel out.
+ */
+type AskToolReach = 'chapter' | 'asker' | 'events';
 
 export type AskToolEffect = 'read' | 'propose';
 
@@ -73,6 +95,7 @@ export interface AskTool extends AgentToolSpec {
   readonly kind: AskSourceKind;
   readonly title: string;
   readonly page: AskSourcePage;
+  readonly reach: AskToolReach;
   /** The read. Null when there is nothing to say (no events, no invoices). */
   run(context: AskToolContext): Promise<AskToolResult | null>;
 }

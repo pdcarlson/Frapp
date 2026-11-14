@@ -85,6 +85,7 @@ describe('RbacService', () => {
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
       findByUser: jest.fn(),
       findChapterMemberIdentities: jest.fn(),
     };
@@ -93,6 +94,7 @@ describe('RbacService', () => {
       findById: jest.fn(),
       findByIds: jest.fn(),
       isAnalyticsOptedOut: jest.fn(),
+      findWithBirthdayChannel: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
@@ -2206,6 +2208,7 @@ describe('RbacService', () => {
         {
           user_id: 'user-officer',
           permissions: new Set([SystemPermissions.CHANNELS_MANAGE]),
+          role_ids: ['role-member', 'role-officer'],
           top_role_order: 2,
           top_role: { id: 'role-officer', name: 'role-role-officer' },
           channel_access: {
@@ -2217,6 +2220,7 @@ describe('RbacService', () => {
         {
           user_id: 'user-none',
           permissions: new Set(),
+          role_ids: [],
           top_role_order: null,
           top_role: null,
           channel_access: EMPTY_ACCESS_HOLDER,
@@ -2299,6 +2303,9 @@ describe('RbacService', () => {
       expect(entry).toEqual({
         user_id: 'user-1',
         permissions: new Set(),
+        // As stored: the event read gate matches an invitation against the
+        // member's own list, and no event of this chapter names this role.
+        role_ids: ['role-foreign'],
         top_role_order: null,
         top_role: null,
         // A foreign role's `*` must not pass a channel's lists either.
@@ -2325,6 +2332,7 @@ describe('RbacService', () => {
             SystemPermissions.MEMBERS_VIEW,
             SystemPermissions.CHANNELS_MANAGE,
           ]),
+          role_ids: ['role-a', 'role-b'],
           top_role_order: 1,
           top_role: { id: 'role-b', name: 'role-role-b' },
           channel_access: {

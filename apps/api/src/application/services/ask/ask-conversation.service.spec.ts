@@ -2,7 +2,8 @@ import { ForbiddenException } from '@nestjs/common';
 import { ASK_STREAM_VERSION, type AskStreamEvent } from '@repo/validation';
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
 import { reportSwallowed } from '../../../infrastructure/observability/report-swallowed';
-import type { ActInput, ActOutcome } from '../act/act.service';
+import type { ActInput } from '../act/act.service';
+import type { ActOutcome } from '../act/act-tool';
 import {
   AskConversationService,
   type AskConversationEvent,
@@ -419,5 +420,55 @@ describe('AskConversationService', () => {
     });
     await expect(run()).rejects.toBeInstanceOf(LanguageModelError);
     expect(reportSwallowed).not.toHaveBeenCalled();
+  });
+
+  describe('with the tool loop on (ASK_AGENT=on, #4899)', () => {
+    const saved = process.env.ASK_AGENT;
+    beforeEach(() => {
+      process.env.ASK_AGENT = 'on';
+    });
+    afterEach(() => {
+      if (saved === undefined) delete process.env.ASK_AGENT;
+      else process.env.ASK_AGENT = saved;
+    });
+
+    it('runs one lane: the loop is offered the cards, and no separate reading of the request is made', async () => {
+      const { run, askService, actService } = build({});
+      const events = await run();
+      expect(actService.act).not.toHaveBeenCalled();
+      expect(askService.ask).toHaveBeenCalledTimes(1);
+      const given = (
+        askService.ask.mock.calls as unknown as [AskInput][]
+      )[0][0];
+      // A build from before cards on an answer draws one, in place of it.
+      expect(given.cards).toBe('one');
+      expect(given.mayGoOn).toBeUndefined();
+      expect(events).toEqual([START, SEARCHING, READING, WRITING, DONE]);
+    });
+
+    it('lets a client that draws cards on an answer have several', async () => {
+      const { run, askService } = build({});
+      await run({ answerCards: true });
+      expect(
+        (askService.ask.mock.calls as unknown as [AskInput][])[0][0].cards,
+      ).toBe('many');
+    });
+
+    it('offers no card to a client that draws none, whatever else it sent', async () => {
+      const { run, askService, actService } = build({});
+      await run({ actions: false, answerCards: true });
+      expect(actService.act).not.toHaveBeenCalled();
+      expect(
+        (askService.ask.mock.calls as unknown as [AskInput][])[0][0].cards,
+      ).toBeUndefined();
+    });
+
+    it('passes on the card the loop ended in', async () => {
+      const card = { type: 'act', outcome: PROPOSED } as AskConversationEvent;
+      const { run } = build({
+        events: [START, SEARCHING, card as never],
+      });
+      expect(await run()).toEqual([START, SEARCHING, card]);
+    });
   });
 });

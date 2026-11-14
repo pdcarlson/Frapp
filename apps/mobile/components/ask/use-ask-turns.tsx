@@ -3,16 +3,22 @@ import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import {
   useDocumentDownloadUrl,
+  type AskCardEnd,
   type AskConversation,
   type AskExchange,
   type AskOptions,
+  useAskSignal,
 } from "@repo/hooks";
-import type { AskSource } from "@repo/validation";
+import type { AiReportReason, AskSource } from "@repo/validation";
 import {
   useAiReport,
   type AiReportTarget,
 } from "@/components/ai/report-ai-sheet";
-import { AskProposal, type ActLink } from "@/components/ask/ask-proposal";
+import {
+  AskAnswerCards,
+  AskProposal,
+  type ActLink,
+} from "@/components/ask/ask-proposal";
 import type { AskReply } from "@/components/ask/ask-turn";
 import { useAskKept } from "@/lib/ask/kept-targets";
 import { askSourceOpening } from "@/lib/ask/source-route";
@@ -22,6 +28,8 @@ import { notificationHref } from "@/lib/notifications/targets";
 
 /** Said under a turn whose source didn't open. */
 export const SOURCE_OPEN_FAILED = "That source didn't open. Try again.";
+
+const NO_CARDS_ENDED: Readonly<Record<string, AskCardEnd>> = {};
 
 /**
  * What a turn of the Ask conversation does when the member acts on it,
@@ -45,7 +53,7 @@ export function useAskTurns({
 }: {
   conversation: Pick<
     AskConversation,
-    "working" | "retry" | "setProposal" | "resolveProposal"
+    "working" | "retry" | "setProposal" | "resolveProposal" | "resolveCard"
   >;
   /** What a question is asked with, read when a turn is asked again. */
   options: () => AskOptions;
@@ -64,47 +72,13 @@ export function useAskTurns({
 } {
   const router = useRouter();
   const reporting = useAiReport();
-  const openDocument = useDocumentDownloadUrl();
+  const signal = useAskSignal();
   const { kept, keep, forget } = useAskKept();
-  const { working, retry, setProposal, resolveProposal } = conversation;
+  const { working, retry, setProposal, resolveProposal, resolveCard } =
+    conversation;
 
-  const [openingSourceId, setOpeningSourceId] = useState<string | null>(null);
-  // A source that didn't open, said under the turn it belongs to.
-  const [sourceNotice, setSourceNotice] = useState<string | null>(null);
-  const presenting = useRef(false);
-
-  const openSource = useCallback(
-    async (exchangeId: string, source: AskSource) => {
-      const opening = askSourceOpening(source);
-      if (!opening) return;
-      if (opening.kind === "route") {
-        leave?.();
-        openHref(router, asRoute(notificationHref(opening.target)));
-        return;
-      }
-      // One browser at a time: iOS rejects a second presentation.
-      if (presenting.current) return;
-      presenting.current = true;
-      setSourceNotice(null);
-      setOpeningSourceId(`${exchangeId}:${source.id}`);
-      try {
-        const url = selectDownloadUrl(
-          await openDocument.mutateAsync(opening.documentId),
-        );
-        if (!url) {
-          setSourceNotice(exchangeId);
-          return;
-        }
-        await WebBrowser.openBrowserAsync(url);
-      } catch {
-        setSourceNotice(exchangeId);
-      } finally {
-        presenting.current = false;
-        setOpeningSourceId(null);
-      }
-    },
-    [leave, openDocument, router],
-  );
+  const sources = useAskSourceOpener(leave);
+  const { open: openSource, openingKey: openingSourceId } = sources;
 
   const openActLink = useCallback(
     (link: ActLink) => {
@@ -114,17 +88,39 @@ export function useAskTurns({
     [leave, router],
   );
 
+  // Opens a channel an answer names (#4904); `ask-turn.tsx` offers it only
+  // for a channel the reader has.
+  const openChannel = useCallback(
+    (channelId: string) => {
+      leave?.();
+      openHref(
+        router,
+        asRoute(`/chat-thread?channelId=${encodeURIComponent(channelId)}`),
+      );
+    },
+    [leave, router],
+  );
+
   const propsFor = (exchange: AskExchange) => ({
     exchange,
-    canOpen,
+    canOpen: canOpenAskSource,
     openingSourceId: openingSourceId?.startsWith(`${exchange.id}:`)
       ? openingSourceId.slice(exchange.id.length + 1)
       : null,
-    onOpenSource: (source: AskSource) => void openSource(exchange.id, source),
+    onOpenSource: (source: AskSource) => {
+      // Counted against the answer's kept trace, where there is one (#4904).
+      // Not while a document's link is still being fetched: that tap opens
+      // nothing, so it is not a second open.
+      if (!openingSourceId) signal(exchange.answer?.ask_id, "source_opened");
+      void openSource(exchange.id, source);
+    },
     busy: working && exchange.phase !== "working",
     onRetry: () => void retry(exchange.id, options()),
+    onThinkHarder: () =>
+      void retry(exchange.id, { ...options(), effort: "more" as const }),
     onAnswerConsent: () => void retry(exchange.id, options()),
     report: reportFor(exchange, reporting),
+    onOpenChannel: openChannel,
     proposal: exchange.proposal ? (
       <AskProposal
         proposal={exchange.proposal}
@@ -137,19 +133,96 @@ export function useAskTurns({
         onOpen={openActLink}
       />
     ) : null,
+    cards: exchange.answer?.proposals?.length ? (
+      <AskAnswerCards
+        ids={exchange.answer.proposals}
+        ended={exchange.cards ?? NO_CARDS_ENDED}
+        kept={kept}
+        onKeep={keep}
+        report={reporting}
+        onEnded={(suggestionId, end) => {
+          // Counted against the answer that proposed it. A card that had
+          // stopped waiting was neither confirmed nor dismissed.
+          if (end.resolution.kind === "done") {
+            signal(exchange.answer?.ask_id, "card_confirmed");
+          } else if (end.resolution.kind === "cancelled") {
+            signal(exchange.answer?.ask_id, "card_dismissed");
+          }
+          resolveCard(exchange.id, suggestionId, end);
+        }}
+        onOpen={openActLink}
+      />
+    ) : null,
   });
 
   return {
     propsFor,
-    sourceFailed: (exchangeId) => sourceNotice === exchangeId,
-    clearNotice: useCallback(() => setSourceNotice(null), []),
+    sourceFailed: (exchangeId) => sources.failedOwner === exchangeId,
+    clearNotice: sources.clearNotice,
     forget,
     reportSheet: reporting.reportSheet,
   };
 }
 
+/**
+ * Opens an Ask source, for a turn of the conversation or for an answer
+ * posted to a channel (`ask-answer-card.tsx`): the same thing from either.
+ * `owner` names what the source belongs to (a turn's id, a message's id), so
+ * the chip that is opening and the row that failed can each say so.
+ */
+export function useAskSourceOpener(leave?: () => void): {
+  open: (owner: string, source: AskSource) => Promise<void>;
+  /** `<owner>:<source id>` while a document's link is fetched. */
+  openingKey: string | null;
+  /** The owner whose source didn't open. */
+  failedOwner: string | null;
+  clearNotice: () => void;
+} {
+  const router = useRouter();
+  const openDocument = useDocumentDownloadUrl();
+  const [openingKey, setOpeningKey] = useState<string | null>(null);
+  const [failedOwner, setFailedOwner] = useState<string | null>(null);
+  const presenting = useRef(false);
+
+  const open = useCallback(
+    async (owner: string, source: AskSource) => {
+      const opening = askSourceOpening(source);
+      if (!opening) return;
+      if (opening.kind === "route") {
+        leave?.();
+        openHref(router, asRoute(notificationHref(opening.target)));
+        return;
+      }
+      // One browser at a time: iOS rejects a second presentation.
+      if (presenting.current) return;
+      presenting.current = true;
+      setFailedOwner(null);
+      setOpeningKey(`${owner}:${source.id}`);
+      try {
+        const url = selectDownloadUrl(
+          await openDocument.mutateAsync(opening.documentId),
+        );
+        if (!url) {
+          setFailedOwner(owner);
+          return;
+        }
+        await WebBrowser.openBrowserAsync(url);
+      } catch {
+        setFailedOwner(owner);
+      } finally {
+        presenting.current = false;
+        setOpeningKey(null);
+      }
+    },
+    [leave, openDocument, router],
+  );
+  const clearNotice = useCallback(() => setFailedOwner(null), []);
+  return { open, openingKey, failedOwner, clearNotice };
+}
+
 /** Whether this build has a screen or a document for the source. */
-const canOpen = (source: AskSource) => askSourceOpening(source) !== null;
+export const canOpenAskSource = (source: AskSource) =>
+  askSourceOpening(source) !== null;
 
 /** The answer's "Report this", for a member who may report (#4315). */
 function reportFor(
@@ -165,5 +238,13 @@ function reportFor(
   return {
     reported: reporting.isReported(target),
     onPress: () => reporting.report(target),
+    // From a thumbs down (#4904): the sheet opens on the reason given. Only
+    // for an answer with a receipt: without one a report keeps none of the
+    // answer, so "send this answer" would not be true.
+    ...(target.receipt
+      ? {
+          onSend: (reason: AiReportReason) => reporting.report(target, reason),
+        }
+      : {}),
   };
 }

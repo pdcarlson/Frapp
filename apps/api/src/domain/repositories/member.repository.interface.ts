@@ -47,6 +47,18 @@ export interface IMemberRepository {
     expectedRoleIds: string[],
     roleIds: string[],
   ): Promise<Member | null>;
+  /**
+   * Add (`join`) or remove a self-assignable role on a member through the
+   * `self_assign_role` RPC (#4958): only while the role is marked and safe,
+   * under the role-then-member locks `delete_role` takes. `ok` carries the
+   * written `role_ids`.
+   */
+  setSelfAssignedRole(
+    chapterId: string,
+    memberId: string,
+    roleId: string,
+    join: boolean,
+  ): Promise<SelfAssignResult>;
   delete(id: string): Promise<void>;
   /**
    * Atomically move the President (wildcard) role from one member to another via
@@ -77,4 +89,10 @@ export interface IMemberRepository {
     eligibleRoleId: string,
     presidentRoleId: string,
   ): Promise<boolean>;
+}
+
+/** What {@link IMemberRepository.setSelfAssignedRole} did. */
+export interface SelfAssignResult {
+  outcome: 'ok' | 'not_assignable' | 'alumni' | 'no_member';
+  role_ids: string[] | null;
 }

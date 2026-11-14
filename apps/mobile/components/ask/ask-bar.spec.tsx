@@ -3,7 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { ASK_COPY } from "@repo/validation";
+import { ASK_COPY, ASK_FIND_PLACEHOLDER } from "@repo/validation";
 import { FrappCrest } from "@/components/frapp-crest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
@@ -20,7 +20,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 const haptics = vi.hoisted(() => ({ selectionHaptic: vi.fn() }));
 vi.mock("@/lib/haptics", () => haptics);
 
-import { AskBar } from "./ask-bar";
+import { ASK_BAR_HINT, AskBar } from "./ask-bar";
 
 function render(onPress = vi.fn()): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -39,15 +39,15 @@ const press = (tree: ReactTestRenderer) =>
   tree.root.findAll((node) => (node.type as unknown) === "Pressable")[0];
 
 describe("AskBar", () => {
-  it("reads as the field it opens: the conversation's own placeholder, and nothing else", () => {
-    expect(screenText(render())).toBe(ASK_COPY.placeholder);
+  it("reads as the field it opens: search or ask (#4904), and nothing else", () => {
+    expect(screenText(render())).toBe(ASK_FIND_PLACEHOLDER);
   });
 
   it("is one button named Ask Frapp, which says what it is for", () => {
     const button = press(render());
     expect(button.props.accessibilityRole).toBe("button");
     expect(button.props.accessibilityLabel).toBe(ASK_COPY.name);
-    expect(button.props.accessibilityHint).toBe(ASK_COPY.entry_label);
+    expect(button.props.accessibilityHint).toBe(ASK_BAR_HINT);
   });
 
   it("draws the crest, its edge and its arrow in the chapter's colour", () => {

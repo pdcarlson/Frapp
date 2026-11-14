@@ -41,6 +41,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ThreadRow } from "@repo/chat-core/blocks";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { ScheduleSendSheet } from "@/components/chat/schedule-send-sheet";
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import {
@@ -395,6 +396,7 @@ function channelState(
     retryPhoto: vi.fn(),
     draft: "",
     setDraft: vi.fn(),
+    restoreDraftFor: vi.fn(),
     sendError: null,
     reactionError: null,
     clearReactionError: vi.fn(),
@@ -430,6 +432,8 @@ let channelLocked = false;
 let channelReadAt = 1_000;
 /** A read-only channel (announcements) the viewer can only read. */
 let channelIsReadOnly = false;
+// Which channel the Scheduled list was read for (#4956).
+const scheduledListFor = vi.fn();
 /** The open channel is the chapter's audit log (#3909). */
 let channelIsAuditLog = false;
 /** The viewer's permissions, and the chapter's modules, for the + (#3701). */
@@ -482,6 +486,9 @@ const setNotificationLevel = {
   variables: undefined,
 };
 const markRead = { mutate: vi.fn() };
+const markUnread = {
+  mutateAsync: vi.fn<(messageId: string) => Promise<unknown>>(async () => ({})),
+};
 const requestUploadUrl = { mutateAsync: vi.fn() };
 
 const rosterCatchUp = vi.hoisted(() =>
@@ -494,63 +501,94 @@ const bookmarkWrites = vi.hoisted(() => ({
   save: { mutateAsync: vi.fn(async () => undefined) },
   unsave: { mutateAsync: vi.fn(async () => undefined) },
 }));
-vi.mock("@repo/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@repo/hooks")>()),
-  // The roster catch-up has its own spec in `@repo/hooks`.
-  useRosterCatchUp: rosterCatchUp,
-  // GIFs (#4631): off here, so the + sheet offers no GIF row.
-  useGifAvailability: () => ({ available: false, provider: "" }),
-  useActiveChapterId: () => "chapter-1",
-  // Pinned and Saved (#3723): nothing saved, no pins, writes that succeed.
-  useBookmarkedMessageIds: () => SAVED,
-  useBookmarkMessage: () => bookmarkWrites.save,
-  useUnbookmarkMessage: () => bookmarkWrites.unsave,
-  useBookmarks: () => ({ data: [], isPending: false, isError: false }),
-  usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
-  useChannel: (id: string) =>
-    channelRow === "found"
-      ? {
-          data: {
-            id,
-            name: "general",
-            type: channelType,
-            description: "The whole chapter.",
-            can_post: !channelIsAuditLog && !channelIsReadOnly,
-            is_read_only: channelIsAuditLog || channelIsReadOnly,
-            is_audit_log: channelIsAuditLog,
-            display_locked: channelLocked,
-          },
-          dataUpdatedAt: channelReadAt,
-          isFetching: false,
-        }
-      : // No row and no cached list: a blank title while it is read, then the
-        // `Thread` fallback (`threadTitleFor`).
-        { data: undefined, isFetching: channelRow === "reading" },
-  useCurrentUser: () => viewerQuery,
-  useMemberDisplayNames: () => ROSTER,
-  useChapterRoster: () => ({ data: MENTION_ROSTER }),
-  useMentionRoles: () => ({ data: MENTION_ROLES }),
-  // No imported authors with avatars in these fixtures.
-  useAuthorAvatars: () => ({ data: undefined }),
-  usePermissionList: () => permissionList,
-  useMyPermissions: () => ({
-    data: { permissions: permissionList },
-    isError: false,
-    fetchStatus: "idle",
-  }),
-  useCurrentChapter: () =>
-    chapterUnread
-      ? { data: undefined, fetchStatus: "fetching" }
-      : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
-  useMarkChannelRead: () => markRead,
-  useRequestChatUploadUrl: () => requestUploadUrl,
-  useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
-  useSetChannelNotificationLevel: () => setNotificationLevel,
-  useImportantMessages: () => importantState,
-  useBlockedUserIds: () => BLOCK_LIST,
-  // The viewer reads the message's images through the row's query.
-  useMessageAttachments: () => ({ data: [IMAGE] }),
+/** Remind me about this (#4957): the set, seen and answered. */
+const reminderWrites = vi.hoisted(() => ({
+  set: { mutateAsync: vi.fn(async (input: unknown) => void input) },
 }));
+
+/** The unread counts' fetch, stood in for `GET /v1/channels/unread`. */
+const unreadCountsFetch = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
+
+vi.mock("@repo/hooks", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/hooks")>();
+  const { useQuery } = await import("@tanstack/react-query");
+  return {
+    ...actual,
+    // The real hook's shape, minus the API client this spec doesn't provide:
+    // one query under the shared key, always with its fetch (#4885).
+    useChannelUnreadCounts: (options?: { enabled?: boolean }) =>
+      useQuery({
+        queryKey: actual.CHANNEL_UNREAD_COUNTS_KEY,
+        queryFn: unreadCountsFetch,
+        enabled: options?.enabled ?? true,
+      }),
+    // The roster catch-up has its own spec in `@repo/hooks`.
+    useRosterCatchUp: rosterCatchUp,
+    // GIFs (#4631): off here, so the + sheet offers no GIF row.
+    useGifAvailability: () => ({ available: false, provider: "" }),
+    useActiveChapterId: () => "chapter-1",
+    // Pinned and Saved (#3723): nothing saved, no pins, writes that succeed.
+    useBookmarkedMessageIds: () => SAVED,
+    useBookmarkMessage: () => bookmarkWrites.save,
+    useUnbookmarkMessage: () => bookmarkWrites.unsave,
+    // Remind me about this (#4957): writes that succeed.
+    useSetMessageReminder: () => reminderWrites.set,
+    useBookmarks: () => ({ data: [], isPending: false, isError: false }),
+    usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
+    // Scheduled messages (#4956): none, and a schedule that never lands.
+    useScheduledMessages: (channelId: string | null) => ({
+      ...(scheduledListFor(channelId) as object),
+      data: [],
+      isPending: false,
+      isError: false,
+    }),
+    useScheduleMessage: () => ({ mutateAsync: vi.fn() }),
+    useChannel: (id: string) =>
+      channelRow === "found"
+        ? {
+            data: {
+              id,
+              name: "general",
+              type: channelType,
+              description: "The whole chapter.",
+              can_post: !channelIsAuditLog && !channelIsReadOnly,
+              is_read_only: channelIsAuditLog || channelIsReadOnly,
+              is_audit_log: channelIsAuditLog,
+              display_locked: channelLocked,
+            },
+            dataUpdatedAt: channelReadAt,
+            isFetching: false,
+          }
+        : // No row and no cached list: a blank title while it is read, then the
+          // `Thread` fallback (`threadTitleFor`).
+          { data: undefined, isFetching: channelRow === "reading" },
+    useCurrentUser: () => viewerQuery,
+    useMemberDisplayNames: () => ROSTER,
+    useChapterRoster: () => ({ data: MENTION_ROSTER }),
+    useMentionRoles: () => ({ data: MENTION_ROLES }),
+    // No imported authors with avatars in these fixtures.
+    useAuthorAvatars: () => ({ data: undefined }),
+    usePermissionList: () => permissionList,
+    useMyPermissions: () => ({
+      data: { permissions: permissionList },
+      isError: false,
+      fetchStatus: "idle",
+    }),
+    useCurrentChapter: () =>
+      chapterUnread
+        ? { data: undefined, fetchStatus: "fetching" }
+        : { data: { enabled_modules: enabledModules }, fetchStatus: "idle" },
+    useMarkChannelRead: () => markRead,
+    useMarkMessageUnread: () => markUnread,
+    useRequestChatUploadUrl: () => requestUploadUrl,
+    useChannelNotificationPreferences: () => ({ data: NOTIFICATION_PREFS }),
+    useSetChannelNotificationLevel: () => setNotificationLevel,
+    useImportantMessages: () => importantState,
+    useBlockedUserIds: () => BLOCK_LIST,
+    // The viewer reads the message's images through the row's query.
+    useMessageAttachments: () => ({ data: [IMAGE] }),
+  };
+});
 
 /** Catch me up (#3946): the gate, and the sheet's hook, both stood in. */
 const catchUp = vi.hoisted(() => ({
@@ -824,6 +862,81 @@ describe("chat thread in the audit log", () => {
     expect(
       tree.root.findAllByProps({ testID: "chat-audit-log-note" }),
     ).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("offers Schedule message from the composer, with its sheets mounted (#4956)", () => {
+    const tree = render();
+    const composer = tree.root.findByType(ChatComposer);
+    expect(typeof composer.props.onSchedule).toBe("function");
+    // Nothing scheduled here: no line above the input.
+    expect(composer.props.scheduled).toBeNull();
+    expect(tree.root.findAllByType(ScheduleSendSheet)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("hands Schedule message the reason a photo still uploading can't be scheduled (#4971)", () => {
+    channel = channelState({
+      draft: "Chapter at 8",
+      photos: [
+        {
+          key: "p1",
+          previewUri: "file:///a.jpg",
+          width: 10,
+          height: 10,
+          status: "ready",
+          attachment: null,
+          reason: null,
+        },
+      ],
+    } as unknown as Partial<UseChatChannelResult>);
+    const tree = render();
+    act(() => tree.root.findByType(ChatComposer).props.onSchedule());
+    expect(tree.root.findByType(ScheduleSendSheet).props.refusal).toMatch(
+      /^Wait for your photos/,
+    );
+    expect(tree.root.findByType(ScheduleSendSheet).props.preview).toBe(
+      "Chapter at 8",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("takes scheduled photos out of the tray once scheduled (#4971)", async () => {
+    channel = channelState({
+      draft: "Agenda",
+      photos: [
+        {
+          key: "p1",
+          previewUri: "file:///a.jpg",
+          width: 10,
+          height: 10,
+          status: "ready",
+          attachment: {
+            storagePath: "chapters/c/chat/ch/a/a.jpg",
+            filename: "a.jpg",
+            contentType: "image/jpeg",
+          },
+          reason: null,
+        },
+      ],
+    } as unknown as Partial<UseChatChannelResult>);
+    const tree = render();
+    act(() => tree.root.findByType(ChatComposer).props.onSchedule());
+    const sheet = tree.root.findByType(ScheduleSendSheet);
+    expect(sheet.props.refusal).toBeNull();
+    await act(async () => {
+      await sheet.props.onSchedule(new Date(Date.now() + 3_600_000));
+    });
+    expect(channel.removePhoto).toHaveBeenCalledWith("p1");
+    act(() => tree.unmount());
+  });
+
+  it("keeps the Scheduled list where the member can't post (#4956)", () => {
+    channelIsReadOnly = true;
+    scheduledListFor.mockClear();
+    const tree = render();
+    expect(tree.root.findByType(ChatComposer).props.onSchedule).toBeUndefined();
+    expect(scheduledListFor).toHaveBeenLastCalledWith(CHANNEL);
     act(() => tree.unmount());
   });
 });
@@ -2282,6 +2395,116 @@ describe("chat thread reports its transport to the connection pill", () => {
 });
 
 /*
+ * Mark unread (#3723): the sheet's row moves the read cursor back, and the
+ * thread stops stamping it for the rest of the visit, or leaving would read
+ * the channel straight back. Then it leaves, so the list shows the badge.
+ */
+describe("chat thread Mark unread", () => {
+  beforeEach(() => {
+    params = { channelId: CHANNEL };
+    markUnread.mutateAsync.mockClear();
+    markUnread.mutateAsync.mockImplementation(async () => ({}));
+  });
+
+  const openSheetOn = (tree: ReturnType<typeof render>) => {
+    const row = rows(tree)[0]!;
+    act(() =>
+      (row.props.onOpenActions as (message: ChatMessage) => void)(
+        (row.props.row as ThreadRow).message,
+      ),
+    );
+    return tree.root.findByType("MessageActionsSheet" as never);
+  };
+
+  it("offers Mark unread, moves the cursor, skips the blur's stamp and leaves", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+    expect(sheet.props.target.canMarkUnread).toBe(true);
+    const goBack = vi.mocked(vi.mocked(expoRouter.useRouter)().dismissTo);
+    goBack.mockClear();
+
+    await act(async () => {
+      (sheet.props.onMarkUnread as (id: string) => void)("m1");
+      await Promise.resolve();
+    });
+
+    expect(markUnread.mutateAsync).toHaveBeenCalledWith("m1");
+    // The activity handler no longer re-stamps this channel.
+    expect(viewedChannelId()).toBeNull();
+    // Leaving runs the focus effect's cleanup, which must not stamp it back.
+    // (An unmount, not the global blur: another spec's mounted screen would
+    // answer that.)
+    markRead.mutate.mockClear();
+    act(() => tree.unmount());
+    expect(markRead.mutate).not.toHaveBeenCalled();
+    // A pushed thread with nothing below goes back to Chat home.
+    expect(goBack).toHaveBeenCalled();
+  });
+
+  it("reads the channel as usual on the next visit", () => {
+    channel = channelState({ messages: [message("m1")] });
+    markRead.mutate.mockClear();
+    const tree = render();
+    expect(markRead.mutate).toHaveBeenCalledWith(CHANNEL);
+    act(() => tree.unmount());
+  });
+
+  it("says so when it fails, without claiming the channel back for a screen that has gone", async () => {
+    const { viewedChannelId } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    markUnread.mutateAsync.mockImplementation(async () => {
+      throw new Error("Couldn't reach the server");
+    });
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+
+    await act(async () => {
+      (sheet.props.onMarkUnread as (id: string) => void)("m1");
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(alert).toHaveBeenCalledWith(
+      "Couldn't mark unread",
+      expect.any(String),
+    );
+    expect(viewedChannelId()).toBeNull();
+    alert.mockRestore();
+    act(() => tree.unmount());
+  });
+
+  it("holds the channel against the activity handler's stamps until the next visit", async () => {
+    const { isChannelHeldUnread } =
+      await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree);
+    act(() => (sheet.props.onMarkUnread as (id: string) => void)("m1"));
+    expect(isChannelHeldUnread(CHANNEL)).toBe(true);
+    // Back on the same screen: the hold ends and the visit reads as usual.
+    markRead.mutate.mockClear();
+    act(() => refocus());
+    expect(isChannelHeldUnread(CHANNEL)).toBe(false);
+    expect(markRead.mutate).toHaveBeenCalledWith(CHANNEL);
+    act(() => tree.unmount());
+  });
+
+  it("isn't offered on the viewer's own message, which never counts as unread", () => {
+    channel = channelState({
+      messages: [message("m1", { sender_id: VIEWER })],
+    });
+    const tree = render();
+    expect(openSheetOn(tree).props.target.canMarkUnread).toBe(false);
+    act(() => tree.unmount());
+  });
+});
+
+/*
  * The thread says it is the one on screen only while focused (#3698): the
  * activity handler re-stamps the viewed channel read when a message lands in
  * it, and this screen stays mounted under one pushed over it (another thread
@@ -2631,6 +2854,34 @@ describe("message threads (#3785)", () => {
     act(() => tree.unmount());
   });
 
+  it("offers Forward with the copy it will carry, and wires the picker (#4864)", () => {
+    const tree = render();
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2", { content: "pizza at eight" }),
+      ),
+    );
+    const sheet = tree.root.findByType("MessageActionsSheet" as never);
+    expect(sheet.props.target).toMatchObject({
+      forward: {
+        messageId: "m2",
+        preview: { message_id: "m2", content: "pizza at eight" },
+        hidden: null,
+      },
+    });
+    expect(sheet.props.nameFor).toBeTypeOf("function");
+    // A card can't be forwarded.
+    act(() =>
+      (rows(tree)[1]!.props.onOpenActions as (m: ChatMessage) => void)(
+        message("m2", { kind: "poll" }),
+      ),
+    );
+    expect(
+      tree.root.findByType("MessageActionsSheet" as never).props.target.forward,
+    ).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
   it("starts no second thread on a parent that has one", () => {
     const tree = render();
     act(() =>
@@ -2760,6 +3011,21 @@ describe("chat thread Pin and Save from the actions sheet", () => {
     expect(other.save).toEqual({ saved: SAVED.has(other.messageId) });
     expect([first, other.messageId].sort()).toEqual(["m1", "m2"]);
     SAVED.clear();
+    act(() => tree.unmount());
+  });
+
+  it("sets a reminder on the sheet's message (#4957)", () => {
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree, 0);
+    const at = new Date("2026-11-20T14:00:00.000Z");
+    act(() =>
+      (sheet.props.onRemind as (id: string, at: Date) => void)("m1", at),
+    );
+    expect(reminderWrites.set.mutateAsync).toHaveBeenCalledWith({
+      messageId: "m1",
+      remindAt: at,
+    });
     act(() => tree.unmount());
   });
 
@@ -3036,6 +3302,21 @@ describe("Catch me up in a channel (#3946)", () => {
     ]);
     act(() => actions[0]!.onPress());
     expect(catchUp.start).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("offers the summary when the counts land after the channel opens", async () => {
+    // A cold launch opens the last channel while Chat home's read is still
+    // out: the screen's own observer of the counts is what catches them.
+    catchUp.surface = true;
+    const tree = render();
+    expect(strips(tree)).toHaveLength(0);
+    // TanStack tells observers on its next tick.
+    await act(async () => {
+      arriveWith(60);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(screenText(tree)).toContain(chatCatchUpOfferLine(60));
     act(() => tree.unmount());
   });
 
@@ -3390,6 +3671,26 @@ describe("chat thread asks Frapp instead of posting (#4713)", () => {
         ?.findAllByType("ThreadMessageRow" as never)
         .map((node) => node.props.row.message.client_message_id),
     ).toEqual(["c-m1"]);
+    act(() => tree.unmount());
+  });
+});
+
+describe("The unread counts the screen observes (#4885)", () => {
+  it("passes their fetch, so no render logs TanStack's no-queryFn error", () => {
+    // In a development build TanStack console.errors on every render of a
+    // query with no `queryFn`, and Expo shows each one as a red toast.
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    queryClient.setQueryData(CHANNEL_UNREAD_COUNTS_KEY, [
+      { channel_id: CHANNEL, unread_count: 3 },
+    ]);
+    const tree = render();
+    const noQueryFn = errors.mock.calls.filter((args) =>
+      String(args[0]).includes("No queryFn was passed"),
+    );
+    errors.mockRestore();
+    expect(noQueryFn).toEqual([]);
+    // Observed, never asked for from here.
+    expect(unreadCountsFetch).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });

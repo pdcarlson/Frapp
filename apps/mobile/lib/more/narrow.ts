@@ -8,8 +8,9 @@
  * generated client handed back something no property access compiled against.
  * Some have schemas now (`/v1/service-entries` list, get and review since #3868;
  * the service leaderboard and points rate before it), so check
- * `packages/api-sdk/src/types.ts` before assuming a body is untyped. `lib/events/select.ts`
- * hit the same wall for `/v1/events` and narrowed at the boundary; these are the
+ * `packages/api-sdk/src/types.ts` before assuming a body is untyped (`/v1/events`
+ * since #4867). `lib/events/select.ts` narrowed `/v1/events` at the boundary
+ * before then; these are the
  * same readers, factored out rather than copied a sixth time.
  *
  * Narrowing rather than casting is not type hygiene. A row missing `id` routes

@@ -10,6 +10,8 @@ import type {
 import type {
   ChatWindowRead,
   FinishCorpusSourceInput,
+  CorpusMatchFilter,
+  CorpusSourceChunks,
   ICorpusRepository,
   MatchCorpusInput,
 } from '#domain/repositories/corpus.repository.interface';
@@ -19,11 +21,30 @@ function vectorLiteral(values: readonly number[]): string {
   return `[${values.join(',')}]`;
 }
 
+/** The search's narrowing as the function's arguments; none when unnarrowed. */
+function matchFilterArgs(filter: CorpusMatchFilter | undefined): {
+  p_source_types?: string[];
+  p_channel_ids?: string[];
+  p_author_id?: string;
+  p_since?: string;
+  p_until?: string;
+} {
+  if (!filter) return {};
+  return {
+    ...(filter.sourceTypes ? { p_source_types: [...filter.sourceTypes] } : {}),
+    ...(filter.channelIds ? { p_channel_ids: [...filter.channelIds] } : {}),
+    ...(filter.authorId ? { p_author_id: filter.authorId } : {}),
+    ...(filter.since ? { p_since: filter.since } : {}),
+    ...(filter.until ? { p_until: filter.until } : {}),
+  };
+}
+
 /**
  * The AI corpus tables through the service role (#720).
  *
- * Passages are read only through `match_corpus_chunks`, which takes the
- * chapter and the acting member and returns nothing for a member of another
+ * Passages are read only through `match_corpus_chunks` and
+ * `read_corpus_source_chunks` (#4900), which take the
+ * chapter and the acting member and return nothing for a member of another
  * chapter, and written only through `write_corpus_chunks`, which takes the
  * chapter from the source row. No query here selects from `corpus_chunks`
  * directly, so there is no passage read that could forget the chapter.
@@ -165,9 +186,50 @@ export class SupabaseCorpusRepository implements ICorpusRepository {
       p_embedding: vectorLiteral(input.embedding),
       p_embedding_model: input.embeddingModel,
       p_limit: input.limit,
+      // Sent only when the search is narrowed, so an unnarrowed search is
+      // the call it always was, against a database with or without
+      // `20261113204057_ask_agent_corpus_filters.sql`.
+      ...matchFilterArgs(input.filter),
     });
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
+  }
+
+  async readSourceChunks(input: {
+    chapterId: string;
+    userId: string;
+    sourceType: string;
+    sourceId: string;
+    offset: number;
+    limit: number;
+  }): Promise<CorpusSourceChunks | null> {
+    const { data, error } = await this.supabase.rpc(
+      'read_corpus_source_chunks',
+      {
+        p_chapter_id: input.chapterId,
+        p_user_id: input.userId,
+        p_source_type: input.sourceType,
+        p_source_id: input.sourceId,
+        p_offset: Math.max(Math.trunc(input.offset), 0),
+        p_limit: Math.max(Math.trunc(input.limit), 1),
+      },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    const rows = data ?? [];
+    if (rows.length === 0) return null;
+    return {
+      title: rows[0].title,
+      source_at: rows[0].source_at,
+      total: rows[0].chunk_count,
+      chunks: rows.map((row) => ({
+        id: row.chunk_id,
+        chunk_index: row.chunk_index,
+        heading: row.heading,
+        content: row.content,
+        page_start: row.page_start,
+        page_end: row.page_end,
+      })),
+    };
   }
 
   async readChatWindow(

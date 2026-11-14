@@ -10,9 +10,7 @@ export type MemberNudge = components["schemas"]["MemberNudgeDto"];
 
 /** Chapter-scoped keys; the read is `memberNudgeKeys.chapter(chapterId)`. */
 const memberNudgeKeys = createChapterQueryKeys("member-nudge");
-const memberNudgeSettingsKeys = createChapterQueryKeys(
-  "member-nudge-settings",
-);
+const memberNudgeSettingsKeys = createChapterQueryKeys("member-nudge-settings");
 
 /**
  * The member's card for Activity (`POST /v1/nudges/current`,

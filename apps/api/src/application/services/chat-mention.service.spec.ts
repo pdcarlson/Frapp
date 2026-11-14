@@ -36,6 +36,7 @@ function role(id: string, name: string, extra: Partial<Role> = {}): Role {
     mentionable: true,
     tier_id: null,
     permission_overrides: {},
+    self_assignable: false,
     created_at: '2026-11-06T00:00:00Z',
     ...extra,
   };
@@ -569,7 +570,16 @@ describe('ChatMentionService.resolveForSend', () => {
       const open = service(members, opened, ['members:view'], ['u1', 'u3']);
       await expect(
         open.mentions.resolveForSend('ch-1', 'u2', '@here'),
-      ).resolves.toEqual(['u1', 'u3']);
+      ).resolves.toEqual(['u1', 'u3', 'u2']);
+    });
+
+    it('reaches the sender even when the presence read misses them', async () => {
+      // They are here, sending it (Paul, 2026-11-13). Only their own row
+      // lights: the push and the badge skip a sender's own message.
+      const officer = service(members, roles, ['channels:manage'], ['u3']);
+      await expect(
+        officer.mentions.resolveForSend('ch-1', 'u1', '@here'),
+      ).resolves.toEqual(['u3', 'u1']);
     });
 
     it('never falls through to a member when nobody is online or the read fails', async () => {
@@ -581,7 +591,7 @@ describe('ChatMentionService.resolveForSend', () => {
         const officer = service(named, roles, ['channels:manage'], online);
         await expect(
           officer.mentions.resolveForSend('ch-1', 'u1', '@here'),
-        ).resolves.toEqual([]);
+        ).resolves.toEqual(['u1']);
       }
     });
 
@@ -648,6 +658,22 @@ describe('ChatMentionService.resolveForSend', () => {
           '@Ann',
         ),
       ).resolves.toEqual(['u1']);
+    });
+
+    it('adds not even the sender when an edit adds @here', async () => {
+      // The send stored no @here, so the edit keeps what it stored: the
+      // sender's row does not start lighting on an edit.
+      const officer = service(members, roles, ['channels:manage'], ['u1']);
+      await expect(
+        officer.mentions.resolveForEdit(
+          'ch-1',
+          'u1',
+          'lunch? @here',
+          [],
+          null,
+          'lunch?',
+        ),
+      ).resolves.toEqual([]);
     });
 
     it('keeps member mentions when the roles read fails', async () => {

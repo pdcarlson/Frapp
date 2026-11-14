@@ -26,7 +26,7 @@ import {
   permissionsNotHeld,
   roleRank,
 } from '#domain/utils/role-rank';
-import { User } from '#domain/entities/user.entity';
+import type { User, UserSharedBirthday } from '#domain/entities/user.entity';
 import {
   SystemPermissions,
   SystemRoleKeys,
@@ -73,6 +73,12 @@ export interface MemberProfile {
    * Only they set it (`PATCH /v1/users/me`).
    */
   phone: string | null;
+  /**
+   * `users.birthday_month` and `birthday_day` (#4959), only when the member
+   * shares their birthday with their chapter; null otherwise. Never the year.
+   */
+  birthday_month: number | null;
+  birthday_day: number | null;
   /** `members.pledge_class_id` (#3939): one of the chapter's classes, or null. */
   pledge_class_id: string | null;
   /** `members.order_number` (#3939): set by officers, or null. */
@@ -266,6 +272,27 @@ export class MemberService {
       });
     }
     return this.photoUrls.signRows(roster, (entry) => entry.user_id);
+  }
+
+  /**
+   * The birthdays this chapter's members share with it (#4959), for the
+   * calendar: who, and the month and day, each photo signed. Members who keep
+   * theirs to themselves, or set none, are left out.
+   */
+  async findBirthdaysByChapter(
+    chapterId: string,
+  ): Promise<UserSharedBirthday[]> {
+    const members = await this.memberRepo.findByChapter(chapterId);
+    if (!members.length) return [];
+    const userIds = [...new Set(members.map((member) => member.user_id))];
+    const birthdays = await this.userRepo.findSharedBirthdaysByIds(userIds);
+    birthdays.sort(
+      (a, b) =>
+        a.birthday_month - b.birthday_month ||
+        a.birthday_day - b.birthday_day ||
+        a.display_name.localeCompare(b.display_name),
+    );
+    return this.photoUrls.signRows(birthdays, (entry) => entry.id);
   }
 
   /**
@@ -1150,8 +1177,23 @@ export class MemberService {
       current_company: user.current_company,
       email: user.email,
       phone: user.phone ?? null,
+      ...sharedBirthday(user),
     };
   }
+}
+
+/** The month and day a member shares with their chapter, or nulls (#4959). */
+function sharedBirthday(
+  user: User,
+): Pick<MemberProfile, 'birthday_month' | 'birthday_day'> {
+  const shared =
+    user.birthday_visibility === 'chapter' &&
+    user.birthday_month != null &&
+    user.birthday_day != null;
+  return {
+    birthday_month: shared ? (user.birthday_month ?? null) : null,
+    birthday_day: shared ? (user.birthday_day ?? null) : null,
+  };
 }
 
 /**

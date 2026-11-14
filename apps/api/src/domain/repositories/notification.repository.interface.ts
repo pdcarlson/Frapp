@@ -70,6 +70,27 @@ export interface INotificationRepository {
     ids?: readonly string[],
   ): Promise<number>;
   /**
+   * Delete the named rows that belong to `userId` in `chapterId` (#3948),
+   * answering how many went. An id that isn't theirs matches nothing.
+   */
+  deleteMany(
+    userId: string,
+    chapterId: string,
+    ids: readonly string[],
+  ): Promise<number>;
+  /**
+   * Delete every chat row `userId` has in `chapterId` for one conversation
+   * (#3948): channel `channelId`'s own rows, or with `threadRootId` that
+   * thread's, created at or before `through`, leaving rows that mention them.
+   * Answers how many went.
+   */
+  deleteConversation(
+    userId: string,
+    chapterId: string,
+    conversation: { channelId: string; threadRootId?: string },
+    through: string,
+  ): Promise<number>;
+  /**
    * Replace the body of the rows in the chapter that quote chat message
    * `messageId` (an edit, #4418), for the members in `userIds` only. Deletes need no call: a trigger on
    * `chat_messages` removes those rows with the message.

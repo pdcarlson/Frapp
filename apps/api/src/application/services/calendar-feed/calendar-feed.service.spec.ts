@@ -48,6 +48,8 @@ function event(overrides: Partial<Event> = {}): Event {
     check_in_zone_name: null,
     check_in_opens_minutes: 15,
     event_type_id: null,
+    agenda: [],
+    attachments: [],
     created_by: USER,
     created_at: '2026-11-01T00:00:00.000Z',
     ...overrides,

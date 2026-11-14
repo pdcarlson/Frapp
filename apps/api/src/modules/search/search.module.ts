@@ -24,5 +24,7 @@ import { SupabaseMemberRepository } from '../../infrastructure/supabase/reposito
     // shared client.
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
+  // Ask's `search_messages` tool searches through the route's own service (#4900).
+  exports: [SearchService],
 })
 export class SearchModule {}

@@ -253,6 +253,7 @@ describe('BillingService', () => {
       findById: jest.fn(),
       findByIds: jest.fn(),
       isAnalyticsOptedOut: jest.fn(),
+      findWithBirthdayChannel: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
@@ -299,6 +300,7 @@ describe('BillingService', () => {
       findChapterMemberIdentities: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
     };
 
     mockRoleRepo = {

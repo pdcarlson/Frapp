@@ -77,6 +77,11 @@ function build(options: {
   reply?: (prompt: string) => AiObjectResult<CatchUpOutput>;
   thread?: 'missing';
   unreadStart?: string | null;
+  place?: {
+    channel_id: string;
+    created_at: string;
+    thread_root_id: string | null;
+  };
 }) {
   const rows = options.rows ?? afternoon();
   const stretch = { messages: rows, total: options.total ?? rows.length };
@@ -119,6 +124,18 @@ function build(options: {
     readChannelSince: jest.fn(async () => stretch),
     readThread: jest.fn(async () =>
       options.thread === 'missing' ? null : stretch,
+    ),
+    readChannelWindow: jest.fn(
+      async (_input: {
+        from?: string;
+        before?: string;
+        limit: number;
+        keep: 'newest' | 'oldest';
+      }) => stretch,
+    ),
+    locateMessage: jest.fn(
+      async (_input: { chapterId: string; messageId: string }) =>
+        options.place === undefined ? null : options.place,
     ),
   };
   const blocks = {
@@ -234,6 +251,24 @@ describe('ChatCatchUpService', () => {
     expect(prompt.system).not.toContain('boathouse');
     expect(prompt.messages[0].content).toContain(
       'Sam Ortiz (mentions Lee Park): @Lee Park can you book the bus by Thursday?',
+    );
+  });
+
+  it("never marks the reader's own message as addressed to them, though their @here stores them", async () => {
+    const rows = [
+      ...afternoon(),
+      row(READER, '@here who can bring chairs Friday?', {
+        mentions: ['sam', READER],
+      }),
+    ];
+    const { service, gateway } = build({ rows });
+    await service.catchUp(input(), NOW);
+    const [, prompt] = gateway.generateObject.mock.calls[0];
+    expect(prompt.messages[0].content).toContain(
+      'Lee Park: @here who can bring chairs Friday?',
+    );
+    expect(prompt.messages[0].content).not.toContain(
+      'Lee Park (mentions Lee Park)',
     );
   });
 
@@ -650,5 +685,253 @@ describe('ChatCatchUpService', () => {
     );
     expect(consent.check).not.toHaveBeenCalled();
     expect(stretches.readChannelSince).not.toHaveBeenCalled();
+  });
+
+  // Ask's tools read a channel through the same reader (#4900).
+  describe('readStretch', () => {
+    const reader = { chapterId: CHAPTER, userId: READER };
+    const window = { channelId: CHANNEL, limit: 20 };
+
+    it('returns the readable messages with names, and calls no model', async () => {
+      const { service, gateway, consent, stretches } = build({});
+      const read = await service.readStretch(reader, window);
+      expect(read).toMatchObject({
+        channel: { id: CHANNEL, name: 'general' },
+        leftOut: 0,
+        notRead: 0,
+        chatOff: false,
+      });
+      expect(read?.messages.map((message) => message.senderName)).toEqual([
+        'Sam Ortiz',
+        'Dana Reyes',
+        'Sam Ortiz',
+        'Dana Reyes',
+        'Sam Ortiz',
+        'Lee Park',
+      ]);
+      expect(read?.messages[4].mentionsReader).toBe(true);
+      expect(stretches.readChannelWindow).toHaveBeenCalledWith({
+        chapterId: CHAPTER,
+        channelId: CHANNEL,
+        limit: 20,
+        keep: 'newest',
+      });
+      expect(gateway.generateObject).not.toHaveBeenCalled();
+      // The caller's own model call carries the consent check.
+      expect(consent.check).not.toHaveBeenCalled();
+    });
+
+    it('leaves out and counts authors who have not said yes, and leaves a blocked member out uncounted', async () => {
+      const { service } = build({
+        rows: [
+          row('sam', 'Bus leaves at six.'),
+          row('quiet', 'I never agreed to this.'),
+          row(null, 'An imported line nobody linked.'),
+          row('blocked', 'You blocked me.'),
+        ],
+        yes: ['sam', 'blocked'],
+        blocked: ['blocked'],
+      });
+      const read = await service.readStretch(reader, window);
+      expect(read?.messages.map((message) => message.content)).toEqual([
+        'Bus leaves at six.',
+      ]);
+      expect(read?.leftOut).toBe(2);
+    });
+
+    it('says how much of a longer stretch was not read', async () => {
+      const { service } = build({ total: 240 });
+      const read = await service.readStretch(reader, window);
+      expect(read?.notRead).toBe(234);
+    });
+
+    it.each([
+      [
+        'not there or another chapter',
+        new NotFoundException('Channel not found'),
+      ],
+      ['not one the reader can open', new ForbiddenException('No access')],
+    ])(
+      'is null for a channel that is %s, and reads nothing',
+      async (_why, error) => {
+        const { service, channels, stretches, consent } = build({});
+        channels.assertChannelAccess.mockRejectedValueOnce(error);
+        expect(await service.readStretch(reader, window)).toBeNull();
+        expect(stretches.readChannelWindow).not.toHaveBeenCalled();
+        expect(consent.chatAuthorsWhoSaidYes).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      [{ type: 'DM' }],
+      [{ type: 'GROUP_DM' }],
+      [{ is_audit_log: true }],
+    ])('is null for %j, and reads nothing', async (channel) => {
+      const { service, stretches } = build({ channel });
+      expect(await service.readStretch(reader, window)).toBeNull();
+      expect(stretches.readChannelWindow).not.toHaveBeenCalled();
+    });
+
+    it('reads nothing while the chapter has chat switched off', async () => {
+      const { service, stretches } = build({ chatSwitch: false });
+      expect(await service.readStretch(reader, window)).toMatchObject({
+        messages: [],
+        chatOff: true,
+      });
+      expect(stretches.readChannelWindow).not.toHaveBeenCalled();
+    });
+
+    it('passes the bounds and the end to keep', async () => {
+      const { service, stretches } = build({});
+      await service.readStretch(reader, {
+        channelId: CHANNEL,
+        from: '2026-11-01T00:00:00.000Z',
+        before: '2026-11-08T00:00:00.000Z',
+        limit: 4,
+        keep: 'oldest',
+      });
+      expect(stretches.readChannelWindow).toHaveBeenCalledWith({
+        chapterId: CHAPTER,
+        channelId: CHANNEL,
+        from: '2026-11-01T00:00:00.000Z',
+        before: '2026-11-08T00:00:00.000Z',
+        limit: 4,
+        keep: 'oldest',
+      });
+    });
+
+    it('reads around a message: the messages before it, then it and what follows', async () => {
+      const at = '2026-11-12T15:00:00.000Z';
+      const { service, channels, stretches } = build({
+        place: { channel_id: CHANNEL, created_at: at, thread_root_id: null },
+      });
+      const read = await service.readStretch(reader, {
+        aroundMessageId: 'msg-hit',
+        limit: 9,
+      });
+      expect(stretches.locateMessage).toHaveBeenCalledWith({
+        chapterId: CHAPTER,
+        messageId: 'msg-hit',
+      });
+      // The channel is the message's own, and is checked like any other.
+      expect(channels.assertChannelAccess).toHaveBeenCalledWith(
+        CHANNEL,
+        CHAPTER,
+        READER,
+        'read',
+      );
+      expect(
+        stretches.readChannelWindow.mock.calls.map(([call]) => call),
+      ).toEqual([
+        expect.objectContaining({ before: at, limit: 4, keep: 'newest' }),
+        expect.objectContaining({ from: at, limit: 5, keep: 'oldest' }),
+      ]);
+      expect(read?.notRead).toBe(0);
+    });
+
+    it('reads the thread when the message is a reply, or when the thread is asked for', async () => {
+      const reply = build({
+        place: {
+          channel_id: CHANNEL,
+          created_at: '2026-11-12T15:00:00.000Z',
+          thread_root_id: 'msg-root',
+        },
+      });
+      await reply.service.readStretch(reader, {
+        aroundMessageId: 'msg-reply',
+        limit: 20,
+      });
+      expect(reply.stretches.readThread).toHaveBeenCalledWith({
+        chapterId: CHAPTER,
+        channelId: CHANNEL,
+        rootId: 'msg-root',
+        limit: 20,
+      });
+
+      const root = build({
+        place: {
+          channel_id: CHANNEL,
+          created_at: '2026-11-12T15:00:00.000Z',
+          thread_root_id: null,
+        },
+      });
+      await root.service.readStretch(reader, {
+        threadOfMessageId: 'msg-root',
+        limit: 20,
+      });
+      expect(root.stretches.readThread).toHaveBeenCalledWith(
+        expect.objectContaining({ rootId: 'msg-root' }),
+      );
+    });
+
+    it('is null for a message that cannot be located (a direct message, another chapter, a rush thread)', async () => {
+      const { service, channels } = build({});
+      expect(
+        await service.readStretch(reader, {
+          aroundMessageId: 'msg-x',
+          limit: 20,
+        }),
+      ).toBeNull();
+      expect(channels.assertChannelAccess).not.toHaveBeenCalled();
+    });
+
+    it('is null for a thread that is not there', async () => {
+      const { service } = build({
+        thread: 'missing',
+        place: {
+          channel_id: CHANNEL,
+          created_at: '2026-11-12T15:00:00.000Z',
+          thread_root_id: 'msg-rush-card',
+        },
+      });
+      expect(
+        await service.readStretch(reader, {
+          aroundMessageId: 'msg-r',
+          limit: 20,
+        }),
+      ).toBeNull();
+    });
+  });
+
+  describe('readableAmong', () => {
+    it('applies the stretch rule to rows a caller already holds', async () => {
+      const { service } = build({ yes: ['sam'], blocked: ['blocked'] });
+      const read = await service.readableAmong(
+        { chapterId: CHAPTER, userId: READER },
+        [
+          row('sam', 'Bus leaves at six.'),
+          row('quiet', 'Not agreed.'),
+          row('blocked', 'Blocked.'),
+        ],
+      );
+      expect(read.messages.map((message) => message.senderName)).toEqual([
+        'Sam Ortiz',
+      ]);
+      expect(read.leftOut).toBe(1);
+      // Which message, and whose: for a caller that counts each once.
+      expect(read.withheld).toEqual([
+        { id: expect.any(String), senderId: 'quiet' },
+      ]);
+      expect(read.chatOff).toBe(false);
+    });
+
+    it('reads nothing for no rows', async () => {
+      const { service, consent } = build({});
+      expect(
+        await service.readableAmong({ chapterId: CHAPTER, userId: READER }, []),
+      ).toEqual({ messages: [], leftOut: 0, withheld: [], chatOff: false });
+      expect(consent.chatAuthorsWhoSaidYes).not.toHaveBeenCalled();
+    });
+
+    it('reads nothing and counts nothing while the chapter has chat off for AI', async () => {
+      const { service, consent } = build({ yes: ['sam'], chatSwitch: false });
+      expect(
+        await service.readableAmong({ chapterId: CHAPTER, userId: READER }, [
+          row('sam', 'Bus leaves at six.'),
+          row('quiet', 'Not agreed.'),
+        ]),
+      ).toEqual({ messages: [], leftOut: 0, withheld: [], chatOff: true });
+      expect(consent.chatAuthorsWhoSaidYes).not.toHaveBeenCalled();
+    });
   });
 });

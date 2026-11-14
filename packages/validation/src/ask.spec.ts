@@ -97,7 +97,13 @@ describe("the Ask stream format", () => {
   });
 
   it("carries what a reading step says is being read", () => {
-    const event = { v, type: "status", step: "reading", reads: ["roster"], found: 3 };
+    const event = {
+      v,
+      type: "status",
+      step: "reading",
+      reads: ["roster"],
+      found: 3,
+    };
     expect(parseAskStreamEvent(JSON.stringify(event))).toEqual(event);
   });
 
@@ -136,6 +142,24 @@ describe("askHistory", () => {
   it("sends a finished turn as its question and its answer", () => {
     expect(askHistory([turn(" What is quorum? ")])).toEqual([
       { question: "What is quorum?", answer: answer.text },
+    ]);
+  });
+
+  it("says how many cards a turn's answer came with, for a turn that was cards alone too", () => {
+    expect(
+      askHistory([
+        turn("Who is behind on hours?", { ...answer, proposals: ["s1"] }),
+        turn("Make tasks for them", {
+          ...answer,
+          text: "",
+          proposals: ["s2", "s3"],
+        }),
+        turn("And quorum?", { ...answer, proposals: [] }),
+      ]),
+    ).toEqual([
+      { question: "Who is behind on hours?", answer: answer.text, cards: 1 },
+      { question: "Make tasks for them", answer: "", cards: 2 },
+      { question: "And quorum?", answer: answer.text },
     ]);
   });
 
@@ -332,7 +356,9 @@ describe("askStepLine", () => {
         reads: ["events", "my_tasks", "my_points"],
         found: 2,
       }),
-    ).toBe("Reading the events calendar, your tasks, your points and 2 sources");
+    ).toBe(
+      "Reading the events calendar, your tasks, your points and 2 sources",
+    );
   });
 
   it("leaves out a read this build has no words for, and never reads a name off the object itself", () => {
@@ -535,9 +561,9 @@ describe("what Send does with a channel message that names @Frapp (#4713)", () =
       kind: "refused",
       reason: ASK_COPY.still_answering,
     });
-    expect(
-      read(`@Frapp ${"a".repeat(ASK_QUESTION_MAX_LENGTH)}`).kind,
-    ).toBe("ask");
+    expect(read(`@Frapp ${"a".repeat(ASK_QUESTION_MAX_LENGTH)}`).kind).toBe(
+      "ask",
+    );
   });
 
   it("reads the chapter's spaced names, and lets none of them capture the handle", () => {

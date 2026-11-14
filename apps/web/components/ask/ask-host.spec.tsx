@@ -1,14 +1,12 @@
 import type React from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { createPortal } from "react-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ASK_COPY } from "@repo/validation";
 
 /**
- * Ask Frapp's front door on web (#4702, Paul 2026-11-13): no button in the
- * top bar and no panel beside the page. The entry is a button in the chat
- * composer, and the conversation is drawn in the slot chat puts above it.
+ * Ask Frapp's front door on web (#4904, Paul's pick of 2026-11-13): no
+ * control of its own. The host hands the top bar's field a way in
+ * (`useAskEntry`) and draws the conversation over whatever page is up.
  */
 
 const who = vi.hoisted(() => ({
@@ -63,7 +61,7 @@ vi.mock("@/components/ask/ask-in-channel", () => ({
 }));
 
 // The conversation has its own spec (`ask-card.spec.tsx`). Here it only has
-// to be drawn where the host says, open or not.
+// to be opened, closed and handed a question by the host.
 const card = vi.hoisted(() => ({ mounts: 0 }));
 vi.mock("@/components/ask/ask-card", async () => {
   const { useEffect } = await import("react");
@@ -71,36 +69,43 @@ vi.mock("@/components/ask/ask-card", async () => {
     AskCard: (props: {
       open: boolean;
       onOpenChange: (open: boolean) => void;
-      container: HTMLElement | null;
+      asking: string | null;
+      onAsked: () => void;
     }) => {
       useEffect(() => {
         card.mounts += 1;
       }, []);
-      if (!props.open || !props.container) return null;
-      return createPortal(
-        <div data-testid="ask-card">
+      if (!props.open) return null;
+      return (
+        <div data-testid="ask-card" data-asking={props.asking ?? ""}>
           <button onClick={() => props.onOpenChange(false)}>close card</button>
-        </div>,
-        props.container,
+          <button onClick={props.onAsked}>take question</button>
+        </div>
       );
     },
   };
 });
 
-const { AskComposerButton, AskHost, AskSlot } = await import("./ask-host");
+const { AskHost, useAskEntry } = await import("./ask-host");
 
-/** A chat column: the slot above a composer that carries the button. */
-function Chat({ channel = "general" }: { channel?: string }) {
+/** A page with the top bar's field on it, as `find-bar.tsx` reaches Ask. */
+function Page({ name = "chat" }: { name?: string }) {
+  const ask = useAskEntry();
   return (
-    <section aria-label={channel}>
-      <AskSlot />
-      <form>
-        <AskComposerButton />
-      </form>
+    <section aria-label={name}>
+      {ask ? (
+        <>
+          <button onClick={() => ask.openWith()}>open</button>
+          <button onClick={() => ask.openWith("  When is formal?  ")}>
+            ask
+          </button>
+          <output>{ask.open ? "open" : "closed"}</output>
+        </>
+      ) : null}
     </section>
   );
 }
-const entry = () => screen.queryByRole("button", { name: ASK_COPY.name });
+const entry = () => screen.queryByRole("button", { name: "open" });
 
 beforeEach(() => {
   who.available = true;
@@ -117,7 +122,7 @@ describe("who gets Ask Frapp", () => {
   it("is a member the server has AI for, in a chapter with Ask on, who may use it", () => {
     render(
       <AskHost>
-        <Chat />
+        <Page />
       </AskHost>,
     );
     expect(entry()).toBeInTheDocument();
@@ -131,7 +136,7 @@ describe("who gets Ask Frapp", () => {
     // not hold across them. Scoped, so it starts over in another chapter.
     const view = render(
       <AskHost>
-        <Chat />
+        <Page />
       </AskHost>,
     );
     const conversation = screen.getByTestId("ask-conversation");
@@ -144,7 +149,7 @@ describe("who gets Ask Frapp", () => {
     who.chapterId = "chapter-2";
     view.rerender(
       <AskHost>
-        <Chat />
+        <Page />
       </AskHost>,
     );
     expect(screen.getByTestId("ask-conversation")).toHaveAttribute(
@@ -194,16 +199,15 @@ describe("who gets Ask Frapp", () => {
       "no",
     ],
   ])(
-    "is nobody else: no button, no slot and no conversation when %s",
+    "is nobody else: no way in and no conversation when %s",
     (_, set, access) => {
       set();
-      const view = render(
+      render(
         <AskHost>
-          <Chat />
+          <Page />
         </AskHost>,
       );
       expect(entry()).toBeNull();
-      expect(view.container.querySelector("[data-ask-slot]")).toBeNull();
       expect(card.mounts).toBe(0);
       expect(bridge.access.at(-1)).toBe(access);
       // And nothing stands in for it: no "not ready" control anywhere.
@@ -215,110 +219,93 @@ describe("who gets Ask Frapp", () => {
     who.available = undefined;
     render(
       <AskHost>
-        <Chat />
+        <Page />
       </AskHost>,
     );
     expect(who.settingsEnabled.every((enabled) => !enabled)).toBe(true);
   });
 
-  it("draws nothing outside a host: a composer on a page with no Ask is just a composer", () => {
-    const view = render(<Chat />);
+  it("has no way in outside a host: a field on a page with no Ask only searches", () => {
+    render(<Page />);
     expect(entry()).toBeNull();
-    expect(view.container.querySelector("[data-ask-slot]")).toBeNull();
   });
 });
 
-describe("the button in the composer", () => {
-  it("says Ask Frapp in words beside the crest, and says what it is for", () => {
+describe("the way in", () => {
+  it("opens the conversation, and follows its own close", async () => {
     render(
       <AskHost>
-        <Chat />
-      </AskHost>,
-    );
-    const button = entry()!;
-    expect(button).toHaveTextContent(ASK_COPY.name);
-    expect(button).toHaveAttribute("title", ASK_COPY.entry_label);
-    // The crest is decoration; the words name the control.
-    expect(button.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
-    // Never a submit: it sits inside the composer's form.
-    expect(button).toHaveAttribute("type", "button");
-  });
-
-  it("opens the conversation in chat's slot, over the thread, and closes it again", async () => {
-    const view = render(
-      <AskHost>
-        <Chat />
+        <Page />
       </AskHost>,
     );
     const user = userEvent.setup();
-    const slot = view.container.querySelector("[data-ask-slot]")!;
-    expect(entry()).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("status")).toHaveTextContent("closed");
     expect(screen.queryByTestId("ask-card")).toBeNull();
 
     await user.click(entry()!);
-    expect(entry()).toHaveAttribute("aria-expanded", "true");
-    expect(slot).toContainElement(screen.getByTestId("ask-card"));
+    expect(screen.getByRole("status")).toHaveTextContent("open");
+    expect(screen.getByTestId("ask-card")).toHaveAttribute("data-asking", "");
 
-    await user.click(entry()!);
-    expect(entry()).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByTestId("ask-card")).toBeNull();
-  });
-
-  it("follows the conversation's own close", async () => {
-    render(
-      <AskHost>
-        <Chat />
-      </AskHost>,
-    );
-    const user = userEvent.setup();
-    await user.click(entry()!);
     await user.click(screen.getByRole("button", { name: "close card" }));
-    expect(entry()).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("status")).toHaveTextContent("closed");
   });
-});
 
-describe("the slot", () => {
-  it("takes no room of its own, so the thread and the composer do not move when Ask arrives", () => {
-    const view = render(
+  it("hands the conversation a question typed into the field, trimmed, until it is taken", async () => {
+    render(
       <AskHost>
-        <Chat />
+        <Page />
       </AskHost>,
     );
-    const slot = view.container.querySelector("[data-ask-slot]")!;
-    expect(slot.className).toContain("h-0");
-    expect(slot.className).toContain("shrink-0");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "ask" }));
+    expect(screen.getByTestId("ask-card")).toHaveAttribute(
+      "data-asking",
+      "When is formal?",
+    );
+    await user.click(screen.getByRole("button", { name: "take question" }));
+    expect(screen.getByTestId("ask-card")).toHaveAttribute("data-asking", "");
   });
 
-  it("keeps one conversation across a change of channel: the composer remounts, the card does not", async () => {
+  it("keeps one conversation across pages: the page changes, the conversation does not remount", async () => {
     const view = render(
       <AskHost>
-        <Chat key="general" channel="general" />
+        <Page key="chat" name="chat" />
       </AskHost>,
     );
     await userEvent.setup().click(entry()!);
     view.rerender(
       <AskHost>
-        <Chat key="announcements" channel="announcements" />
+        <Page key="settings" name="settings" />
       </AskHost>,
     );
-    // Still open, drawn in the new channel's slot, and never remounted.
-    expect(view.container.querySelector("[data-ask-slot]")).toContainElement(
-      screen.getByTestId("ask-card"),
-    );
-    expect(entry()).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("ask-card")).toBeInTheDocument();
     expect(card.mounts).toBe(1);
   });
 
-  it("holds the conversation while chat is off screen, and shows it again when chat comes back", async () => {
-    const tree = (chat: boolean) => (
-      <AskHost>{chat ? <Chat /> : <p>Chapter settings</p>}</AskHost>
+  it("drops a question waiting to be asked when the member loses Ask", async () => {
+    const view = render(
+      <AskHost>
+        <Page />
+      </AskHost>,
     );
-    const view = render(tree(true));
-    await userEvent.setup().click(entry()!);
-    view.rerender(tree(false));
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "ask" }));
+    who.previewing = true;
+    view.rerender(
+      <AskHost>
+        <Page />
+      </AskHost>,
+    );
+    who.previewing = false;
+    view.rerender(
+      <AskHost>
+        <Page />
+      </AskHost>,
+    );
+    // It does not open itself, and it does not ask what was typed before.
     expect(screen.queryByTestId("ask-card")).toBeNull();
-    view.rerender(tree(true));
-    expect(screen.getByTestId("ask-card")).toBeInTheDocument();
-    expect(card.mounts).toBe(1);
+    await userEvent.setup().click(entry()!);
+    expect(screen.getByTestId("ask-card")).toHaveAttribute("data-asking", "");
   });
 });

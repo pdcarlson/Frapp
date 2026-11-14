@@ -234,6 +234,33 @@ describe("Saved messages (#3723)", () => {
     expect(shown).not.toContain("[message from a blocked member]");
   });
 
+  it("previews a saved forward with no comment as its copy (#4875)", () => {
+    reads.bookmarks.data = [
+      {
+        id: "b1",
+        message_id: "m9",
+        created_at: "2026-11-03T00:00:00Z",
+        message: message({
+          id: "m9",
+          content: "",
+          forwarded_from: {
+            message_id: "orig-1",
+            channel_id: "ch-2",
+            sender_id: "u-3",
+            author_name: "Sam",
+            content: "the van leaves at 6",
+            gif: null,
+            attachment_count: 0,
+            created_at: "2026-11-01T00:00:00Z",
+            deleted: false,
+            sender_blocked: false,
+          },
+        }),
+      },
+    ];
+    expect(text(render("saved"))).toContain("Forwarded: the van leaves at 6");
+  });
+
   it("names an unavailable row's Remove without calling it someone's message", () => {
     expect(removeLabel({ author: SAVED_UNAVAILABLE, openable: false })).toBe(
       "Remove this unavailable message from Saved",

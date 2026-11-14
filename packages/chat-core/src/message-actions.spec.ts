@@ -6,9 +6,11 @@ import {
   canActOnMessage,
   canDeleteMessage,
   canEditMessage,
+  canReportMessage,
   channelAllowsReplies,
   copyableText,
   isOwnMessage,
+  isOwnPostedAnswer,
   isCardMessage,
   replyTargetId,
 } from "./message-actions";
@@ -88,6 +90,58 @@ describe("canDeleteMessage", () => {
       false,
     );
     expect(canDeleteMessage({ sender_id: null }, VIEWER, false)).toBe(false);
+  });
+});
+
+describe("an Ask Frapp answer posted to the channel (#4713)", () => {
+  const SYSTEM = "00000000-0000-0000-0000-000000000000";
+  const posted = (askedBy: unknown) => ({
+    sender_id: SYSTEM,
+    kind: "ask_answer" as const,
+    payload: { asked_by: askedBy },
+  });
+
+  it("is the asker's to delete, though the row is the Frapp sender's", () => {
+    expect(isOwnPostedAnswer(posted(VIEWER), VIEWER)).toBe(true);
+    expect(canDeleteMessage(posted(VIEWER), VIEWER, false)).toBe(true);
+  });
+
+  it("is not another member's to delete without channels:manage", () => {
+    expect(canDeleteMessage(posted("user-2"), VIEWER, false)).toBe(false);
+    expect(canDeleteMessage(posted("user-2"), VIEWER, true)).toBe(true);
+  });
+
+  it("reads the asker from this kind alone, so a payload naming the viewer on another kind grants nothing", () => {
+    const poll = {
+      sender_id: "user-2",
+      kind: "poll" as const,
+      payload: { asked_by: VIEWER },
+    };
+    expect(isOwnPostedAnswer(poll, VIEWER)).toBe(false);
+    expect(canDeleteMessage(poll, VIEWER, false)).toBe(false);
+  });
+
+  it("is nobody's for a signed-out viewer or a payload with no asker", () => {
+    expect(isOwnPostedAnswer(posted(null), null)).toBe(false);
+    expect(isOwnPostedAnswer(posted(undefined), VIEWER)).toBe(false);
+    expect(
+      isOwnPostedAnswer({ kind: "ask_answer", payload: null }, VIEWER),
+    ).toBe(false);
+  });
+
+  it("is not the asker's to report, and is anyone else's", () => {
+    const row = (askedBy: string) => ({
+      ...posted(askedBy),
+      _status: "confirmed" as const,
+      is_deleted: false,
+    });
+    expect(canReportMessage(row(VIEWER), VIEWER)).toBe(false);
+    expect(canReportMessage(row("user-2"), VIEWER)).toBe(true);
+  });
+
+  it("is a card, so it is never edited", () => {
+    expect(isCardMessage({ kind: "ask_answer" })).toBe(true);
+    expect(canEditMessage(posted(VIEWER), VIEWER)).toBe(false);
   });
 });
 

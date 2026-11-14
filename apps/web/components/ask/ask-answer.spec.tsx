@@ -12,14 +12,113 @@ import {
   ACT_COPY,
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_EFFORT_COPY,
+  ASK_FEEDBACK_COPY,
   askReadLine,
   type AskAnswer,
 } from "@repo/validation";
 
+const channelList = vi.hoisted(() => ({ reads: 0 }));
+const thumbs = vi.hoisted(() => ({
+  state: { rating: null, reason: null } as {
+    rating: "up" | "down" | null;
+    reason: string | null;
+  },
+  failed: false,
+  askId: undefined as string | null | undefined,
+  rate: vi.fn(),
+  giveReason: vi.fn(),
+  signal: vi.fn(),
+}));
+const reportDialog = vi.hoisted(() => ({ opened: vi.fn() }));
+vi.mock("@/components/ai/report-ai", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/ai/report-ai")>()),
+  ReportAiDialog: (props: {
+    initialReason?: string | null;
+    onReported: () => void;
+    onClose: () => void;
+  }) => {
+    reportDialog.opened(props.initialReason);
+    return (
+      <>
+        <button type="button" onClick={props.onReported}>
+          fake report sent
+        </button>
+        <button type="button" onClick={props.onClose}>
+          fake report closed
+        </button>
+      </>
+    );
+  },
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The reader has #rush-week and not #exec.
+  useChannels: () => {
+    channelList.reads += 1;
+    return { data: [{ id: "c1", name: "rush-week" }] };
+  },
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useActEventAudience: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // The hook has its own spec (`use-ask-feedback.spec.tsx`); here it is what
+  // the row draws from.
+  useAskSignal: () => thumbs.signal,
+  useAskThumbs: (askId: string | null | undefined) => {
+    thumbs.askId = askId;
+    return {
+      state: thumbs.state,
+      failed: thumbs.failed,
+      rate: thumbs.rate,
+      giveReason: thumbs.giveReason,
+    };
+  },
+}));
+
+// The cards have their own spec (`ask-proposal.spec.tsx`); here they are
+// where the answer puts them and what it counts when one ends.
+vi.mock("./ask-proposal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ask-proposal")>()),
+  AskAnswerCards: (props: {
+    ids: readonly string[];
+    onEnded: (id: string, end: unknown) => void;
+  }) => (
+    <div data-testid="cards">
+      {props.ids.map((id) => (
+        <span key={id}>
+          <button
+            type="button"
+            onClick={() =>
+              props.onEnded(id, {
+                resolution: { kind: "done", line: "Task created", page: "tasks" },
+                headline: null,
+              })
+            }
+          >
+            confirm {id}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              props.onEnded(id, {
+                resolution: { kind: "cancelled" },
+                headline: null,
+              })
+            }
+          >
+            cancel {id}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              props.onEnded(id, { resolution: { kind: "gone" }, headline: null })
+            }
+          >
+            gone {id}
+          </button>
+        </span>
+      ))}
+    </div>
+  ),
 }));
 
 const { AskTurn } = await import("./ask-answer");
@@ -91,16 +190,21 @@ const show = (
     retry?: () => void;
     consent?: () => void;
     followMessage?: () => void;
+    thinkHarder?: () => void;
+    busy?: boolean;
   } = {},
 ) =>
   render(
     <AskTurn
       exchange={value}
+      busy={handlers.busy}
+      onThinkHarder={handlers.thinkHarder}
       onRetry={handlers.retry ?? (() => undefined)}
       onAnswerConsent={handlers.consent ?? (() => undefined)}
       onFollowMessage={handlers.followMessage}
       onProposal={() => undefined}
       onResolved={() => undefined}
+      onCardEnded={() => undefined}
     />,
   );
 
@@ -221,6 +325,28 @@ describe("AskTurn", () => {
     ).toHaveClass("bg-primary", "text-primary-foreground");
   });
 
+  it("says whose message a chat source is and when, on its chip and its marker (#4904)", () => {
+    const sources = ANSWER.sources.map((source) =>
+      source.id === "s2" ? { ...source, author: "Sam Ortiz" } : source,
+    );
+    show(exchange({ answer: { ...ANSWER, sources } }));
+    const list = screen.getByRole("list", { name: ASK_COPY.sources });
+    const chip = within(list).getByRole("link", {
+      name: /^Source 2: Sam Ortiz in #general, /,
+    });
+    expect(chip).toHaveTextContent("Sam Ortiz in #general");
+    expect(chip).toHaveTextContent("November 9, 2026");
+    // A source with no author reads as before, with no day on the chip.
+    const bylaws = within(list).getByRole("link", {
+      name: /^Source 1: Bylaws/,
+    });
+    expect(bylaws).not.toHaveTextContent("2026");
+    expect(
+      screen.getAllByRole("link", { name: "Source 2: Sam Ortiz in #general" })
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
   it("tells the card when a cited chat message is followed, and not for a source that opens beside chat", async () => {
     const followMessage = vi.fn();
     show(exchange(), { followMessage });
@@ -241,6 +367,45 @@ describe("AskTurn", () => {
       { ctrlKey: true },
     );
     expect(followMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws a listed person as a mention and a channel the reader has as a link (#4904)", async () => {
+    const followMessage = vi.fn();
+    show(
+      exchange({
+        answer: {
+          ...ANSWER,
+          text: "Ask @Sam Abernathy in #rush-week or #exec, not @Nobody.",
+          citations: [],
+          entities: [
+            { type: "member", id: "u1", name: "Sam Abernathy" },
+            { type: "channel", id: "c1", name: "rush-week" },
+            { type: "channel", id: "c9", name: "exec" },
+          ],
+        } as AskAnswer,
+      }),
+      { followMessage },
+    );
+
+    expect(screen.getByText("@Sam Abernathy").tagName).toBe("MARK");
+    const channel = screen.getByRole("link", { name: "#rush-week" });
+    expect(channel.getAttribute("href")).toContain("c1");
+    channel.addEventListener("click", (event) => event.preventDefault());
+    await userEvent.click(channel);
+    expect(followMessage).toHaveBeenCalledTimes(1);
+
+    // A channel the reader cannot open, and a name the server did not list,
+    // are the plain words.
+    expect(screen.queryByRole("link", { name: "#exec" })).toBeNull();
+    expect(screen.queryByText("@Nobody")).toBeNull();
+    expect(screen.getByText(/or #exec, not @Nobody\./)).toBeTruthy();
+  });
+
+  it("reads the channel list only for an answer that names a channel", () => {
+    channelList.reads = 0;
+    show(exchange());
+    expect(channelList.reads).toBe(0);
+    expect(screen.queryByRole("mark")).toBeNull();
   });
 
   it("marks each cited sentence with a link to its source", () => {
@@ -419,6 +584,7 @@ describe("AskTurn", () => {
         onAnswerConsent={() => undefined}
         onProposal={() => undefined}
         onResolved={() => undefined}
+        onCardEnded={() => undefined}
       />,
     );
     expect(
@@ -441,6 +607,7 @@ describe("AskTurn", () => {
         onAnswerConsent={() => undefined}
         onProposal={() => undefined}
         onResolved={() => undefined}
+        onCardEnded={() => undefined}
       />,
     );
     expect(
@@ -473,5 +640,239 @@ describe("AskTurn", () => {
     expect(
       screen.queryByRole("button", { name: ASK_COPY.try_again }),
     ).toBeNull();
+  });
+
+  describe("thumbs", () => {
+    const kept = (
+      rating: "up" | "down" | null,
+      reason: string | null = null,
+      receipt: string | null = "sealed",
+    ) => {
+      thumbs.state = { rating, reason };
+      thumbs.failed = false;
+      thumbs.rate.mockClear();
+      thumbs.giveReason.mockClear();
+      reportDialog.opened.mockClear();
+      return show(
+        exchange({
+          askId: "a-1",
+          answer: { ...ANSWER, ask_id: "trace-1", report_receipt: receipt },
+        }),
+      );
+    };
+
+    it("are not drawn under an answer the server kept no trace of", () => {
+      thumbs.state = { rating: null, reason: null };
+      show(exchange({ askId: "a-1" }));
+      expect(
+        screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.up }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.down }),
+      ).toBeNull();
+    });
+
+    it("rate against the kept trace's id, not the turn's", async () => {
+      kept(null);
+      expect(thumbs.askId).toBe("trace-1");
+      await userEvent.click(
+        screen.getByRole("button", { name: ASK_FEEDBACK_COPY.up }),
+      );
+      expect(thumbs.rate).toHaveBeenCalledWith("up");
+      expect(screen.queryByText(ASK_FEEDBACK_COPY.thanks)).toBeNull();
+    });
+
+    it("thank an up and mark it pressed", () => {
+      kept("up");
+      expect(
+        screen.getByRole("button", { name: ASK_FEEDBACK_COPY.up }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(screen.getByText(ASK_FEEDBACK_COPY.thanks)).toBeInTheDocument();
+      expect(screen.queryByText(ASK_FEEDBACK_COPY.prompt)).toBeNull();
+    });
+
+    it("ask why on a down, in one tap", async () => {
+      kept("down");
+      const group = screen.getByRole("group", {
+        name: ASK_FEEDBACK_COPY.prompt,
+      });
+      await userEvent.click(
+        within(group).getByRole("button", {
+          name: ASK_FEEDBACK_COPY.reasons.missed,
+        }),
+      );
+      expect(thumbs.giveReason).toHaveBeenCalledWith("missed");
+    });
+
+    it("offer to send the answer through Report this, on the reason given", async () => {
+      kept("down", "wrong");
+      expect(
+        screen.getByRole("button", { name: ASK_FEEDBACK_COPY.reasons.wrong }),
+      ).toHaveAttribute("aria-pressed", "true");
+      expect(
+        screen.getByText(ASK_FEEDBACK_COPY.send.line, { exact: false }),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        screen.getByRole("button", { name: ASK_FEEDBACK_COPY.send.action }),
+      );
+      expect(reportDialog.opened).toHaveBeenCalledWith("wrong");
+      // Once it is sent the sheet stays up to say so; closing it folds the
+      // offer away, and the row's flag reads Reported.
+      await userEvent.click(
+        screen.getByRole("button", { name: "fake report sent" }),
+      );
+      expect(
+        screen.getByRole("button", { name: "fake report closed" }),
+      ).toBeInTheDocument();
+      await userEvent.click(
+        screen.getByRole("button", { name: "fake report closed" }),
+      );
+      expect(
+        screen.getByRole("button", { name: AI_REPORT_COPY.reported }),
+      ).toBeDisabled();
+      expect(
+        screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.send.action }),
+      ).toBeNull();
+      expect(screen.getByText(ASK_FEEDBACK_COPY.thanks)).toBeInTheDocument();
+    });
+
+    it("offer no send for an answer a report would keep nothing of", () => {
+      kept("down", null, null);
+      expect(screen.getByText(ASK_FEEDBACK_COPY.prompt)).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: ASK_FEEDBACK_COPY.send.action }),
+      ).toBeNull();
+    });
+
+    it("fold the offer away on Not now", async () => {
+      kept("down");
+      await userEvent.click(
+        screen.getByRole("button", { name: ASK_FEEDBACK_COPY.send.dismiss }),
+      );
+      expect(screen.queryByText(ASK_FEEDBACK_COPY.prompt)).toBeNull();
+      expect(reportDialog.opened).not.toHaveBeenCalled();
+    });
+
+    it("count a source opened from its chip or its marker, against the kept trace", () => {
+      kept(null);
+      thumbs.signal.mockClear();
+      const first = screen.getAllByRole("link", { name: /^Source 1:/ });
+      // The marker in the sentence and the chip under it.
+      expect(first.length).toBeGreaterThan(1);
+      for (const link of first) {
+        link.addEventListener("click", (event) => event.preventDefault());
+        fireEvent.click(link);
+      }
+      expect(thumbs.signal).toHaveBeenCalledTimes(first.length);
+      expect(thumbs.signal).toHaveBeenCalledWith("trace-1", "source_opened");
+    });
+
+    it("count nothing under an answer with no kept trace", () => {
+      thumbs.signal.mockClear();
+      show(exchange({ askId: "a-1" }));
+      const link = screen.getAllByRole("link", { name: /^Source 1:/ })[0]!;
+      link.addEventListener("click", (event) => event.preventDefault());
+      fireEvent.click(link);
+      expect(thumbs.signal).not.toHaveBeenCalled();
+    });
+
+    it("sit beside Think harder, which asks again once and waits while another turn is answered", async () => {
+      thumbs.state = { rating: null, reason: null };
+      const traced = { ...ANSWER, ask_id: "trace-1" };
+      const thinkHarder = vi.fn();
+      const { unmount } = show(exchange({ askId: "a-1", answer: traced }), {
+        thinkHarder,
+      });
+      await userEvent.click(
+        screen.getByRole("button", { name: ASK_EFFORT_COPY.action }),
+      );
+      expect(thinkHarder).toHaveBeenCalledTimes(1);
+      unmount();
+
+      // Not on the harder answer itself, not without a trace, not where the
+      // host offers none.
+      const none = (value: AskExchange, on = true) => {
+        const view = show(value, on ? { thinkHarder } : {});
+        expect(
+          screen.queryByRole("button", { name: ASK_EFFORT_COPY.action }),
+        ).toBeNull();
+        view.unmount();
+      };
+      none(exchange({ askId: "a-1", answer: traced, effort: "more" }));
+      none(exchange({ askId: "a-1" }));
+      none(exchange({ askId: "a-1", answer: traced }), false);
+
+      show(exchange({ askId: "a-1", answer: traced }), {
+        thinkHarder,
+        busy: true,
+      });
+      expect(
+        screen.getByRole("button", { name: ASK_EFFORT_COPY.action }),
+      ).toBeDisabled();
+    });
+
+    it("say so when a rating did not send", () => {
+      thumbs.state = { rating: null, reason: null };
+      thumbs.failed = true;
+      show(exchange({ askId: "a-1", answer: { ...ANSWER, ask_id: "trace-1" } }));
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        ASK_FEEDBACK_COPY.failed,
+      );
+      thumbs.failed = false;
+    });
+  });
+
+  describe("the cards an answer came with (#4904)", () => {
+    const withCards = (text: string) =>
+      exchange({
+        askId: "ask-1",
+        answer: {
+          ...ANSWER,
+          text,
+          citations: [],
+          sources: [],
+          ask_id: "ask-1",
+          proposals: ["s1", "s2"],
+        },
+      });
+
+    it("sit under the answer's words, and each one that ends is counted against the answer", async () => {
+      thumbs.signal.mockClear();
+      const ended = vi.fn();
+      render(
+        <AskTurn
+          exchange={withCards("Three members cleaned up.")}
+          onRetry={() => undefined}
+          onAnswerConsent={() => undefined}
+          onProposal={() => undefined}
+          onResolved={() => undefined}
+          onCardEnded={ended}
+        />,
+      );
+      const words = screen.getByText("Three members cleaned up.");
+      const cards = screen.getByTestId("cards");
+      expect(
+        words.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "confirm s1" }));
+      expect(thumbs.signal).toHaveBeenLastCalledWith("ask-1", "card_confirmed");
+      await user.click(screen.getByRole("button", { name: "cancel s2" }));
+      expect(thumbs.signal).toHaveBeenLastCalledWith("ask-1", "card_dismissed");
+      expect(ended).toHaveBeenCalledTimes(2);
+      // One that had stopped waiting was neither.
+      await user.click(screen.getByRole("button", { name: "gone s2" }));
+      expect(thumbs.signal).toHaveBeenCalledTimes(2);
+      expect(ended).toHaveBeenCalledTimes(3);
+    });
+
+    it("stand alone when the answer is cards and nothing else, with no Copy and no Think harder", () => {
+      show(withCards(""), { thinkHarder: () => undefined });
+      expect(screen.getByTestId("cards")).toBeDefined();
+      expect(screen.queryByRole("button", { name: /copy/i })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: ASK_EFFORT_COPY.action }),
+      ).toBeNull();
+    });
   });
 });

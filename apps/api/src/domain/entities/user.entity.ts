@@ -1,3 +1,5 @@
+import type { BirthdayVisibility } from '@repo/validation';
+
 /**
  * The only user columns a display surface needs: who this is, what to call
  * them, and what to draw. Deliberately excludes every PII column on {@link
@@ -15,6 +17,18 @@ export interface UserDisplayIdentity {
   id: string;
   display_name: string;
   avatar_url: string | null;
+}
+
+/**
+ * A birthday its member shares with their chapter (#4959), for the calendar
+ * and the birthday post: who, and the month and day. Never the year.
+ */
+export interface UserSharedBirthday {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+  birthday_month: number;
+  birthday_day: number;
 }
 
 /** A user's name and address, for officer-facing exports such as the roster. */
@@ -42,6 +56,20 @@ export interface User {
    * Optional so fixtures that predate it still type-check.
    */
   phone?: string | null;
+  /**
+   * The member's birthday (#4959): month (1-12) and day, both set or both
+   * null, and an optional year no surface shows to anyone but them. Only they
+   * set it. Optional so fixtures that predate it still type-check.
+   */
+  birthday_month?: number | null;
+  birthday_day?: number | null;
+  birthday_year?: number | null;
+  /**
+   * Who may see the birthday: `'chapter'` (members of their chapters, on the
+   * profile, the calendar and the chapter's birthday post) or `'nobody'`, the
+   * default.
+   */
+  birthday_visibility?: BirthdayVisibility;
   /**
    * Persisted active chapter. `custom_access_token_hook` stamps it into the
    * access token as the `active_chapter_id` claim; null means "auto-resolve if

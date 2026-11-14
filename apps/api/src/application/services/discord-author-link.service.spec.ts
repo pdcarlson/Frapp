@@ -99,6 +99,7 @@ describe('DiscordAuthorLinkService (#2878)', () => {
       expect(result).toEqual({
         available: true,
         linked: true,
+        discord_user_id: DISCORD_ID,
         discord_username: 'jkslayer',
         linked_at: '2026-09-29T12:02:00Z',
         messages_linked: 412,
@@ -172,6 +173,7 @@ describe('DiscordAuthorLinkService (#2878)', () => {
       await expect(service.getMine(CHAPTER, USER)).resolves.toEqual({
         available: false,
         linked: false,
+        discord_user_id: null,
         discord_username: null,
         linked_at: null,
       });
@@ -189,6 +191,7 @@ describe('DiscordAuthorLinkService (#2878)', () => {
       });
       await expect(service.getMine(CHAPTER, USER)).resolves.toMatchObject({
         linked: true,
+        discord_user_id: DISCORD_ID,
         discord_username: 'jkslayer',
       });
     });

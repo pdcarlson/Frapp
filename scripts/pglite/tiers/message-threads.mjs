@@ -10,6 +10,9 @@ import { db, miss } from "../harness.mjs";
 // - a thread @mention counts until the later of the channel and thread reads;
 // - `get_followed_thread_unread` counts new replies for a follower only, never
 //   for a muted or unfollowed row, and skips your own and deleted replies.
+// - All threads (#4960): `get_member_thread_channel_ids` and
+//   `get_member_threads` list a member's followed and muted threads across
+//   the channels passed, newest activity first, with the same counts.
 try {
   const CH = "f3f3f3f3-0000-4000-8000-000000003785";
   const U = {
@@ -102,6 +105,43 @@ try {
   const cFollowed = await followed(U.c);
   const dFollowed = await followed(U.d);
 
+  // A second channel with a newer thread B also follows.
+  const GEN2 = "f5f5f5f5-0000-4000-8000-000000000002";
+  const ROOT2 = "f6f6f6f6-0000-4000-8000-000000000002";
+  await db.exec(`
+    insert into chat_channels (id, chapter_id, name, type, member_ids) values
+      ('${GEN2}', '${CH}', 'second', 'PUBLIC', '{}'::uuid[]);
+    insert into chat_messages (id, channel_id, sender_id, content, created_at) values
+      ('${ROOT2}', '${GEN2}', '${U.c}', 'root2', ${at(8)});
+    insert into chat_messages (channel_id, sender_id, content, thread_root_id, created_at) values
+      ('${GEN2}', '${U.c}', 'r6', '${ROOT2}', ${at(9)});
+    insert into chat_thread_follows (thread_root_id, user_id, channel_id, state, last_read_at) values
+      ('${ROOT2}', '${U.b}', '${GEN2}', 'following', null);
+  `);
+  const bChannels = (
+    await db.query(
+      `select channel_id from public.get_member_thread_channel_ids($1, $2)
+        order by channel_id`,
+      [CH, U.b],
+    )
+  ).rows
+    .map((r) => (r.channel_id === GEN ? "general" : "second"))
+    .join(",");
+  const memberThreads = async (user, channels) =>
+    (
+      await db.query(
+        `select thread_root_id, state, unread_count::int as n
+           from public.get_member_threads($1, $2, $3::uuid[], 50)`,
+        [CH, user, channels],
+      )
+    ).rows
+      .map((r) => `${r.thread_root_id === ROOT ? "root" : "root2"}:${r.state}/${r.n}`)
+      .join(",");
+  const bAll = await memberThreads(U.b, [GEN, GEN2]);
+  const bGeneralOnly = await memberThreads(U.b, [GEN]);
+  const cAll = await memberThreads(U.c, [GEN, GEN2]);
+  const dAll = await memberThreads(U.d, [GEN, GEN2]);
+
   const SCENARIOS = [
     {
       name: "a thread's parent counts its replies and keeps the three newest distinct repliers",
@@ -128,6 +168,26 @@ try {
       got: `${bFollowed} | ${cFollowed} | ${dFollowed}`,
       // B read through r2; after it come r3 (deleted), r4 (B's own) and r5.
       want: "following/1 | muted/0 | ",
+    },
+    {
+      name: "All threads finds every channel a member follows threads in",
+      got: bChannels,
+      want: "general,second",
+    },
+    {
+      name: "All threads lists followed threads newest activity first, with the same counts",
+      got: bAll,
+      want: "root2:following/1,root:following/1",
+    },
+    {
+      name: "All threads reads only the channels it is given",
+      got: bGeneralOnly,
+      want: "root:following/1",
+    },
+    {
+      name: "All threads keeps a muted thread at 0 and leaves out an unfollowed one",
+      got: `${cAll} | ${dAll}`,
+      want: "root:muted/0 | ",
     },
   ];
   for (const s of SCENARIOS) {

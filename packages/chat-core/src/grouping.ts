@@ -61,6 +61,8 @@ export interface GroupableMessage extends MessageAuthorKey {
   created_at: string;
   kind?: string | null;
   reply_to_id?: string | null;
+  /** A forward's copy (#4864); only its presence is read. */
+  forwarded_from?: unknown;
   is_deleted?: boolean;
   /** A flag a member put on the message (#3921), which rides its author line. */
   flag?: string | null;
@@ -126,6 +128,9 @@ function startsRun(
   }
   // The quote above a reply needs the author line under it.
   if (message.reply_to_id) return true;
+  // So does a forward's card: "Forwarded" over someone else's words needs
+  // the forwarder's name above it (#4864).
+  if (message.forwarded_from) return true;
   // Audit lines stack: one under another draws tight, with no gap between
   // them, however far apart in time (each line carries its own time).
   // A deleted entry draws as the deleted placeholder, not a line, so it

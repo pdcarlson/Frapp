@@ -22,6 +22,7 @@ import {
   type EmbeddingResult,
   type ILanguageModel,
   type ILanguageModelRegistry,
+  type LanguageModelEffort,
   type LanguageModelRequest,
   type LanguageModelResult,
   type LanguageModelStreamEvent,
@@ -48,6 +49,20 @@ export interface MeteredCall {
 export interface CandidateRegistry {
   registry: ILanguageModelRegistry;
   calls: MeteredCall[];
+}
+
+export interface CandidateOptions {
+  /**
+   * Run every generation at this effort instead of the catalog's, so one
+   * model can be compared with itself at two efforts (#4903). Left out, the
+   * catalog's effort stands and the run is the product's.
+   */
+  effort?: LanguageModelEffort;
+  /**
+   * Called with each request as it goes to the model, before the call. For a
+   * check on what a model was shown; the caller must keep no text from it.
+   */
+  onRequest?: (request: LanguageModelRequest) => void;
 }
 
 export const ALLOW_PAID_ENV = 'AI_EVALS_ALLOW_PAID';
@@ -86,6 +101,7 @@ class MeteredModel implements ILanguageModel {
     private readonly inner: ILanguageModel,
     private readonly model: string,
     private readonly calls: MeteredCall[],
+    private readonly options: CandidateOptions = {},
   ) {
     this.provider = inner.provider;
   }
@@ -100,10 +116,15 @@ class MeteredModel implements ILanguageModel {
       groundedQuotes: 0,
     };
     try {
-      const result = await this.inner.generate({
+      const sent: LanguageModelRequest = {
         ...request,
         model: this.model,
-      });
+        ...(this.options.effort === undefined
+          ? {}
+          : { effort: this.options.effort }),
+      };
+      this.options.onRequest?.(sent);
+      const result = await this.inner.generate(sent);
       call.outcome = result.outcome;
       if (result.outcome === 'completed' && request.kind === 'cited') {
         call.quotes = result.citations.length;
@@ -139,11 +160,12 @@ export function candidateRegistry(
   candidate: BakeOffCandidate,
   scriptedReplies: ScriptedReplies,
   env: Env = process.env,
+  options: CandidateOptions = {},
 ): CandidateRegistry {
   const adapter = candidate.paid
     ? liveAdapter(candidate, env)
     : new ScriptedLanguageModel(scriptedReplies);
   const calls: MeteredCall[] = [];
-  const metered = new MeteredModel(adapter, candidate.model, calls);
+  const metered = new MeteredModel(adapter, candidate.model, calls, options);
   return { registry: { resolve: () => metered }, calls };
 }

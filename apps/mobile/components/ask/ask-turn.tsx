@@ -1,29 +1,51 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AccessibilityInfo,
   Pressable,
   StyleSheet,
   Text,
   View,
+  type StyleProp,
+  type TextStyle,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import type { AskExchange } from "@repo/hooks";
+import { useAskThumbs, useChannels, type AskExchange } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_EFFORT_COPY,
+  ASK_FEEDBACK_COPY,
+  ASK_FEEDBACK_REASONS,
+  ASK_POST_COPY,
+  askAnswerEntities,
+  askFeedbackReportReason,
   askAnswerSegments,
+  askEntityParts,
   askLeftOutLine,
+  askOffersThinkHarder,
+  askPostedSourceTitle,
   askReadLine,
-  askSourceMetaLine,
+  askSourceChip,
   askStepLine,
   askUnavailableLine,
+  type AiReportReason,
   type AskAnswer,
+  type AskEntity,
+  type AskPostedAnswer,
   type AskSource,
 } from "@repo/validation";
-import { CheckGlyph, CopyGlyph, FlagGlyph } from "@/components/control-glyphs";
+import {
+  CheckGlyph,
+  CopyGlyph,
+  FlagGlyph,
+  LightbulbGlyph,
+  ThumbDownGlyph,
+  ThumbUpGlyph,
+} from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { selectChannels } from "@/lib/chat/channel-list";
 import { selectionHaptic } from "@/lib/haptics";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -74,16 +96,30 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * A refusal, "couldn't find that" and "not available" are the product working
  * as designed, not errors, so they read as plain answers.
  */
+/** "Report this" for an answer, as the turn's row draws it. */
+export interface AskTurnReport {
+  reported: boolean;
+  onPress: () => void;
+  /**
+   * Opens the same sheet on a reason already given, from a thumbs down
+   * (#4904). Left out, a thumbs down offers no send.
+   */
+  onSend?: (reason: AiReportReason) => void;
+}
+
 export function AskTurn({
   exchange,
   proposal,
+  cards,
   canOpen,
   openingSourceId,
   onOpenSource,
   busy = false,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   report,
+  onOpenChannel,
 }: {
   exchange: AskExchange;
   /**
@@ -93,6 +129,8 @@ export function AskTurn({
   busy?: boolean;
   /** The card for a turn that asked for something to be done, in the answer's place. */
   proposal?: ReactNode;
+  /** The cards the answer came with (`answer.proposals`), drawn under it. */
+  cards?: ReactNode;
   /** Whether this build has a screen for the source; a chip without one is plain. */
   canOpen: (source: AskSource) => boolean;
   /** The source whose document link is being fetched, so its chip says so. */
@@ -100,13 +138,23 @@ export function AskTurn({
   onOpenSource: (source: AskSource) => void;
   /** Asks the same question again, after a failure that may not repeat. */
   onRetry: () => void;
+  /**
+   * Asks the same question again in this turn's place with more effort
+   * (#4904). Left out, the answer offers no Think harder.
+   */
+  onThinkHarder?: () => void;
   /** Opens the AI sheet, for an answer refused because it is unanswered. */
   onAnswerConsent: () => void;
   /**
    * "Report this" for the answer (#4315), where the member may report. Left
    * out, or null, draws nothing.
    */
-  report?: { reported: boolean; onPress: () => void } | null;
+  report?: AskTurnReport | null;
+  /**
+   * Opens a channel the answer names (#4904), offered only for a channel the
+   * reader has. Left out, a channel's name is the plain words.
+   */
+  onOpenChannel?: (channelId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
   const { accentPrimary, accentOnPrimary } = useChapterBranding();
@@ -125,13 +173,16 @@ export function AskTurn({
       <AskReply
         exchange={exchange}
         proposal={proposal}
+        cards={cards}
         canOpen={canOpen}
         openingSourceId={openingSourceId}
         onOpenSource={onOpenSource}
         busy={busy}
         onRetry={onRetry}
+        onThinkHarder={onThinkHarder}
         onAnswerConsent={onAnswerConsent}
         report={report}
+        onOpenChannel={onOpenChannel}
       />
     </View>
   );
@@ -149,13 +200,16 @@ type AskReplyProps = Parameters<typeof AskTurn>[0];
 export function AskReply({
   exchange,
   proposal,
+  cards,
   canOpen,
   openingSourceId,
   onOpenSource,
   busy = false,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   report,
+  onOpenChannel,
 }: AskReplyProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -199,8 +253,11 @@ export function AskReply({
             onOpenSource={onOpenSource}
             busy={busy}
             onAnswerConsent={onAnswerConsent}
+            onOpenChannel={onOpenChannel}
           />
         ) : null}
+
+        {exchange.phase === "done" && exchange.answer ? cards : null}
 
         {/* Anything Ask wrote, or chose not to, can be reported; what it
             wrote can be copied. An answer that was never attempted has
@@ -209,12 +266,35 @@ export function AskReply({
         {exchange.phase === "done" &&
         exchange.answer &&
         exchange.answer.status !== "unavailable" ? (
-          <AnswerActions
-            text={
-              exchange.answer.status === "answered" ? exchange.answer.text : null
-            }
-            report={exchange.askId ? (report ?? null) : null}
-          />
+          exchange.answer.ask_id ? (
+            <RatedAnswerActions
+              // A turn asked again is a new answer: its thumbs start empty.
+              key={exchange.answer.ask_id}
+              askId={exchange.answer.ask_id}
+              text={
+                exchange.answer.status === "answered"
+                  ? exchange.answer.text
+                  : null
+              }
+              report={exchange.askId ? (report ?? null) : null}
+              thinkHarder={
+                onThinkHarder &&
+                askOffersThinkHarder(exchange.answer, exchange.effort)
+                  ? { busy, onPress: onThinkHarder }
+                  : null
+              }
+            />
+          ) : (
+            <AnswerActions
+              thumbs={null}
+              text={
+                exchange.answer.status === "answered"
+                  ? exchange.answer.text
+                  : null
+              }
+              report={exchange.askId ? (report ?? null) : null}
+            />
+          )
         ) : null}
       </View>
   );
@@ -227,17 +307,33 @@ const COPIED_RESET_MS = 2000;
 const ACTION_GLYPH_SIZE = 16;
 
 /**
- * The row under an answer: Copy, then Report. Glyphs alone in the muted text
- * tone, each with the icon button's 44pt touch area, so nothing here competes
- * with the answer above it.
+ * The row under an answer: Copy, the thumbs, then Report. Glyphs alone in the
+ * muted text tone, each with the icon button's 44pt touch area, so nothing
+ * here competes with the answer above it.
+ *
+ * The thumbs (#4904, `spec/behavior/ai.md` § Feedback on an answer) are drawn
+ * only for an answer whose turn the server kept a trace of (`answer.ask_id`,
+ * {@link RatedAnswerActions}): a rating has nothing to be recorded against
+ * otherwise. What a thumbs opens sits under the row ({@link ThumbsFollowUp});
+ * web's twin is `ask-thumbs.tsx`.
  */
 function AnswerActions({
+  thumbs,
   text,
   report,
+  thinkHarder = null,
 }: {
+  /**
+   * Think harder, where this answer offers it (`askOffersThinkHarder`): the
+   * same question again in this turn's place with more effort. It waits
+   * while another turn is being answered.
+   */
+  thinkHarder?: { busy: boolean; onPress: () => void } | null;
+  /** The answer's thumbs, or null when the server kept no trace to rate. */
+  thumbs: ReturnType<typeof useAskThumbs> | null;
   /** The answer's words, without the markers, or null when there are none to copy. */
   text: string | null;
-  report: { reported: boolean; onPress: () => void } | null;
+  report: AskTurnReport | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -253,7 +349,9 @@ function AnswerActions({
     };
   }, []);
 
-  if (!text && !report) return null;
+  const strong = tokens.color.text.foreground;
+
+  if (!text && !report && !thumbs) return null;
   const copy = () => {
     if (!text) return;
     void Clipboard.setStringAsync(text).then(
@@ -273,35 +371,210 @@ function AnswerActions({
     );
   };
   return (
-    <View style={styles.actions}>
-      {text ? (
-        <IconButton
-          label={copied ? ASK_COPY.copied_answer : ASK_COPY.copy_answer}
-          onPress={copy}
-        >
-          {copied ? (
-            <CheckGlyph color={color} size={ACTION_GLYPH_SIZE} />
-          ) : (
-            <CopyGlyph color={color} size={ACTION_GLYPH_SIZE} />
-          )}
-        </IconButton>
+    <View style={styles.actionsBlock}>
+      <View style={styles.actions}>
+        {text ? (
+          <IconButton
+            label={copied ? ASK_COPY.copied_answer : ASK_COPY.copy_answer}
+            onPress={copy}
+          >
+            {copied ? (
+              <CheckGlyph color={color} size={ACTION_GLYPH_SIZE} />
+            ) : (
+              <CopyGlyph color={color} size={ACTION_GLYPH_SIZE} />
+            )}
+          </IconButton>
+        ) : null}
+        {thumbs ? (
+          <>
+            <IconButton
+              label={ASK_FEEDBACK_COPY.up}
+              selected={thumbs.state.rating === "up"}
+              onPress={() => {
+                selectionHaptic();
+                thumbs.rate("up");
+              }}
+            >
+              <ThumbUpGlyph
+                color={thumbs.state.rating === "up" ? strong : color}
+                size={ACTION_GLYPH_SIZE}
+                chosen={thumbs.state.rating === "up"}
+              />
+            </IconButton>
+            <IconButton
+              label={ASK_FEEDBACK_COPY.down}
+              selected={thumbs.state.rating === "down"}
+              onPress={() => {
+                selectionHaptic();
+                thumbs.rate("down");
+              }}
+            >
+              <ThumbDownGlyph
+                color={thumbs.state.rating === "down" ? strong : color}
+                size={ACTION_GLYPH_SIZE}
+                chosen={thumbs.state.rating === "down"}
+              />
+            </IconButton>
+          </>
+        ) : null}
+        {thinkHarder ? (
+          <IconButton
+            label={ASK_EFFORT_COPY.action}
+            disabled={thinkHarder.busy}
+            onPress={thinkHarder.onPress}
+          >
+            <View style={thinkHarder.busy ? styles.dimmed : null}>
+              <LightbulbGlyph color={color} size={ACTION_GLYPH_SIZE} />
+            </View>
+          </IconButton>
+        ) : null}
+        {report ? (
+          <IconButton
+            // Named for what it reports, as web's icon is: there are no
+            // words beside it to say so.
+            label={
+              report.reported
+                ? AI_REPORT_COPY.reported
+                : AI_REPORT_COPY.titles.ask_answer
+            }
+            disabled={report.reported}
+            onPress={report.onPress}
+          >
+            <View style={report.reported ? styles.dimmed : null}>
+              <FlagGlyph color={color} size={ACTION_GLYPH_SIZE} />
+            </View>
+          </IconButton>
+        ) : null}
+      </View>
+      {thumbs ? (
+        <ThumbsFollowUp
+          key={thumbs.state.rating ?? "none"}
+          rating={thumbs.state.rating}
+          reason={thumbs.state.reason}
+          failed={thumbs.failed}
+          onReason={thumbs.giveReason}
+          reported={report?.reported ?? false}
+          send={report && !report.reported ? (report.onSend ?? null) : null}
+        />
       ) : null}
-      {report ? (
-        <IconButton
-          // Named for what it reports, as web's icon is: there are no
-          // words beside it to say so.
-          label={
-            report.reported
-              ? AI_REPORT_COPY.reported
-              : AI_REPORT_COPY.titles.ask_answer
-          }
-          disabled={report.reported}
-          onPress={report.onPress}
-        >
-          <View style={report.reported ? styles.dimmed : null}>
-            <FlagGlyph color={color} size={ACTION_GLYPH_SIZE} />
+    </View>
+  );
+}
+
+/** The row for an answer the server kept a trace of, with its thumbs. */
+function RatedAnswerActions({
+  askId,
+  ...row
+}: {
+  askId: string;
+  text: string | null;
+  report: AskTurnReport | null;
+  thinkHarder: { busy: boolean; onPress: () => void } | null;
+}) {
+  return <AnswerActions thumbs={useAskThumbs(askId)} {...row} />;
+}
+
+/**
+ * What a thumbs opens under the row. An up gets one line of thanks. A down
+ * asks why in one tap, then says the rating carried none of the words and
+ * offers to send the answer through Report this, which opens on the reason
+ * already given. "Not now", and a report sent while it is open, fold it back
+ * to the thanks line; an answer reported before the thumbs still gets its
+ * reasons, without the offer. Keyed by the rating, so a change of thumb
+ * starts it over.
+ */
+function ThumbsFollowUp({
+  rating,
+  reason,
+  failed,
+  onReason,
+  send,
+  reported,
+}: {
+  /** The answer has been reported, from here or from the flag. */
+  reported: boolean;
+  rating: "up" | "down" | null;
+  reason: string | null;
+  failed: boolean;
+  onReason: (reason: (typeof ASK_FEEDBACK_REASONS)[number]) => void;
+  /** Opens Report this on a reason, or null where there is nothing to offer. */
+  send: ((reason: AiReportReason) => void) | null;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const [closed, setClosed] = useState(false);
+  const [reportedBefore] = useState(reported);
+
+  if (failed) {
+    return (
+      <Text accessibilityRole="alert" style={styles.feedbackFailed}>
+        {ASK_FEEDBACK_COPY.failed}
+      </Text>
+    );
+  }
+  if (rating === null) return null;
+  if (rating === "up" || closed || (reported && !reportedBefore)) {
+    return (
+      <Text accessibilityLiveRegion="polite" style={styles.note}>
+        {ASK_FEEDBACK_COPY.thanks}
+      </Text>
+    );
+  }
+  return (
+    <View style={styles.feedback}>
+      <Text style={styles.note}>{ASK_FEEDBACK_COPY.prompt}</Text>
+      <View style={styles.sources}>
+        {ASK_FEEDBACK_REASONS.map((option) => {
+          const chosen = reason === option;
+          return (
+            <Pressable
+              key={option}
+              accessibilityRole="button"
+              accessibilityLabel={ASK_FEEDBACK_COPY.reasons[option]}
+              accessibilityState={{ selected: chosen }}
+              // 36pt drawn against the 44pt minimum.
+              hitSlop={4}
+              onPress={() => {
+                selectionHaptic();
+                onReason(option);
+              }}
+              style={({ pressed }) => [
+                styles.action,
+                chosen ? styles.reasonChosen : null,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={styles.actionText}>
+                {ASK_FEEDBACK_COPY.reasons[option]}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {send ? (
+        <>
+          <Text style={styles.note}>{ASK_FEEDBACK_COPY.send.line}</Text>
+          <View style={styles.feedbackLinks}>
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={12}
+              onPress={() => send(askFeedbackReportReason(reason))}
+              style={({ pressed }) => (pressed ? styles.pressed : null)}
+            >
+              <Text style={styles.feedbackLink}>
+                {ASK_FEEDBACK_COPY.send.action}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={12}
+              onPress={() => setClosed(true)}
+              style={({ pressed }) => (pressed ? styles.pressed : null)}
+            >
+              <Text style={styles.note}>{ASK_FEEDBACK_COPY.send.dismiss}</Text>
+            </Pressable>
           </View>
-        </IconButton>
+        </>
       ) : null}
     </View>
   );
@@ -315,6 +588,7 @@ function AnswerBody({
   onOpenSource,
   busy,
   onAnswerConsent,
+  onOpenChannel,
 }: {
   answer: AskAnswer;
   /** What Frapp read to write it (`askReadLine`), or null. */
@@ -324,6 +598,7 @@ function AnswerBody({
   onOpenSource: (source: AskSource) => void;
   busy: boolean;
   onAnswerConsent: () => void;
+  onOpenChannel?: (channelId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -355,31 +630,52 @@ function AnswerBody({
     );
   }
 
+  const entities = askAnswerEntities(answer);
+  const words = (canOpenChannel: (channelId: string) => boolean) => (
+    <Text style={styles.answer}>
+      {askAnswerSegments(answer).map((segment, position) => {
+        if (segment.type === "text") {
+          return (
+            <EntityText
+              key={position}
+              text={segment.text}
+              entities={entities}
+              mentionStyle={styles.mention}
+              canOpenChannel={canOpenChannel}
+              onOpenChannel={onOpenChannel}
+            />
+          );
+        }
+        const source = answer.sources[segment.citation.source];
+        if (!source) return null;
+        const number = segment.citation.source + 1;
+        const opens = canOpen(source);
+        return (
+          <Text
+            key={position}
+            accessibilityRole={opens ? "link" : undefined}
+            accessibilityLabel={`Source ${number}: ${askSourceChip(source).name}`}
+            onPress={opens ? () => onOpenSource(source) : undefined}
+            style={styles.marker}
+          >
+            {/* No-break spaces: the marker wraps whole, with the sentence it ends. */}
+            {`\u00A0${number}\u00A0`}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+
   return (
     <>
-      <Text style={styles.answer}>
-        {askAnswerSegments(answer).map((segment, position) => {
-          if (segment.type === "text") {
-            return <Text key={position}>{segment.text}</Text>;
-          }
-          const source = answer.sources[segment.citation.source];
-          if (!source) return null;
-          const number = segment.citation.source + 1;
-          const opens = canOpen(source);
-          return (
-            <Text
-              key={position}
-              accessibilityRole={opens ? "link" : undefined}
-              accessibilityLabel={`Source ${number}: ${source.title}`}
-              onPress={opens ? () => onOpenSource(source) : undefined}
-              style={styles.marker}
-            >
-              {/* No-break spaces: the marker wraps whole, with the sentence it ends. */}
-              {`\u00A0${number}\u00A0`}
-            </Text>
-          );
-        })}
-      </Text>
+      {/* The reader's channel list is only read for an answer that names one. */}
+      {/* An answer that is cards and nothing else has no words to draw. */}
+      {!answer.text ? null : onOpenChannel &&
+        entities.some((entity) => entity.type === "channel") ? (
+        <ChannelOpens>{words}</ChannelOpens>
+      ) : (
+        words(() => false)
+      )}
       {/* Where the step line was while it worked, in the same tone. */}
       {readLine ? <Text style={styles.note}>{readLine}</Text> : null}
       <AnswerNotes answer={answer} />
@@ -398,6 +694,176 @@ function AnswerBody({
         </View>
       ) : null}
     </>
+  );
+}
+
+/**
+ * A run of an answer's text with the people and channels it names drawn the
+ * way chat draws a mention (#4904; `message-markdown.tsx`), as Discord and
+ * Slack mark a name inside a sentence. Which names count is the server's
+ * call (`askEntityParts`): a name that is not in `entities` is ordinary
+ * text. Web's twin is `ask-entity-text.tsx`.
+ *
+ * A member is a highlight. A channel is also a link into that channel, when
+ * the reader has it; one they cannot open stays the plain words.
+ */
+function EntityText({
+  text,
+  entities,
+  mentionStyle,
+  canOpenChannel,
+  onOpenChannel,
+}: {
+  text: string;
+  entities: readonly AskEntity[];
+  mentionStyle: StyleProp<TextStyle>;
+  canOpenChannel: (channelId: string) => boolean;
+  onOpenChannel?: (channelId: string) => void;
+}) {
+  return (
+    <>
+      {askEntityParts(text, entities).map((part, position) => {
+        if (part.type === "text") {
+          return <Text key={position}>{part.text}</Text>;
+        }
+        if (part.type === "member") {
+          return (
+            <Text key={position} style={mentionStyle}>
+              {part.text}
+            </Text>
+          );
+        }
+        if (!onOpenChannel || !canOpenChannel(part.id)) {
+          return <Text key={position}>{part.text}</Text>;
+        }
+        return (
+          <Text
+            key={position}
+            accessibilityRole="link"
+            onPress={() => onOpenChannel(part.id)}
+            style={mentionStyle}
+          >
+            {part.text}
+          </Text>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * Which channels in an answer this reader can open: the ones in their own
+ * channel list. Drawn only around an answer that names a channel, so no
+ * other answer reads the list. Web's twin is `AskChannelOpens`.
+ */
+function ChannelOpens({
+  children,
+}: {
+  children: (canOpenChannel: (channelId: string) => boolean) => ReactNode;
+}) {
+  const channels = useChannels().data;
+  const mine = useMemo(
+    () => new Set(selectChannels(channels).map((channel) => channel.id)),
+    [channels],
+  );
+  return children((channelId) => mine.has(channelId));
+}
+
+/**
+ * An answer posted to a channel (`ask_answer`, #4713), drawn as its asker
+ * saw it: the same words, markers and chips, from the posted row. Web's twin
+ * is `AskPostedBody` in `apps/web/components/ask/ask-answer.tsx`.
+ *
+ * A marker carries no quoted passage here: the quote stayed with the asker,
+ * so a reader who can't open a source sees its name and nothing of its text.
+ * The asker's own records are named as theirs ("Sam Abernathy's tasks") and
+ * open nothing, since a reader's Tasks page is the reader's own.
+ */
+export function AskPostedBody({
+  text,
+  posted,
+  askerName,
+  canOpen,
+  openingSourceId,
+  onOpenSource,
+}: {
+  /** The row's `content`: the answer's words, which the markers count into. */
+  text: string;
+  posted: AskPostedAnswer;
+  /** The asker's roster name, or null when the roster can't name them. */
+  askerName: string | null;
+  canOpen: (source: AskSource) => boolean;
+  openingSourceId: string | null;
+  onOpenSource: (source: AskSource) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const sources: AskSource[] = posted.sources.map((source, index) => ({
+    id: String(index),
+    kind: source.kind,
+    title: askPostedSourceTitle(source, askerName),
+    detail: source.detail,
+    date: source.date,
+    target: source.target,
+  }));
+  const segments = askAnswerSegments({
+    text,
+    citations: posted.citations.map((citation) => ({ ...citation, quote: "" })),
+  });
+  const notes: string[] = [
+    ...(posted.truncated ? [ASK_COPY.truncated] : []),
+    ...(posted.sources.some((source) => source.limited)
+      ? [ASK_POST_COPY.limited]
+      : []),
+  ];
+  return (
+    <View style={styles.reply}>
+      <Text style={styles.answer}>
+        {segments.map((segment, position) => {
+          if (segment.type === "text") {
+            return <Text key={position}>{segment.text}</Text>;
+          }
+          const source = sources[segment.citation.source];
+          if (!source) return null;
+          const number = segment.citation.source + 1;
+          const opens = canOpen(source);
+          return (
+            <Text
+              key={position}
+              accessibilityRole={opens ? "link" : undefined}
+              accessibilityLabel={`Source ${number}: ${source.title}`}
+              onPress={opens ? () => onOpenSource(source) : undefined}
+              style={styles.marker}
+            >
+              {`\u00A0${number}\u00A0`}
+            </Text>
+          );
+        })}
+      </Text>
+      {sources.length > 0 ? (
+        <View style={styles.sources}>
+          {sources.map((source, index) => (
+            <SourceChip
+              key={source.id}
+              number={index + 1}
+              source={source}
+              opens={canOpen(source)}
+              opening={openingSourceId === source.id}
+              onPress={() => onOpenSource(source)}
+            />
+          ))}
+        </View>
+      ) : null}
+      {notes.length > 0 ? (
+        <View style={styles.notes}>
+          {notes.map((note) => (
+            <Text key={note} style={styles.note}>
+              {note}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -443,14 +909,20 @@ function SourceChip({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const meta = askSourceMetaLine(source);
-  const label = `Source ${number}: ${source.title}. ${meta}`;
+  // A quoted message says whose it is and when (`askSourceChip`, #4904).
+  const { name, when, meta } = askSourceChip(source);
+  const label = `Source ${number}: ${name}. ${meta}`;
   const body = (
     <>
       <Text style={styles.sourceNumber}>{number}</Text>
       <Text numberOfLines={1} style={styles.sourceTitle}>
-        {source.title}
+        {name}
       </Text>
+      {when ? (
+        <Text numberOfLines={1} style={styles.sourceWhen}>
+          {when}
+        </Text>
+      ) : null}
     </>
   );
   if (!opens) {
@@ -538,6 +1010,12 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.gold.askText,
       backgroundColor: tokens.color.gold.askFill,
     },
+    // Chat's in-body mention chip (`message-markdown.tsx`): colour only, so a
+    // name can't change its line's height.
+    mention: {
+      backgroundColor: tokens.color.semantic.mentionChip,
+      color: tokens.color.semantic.mentionChipText,
+    },
     notes: {
       gap: tokens.spacing.xs,
     },
@@ -573,6 +1051,11 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
       flexShrink: 1,
     },
+    sourceWhen: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      flexShrink: 0,
+    },
     action: {
       alignSelf: "flex-start",
       height: 36,
@@ -586,6 +1069,28 @@ function createStyles(tokens: SignetTokens) {
     actionText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
+    },
+    actionsBlock: {
+      gap: tokens.spacing.md,
+    },
+    feedback: {
+      gap: tokens.spacing.sm,
+    },
+    feedbackFailed: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructiveText,
+    },
+    feedbackLinks: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xl,
+    },
+    feedbackLink: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
+    },
+    reasonChosen: {
+      borderColor: tokens.color.text.foreground,
     },
     actions: {
       flexDirection: "row",

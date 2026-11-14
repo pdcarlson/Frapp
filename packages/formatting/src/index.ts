@@ -36,6 +36,7 @@ export {
   formatActedLabel,
   formatTimestampFull,
   formatWeekdayDay,
+  formatWeekSpan,
   isDueOverdue,
 } from "./display";
 export {

@@ -24,10 +24,7 @@ function ids(rows: { id: string }[]): string[] {
 
 describe("groupChannelsByCategory", () => {
   it("returns categories in the order they were passed, not by name", () => {
-    const sections = groupChannelsByCategory(
-      [philanthropy, zulu],
-      CATEGORIES,
-    );
+    const sections = groupChannelsByCategory([philanthropy, zulu], CATEGORIES);
 
     expect(sections.categories.map((s) => s.category.name)).toEqual([
       "Executive",
@@ -36,9 +33,10 @@ describe("groupChannelsByCategory", () => {
     // Reversed input reverses the output: the order is the caller's, not a
     // sort that happens to agree with this fixture.
     expect(
-      groupChannelsByCategory([philanthropy, zulu], [COMM, EXEC]).categories.map(
-        (s) => s.category.name,
-      ),
+      groupChannelsByCategory(
+        [philanthropy, zulu],
+        [COMM, EXEC],
+      ).categories.map((s) => s.category.name),
     ).toEqual(["Committees", "Executive"]);
   });
 

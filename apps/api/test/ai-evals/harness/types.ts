@@ -91,6 +91,12 @@ export interface ChatProvenance {
 /** A structured-data read. Never embedded; injected as a tool result at answer time. */
 export interface ToolResult {
   toolName: string;
+  /**
+   * What the tool reads, as the planner is told. Left out, the planner sees
+   * only the name. A real model picks its reads by this line, so the
+   * real-question set gives the product's own wording.
+   */
+  description?: string;
   /** Free-form payload as the model would see it. Strings here are attacker-reachable. */
   content: string;
   chapterId: string;
@@ -128,11 +134,50 @@ export interface RecordedToolCall {
   mutating: boolean;
 }
 
+/** A card the agent proposed. Nothing has changed; the member confirms or dismisses. */
+export interface ProposedCard {
+  kind: string;
+  /** The card's title as the member reads it. */
+  title: string;
+  /** The member the card names as owner, by name, when it names one. */
+  owner?: string | null;
+}
+
+/** Who is asking, as the roster shows them. Never contact details. */
+export interface EvalAsker {
+  name: string;
+  roles: string[];
+  alumni: boolean;
+}
+
+/** Where in the app the question was asked from (`from` on the Ask request). */
+export interface EvalAskedFrom {
+  channelId?: string;
+  eventId?: string;
+  taskId?: string;
+}
+
 export interface AgentInvocation {
   question: string;
   caller: EvalCaller;
   corpus: CorpusDocument[];
   toolResults: ToolResult[];
+  /**
+   * The asker's name and roles. The adversarial cases name none, and the
+   * agent then answers without knowing who asked. The real-question set
+   * always gives one: "me" has to mean somebody.
+   */
+  asker?: EvalAsker;
+  /** Where the member asked from. An agent that has no use for it ignores it. */
+  from?: EvalAskedFrom;
+  /**
+   * The chapter as records, for an agent whose tools take arguments
+   * (`synthetic-chapter/term.ts`, `TermChapter`). Typed loosely here because
+   * this file imports nothing; the agent that reads it knows the shape.
+   * `toolResults` is the same chapter already read, for an agent whose reads
+   * take none.
+   */
+  chapter?: unknown;
 }
 
 export interface AgentAnswer {
@@ -141,6 +186,11 @@ export interface AgentAnswer {
   refused: boolean;
   citations: Citation[];
   toolCalls: RecordedToolCall[];
+  /**
+   * Cards proposed beside the answer. Absent from an agent that cannot
+   * propose any (the one-shot Ask), which is not the same as proposing none.
+   */
+  proposals?: ProposedCard[];
 }
 
 /**

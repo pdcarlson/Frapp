@@ -54,7 +54,7 @@ function PersonalSettingsContent() {
   // chapter is known (or with none active) it says so in general terms; each
   // chapter section already tells a member with no chapter to pick one.
   const { data: chapter } = useCurrentChapter();
-  const chapterName = (chapter as { name?: string } | undefined)?.name?.trim();
+  const chapterName = chapter?.name.trim();
 
   const groups: SettingsNavGroup[] = [
     { label: "My account", group: "account" as const },

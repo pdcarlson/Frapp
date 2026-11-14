@@ -1,5 +1,6 @@
 import type { components } from "@repo/api-sdk";
 import type { NavGlyphName } from "@repo/theme/nav-glyphs";
+import { signUpLinkKind } from "@repo/validation";
 import { isSentBack, taskStatusLabel } from "./task-card";
 import {
   formatDueLabel,
@@ -16,6 +17,8 @@ export type ActivityPoll = components["schemas"]["ActivityPollDto"];
 export type ActivityEvent = components["schemas"]["ActivityEventDto"];
 export type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
 export type ActivityLink = components["schemas"]["ActivityLinkDto"];
+/** A reminder the member set on a chat message (#4957). Private to them. */
+export type ActivityReminder = components["schemas"]["ActivityReminderDto"];
 /** A sign-up sheet, headcount or form waiting on the member's answer (#3926). */
 export type ActivityCard = components["schemas"]["ActivityCardDto"];
 /** How many have answered something the member made, of how many can (#4792). */
@@ -49,7 +52,15 @@ export type ActivityBadgeVariant =
  * their own tasks; an event row draws its date instead of a glyph.
  */
 export type ActivityGlyph =
-  "task" | "confirm" | "hours" | "poll" | "event" | "link" | "signup" | "form";
+  | "task"
+  | "confirm"
+  | "hours"
+  | "poll"
+  | "event"
+  | "link"
+  | "signup"
+  | "form"
+  | "reminder";
 
 /**
  * The shared nav glyph each kind draws (`@repo/theme/nav-glyphs`), so a row
@@ -66,6 +77,7 @@ export const ACTIVITY_GLYPH_NAV: Record<ActivityGlyph, NavGlyphName> = {
   link: "link",
   signup: "signup",
   form: "form",
+  reminder: "schedule",
 };
 
 /**
@@ -120,8 +132,11 @@ interface RowBase {
    * dot. Never on a Waiting on others row.
    */
   unread: boolean;
-  /** The item `POST /v1/activity/reads` records when the row is opened. */
-  readRef: ActivityItemRef;
+  /**
+   * What opening the row records as read. Null for a row that has no unread
+   * dot to clear: a reminder (#4957), which is the member's own.
+   */
+  readRef: ActivityItemRef | null;
   /**
    * How far along a Waiting on others row is (#4792): an open poll the member
    * posted, or an event they made once its check-in has opened. A client
@@ -213,6 +228,7 @@ export type ActivityRow = RowBase &
     | { kind: "hours"; entry: ActivityHours }
     | { kind: "link"; link: ActivityLink }
     | { kind: "card"; card: ActivityCard }
+    | { kind: "reminder"; reminder: ActivityReminder }
   );
 
 /**
@@ -230,7 +246,7 @@ export interface ActivityPart {
 }
 
 export interface ActivityGroup {
-  id: "made-by-you" | "links";
+  id: "reminders" | "made-by-you" | "links";
   label: string;
   /** Every row of the group, in order: the parts' rows end to end. */
   rows: ActivityRow[];
@@ -256,6 +272,7 @@ export const ACTIVITY_SECTION_NAMES: Record<ActivitySection, string> = {
   coming_up: "events",
   made_events: "events you made",
   links: "links",
+  reminders: "reminders",
 };
 
 function channelLabel(
@@ -275,39 +292,13 @@ function channelLabel(
 export function activityLinkKind(
   link: Pick<ActivityLink, "host" | "url">,
 ): string {
-  const host = link.host;
-  if (host === "forms.gle") return "Google Form";
-  if (host === "docs.google.com") {
-    let path = "";
-    try {
-      path = new URL(link.url).pathname;
-    } catch {
-      return host;
-    }
-    // A Workspace account's links carry `/a/<domain>` first.
-    const rest = path.replace(/^\/a\/[^/]+/, "");
-    if (rest.startsWith("/forms/")) return "Google Form";
-    if (rest.startsWith("/spreadsheets/")) return "Google Sheet";
-    if (rest.startsWith("/document/")) return "Google Doc";
-    return host;
+  let path = "";
+  try {
+    path = new URL(link.url).pathname;
+  } catch {
+    // An unparseable URL still names its host; only Google needs the path.
   }
-  if (
-    host === "forms.office.com" ||
-    host === "forms.microsoft.com" ||
-    host === "forms.cloud.microsoft"
-  ) {
-    return "Microsoft Form";
-  }
-  if (host === "typeform.com" || host.endsWith(".typeform.com")) {
-    return "Typeform";
-  }
-  if (host === "signupgenius.com" || host.endsWith(".signupgenius.com")) {
-    return "SignUpGenius";
-  }
-  if (host === "calendly.com" || host.endsWith(".calendly.com")) {
-    return "Calendly";
-  }
-  return host;
+  return signUpLinkKind(link.host, path) ?? link.host;
 }
 
 /**
@@ -642,6 +633,41 @@ function linkRow(link: ActivityLink, now: Date): ActivityRow {
   };
 }
 
+/**
+ * A reminder row (#4957): the message's words as the title, then who wrote
+ * it, where, and when the reminder is (or was) for. A due one carries a
+ * "Due" badge, as Slack's Later list marks a reminder whose time came.
+ */
+function reminderRow(reminder: ActivityReminder, now: Date): ActivityRow {
+  const when = formatRelativeDayTime(reminder.remind_at, now);
+  return {
+    kind: "reminder",
+    key: `reminder:${reminder.id}`,
+    reminder,
+    title: reminder.preview,
+    detail: [
+      reminder.author_name || null,
+      reminder.message_available && reminder.channel_type
+        ? channelLabel({
+            channel_type: reminder.channel_type,
+            channel_name: reminder.channel_name ?? "",
+          })
+        : null,
+      when ? (reminder.due ? `Reminded ${when}` : `Remind me ${when}`) : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    soon: null,
+    faceId: null,
+    badge: reminder.due ? { label: "Due", variant: "warning" } : null,
+    glyph: "reminder",
+    dateBlock: null,
+    unread: false,
+    readRef: null,
+    progress: null,
+  };
+}
+
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
@@ -715,6 +741,12 @@ export function activityGroups(
   const downFor = (sections: ActivitySection[]) =>
     sections.filter((section) => down.has(section));
   const links = activity.links.map((link) => linkRow(link, now));
+  // Due first (the read orders by time, so the oldest due leads), then the
+  // ones still waiting, soonest first. `?? []`: a read from an API before
+  // #4957 has no field.
+  const reminders = (activity.reminders ?? []).map((reminder) =>
+    reminderRow(reminder, now),
+  );
 
   // A closed poll, by time or by hand, leaves the list for the archive.
   const madePolls = activity.made_by_you.polls
@@ -736,6 +768,16 @@ export function activityGroups(
   );
 
   return [
+    {
+      // The member's own reminders on chat messages (#4957), apart from the
+      // To do list: Slack keeps them in Later, beside saved items.
+      id: "reminders",
+      label: "Reminders",
+      rows: reminders,
+      parts: part("all", null, reminders, null),
+      unavailable: downFor(["reminders"]),
+      archive: null,
+    },
     {
       // What the member made, listed for what it still waits on.
       id: "made-by-you",

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import {
   LanguageModelError,
+  type AgentLanguageModelRequest,
   type CitedLanguageModelRequest,
   type LanguageModelStreamEvent,
   type StructuredLanguageModelRequest,
@@ -243,6 +244,256 @@ describe('AnthropicLanguageModel', () => {
         text: 'Formal is April 12.',
         citations: [{ sourceId: 'doc-minutes', quote: 'Formal is April 12.' }],
       });
+    });
+  });
+
+  describe('a round of a tool loop', () => {
+    const agent: AgentLanguageModelRequest = {
+      kind: 'agent',
+      task: 'ask.answer',
+      model: 'claude-sonnet-5-5',
+      system: 'You are Ask Frapp.',
+      messages: [
+        { role: 'user', content: 'When is formal?' },
+        { role: 'assistant', content: 'April 12.' },
+        { role: 'user', content: 'What do I owe for it?' },
+      ],
+      maxOutputTokens: 4000,
+      effort: 'medium',
+      tools: [
+        {
+          name: 'search_messages',
+          description: 'Finds messages.',
+          inputSchema: {
+            type: 'object',
+            properties: { query: { type: 'string' } },
+          },
+        },
+      ],
+      context: [
+        {
+          id: 'asker',
+          title: 'The member asking',
+          text: 'The member asking this question is Jordan Lee.',
+        },
+      ],
+      rounds: [],
+      cache: true,
+    };
+    const calling = [
+      { type: 'thinking', thinking: '', signature: 'sig' },
+      { type: 'text', text: 'Looking.' },
+      {
+        type: 'tool_use',
+        id: 'toolu_1',
+        name: 'search_messages',
+        input: { query: 'formal dues' },
+      },
+    ];
+
+    it('offers the tools, puts what Frapp knows ahead of the question, and returns the calls', async () => {
+      const { create, model } = clientReturning(
+        message({ content: calling, stop_reason: 'tool_use' }),
+      );
+
+      const result = await model.generate(agent);
+
+      const [params] = create.mock.calls[0] as [Record<string, unknown>];
+      expect(params).toEqual({
+        model: 'claude-sonnet-5-5',
+        max_tokens: 4000,
+        system: [
+          {
+            type: 'text',
+            text: 'You are Ask Frapp.',
+            cache_control: { type: 'ephemeral' },
+          },
+        ],
+        messages: [
+          { role: 'user', content: 'When is formal?' },
+          { role: 'assistant', content: 'April 12.' },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: 'The member asking\nThe member asking this question is Jordan Lee.',
+              },
+              { type: 'text', text: 'What do I owe for it?' },
+            ],
+          },
+        ],
+        tools: [
+          {
+            name: 'search_messages',
+            description: 'Finds messages.',
+            input_schema: {
+              type: 'object',
+              properties: { query: { type: 'string' } },
+            },
+          },
+        ],
+        output_config: { effort: 'medium' },
+      });
+      // No forced tool choice, no thinking budget, no sampling parameters.
+      expect(params).not.toHaveProperty('tool_choice');
+      expect(params).not.toHaveProperty('thinking');
+      expect(result).toMatchObject({
+        outcome: 'completed',
+        toolCalls: [
+          {
+            id: 'toolu_1',
+            name: 'search_messages',
+            input: { query: 'formal dues' },
+          },
+        ],
+        replay: calling,
+      });
+    });
+
+    it('sends a round back as it came, with each source as citable lines, and maps a citation to its source', async () => {
+      const { create, model } = clientReturning(
+        message({
+          content: [
+            {
+              type: 'text',
+              text: 'You owe $450.',
+              citations: [
+                {
+                  type: 'search_result_location',
+                  source: 'message:m1',
+                  title: '#general',
+                  cited_text: 'Sam Park: dues are $450\n',
+                  search_result_index: 0,
+                  start_block_index: 0,
+                  end_block_index: 1,
+                },
+              ],
+            },
+          ],
+        }),
+      );
+
+      const result = await model.generate({
+        ...agent,
+        rounds: [
+          {
+            replay: calling,
+            results: [
+              {
+                callId: 'toolu_1',
+                sources: [
+                  {
+                    id: 'message:m1',
+                    title: '#general',
+                    text: 'Sam Park: dues are $450\n\nSam Park: pay by Friday',
+                  },
+                ],
+                note: 'Showing 2 of 2.',
+              },
+            ],
+          },
+        ],
+      });
+
+      const [params] = create.mock.calls[0] as [
+        { messages: { role: string; content: unknown }[] },
+      ];
+      expect(params.messages.slice(3)).toEqual([
+        // Thinking blocks included: an edited turn is rejected.
+        { role: 'assistant', content: calling },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_1',
+              content: [
+                {
+                  type: 'search_result',
+                  source: 'message:m1',
+                  title: '#general',
+                  // A blank line rides with the line before it, and the
+                  // blocks joined are the source's text.
+                  content: [
+                    { type: 'text', text: 'Sam Park: dues are $450\n\n' },
+                    { type: 'text', text: 'Sam Park: pay by Friday' },
+                  ],
+                  citations: { enabled: true },
+                },
+                { type: 'text', text: 'Showing 2 of 2.' },
+              ],
+              cache_control: { type: 'ephemeral' },
+            },
+          ],
+        },
+      ]);
+      expect(result).toMatchObject({
+        outcome: 'completed',
+        text: 'You owe $450.',
+        toolCalls: [],
+        citations: [
+          {
+            sourceId: 'message:m1',
+            quote: 'Sam Park: dues are $450\n',
+            at: 'You owe $450.'.length,
+          },
+        ],
+      });
+    });
+
+    it('marks a call that was not run, and never sends an empty result', async () => {
+      const { create, model } = clientReturning(message({ content: [] }));
+
+      await model.generate({
+        ...agent,
+        cache: false,
+        rounds: [
+          {
+            replay: calling,
+            results: [
+              { callId: 'toolu_1', sources: [], note: null, failed: true },
+            ],
+          },
+        ],
+      });
+
+      const [params] = create.mock.calls[0] as [
+        { system: unknown; messages: { content: unknown }[] },
+      ];
+      expect(params.system).toEqual([
+        { type: 'text', text: 'You are Ask Frapp.' },
+      ]);
+      expect(params.messages.at(-1)?.content).toEqual([
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_1',
+          content: [{ type: 'text', text: 'Nothing.' }],
+          is_error: true,
+        },
+      ]);
+    });
+
+    it('takes the tools away for a round that must answer, without forcing a choice', async () => {
+      const { create, model } = clientReturning(message({ content: [] }));
+
+      await model.generate({ ...agent, mustAnswer: true });
+
+      const [params] = create.mock.calls[0] as [
+        { tool_choice: unknown; tools: unknown[] },
+      ];
+      expect(params.tool_choice).toEqual({ type: 'none' });
+      expect(params.tools).toHaveLength(1);
+    });
+
+    it('runs no call from a turn cut off at the ceiling', async () => {
+      const { model } = clientReturning(
+        message({ content: calling, stop_reason: 'max_tokens' }),
+      );
+
+      const result = await model.generate(agent);
+
+      expect(result).toMatchObject({ truncated: true, toolCalls: [] });
     });
   });
 

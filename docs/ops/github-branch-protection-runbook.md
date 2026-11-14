@@ -211,6 +211,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Deletions                   | Blocked         |
 | Conversation resolution     | Disabled        |
 | Required approving reviews  | Disabled        |
+| Merge queue                 | Required, squash; set in the `main` ruleset, not here ([§ Merge queue](#merge-queue)) |
 
 Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requirement policy](../../CONTRIBUTING.md#pr-review-requirement-policy).
 
@@ -235,7 +236,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (issue #840) |
 | `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/chat-core`) |
 | `changes`            | Path filter deciding whether `web-tests`, `web-responsive-floor`, `landing-fold` and `pglite-migrations` run; required only because they need it |
-| `pglite-migrations`  | Every migration applied from empty to PGlite, with the RLS posture asserted on the result (`scripts/pglite/`), then the change-ping contract checked against the same replay (`apps/web/lib/realtime/change-topics.spec.ts`). Added to the roster by [#2538](https://github.com/pdcarlson/Frapp/issues/2538). `validate-deploy-sha` requires it for production deploys from the roster alone; a PR can merge past a red run until an admin applies the roster, which `--verify` shows |
+| `pglite-migrations`  | Every migration applied from empty to PGlite, with the RLS posture asserted on the result (`scripts/pglite/`), then the role-delete vs member-roles-save overlap run with two real connections on a Postgres service container (`scripts/db-race/`, #4862), then the change-ping contract checked against the same replay (`apps/web/lib/realtime/change-topics.spec.ts`). Added to the roster by [#2538](https://github.com/pdcarlson/Frapp/issues/2538). `validate-deploy-sha` requires it for production deploys from the roster alone; a PR can merge past a red run until an admin applies the roster, which `--verify` shows |
 | `dependency-cruiser` | Architectural boundaries (API layer direction, package/app separation, cycles) against a committed baseline — [`quality-gates.md`](../ci-cd/quality-gates.md) |
 | `web-production-build` | Builds web and landing on a devDependency-pruned tree, matching the Vercel production install — [`agent-infra.md`](../ci-cd/agent-infra.md) |
 | `web-responsive-floor` | Every dashboard route renders without horizontal scroll at 375px ([`responsive-floor.spec.ts`](../../apps/web/tests/visual/responsive-floor.spec.ts)). Playwright, but no baseline and no pixel comparison |
@@ -343,6 +344,29 @@ blocking `main` churn.
 There is **no AI-review required check.** Code review is a **repository-managed Git pre-push gate**
 ([`.githooks/pre-push`](../../.githooks/pre-push), installed by the root `prepare` script; requires
 exact-pushed-commit evidence from `/diff-review` before it publishes unreviewed work) — the former `claude-review-gate` CI check was removed (2026-06-04). See [`ai-code-review-runbook.md`](../ci-cd/ai-code-review-runbook.md).
+
+## Merge queue
+
+Paul chose the merge queue on 2026-11-14 ([#4795](https://github.com/pdcarlson/Frapp/issues/4795)), to stop two PRs that are each green, but break together, from landing on `main`. With it on, merging a PR (or turning on its auto-merge) adds it to a queue; GitHub builds a commit from `main` plus every PR ahead of it, runs the required checks there, and merges only when they pass. A PR that fails in the queue is removed from it, and the ones behind are rebuilt without it.
+
+**Where it lives.** Not in classic branch protection, whose REST API has no merge queue field, so `npm run configure:branch-protection` can neither write nor erase it. It is a rule in the repository ruleset named `main` (Settings → Rules → Rulesets → `main`), beside that ruleset's deletion and pull request rules. The settings this repo depends on are `MERGE_QUEUE` in [`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs), and `npm run configure:branch-protection:verify` reads the ruleset back (`GET /repos/{repo}/rules/branches/main`) and fails when the queue is off or differs from them.
+
+**What CI does for it.** Every workflow with a required check listens for `merge_group` (pinned by [`merge-queue-triggers.test.mjs`](../../scripts/ci/__tests__/merge-queue-triggers.test.mjs)), or a queued PR would wait out the timeout on checks nobody reports. A queue run is treated like a push to `main`: the path-gated jobs run in full, and the diff checks (secrets, migration safety, API contract, `migration-replay`'s did-migrations-change test) measure against `merge_group.base_sha`, the commit the entry was built on (`main` or the entry ahead), where a PR uses its own base. `migration-order` measures against `main`'s tip instead, so its introduced set includes the entries ahead ([`drift-and-ordering.md`](database/drift-and-ordering.md#migration-order--the-required-one)). `migration-drift`, which reports on staging rather than the change, skips there. Each queue entry has its own ref (`gh-readonly-queue/main/pr-<n>-<sha>`), so its runs share no concurrency group with anything. Deploy staging, PR base sync and CI wake all ignore queue runs.
+
+**Turning it on** (owner only, and only after the PR adding the `merge_group` triggers has merged): open the `main` ruleset, add **Require merge queue**, and set:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Merge method | Squash | Matches how PRs merge today; linear history forbids merge commits |
+| Only merge non-failing pull requests | On (`ALLGREEN`) | A red entry never merges on a later entry's green |
+| Status check timeout | 60 minutes | Outlasts `migration-replay`, the slowest required job (50-minute timeout). It does not cover a runner backlog: on a day when jobs wait an hour for a runner, entries time out and drop, and need re-queueing |
+| Build concurrency, group sizes, wait time | GitHub's defaults | Tuning, not correctness; not checked by `--verify` |
+
+Then run `npm run configure:branch-protection:verify` and confirm the merge queue line reads `Live merge queue matches the roster.`
+
+**Effect on deploys.** A queued PR's `main` commit is the queue's own commit, so it carries the queue run's check runs as well as the push run's. [`validate-deploy-sha.mjs`](../../scripts/ci/validate-deploy-sha.mjs) takes the latest run of each name, normally the push run. When a burst of merges drops a push run from CI's per-ref group (see `ci.yml`'s concurrency comment), the queue run's green checks still stand for that commit, on the same tree. Deploy production's empty-`sha` pick still skips it, because it also requires a verified staging deploy, which that commit never got. A SHA pasted into Deploy production is checked by `validate-deploy-sha.mjs` only for ancestry and green required checks, so such a commit now passes there where it used to be refused as `missing`: check that its Deploy staging ran before pasting one from a burst of merges.
+
+**Turning it off** is removing the rule from the ruleset; nothing in CI needs to change back, since the `merge_group` triggers are inert without a queue. Do the same in an emergency where the queue itself is broken, and say so in the PR you merge.
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 

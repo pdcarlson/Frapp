@@ -1,4 +1,5 @@
 import { act, render, screen, within } from "@testing-library/react";
+import { selectCalendarBirthdays } from "@repo/hooks/calendar-birthdays";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cardFilledContainers } from "@/tests/card-surfaces";
@@ -101,6 +102,7 @@ vi.mock("@repo/hooks", () => ({
   GOOGLE_CALENDAR_RETURN_PARAMS: [],
   useActiveChapterId: () => "chap-1",
   useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
+  useCalendarBirthdays: () => birthdaysRef.current,
   useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => ({
     data: { subscription_status: "active", past_due_since: null },
@@ -180,6 +182,10 @@ vi.mock("@/lib/realtime/use-realtime-table", () => ({
 
 // The page's URL; no `?event=` unless a test sets one.
 const searchRef = vi.hoisted(() => ({ current: new URLSearchParams() }));
+// The calendar's birthday items (#4959), as `useCalendarBirthdays` serves them.
+const birthdaysRef = vi.hoisted(() => ({
+  current: [] as import("@repo/hooks/calendar-birthdays").CalendarBirthday[],
+}));
 vi.mock("next/navigation", () => ({
   useSearchParams: () => searchRef.current,
 }));
@@ -218,6 +224,7 @@ beforeEach(() => {
   eventsQuery.isError = false;
   permissionsRef.current = ["events:create", "events:update", "members:view"];
   searchRef.current = new URLSearchParams();
+  birthdaysRef.current = [];
 });
 
 describe("EventsPage ?event=<id> (Activity's Open in Events, #3897)", () => {
@@ -856,6 +863,60 @@ describe("EventsPage calendar", () => {
     expect(screen.queryByText("Chapter Calendar")).toBeNull();
     expect(screen.queryByText(/click a date to schedule/i)).toBeNull();
     expect(cardFilledContainers(container)).toEqual([]);
+  });
+});
+
+describe("EventsPage calendar birthdays (#4959)", () => {
+  function withBirthdayToday() {
+    const today = new Date();
+    birthdaysRef.current = selectCalendarBirthdays(
+      [
+        {
+          id: "u-dana",
+          display_name: "Dana Lowe",
+          avatar_url: null,
+          birthday_month: today.getMonth() + 1,
+          birthday_day: today.getDate(),
+        },
+      ],
+      [today.getFullYear()],
+    );
+  }
+
+  it("draws a shared birthday and offers a Birthdays toggle that hides it", async () => {
+    withBirthdayToday();
+    const user = userEvent.setup();
+    render(<EventsPage />);
+    await user.click(screen.getByRole("radio", { name: "Calendar" }));
+
+    expect(screen.getAllByTitle("Dana Lowe's birthday").length).toBeGreaterThan(
+      0,
+    );
+    const toggle = screen.getByRole("button", { name: "Birthdays" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(toggle);
+    expect(screen.queryByTitle("Dana Lowe's birthday")).toBeNull();
+    expect(
+      JSON.parse(
+        window.localStorage.getItem("frapp.events.calendar-layers.user-1")!,
+      ),
+    ).toEqual({ hidden: ["birthdays"] });
+  });
+
+  it("shows birthdays to a member whose saved toggles predate them", async () => {
+    withBirthdayToday();
+    window.localStorage.setItem(
+      "frapp.events.calendar-layers.user-1",
+      JSON.stringify(["events", "mine", "assigned"]),
+    );
+    const user = userEvent.setup();
+    render(<EventsPage />);
+    await user.click(screen.getByRole("radio", { name: "Calendar" }));
+
+    expect(screen.getAllByTitle("Dana Lowe's birthday").length).toBeGreaterThan(
+      0,
+    );
   });
 });
 

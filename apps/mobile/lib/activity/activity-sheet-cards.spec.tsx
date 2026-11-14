@@ -121,6 +121,11 @@ describe("Activity sheet with chat's real task card (#3897)", () => {
                   openInChat: () => {},
                   remove: () => {},
                 }}
+                reminderActions={{
+                  open: () => {},
+                  snooze: () => {},
+                  done: () => {},
+                }}
               />
             </NavigationRouteContext.Provider>
           </NavigationContext.Provider>

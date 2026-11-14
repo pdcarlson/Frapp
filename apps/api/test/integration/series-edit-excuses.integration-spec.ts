@@ -3,7 +3,7 @@
 // The unit suite pins which old occurrence pairs with which rebuilt one; only
 // the database can show what `delete_replaced_occurrences` does with the
 // pairs: each excuse, and an approved one's EXCUSED attendance row, moves to
-// the new meeting; the excuses no pair took are returned and deleted with
+// the new meeting, and so do the old meeting's agenda and attachments (#4934); the excuses no pair took are returned and deleted with
 // their rows; and a bad pair changes nothing at all.
 //
 // Run: `npm run test:integration -w apps/api` (needs a local Supabase stack;
@@ -43,6 +43,16 @@ describeIntegration(
     ];
     const eventIds = [oldKept, oldGone, rebuilt, otherChapterEvent];
 
+    const KEPT_AGENDA = [{ id: 'a1', text: 'Treasurer report', done: false }];
+    const KEPT_ATTACHMENTS = [
+      {
+        id: 'x1',
+        kind: 'link',
+        url: 'https://docs.example.com/budget',
+        title: 'Budget',
+      },
+    ];
+
     const assertOk = (label: string, error: { message: string } | null) => {
       if (error) throw new Error(`seed ${label}: ${error.message}`);
     };
@@ -57,6 +67,10 @@ describeIntegration(
         end_time: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
         point_value: 10,
         is_mandatory: true,
+        // Every row names both, or PostgREST's bulk insert fills a key one row
+        // leaves out with null rather than the column default.
+        agenda: [] as unknown[],
+        attachments: [] as unknown[],
       };
     };
 
@@ -93,14 +107,16 @@ describeIntegration(
       assertOk(
         'events',
         (
-          await supabase
-            .from('events')
-            .insert([
-              meeting(oldKept, chapterId, 7),
-              meeting(oldGone, chapterId, 14),
-              meeting(rebuilt, chapterId, 7),
-              meeting(otherChapterEvent, otherChapterId, 7),
-            ] as never)
+          await supabase.from('events').insert([
+            {
+              ...meeting(oldKept, chapterId, 7),
+              agenda: KEPT_AGENDA,
+              attachments: KEPT_ATTACHMENTS,
+            },
+            meeting(oldGone, chapterId, 14),
+            meeting(rebuilt, chapterId, 7),
+            meeting(otherChapterEvent, otherChapterId, 7),
+          ] as never)
         ).error,
       );
 
@@ -165,6 +181,12 @@ describeIntegration(
 
       expect(await excusesOn(oldKept)).toHaveLength(3);
       expect(await excusesOn(oldGone)).toHaveLength(2);
+      const { data: untouched } = await supabase
+        .from('events')
+        .select('agenda')
+        .eq('id', otherChapterEvent)
+        .single();
+      expect(untouched).toEqual({ agenda: [] });
       const { data } = await supabase
         .from('events')
         .select('id')
@@ -204,6 +226,17 @@ describeIntegration(
           marked_by: officerId,
         },
       ]);
+
+      // The rebuilt meeting took over the old one's agenda and attachments.
+      const { data: carried } = await supabase
+        .from('events')
+        .select('agenda, attachments')
+        .eq('id', rebuilt)
+        .single();
+      expect(carried).toEqual({
+        agenda: KEPT_AGENDA,
+        attachments: KEPT_ATTACHMENTS,
+      });
 
       const { data: left } = await supabase
         .from('events')

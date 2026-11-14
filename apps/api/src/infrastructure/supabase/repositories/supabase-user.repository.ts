@@ -10,6 +10,7 @@ import {
   User,
   UserContact,
   UserDisplayIdentity,
+  UserSharedBirthday,
 } from '#domain/entities/user.entity';
 import { chunkIds } from '#domain/utils/chunk-ids';
 import { SupabaseQueryError } from '../supabase-query-error';
@@ -49,6 +50,36 @@ export class SupabaseUserRepository implements IUserRepository {
 
   async findContactsByIds(ids: string[]): Promise<UserContact[]> {
     return this.findColumnsByIds(ids, 'id, display_name, email');
+  }
+
+  async findSharedBirthdaysByIds(ids: string[]): Promise<UserSharedBirthday[]> {
+    if (!ids.length) return [];
+    const pages = await Promise.all(
+      chunkIds(ids).map((chunk) =>
+        this.supabase
+          .from('users')
+          .select('id, display_name, avatar_url, birthday_month, birthday_day')
+          .in('id', chunk)
+          .eq('birthday_visibility', 'chapter')
+          .not('birthday_month', 'is', null)
+          .not('birthday_day', 'is', null),
+      ),
+    );
+    const rows: UserSharedBirthday[] = [];
+    for (const { data, error } of pages) {
+      if (error) throw new SupabaseQueryError(error);
+      for (const row of data ?? []) {
+        if (row.birthday_month == null || row.birthday_day == null) continue;
+        rows.push({
+          id: row.id,
+          display_name: row.display_name,
+          avatar_url: row.avatar_url,
+          birthday_month: row.birthday_month,
+          birthday_day: row.birthday_day,
+        });
+      }
+    }
+    return rows;
   }
 
   /**

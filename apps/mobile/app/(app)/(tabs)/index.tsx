@@ -70,8 +70,10 @@ import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { selectFromChapterLevel } from "@/components/chat/notification-level-control";
 import {
   MessagesButton,
+  ThreadsButton,
   NotificationsButton,
 } from "@/components/chat/home-header";
+import { AllThreadsSheet } from "@/components/chat/all-threads-sheet";
 import { DisclosureGlyph, PlusGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
 import { selectChannelAccessOptions } from "@repo/hooks/channel-access";
@@ -440,6 +442,22 @@ export default function ChatHomeScreen() {
   const unreadConversations = directChannels.filter(
     (channel) => (unreadByChannelId?.get(channel.id)?.unreadCount ?? 0) > 0,
   ).length;
+  // All threads (#4960): the member's threads across channels, in a sheet.
+  // A channel reads `#name`, a DM its people, as the thread header does.
+  const threadsSheetRef = useRef<BottomSheetModal>(null);
+  const threadChannelLabel = useCallback(
+    (channelId: string) => {
+      const channel = allChannels.find((row) => row.id === channelId);
+      if (!channel) return null;
+      const name = displayChannelName(channel, viewerId, memberNames);
+      return isDirectChannel(channel) ? name : `#${name}`;
+    },
+    [allChannels, viewerId, memberNames],
+  );
+  const threadAuthorName = useCallback(
+    (userId: string) => memberNames[userId] ?? null,
+    [memberNames],
+  );
   const filterMenu = useChannelFilterMenu();
   const titleOf = useCallback(
     (channel: ChannelSummary) =>
@@ -702,6 +720,9 @@ export default function ChatHomeScreen() {
         <View style={styles.headerActions}>
           {/* The Messages door, then the inbox's bell (#3362). The
               member's avatar is the You tab since #3839. */}
+          <ThreadsButton
+            onPress={() => threadsSheetRef.current?.present?.()}
+          />
           <MessagesButton unreadConversations={unreadConversations} />
           <NotificationsButton />
         </View>
@@ -962,6 +983,18 @@ export default function ChatHomeScreen() {
         </>
       )}
 
+      <AllThreadsSheet
+        ref={threadsSheetRef}
+        channelNameFor={threadChannelLabel}
+        nameFor={threadAuthorName}
+        viewerId={viewerId}
+        onOpen={({ channelId, rootId }) =>
+          router.push({
+            pathname: "/chat-thread",
+            params: { channelId, threadRootId: rootId },
+          })
+        }
+      />
       {channelForm ? (
         <ChannelFormSheet
           key={channelForm.key}

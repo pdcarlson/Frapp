@@ -32,7 +32,10 @@
  * `if (!url) throw` and surface the "couldn't fetch download link" toast rather
  * than opening a blank tab.
  */
-function nonBlankString(record: Record<string, unknown>, key: string): string | null {
+function nonBlankString(
+  record: Record<string, unknown>,
+  key: string,
+): string | null {
   const raw = record[key];
   return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
 }
@@ -41,7 +44,8 @@ export function selectDownloadUrl(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
   const record = data as Record<string, unknown>;
   return (
-    nonBlankString(record, "downloadUrl") ?? nonBlankString(record, "download_url")
+    nonBlankString(record, "downloadUrl") ??
+    nonBlankString(record, "download_url")
   );
 }
 

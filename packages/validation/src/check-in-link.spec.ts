@@ -5,6 +5,7 @@ import {
   checkInLinkUrl,
   checkInTargetFrom,
   openCheckInInAppUrl,
+  parseCheckInLink,
 } from "./index";
 
 const EVENT = "11111111-1111-4111-8111-111111111111";
@@ -55,5 +56,44 @@ describe("openCheckInInAppUrl", () => {
     expect(openCheckInInAppUrl("android", target)).toBe(
       `intent://check-in?event=${EVENT}&t=${TOKEN}#Intent;scheme=frapp;package=live.frapp.mobile;end`,
     );
+  });
+});
+
+describe("parseCheckInLink", () => {
+  const link = checkInLinkUrl("https://app.frapp.live", EVENT, TOKEN);
+
+  it("reads the code the host screen draws", () => {
+    expect(parseCheckInLink(link)).toEqual({ eventId: EVENT, token: TOKEN });
+    expect(parseCheckInLink(`  ${link}\n`)).toEqual({
+      eventId: EVENT,
+      token: TOKEN,
+    });
+  });
+
+  it("reads a staging code only on a build whose origin is staging", () => {
+    const staging = checkInLinkUrl(
+      "https://app.staging.frapp.live",
+      EVENT,
+      TOKEN,
+    );
+    expect(parseCheckInLink(staging)).toBeNull();
+    expect(
+      parseCheckInLink(staging, ["https://app.staging.frapp.live/"]),
+    ).toEqual({ eventId: EVENT, token: TOKEN });
+  });
+
+  it("refuses anything that isn't a check-in link on the origin", () => {
+    for (const raw of [
+      "",
+      "hello",
+      `frapp-checkin:v1:${EVENT}:${TOKEN}`,
+      `https://evil.example/check-in?event=${EVENT}&t=${TOKEN}`,
+      `http://app.frapp.live/check-in?event=${EVENT}&t=${TOKEN}`,
+      `https://app.frapp.live/join?event=${EVENT}&t=${TOKEN}`,
+      `https://app.frapp.live/check-in?event=${EVENT}`,
+      `https://app.frapp.live/check-in?t=${TOKEN}`,
+    ]) {
+      expect(parseCheckInLink(raw), raw).toBeNull();
+    }
   });
 });

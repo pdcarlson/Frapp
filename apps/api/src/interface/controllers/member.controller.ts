@@ -35,6 +35,7 @@ import {
   UpdateOnboardingDto,
 } from '../dtos/member.dto';
 import {
+  MemberBirthdayDto,
   MemberProfileDto,
   MemberRosterEntryDto,
 } from '../dtos/member-profile.dto';
@@ -92,6 +93,18 @@ export class MemberController {
   @ApiOkResponse({ type: MemberRosterEntryDto, isArray: true })
   async roster(@CurrentChapterId() chapterId: string) {
     return this.memberService.findRosterByChapter(chapterId);
+  }
+
+  // MUST stay above `@Get(':id')`, like `search` and `roster` (#990).
+  @Get('birthdays')
+  @ApiOperation({
+    summary: 'Birthdays members share with the chapter',
+    description:
+      'Month and day of every member who shares their birthday with their chapter (#4959), for the calendar. A member who keeps theirs to themselves is left out, and the year is never sent.',
+  })
+  @ApiOkResponse({ type: MemberBirthdayDto, isArray: true })
+  async birthdays(@CurrentChapterId() chapterId: string) {
+    return this.memberService.findBirthdaysByChapter(chapterId);
   }
 
   // Two segments, so `:id` never swallows it. Chat knows a person by their

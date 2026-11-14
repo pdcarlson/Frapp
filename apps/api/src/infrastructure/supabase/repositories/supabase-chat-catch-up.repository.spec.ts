@@ -277,6 +277,74 @@ describe('SupabaseChatCatchUpRepository — tenant scope', () => {
     expect(stretch.total).toBe(ids.length);
   });
 
+  it('readChannelWindow reads a stretch from either end, between two times', async () => {
+    const window = {
+      chapterId: CHAPTER_A,
+      channelId: CHANNEL_A,
+      from: SINCE,
+      before: '2026-11-10T20:30:00.000Z',
+    };
+    // Written and live in that stretch: a-1 (18:00), a-2 (19:00), the root
+    // (20:00). The reply at 21:00 is past `before`.
+    const oldest = await repo.readChannelWindow({
+      ...window,
+      limit: 2,
+      keep: 'oldest',
+    });
+    expect(oldest.messages.map((m) => m.id)).toEqual(['a-1', 'a-2']);
+    expect(oldest.total).toBe(3);
+    const newest = await repo.readChannelWindow({
+      ...window,
+      limit: 2,
+      keep: 'newest',
+    });
+    expect(newest.messages.map((m) => m.id)).toEqual(['a-2', ROOT_A]);
+    await expect(
+      repo.readChannelWindow({
+        ...window,
+        chapterId: CHAPTER_B,
+        limit: 5,
+        keep: 'oldest',
+      }),
+    ).resolves.toEqual({ messages: [], total: 0 });
+  });
+
+  it('locateMessage finds a written message of a chapter channel, in this chapter only', async () => {
+    await expect(
+      repo.locateMessage({ chapterId: CHAPTER_A, messageId: 'a-reply' }),
+    ).resolves.toEqual({
+      channel_id: CHANNEL_A,
+      created_at: '2026-11-10T21:00:00.000Z',
+      thread_root_id: ROOT_A,
+    });
+    expect(filtersOf(0)).toEqual(
+      expect.arrayContaining([
+        ['id', 'a-reply'],
+        ['chat_channels.chapter_id', CHAPTER_A],
+        ['chat_channels.type', ['PUBLIC', 'PRIVATE', 'ROLE_GATED']],
+        ['chat_channels.is_audit_log', false],
+        ['is_deleted', false],
+      ]),
+    );
+    for (const [chapterId, messageId] of [
+      // Another chapter's message, and this chapter's from the other side.
+      [CHAPTER_A, 'b-1'],
+      [CHAPTER_B, 'a-1'],
+      // A direct message, the audit log, a deleted row, a card.
+      [CHAPTER_A, 'dm-1'],
+      [CHAPTER_A, 'audit-1'],
+      [CHAPTER_A, 'a-deleted'],
+      [CHAPTER_A, 'a-card'],
+      // Talk under a recruitment candidate's card.
+      [CHAPTER_A, 'a-rush-reply'],
+      [CHAPTER_A, 'nowhere'],
+    ]) {
+      await expect(
+        repo.locateMessage({ chapterId, messageId }),
+      ).resolves.toBeNull();
+    }
+  });
+
   it("unreadStart finds where the member's unread stretch began", async () => {
     // What counted as unread to USER_A at midnight, newest first: ROOT_A,
     // the empty row, the card, a-1, a-old. Not a-2 (their own), the reply

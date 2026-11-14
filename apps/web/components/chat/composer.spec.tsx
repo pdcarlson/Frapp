@@ -89,6 +89,15 @@ vi.mock("@repo/hooks", () => ({
   useUploadSignedUrl: () => ({ mutateAsync: mockUploadSignedUrl }),
   useChapterRoster: () => ({ data: [] }),
   useMentionRoles: () => ({ data: [] }),
+  // The schedule chevron (#4956): one preset, tomorrow at 9.
+  schedulePresets: (now: Date) => {
+    const at = new Date(now);
+    at.setDate(at.getDate() + 1);
+    at.setHours(9, 0, 0, 0);
+    return [{ key: "tomorrow", label: "Tomorrow at 9:00 AM", at }];
+  },
+  formatScheduledFor: () => "Tomorrow at 9:00 AM",
+  scheduleTimeProblem: () => null,
 }));
 vi.mock("@/lib/chat/photo-preview", () => ({
   describeChatPhoto: mockDescribePhoto,
@@ -101,16 +110,6 @@ const { captureException } = vi.hoisted(() => ({
   captureException: vi.fn(),
 }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
-// Ask Frapp's entry decides for itself who gets it (`ask-host.spec.tsx`).
-// Here it only has to be where the composer puts it.
-vi.mock("@/components/ask/ask-host", () => ({
-  AskComposerButton: ({ className }: { className?: string }) => (
-    <button type="button" data-testid="ask-entry" className={className}>
-      Ask Frapp
-    </button>
-  ),
-}));
-
 import {
   COMPOSER_BOX_CLASS,
   COMPOSER_INPUT_CLASS,
@@ -2579,32 +2578,18 @@ describe("Composer in the audit log", () => {
 });
 
 /**
- * Ask Frapp's entry is in the composer (#4702, Paul 2026-11-13): "a card that
- * says Ask Frapp next to like GIF and question mark", not a button in the top
- * bar.
+ * Ask Frapp has no control in the composer (#4904, Paul's pick of
+ * 2026-11-13): it was a button here for a day (#4702) and read as out of
+ * place. The top bar's field asks; `@Frapp` typed here still does (#4713).
  */
-describe("Composer carries Ask Frapp's entry (#4702)", () => {
-  it("puts it on the row of controls, straight after the help mark", () => {
-    render(<Composer {...baseProps()} />);
-    const help = screen.getByRole("button", { name: "Composing help" });
-    const entry = screen.getByTestId("ask-entry");
-    expect(help.parentElement).toBe(entry.parentElement);
-    expect(help.nextElementSibling).toBe(entry);
-  });
-
+describe("Composer carries no Ask Frapp control (#4904)", () => {
   it.each([
+    ["a channel the member can post in", {}],
     ["a channel that is read-only for the member's role", { isReadOnly: true }],
-    ["the audit log", { isReadOnly: true, isAuditLog: true }],
     ["an alumnus who can read but not post", { canPost: false }],
-  ])("keeps it where there is no composer to type in: %s", (_, props) => {
+  ])("draws none in %s", (_, props) => {
     render(<Composer {...baseProps(props)} />);
-    expect(screen.queryByRole("textbox")).toBeNull();
-    // On the same row as the line that says why, not under it.
-    const entry = screen.getByTestId("ask-entry");
-    expect(entry.parentElement).toHaveTextContent(
-      /read-only|read this channel|audit|log/i,
-    );
-    expect(entry.parentElement?.className).toContain("items-center");
+    expect(screen.queryByRole("button", { name: /ask frapp/i })).toBeNull();
   });
 });
 
@@ -3099,5 +3084,241 @@ describe("Composer asks Frapp instead of posting (#4713)", () => {
       expect.objectContaining({ kind: "ask" }),
     ]);
     expect(items(null)).toEqual([]);
+  });
+});
+
+/** Schedule for later from the chevron beside Send (#4956). */
+describe("Composer schedule (#4956)", () => {
+  afterEach(() => {
+    editorDouble.current = null;
+  });
+
+  async function scheduleText(
+    text: string,
+    overrides: Partial<ComposerProps> = {},
+  ) {
+    const editor = fakeEditor(text);
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    const onSchedule = vi.fn(async () => {});
+    const onSend = vi.fn();
+    render(
+      <Composer
+        {...baseProps({ draft: text, onSchedule, onSend, ...overrides })}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+    );
+    return { editor, onSchedule, onSend };
+  }
+
+  it("schedules the text, clears the composer, and says when", async () => {
+    const { editor, onSchedule } = await scheduleText("Chapter at 8");
+    expect(onSchedule).toHaveBeenCalledWith(
+      "Chapter at 8",
+      [],
+      expect.any(Array),
+      expect.any(Date),
+    );
+    expect(editor.isEmpty).toBe(true);
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: expect.stringMatching(/^Scheduled for/),
+      }),
+    );
+  });
+
+  it.each([
+    ["a slash command", '/poll "Formal?" Yes No', {}, /Commands/],
+    ["offline", "later", { isOffline: true }, /Reconnect/],
+    [
+      "a question for Frapp",
+      "@Frapp who's driving?",
+      { askUnknown: true },
+      /Frapp/,
+    ],
+  ])("refuses %s and keeps the text", async (_label, text, overrides, copy) => {
+    const { editor, onSchedule } = await scheduleText(
+      text,
+      overrides as Partial<ComposerProps>,
+    );
+    expect(onSchedule).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe(text);
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: expect.stringMatching(copy) }),
+    );
+  });
+
+  it("schedules with a reply staged, leaving the reply to the parent (#4971)", async () => {
+    const onCancelReply = vi.fn();
+    const { onSchedule } = await scheduleText("sounds good", {
+      replyTo: { id: "m-1", author: "A", preview: "x" },
+      onCancelReply,
+    });
+    expect(onSchedule).toHaveBeenCalledWith(
+      "sounds good",
+      [],
+      expect.any(Array),
+      expect.any(Date),
+    );
+  });
+
+  it("schedules a staged file with no text, and clears the tray (#4971)", async () => {
+    const editor = fakeEditor("");
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    const onSchedule = vi.fn(async () => {});
+    const { container } = render(
+      <Composer {...baseProps({ draft: "", onSchedule })} />,
+    );
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await screen.findByRole("button", { name: "Remove notes.pdf" });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+    );
+    expect(onSchedule).toHaveBeenCalledWith(
+      "",
+      [expect.objectContaining({ filename: "notes.pdf" })],
+      expect.any(Array),
+      expect.any(Date),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Remove notes.pdf" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("schedules text that only starts with a slash, as Send posts it", async () => {
+    const { onSchedule } = await scheduleText("/r/fraternity has a thread");
+    expect(onSchedule).toHaveBeenCalled();
+  });
+
+  it("puts the text back when scheduling fails", async () => {
+    const editor = fakeEditor("Chapter at 8");
+    editorDouble.current = editor;
+    const onSchedule = vi.fn(async () => {
+      throw new Error("down");
+    });
+    render(<Composer {...baseProps({ draft: "Chapter at 8", onSchedule })} />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+    );
+    expect(editor.getText()).toBe("Chapter at 8");
+  });
+
+  function stage(container: HTMLElement, name: string) {
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [new File(["%PDF-1.4"], name, { type: "application/pdf" })],
+        },
+      },
+    );
+    return screen.findByRole("button", { name: `Remove ${name}` });
+  }
+
+  async function pickTomorrow() {
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+    );
+  }
+
+  it("puts the files back with the text when scheduling fails (#4971)", async () => {
+    const editor = fakeEditor("Agenda");
+    editorDouble.current = editor;
+    const onSchedule = vi.fn(async () => {
+      throw new Error("down");
+    });
+    const { container } = render(
+      <Composer {...baseProps({ draft: "Agenda", onSchedule })} />,
+    );
+    await stage(container, "notes.pdf");
+    await pickTomorrow();
+    expect(editor.getText()).toBe("Agenda");
+    expect(
+      await screen.findByRole("button", { name: "Remove notes.pdf" }),
+    ).toBeInTheDocument();
+  });
+
+  it("puts nothing back when a file was started while it was out, and says so (#4971)", async () => {
+    const editor = fakeEditor("Agenda");
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    let reject!: (error: Error) => void;
+    const onSchedule = vi.fn(
+      () =>
+        new Promise<void>((_, no) => {
+          reject = no;
+        }),
+    );
+    const { container } = render(
+      <Composer {...baseProps({ draft: "Agenda", onSchedule })} />,
+    );
+    await stage(container, "notes.pdf");
+    await pickTomorrow();
+    // A second file still uploading when the schedule fails.
+    let finishUpload!: () => void;
+    const uploadsBefore = mockUploadSignedUrl.mock.calls.length;
+    mockUploadSignedUrl.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((done) => {
+          finishUpload = () => done(undefined);
+        }),
+    );
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "later.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await waitFor(() =>
+      expect(mockUploadSignedUrl.mock.calls.length).toBe(uploadsBefore + 1),
+    );
+    await act(async () => {
+      reject(new Error("down"));
+    });
+    expect(
+      screen.queryByRole("button", { name: "Remove notes.pdf" }),
+    ).not.toBeInTheDocument();
+    await act(async () => {
+      finishUpload();
+    });
+    expect(
+      await screen.findByRole("button", { name: "Remove later.pdf" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Remove notes.pdf" }),
+    ).not.toBeInTheDocument();
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringMatching(/couldn't be put back/),
+      }),
+    );
   });
 });

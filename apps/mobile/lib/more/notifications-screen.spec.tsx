@@ -85,6 +85,9 @@ const inbox = vi.hoisted(() => ({ data: null as unknown[] | null }));
 /** The read receipt the screen sends; stable so a spec can assert on a tap. */
 const markRead = vi.hoisted(() => ({ mutate: vi.fn(), mutateAsync: vi.fn() }));
 
+/** `POST /v1/notifications/clear` (#3948). */
+const clearRows = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
+
 /** `POST /v1/notifications/read`, the one request behind Mark all read. */
 const markAll = vi.hoisted(() => ({ mutate: vi.fn(), isPending: false }));
 
@@ -103,6 +106,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useMarkNotificationRead: () => markRead,
   useMarkNotificationsRead: () => markAll,
+  useClearNotifications: () => clearRows,
   useViewerUserId: () => "u-me",
   useChapterRoster: () => ({ data: ROSTER }),
   useMemberDisplayNames: () => NAMES,
@@ -768,5 +772,61 @@ describe("Notifications: Unread / All (#3948)", () => {
         (node) => node.props.accessibilityRole === "radiogroup",
       ),
     ).toHaveLength(0);
+  });
+});
+
+describe("Notifications: clearing an entry (#3948)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    inbox.data = null;
+    vi.restoreAllMocks();
+  });
+
+  it("offers Clear on a long press and clears every row the entry stands for", async () => {
+    const { Alert } = await import("react-native");
+    const alert = vi.spyOn(Alert, "alert").mockImplementation(() => undefined);
+    const chat = (id: string, minute: number) => ({
+      id,
+      title: "Ryan Castellano in #general",
+      body: `message ${id}`,
+      created_at: new Date(2026, 8, 30, 23, minute).toISOString(),
+      read_at: null,
+      data: { target: { screen: "chat", channelId: "c1" }, senderId: "u-ryan" },
+    });
+    inbox.data = [chat("old", 10), chat("new", 40)];
+    clearRows.mutate.mockClear();
+    const tree = render();
+    expect(screenText(tree)).toContain("2 messages");
+
+    const row = tree.root.find(
+      (node) =>
+        typeof node.props.onLongPress === "function" &&
+        node.props.accessibilityRole === "button",
+    );
+    expect(row.props.accessibilityActions).toEqual([
+      { name: "clear", label: "Clear" },
+    ]);
+    act(() => row.props.onLongPress());
+
+    expect(alert).toHaveBeenCalledTimes(1);
+    const buttons = alert.mock.calls[0]?.[2] as {
+      text: string;
+      onPress?: () => void;
+    }[];
+    expect(buttons.map((b) => b.text)).toEqual(["Cancel", "Clear"]);
+    act(() => buttons[1]?.onPress?.());
+    expect(clearRows.mutate).toHaveBeenCalledWith({
+      ids: ["new", "old"],
+      conversation: { channelId: "c1" },
+    });
+
+    // A screen reader's named action asks the same way.
+    alert.mockClear();
+    act(() =>
+      row.props.onAccessibilityAction({ nativeEvent: { actionName: "clear" } }),
+    );
+    expect(alert).toHaveBeenCalledTimes(1);
   });
 });

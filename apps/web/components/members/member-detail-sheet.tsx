@@ -23,8 +23,10 @@ import {
   useUpdateMemberRoles,
 } from "@repo/hooks";
 import {
+  BIRTHDAY_COPY,
   can,
   CORRECTION_MENU_LABEL,
+  formatBirthday,
   memberAccessRoleIds,
   phoneHref,
   removesMemberAccess,
@@ -416,6 +418,13 @@ export function MemberDetailSheet({
   const meta = metaLine(member);
   const email = stringField(member, "email");
   const phone = stringField(member, "phone");
+  // Present only when the member shares it with the chapter (#4959).
+  const birthdayMonth = member?.birthday_month;
+  const birthdayDay = member?.birthday_day;
+  const birthday =
+    typeof birthdayMonth === "number" && typeof birthdayDay === "number"
+      ? formatBirthday(birthdayMonth, birthdayDay)
+      : "";
   const phoneLink = phoneHref(phone, "call");
   const textLink = phoneHref(phone, "text");
   const joined = formatDay(member?.created_at);
@@ -757,6 +766,9 @@ export function MemberDetailSheet({
                       {email}
                     </a>
                   </DetailRow>
+                ) : null}
+                {birthday ? (
+                  <DetailRow label={BIRTHDAY_COPY.label}>{birthday}</DetailRow>
                 ) : null}
                 <DetailRow label="Member since">
                   {joined ?? "Not recorded"}

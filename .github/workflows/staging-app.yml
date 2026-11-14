@@ -1,0 +1,466 @@
+name: Staging app
+
+# Build, upload and update Frapp Staging, the side-by-side app that follows
+# `main` (#4917 step 3, epic #2511). Started by hand for now; it runs after
+# every staging deploy once a first run has proved the store uploads.
+#
+# ── What a run does ─────────────────────────────────────────────────────────
+#   1. `plan` computes the tree's staging runtime (version plus a hash of its
+#      native inputs, `scripts/staging-runtime.mjs`) and asks whether a binary
+#      of that runtime was already uploaded, per platform
+#      (`scripts/ci/plan-staging-app.mjs`, whose header says why the record is
+#      a marker artifact).
+#   2. `update` publishes the tree as an OTA update to the `staging` channel,
+#      through the same guard a person uses (`npm run eas -- update`). Every
+#      installed Frapp Staging of this runtime takes it. Published on every
+#      run: an update for a runtime no binary carries reaches nobody.
+#   3. `ios` and `android` build a binary where the plan found none, on
+#      GitHub's own runners with `eas build --local`, and hand it to EAS
+#      Submit: TestFlight, and the Play internal track (`submit.staging` in
+#      `apps/mobile/eas.json`). Never released by a machine.
+#   4. `confirm` waits out Expo's submission queue and records each upload
+#      that finished, so the next run sends that runtime an update instead.
+#
+# ── Why GitHub's runners, not Expo's (Paul, 2026-11-13) ─────────────────────
+# Expo's free plan meters builds, and the store app needs them. A spike
+# (#4877) measured the app's Release compile here: iOS 22 to 33 minutes on
+# `macos-latest`, Android 34 on `ubuntu-latest`, both free for a public
+# repository. A local build takes its signing credentials from EAS with
+# `EXPO_TOKEN`, as a cloud build does, so no certificate or keystore is a
+# GitHub secret.
+#
+# ── What a local build doesn't get ──────────────────────────────────────────
+#   * eas.json's `image`. The iOS job picks the runner's newest stable
+#     Xcode 26 itself (#2477).
+#   * Secret EAS variables. The Sentry upload needs one, so these builds skip
+#     it (`SENTRY_DISABLE_AUTO_UPLOAD`) and a staging binary's native stack
+#     traces stay unsymbolicated. The update job's bundle is unaffected by
+#     that switch.
+#   * The staging runtime from anywhere but this shell: each build job
+#     computes it, checks it against the plan's, and exports it
+#     (`FRAPP_STAGING_RUNTIME`), and `app.config.js` refuses the `staging`
+#     profile without it.
+#
+# ── Trust ───────────────────────────────────────────────────────────────────
+# A dispatch can target any branch and runs that branch's copy of this file.
+# Every job that names a secret names the `automation` environment, whose
+# deployment-branch rule admits `main` only (#2583), so a branch's copy never
+# sees `EXPO_TOKEN`. `plan` holds no secret and names the commit; `update`,
+# `ios` and `android` check out that commit by SHA, set up Node by hand
+# (node-setup would restore `node_modules` from a cache into a job with a
+# token) and run no local action. `confirm` holds the token too, but runs the
+# workflow's own ref with nothing installed: it only reads each submission's
+# status from EAS's API. Honest limits: each job's own `npm ci` runs before
+# any step names the token, but `eas build --local` then copies the project
+# and installs its dependencies again, install scripts included, inside the
+# step that holds `EXPO_TOKEN`; the export and the native build run the
+# tree's lockfile-pinned dependencies in that process too; and eas-cli and
+# the local-build plugin it fetches (an exact version, eas-cli's own pin)
+# resolve their dependencies at install time, not from a lockfile (#3118).
+#
+# ── One run at a time ───────────────────────────────────────────────────────
+# Two runs planning at once would both build the same missing binary, so runs
+# share one concurrency group. GitHub keeps one waiting run per group: while a
+# run is in flight (`confirm` can hold it for the length of Expo's submission
+# queue), a newer dispatch replaces the one already waiting, which shows as
+# cancelled. The newest commit still gets its run. A run that was cancelled
+# while it asked for a named platform has to be dispatched again.
+
+on:
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "Binaries to build. auto builds a platform only when no uploaded binary has this tree's runtime."
+        type: choice
+        default: auto
+        options:
+          - auto
+          - ios
+          - android
+          - all
+          - none
+      save_android_bundle:
+        description: "First Android upload only: keep the .aab as a one-day artifact to upload in Play Console by hand, and skip the store upload."
+        type: boolean
+        default: false
+
+concurrency:
+  group: staging-app
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    name: Decide which binaries this tree needs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Reads the marker artifacts earlier runs uploaded.
+      actions: read
+    outputs:
+      # The dispatched commit today; the commit staging deployed once this
+      # runs after Deploy staging. Every later job checks out exactly this.
+      sha: ${{ github.sha }}
+      runtime: ${{ steps.plan.outputs.runtime }}
+      ios: ${{ steps.plan.outputs.ios }}
+      android: ${{ steps.plan.outputs.android }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Which packages are native is read from the installed tree.
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
+        with:
+          install: ci
+
+      - name: Plan
+        id: plan
+        env:
+          BUILD: ${{ inputs.build }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUNTIME="$(node scripts/staging-runtime.mjs)"
+          export RUNTIME
+          node scripts/ci/plan-staging-app.mjs
+
+  update:
+    name: Publish the OTA update to the staging channel
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: automation
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      # The commit the plan judged, and nothing else.
+      - name: Check out the planned commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+
+      # Hand-written, not ./.github/actions/node-setup: this job holds
+      # EXPO_TOKEN, and node-setup restores `node_modules` from a cache. Matches
+      # node-setup's step (`node-setup-action.test.mjs`).
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # No install script runs: the export needs none (`_mobile-update.yml`).
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      # Before EXPO_TOKEN is in any step's environment.
+      - name: Install the pinned EAS CLI
+        run: node scripts/eas.mjs --version
+
+      # The guard computes the runtime itself; a difference from the plan's
+      # means the two jobs read different trees.
+      - name: Publish through the guard
+        timeout-minutes: 20
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          PLAN_RUNTIME: ${{ needs.plan.outputs.runtime }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CI: "1"
+          EXPO_NO_TELEMETRY: "1"
+        run: |
+          set -euo pipefail
+          RUNTIME="$(node scripts/staging-runtime.mjs)"
+          if [ "$RUNTIME" != "$PLAN_RUNTIME" ]; then
+            echo "::error::This job computes runtime $RUNTIME but the plan computed $PLAN_RUNTIME. Refusing to publish."
+            exit 1
+          fi
+          npm run eas -- update --channel staging --platform all --non-interactive \
+            --message "Staging app $(git rev-parse HEAD) $RUN_URL"
+          echo "Published \`$(git rev-parse HEAD)\` to the \`staging\` channel for runtime \`$RUNTIME\`." >> "$GITHUB_STEP_SUMMARY"
+
+  ios:
+    name: Build Frapp Staging for iOS and send it to TestFlight
+    needs: plan
+    if: needs.plan.outputs.ios == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 100
+    environment:
+      name: automation
+      deployment: false
+    permissions:
+      contents: read
+    outputs:
+      upload: ${{ steps.upload.outcome }}
+      submission: ${{ steps.upload.outputs.submission }}
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
+    steps:
+      # The commit the plan judged, and nothing else.
+      - name: Check out the planned commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+
+      # A local build ignores eas.json's `image`, so the runner's own Xcode is
+      # what counts. A beta is skipped, and with no stable Xcode 26 the job
+      # stops: a build on an older Xcode would not be the app's build (#2477).
+      - name: Pick the newest stable Xcode 26 on the runner
+        run: |
+          set -euo pipefail
+          newest="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -viE 'beta|release_candidate|_rc' | sort -V | tail -n 1 || true)"
+          if [ -z "$newest" ]; then
+            echo "::error::No stable Xcode 26 on this runner image (${ImageOS:-unknown}); the app pins Xcode 26 (#2477)."
+            exit 1
+          fi
+          sudo xcode-select -s "$newest/Contents/Developer"
+          echo "Building with $(xcodebuild -version | tr '\n' ' ')" >> "$GITHUB_STEP_SUMMARY"
+
+      # Hand-written, not ./.github/actions/node-setup: this job holds
+      # EXPO_TOKEN, and node-setup restores `node_modules` from a cache. Matches
+      # node-setup's step (`node-setup-action.test.mjs`).
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # Before EXPO_TOKEN is in any step's environment.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install the pinned EAS CLI
+        run: node scripts/eas.mjs --version
+
+      - name: Export the staging runtime
+        env:
+          PLAN_RUNTIME: ${{ needs.plan.outputs.runtime }}
+        run: |
+          set -euo pipefail
+          RUNTIME="$(node scripts/staging-runtime.mjs)"
+          if [ "$RUNTIME" != "$PLAN_RUNTIME" ]; then
+            echo "::error::This runner computes runtime $RUNTIME but the plan computed $PLAN_RUNTIME, so the binary would never take the update. Refusing to build."
+            exit 1
+          fi
+          echo "FRAPP_STAGING_RUNTIME=$RUNTIME" >> "$GITHUB_ENV"
+
+      - name: Build (Release, signed with EAS's credentials)
+        timeout-minutes: 70
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm run eas -- build --local --platform ios --profile staging --non-interactive \
+            --output "$RUNNER_TEMP/frapp-staging.ipa"
+
+      # `--no-wait`: the step ends once EAS accepts the submission, and
+      # `confirm` waits out Expo's queue. `--no-auto-testflight-setup`: who
+      # tests a build is a person's call.
+      - name: Send it to TestFlight
+        id: upload
+        timeout-minutes: 15
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm run eas -- submit --platform ios --profile staging --path "$RUNNER_TEMP/frapp-staging.ipa" \
+            --non-interactive --no-wait --no-auto-testflight-setup | tee "$RUNNER_TEMP/submit.log"
+          ID="$(grep -oE 'submissions/[0-9a-f-]{36}' "$RUNNER_TEMP/submit.log" | head -n 1 | cut -d/ -f2 || true)"
+          [ -n "$ID" ] || echo "::warning::eas submit printed no submission link, so the confirm job can't check this upload."
+          echo "submission=$ID" >> "$GITHUB_OUTPUT"
+
+  android:
+    name: Build Frapp Staging for Android and send it to the Play internal track
+    needs: plan
+    if: needs.plan.outputs.android == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment:
+      name: automation
+      deployment: false
+    permissions:
+      contents: read
+    outputs:
+      upload: ${{ steps.upload.outcome }}
+      submission: ${{ steps.upload.outputs.submission }}
+    env:
+      CI: "1"
+      EXPO_NO_TELEMETRY: "1"
+      SENTRY_DISABLE_AUTO_UPLOAD: "true"
+    steps:
+      # The commit the plan judged, and nothing else.
+      - name: Check out the planned commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+
+      # The template's default JVM settings ran out of Metaspace in the
+      # release lint tasks on this runner (spike run 43494274899). The user
+      # properties file wins over the project's, which a local build
+      # generates and this job can't edit.
+      - name: Use Java 17 and give Gradle the memory the runner has
+        run: |
+          set -euo pipefail
+          if [ -n "${JAVA_HOME_17_X64:-}" ]; then
+            echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          fi
+          mkdir -p "$HOME/.gradle"
+          echo "org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g" >> "$HOME/.gradle/gradle.properties"
+
+      # Hand-written, not ./.github/actions/node-setup: this job holds
+      # EXPO_TOKEN, and node-setup restores `node_modules` from a cache. Matches
+      # node-setup's step (`node-setup-action.test.mjs`).
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # Before EXPO_TOKEN is in any step's environment.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install the pinned EAS CLI
+        run: node scripts/eas.mjs --version
+
+      - name: Export the staging runtime
+        env:
+          PLAN_RUNTIME: ${{ needs.plan.outputs.runtime }}
+        run: |
+          set -euo pipefail
+          RUNTIME="$(node scripts/staging-runtime.mjs)"
+          if [ "$RUNTIME" != "$PLAN_RUNTIME" ]; then
+            echo "::error::This runner computes runtime $RUNTIME but the plan computed $PLAN_RUNTIME, so the binary would never take the update. Refusing to build."
+            exit 1
+          fi
+          echo "FRAPP_STAGING_RUNTIME=$RUNTIME" >> "$GITHUB_ENV"
+
+      - name: Build (Release bundle, signed with EAS's keystore)
+        timeout-minutes: 60
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm run eas -- build --local --platform android --profile staging --non-interactive \
+            --output "$RUNNER_TEMP/frapp-staging.aab"
+
+      # Google Play takes a new app's first bundle only through Play Console,
+      # never the API, so that one run keeps the bundle for a person to upload
+      # and records nothing. The artifact is the same signed bundle testers
+      # install; it lives one day.
+      - name: Keep the bundle for a first upload by hand
+        if: ${{ inputs.save_android_bundle }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: frapp-staging-first-upload
+          path: ${{ runner.temp }}/frapp-staging.aab
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Send it to the Play internal track
+        id: upload
+        if: ${{ !inputs.save_android_bundle }}
+        timeout-minutes: 15
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm run eas -- submit --platform android --profile staging --path "$RUNNER_TEMP/frapp-staging.aab" \
+            --non-interactive --no-wait | tee "$RUNNER_TEMP/submit.log"
+          ID="$(grep -oE 'submissions/[0-9a-f-]{36}' "$RUNNER_TEMP/submit.log" | head -n 1 | cut -d/ -f2 || true)"
+          [ -n "$ID" ] || echo "::warning::eas submit printed no submission link, so the confirm job can't check this upload."
+          echo "submission=$ID" >> "$GITHUB_OUTPUT"
+
+  confirm:
+    name: Confirm the store uploads finished, and record them
+    needs: [plan, ios, android]
+    # After a failed build too: the other platform may have been submitted.
+    if: ${{ !cancelled() && (needs.ios.outputs.upload == 'success' || needs.android.outputs.upload == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment:
+      name: automation
+      deployment: false
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Node only: the script uses fetch and Node built-ins, so no installed
+      # package runs with the token.
+      - name: Setup Node
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+
+      # Its own deadline ends the poll at 150, so it reports before the step
+      # is killed at 160.
+      - name: Wait for each submission to finish on EAS
+        id: wait
+        timeout-minutes: 160
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          IOS_UPLOAD: ${{ needs.ios.outputs.upload }}
+          IOS_SUBMISSION: ${{ needs.ios.outputs.submission }}
+          ANDROID_UPLOAD: ${{ needs.android.outputs.upload }}
+          ANDROID_SUBMISSION: ${{ needs.android.outputs.submission }}
+          DEADLINE_MINUTES: "150"
+          POLL_SECONDS: "60"
+        run: node scripts/ci/confirm-staging-submissions.mjs
+
+      # The record `plan` reads. After a red wait too: one platform may have
+      # finished while the other failed.
+      - name: Write the markers
+        if: ${{ !cancelled() }}
+        env:
+          RUNTIME: ${{ needs.plan.outputs.runtime }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          IOS: ${{ steps.wait.outputs.ios }}
+          ANDROID: ${{ steps.wait.outputs.android }}
+          IOS_SUBMISSION: ${{ needs.ios.outputs.submission }}
+          ANDROID_SUBMISSION: ${{ needs.android.outputs.submission }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/markers/ios" "$RUNNER_TEMP/markers/android"
+          if [ "$IOS" = "true" ]; then
+            printf '{"platform":"ios","runtime":"%s","sha":"%s","submission":"%s"}\n' "$RUNTIME" "$SHA" "$IOS_SUBMISSION" > "$RUNNER_TEMP/markers/ios/marker.json"
+          fi
+          if [ "$ANDROID" = "true" ]; then
+            printf '{"platform":"android","runtime":"%s","sha":"%s","submission":"%s"}\n' "$RUNTIME" "$SHA" "$ANDROID_SUBMISSION" > "$RUNNER_TEMP/markers/android/marker.json"
+          fi
+
+      # The names and the 90 days are `markerName` and `MARKER_DAYS` in
+      # scripts/ci/plan-staging-app.mjs (`staging-app.test.mjs` pins both).
+      - name: Record the iOS binary
+        if: ${{ !cancelled() && steps.wait.outputs.ios == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: staging-app-ios-${{ needs.plan.outputs.runtime }}
+          path: ${{ runner.temp }}/markers/ios/marker.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
+
+      - name: Record the Android binary
+        if: ${{ !cancelled() && steps.wait.outputs.android == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: staging-app-android-${{ needs.plan.outputs.runtime }}
+          path: ${{ runner.temp }}/markers/android/marker.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true

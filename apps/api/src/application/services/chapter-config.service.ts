@@ -1,3 +1,8 @@
+import { isBirthdayPostChannel } from '../workers/birthday-post-sweep.service';
+import {
+  CHAT_CHANNEL_REPOSITORY,
+  type IChatChannelRepository,
+} from '#domain/repositories/chat.repository.interface';
 import {
   BadRequestException,
   Inject,
@@ -232,6 +237,8 @@ export interface PatchChapterConfigInput {
   analytics_opt_out?: boolean;
   /** `null` clears the default rather than meaning "not supplied" (#422). */
   default_invite_role_id?: string | null;
+  /** The birthday post channel (#4959); `null` turns the posts off. */
+  birthday_channel_id?: string | null;
 }
 
 @Injectable()
@@ -244,6 +251,8 @@ export class ChapterConfigService {
     @Inject(CHAPTER_CONFIG_REPOSITORY)
     private readonly configRepo: IChapterConfigRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channelRepo: IChatChannelRepository,
     private readonly activation: ActivationService,
     private readonly pointsConfig: ChapterPointsConfigService,
     private readonly auditLog: ChapterAuditLogService,
@@ -377,6 +386,8 @@ export class ChapterConfigService {
       // deleted role clears this via `on delete set null`, so a client never
       // sees an id that no longer resolves.
       default_invite_role_id: chapter.default_invite_role_id ?? null,
+      // #4959: where the happy-birthday posts go; null while they're off.
+      birthday_channel_id: chapter.birthday_channel_id ?? null,
       workflows,
       dues,
       service,
@@ -410,6 +421,29 @@ export class ChapterConfigService {
         code: 'chapter.config.invalid_default_invite_role',
         message:
           'default_invite_role_id must name a role that belongs to this chapter.',
+      });
+    }
+  }
+
+  /**
+   * #4959. The channel is caller-supplied, so it must be one of this
+   * chapter's own, read chapter-first: another chapter's id comes back as not
+   * found. It must be a public channel that isn't archived or the audit
+   * feed (`isBirthdayPostChannel`, which the sweep checks again).
+   */
+  private async assertBirthdayChannel(
+    chapterId: string,
+    channelId: string,
+  ): Promise<void> {
+    const channel = await this.channelRepo.findById(channelId, chapterId);
+    // Public only: a DM or a private channel is a conversation the officer
+    // may not even be in, and a birthday post is for the whole chapter. Never
+    // the audit feed, which only the system writes.
+    if (!channel || !isBirthdayPostChannel(channel)) {
+      throw new BadRequestException({
+        code: 'chapter.config.invalid_birthday_channel',
+        message:
+          "birthday_channel_id must name one of this chapter's public channels that isn't archived or the audit log.",
       });
     }
   }
@@ -466,6 +500,21 @@ export class ChapterConfigService {
         to: dto.default_invite_role_id,
       };
       update['default_invite_role_id'] = dto.default_invite_role_id;
+    }
+    // #4959: the birthday post channel. `null` turns the posts off, so this
+    // keys on `!== undefined` like the default invite role above.
+    if (
+      dto.birthday_channel_id !== undefined &&
+      dto.birthday_channel_id !== existing.birthday_channel_id
+    ) {
+      if (dto.birthday_channel_id !== null) {
+        await this.assertBirthdayChannel(chapterId, dto.birthday_channel_id);
+      }
+      diff['birthday_channel_id'] = {
+        from: existing.birthday_channel_id,
+        to: dto.birthday_channel_id,
+      };
+      update['birthday_channel_id'] = dto.birthday_channel_id;
     }
     // JSON columns are patched, not replaced: a partial payload deep-merges
     // onto the existing value so untouched keys are preserved.

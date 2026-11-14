@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
-import {
-  CHANNEL_LATEST_MESSAGES_KEY,
-  CHANNEL_UNREAD_COUNTS_KEY,
-} from "./use-chat";
+import { isChannelHeldUnread, trackActivityStamping } from "./read-cursor";
+import { invalidateChannelSummaries } from "./use-chat";
 
 /**
  * What the chat realtime manager reports about traffic outside the open
@@ -116,7 +114,9 @@ export function createChatActivityHandler(
   let stamping: Promise<void> = Promise.resolve();
 
   const round = async () => {
-    const toStamp = [...stamps];
+    // A channel Mark unread is holding sends nothing, even a stamp queued
+    // before the hold (#3723).
+    const toStamp = [...stamps].filter((id) => !isChannelHeldUnread(id));
     stamps.clear();
     const shouldRefresh = refresh || toStamp.length > 0;
     refresh = false;
@@ -124,14 +124,7 @@ export function createChatActivityHandler(
     // answer, which is better than a badge left stale.
     await Promise.allSettled(toStamp.map((id) => options.markRead(id)));
     if (disposed || !shouldRefresh) return;
-    void options.queryClient.invalidateQueries({
-      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
-      exact: true,
-    });
-    void options.queryClient.invalidateQueries({
-      queryKey: CHANNEL_LATEST_MESSAGES_KEY,
-      exact: true,
-    });
+    invalidateChannelSummaries(options.queryClient);
   };
 
   const flush = () => {
@@ -139,6 +132,7 @@ export function createChatActivityHandler(
     // Taken now, at the end of the coalescing window; what arrives while the
     // previous round is still running joins this round.
     stamping = stamping.then(round, round);
+    trackActivityStamping(stamping);
   };
 
   const handle = (activity: ChatActivity) => {

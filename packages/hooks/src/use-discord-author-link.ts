@@ -11,7 +11,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * sign-in, and no route links anyone but the caller. Linking and unlinking
  * change `sender_id` on imported messages server-side; imported rows never
  * arrive over Realtime, so a chat thread already in the cache shows the change
- * only on its next read. The caller decides what to drop, because this package
+ * only on its next read. The caller decides what to drop or refetch, because this package
  * does not own the chat message cache (`@repo/chat-core`).
  */
 

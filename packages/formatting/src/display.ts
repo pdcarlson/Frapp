@@ -174,6 +174,17 @@ export function formatPointsChip(value: number): string {
 }
 
 /**
+ * `"Nov 8 – Nov 14"`: a week's first and last day, month and day in the
+ * reader's locale ("8 Nov – 14 Nov" in en-GB) and no year, for a week that
+ * has just ended (Activity's recap, #4983).
+ */
+export function formatWeekSpan(firstDay: Date, lastDay: Date): string {
+  const day = (at: Date) =>
+    at.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return `${day(firstDay)} – ${day(lastDay)}`;
+}
+
+/**
  * `"Aug 24 – Dec 12, 2026"`: a span of days, the year said once at the end
  * when both ends share it, and on each end when they don't.
  */

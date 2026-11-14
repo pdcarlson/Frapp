@@ -386,7 +386,9 @@ describe("DashboardShell", () => {
       </DashboardShell>,
     );
     expect(
-      within(screen.getByRole("banner")).getByRole("link", { name: "Backwork" }),
+      within(screen.getByRole("banner")).getByRole("link", {
+        name: "Backwork",
+      }),
     ).toBeInTheDocument();
   });
 
@@ -488,8 +490,13 @@ describe("DashboardShell", () => {
       screen.getByRole("button", { name: /account menu/i }),
     ).toBeInTheDocument();
     // Paul, 2026-11-13: no Ask button in the corner of the top bar. Its
-    // entry is in the chat composer.
-    expect(within(banner).queryByRole("button", { name: /Ask/ })).toBeNull();
+    // entry is the find field itself (#4904, `find-bar.spec.tsx`), so the
+    // field is the only control here that could name Ask.
+    expect(
+      within(banner)
+        .queryAllByRole("button", { name: /ask/i })
+        .filter((button) => !/^(Find|Search)/.test(button.textContent ?? "")),
+    ).toHaveLength(0);
   });
 
   it("keeps the skip link ahead of the content", () => {
@@ -798,9 +805,7 @@ describe("DashboardShell", () => {
           fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
           // The same exit the Chat row plays, and the page keeps the route.
           expect(chatPanel(container)).toHaveAttribute("inert");
-          expect(
-            container.querySelector("[data-tool-column]"),
-          ).toHaveFocus();
+          expect(container.querySelector("[data-tool-column]")).toHaveFocus();
           act(() => {
             vi.runAllTimers();
           });
@@ -852,9 +857,7 @@ describe("DashboardShell", () => {
         expect(header).toContainElement(headings[0]!);
         expect(headings[0]).toHaveTextContent("Profile");
         // The top bar's copy steps aside at the same width, by CSS.
-        const barCopy = within(screen.getByRole("banner")).getByText(
-          "Profile",
-        );
+        const barCopy = within(screen.getByRole("banner")).getByText("Profile");
         expect(barCopy.tagName).toBe("P");
         expect(barCopy.parentElement).toHaveClass("min-[1056px]:hidden");
 

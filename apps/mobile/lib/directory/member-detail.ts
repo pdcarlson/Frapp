@@ -15,6 +15,7 @@
  */
 import { parseInstant } from "@repo/formatting";
 import { formatGraduationYear, memberLabel } from "@repo/hooks";
+import { formatBirthday } from "@repo/validation";
 import {
   initialsFor,
   isRecord,
@@ -48,6 +49,8 @@ export interface MemberDetail {
   email: string | null;
   /** The member's own phone (#3711), as they typed it, or `null`. */
   phone: string | null;
+  /** "March 4" when they share their birthday with the chapter (#4959), else `null`. */
+  birthday: string | null;
   /** Their graduation year, the value the officer's editor opens on. */
   graduationYear: number | null;
   bio: string | null;
@@ -96,6 +99,10 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     initials: initialsFor(rawDisplayName),
     email: str(data, "email"),
     phone: str(data, "phone"),
+    birthday: birthdayLabel(
+      num(data, "birthday_month"),
+      num(data, "birthday_day"),
+    ),
     graduationYear: num(data, "graduation_year"),
     bio: str(data, "bio"),
     meta: metaLine([
@@ -148,4 +155,13 @@ function formatCustomFieldValue(row: Record<string, unknown>): string {
   const raw = str(row, "value");
   if (raw === null) return "—";
   return str(row, "type") === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
+}
+
+/** The shared birthday as "March 4", or `null` (#4959). */
+function birthdayLabel(
+  month: number | null,
+  day: number | null,
+): string | null {
+  if (month === null || day === null) return null;
+  return formatBirthday(month, day) || null;
 }

@@ -1,4 +1,5 @@
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   IsArray,
   IsISO8601,
@@ -25,6 +26,14 @@ import {
   MAX_REPEAT_INTERVAL,
   MAX_REPEAT_RULE_LENGTH,
   MAX_SERIES_MEETINGS,
+  EVENT_AGENDA_ITEM_MAX,
+  EVENT_AGENDA_MAX,
+  EVENT_ATTACHMENT_KINDS,
+  EVENT_ATTACHMENT_TITLE_MAX,
+  EVENT_ATTACHMENTS_MAX,
+  TASK_PROOF_LINK_MAX,
+  type EventAgendaItem,
+  type EventAttachment,
 } from '@repo/validation';
 import { IsRepeatRule } from '../decorators/is-repeat-rule.decorator';
 import type { Event } from '#domain/entities/event.entity';
@@ -50,6 +59,76 @@ const RECURRENCE_RULE_DESCRIPTION =
   'BYDAY (weekly: the days, required; monthly: the nth weekday such as 2TU or -1FR), BYMONTHDAY (monthly by date: 1-31, not with BYDAY), ' +
   `exactly one of COUNT (2-${MAX_SERIES_MEETINGS} meetings, the first included) or UNTIL (YYYYMMDD, inclusive), ` +
   'and TZID (the zone whose wall clock the series keeps).';
+
+/** One agenda item (#4934, `spec/behavior/events.md` § Agenda and attachments). */
+export class EventAgendaItemDto implements EventAgendaItem {
+  @ApiProperty({
+    maxLength: 64,
+    description:
+      "The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event.",
+  })
+  @IsString()
+  @MaxLength(64)
+  id: string;
+
+  @ApiProperty({ maxLength: EVENT_AGENDA_ITEM_MAX })
+  @IsString()
+  @MaxLength(EVENT_AGENDA_ITEM_MAX)
+  text: string;
+
+  @ApiProperty({ description: 'Checked off during the meeting.' })
+  @IsStrictBoolean()
+  done: boolean;
+}
+
+/**
+ * One attachment (#4934): a titled link, or one of the chapter's Chapter
+ * Files documents. A flat shape rather than a `oneOf`, so the SDK type stays
+ * one object; `kind` says which of `url` and `document_id` it carries.
+ */
+export class EventAttachmentDto {
+  @ApiProperty({
+    maxLength: 64,
+    description: "The client's id for the attachment. Unique within the event.",
+  })
+  @IsString()
+  @MaxLength(64)
+  id: string;
+
+  @ApiProperty({ enum: EVENT_ATTACHMENT_KINDS })
+  @IsIn([...EVENT_ATTACHMENT_KINDS])
+  kind: EventAttachment['kind'];
+
+  @ApiPropertyOptional({
+    maxLength: TASK_PROOF_LINK_MAX,
+    description: "A `link` attachment's address: http or https only.",
+  })
+  @ValidateIf((o: EventAttachmentDto) => o.kind === 'link')
+  @IsString()
+  @MaxLength(TASK_PROOF_LINK_MAX)
+  url?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "A `document` attachment's Chapter Files document (`GET /v1/documents/{id}` opens it). An id that isn't the chapter's is a 400.",
+  })
+  @ValidateIf((o: EventAttachmentDto) => o.kind === 'document')
+  @IsUUID()
+  document_id?: string;
+
+  @ApiProperty({
+    maxLength: EVENT_ATTACHMENT_TITLE_MAX,
+    description:
+      'What the list shows. For a document, its name when it was attached.',
+  })
+  @IsString()
+  @MaxLength(EVENT_ATTACHMENT_TITLE_MAX)
+  title: string;
+}
+
+const AGENDA_DESCRIPTION = `This meeting's agenda, in order: at most ${EVENT_AGENDA_MAX} short items. Sent whole; it replaces the stored list, and \`[]\` clears it (null is refused). Belongs to this one meeting: with \`scope: 'series'\` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.`;
+const ATTACHMENTS_DESCRIPTION = `This meeting's attachments, in order: at most ${EVENT_ATTACHMENTS_MAX} titled links or Chapter Files documents. Sent whole; it replaces the stored list, and \`[]\` clears it. Per meeting, like \`agenda\`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.`;
 
 export class CreateEventDto {
   @ApiProperty()
@@ -154,6 +233,32 @@ export class CreateEventDto {
   notes?: string;
 
   @ApiPropertyOptional({
+    type: [EventAgendaItemDto],
+    description: AGENDA_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_AGENDA_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAgendaItemDto)
+  agenda?: EventAgendaItemDto[];
+
+  @ApiPropertyOptional({
+    type: [EventAttachmentDto],
+    description: ATTACHMENTS_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_ATTACHMENTS_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAttachmentDto)
+  attachments?: EventAttachmentDto[];
+
+  @ApiPropertyOptional({
     type: [GeofenceCoordinateDto],
     description: CHECK_IN_ZONE_DESCRIPTION,
   })
@@ -219,21 +324,17 @@ export class CreateEventDto {
 }
 
 /**
- * Response contract for `POST /v1/events`.
+ * The event row as the API serves it: the shared body of the create, list and
+ * read responses.
  *
- * This route previously declared no response schema, which openapi-typescript
- * renders as `content?: never` — so `data` reached the SDK typed `never` and
- * `/event` could not read `card_posted` without an unchecked cast (#1717). The
- * event fields are flattened at the top level exactly as the route already
- * returned them: the **parent** row. Recurring children are side effects of
- * create and are not in this body; do not invent an `occurrences[]` field.
- *
- * Drift between this class and the event row is caught the same way as
- * `AdjustPointsResponseDto`: `implements Event` for type drift, and the
- * `Assert<Exclude<…>>` aliases below for key drift. `card_posted` is the one
- * deliberate extra field.
+ * These routes once declared no response schema, which openapi-typescript
+ * renders as `content?: never` (or no content at all), so callers cast the
+ * fields they read (#1717, #4867). Drift between this class and the event row
+ * is caught the same way as `AdjustPointsResponseDto`: `implements Event` for
+ * type drift, and the `Assert<Exclude<…>>` aliases at the end of this file for
+ * key drift.
  */
-export class CreateEventResponseDto implements Event {
+export class EventResponseDto implements Event {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
@@ -287,6 +388,15 @@ export class CreateEventResponseDto implements Event {
   @ApiProperty({ type: String, nullable: true })
   notes: string | null;
 
+  @ApiProperty({ type: [EventAgendaItemDto], description: AGENDA_DESCRIPTION })
+  agenda: EventAgendaItem[];
+
+  @ApiProperty({
+    type: [EventAttachmentDto],
+    description: ATTACHMENTS_DESCRIPTION,
+  })
+  attachments: EventAttachment[];
+
   @ApiProperty({
     type: [GeofenceCoordinateDto],
     nullable: true,
@@ -325,12 +435,32 @@ export class CreateEventResponseDto implements Event {
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+}
 
+/**
+ * Response contract for `POST /v1/events`: the **parent** row, flattened at the
+ * top level exactly as the route returns it. Recurring children are side
+ * effects of create and are not in this body; do not invent an
+ * `occurrences[]` field. `card_posted` is the one deliberate extra field.
+ */
+export class CreateEventResponseDto extends EventResponseDto {
   @ApiPropertyOptional({
     description:
       'Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch.',
   })
   card_posted?: boolean;
+}
+
+/**
+ * Response contract for `GET /v1/events/:id`: the row plus whether check-in
+ * now needs the officer's code (#4808).
+ */
+export class EventDetailResponseDto extends EventResponseDto {
+  @ApiProperty({
+    description:
+      "Whether checking in now needs the officer's rotating code, so a client says to scan rather than offering a Check in the server would refuse. False when it cannot be worked out; the check-in route stays the authority.",
+  })
+  check_in_needs_code: boolean;
 }
 
 /**
@@ -442,6 +572,32 @@ export class UpdateEventDto {
   notes?: string;
 
   @ApiPropertyOptional({
+    type: [EventAgendaItemDto],
+    description: AGENDA_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_AGENDA_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAgendaItemDto)
+  agenda?: EventAgendaItemDto[];
+
+  @ApiPropertyOptional({
+    type: [EventAttachmentDto],
+    description: ATTACHMENTS_DESCRIPTION,
+  })
+  // Not `@IsOptional()`, which lets null through: omit the list to leave
+  // it, send [] to clear it.
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsArray()
+  @ArrayMaxSize(EVENT_ATTACHMENTS_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => EventAttachmentDto)
+  attachments?: EventAttachmentDto[];
+
+  @ApiPropertyOptional({
     type: [GeofenceCoordinateDto],
     description: `${CHECK_IN_ZONE_DESCRIPTION} Send an empty array to clear an existing zone.`,
   })
@@ -517,23 +673,23 @@ export class DeleteEventQueryDto {
 }
 
 /**
- * Compile-time key-drift guards between {@link CreateEventResponseDto} and the
+ * Compile-time key-drift guards between {@link EventResponseDto} and the
  * event row it publishes. Each resolves to `never` while the two agree; when
  * they diverge the alias stops satisfying `Assert`'s constraint and the build
  * fails naming the field.
  */
 type Assert<T extends never> = T;
 
-/** Event fields {@link CreateEventResponseDto} forgot to declare. Must be `never`. */
-export type CreateEventResponseDtoMissingFields = Assert<
-  Exclude<keyof Event, keyof CreateEventResponseDto>
+/** Event fields {@link EventResponseDto} forgot to declare. Must be `never`. */
+export type EventResponseDtoMissingFields = Assert<
+  Exclude<keyof Event, keyof EventResponseDto>
 >;
 
 /**
- * Fields {@link CreateEventResponseDto} declares that the event row does not
- * carry. Must be `never`. `card_posted` is excluded because it is this route's
- * own outcome flag, not a column — the one deliberate addition.
+ * Fields {@link EventResponseDto} declares that the event row does not carry.
+ * Must be `never`. Route-specific additions (`card_posted`,
+ * `check_in_needs_code`) live on the subclasses, not here.
  */
-export type CreateEventResponseDtoExtraFields = Assert<
-  Exclude<keyof CreateEventResponseDto, keyof Event | 'card_posted'>
+export type EventResponseDtoExtraFields = Assert<
+  Exclude<keyof EventResponseDto, keyof Event>
 >;

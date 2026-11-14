@@ -23,7 +23,12 @@ import {
   eventChangeOf,
 } from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { isEventVisibleTo, isInvited } from './event-role-targeting';
+import {
+  isEventVisibleTo,
+  isEventVisibleWith,
+  isInvited,
+  type EventViewer,
+} from './event-role-targeting';
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   checkInWindowBounds,
@@ -32,13 +37,21 @@ import {
   eventLimitsAudience,
   eventOthersInvited,
 } from '@repo/validation';
-import { normalizeCheckInZone } from './event-input';
+import {
+  normalizeAgenda,
+  normalizeAttachments,
+  normalizeCheckInZone,
+} from './event-input';
+import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
+import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
+import type { EventAttachment } from '@repo/validation';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import type {
   CreateEventInput,
   CreateEventResult,
   EventMutationScope,
   UpdateEventInput,
+  SeriesUpdateInput,
 } from './event-input';
 
 /**
@@ -59,7 +72,82 @@ export class EventService {
     private readonly eventTypes: EventTypeService,
     @Inject(EVENT_CHECK_IN_SCREEN_REPOSITORY)
     private readonly screenRepo: IEventCheckInScreenRepository,
+    @Inject(CHAPTER_DOCUMENT_REPOSITORY)
+    private readonly documentRepo: IChapterDocumentRepository,
   ) {}
+
+  /**
+   * A request's attachments, normalized, with every newly attached document
+   * one of this chapter's Chapter Files (#4934). A new document id from
+   * another chapter, or one already deleted, is a 400, so an event never
+   * starts pointing at a file its members can't open. A document the meeting
+   * already held (`stored`) passes unchecked: the list is sent whole, and a
+   * file deleted since it was attached must not block every later save
+   * (`spec/behavior/events.md` § Agenda and attachments).
+   */
+  private async attachmentsFor(
+    input: CreateEventInput['attachments'],
+    chapterId: string,
+    stored: readonly EventAttachment[] = [],
+  ): Promise<EventAttachment[] | undefined> {
+    const attachments = normalizeAttachments(input);
+    if (!attachments) return attachments;
+    const held = new Set(
+      stored.flatMap((a) => (a.kind === 'document' ? [a.document_id] : [])),
+    );
+    const documentIds = [
+      ...new Set(
+        attachments.flatMap((a) =>
+          a.kind === 'document' && !held.has(a.document_id)
+            ? [a.document_id]
+            : [],
+        ),
+      ),
+    ];
+    if (documentIds.length > 0) {
+      const found = await this.documentRepo.findByIds(documentIds, chapterId);
+      const known = new Set(found.map((doc) => doc.id));
+      const missing = attachments.find(
+        (a) =>
+          a.kind === 'document' &&
+          documentIds.includes(a.document_id) &&
+          !known.has(a.document_id),
+      );
+      if (missing) {
+        throw new BadRequestException(
+          `"${missing.title}" isn't one of this chapter's files any more. Remove it, or attach it again from Chapter Files.`,
+        );
+      }
+    }
+    return attachments;
+  }
+
+  /**
+   * Undo `update`'s early write of a meeting's agenda and attachments when
+   * the series edit after it refuses. A failed undo is reported rather than
+   * thrown, so the caller still hears the series edit's own error.
+   */
+  private async restoreMeetingOwn(
+    before: Event,
+    chapterId: string,
+    written: Partial<Event>,
+  ): Promise<void> {
+    const back: Partial<Event> = {};
+    if (written.agenda !== undefined) back.agenda = before.agenda;
+    if (written.attachments !== undefined) {
+      back.attachments = before.attachments;
+    }
+    try {
+      await this.eventRepo.update(before.id, chapterId, back);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'event-series-agenda-restore',
+        message: `A series edit of event ${before.id} was refused after its agenda or attachments were saved, and putting them back failed. Check that meeting's agenda and attachments.`,
+        error,
+      });
+    }
+  }
 
   /**
    * Whether a check-in without the code would be refused right now
@@ -179,6 +267,30 @@ export class EventService {
     if (unique.length === 0) return [];
     const events = await this.eventRepo.findByIds(unique, chapterId);
     return this.visibleOf(events, chapterId, viewerId);
+  }
+
+  /**
+   * Of `ids`, the events every one of `viewers` may read, by the list's own
+   * rule (`isEventVisibleWith`). An id that names no event in this chapter is
+   * not in the answer. One read however many viewers: for a check made over
+   * a whole audience, such as who in a channel could open what an Ask Frapp
+   * answer drew on before it is posted there (#4713).
+   */
+  async visibleToAll(
+    ids: readonly string[],
+    chapterId: string,
+    viewers: readonly EventViewer[],
+  ): Promise<Set<string>> {
+    const unique = [...new Set(ids)];
+    if (unique.length === 0) return new Set();
+    const events = await this.eventRepo.findByIds(unique, chapterId);
+    return new Set(
+      events
+        .filter((event) =>
+          viewers.every((viewer) => isEventVisibleWith(event, viewer)),
+        )
+        .map((event) => event.id),
+    );
   }
 
   /**
@@ -315,6 +427,9 @@ export class EventService {
     // Before the write, so a stray id is a 400 rather than the composite
     // foreign key's 500.
     await this.eventTypes.assertBelongs(input.event_type_id, input.chapter_id);
+    const agenda = normalizeAgenda(input.agenda) ?? [];
+    const attachments =
+      (await this.attachmentsFor(input.attachments, input.chapter_id)) ?? [];
 
     const parent = await this.eventRepo.create({
       chapter_id: input.chapter_id,
@@ -333,6 +448,10 @@ export class EventService {
       excluded_role_ids: input.excluded_role_ids ?? null,
       others_invited,
       notes: input.notes ?? null,
+      // This first meeting's own; the series' other meetings start with
+      // none (#4934).
+      agenda,
+      attachments,
       check_in_zone: normalizeCheckInZone(input.check_in_zone) ?? null,
       check_in_zone_name: input.check_in_zone_name ?? null,
       check_in_opens_minutes:
@@ -450,18 +569,61 @@ export class EventService {
 
     await this.eventTypes.assertBelongs(input.event_type_id, chapterId);
 
-    const patch: UpdateEventInput = input;
+    // A meeting's agenda and attachments are its own (#4934), validated here
+    // and kept apart from the rest of the patch so no series path ever
+    // copies them.
+    const { agenda: rawAgenda, attachments: rawAttachments, ...rest } = input;
+    const meetingOwn: Partial<Event> = {};
+    const agenda = normalizeAgenda(rawAgenda);
+    if (agenda !== undefined) meetingOwn.agenda = agenda;
+    if (rawAttachments !== undefined) {
+      // The stored list says which documents were attached already.
+      existing ??= await this.findById(id, chapterId);
+      meetingOwn.attachments = await this.attachmentsFor(
+        rawAttachments,
+        chapterId,
+        existing.attachments,
+      );
+    }
+    const ownsSomething = Object.keys(meetingOwn).length > 0;
+    const patch: SeriesUpdateInput = rest;
 
     if (scope === 'series') {
       // Hand on the row already read rather than reading it twice.
       const target = existing ?? (await this.findById(id, chapterId));
-      return this.series.updateSeries(
-        target,
+      if (!ownsSomething) {
+        return this.series.updateSeries(
+          target,
+          chapterId,
+          patch,
+          actorId,
+          requestZone,
+        );
+      }
+      // Written to the occurrence addressed, never across the series, and
+      // before the series edit so a rebuild carries it to the new meeting
+      // (`delete_replaced_occurrences`).
+      const withOwn = await this.eventRepo.update(
+        target.id,
         chapterId,
-        patch,
-        actorId,
-        requestZone,
+        meetingOwn,
       );
+      if (Object.keys(patch).length === 0) return withOwn;
+      try {
+        // The series head comes back, as for any series save.
+        return await this.series.updateSeries(
+          withOwn,
+          chapterId,
+          patch,
+          actorId,
+          requestZone,
+        );
+      } catch (error) {
+        // The series edit refused (or failed) and wrote nothing, so neither
+        // does this request: put the meeting's own lists back.
+        await this.restoreMeetingOwn(target, chapterId, meetingOwn);
+        throw error;
+      }
     }
 
     // The row as it was, to tell a real move from a round-tripped save
@@ -507,6 +669,7 @@ export class EventService {
 
     const updated = await this.eventRepo.update(id, chapterId, {
       ...patch,
+      ...meetingOwn,
       // Spread first, then overwrite: `normalizeCheckInZone` returns `undefined`
       // for an absent key, which the repository's partial update ignores, so an
       // update that never mentions the zone leaves it untouched.

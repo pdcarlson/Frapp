@@ -81,6 +81,9 @@ export interface OrgConfig {
   [key: string]: unknown;
 }
 
+/** The `GET /v1/chapters/current` payload, which `usePatchOrgConfig` writes module toggles into. */
+type CurrentChapter = components["schemas"]["CurrentChapterResponseDto"];
+
 type OrgConfigWithHelpers = OrgConfig & {
   /** A module is enabled unless explicitly set to `false`. */
   isModuleEnabled: (key: string) => boolean;
@@ -236,15 +239,14 @@ export function usePatchOrgConfig() {
       // optimistic write lands while this one is in flight; restoring a
       // whole-object snapshot on error would silently undo it too.
       const touchedModules: Record<string, boolean | undefined> = {};
-      const replaced: { optOut?: { value: unknown } } = {};
-      qc.setQueryData(chapterKey, (old: unknown) => {
+      const replaced: { optOut?: { value: boolean | undefined } } = {};
+      qc.setQueryData<CurrentChapter>(chapterKey, (old) => {
         if (!old || typeof old !== "object") return old;
-        let next = old as Record<string, unknown>;
+        let next = old;
         if (modules) {
-          const current =
-            (next.enabled_modules as Record<string, boolean> | null | undefined) ??
-            {};
-          for (const key of Object.keys(modules)) touchedModules[key] = current[key];
+          const current = next.enabled_modules ?? {};
+          for (const key of Object.keys(modules))
+            touchedModules[key] = current[key];
           next = { ...next, enabled_modules: { ...current, ...modules } };
         }
         if (optOut !== undefined) {
@@ -264,22 +266,22 @@ export function usePatchOrgConfig() {
         qc.setQueryData(queryKey, context.previous);
       }
       const optOutBefore =
-        context && "touchedOptOut" in context ? context.touchedOptOut : undefined;
+        context && "touchedOptOut" in context
+          ? context.touchedOptOut
+          : undefined;
       if (optOutBefore) {
-        qc.setQueryData(chapterKey, (old: unknown) =>
+        qc.setQueryData<CurrentChapter>(chapterKey, (old) =>
           old && typeof old === "object"
             ? { ...old, analytics_opt_out: optOutBefore.value }
             : old,
         );
       }
-      const touched = context && "touchedModules" in context ? context.touchedModules : null;
+      const touched =
+        context && "touchedModules" in context ? context.touchedModules : null;
       if (touched) {
-        qc.setQueryData(chapterKey, (old: unknown) => {
+        qc.setQueryData<CurrentChapter>(chapterKey, (old) => {
           if (!old || typeof old !== "object") return old;
-          const restored = {
-            ...((old as { enabled_modules?: Record<string, boolean> | null })
-              .enabled_modules ?? {}),
-          };
+          const restored = { ...(old.enabled_modules ?? {}) };
           for (const [key, value] of Object.entries(touched)) {
             if (value === undefined) delete restored[key];
             else restored[key] = value;
@@ -298,7 +300,8 @@ export function usePatchOrgConfig() {
     // back. During `onSettled` this mutation still counts as pending, so 1
     // means "only this one".
     onSettled: () => {
-      if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) > 1) return;
+      if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) > 1)
+        return;
       void qc.invalidateQueries({ queryKey });
       void qc.invalidateQueries({ queryKey: chapterKey });
     },

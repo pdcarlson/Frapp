@@ -10,6 +10,7 @@ import {
   ACT_COPY,
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_FIND_PLACEHOLDER,
   askSavedLine,
   askUnavailableLine,
   type AskAnswer,
@@ -35,6 +36,7 @@ const hooks = vi.hoisted(() => ({
   statusEnabled: [] as boolean[],
   savedUntil: null as string | null,
   download: vi.fn(),
+  signal: vi.fn(),
   actions: [] as string[],
   actEnabled: [] as boolean[],
   mayAct: false,
@@ -69,6 +71,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     };
   },
   useDocumentDownloadUrl: () => ({ mutateAsync: hooks.download }),
+  useAskSignal: () => hooks.signal,
+  // The thumbs have their own specs (`ask-turn.spec.tsx`).
+  useAskThumbs: () => ({
+    state: { rating: null, reason: null },
+    failed: false,
+    rate: vi.fn(),
+    giveReason: vi.fn(),
+  }),
   useAskSuggestions: (options: { enabled: boolean }) => {
     hooks.suggestionsEnabled.push(options.enabled);
     return { suggestions: options.enabled ? hooks.suggestions : [] };
@@ -82,6 +92,19 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
   }),
   useCurrentUser: () => ({ data: { id: "me" } }),
+}));
+
+// The list of places has its own spec (`ask-find.spec.tsx`); here it is a
+// row the sheet's own wiring can be pressed through.
+const find = vi.hoisted(() => ({ queries: [] as string[] }));
+vi.mock("@/components/ask/ask-find", () => ({
+  AskFind: (props: {
+    query: string;
+    onOpen: (route: { pathname: string; params?: object }) => void;
+  }) => {
+    find.queries.push(props.query);
+    return React.createElement("AskFind", props);
+  },
 }));
 
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
@@ -267,6 +290,7 @@ beforeEach(() => {
   hooks.mayAct = false;
   hooks.suggestions = [EVENT];
   hooks.suggestionsEnabled = [];
+  find.queries = [];
   reporting.offered = true;
   reporting.reported = false;
   gate.ensureConsent.mockResolvedValue(true);
@@ -291,7 +315,7 @@ describe("AskSheet", () => {
     );
     expect(list).toHaveLength(1);
     expect(list[0].props.entering).toMatchObject({ animation: "FadeIn" });
-    expect(field(tree).props.placeholder).toBe(ASK_COPY.placeholder);
+    expect(field(tree).props.placeholder).toBe(ASK_FIND_PLACEHOLDER);
     // Nothing to clear yet.
     expect(byLabel(tree, ASK_COPY.new_conversation)).toHaveLength(0);
   });
@@ -302,7 +326,9 @@ describe("AskSheet", () => {
     open(tree);
     expect(screenText(tree)).toContain(ASK_COPY.empty_title);
     expect(
-      tree.root.findAll((node) => node.props.accessibilityHint === "Sends this."),
+      tree.root.findAll(
+        (node) => node.props.accessibilityHint === "Sends this.",
+      ),
     ).toHaveLength(0);
   });
 
@@ -415,6 +441,21 @@ describe("AskSheet", () => {
       "https://files.example/d1",
     );
     expect(modal.dismiss).not.toHaveBeenCalled();
+    // No kept trace on this answer, so the open is counted against nothing.
+    expect(hooks.signal).toHaveBeenLastCalledWith(undefined, "source_opened");
+  });
+
+  it("counts a source opened against the answer's kept trace (#4904)", async () => {
+    const turn = answered();
+    hooks.exchanges = [
+      { ...turn, answer: { ...turn.answer!, ask_id: "trace-1" } },
+    ];
+    hooks.download.mockResolvedValue({
+      downloadUrl: "https://files.example/d1",
+    });
+    const tree = render();
+    await act(async () => sourceRow(tree, 1).props.onPress());
+    expect(hooks.signal).toHaveBeenLastCalledWith("trace-1", "source_opened");
   });
 
   it("says a document didn't open rather than doing nothing", async () => {
@@ -434,6 +475,43 @@ describe("AskSheet", () => {
     expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
       "/minutes-details?id=m1",
     );
+  });
+
+  it("lists places only once three characters are typed, and never before the sheet is open", () => {
+    const tree = render();
+    const found = () =>
+      tree.root.findAll((node) => (node.type as unknown) === "AskFind");
+    act(() => field(tree).props.onChangeText("rush"));
+    // Typed into a sheet that has not finished opening: nothing is read.
+    expect(found()).toHaveLength(0);
+    open(tree);
+    expect(found()).toHaveLength(1);
+    expect(found()[0].props.query).toBe("rush");
+    act(() => field(tree).props.onChangeText("ru"));
+    expect(found()).toHaveLength(0);
+  });
+
+  it("closes for a place found while typing, opens it, and drops what was typed", () => {
+    const onClosed = vi.fn();
+    const tree = render(onClosed);
+    open(tree);
+    act(() => field(tree).props.onChangeText("rush"));
+    const row = tree.root.findAll(
+      (node) => (node.type as unknown) === "AskFind",
+    )[0];
+    act(() =>
+      row.props.onOpen({
+        pathname: "/chat-thread",
+        params: { channelId: "c1", focusMessageId: "m9" },
+      }),
+    );
+    expect(modal.dismiss).toHaveBeenCalled();
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
+      "/chat-thread?channelId=c1&focusMessageId=m9",
+    );
+    expect(field(tree).props.value).toBe("");
+    // A search, not a question: nothing was asked.
+    expect(hooks.ask).not.toHaveBeenCalled();
   });
 
   it("tells its host when it closed for a source, and only that once", async () => {
@@ -487,7 +565,9 @@ describe("AskSheet", () => {
       },
     ];
     const tree = render();
-    act(() => byLabel(tree, AI_REPORT_COPY.titles.ask_answer)[0]!.props.onPress());
+    act(() =>
+      byLabel(tree, AI_REPORT_COPY.titles.ask_answer)[0]!.props.onPress(),
+    );
     expect(reporting.report).toHaveBeenCalledWith({
       subject: "ask_answer",
       subjectId: "ask-1",
@@ -654,9 +734,7 @@ describe("the sheet itself (#4702)", () => {
 
   it("is drawn on the page's background, not the sheet grey", () => {
     const tree = render();
-    const background = flat(
-      sheet(tree)!.props.backgroundStyle,
-    );
+    const background = flat(sheet(tree)!.props.backgroundStyle);
     // `surface.background`; a sheet's own fill is `surface.popover`.
     expect(String(background.backgroundColor)).toBe("#050505");
     // Still a sheet's shape.

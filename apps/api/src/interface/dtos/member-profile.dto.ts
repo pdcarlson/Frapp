@@ -64,6 +64,22 @@ export class MemberProfileDto {
   phone: string | null;
 
   @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      "The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none.",
+  })
+  birthday_month: number | null;
+
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    description:
+      'The day of `birthday_month`, under the same rule. The year is never sent.',
+  })
+  birthday_day: number | null;
+
+  @ApiProperty({
     type: String,
     format: 'uuid',
     nullable: true,
@@ -158,4 +174,30 @@ export class MemberRosterEntryDto {
       'Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it.',
   })
   role_color: string | null;
+}
+
+/**
+ * A birthday a member shares with their chapter (#4959), for the calendar:
+ * who, and the month and day. Never the year.
+ */
+export class MemberBirthdayDto {
+  @ApiProperty({ description: 'users.id' })
+  id: string;
+
+  @ApiProperty()
+  display_name: string;
+
+  @ApiProperty({ type: String, nullable: true })
+  avatar_url: string | null;
+
+  @ApiProperty({ minimum: 1, maximum: 12 })
+  birthday_month: number;
+
+  @ApiProperty({
+    minimum: 1,
+    maximum: 31,
+    description:
+      'The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`).',
+  })
+  birthday_day: number;
 }

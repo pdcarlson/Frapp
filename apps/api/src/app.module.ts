@@ -9,6 +9,7 @@ import { SupabaseModule } from './infrastructure/supabase/supabase.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
+import { BootstrapModule } from './modules/bootstrap/bootstrap.module';
 import { ChapterModule } from './modules/chapter/chapter.module';
 import { MemberModule } from './modules/member/member.module';
 import { MemberNudgeModule } from './modules/member-nudge/member-nudge.module';
@@ -39,6 +40,7 @@ import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
 import { ActivityFeedModule } from './modules/activity-feed/activity-feed.module';
 import { ActivityModule } from './modules/activity/activity.module';
+import { BirthdayModule } from './modules/birthday/birthday.module';
 import { GoalsModule } from './modules/goals/goals.module';
 import { AiRunsModule } from './modules/ai-runs/ai-runs.module';
 import { CorpusModule } from './modules/corpus/corpus.module';
@@ -54,6 +56,8 @@ import { DevLogModule } from './modules/dev-log/dev-log.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AiConsentModule } from './modules/ai-consent/ai-consent.module';
 import { AskModule } from './modules/ask/ask.module';
+import { AskPostModule } from './modules/ask-post/ask-post.module';
+import { AskObserveModule } from './modules/ask-observe/ask-observe.module';
 import { ActModule } from './modules/act/act.module';
 import { ChatCatchUpModule } from './modules/chat-catch-up/chat-catch-up.module';
 import { AiReportModule } from './modules/ai-report/ai-report.module';
@@ -110,6 +114,7 @@ import { validateEnv } from './config/env.validation';
     SearchModule,
     ActivityFeedModule,
     ActivityModule,
+    BirthdayModule,
     GoalsModule,
     AiRunsModule,
     CorpusModule,
@@ -125,6 +130,8 @@ import { validateEnv } from './config/env.validation';
     AiModule,
     AiConsentModule,
     AskModule,
+    AskPostModule,
+    AskObserveModule,
     ActModule,
     ChatCatchUpModule,
     MemberNudgeModule,
@@ -135,6 +142,7 @@ import { validateEnv } from './config/env.validation';
     // the exported contract.
     MeetingDraftModule,
     MeetingRecordingModule,
+    BootstrapModule,
   ],
   providers: [
     {

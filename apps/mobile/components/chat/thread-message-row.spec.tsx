@@ -70,6 +70,8 @@ vi.mock("@repo/hooks", async () => {
     useRushCandidate: () => ({ data: undefined, isError: false }),
     useVoteRushCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useBidRushCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    // A posted answer's document sources (#4713); its own spec covers them.
+    useDocumentDownloadUrl: () => ({ mutateAsync: vi.fn() }),
   };
 });
 
@@ -1110,11 +1112,40 @@ describe("ThreadMessageRow — record cards (#3383)", () => {
    * (#3926 step 3) reads as its title until the phone's form card lands.
    */
   const TEXT_ON_MOBILE = ["dues", "loading", "form"];
+  /**
+   * A posted Ask answer (#4713) is the one card whose `content` is drawn:
+   * the answer's words are the row's text, under who asked and what.
+   */
+  const ANSWER_ON_MOBILE = ["ask_answer"];
+
+  it("draws a posted answer under who asked and what they asked", () => {
+    const text = allDrawnText(
+      renderRow(
+        visible(
+          message({
+            kind: "ask_answer",
+            content: "Quorum is half.",
+            payload: {
+              v: 1,
+              ask_id: "ask-1",
+              asked_by: "user-9",
+              question: "What is quorum?",
+              citations: [],
+              sources: [],
+            } as ChatMessage["payload"],
+          }),
+        ),
+      ),
+    );
+    expect(text).toContain("asked Frapp");
+    expect(text).toContain("What is quorum?");
+    expect(text).toContain("Quorum is half.");
+  });
 
   it("draws every card kind as a card, but the ones it means to leave as text", () => {
-    expect(new Set([...Object.keys(CARDS), ...TEXT_ON_MOBILE])).toEqual(
-      new Set(CARD_KINDS),
-    );
+    expect(
+      new Set([...Object.keys(CARDS), ...TEXT_ON_MOBILE, ...ANSWER_ON_MOBILE]),
+    ).toEqual(new Set(CARD_KINDS));
     for (const [kind, { payload, eyebrow }] of Object.entries(CARDS)) {
       const text = allDrawnText(
         renderRow(

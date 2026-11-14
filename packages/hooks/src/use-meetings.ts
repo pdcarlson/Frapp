@@ -447,10 +447,10 @@ export function useStartMeetingRecording() {
       id: string;
       body: StartMeetingRecordingBody;
     }) => {
-      const { data, error } = await client.POST(
-        "/v1/meetings/{id}/recording",
-        { params: { path: { id } }, body },
-      );
+      const { data, error } = await client.POST("/v1/meetings/{id}/recording", {
+        params: { path: { id } },
+        body,
+      });
       if (error) throw error;
       return data;
     },

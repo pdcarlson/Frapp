@@ -43,6 +43,7 @@ const CONFIG_SECTIONS: Readonly<Record<keyof PatchChapterConfigDto, true>> = {
   workflows: true,
   analytics_opt_out: true,
   default_invite_role_id: true,
+  birthday_channel_id: true,
 };
 
 /**

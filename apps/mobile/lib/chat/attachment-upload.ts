@@ -5,6 +5,7 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { describeChatPhoto } from "./photo-preview";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 import {
+  AVATAR_MAX_EDGE,
   MAX_UPLOAD_LABEL,
   inspectUploadFile,
   isAllowedUploadExtension,
@@ -253,6 +254,125 @@ async function encodeJpeg(asset: {
   return saved.uri;
 }
 
+/** JPEG quality for a downscaled profile photo: no visible loss at 512px. */
+const AVATAR_JPEG_QUALITY = 0.85;
+
+/**
+ * Below this many bytes, an avatar already within `AVATAR_MAX_EDGE` goes up as
+ * picked, as on web (`apps/web/lib/downscale-image.ts`).
+ */
+const AVATAR_KEEP_AS_IS_BYTES = 256 * 1024;
+
+/** The types that may carry transparency, which a logo re-encode keeps as PNG. */
+const ALPHA_TYPES = new Set(["image/png", "image/webp", "image/gif"]);
+
+/**
+ * The picked file as it is, when its type is on the `image` allowlist by both
+ * MIME and extension (the test `resolveUploadable` applies before deciding not
+ * to transcode); `null` otherwise. Encodes nothing.
+ */
+function pickedAsAllowlisted(asset: {
+  uri: string;
+  fileName?: string | null;
+  mimeType?: string;
+}): { uri: string; filename: string; contentType: string } | null {
+  const filename = safeBasename(asset.fileName ?? asset.uri, "photo.jpg");
+  const declared =
+    asset.mimeType && isAllowedUploadMime("image", asset.mimeType)
+      ? asset.mimeType
+      : mimeForUploadFile("image", {
+          name: filename,
+          type: asset.mimeType ?? "",
+        });
+  return declared && isAllowedUploadExtension("image", filename)
+    ? { uri: asset.uri, filename, contentType: declared }
+    : null;
+}
+
+/**
+ * The bytes to upload for a profile photo or chapter logo (#2912): its longest
+ * edge at most `AVATAR_MAX_EDGE`, because the stored object is what every
+ * 24-112px avatar and crest downloads.
+ *
+ * - An image already within the bound and small, of an allowlisted type other
+ *   than GIF, goes up as picked: re-encoding it would only cost it quality.
+ * - Anything else is re-encoded, so a GIF keeps one frame and HEIC becomes an
+ *   allowlisted type. It is scaled down only, never up. A photo is JPEG. A logo
+ *   is PNG when its source may be transparent and JPEG otherwise; PNG and JPEG
+ *   are also the two types the PDF report can embed a logo as.
+ * - The original is kept when the re-encode is no smaller and the original was
+ *   already an allowlisted, single-frame image within the bound.
+ */
+export async function encodeAvatar(
+  asset: {
+    uri: string;
+    fileName?: string | null;
+    mimeType?: string;
+    width?: number;
+    height?: number;
+    fileSize?: number;
+  },
+  avatar: "photo" | "logo",
+): Promise<{ uri: string; filename: string; contentType: string }> {
+  const original = pickedAsAllowlisted(asset);
+  const keepable = original !== null && original.contentType !== "image/gif";
+
+  // The picker can report 0 for either side; the rendered image knows its own.
+  let width = asset.width ?? 0;
+  let height = asset.height ?? 0;
+  let source: Parameters<typeof ImageManipulator.manipulate>[0] = asset.uri;
+  if (!width || !height) {
+    const measured = await ImageManipulator.manipulate(asset.uri).renderAsync();
+    width = measured.width ?? 0;
+    height = measured.height ?? 0;
+    source = measured;
+  }
+  const withinBound =
+    width > 0 && height > 0 && Math.max(width, height) <= AVATAR_MAX_EDGE;
+  if (
+    keepable &&
+    withinBound &&
+    typeof asset.fileSize === "number" &&
+    asset.fileSize <= AVATAR_KEEP_AS_IS_BYTES
+  ) {
+    return original;
+  }
+
+  const context = ImageManipulator.manipulate(source);
+  if (Math.max(width, height) > AVATAR_MAX_EDGE) {
+    context.resize(
+      width >= height
+        ? { width: AVATAR_MAX_EDGE }
+        : { height: AVATAR_MAX_EDGE },
+    );
+  }
+  const png = avatar === "logo" && ALPHA_TYPES.has(original?.contentType ?? "");
+  const rendered = await context.renderAsync();
+  const saved = await rendered.saveAsync(
+    png
+      ? { format: SaveFormat.PNG }
+      : { format: SaveFormat.JPEG, compress: AVATAR_JPEG_QUALITY },
+  );
+
+  if (keepable && withinBound) {
+    const [before, after] = await Promise.all([
+      byteSizeOf(asset.uri, asset.fileSize),
+      byteSizeOf(saved.uri),
+    ]);
+    if (after >= before) return original;
+  }
+
+  const base = safeBasename(asset.fileName ?? asset.uri, "photo").replace(
+    /\.[^.]*$/,
+    "",
+  );
+  return {
+    uri: saved.uri,
+    filename: `${base.length > 0 ? base : "photo"}.${png ? "png" : "jpg"}`,
+    contentType: png ? "image/png" : "image/jpeg",
+  };
+}
+
 /** The byte size of `uri`: `hinted` when the caller has one for these exact bytes, else read from disk. */
 async function byteSizeOf(uri: string, hinted?: number): Promise<number> {
   if (typeof hinted === "number" && Number.isFinite(hinted) && hinted >= 0) {
@@ -268,6 +388,11 @@ export interface ImagePickOptions {
   kind: UploadKind;
   /** Square-crop in the picker. Re-encodes, so a GIF keeps one frame. */
   cropSquare?: boolean;
+  /**
+   * Downscale to `AVATAR_MAX_EDGE` before the upload ({@link encodeAvatar}):
+   * a profile photo encodes JPEG, a chapter logo PNG or JPEG.
+   */
+  avatar?: "photo" | "logo";
   /** The sentences a refusal reads as, in the caller's own words. */
   copy: {
     /** Library access was refused and the prompt can be shown again. */
@@ -405,7 +530,9 @@ async function preparePickedAsset(
   const { kind, copy } = options;
   let uploadable: Awaited<ReturnType<typeof resolveUploadable>>;
   try {
-    uploadable = await resolveUploadable(asset, kind);
+    uploadable = options.avatar
+      ? await encodeAvatar(asset, options.avatar)
+      : await resolveUploadable(asset, kind);
   } catch {
     return { status: "refused", reason: copy.type };
   }

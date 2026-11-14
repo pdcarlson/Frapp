@@ -31,6 +31,19 @@ const {
 
 // useSelectChapter refreshes the Supabase session so the new chapter's
 // active_chapter_id claim is issued before the next API call.
+// #2912: what goes up is what the downscale hands back, never the picked file.
+vi.mock("@/lib/downscale-image", () => ({
+  downscaleImage: vi.fn(
+    async (image: { filename: string }, opts: { keepAlpha: boolean }) => ({
+      body: new Blob(["small"], {
+        type: opts.keepAlpha ? "image/png" : "image/jpeg",
+      }),
+      filename: `small-${image.filename}`,
+      contentType: opts.keepAlpha ? "image/png" : "image/jpeg",
+    }),
+  ),
+}));
+
 vi.mock("@/lib/supabase/client", () => ({
   createSupabaseBrowserClient: () => ({ auth: { refreshSession } }),
 }));
@@ -107,6 +120,7 @@ import {
   normalizeAccentInput,
 } from "@repo/hooks/chapter-identity";
 import { ChapterWizard } from "./chapter-wizard";
+import { downscaleImage } from "@/lib/downscale-image";
 import { DISPLAY_STEP_TITLE } from "./display-step";
 import { setChatDensity } from "@/lib/chat/chat-density";
 
@@ -329,9 +343,14 @@ describe("ChapterWizard chapter mark (#2876)", () => {
     create();
 
     await waitFor(() => expect(uploadLogoMutate).toHaveBeenCalledTimes(1));
+    // Downscaled first, keeping transparency (#2912).
+    expect(downscaleImage).toHaveBeenCalledWith(
+      { body: file, filename: "crest.png", contentType: "image/png" },
+      { keepAlpha: true },
+    );
     expect(uploadLogoMutate).toHaveBeenCalledWith({
-      body: file,
-      filename: "crest.png",
+      body: expect.any(Blob),
+      filename: "small-crest.png",
       contentType: "image/png",
     });
     // The logo routes are chapter-scoped, so the switch has to land first.

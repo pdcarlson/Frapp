@@ -37,6 +37,7 @@ export async function pickAndSetChapterLogo(
   return pickUploadAndConfirmImage({
     kind: "image",
     cropSquare: true,
+    avatar: "logo",
     // The pipeline sends `size_bytes`, which the logo route forbids, so only
     // the two fields it declares go through.
     requestUploadUrl: ({ filename, content_type }) =>

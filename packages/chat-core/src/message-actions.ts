@@ -1,3 +1,4 @@
+import { isAskAnswerPostedBy } from "@repo/validation";
 import { isBlockableSender } from "./blocks";
 import { DELETED_MESSAGE_PLACEHOLDER } from "./reply-preview";
 import type { ChatMessage } from "./types";
@@ -41,6 +42,9 @@ export const CARD_KINDS: ReadonlySet<string> = new Set([
   "rush",
   "signup",
   "form",
+  // An Ask Frapp answer posted to the channel (#4713): the Frapp sender's
+  // row, with who asked and its sources in `payload`.
+  "ask_answer",
 ]);
 
 /**
@@ -106,17 +110,36 @@ export function canEditMessage(
 }
 
 /**
- * Delete: your own message, or any message when the viewer holds
- * `channels:manage`. The server resolves that permission in the message's own
- * chapter, after channel access is confirmed; the client only decides whether
- * the control is likely to succeed.
+ * Whether the viewer posted this Ask Frapp answer to the channel (#4713).
+ * The row is the Frapp sender's, so `isOwnMessage` is false for everyone;
+ * the server writes who posted it in `payload.asked_by`, and no client can
+ * send the kind.
+ */
+export function isOwnPostedAnswer(
+  message: Partial<Pick<ChatMessage, "kind" | "payload">>,
+  viewerId: string | null,
+): boolean {
+  return isAskAnswerPostedBy(message, viewerId);
+}
+
+/**
+ * Delete: your own message, an Ask Frapp answer you posted, or any message
+ * when the viewer holds `channels:manage`. The server resolves that
+ * permission in the message's own chapter, after channel access is
+ * confirmed; the client only decides whether the control is likely to
+ * succeed.
  */
 export function canDeleteMessage(
-  message: Pick<ChatMessage, "sender_id">,
+  message: Pick<ChatMessage, "sender_id"> &
+    Partial<Pick<ChatMessage, "kind" | "payload">>,
   viewerId: string | null,
   canManageChannel: boolean,
 ): boolean {
-  return isOwnMessage(message, viewerId) || canManageChannel;
+  return (
+    isOwnMessage(message, viewerId) ||
+    isOwnPostedAnswer(message, viewerId) ||
+    canManageChannel
+  );
 }
 
 /**
@@ -196,11 +219,14 @@ export interface MessageActions {
   canDelete: boolean;
   canReport: boolean;
   canBlock: boolean;
+  /** Forward to another channel or DM (#4864): `canForwardMessage`. */
+  canForward: boolean;
 }
 
 const NO_ACTIONS: MessageActions = {
   canOpen: false,
   canReply: false,
+  canForward: false,
   canEdit: false,
   canDelete: false,
   canReport: false,
@@ -329,7 +355,9 @@ export function messageActionsFor(
   message: Pick<
     ChatMessage,
     "id" | "sender_id" | "kind" | "_status" | "is_deleted"
-  >,
+  > &
+    Partial<Pick<ChatMessage, "payload">> &
+    ForwardableFields,
   viewerId: string | null,
   context: MessageActionsContext,
 ): MessageActions {
@@ -341,20 +369,55 @@ export function messageActionsFor(
     canDelete: canDeleteMessage(message, viewerId, context.canManageChannel),
     canReport: canReportMessage(message, viewerId),
     canBlock: canBlockSender(message, viewerId, context.isMember),
+    canForward: canForwardMessage(message),
   };
 }
 
+/** What `canForwardMessage` reads beyond the row's status and kind. */
+type ForwardableFields = Partial<
+  Pick<ChatMessage, "content" | "gif" | "attachment_count" | "forwarded_from">
+>;
+
 /**
- * Report, on its own: anyone else's confirmed, undeleted message. The web
+ * Forward (#4864): a confirmed, undeleted plain-text message, GIFs and
+ * messages with files included, whoever sent it. The channel's `can_post`
+ * does not enter into it: the forward posts somewhere else, and the picker
+ * offers only the channels the viewer can post in. Never a card (its words
+ * live in `payload`), an imported archive row, or a pending, failed or
+ * unconfirmed row, which the API has no id for (or can't vouch for); the
+ * API refuses each with 400. A forward of a forward with no comment is
+ * forwarded as its copy, so one whose original was deleted has nothing left
+ * to send.
+ */
+export function canForwardMessage(
+  message: Pick<ChatMessage, "kind" | "_status" | "is_deleted"> &
+    ForwardableFields,
+): boolean {
+  if (!canActOnMessage(message) || message.kind !== "text") return false;
+  const copy = message.forwarded_from;
+  if (!copy?.deleted) return true;
+  return (
+    (message.content ?? "").trim().length > 0 ||
+    !!message.gif ||
+    (message.attachment_count ?? 0) > 0
+  );
+}
+
+/**
+ * Report, on its own: anyone else's confirmed, undeleted message. An Ask
+ * Frapp answer the viewer posted is theirs, though the row is Frapp's. The web
  * action bar asks this directly, since it gates Reply, Edit and Delete on its
  * own callbacks rather than on a {@link MessageActionsContext}.
  */
 export function canReportMessage(
-  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted"> &
+    Partial<Pick<ChatMessage, "kind" | "payload">>,
   viewerId: string | null,
 ): boolean {
   return (
-    canOpenMessageActions(message, viewerId) && !isOwnMessage(message, viewerId)
+    canOpenMessageActions(message, viewerId) &&
+    !isOwnMessage(message, viewerId) &&
+    !isOwnPostedAnswer(message, viewerId)
   );
 }
 
@@ -378,12 +441,21 @@ export function canBlockSender(
  * photo-only message). The body is copied as the member wrote it, markdown and
  * `@handles` included, as Discord and iMessage copy what was typed rather than
  * how it was drawn.
+ *
+ * A forward with no comment (#4864) copies its copy's text, unless the
+ * original was deleted or the viewer's block list masks it: pass
+ * `forwarded_from` already through `forwardedSnapshotVisible`, as the card
+ * draws it, or leave it out to copy only the comment.
  */
 export function copyableText(
-  message: Pick<ChatMessage, "content" | "kind" | "is_deleted">,
+  message: Pick<ChatMessage, "content" | "kind" | "is_deleted"> &
+    Partial<Pick<ChatMessage, "forwarded_from">>,
 ): string | null {
   if (message.is_deleted || isCardMessage(message)) return null;
-  return message.content.trim() ? message.content : null;
+  if (message.content.trim()) return message.content;
+  const copy = message.forwarded_from;
+  if (!copy || copy.deleted || copy.sender_blocked) return null;
+  return copy.content.trim() ? copy.content : null;
 }
 
 /**

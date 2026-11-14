@@ -2,11 +2,18 @@ import { Module } from '@nestjs/common';
 import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
 import { ActivityStandingService } from '../../application/services/activity-standing.service';
+import { ActivityRecapService } from '../../application/services/activity-recap.service';
 import { SupabaseChatMessageLinkRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-link.repository';
 import { CHAT_MESSAGE_LINK_REPOSITORY } from '#domain/repositories/chat-message-link.repository.interface';
 import { SupabaseActivityItemReadRepository } from '../../infrastructure/supabase/repositories/supabase-activity-item-read.repository';
 import { ACTIVITY_ITEM_READ_REPOSITORY } from '#domain/repositories/activity-item-read.repository.interface';
 import { ActivityController } from '../../interface/controllers/activity.controller';
+import { ChatReminderController } from '../../interface/controllers/chat-reminder.controller';
+import { ChatReminderService } from '../../application/services/chat-reminder.service';
+import { ChatReminderSweepService } from '../../application/workers/chat-reminder-sweep.service';
+import { SupabaseChatMessageReminderRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-reminder.repository';
+import { CHAT_MESSAGE_REMINDER_REPOSITORY } from '#domain/repositories/chat-message-reminder.repository.interface';
+import { NotificationModule } from '../notification/notification.module';
 import { LinkTitleSweepService } from '../../application/workers/link-title-sweep.service';
 import { HttpsLinkTitleFetcher } from '../../infrastructure/link-title/https-link-title.fetcher';
 import { LINK_TITLE_FETCHER } from '#domain/adapters/link-title.interface';
@@ -56,12 +63,15 @@ import { TaskModule } from '../task/task.module';
     StudyModule,
     // Each member's goal on points, service and study (#1062).
     GoalsModule,
+    NotificationModule,
   ],
-  controllers: [ActivityController],
+  controllers: [ActivityController, ChatReminderController],
   providers: [
     ActivityService,
     ActivityLinkService,
     ActivityStandingService,
+    // Last week's recap (`GET /v1/activity/recap`, #4983).
+    ActivityRecapService,
     // Links on Activity (#3897): this module is the table's only reader. The
     // database's triggers on `chat_messages` write its rows; the title sweep
     // below writes only their page titles.
@@ -74,6 +84,14 @@ import { TaskModule } from '../task/task.module';
     // URL a member posted. Built by a factory, since a spec passes its own
     // DNS and request in place of the network.
     LinkTitleSweepService,
+    // "Remind me about this" (#4957): its routes, its Activity section and
+    // the minute sweep that sends its pushes.
+    ChatReminderService,
+    ChatReminderSweepService,
+    {
+      provide: CHAT_MESSAGE_REMINDER_REPOSITORY,
+      useClass: SupabaseChatMessageReminderRepository,
+    },
     {
       provide: LINK_TITLE_FETCHER,
       useFactory: () => new HttpsLinkTitleFetcher(),
@@ -107,5 +125,8 @@ import { TaskModule } from '../task/task.module';
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     { provide: ATTENDANCE_REPOSITORY, useClass: SupabaseAttendanceRepository },
   ],
+  // For Frapp AI's standing tools (#4901), which read the standing as `GET
+  // /v1/activity/standing` does.
+  exports: [ActivityStandingService],
 })
 export class ActivityModule {}

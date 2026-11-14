@@ -21,10 +21,12 @@ import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
+import { CHAT_SCHEDULED_MESSAGE_REPOSITORY } from '#domain/repositories/chat-scheduled-message.repository.interface';
 import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { memberFixture } from './entity-fixtures';
 import { ChatService } from '../../src/application/services/chat.service';
 import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
+import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import { ChatMentionService } from '../../src/application/services/chat-mention.service';
 import { ChapterPresenceReader } from '../../src/application/services/chapter-presence-reader.service';
 import { ChatAttachmentService } from '../../src/application/services/chat-attachment.service';
@@ -241,6 +243,10 @@ export async function createChatServiceFixture() {
   };
 
   // No open report holds anything unless a case says so (#2481).
+  // What scheduled messages still name (#4971): nothing, unless a test says.
+  const mockScheduledRepo: { findPathsInUse: jest.Mock } = {
+    findPathsInUse: jest.fn().mockResolvedValue([]),
+  };
   const mockReportRepo: { findHeldObjects: jest.Mock } = {
     findHeldObjects: jest.fn().mockResolvedValue([]),
   };
@@ -266,6 +272,9 @@ export async function createChatServiceFixture() {
     setFollowState: jest.fn().mockResolvedValue(undefined),
     markRead: jest.fn().mockResolvedValue(undefined),
     findFollowedUnread: jest.fn().mockResolvedValue([]),
+    findMemberThreads: jest.fn().mockResolvedValue([]),
+    findFollowedChannelIds: jest.fn().mockResolvedValue([]),
+    findMessagesByIds: jest.fn().mockResolvedValue([]),
   };
 
   const mockRbac = {
@@ -288,6 +297,11 @@ export async function createChatServiceFixture() {
   // names (`ChannelAccessListService`). None by default.
   const mockRoleRepo = { findByChapter: jest.fn().mockResolvedValue([]) };
   const mockTierRepo = { findByChapter: jest.fn().mockResolvedValue([]) };
+
+  // A forward's copy names the original's author (#4864). Nobody by default.
+  const mockUserRepo = {
+    findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([]),
+  };
 
   // Defaults: caller is a member of the chapter, channel resolves, no special
   // permissions. Individual tests override to exercise denial paths.
@@ -346,7 +360,12 @@ export async function createChatServiceFixture() {
       { provide: ChannelCacheService, useValue: mockChannelCache },
       { provide: ChatBlockService, useValue: mockChatBlocks },
       { provide: CHAT_MESSAGE_REPORT_REPOSITORY, useValue: mockReportRepo },
+      {
+        provide: CHAT_SCHEDULED_MESSAGE_REPOSITORY,
+        useValue: mockScheduledRepo,
+      },
       { provide: CHAT_THREAD_REPOSITORY, useValue: mockThreadRepo },
+      { provide: USER_REPOSITORY, useValue: mockUserRepo },
     ],
   }).compile();
 
@@ -375,7 +394,9 @@ export async function createChatServiceFixture() {
     mockGroupRepo,
     mockChatBlocks,
     mockReportRepo,
+    mockScheduledRepo,
     mockThreadRepo,
+    mockUserRepo,
   };
 }
 

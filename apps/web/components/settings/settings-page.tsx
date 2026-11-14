@@ -43,6 +43,7 @@ import {
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useChapterModuleGate } from "@/lib/hooks/use-chapter-module-gate";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import { downscaleImage } from "@/lib/downscale-image";
 import {
   isSettingsTabVisible,
   visibleSettingsTools,
@@ -85,6 +86,7 @@ import { PlanAndBilling } from "@/components/billing/plan-and-billing";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
+import { SettingsBirthdayPosts } from "@/components/settings/settings-birthday-posts";
 import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
 import { SettingsAiTab } from "@/components/settings/settings-ai-tab";
 import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
@@ -454,7 +456,10 @@ function SettingsPageContent() {
 
   async function saveLogo(upload: ChapterLogoUpload) {
     try {
-      await uploadLogo.mutateAsync(upload);
+      // Stored at 512px for the crests that draw it (#2912).
+      await uploadLogo.mutateAsync(
+        await downscaleImage(upload, { keepAlpha: true }),
+      );
       toast({
         title: "Logo saved",
         description: "An entry was written to the chapter audit log.",
@@ -712,6 +717,27 @@ function SettingsPageContent() {
                 }
               />,
             )}
+            {config ? (
+              <div className="mt-10">
+                <SettingsBirthdayPosts
+                  channelId={
+                    typeof config.birthday_channel_id === "string"
+                      ? config.birthday_channel_id
+                      : null
+                  }
+                  canManage={canManage}
+                  isSaving={pendingConfigKeys.has("birthday_channel_id")}
+                  onChange={(birthdayChannelId) =>
+                    patchConfig(
+                      { birthday_channel_id: birthdayChannelId },
+                      birthdayChannelId
+                        ? "Birthday posts on"
+                        : "Birthday posts off",
+                    )
+                  }
+                />
+              </div>
+            ) : null}
           </TabsContent>
           {/*
             Board `4d` gives Semester its own rail entry. It used to be two

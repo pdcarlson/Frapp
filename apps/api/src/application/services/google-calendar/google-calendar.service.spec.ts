@@ -196,6 +196,7 @@ describe('GoogleCalendarService', () => {
     it.each([
       ['a web page', 'https://evil.example/steal'],
       ['Expo Go, in production', 'exp://192.168.1.5:8081/--/google-calendar'],
+      ['the staging app, in production', 'frapp-staging://google-calendar'],
       ['nothing', null],
       ['Expo Go on a public server', 'exp://evil.example:80/--/x'],
       ['Expo Go on a lookalike host', 'exps://192.168.1.5.evil.example/--/x'],
@@ -211,6 +212,25 @@ describe('GoogleCalendarService', () => {
         service.connect(CHAPTER, USER, 'mobile', url),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(repo.createState).not.toHaveBeenCalled();
+    });
+
+    it('accepts the staging app outside production', async () => {
+      const { service, repo } = setup({
+        env: { SUPABASE_URL: 'http://localhost:54321' },
+      });
+
+      await service.connect(
+        CHAPTER,
+        USER,
+        'mobile',
+        'frapp-staging://google-calendar',
+      );
+
+      expect(repo.createState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          return_to: 'frapp-staging://google-calendar',
+        }),
+      );
     });
 
     it('accepts Expo Go outside production', async () => {

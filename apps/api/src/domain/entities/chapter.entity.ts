@@ -74,4 +74,9 @@ export interface Chapter {
   // default rather than leaving it dangling — optional here for the same
   // projection reason as the columns above.
   default_invite_role_id?: string | null;
+  /**
+   * The channel the chapter's happy-birthday posts go to (#4959), or null for
+   * none, the default. A deleted channel clears it (`on delete set null`).
+   */
+  birthday_channel_id?: string | null;
 }

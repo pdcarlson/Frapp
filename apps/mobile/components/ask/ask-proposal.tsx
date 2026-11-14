@@ -16,12 +16,14 @@ import { codeOf } from "@repo/api-sdk";
 import {
   memberFallbackLabel,
   useAcceptAiSuggestion,
+  useAskCards,
   useActEventAudience,
   useChapterRoster,
   useCurrentUser,
   useDismissAiSuggestion,
   type ActResponse,
   type AiSuggestion,
+  type AskCardEnd,
   type AskProposalResolution,
   type PointsSuggestionEdits,
 } from "@repo/hooks";
@@ -29,6 +31,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   ACT_COPY,
+  ASK_CARDS_COPY,
   AI_REPORT_COPY,
   actActionLabel,
   actAttendanceLine,
@@ -149,25 +152,13 @@ export function AskProposal({
   const [problem, setProblem] = useState<string | null>(null);
 
   if (resolution) {
-    const headline = proposalHeadline(proposal);
-    const link =
-      resolution.kind === "done"
-        ? (RESULT_LINKS[resolution.page ?? ""] ?? null)
-        : null;
     return (
-      <View style={styles.card}>
-        {headline ? <Text style={styles.headline}>{headline}</Text> : null}
-        <Text style={styles.muted}>
-          {resolutionLine(resolution)}
-        </Text>
-        {link ? (
-          <QuietButton
-            label={link.label}
-            onPress={() => onOpen(link)}
-            styles={styles}
-          />
-        ) : null}
-      </View>
+      <CardReceipt
+        headline={proposal.suggestion ? cardHeadline(proposal.suggestion) : null}
+        resolution={resolution}
+        onOpen={onOpen}
+        styles={styles}
+      />
     );
   }
 
@@ -217,15 +208,153 @@ export function AskProposal({
 }
 
 /** What the card was about, in a few words, once it is one line. */
-function proposalHeadline(proposal: ActResponse): string | null {
-  const suggestion = proposal.suggestion;
-  if (!suggestion) return null;
+function cardHeadline(suggestion: AiSuggestion): string | null {
   if (suggestion.task) return suggestion.task.title;
   if (suggestion.new_event) return suggestion.new_event.name;
   return suggestion.points?.reason ?? null;
 }
 
 type Styles = ReturnType<typeof createStyles>;
+
+/** A card that ended: what happened, in the frame the card had. */
+function CardReceipt({
+  headline,
+  resolution,
+  onOpen,
+  styles,
+}: {
+  headline: string | null;
+  resolution: AskProposalResolution;
+  onOpen: (link: ActLink) => void;
+  styles: Styles;
+}) {
+  const link =
+    resolution.kind === "done"
+      ? (RESULT_LINKS[resolution.page ?? ""] ?? null)
+      : null;
+  return (
+    <View style={styles.card}>
+      {headline ? <Text style={styles.headline}>{headline}</Text> : null}
+      <Text style={styles.muted}>{resolutionLine(resolution)}</Text>
+      {link ? (
+        <QuietButton
+          label={link.label}
+          onPress={() => onOpen(link)}
+          styles={styles}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/** A card under an answer carries no notes: they come only with a typed request. */
+const NO_NOTES: ActResponse["notes"] = [];
+
+/**
+ * The cards an answer came with (`answer.proposals`, #4904), stacked under
+ * it, each waiting for its own Confirm. Web's twin is `AskAnswerCards` in
+ * `apps/web/components/ask/ask-proposal.tsx`, and the reasoning is there. A
+ * card that ended is one line in its frame; one the server no longer holds
+ * says so in the same frame. While the cards are being read each holds a
+ * frame of a card's usual height, so the thread does not jump.
+ */
+export function AskAnswerCards({
+  ids,
+  ended,
+  onEnded,
+  kept,
+  onKeep,
+  report,
+  onOpen,
+}: {
+  ids: readonly string[];
+  /** How each card that is no longer waiting ended, by its id. */
+  ended: Readonly<Record<string, AskCardEnd>>;
+  onEnded: (suggestionId: string, end: AskCardEnd) => void;
+  kept: KeptTargets;
+  onKeep: (suggestionId: string, targets: string[]) => void;
+  report: Reporting;
+  onOpen: (link: ActLink) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const waiting = useMemo(
+    () => ids.filter((id) => !ended[id]),
+    [ids, ended],
+  );
+  const cards = useAskCards(waiting);
+  return (
+    <View style={styles.block} testID="ask-answer-cards">
+      {ids.map((id) => {
+        const end = ended[id];
+        if (end) {
+          return (
+            <CardReceipt
+              key={id}
+              headline={end.headline}
+              resolution={end.resolution}
+              onOpen={onOpen}
+              styles={styles}
+            />
+          );
+        }
+        const suggestion = cards.byId.get(id);
+        if (suggestion) {
+          const headline = cardHeadline(suggestion);
+          return (
+            <ActCard
+              key={id}
+              suggestion={suggestion}
+              notes={NO_NOTES}
+              kept={kept[id] ?? null}
+              onKeep={onKeep}
+              report={report}
+              onDone={(line, page) =>
+                onEnded(id, {
+                  resolution: { kind: "done", line, page },
+                  headline,
+                })
+              }
+              onCancelled={() =>
+                onEnded(id, { resolution: { kind: "cancelled" }, headline })
+              }
+              onGone={() =>
+                onEnded(id, { resolution: { kind: "gone" }, headline })
+              }
+              styles={styles}
+            />
+          );
+        }
+        if (!cards.settled) {
+          // The list could not be read: the card may well still be waiting,
+          // so it is not called gone. It comes back when the list is read.
+          return cards.failed ? (
+            <View key={id} style={styles.card}>
+              <Text accessibilityRole="alert" style={styles.muted}>
+                {ASK_CARDS_COPY.unread}
+              </Text>
+            </View>
+          ) : (
+            <View
+              key={id}
+              accessibilityState={{ busy: true }}
+              style={[styles.card, styles.cardWaiting]}
+            />
+          );
+        }
+        return (
+          <CardReceipt
+            key={id}
+            headline={null}
+            resolution={{ kind: "gone" }}
+            onOpen={onOpen}
+            styles={styles}
+          />
+        );
+      })}
+    </View>
+  );
+}
 
 function QuietButton({
   label,
@@ -1037,6 +1166,11 @@ function createStyles(tokens: SignetTokens) {
       backgroundColor: tokens.color.surface.surface1,
       padding: tokens.spacing.md,
       gap: tokens.spacing.md,
+    },
+    // A card still being read: its frame, at about a card's height.
+    cardWaiting: {
+      height: 112,
+      opacity: 0.6,
     },
     cardHead: {
       flexDirection: "row",

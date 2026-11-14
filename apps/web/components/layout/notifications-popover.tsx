@@ -10,11 +10,12 @@ import {
 } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import {
   AI_SUGGESTIONS_NOTIFICATION_SCREEN,
   CHAT_REPORTS_NOTIFICATION_SCREEN,
   DISCORD_IMPORT_NOTIFICATION_SCREEN,
+  useClearNotifications,
   useInvalidateChatReports,
   useMarkNotificationRead,
   useMarkNotificationScreensSeen,
@@ -31,6 +32,7 @@ import {
   NOTIFICATION_TILE_HUE,
   groupNotificationsBySource,
   isTileKind,
+  notificationConversation,
   notificationEntryCount,
   notificationLook,
   notificationPreview,
@@ -50,6 +52,7 @@ import {
 } from "@/components/chat/chat-glyphs";
 import { MENTION_CHIP } from "@/components/chat/chip";
 import { Button } from "@/components/ui/button";
+import { IconButton } from "@/components/ui/icon-button";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { UnreadDot } from "@/components/shared/unread-dot";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -91,6 +94,8 @@ type Notification = {
       screen?: string;
       channelId?: string;
       messageId?: string;
+      /** A thread's first message, when the row is about a reply in it. */
+      threadRootId?: string;
       eventId?: string;
       /** "Minutes posted" (`meeting.service.ts`) names the minutes too. */
       meetingId?: string;
@@ -107,7 +112,13 @@ type Notification = {
     memberUserId?: string;
     chatKind?: string;
     mentioned?: boolean;
+    /** A message reminder that came due (#4957). */
+    reminder?: boolean;
+    /** The message a reminder is about (#4957). */
+    messageId?: string;
   } | null;
+  /** The chat message a chat row is about, kept in its own column. */
+  chat_message_id?: string | null;
   read_at: string | null;
   created_at: string;
 };
@@ -122,15 +133,25 @@ type Notification = {
  *
  * A chat notification's `target` never carries a `messageId` (a chat push
  * carries one beside `target` for the phone's tray, and the in-app row keeps
- * it in a column, `spec/behavior/notifications.md` § Deep Linking), so this
- * only ever forwards `channelId` through `chatDeepLink`.
+ * it in a column, `spec/behavior/notifications.md` § Deep Linking). Only a
+ * reminder (#4957) forwards it (its `data.messageId`, or the column on a
+ * row written before that field), so it opens on the message the
+ * member asked about: its thread's first message for a reply, which is what
+ * the channel's timeline holds. Any other chat row opens the channel.
  */
 export function deepLinkFor(notification: Notification): string {
   const target = notification.data?.target;
   if (!target) return "/chat";
   switch (target.screen) {
     case "chat":
-      return chatDeepLink({ channelId: target.channelId });
+      return chatDeepLink({
+        channelId: target.channelId,
+        messageId: notification.data?.reminder
+          ? (target.threadRootId ??
+            notification.data?.messageId ??
+            notification.chat_message_id)
+          : null,
+      });
     case "events":
       return target.meetingId ? `/meetings/${target.meetingId}` : "/events";
     case "points":
@@ -200,6 +221,7 @@ export function NotificationsPopover({
   const markManyRead = useMarkNotificationsRead();
   // Its own instance, so opening an entry doesn't disable Mark all read.
   const markEntryRead = useMarkNotificationsRead();
+  const clear = useClearNotifications();
   const invalidateReports = useInvalidateChatReports();
 
   // A notification is read once the member has seen what it is about
@@ -410,7 +432,7 @@ export function NotificationsPopover({
                     {group.rows.map(({ entry, time }) => {
                       const notification = entry.lead;
                       return (
-                        <li key={entry.key}>
+                        <li key={entry.key} className="group/entry relative">
                           <NotificationRow
                             notification={notification}
                             time={time}
@@ -426,6 +448,29 @@ export function NotificationsPopover({
                               onOpenChange(false);
                             }}
                           />
+                          {/* Clear (#3948), as Discord's inbox and GitHub's
+                              Done clear one. To a mouse it shows over the
+                              time on hover or focus, as Gmail's row actions
+                              do; to a finger it is always there, centred in
+                              a gutter the row keeps for it, so the time
+                              stays readable. A conversation's entry clears
+                              the whole conversation on the server, rows the
+                              list didn't load or hid under Unread included. */}
+                          <IconButton
+                            label={`Clear: ${notificationTitle(notification.title)}`}
+                            onClick={() => {
+                              contentRef.current?.focus();
+                              clear.mutate({
+                                ids: entry.rows.map((row) => row.id),
+                                conversation:
+                                  notificationConversation(notification.data) ??
+                                  undefined,
+                              });
+                            }}
+                            className="absolute right-1 top-1.5 bg-popover text-muted-foreground opacity-0 group-hover/entry:opacity-100 group-focus-within/entry:opacity-100 pointer-coarse:top-1/2 pointer-coarse:-translate-y-1/2 pointer-coarse:opacity-100"
+                          >
+                            <X className="h-4 w-4" aria-hidden="true" />
+                          </IconButton>
                         </li>
                       );
                     })}
@@ -516,7 +561,7 @@ function NotificationRow({
       onClick={onOpen}
       data-notification-kind={look.kind}
       className={cn(
-        "group/row grid grid-cols-[8px_36px_minmax(0,1fr)] gap-x-3 rounded-md border border-transparent px-3 py-3 transition hover:bg-card-hover",
+        "group/row grid grid-cols-[8px_36px_minmax(0,1fr)] gap-x-3 rounded-md border border-transparent px-3 py-3 transition hover:bg-card-hover pointer-coarse:pr-14",
         FOCUS_RING,
         "focus-visible:ring-inset",
       )}

@@ -201,10 +201,7 @@ export default function TasksScreen() {
   // chapter has Events on. The chapter must be read first, because an unread
   // `enabled_modules` counts as on and would fire a read Events-off refuses.
   const chapterQuery = useCurrentChapter();
-  const enabledModules = (
-    chapterQuery.data as
-      { enabled_modules?: Record<string, boolean> } | undefined
-  )?.enabled_modules;
+  const enabledModules = chapterQuery.data?.enabled_modules;
   const eventsOn =
     chapterQuery.isSuccess && isModuleEnabled(enabledModules, "events");
   const canCreate =

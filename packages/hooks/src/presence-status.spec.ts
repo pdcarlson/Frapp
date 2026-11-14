@@ -126,7 +126,12 @@ describe("presenceMapFrom", () => {
       a: [{ userId: "u1", ts: 10, status: "dnd", line: "old tab" }],
       b: [{ userId: "u1", ts: 99, status: "idle", line: "At practice" }],
     });
-    expect(map.get("u1")).toEqual({ ts: 99, picked: "idle", line: "At practice", away: false });
+    expect(map.get("u1")).toEqual({
+      ts: 99,
+      picked: "idle",
+      line: "At practice",
+      away: false,
+    });
   });
 
   test("reads status and line, and leaves them out when absent", () => {
@@ -136,7 +141,12 @@ describe("presenceMapFrom", () => {
         { userId: "u2", ts: 1 },
       ],
     });
-    expect(map.get("u1")).toEqual({ ts: 1, picked: "dnd", line: "Studying", away: false });
+    expect(map.get("u1")).toEqual({
+      ts: 1,
+      picked: "dnd",
+      line: "Studying",
+      away: false,
+    });
     expect(map.get("u2")).toEqual(at(1));
   });
 
@@ -210,7 +220,7 @@ describe("presenceMapFrom", () => {
         "nope",
         42,
         {},
-        { userId: "" , ts: 1 },
+        { userId: "", ts: 1 },
         { userId: "u1" },
         { userId: "u2", ts: "soon" },
         { userId: "u3", ts: Number.NaN },
@@ -226,8 +236,10 @@ describe("presenceMapFrom", () => {
     expect(presenceMapFrom({}).size).toBe(0);
     expect(presenceMapFrom({ a: [] }).size).toBe(0);
     expect(
-      presenceMapFrom({ a: "not-an-array" } as unknown as Record<string, never[]>)
-        .size,
+      presenceMapFrom({ a: "not-an-array" } as unknown as Record<
+        string,
+        never[]
+      >).size,
     ).toBe(0);
   });
 });
@@ -242,9 +254,7 @@ describe("presenceMapFrom", () => {
  */
 describe("sameRoster", () => {
   test("equal contents compare equal even as different Map instances", () => {
-    expect(
-      sameRoster(roster(["u1", 1]), roster(["u1", 1])),
-    ).toBe(true);
+    expect(sameRoster(roster(["u1", 1]), roster(["u1", 1]))).toBe(true);
   });
 
   test("a changed timestamp is a change", () => {
@@ -256,12 +266,12 @@ describe("sameRoster", () => {
     expect(
       sameRoster(base, new Map([["u1", { ...at(1), picked: "dnd" }]])),
     ).toBe(false);
-    expect(
-      sameRoster(base, new Map([["u1", { ...at(1), away: true }]])),
-    ).toBe(false);
-    expect(
-      sameRoster(base, new Map([["u1", { ...at(1), line: "Out" }]])),
-    ).toBe(false);
+    expect(sameRoster(base, new Map([["u1", { ...at(1), away: true }]]))).toBe(
+      false,
+    );
+    expect(sameRoster(base, new Map([["u1", { ...at(1), line: "Out" }]]))).toBe(
+      false,
+    );
   });
 
   test("a different member set is a change, both directions", () => {

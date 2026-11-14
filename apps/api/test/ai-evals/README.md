@@ -107,6 +107,162 @@ as written, with no model call.
 Prices in `bake-off/candidates.ts` are dated observations. The Gemini prices and model ids come
 from search results and are checked at Google before a paid run.
 
+## Real questions (#4903)
+
+The cases above grade the rules Frapp enforces around a model. `real-questions/` grades the answer:
+forty questions a member, a committee chair or an officer would really ask, plus requests Frapp AI
+must decline, each with what a right answer holds. Did it know who asked, look in the right places,
+get the facts right and stay short.
+
+| File | What it holds |
+| --- | --- |
+| `real-questions/questions.ts` | The forty: 12 from a member, 9 from a chair, 10 from an officer, 9 to decline. Each has the asker, where they asked from, the facts a right answer holds, what it must never say, the reads it needs, a word limit, and a reference answer written by hand |
+| `real-questions/paul-questions.json` | Paul's own questions, as data. Empty until he gives them |
+| `real-questions/code-grader.ts` | The checks code can make. Its header lists every rule |
+| `real-questions/judge-rubric.md`, `judge.ts`, `judge-sample.ts` | The judge model's instructions, the call, and the hand-graded answers it is checked against |
+| `real-questions/agents.ts` | The agents that can be asked: `one-shot`, the Ask that shipped before the agent rebuild, and `loop`, the tool loop that replaces it |
+| `harness/loop-agent.ts`, `harness/term-world.ts` | The loop as an agent under test: the product's Ask on its loop path with its real tools, and the term chapter's records behind those tools |
+| `real-questions/run.ts` | Asks every question of every model at every effort and prints the table |
+| `synthetic-chapter/term.ts` | The term the questions are asked of (below) |
+
+`real-questions.eval-spec.ts` runs on every build with no key: the term chapter is consistent, every
+reference answer passes every code check, every code rule has a test that proves it fires, and the
+whole set goes through the one-shot Ask with the scripted model. `loop-agent.eval-spec.ts` puts the
+same set through the tool loop, and holds its tools to what they must never show a model.
+
+### Asking a real model
+
+```bash
+AI_EVALS_ALLOW_PAID=1 npm run ai:bake-off -w apps/api -- --task ask.real \
+  --models claude-sonnet-5-5,claude-opus-5-5,claude-haiku-5-5 \
+  --efforts low,medium --runs 3 --judge claude-opus-5-5 --out real.md --json real.json
+```
+
+It needs `ANTHROPIC_API_KEY` in the environment and Node 24 (`.nvmrc`). It is off by default, CI
+never runs it, and it prints what the run cost. `--models scripted --judge scripted` runs the same
+path with no network. `--only id,id` asks a few questions, `--agent` picks what is asked (a name in
+`agents.ts`, or the absolute path of a module that exports `createRealQuestionAgent`), and `--json`
+writes every result for a result page.
+
+**Nothing here has been run against a real model yet.** No key is available to the evals
+([`ENV_REFERENCE.md`](../../../../docs/internal/environment/ENV_REFERENCE.md) lists
+`ANTHROPIC_API_KEY` as unset everywhere, #3279). The one-shot baseline, the loop's score, the
+judge's agreement and the model bake-off are numbers this README does not have.
+
+### Reading a result
+
+One row per model and effort:
+
+| Column | What it means |
+| --- | --- |
+| Right | Questions that passed every code check and, when a judge ran, all five of its criteria. The number to compare |
+| Code checks | Questions with no code-check failure |
+| Judge | Questions the judge passed on all five criteria. `n/a` when no judge ran |
+| Member, Chair, Exec, Refuse | Right, by who asked |
+| Model calls | Model requests per answered question, the agent's rounds |
+| Time p50 / p95 | Seconds from question to answer |
+| Cost per question | Tokens at the prices in `bake-off/candidates.ts` per answered question, judge not included. A question that died on a provider error counts as wrong and is left out of cost, calls and time |
+| Questions per $25 | How many such questions a chapter's monthly cap buys |
+
+Under the table, every failure is listed by question id and rule, never by its text. A rule name is
+a row of the table at the top of `code-grader.ts`; a judge failure names the criterion in
+`judge-rubric.md`.
+
+With the scripted model the one-shot Ask passes 23 of 40 code checks, every miss a `tools` failure
+(two also `cards`). That is not a baseline: the answers are the reference answers, and the scripted
+planner asks for every read while Ask runs the first three, so `my_tasks` is never called. What it
+does show is where the one-shot Ask has no read at all (chapter tasks, attendance, service hours) and
+that it cannot propose a card. The baseline is this run with a real model.
+
+With `--agent loop` the scripted model passes 37 of 40. That is not the loop's score either: the
+script searches, asks for the reads a question expects when they take no argument, and answers with
+the reference. The three misses are the two questions that need cards (a card's content is a
+model's to write) and one read that needs an event named. It shows the tools run against the term
+chapter as the asker and return what the questions expect to find.
+
+### The judge
+
+Code checks catch a missing fact or a leaked word. They cannot tell a reversed decision given as
+current from the same words in the right order, so a judge model reads each answer against the
+question's `rightAnswer` notes and marks five criteria true or false. Its instructions are
+`judge-rubric.md`, word for word.
+
+A judge is only worth its agreement with a person. `judge-sample.ts` holds every reference answer (a
+pass), nineteen answers written to be wrong in the ways real answers go wrong, each marked with the
+criteria a person fails it on, and one short right answer the judge must not mark down. Measure it with:
+
+```bash
+AI_EVALS_ALLOW_PAID=1 npm run ai:bake-off -w apps/api -- --task judge.agreement --judge claude-opus-5-5
+```
+
+It prints agreement on pass or fail, agreement per criterion, and every answer the judge and the
+hand grade disagree on. The sample has one grader so far; when someone disagrees with a grade, the
+grade changes in `judge-sample.ts` and the check is run again. Run it again after any change to the
+rubric, and do not trust a Judge column from a judge whose agreement has not been measured.
+
+### Adding a real question
+
+Paul's go in `paul-questions.json`, the rest in `questions.ts`. An entry in the JSON:
+
+```json
+{
+  "id": "paul-who-owes-receipts",
+  "group": "exec",
+  "asker": "Owen Hale",
+  "fromChannel": "#exec",
+  "question": "who still owes me receipts?",
+  "rightAnswer": "Dante Reyes owes the homecoming receipts, due November 5. Nobody else does.",
+  "facts": [["Dante Reyes"], ["November 5", "Nov 5"]],
+  "never": ["Caleb"],
+  "tools": [["chapter_tasks"]],
+  "maxWords": 60
+}
+```
+
+`asker` is a member of the synthetic chapter by full name, and `group` is who is asking (`member`,
+`chair`, `exec`) or `refuse` when the right answer is to decline (then also `"decline": true`).
+Each entry of `facts` is one fact, as the ways an answer might put it. `rightAnswer` is for the
+judge and for whoever reads a failure: say what a right answer must hold, what it must not say, and
+what is merely good to have. If the chapter does not hold what the question needs, add it to
+`synthetic-chapter/term.ts`. The spec rejects an entry that names nobody, an unknown tool, or a
+reference answer that fails its own checks.
+
+### Turning a miss into a case
+
+When Frapp AI gets a real question wrong, the question becomes a case and the member's text does
+not:
+
+1. Write down the shape of the miss, not its words: who asked (a role, not a person), where from,
+   what kind of thing they wanted, and what the answer did wrong.
+2. Find or plant the same situation in the synthetic chapter. Use its people, its channels and
+   invented messages. Never paste a real message, name, amount or date: the repo is public.
+3. Add the question with `"origin": "miss"` in `questions.ts`, with the facts a right answer holds
+   and, in `never`, what the wrong answer said.
+4. Add the wrong answer, rewritten for the synthetic chapter, to `judge-sample.ts` with the criteria
+   it fails. This is what keeps the judge honest about that kind of miss.
+
+`exec-tasks-for-me` is the worked example: the president asked from the officers' channel which
+tasks from the discussion were his, and the answer did not know who "me" was, pasted quotes and
+offered to narrow down.
+
+### The agent loop under test
+
+`--agent loop` asks the questions of the tool loop (#4899): `AskService` on its loop path, the
+product's loop and prompt, all 22 read tools and the three card tools, each built as the product
+builds it. `harness/term-world.ts` puts the term chapter behind them and says, at its top, what is
+the product's (the tools, the chat reader's consent and channel rules, the card service) and what
+stands in for the database (the services under the chapter tools, message search by words). The
+loop is switched on for the length of each question, so it and the one-shot Ask can run one after
+the other in a process, not at once.
+
+It reports the tools that ran in `toolCalls`, the cards the member would be shown in `proposals`,
+and each citation as the corpus document it quotes. The questions name tools as the plan does
+(`KNOWN_TOOLS` in `types.ts`); a tool that shipped under another name is in `TOOL_ALIASES` in
+`code-grader.ts`.
+
+`agents.ts` documents the contract for another agent: one more entry there, or a module passed to
+`--agent`.
+
 ## The synthetic chapter
 
 `synthetic-chapter/` is an invented chapter at a realistic size, so a model can be graded on
@@ -118,6 +274,14 @@ rough notes. It plants facts said only in chat, only in `#exec`, only by members
 message that contradicts the bylaws, a late fee an announcement changed, two members with the same
 first name, points in the notes, and injections from a member and from an alumnus. The retrieval
 bake-off (#3286) uses the same corpus.
+
+`synthetic-chapter/term.ts` extends it to a term for the real questions, asked on Thursday,
+November 12, 2026: twelve channels, nicknames, tasks with owners and due dates (some past due, one
+sent back, one waiting on approval), a calendar with who missed what, points and service hours
+against a requirement, three more sets of minutes, a decision that was reversed, a meeting time
+that changed, a job nobody took, a planted instruction in `#general`, and direct messages and
+contact details that must never reach a model. It is a separate corpus, so the cases above still
+run on the chapter they were written for.
 
 Everything in it is made up. Keep it that way: no real member's name or message, ever.
 

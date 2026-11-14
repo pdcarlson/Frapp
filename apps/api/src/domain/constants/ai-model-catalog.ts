@@ -34,9 +34,17 @@ interface CatalogEntryBase {
 }
 
 export interface GenerationCatalogEntry extends CatalogEntryBase {
-  kind: 'structured' | 'cited';
+  kind: 'structured' | 'cited' | 'agent';
   maxOutputTokens: number;
   effort: LanguageModelEffort;
+  /**
+   * What changes when the member asks the task to think harder. Only a task
+   * that offers that has one; without it the task always runs as above. The
+   * ceiling rises with the effort because a model's thinking is spent from
+   * the same output tokens as its answer, and what a call may cost is
+   * reserved from this ceiling.
+   */
+  more?: { effort: LanguageModelEffort; maxOutputTokens: number };
   inputUsdPerMillionTokens: number;
   outputUsdPerMillionTokens: number;
 }
@@ -111,6 +119,22 @@ export const AI_MODEL_CATALOG = {
     kind: 'cited',
     maxOutputTokens: 4_000,
     effort: 'low',
+  },
+  /**
+   * One round of Ask's tool loop (#4899): the model is offered the read
+   * tools this member may use and either calls some or writes the answer.
+   * A question is several of these, each admitted against the caps on its
+   * own. Medium effort, where the plan page starts; the bake-off (#4903)
+   * decides the model and the effort with numbers.
+   */
+  'ask.agent': {
+    ...CLAUDE_SONNET,
+    family: 'ask',
+    kind: 'agent',
+    maxOutputTokens: 4_000,
+    effort: 'medium',
+    // "Think harder" (`AskEffort` `more`), with the loop's wider bounds.
+    more: { effort: 'high', maxOutputTokens: 8_000 },
   },
   /**
    * An officer's request, read into one action and its details (#718). It is
@@ -226,6 +250,7 @@ type TasksOfKind<K extends AiCatalogEntry['kind']> = {
 
 export type AiStructuredTaskName = TasksOfKind<'structured'>;
 export type AiCitedTaskName = TasksOfKind<'cited'>;
+export type AiAgentTaskName = TasksOfKind<'agent'>;
 export type AiEmbeddingTaskName = TasksOfKind<'embedding'>;
 export type AiTranscriptionTaskName = TasksOfKind<'transcription'>;
 

@@ -50,3 +50,22 @@ export function isSubscriptionHardLocked(
   }
   return false;
 }
+
+/**
+ * Whether a free-tier write (chat is one) may land in a chapter with this
+ * subscription state, by `ChapterGuard.enforceSubscription`'s rule: never in a
+ * canceled chapter, and in a past-due one only within grace. For a write that
+ * doesn't come through the guard, such as a scheduled message the sweep posts
+ * (#4956).
+ */
+export function freeTierWriteAllowed(
+  status: string | null | undefined,
+  pastDueSince: string | null,
+  nowMs: number = Date.now(),
+): boolean {
+  if (status === 'canceled') return false;
+  if (status === 'past_due') {
+    return isWithinSubscriptionGrace(pastDueSince, nowMs);
+  }
+  return true;
+}

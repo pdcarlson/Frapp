@@ -34,6 +34,45 @@ export interface MatchCorpusInput {
   embeddingModel: string;
   /** How many candidates each half returns. */
   limit: number;
+  /** Narrows the candidates; never an access rule. */
+  filter?: CorpusMatchFilter;
+}
+
+/**
+ * What a search can be narrowed by (#4900). Every field only removes
+ * passages, in the query itself, so the candidates a narrowed search gets
+ * back are the best of what was asked for and not the best of the chapter
+ * with most of them thrown away afterwards.
+ */
+export interface CorpusMatchFilter {
+  /** Only these source types. */
+  sourceTypes?: readonly string[];
+  /** A chat passage must sit in one of these channels. */
+  channelIds?: readonly string[];
+  /** Only passages holding a message by this member (so chat only). */
+  authorId?: string;
+  /** ISO instant; a passage from this moment on. */
+  since?: string;
+  /** ISO instant; a passage from before this moment. */
+  until?: string;
+}
+
+/** One indexed passage of a source, read in order (#4900). */
+export interface CorpusSourceChunk {
+  id: string;
+  chunk_index: number;
+  heading: string | null;
+  content: string;
+  page_start: number | null;
+  page_end: number | null;
+}
+
+/** A stretch of one source's passages, and how many it has in all. */
+export interface CorpusSourceChunks {
+  title: string;
+  source_at: string | null;
+  total: number;
+  chunks: CorpusSourceChunk[];
 }
 
 /**
@@ -94,6 +133,23 @@ export interface ICorpusRepository {
   /** Marks the source indexed or skipped. False when it moved on. */
   finishSource(input: FinishCorpusSourceInput): Promise<boolean>;
   match(input: MatchCorpusInput): Promise<CorpusCandidate[]>;
+
+  /**
+   * One source's passages in the order they sit in it, `limit` of them from
+   * `offset`: a document read page by page (#4900). Null when the chapter's
+   * index holds no current revision of it (not there, another chapter's,
+   * skipped, or edited and not read again yet), when `offset` is past its
+   * end, or when `userId` is not a member of the chapter. Never a chat
+   * window. Who may open the source is the caller's check.
+   */
+  readSourceChunks(input: {
+    chapterId: string;
+    userId: string;
+    sourceType: string;
+    sourceId: string;
+    offset: number;
+    limit: number;
+  }): Promise<CorpusSourceChunks | null>;
 
   /**
    * A chat window's readable messages, or null when the window is gone, is

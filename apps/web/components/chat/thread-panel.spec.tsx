@@ -8,7 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { normalizeRow, reactionActionType } from "@repo/chat-core/types";
 import type { BlockState } from "@repo/chat-core/blocks";
@@ -27,12 +27,30 @@ const thread = {
   typingUsers: [] as readonly string[],
   setFollow: vi.fn(async () => undefined),
   send: vi.fn(async () => ({ error: null as string | null })),
+  sendGif: vi.fn(async () => ({ error: null as string | null })),
   retry: vi.fn(async () => ({ error: null as string | null })),
   discard: vi.fn(),
   refreshRoot: vi.fn(),
   emitTyping: vi.fn(),
 };
 let offline = false;
+let gifs = { available: false, provider: "" };
+
+// The picker's own spec covers search; here a button picks one GIF.
+const PICKED_GIF = {
+  id: "g1",
+  title: "wave",
+  token: "signed",
+  full: { url: "https://static.klipy.com/g1.webp", width: 200, height: 150 },
+  preview: { url: "https://static.klipy.com/g1-s.webp", width: 100, height: 75 },
+};
+vi.mock("./gif-picker", () => ({
+  GifPickerButton: ({ onPick }: { onPick: (gif: unknown) => void }) => (
+    <button type="button" onClick={() => onPick(PICKED_GIF)}>
+      Send a GIF
+    </button>
+  ),
+}));
 
 // Chat backgrounds (#3973) read their own query; decoration, not under test here.
 vi.mock("./chat-background", () => ({ ChatBackground: () => null }));
@@ -80,6 +98,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useAuthorAvatars: () => ({ data: {} }),
     // The roster catch-up has its own spec in `@repo/hooks`.
     useRosterCatchUp: rosterCatchUp,
+    useGifAvailability: () => gifs,
   };
 });
 
@@ -219,6 +238,58 @@ describe("ThreadPanel (#3785)", () => {
       "Me too{Enter}",
     );
     expect(thread.send).toHaveBeenCalledWith("Me too");
+  });
+
+  describe("GIFs (#4657)", () => {
+    afterEach(() => {
+      gifs = { available: false, provider: "" };
+      offline = false;
+    });
+
+    it("offers the GIF button and sends a GIF as its own reply, keeping the draft", async () => {
+      gifs = { available: true, provider: "KLIPY" };
+      thread.sendGif.mockClear();
+      renderPanel();
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      await user.type(box, "half typed");
+      await user.click(screen.getByRole("button", { name: "Send a GIF" }));
+      expect(thread.sendGif).toHaveBeenCalledWith({
+        provider: "klipy",
+        id: "g1",
+        title: "wave",
+        url: PICKED_GIF.full.url,
+        width: 200,
+        height: 150,
+        token: "signed",
+      });
+      expect(box).toHaveValue("half typed");
+    });
+
+    it("says why a GIF reply didn't send", async () => {
+      gifs = { available: true, provider: "KLIPY" };
+      toastSpy.mockClear();
+      thread.sendGif.mockResolvedValueOnce({ error: "No posting here" });
+      renderPanel();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Send a GIF" }));
+      await waitFor(() =>
+        expect(toastSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ description: "No posting here" }),
+        ),
+      );
+    });
+
+    it("hides it where GIFs aren't set up, and offline", () => {
+      renderPanel();
+      expect(screen.queryByRole("button", { name: "Send a GIF" })).toBeNull();
+      cleanup();
+      gifs = { available: true, provider: "KLIPY" };
+      offline = true;
+      renderPanel();
+      expect(screen.queryByRole("button", { name: "Send a GIF" })).toBeNull();
+    });
   });
 
   it("refuses a reply that is a question for Frapp, and keeps its words (#4713)", async () => {

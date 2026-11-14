@@ -514,10 +514,28 @@ Each question a member is allowed to ask sends one PostHog event, `ai-question-a
 
 | Property | Value |
 | --- | --- |
-| `door` | Where the question was typed: `ask` (Ask's own screen: the card on web, the sheet on the phone) or `chat_private` (`@Frapp` in a channel, answered to the asker alone; [`ai.md` § Asking from a channel](ai.md#asking-from-a-channel)). A build from before #4713 names no door and is counted as `ask`. A closed set, `ASK_DOORS` in `@repo/validation`; a door that posts an answer to the channel will be a third value |
+| `door` | Where the question was typed: `ask` (Ask's own screen: the card on web, the sheet on the phone) or `chat_private` (`@Frapp` in a channel, answered to the asker alone; [`ai.md` § Asking from a channel](ai.md#asking-from-a-channel)). A build from before #4713 names no door and is counted as `ask`. A closed set, `ASK_DOORS` in `@repo/validation`; posting an answer to the channel is not a door, since every answer is asked through one of these two first; it has its own event below |
 | `is_follow_up` | Whether the question was sent with earlier turns of the conversation |
 
 It is sent once the member has passed the checks that can refuse a question outright (the server switch, the chapter's switch, `ai:use`, consent), and before the answer starts, so a question that later fails or is stopped is still counted. It is not a feature event: Ask belongs to no module. No question text, answer text, source, channel id or message id is on it; `ask.controller.spec.ts` runs the event through `assertContentFreeProperties`, and `ai-stored-text.invariant.spec.ts` reads it for leaks with everything else the route sends out. The share of questions asked from a channel is `door = chat_private` over all.
+
+Posting an answer to a channel ([`ai.md` § Posting an answer to the channel](ai.md#posting-an-answer-to-the-channel), #4713) sends `ai-answer-posted` from `AskPostController`, once per message written (a repeat of the same post to the same channel is refused and sends nothing), attributed to the member. Its one property is `warned`: whether the asker posted past a list of sources not everyone in the channel could open. No question, answer, source name, channel id or message id is on it. The share of answers members make public is this event over `ai-question-asked` with `door = chat_private`.
+
+## AI answer events
+
+What a finished Ask turn, and the member's reaction to it, send to PostHog (#4902). All are sent by the API through `AnalyticsService.track`, attributed to the member and their chapter group like any server event, and none carries a word of a question, an answer, a tool's arguments or its result. The same facts are kept for 90 days in the database, where they can be joined ([`ai.md` § Stored AI text](ai.md#stored-ai-text)). Only a turn answered through the tool loop (#4899) calls `AskTraceService.record`, so none is sent by a server without `ASK_AGENT=on` (2026-11-13).
+
+| Event | Sent when | Properties |
+| --- | --- | --- |
+| `ai-answer-finished` | A turn ends, however it ends (`AskTraceService.record`) | `ask_id`, `door`, `prompt_version`, `model`, `effort`, `outcome`, `limit_kind`, `error_kind`, `is_follow_up`, `is_rephrase`, `read_chat`, `truncated`, and counts: `rounds`, `tool_calls`, `tool_failures`, `input_tokens`, `output_tokens`, `cached_input_tokens`, `cost_micro_usd`, `duration_ms`, `sources_read`, `citations_kept`, `citations_dropped`, `left_out_messages`, `proposals` |
+| `ai-answer-tool-called` | Once per tool call in that turn | `ask_id`, `tool`, `outcome`, `round`, `duration_ms`, `arg_bytes`, `result_chars`, `result_sources` |
+| `ai-answer-rated` | The asker sets or changes their thumbs (the same thumbs sent again sends nothing) | `ask_id`, `rating`, `reason`, and the turn's `door`, `prompt_version`, `model`, `effort`, `outcome` |
+| `ai-answer-rating-cleared` | The asker takes their thumbs back | `ask_id` and the turn's five codes |
+| `ai-answer-signal` | A tap under an answer | `ask_id`, `signal` (`retried`, `think_harder`, `source_opened`, `card_confirmed`, `card_dismissed`; `ASK_SIGNALS` in `@repo/validation`), and the turn's five codes |
+
+`outcome` is how the turn ended: `answered`, `not_found`, `refused`, `limit`, `unavailable`, `proposal`, `stopped` or `error`. A tool's `outcome` is `ok`, `empty`, `invalid_args`, `denied`, `unknown_tool`, `over_limit`, `stopped` or `error`; `tool` is the registered name of a tool the loop offered, and is null when the model named one it was not offered. `is_rephrase` is true when the same member asked again within a minute of their last question. `ask_id` is a random id that ties a turn's events together and says nothing about the question. The model rounds of a turn are not sent again here: the gateway already sends `ai-call-finished` for each provider call.
+
+`ask-trace.service.spec.ts` and `ask-feedback.service.spec.ts` run every event through `assertContentFreeProperties`, and `ask-observe.invariant.spec.ts` hands the recorder a turn with text in every code field and reads the events for it.
 
 ## AI Suggestion Events
 
@@ -658,6 +676,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | --- | --- | --- |
 | `message-sent` | Any message is sent, a retry on the same `client_message_id` excepted. `kind` is the stored message kind. This is the count of sends; the web outbox events measure delivery | `kind`, `is_reply`, `attachment_count` |
 | `announcement-posted` | An `/announce` message is sent (feature `announcements`) | — |
+| `message-forwarded` | A member forwards a message to a channel or DM ([chat § Forward](chat/README.md)). Not counted in `message-sent`, which is the send route's. A retry on the same `client_message_id` answers `deduplicated: true` and records nothing | `has_comment` |
 | `message-reacted` | A member adds a reaction. The emoji is never sent; a repeat is deduplicated, and removing one doesn't reach the API | — |
 | `message-flagged` | A member puts a flag on a message, or replaces one ([chat § Message flags](chat/README.md#message-flags)). Setting the flag a message already carries counts again; removing one sends nothing | `flag` (which of the six flags) |
 | `dm-opened` | A member opens a 1-on-1 DM. Get-or-create, so reopening one counts again | — |

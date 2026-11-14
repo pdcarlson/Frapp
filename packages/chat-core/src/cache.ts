@@ -125,6 +125,14 @@ export function mergeServerRow(
           },
         }
       : {}),
+    ...(carriesForwardMask(overwritten, incoming)
+      ? {
+          forwarded_from: {
+            ...incoming.forwarded_from!,
+            sender_blocked: true,
+          },
+        }
+      : {}),
     actions,
     reactions,
   };
@@ -151,6 +159,30 @@ function carriesPreviewMask(
     !after.sender_blocked &&
     !incoming._blockEvaluated &&
     after.sender_id === before.sender_id
+  );
+}
+
+/**
+ * The same carry for a forward's copy of its original (#4864): the server
+ * withheld it because the viewer blocked the original's author, and the
+ * row's echo (a pin, an edit of the comment) carries the copy raw. The copy
+ * never changes but to be blanked, so the carry holds while it is still the
+ * same original's. The body is the echo's; `hiddenForwardedText` reads the
+ * verdict, as `threadPreviewVisible` reads a preview's.
+ */
+function carriesForwardMask(
+  overwritten: ChatMessage | undefined,
+  incoming: ChatMessage,
+): boolean {
+  const before = overwritten?.forwarded_from;
+  const after = incoming.forwarded_from;
+  return (
+    before?.sender_blocked === true &&
+    !!after &&
+    !after.sender_blocked &&
+    !after.deleted &&
+    !incoming._blockEvaluated &&
+    after.message_id === before.message_id
   );
 }
 

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Frapp",
     "slug": "frapp",
-    "version": "0.12.0",
+    "version": "0.13.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "frapp",
@@ -68,6 +68,11 @@
               "scheme": "https",
               "host": "app.frapp.live",
               "path": "/join"
+            },
+            {
+              "scheme": "https",
+              "host": "app.frapp.live",
+              "path": "/check-in"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]
@@ -91,7 +96,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Frapp uses the camera to scan the check-in code at chapter events.",
+          "cameraPermission": "Frapp uses the camera to scan an event's check-in code when you tap Scan code.",
           "recordAudioAndroid": false,
           "microphonePermission": "Frapp uses the microphone when an officer records a chapter meeting to write its minutes. Recording starts only when you tap Record."
         }
@@ -100,6 +105,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Frapp uses your photo library so you can set your profile photo, add your chapter's logo, send photos in chapter chat, add photos to your chapter's documents, and attach photo proof to service hours.",
+          "cameraPermission": "Frapp uses the camera to scan an event's check-in code when you tap Scan code.",
           "microphonePermission": "Frapp uses the microphone when an officer records a chapter meeting to write its minutes. Recording starts only when you tap Record."
         }
       ],

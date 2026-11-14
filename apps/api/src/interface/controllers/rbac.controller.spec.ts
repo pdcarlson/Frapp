@@ -21,6 +21,7 @@ describe('RbacController', () => {
       createAsMember: jest.fn(),
       updateAsMember: jest.fn(),
       deleteAsMember: jest.fn(),
+      setOwnSelfAssignableRole: jest.fn(),
       transferPresidency: jest.fn(),
       getPresidencyClaimStatus: jest.fn(),
       claimPresidency: jest.fn(),
@@ -142,6 +143,42 @@ describe('RbacController', () => {
         controller.delete,
       );
       expect(permissions).toEqual([SystemPermissions.ROLES_MANAGE]);
+    });
+  });
+
+  describe('join and leave a self-assignable role (#4958)', () => {
+    it('join asks the service to add the role to the caller', async () => {
+      rbacService.setOwnSelfAssignableRole.mockResolvedValue({
+        role_ids: ['role-1'],
+      });
+      const result = await controller.join('role-1', 'chapter-1', 'user-1');
+      expect(rbacService.setOwnSelfAssignableRole).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        'role-1',
+        true,
+      );
+      expect(result).toEqual({ role_ids: ['role-1'] });
+    });
+
+    it('leave asks the service to take it off', async () => {
+      rbacService.setOwnSelfAssignableRole.mockResolvedValue({ role_ids: [] });
+      await controller.leave('role-1', 'chapter-1', 'user-1');
+      expect(rbacService.setOwnSelfAssignableRole).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        'role-1',
+        false,
+      );
+    });
+
+    it('needs no permission beyond the controller-level members:view', () => {
+      for (const handler of [controller.join, controller.leave]) {
+        expect(Reflect.getMetadata(PERMISSIONS_KEY, handler)).toBeUndefined();
+      }
+      expect(Reflect.getMetadata(PERMISSIONS_KEY, RbacController)).toEqual([
+        SystemPermissions.MEMBERS_VIEW,
+      ]);
     });
   });
 

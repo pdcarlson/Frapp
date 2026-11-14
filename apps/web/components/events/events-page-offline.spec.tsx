@@ -47,20 +47,26 @@ vi.mock("@/components/ai/suggested-events", () => ({
 vi.mock("@repo/hooks", () => ({
   // A viewer with no roles: the event's default decides (#4132). The rule
   // itself is the hook's own spec.
-  useRequiredOfViewer:
-    () => (fields: { is_mandatory?: boolean | null }) =>
-      fields.is_mandatory === true,
+  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
+    fields.is_mandatory === true,
   // The toolbar's Subscribe menu (#3322) asks for nothing until it opens.
   useCalendarFeedLink: () => ({ data: undefined, isError: false }),
   useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
   calendarAppLinks: () => null,
   useGoogleCalendarStatus: () => ({ data: undefined }),
-  useStartGoogleCalendarConnect: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useStartGoogleCalendarConnect: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
   useConfirmGoogleCalendarConnect: () => ({ mutateAsync: vi.fn() }),
-  useDisconnectGoogleCalendar: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDisconnectGoogleCalendar: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
   readGoogleCalendarReturn: () => null,
   GOOGLE_CALENDAR_RETURN_PARAMS: [],
   useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
+  useCalendarBirthdays: () => [],
   useChapterRoster: () => ({ data: [] }),
   useCurrentChapter: () => mockCurrentChapter(),
   useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),

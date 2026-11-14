@@ -1,4 +1,5 @@
 import { ASK_COPY } from '@repo/validation';
+import { SystemPermissions } from '#domain/constants/permissions';
 import {
   ASK_TOOL_CLASSES,
   EventsAskTool,
@@ -74,6 +75,40 @@ describe('Ask tools', () => {
     });
   });
 
+  it('every tool says who else could read what it returns (#4713)', () => {
+    const tools = ASK_TOOL_CLASSES.map(
+      (Tool) =>
+        new (Tool as new (...services: never[]) => AskTool)(
+          {} as never,
+          {} as never,
+        ),
+    );
+    // What decides whether an answer built on a read warns before it is
+    // posted to a channel. A read of the asker's own records must say so:
+    // called `chapter`, it would be posted with no warning.
+    expect(
+      Object.fromEntries(tools.map((tool) => [tool.name, tool.reach])),
+    ).toEqual({
+      roster: 'chapter',
+      events: 'events',
+      my_points: 'asker',
+      points_leaderboard: 'chapter',
+      my_dues: 'asker',
+      my_tasks: 'asker',
+    });
+    // `AskPostService` checks a `chapter` or `events` read against
+    // `members:view`, so a tool with either reach must be gated on it.
+    expect(
+      tools
+        .filter((tool) => tool.reach !== 'asker')
+        .map((tool) => tool.permission),
+    ).toEqual(
+      tools
+        .filter((tool) => tool.reach !== 'asker')
+        .map(() => SystemPermissions.MEMBERS_VIEW),
+    );
+  });
+
   describe('events', () => {
     const event = (over: Record<string, unknown> = {}) => ({
       name: 'Chapter meeting',
@@ -107,6 +142,34 @@ describe('Ask tools', () => {
         'Chapter meeting: Sunday, November 15, 2026 at 7:00 PM to 8:00 PM, at Chapter room.',
       );
       expect(text).toContain('Worth 10 points');
+    });
+
+    it('names the listed events that leave some member out, by id only (#4713)', async () => {
+      const events = {
+        findByChapter: jest.fn(async () => [
+          event({ id: 'e-open' }),
+          event({
+            id: 'e-exec',
+            name: 'Exec retreat',
+            excluded_role_ids: ['r-new-member'],
+          }),
+        ]),
+      };
+      const members = {
+        findByUserAndChapter: jest.fn(async () => ({ role_ids: ['r-member'] })),
+      };
+      const result = await new EventsAskTool(
+        events as never,
+        members as never,
+      ).run(context);
+      expect(result?.limitedEventIds).toEqual(['e-exec']);
+
+      events.findByChapter.mockResolvedValue([event({ id: 'e-open' })]);
+      const open = await new EventsAskTool(
+        events as never,
+        members as never,
+      ).run(context);
+      expect(open).not.toHaveProperty('limitedEventIds');
     });
 
     it('keeps what is coming over what has passed when the calendar is too long, and says it cut', async () => {

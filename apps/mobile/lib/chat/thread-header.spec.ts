@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ThreadRow } from "@repo/chat-core/blocks";
+import type { BlockState, ThreadRow } from "@repo/chat-core/blocks";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   THREAD_HEADER_FALLBACK_TITLE,
@@ -11,6 +11,13 @@ const MILES = "22222222-2222-4222-8222-222222222222";
 const GONE = "33333333-3333-4333-8333-333333333333";
 const names: Record<string, string> = { [MILES]: "Miles Guerrero" };
 const nameFor = (id: string) => names[id] ?? null;
+const BLOCKED = "44444444-4444-4444-8444-444444444444";
+const READY: BlockState = {
+  status: "ready",
+  ids: new Set([BLOCKED]),
+  unblocked: new Set(),
+  cleared: new Set(),
+};
 
 function row(
   overrides: Partial<ChatMessage> = {},
@@ -37,6 +44,7 @@ const lines = (root: ThreadRow | null) =>
     viewerId: VIEWER,
     nameFor,
     channelTitle: "#general",
+    blockState: READY,
   });
 
 /** The phone's open-thread header (#4297, slice 5; proposal option B). */
@@ -72,5 +80,26 @@ describe("threadHeaderLines", () => {
     expect(lines(null)).toEqual(fallback);
     expect(lines(row({ is_deleted: true }))).toEqual(fallback);
     expect(lines(row({}, "tombstone"))).toEqual(fallback);
+  });
+
+  it("never shows the copy of a forward whose original author the viewer blocked (#4864)", () => {
+    const forwarded = (sender_id: string) =>
+      row({
+        content: "",
+        forwarded_from: {
+          message_id: "orig",
+          channel_id: "chan-2",
+          sender_id,
+          author_name: "Someone",
+          content: "the original words",
+          gif: null,
+          attachment_count: 0,
+          created_at: "2026-11-12T18:00:00.000Z",
+          deleted: false,
+          sender_blocked: false,
+        },
+      });
+    expect(lines(forwarded(BLOCKED)).title).toBe("Forwarded a message");
+    expect(lines(forwarded(GONE)).title).toBe("Forwarded: the original words");
   });
 });

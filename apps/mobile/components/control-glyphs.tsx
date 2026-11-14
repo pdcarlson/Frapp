@@ -28,6 +28,24 @@ interface ControlGlyphProps {
 
 const DEFAULT_SIZE = 20;
 
+/**
+ * All threads (#4960), Chat home's door to the member's threads: web's
+ * `StartThreadGlyph` (a bubble with a reply branching off it), so the two
+ * apps draw the same picture for threads.
+ */
+export function ThreadsGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M6.5 3.5h9A2.5 2.5 0 0118 6v3.5a2.5 2.5 0 01-2.5 2.5H10l-3.5 2.6V12A2.5 2.5 0 014 9.5V6a2.5 2.5 0 012.5-2.5z"
+        {...detail}
+      />
+      <Path d="M13.5 12v3a3 3 0 003 3h3.5M18 15.8l2.2 2.2-2.2 2.2" {...detail} />
+    </Frame>
+  );
+}
+
 export function CloseGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });
   return (
@@ -152,6 +170,65 @@ export function FlagGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
         {...detail}
       />
       <Path d="M4 22v-7" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * Good answer and bad answer under an Ask answer (#4904): web draws Lucide's
+ * `ThumbsUp` and `ThumbsDown`. `chosen` fills the hand in its own colour, the
+ * way ChatGPT's and Claude's apps mark the thumb a member picked.
+ */
+export function ThumbUpGlyph({
+  color,
+  size = DEFAULT_SIZE,
+  chosen = false,
+}: ControlGlyphProps & { chosen?: boolean }) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M7 10v12" {...detail} />
+      <Path
+        d="M15 5.88L14 10h5.83a2 2 0 011.92 2.56l-2.33 8A2 2 0 0117.5 22H4a2 2 0 01-2-2v-8a2 2 0 012-2h2.76a2 2 0 001.79-1.11L12 2a3.13 3.13 0 013 3.88z"
+        {...detail}
+        fill={chosen ? color : "none"}
+      />
+    </Frame>
+  );
+}
+
+export function ThumbDownGlyph({
+  color,
+  size = DEFAULT_SIZE,
+  chosen = false,
+}: ControlGlyphProps & { chosen?: boolean }) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M17 14V2" {...detail} />
+      <Path
+        d="M9 18.12L10 14H4.17a2 2 0 01-1.92-2.56l2.33-8A2 2 0 016.5 2H20a2 2 0 012 2v8a2 2 0 01-2 2h-2.76a2 2 0 00-1.79 1.11L12 22a3.13 3.13 0 01-3-3.88z"
+        {...detail}
+        fill={chosen ? color : "none"}
+      />
+    </Frame>
+  );
+}
+
+/** Think harder under an Ask answer (#4904): web draws Lucide's `Lightbulb`. */
+export function LightbulbGlyph({
+  color,
+  size = DEFAULT_SIZE,
+}: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 006 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"
+        {...detail}
+      />
+      <Path d="M9 18h6" {...detail} />
+      <Path d="M10 22h4" {...detail} />
     </Frame>
   );
 }

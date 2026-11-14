@@ -50,6 +50,20 @@ describe('AskRequestDto', () => {
     }
   });
 
+  it('takes how many cards an earlier turn came with, and only a count', async () => {
+    await expect(
+      transform({
+        question: 'Make it 10 instead',
+        history: [turn({ answer: '', cards: 2 })],
+      }),
+    ).resolves.toMatchObject({ history: [{ answer: '', cards: 2 }] });
+    for (const cards of [0, 6, 1.5, 'two']) {
+      await expect(
+        transform({ question: 'And?', history: [turn({ cards })] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
+  });
+
   it('takes a question alone, as every shipped build sends it', async () => {
     await expect(
       transform({ question: 'What is quorum?' }),

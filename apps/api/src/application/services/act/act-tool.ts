@@ -1,5 +1,8 @@
 import type { ActMissing, ActNoteType } from '@repo/validation';
-import type { AiSuggestionKind } from '#domain/entities/ai-suggestion.entity';
+import type {
+  AiSuggestion,
+  AiSuggestionKind,
+} from '#domain/entities/ai-suggestion.entity';
 import type { AgentToolSpec } from '../ask/ask-tool';
 import type { ActPlan } from './act-prompt';
 
@@ -73,6 +76,38 @@ export type ActDraft =
       events: ActEventChoice[];
     }
   | { status: 'unclear'; missing: ActMissing };
+
+/** Why nothing could be proposed, as a client is told it. */
+type ActUnavailableReason =
+  | 'consent_required'
+  | 'chapter_off'
+  | 'chapter_limit'
+  | 'member_limit'
+  | 'not_available';
+
+/**
+ * What a request to act came to (`ActService`). Here, beside the tool's own
+ * shapes, so the tool loop's contract can name it without importing the
+ * service (`../ask/agent/agent-tool.ts`).
+ */
+export type ActOutcome =
+  | {
+      status: 'proposed';
+      action: string;
+      suggestion: AiSuggestion;
+      notes: ActNote[];
+    }
+  | {
+      status: 'needs_event';
+      action: string;
+      amount: number;
+      reason: string;
+      events: ActEventChoice[];
+    }
+  | { status: 'unclear'; action: string | null; missing: ActMissing }
+  | { status: 'no_action'; available: string[] }
+  | { status: 'refused' }
+  | { status: 'unavailable'; reason: ActUnavailableReason };
 
 export interface ActTool extends AgentToolSpec {
   readonly effect: 'propose';

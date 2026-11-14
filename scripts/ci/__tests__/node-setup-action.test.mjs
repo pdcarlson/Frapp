@@ -63,6 +63,7 @@ const EXCEPTIONS = [
   "_mobile-update.yml",
   "deploy-production.yml",
   "mobile-rollback.yml",
+  "staging-app.yml",
 ];
 
 const INSTALL_MODES = ["ci", "none", "omit-dev"];

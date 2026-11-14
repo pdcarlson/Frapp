@@ -2,11 +2,12 @@
  * Single-shot latch for a check-in, one per event.
  *
  * It was written for the in-app scanner, whose camera handed the same code
- * over many times a second; the scanner is gone (2026-11-13), and the rule
- * still holds for what is left. A camera link can be opened twice (a double
- * tap on the banner, or the screen re-rendering with the same token), and a
- * double tap on the typed code's button lands its second press before the
- * re-render that disables it. Each of those must send one check-in, not two:
+ * over many times a second. Since 2026-11-13 the code is mostly a link the
+ * phone's camera opens, and Scan code hands what it reads to that same path,
+ * once per code. The rule still holds: a camera link can be opened twice (a
+ * double tap on the banner, or the screen re-rendering with the same token),
+ * and a double tap on the typed code's button lands its second press before
+ * the re-render that disables it. Each of those must send one check-in, not two:
  * the second would only come back a 409.
  *
  * The latch releases only when the caller says so, after the server has

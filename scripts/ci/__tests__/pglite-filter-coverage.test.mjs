@@ -66,6 +66,9 @@ import { runTiers, tierFiles } from "../../pglite/tier-list.mjs";
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const HARNESS = "scripts/pglite";
 const ENTRY = `${HARNESS}/run.mjs`;
+// The job's second step: the two-connection lock harness (#4862), which
+// applies the migrations to a Postgres service container.
+const RACE_ENTRY = "scripts/db-race/role-lock-race.mjs";
 const TIER_LOADER = `${HARNESS}/tier-list.mjs`;
 const TIER_IMPORT = "import(new URL(file, dir).href)";
 
@@ -450,7 +453,7 @@ export function scan(src, file, { computedImport = null } = {}) {
 function inputs() {
   const seen = new Set();
   const found = new Set(STRUCTURAL);
-  const queue = [ENTRY];
+  const queue = [ENTRY, RACE_ENTRY];
   while (queue.length) {
     const file = queue.shift();
     if (seen.has(file)) continue;
@@ -536,6 +539,8 @@ describe("pglite-migrations: required, and its path filter covers what it reads"
       ".github/environments.json",
       "scripts/load-chapter-directory.mjs",
       "scripts/lib/chapter-directory-seed.mjs",
+      "scripts/pglite/bootstrap.mjs",
+      RACE_ENTRY,
     ]) {
       assert.ok(
         found.includes(expected),

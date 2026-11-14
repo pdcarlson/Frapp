@@ -30,10 +30,7 @@ const handlers = {
   onSeen: vi.fn(),
 };
 
-function render(
-  nudge: MemberNudge = NUDGE,
-  canAsk = true,
-): ReactTestRenderer {
+function render(nudge: MemberNudge = NUDGE, canAsk = true): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(

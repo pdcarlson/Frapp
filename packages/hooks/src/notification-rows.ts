@@ -355,6 +355,21 @@ export function notificationSourceKey(data: unknown): string | null {
     : `chat:${channelId}`;
 }
 
+/**
+ * The conversation a row's entry stands for, as a clear names it to the
+ * server (#3948), or `null` for a row that stands on its own: the same rows
+ * `notificationSourceKey` groups.
+ */
+export function notificationConversation(
+  data: unknown,
+): { channelId: string; threadRootId?: string } | null {
+  if (!notificationSourceKey(data) || !isRecord(data)) return null;
+  const target = data.target as Record<string, unknown>;
+  const channelId = stringAt(target, "channelId") as string;
+  const threadRootId = stringAt(target, "threadRootId");
+  return threadRootId ? { channelId, threadRootId } : { channelId };
+}
+
 /** A bundled burst's `data.count`, or `null` for a row that isn't one. */
 function bundleCount(data: unknown): number | null {
   if (!isRecord(data) || data.bundled !== true) return null;

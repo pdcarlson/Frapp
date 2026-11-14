@@ -9,7 +9,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { randomClientId } from "@repo/api-sdk";
 import type { MentionPick } from "@repo/validation";
-import { useFrappClient } from "@repo/hooks";
+import { memberThreadKeys, useFrappClient } from "@repo/hooks";
 import {
   chatRealtime,
   NO_TYPING_USERS,
@@ -26,6 +26,7 @@ import {
   loadThreadReplies,
   chatFollowedThreadsKey,
   markThreadRead,
+  outgoingGifOf,
   sendThreadReply,
   setThreadFollow,
   type ThreadFollowChoice,
@@ -36,6 +37,7 @@ import {
   normalizeRow,
   type ChannelCache,
   type ChatMessage,
+  type OutgoingGif,
 } from "@repo/chat-core/types";
 import { cacheFromPage, emptyCache } from "@repo/chat-core/cache";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -207,9 +209,13 @@ export function useMessageThread(
       // The channel's thread cards re-read what's new once the server has
       // the cursor (#4297), as web's do.
       .then(() =>
-        queryClient.invalidateQueries({
-          queryKey: chatFollowedThreadsKey(channelId),
-        }),
+        Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: chatFollowedThreadsKey(channelId),
+          }),
+          // And All threads' unread mark (#4960), in every chapter's cache.
+          queryClient.invalidateQueries({ queryKey: memberThreadKeys.all }),
+        ]),
       )
       .catch(() => undefined);
   }, [api, queryClient, channelId, rootId, metaLoaded, newestId]);
@@ -273,6 +279,7 @@ export function useMessageThread(
       content: string,
       clientMessageId?: string,
       mentionPicks?: readonly MentionPick[],
+      gif?: OutgoingGif | null,
     ) => {
       if (!viewerId) return { error: "You're signed out." };
       // The id is minted here, not in `sendThreadReply`, so a failed reply's
@@ -287,6 +294,7 @@ export function useMessageThread(
         content,
         clientMessageId: clientId,
         mentionPicks: picks,
+        gif,
       });
       if (!result.error) replyPicksRef.current.delete(clientId);
       // Replying follows the thread (the server's rule); show it now.
@@ -302,9 +310,20 @@ export function useMessageThread(
         (message) => message.client_message_id === clientMessageId,
       );
       if (!row) return Promise.resolve({ error: null as string | null });
-      return send(row.content, clientMessageId);
+      return send(
+        row.content,
+        clientMessageId,
+        undefined,
+        outgoingGifOf(row.gif),
+      );
     },
     [messages, send],
+  );
+
+  /** A GIF from the picker as its own reply (#4657); the draft stays. */
+  const sendGif = useCallback(
+    (gif: OutgoingGif) => send("", undefined, undefined, gif),
+    [send],
   );
 
   const discard = useCallback(
@@ -343,6 +362,7 @@ export function useMessageThread(
     typingUsers,
     setFollow,
     send,
+    sendGif,
     retry,
     discard,
     emitTyping,

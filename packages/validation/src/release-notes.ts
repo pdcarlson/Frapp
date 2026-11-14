@@ -120,6 +120,32 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-14",
+    title: "New in this update",
+    changes: [
+      "A Threads button at the top of Chat lists every thread you started, replied in or were mentioned in, across channels, with new replies marked; tap one to open it.",
+      "You can add your birthday to your profile, with the year optional and never shown, and choose whether your chapter sees it.",
+      "Birthdays members share now show on the events calendar, with a Birthdays switch to hide them.",
+      "An officer can pick a channel where Frapp wishes members a happy birthday on the day, for members who share their birthday.",
+      "Snooze what's waiting on you on Activity until later today, tomorrow, the weekend or next week: from a row's ⋯ menu on the web, or a long press on your phone. It comes back when you picked.",
+      "Activity starts each week with a short recap of the last one: the events you went to, the tasks you finished, your points, and your service and study hours.",
+      "Birthdays members share now show on the events calendar, with a Birthdays switch to hide them.",
+      "Opening the app is faster, and it no longer slows to a crawl when lots of people open it at once.",
+      "A GIF now shows as \"GIF\" in your conversation list and saved messages, you can send GIFs in message threads, and GIFs stay still until you play them if your device is set to reduce motion.",
+      "You can ask Frapp to remind you about a chat message later, and the reminder shows up on your Activity page until you mark it done.",
+      "A scheduled message can now carry the photos or files you staged and a reply to another message, and each one in your scheduled list says what it carries.",
+    ],
+    web: [
+      "Schedule a message to send later: open the arrow beside Send, pick a time, and see, edit or send your scheduled messages from the line above the composer.",
+      "Open a message's More menu and pick Forward to send it to another channel or a direct message, with a note of your own if you like.",
+    ],
+    phone: [
+      "Schedule a message to send later: hold Send, pick a time, and see, edit or send your scheduled messages from the line above the composer.",
+      "Typing @ in a forwarded message's note now lets you pick who to mention, as it does when you post.",
+      "The month calendar writes each day's events in its square, so you can see what's on without tapping each day.",
+    ],
+  },
+  {
     date: "2026-11-13",
     title: "New in this update",
     changes: [
@@ -146,6 +172,12 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can only invite people into roles at or below their own, and the invite list shows only the invites they could have sent.",
       "Notifications now show one row per conversation with how many messages it holds, and an Unread switch hides what you've already read.",
       "If your chapter has Ask Frapp on, type @Frapp and a question in any channel to ask it right there: nothing is posted and only you see the answer.",
+      "Your own message now lights up for you when it mentions you, such as your own @here or @everyone.",
+      "A forwarded message shows up as a card marked Forwarded, with who wrote it and when.",
+      "Ask Frapp now knows who is asking, so \"me\" and \"my\" mean you, and its answers are shorter and in its own words.",
+      "An answer from @Frapp in a channel can be posted for everyone there with Post for everyone here, after Frapp tells you which of its sources not everyone can open.",
+      "A forward you saved with no comment now shows what was forwarded in Saved messages.",
+      "On a required event, Can't make it is now a quiet link instead of a big button, on the event page and on its chat card.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -162,6 +194,11 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Ask Frapp now lives in the chat box next to GIF, and the conversation opens over your chat instead of in a side panel.",
       "The Events calendar has Week and Day views beside Month, with each event drawn at its time and as long as it lasts, and Frapp remembers which one you use.",
       "Leaving a page halfway through a new event, a document upload or new minutes keeps what you typed, and the form picks up where you left off.",
+      "While an officer's check-in screen is up, an event's chat card, page and Activity row say to point your phone's camera at the code instead of offering a Check in that can't work.",
+      "Invites, new channels, backwork uploads, pledge class members, study zones and folder imports also keep what you typed when you leave, and pick up where you left off.",
+      "You can clear a notification with the x that shows when you hover over it.",
+      "After you link or unlink your Discord account, an open chat now shows your imported messages under the right name without a reload.",
+      "The search field at the top now asks Frapp too: type a question, press Enter, and the answer opens right there, from any page.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
@@ -183,6 +220,14 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Activity can now show a short note from Frapp about one of your tasks, with a suggested place to start, when your chapter has Ask on.",
       "Long-press a message to pin it for the channel or save it for yourself, and find both under Pinned messages and Saved messages in the channel's menu.",
       "Events in the Calendar list now look like they do on Activity, with an arrow that shows each one opens, and the buttons beside each section name on the chat list line up.",
+      "New task, Log service hours and Upload document keep what you typed when you go back, and open on it next time.",
+      "Copy message link on a message's long-press gives you a link to that message. It opens on the web, and in the app when you tap it in a Frapp message.",
+      "You can clear a notification by pressing and holding it.",
+      "Long-press a message and choose Mark unread to come back to it later: the channel shows as unread from that message on.",
+      "Long-press a message and tap Forward to send it to another channel or a direct message, with a note of your own if you like.",
+      "On Android, pointing your camera at a check-in code now opens Frapp straight to the check-in, the way it already did on iPhone.",
+      "You can also check in without leaving Frapp: tap Scan code on the event and point it at the officer's code.",
+      "The Ask Frapp bar searches too: type a few letters to jump to a channel, member, message or event, or send a question as before.",
     ],
   },
   {

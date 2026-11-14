@@ -2,21 +2,28 @@ import {
   ArrayMaxSize,
   IsArray,
   IsIn,
+  IsInt,
   IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ASK_DOORS,
+  ASK_EFFORTS,
   ASK_HISTORY_ANSWER_MAX_LENGTH,
   ASK_HISTORY_MAX_TURNS,
+  ASK_PROPOSALS_MAX,
   ASK_QUESTION_MAX_LENGTH,
   type AskDoor,
+  type AskEffort,
 } from '@repo/validation';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 
@@ -50,6 +57,44 @@ export class AskHistoryTurnDto {
   @IsOptional()
   @IsStrictBoolean()
   suggested?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'How many cards that turn came with. A count only: the server writes the line that stands for them, so a follow-up is read knowing cards are already in front of the member.',
+    minimum: 1,
+    maximum: ASK_PROPOSALS_MAX,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(ASK_PROPOSALS_MAX)
+  cards?: number;
+}
+
+export class AskFromDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'The channel the member had open.',
+  })
+  @IsOptional()
+  @IsUUID()
+  channel_id?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'The event the member had open.',
+  })
+  @IsOptional()
+  @IsUUID()
+  event_id?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'The task the member had open.',
+  })
+  @IsOptional()
+  @IsUUID()
+  task_id?: string;
 }
 
 export class AskRequestDto {
@@ -97,6 +142,14 @@ export class AskRequestDto {
   actions?: boolean;
 
   @ApiPropertyOptional({
+    description:
+      'True when the client draws the cards an answer comes with (`answer.proposals` on `done`). Read only with `actions`, by a server that answers through the tool loop: a turn can then be an answer with cards under it, or up to five cards. Without it a turn comes with at most one card, sent as a `proposal` event in place of the answer.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  answer_cards?: boolean;
+
+  @ApiPropertyOptional({
     enum: ASK_DOORS,
     description:
       'Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message.',
@@ -104,6 +157,27 @@ export class AskRequestDto {
   @IsOptional()
   @IsIn(ASK_DOORS)
   door?: AskDoor;
+
+  @ApiPropertyOptional({
+    type: AskFromDto,
+    nullable: true,
+    description:
+      'What the member had open when they asked, so "this channel" or "this event" means something. Each id is looked up as the caller, and one they cannot open is dropped. Accepted from any client; read only by a server that answers through the tool loop, and not yet by that one.',
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => AskFromDto)
+  from?: AskFromDto | null;
+
+  @ApiPropertyOptional({
+    enum: ASK_EFFORTS,
+    description:
+      'How hard to work on the question: `default`, or `more` when the member asked Frapp to think harder. Accepted from any client; not read yet.',
+  })
+  @IsOptional()
+  @IsIn(ASK_EFFORTS)
+  effort?: AskEffort;
 }
 
 export class AskDiagnosticsDto {

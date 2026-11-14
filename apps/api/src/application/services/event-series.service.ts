@@ -30,7 +30,7 @@ import type { EventChange } from './event-announcement.service';
 import { normalizeCheckInZone } from './event-input';
 import { NotificationService } from './notification.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
-import type { UpdateEventInput } from './event-input';
+import type { SeriesUpdateInput } from './event-input';
 
 /**
  * Fields whose change forces future instances to be regenerated rather than
@@ -46,7 +46,7 @@ const RECURRENCE_DEFINING_FIELDS = [
   'recurrence_rule',
   'start_time',
   'end_time',
-] as const satisfies readonly (keyof UpdateEventInput)[];
+] as const satisfies readonly (keyof SeriesUpdateInput)[];
 
 /**
  * Fields that are meaningful on a generated instance and therefore propagate
@@ -58,9 +58,9 @@ const RECURRENCE_DEFINING_FIELDS = [
  * re-point the series at itself.
  */
 function propagatableFields(
-  input: UpdateEventInput,
-): Omit<UpdateEventInput, 'start_time' | 'end_time' | 'recurrence_rule'> {
-  const propagate: UpdateEventInput = { ...input };
+  input: SeriesUpdateInput,
+): Omit<SeriesUpdateInput, 'start_time' | 'end_time' | 'recurrence_rule'> {
+  const propagate: SeriesUpdateInput = { ...input };
   delete propagate.start_time;
   delete propagate.end_time;
   delete propagate.recurrence_rule;
@@ -432,7 +432,7 @@ export class EventSeriesService {
   async updateSeries(
     target: Event,
     chapterId: string,
-    input: UpdateEventInput,
+    input: SeriesUpdateInput,
     actorId?: string,
     requestZone?: string | null,
   ): Promise<Event> {
@@ -446,7 +446,7 @@ export class EventSeriesService {
     // row the client happened to have open. Honouring it dragged the anchor onto
     // the child's date and rebuilt every future occurrence with fresh ids.
     const issuedFromChild = target.id !== parent.id;
-    const effective: UpdateEventInput = { ...input };
+    const effective: SeriesUpdateInput = { ...input };
     if (issuedFromChild) {
       delete effective.start_time;
       delete effective.end_time;
@@ -473,7 +473,7 @@ export class EventSeriesService {
       }
     }
 
-    const normalized: UpdateEventInput = {
+    const normalized: SeriesUpdateInput = {
       ...effective,
       ...(effective.check_in_zone !== undefined
         ? { check_in_zone: normalizeCheckInZone(effective.check_in_zone) }
@@ -598,7 +598,7 @@ export class EventSeriesService {
       // In this order a failure anywhere before the parent write leaves a
       // retry that still regenerates, and replacing the occurrences again is
       // safe because it rebuilds whatever upcoming rows the parent has.
-      const written: UpdateEventInput = {
+      const written: SeriesUpdateInput = {
         ...normalized,
         recurrence_rule: nextRule,
       };
@@ -675,7 +675,7 @@ export class EventSeriesService {
     parent: Event;
     children: Event[];
     chapterId: string;
-    normalized: UpdateEventInput;
+    normalized: SeriesUpdateInput;
     regenerates: boolean;
     nextRule: string | null;
     keptRule: boolean;

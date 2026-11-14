@@ -115,7 +115,11 @@ export function searchDirectMessages<C extends DmSearchConversation>({
 }: DmSearchInput<C>): DmSearchResult<C> {
   const needle = normalizeDmSearchText(query);
   if (!needle) {
-    return { conversations: [...conversations], members: [], membersHeld: false };
+    return {
+      conversations: [...conversations],
+      members: [],
+      membersHeld: false,
+    };
   }
 
   const ranked: Array<{ conversation: C; rank: number; index: number }> = [];

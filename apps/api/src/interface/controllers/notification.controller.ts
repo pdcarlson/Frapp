@@ -33,6 +33,8 @@ import {
   RegisterPushTokenDto,
   ListNotificationPreferencesQueryDto,
   ListNotificationsQueryDto,
+  ClearNotificationsDto,
+  ClearNotificationsResultDto,
   MarkNotificationsReadDto,
   MarkNotificationsReadResultDto,
   UpdateNotificationPreferenceDto,
@@ -105,6 +107,28 @@ export class NotificationController {
       screens: dto.screens,
       ids: dto.ids,
     });
+  }
+
+  @Post('notifications/clear')
+  @HttpCode(200)
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @FreeTier()
+  @ApiOperation({
+    summary: "Clear (delete) the caller's own notifications by id",
+  })
+  @ApiOkResponse({ type: ClearNotificationsResultDto })
+  async clearNotifications(
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: ClearNotificationsDto,
+  ): Promise<ClearNotificationsResultDto> {
+    return this.notificationService.clearNotifications(
+      userId,
+      chapterId,
+      dto.ids,
+      dto.conversation,
+    );
   }
 
   @Patch('notifications/:id/read')

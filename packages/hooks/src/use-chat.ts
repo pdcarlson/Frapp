@@ -1,11 +1,12 @@
 "use client";
 
-import { throwUnlessOk } from "@repo/api-sdk";
+import { randomClientId, throwUnlessOk } from "@repo/api-sdk";
 import {
   can,
   isDirectChannel,
   type ChatChapterLevel,
   type ChatNotificationLevel,
+  type MentionPick,
 } from "@repo/validation";
 
 import { useEffect, useMemo, useRef } from "react";
@@ -14,11 +15,13 @@ import {
   useQuery,
   useMutation,
   useQueryClient,
+  type QueryClient,
 } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { putSignedUpload } from "./put-signed-upload";
+import { chatActivityStampsSettled } from "./read-cursor";
 import {
   invalidateNotificationLists,
   markChannelNotificationsReadInCache,
@@ -94,9 +97,10 @@ export const CHANNEL_LATEST_MESSAGES_KEY = ["channels", "latest"] as const;
  * has no row. Draw the line with `channelPreviewLine` in
  * `@repo/chat-core/channel-preview`.
  *
- * Under the `["channels"]` prefix and on the unread counts' 15s staleness, so
- * a preview refreshes whenever its row's badge does: the same invalidations
- * (opening a channel marks it read) and the same refetch on focus.
+ * On the unread counts' 15s staleness and refreshed with them by
+ * {@link invalidateChannelSummaries}, so a preview refreshes whenever its
+ * row's badge does: the same invalidations (opening a channel marks it read)
+ * and the same refetch on focus.
  */
 export function useChannelLatestMessages(options?: { enabled?: boolean }) {
   const client = useFrappClient();
@@ -112,6 +116,23 @@ export function useChannelLatestMessages(options?: { enabled?: boolean }) {
     },
     staleTime: 15_000,
     enabled: enabled && scope === "chapter",
+  });
+}
+
+/**
+ * Re-read the per-channel summaries every unread badge and preview draws
+ * from: the unread counts and the latest-message previews, by exact key. One
+ * helper so a badge and its preview can't be refreshed on different paths
+ * (`useChannelLatestMessages` promises they move together).
+ */
+export function invalidateChannelSummaries(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({
+    queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+    exact: true,
+  });
+  void queryClient.invalidateQueries({
+    queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+    exact: true,
   });
 }
 
@@ -155,10 +176,10 @@ export function usePinnedMessages(channelId: string) {
  *
  * Keyed under `["members", chapterId, …]`, not `["channels", …]`, on purpose.
  * Every member and role mutation invalidates the members prefix (a role grant
- * changes who reads a ROLE_GATED channel), while the channels prefix is
- * invalidated by every read receipt, so under it this chapter-wide read would
- * refetch twice on each channel switch. A channel edit names it explicitly
- * (`useUpdateChannel`).
+ * changes who reads a ROLE_GATED channel), while a read receipt re-reads
+ * several `["channels", …]` keys, and the whole prefix until #4709, so under
+ * it this chapter-wide read would have refetched twice on each channel
+ * switch. A channel edit names it explicitly (`useUpdateChannel`).
  */
 export function useChannelMembers(
   channelId: string | null | undefined,
@@ -300,11 +321,13 @@ export function useChannelNotificationPreferences() {
 
   return useQuery({
     // Deliberately NOT nested under ["channels"]. `useMarkChannelRead`
-    // invalidates that whole prefix, and TanStack Query matches prefixes
-    // non-exactly, so nesting made this endpoint refetch on every channel open
-    // AND close — two extra round trips per channel switch, each one re-running
-    // the accessible-channel predicate server-side. Mute state does not change
-    // when a read receipt is written, so it should not be invalidated by one.
+    // invalidated that whole prefix until #4709, and TanStack Query matches
+    // prefixes non-exactly, so nesting made this endpoint refetch on every
+    // channel open AND close — two extra round trips per channel switch, each
+    // one re-running the accessible-channel predicate server-side. Mute state
+    // does not change when a read receipt is written, so it should not be
+    // invalidated by one. The channel-list refetch a read still causes is what
+    // re-reads it when the channel set changes (the fingerprint above).
     queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
     queryFn: async () => {
       const { data, error } = await client.GET(
@@ -722,6 +745,8 @@ export function useMarkChannelRead() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: markChannelReadMutationKey,
+    // Ordered with Mark unread (#3723), which must land after it.
+    scope: READ_CURSOR_SCOPE,
     mutationFn: async (id: string) => {
       const result = await client.POST("/v1/channels/{id}/read", {
         params: { path: { id } },
@@ -734,7 +759,26 @@ export function useMarkChannelRead() {
       return result.data;
     },
     onSuccess: (_data, id) => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // The read moves the badges and previews. Opening a channel is also
+      // the routine moment the rail catches up with channels other members
+      // created, renamed or locked, so the list, its categories and the
+      // opened channel's detail are re-read too: nothing pushes channel
+      // metadata, and the list's refetch is what moves the notification
+      // preferences' fingerprint (`spec/behavior/notifications.md`).
+      //
+      // Exact keys, not the `["channels"]` prefix (#4709): the prefix also
+      // holds every mounted attachment read, the imported-author avatars, the
+      // pins and the per-channel member lists, which a read doesn't change,
+      // and refetching those on every open (a signed URL re-minted per
+      // attachment) was part of the open burst.
+      invalidateChannelSummaries(queryClient);
+      for (const queryKey of [
+        CHANNEL_LIST_KEY,
+        CATEGORY_LIST_KEY,
+        ["channels", id],
+      ]) {
+        void queryClient.invalidateQueries({ queryKey, exact: true });
+      }
       // The read also cleared this channel's chat notifications on the server
       // (#3788). Mirror that in the inbox's cache, and refetch it only when it
       // was showing one, so a busy channel's reads don't each cost a list GET.
@@ -742,6 +786,46 @@ export function useMarkChannelRead() {
         void invalidateNotificationLists(queryClient);
       }
     },
+  });
+}
+
+/**
+ * The scope both read-cursor writes run in (#3723): TanStack runs a scope's
+ * mutations one at a time, in order, so Mark unread waits behind a Mark as
+ * read already pending (a paused or retrying one included) rather than
+ * landing first and being stamped over.
+ */
+export const READ_CURSOR_SCOPE = { id: "chat-read-cursor" } as const;
+
+/**
+ * Mark unread (#3723): move the viewer's read cursor in a message's channel to
+ * just before it (`POST /v1/channels/messages/{messageId}/unread`), so the
+ * channel's badge counts it and what came after, as Discord's and Slack's
+ * Mark unread do.
+ *
+ * Two kinds of read stamp could otherwise land after it and undo it. Mark as
+ * read (`useMarkChannelRead`) shares {@link READ_CURSOR_SCOPE}, so this waits
+ * behind it. The app-wide activity handler stamps without a mutation, so this
+ * waits for its round in flight (`chatActivityStampsSettled`), and the caller
+ * holds the channel (`holdChannelUnread`) so it queues no more.
+ */
+export function useMarkMessageUnread() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["channels", "unread"],
+    scope: READ_CURSOR_SCOPE,
+    mutationFn: async (messageId: string) => {
+      await chatActivityStampsSettled();
+      const result = await client.POST(
+        "/v1/channels/messages/{messageId}/unread",
+        { params: { path: { messageId } } },
+      );
+      throwUnlessOk(result);
+      return result.data;
+    },
+    // Every channel badge and the unread counts live under `["channels"]`.
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["channels"] }),
   });
 }
 
@@ -1303,6 +1387,88 @@ export function useUnbookmarkMessage() {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: bookmarkKeys.lists(chapterId!),
+      });
+    },
+  });
+}
+
+/** What {@link useForwardMessage} sends (#4864). */
+export interface ForwardMessageInput {
+  /** The original message's server id. */
+  messageId: string;
+  /** The channel or DM it goes to; may be the channel it is in. */
+  channelId: string;
+  /** The forwarder's optional comment, posted as the new message's text. */
+  content?: string;
+  /**
+   * The idempotency key. Keep one per draft (the same destination and
+   * comment) so a retry after a lost response answers the forward already
+   * made instead of posting a second; a fresh one is drawn when omitted.
+   */
+  clientMessageId?: string;
+  /**
+   * The members picked from the comment's `@` list (#4907), as a post's
+   * `mention_picks`: each reaches its member while the comment still writes
+   * its label. Sent only with a comment.
+   */
+  mentionPicks?: readonly MentionPick[];
+}
+
+/**
+ * Forward a message to a channel or DM, with an optional comment (#4864,
+ * `spec/behavior/chat/README.md` § Forward). The server posts it as an
+ * ordinary message from the forwarder, so it arrives in the destination's
+ * timeline over Realtime like any post; the caller may also merge the
+ * returned row into that channel's cache (this package doesn't know chat-core's
+ * cache shape).
+ *
+ * A failure throws with the HTTP status on it (`throwUnlessOk`), so the
+ * caller can tell a refusal (403 / 404) from one worth retrying.
+ *
+ * On success it re-reads the two per-channel summaries exactly, the Messages
+ * order and preview and the unread counts, as a message arriving does
+ * (`createChatActivityHandler`), never the `["channels"]` prefix.
+ */
+export function useForwardMessage() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["channels", "forward-message"],
+    mutationFn: async ({
+      messageId,
+      channelId,
+      content,
+      clientMessageId,
+      mentionPicks,
+    }: ForwardMessageInput) => {
+      const comment = content?.trim() ? content : undefined;
+      const picks =
+        comment !== undefined && mentionPicks && mentionPicks.length > 0
+          ? [...mentionPicks]
+          : undefined;
+      const result = await client.POST(
+        "/v1/channels/messages/{messageId}/forward",
+        {
+          params: { path: { messageId } },
+          body: {
+            channel_id: channelId,
+            ...(comment !== undefined ? { content: comment } : {}),
+            ...(picks !== undefined ? { mention_picks: picks } : {}),
+            client_message_id: clientMessageId ?? randomClientId(),
+          },
+        },
+      );
+      throwUnlessOk(result);
+      return result.data!;
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+        exact: true,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+        exact: true,
       });
     },
   });

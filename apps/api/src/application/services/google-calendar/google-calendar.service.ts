@@ -310,14 +310,19 @@ export class GoogleCalendarService {
 
   /**
    * The phone app's return address: its own `frapp://` scheme, or, outside
-   * production, Expo Go's on this computer or the local network. Anything
+   * production, the staging variant's `frapp-staging://` (Frapp Staging,
+   * `apps/mobile/app.config.js`) or Expo Go's on this computer or the local
+   * network. Production takes neither: a staging app must not finish a
+   * production member's sign-in. Anything
    * else would hand Google's code to a page the member's own app doesn't
    * control: Expo Go runs whatever server an `exp://` address names.
    */
   private appReturnUrl(value: string | null): string {
     const url = value ?? '';
     const allowed =
-      url.startsWith('frapp://') || (this.allowExpoGo && isLocalExpoGoUrl(url));
+      url.startsWith('frapp://') ||
+      (this.allowExpoGo &&
+        (url.startsWith('frapp-staging://') || isLocalExpoGoUrl(url)));
     // eslint-disable-next-line no-control-regex
     if (!allowed || /[\u0000-\u001F\u007F\s]/.test(url) || url.length > 512) {
       throw new BadRequestException(

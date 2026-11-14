@@ -13,6 +13,8 @@ import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interfac
 import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
 import { SupabaseEventCheckInScreenRepository } from '../../infrastructure/supabase/repositories/supabase-event-check-in-screen.repository';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
+import { SupabaseChapterDocumentRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-document.repository';
 import { NotificationModule } from '../notification/notification.module';
 import { ChatModule } from '../chat/chat.module';
 import { AuthModule } from '../auth/auth.module';
@@ -38,6 +40,12 @@ import { RbacModule } from '../rbac/rbac.module';
     {
       provide: EVENT_CHECK_IN_SCREEN_REPOSITORY,
       useClass: SupabaseEventCheckInScreenRepository,
+    },
+    // Read-only here: an event's document attachments must be the chapter's
+    // own files (#4934). Bound locally for the same reason as above.
+    {
+      provide: CHAPTER_DOCUMENT_REPOSITORY,
+      useClass: SupabaseChapterDocumentRepository,
     },
   ],
   exports: [EventService],

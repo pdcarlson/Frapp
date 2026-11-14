@@ -95,7 +95,7 @@ function effectivePollListLimit(requested?: number): number {
  * message page for a field that is discarded on arrival.
  */
 export const CHAT_MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, thread_root_id, thread_reply_count, thread_last_reply_at, thread_recent_sender_ids, thread_last_reply, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at' as const;
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, type, kind, payload, client_message_id, reply_to_id, metadata, mentions, thread_root_id, thread_reply_count, thread_last_reply_at, thread_recent_sender_ids, thread_last_reply, forwarded_from, is_pinned, pinned_at, flag, flagged_by, flagged_at, edited_at, is_deleted, created_at' as const;
 
 @Injectable()
 export class SupabaseChatMessageRepository implements IChatMessageRepository {
@@ -128,6 +128,8 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       // An `integer` from the RPC, but the count decides between "Attachment"
       // and "3 attachments", so coerce rather than trust the wire type.
       attachment_count: Number(row.attachment_count) || 0,
+      // Absent until `20261114153147` is applied; a missing column is no GIF.
+      has_gif: row.has_gif === true,
     }));
   }
 

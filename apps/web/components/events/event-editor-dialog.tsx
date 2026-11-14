@@ -675,12 +675,7 @@ export function EventEditorDialog({
   });
   const editTarget = useMemo(() => {
     if (mode !== "edit") return null;
-    const target = editTargetOf(
-      event,
-      parentQuery.data && typeof parentQuery.data === "object"
-        ? (parentQuery.data as EventRecord)
-        : null,
-    );
+    const target = editTargetOf(event, parentQuery.data ?? null);
     return target
       ? {
           ...target,

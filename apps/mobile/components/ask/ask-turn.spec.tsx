@@ -13,6 +13,8 @@ import type { AskExchange } from "@repo/hooks";
 import {
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_EFFORT_COPY,
+  ASK_FEEDBACK_COPY,
   askLeftOutLine,
   askReadLine,
   askSourceMetaLine,
@@ -29,6 +31,37 @@ import { AskTurn } from "./ask-turn";
  * Every word is read from `ASK_COPY`, the same object web reads, so the two
  * can't drift.
  */
+
+// The reader has #rush-week (c1) and no other channel.
+const channelList = vi.hoisted(() => ({ reads: 0 }));
+// The thumbs hook has its own spec (`use-ask-feedback.spec.tsx`); here it is
+// what the row draws from, and it is only called for a traced answer.
+const thumbs = vi.hoisted(() => ({
+  state: { rating: null, reason: null } as {
+    rating: "up" | "down" | null;
+    reason: string | null;
+  },
+  failed: false,
+  asked: [] as (string | null | undefined)[],
+  rate: vi.fn(),
+  giveReason: vi.fn(),
+}));
+vi.mock("@repo/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useChannels: () => {
+    channelList.reads += 1;
+    return { data: [{ id: "c1", name: "rush-week", type: "PUBLIC" }] };
+  },
+  useAskThumbs: (askId: string | null | undefined) => {
+    thumbs.asked.push(askId);
+    return {
+      state: thumbs.state,
+      failed: thumbs.failed,
+      rate: thumbs.rate,
+      giveReason: thumbs.giveReason,
+    };
+  },
+}));
 
 // A purple chapter: the member's bubble takes its solid accent pair, and
 // nothing that is Frapp's (a marker, a chip's number) may.
@@ -272,6 +305,34 @@ describe("AskTurn", () => {
     expect(props.onOpenSource).toHaveBeenLastCalledWith(BYLAWS);
   });
 
+  it("says whose message a chat source is and when, on its chip (#4904)", () => {
+    const chat: AskSource = {
+      id: "s1",
+      kind: "chat",
+      title: "#general",
+      detail: null,
+      date: "2026-11-09T12:00:00.000Z",
+      target: { type: "message", channel_id: "c1", message_id: "m1" },
+      author: "Sam Ortiz",
+    };
+    const tree = render(
+      exchange({ answer: answer({ sources: [chat, ROSTER] }) }),
+    );
+    const chip = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith(
+          "Source 1: Sam Ortiz in #general. ",
+        ),
+    );
+    expect(chip).toHaveLength(1);
+    const text = screenText(tree);
+    expect(text).toContain("Sam Ortiz in #general");
+    expect(text).toContain("November 9, 2026");
+    // The marker in the sentence says whose too.
+    expect(byLabel(tree, "Source 1: Sam Ortiz in #general").length).toBe(1);
+  });
+
   it("draws a source with no screen as a plain chip, not a dead button", () => {
     const tree = render(exchange({ answer: answer() }));
     const marker = byLabel(tree, "Source 2: Roster")[0];
@@ -345,9 +406,74 @@ describe("AskTurn", () => {
   });
 });
 
+describe("people and channels an answer names (#4904)", () => {
+  const named = (entities: unknown) =>
+    exchange({
+      answer: {
+        ...answer({
+          text: "Ask @Ana Ruiz in #rush-week, not @Nobody.",
+          citations: [],
+          sources: [],
+        }),
+        entities,
+      } as AskAnswer,
+    });
+  const ENTITIES = [
+    { type: "member", id: "u1", name: "Ana Ruiz" },
+    { type: "channel", id: "c1", name: "rush-week" },
+  ];
+  const ELSEWHERE = [{ type: "channel", id: "c9", name: "rush-week" }];
+  const runs = (tree: ReactTestRenderer, text: string) =>
+    tree.root.findAll(
+      (node) => node.type === Text && node.props.children === text,
+    );
+  const filled = (node: ReactTestInstance) =>
+    Boolean(
+      (node.props.style as { backgroundColor?: string } | undefined)
+        ?.backgroundColor,
+    );
+
+  it("highlights a listed member and links a channel the reader has", () => {
+    const onOpenChannel = vi.fn();
+    const tree = render(named(ENTITIES), { onOpenChannel });
+
+    const [member] = runs(tree, "@Ana Ruiz");
+    expect(filled(member)).toBe(true);
+    expect(member.props.onPress).toBeUndefined();
+
+    const [channel] = runs(tree, "#rush-week");
+    expect(channel.props.accessibilityRole).toBe("link");
+    act(() => channel.props.onPress());
+    expect(onOpenChannel).toHaveBeenCalledWith("c1");
+
+    // A name the server did not list is ordinary text.
+    expect(runs(tree, "@Nobody")).toHaveLength(0);
+  });
+
+  it("leaves a channel the reader cannot open as plain words", () => {
+    const tree = render(named(ELSEWHERE), { onOpenChannel: vi.fn() });
+    const [channel] = runs(tree, "#rush-week");
+    expect(channel.props.accessibilityRole).toBeUndefined();
+    expect(channel.props.onPress).toBeUndefined();
+    expect(filled(channel)).toBe(false);
+  });
+
+  it("draws an answer with no list as it always was, without reading the channel list", () => {
+    channelList.reads = 0;
+    const tree = render(named(undefined), { onOpenChannel: vi.fn() });
+    expect(channelList.reads).toBe(0);
+    expect(runs(tree, "@Ana Ruiz")).toHaveLength(0);
+    expect(
+      runs(tree, "Ask @Ana Ruiz in #rush-week, not @Nobody."),
+    ).toHaveLength(1);
+  });
+});
+
 describe("askSourceMetaLine", () => {
   it("writes kind, place and the full date", () => {
-    expect(askSourceMetaLine(BYLAWS)).toMatch(/· Article IV · September 1, 2026$/);
+    expect(askSourceMetaLine(BYLAWS)).toMatch(
+      /· Article IV · September 1, 2026$/,
+    );
   });
 
   it("marks live data, and says its kind once when the title is the kind", () => {
@@ -369,7 +495,9 @@ describe("under an answer", () => {
     expect(screenText(tree)).not.toContain(AI_REPORT_COPY.action);
 
     const sent = render(done, { report: { reported: true, onPress } });
-    expect(byLabel(sent, AI_REPORT_COPY.reported)[0]!.props.disabled).toBe(true);
+    expect(byLabel(sent, AI_REPORT_COPY.reported)[0]!.props.disabled).toBe(
+      true,
+    );
 
     // Nothing AI-made in an answer that was never attempted, or not yet named.
     expect(
@@ -431,5 +559,176 @@ describe("under an answer", () => {
     expect(screenText(render(exchange({ answer: answer() })))).not.toMatch(
       /Read the /,
     );
+  });
+});
+
+describe("thumbs under an answer (#4904)", () => {
+  const traced = exchange({
+    askId: "ask-1",
+    answer: answer({ ask_id: "trace-1" }),
+  });
+  const show = (
+    rating: "up" | "down" | null,
+    reason: string | null = null,
+    report: React.ComponentProps<typeof AskTurn>["report"] = null,
+  ) => {
+    thumbs.state = { rating, reason };
+    thumbs.failed = false;
+    thumbs.asked.length = 0;
+    thumbs.rate.mockClear();
+    thumbs.giveReason.mockClear();
+    return render(traced, { report });
+  };
+
+  it("are not drawn, and nothing is asked of the server, without a kept trace", () => {
+    thumbs.asked.length = 0;
+    const tree = render(exchange({ askId: "ask-1", answer: answer() }));
+    expect(byLabel(tree, ASK_FEEDBACK_COPY.up)).toHaveLength(0);
+    expect(byLabel(tree, ASK_FEEDBACK_COPY.down)).toHaveLength(0);
+    expect(thumbs.asked).toHaveLength(0);
+  });
+
+  it("rate against the kept trace's id, not the turn's", () => {
+    const tree = show(null);
+    expect(thumbs.asked).toContain("trace-1");
+    act(() => byLabel(tree, ASK_FEEDBACK_COPY.down)[0]!.props.onPress());
+    expect(thumbs.rate).toHaveBeenCalledWith("down");
+    expect(screenText(tree)).not.toContain(ASK_FEEDBACK_COPY.thanks);
+  });
+
+  it("thank an up and say it is selected", () => {
+    const tree = show("up");
+    expect(
+      byLabel(tree, ASK_FEEDBACK_COPY.up)[0]!.props.accessibilityState,
+    ).toMatchObject({ selected: true });
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.thanks);
+    expect(screenText(tree)).not.toContain(ASK_FEEDBACK_COPY.prompt);
+  });
+
+  it("ask why on a down in one tap, and offer to send on the reason given", () => {
+    const onSend = vi.fn();
+    const tree = show("down", "wrong", {
+      reported: false,
+      onPress: vi.fn(),
+      onSend,
+    });
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.prompt);
+    act(() =>
+      byLabel(tree, ASK_FEEDBACK_COPY.reasons.missed)[0]!.props.onPress(),
+    );
+    expect(thumbs.giveReason).toHaveBeenCalledWith("missed");
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.send.line);
+    const send = tree.root.findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        typeof node.props.onPress === "function" &&
+        screenText({ root: node } as never).includes(
+          ASK_FEEDBACK_COPY.send.action,
+        ) &&
+        !screenText({ root: node } as never).includes(
+          ASK_FEEDBACK_COPY.prompt,
+        ),
+    )[0]!;
+    act(() => send.props.onPress());
+    expect(onSend).toHaveBeenCalledWith("wrong");
+  });
+
+  it("offer no send to a member who cannot report, or once it is reported", () => {
+    expect(screenText(show("down"))).not.toContain(
+      ASK_FEEDBACK_COPY.send.action,
+    );
+    const reported = show("down", null, {
+      reported: true,
+      onPress: vi.fn(),
+      onSend: vi.fn(),
+    });
+    expect(screenText(reported)).not.toContain(ASK_FEEDBACK_COPY.send.action);
+    // Reported before the thumbs: the rating is still the member's to explain.
+    expect(screenText(reported)).toContain(ASK_FEEDBACK_COPY.prompt);
+  });
+
+  it("fold to the thanks line once a report goes in from the offer", () => {
+    const tree = show("down", "wrong", {
+      reported: false,
+      onPress: vi.fn(),
+      onSend: vi.fn(),
+    });
+    act(() => {
+      tree.update(
+        <FrappThemeProvider>
+          <AskTurn
+            exchange={traced}
+            canOpen={() => false}
+            {...handlers()}
+            report={{ reported: true, onPress: vi.fn(), onSend: vi.fn() }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.thanks);
+    expect(screenText(tree)).not.toContain(ASK_FEEDBACK_COPY.prompt);
+  });
+
+  it("sit beside Think harder, which asks again once and waits while another turn is answered", () => {
+    thumbs.state = { rating: null, reason: null };
+    const onThinkHarder = vi.fn();
+    const tree = render(traced, { onThinkHarder });
+    act(() => byLabel(tree, ASK_EFFORT_COPY.action)[0]!.props.onPress());
+    expect(onThinkHarder).toHaveBeenCalledTimes(1);
+
+    // Not on the harder answer itself, not without a trace, not where the
+    // host offers none.
+    for (const quiet of [
+      render({ ...traced, effort: "more" }, { onThinkHarder }),
+      render(exchange({ askId: "ask-1", answer: answer() }), { onThinkHarder }),
+      render(traced),
+    ]) {
+      expect(byLabel(quiet, ASK_EFFORT_COPY.action)).toHaveLength(0);
+    }
+
+    const waiting = render(traced, { onThinkHarder, busy: true });
+    expect(byLabel(waiting, ASK_EFFORT_COPY.action)[0]!.props.disabled).toBe(
+      true,
+    );
+  });
+
+  it("leave Think harder off an answer that came with cards, which sit under its words", () => {
+    thumbs.state = { rating: null, reason: null };
+    const withCards = exchange({
+      askId: "ask-1",
+      answer: answer({ ask_id: "trace-1", proposals: ["s1"] }),
+    });
+    const tree = render(withCards, {
+      onThinkHarder: vi.fn(),
+      cards: <Text>the cards</Text>,
+    });
+    expect(byLabel(tree, ASK_EFFORT_COPY.action)).toHaveLength(0);
+    const text = screenText(tree);
+    expect(text.indexOf("the cards")).toBeGreaterThan(
+      text.indexOf(withCards.answer!.text),
+    );
+
+    // An answer that is cards and nothing else: the cards, and no words.
+    const alone = render(
+      exchange({
+        askId: "ask-1",
+        answer: answer({
+          ask_id: "trace-1",
+          text: "",
+          citations: [],
+          proposals: ["s1"],
+        }),
+      }),
+      { cards: <Text>the cards</Text> },
+    );
+    expect(screenText(alone)).toContain("the cards");
+  });
+
+  it("say so when a rating did not send", () => {
+    thumbs.state = { rating: null, reason: null };
+    thumbs.failed = true;
+    const tree = render(traced);
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.failed);
+    thumbs.failed = false;
   });
 });

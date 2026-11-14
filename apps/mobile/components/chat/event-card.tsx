@@ -80,8 +80,8 @@ import { LocationGlyph } from "./location-glyph";
  * `events:update` holder can read, so nobody else asks for it or sees a count.
  *
  * **Can't make it** (#4660). A member the event requires, by the card's own
- * role fields (`useEventCardExcuse`), gets a secondary Can't make it beside
- * Check in that opens Event details with the excuse line already open, the
+ * role fields (`useEventCardExcuse`), gets a quiet underlined Can't make it?
+ * beside Check in (#4933: declining reads quieter than going) that opens Event details with the excuse line already open, the
  * way a calendar invite in Gmail or Slack carries its RSVP on the message.
  * Once they've sent one, the card says where it stands ("Excuse sent to
  * Jake", "Excused") instead. Nobody else sees either, and only those cards
@@ -222,7 +222,8 @@ export function EventCard({
   const excuseButton =
     excuse.kind === "offer" && !eventsOff ? (
       <CardButton
-        label="Can't make it"
+        label="Can't make it?"
+        variant="link"
         onPress={openExcuse}
         disabled={!frame.isConfirmed}
         accessibilityHint="Opens the event to send an excuse."

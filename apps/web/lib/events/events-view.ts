@@ -1,5 +1,6 @@
 import {
   parseCalendarLayers,
+  serializeCalendarLayers,
   type CalendarLayer,
 } from "@repo/hooks/calendar-tasks";
 
@@ -120,7 +121,7 @@ export function writeCalendarLayers(
   try {
     window.localStorage.setItem(
       `frapp.events.calendar-layers.${userId}`,
-      JSON.stringify([...layers]),
+      serializeCalendarLayers(layers),
     );
   } catch {
     /* Best-effort, as the view. */

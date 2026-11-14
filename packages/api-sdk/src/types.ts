@@ -477,6 +477,46 @@ export interface paths {
         patch: operations["RbacController_update_v1"];
         trace?: never;
     };
+    "/v1/roles/{id}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join a self-assignable role
+         * @description Adds the role to the caller's own roles (#4958). 403 `role.not_self_assignable` unless an officer marked it and it is still safe to pick; 409 when it changed mid-save. Joining a role already held changes nothing.
+         */
+        post: operations["RbacController_join_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/{id}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave a self-assignable role
+         * @description Takes the role off the caller's own roles (#4958), with the same refusals as join. Leaving a role not held changes nothing.
+         */
+        post: operations["RbacController_leave_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/roles/transfer-presidency": {
         parameters: {
             query?: never;
@@ -636,6 +676,26 @@ export interface paths {
         };
         /** Display roster for the chapter — id, name, avatar and role color only */
         get: operations["MemberController_roster_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/birthdays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Birthdays members share with the chapter
+         * @description Month and day of every member who shares their birthday with their chapter (#4959), for the calendar. A member who keeps theirs to themselves is left out, and the year is never sent.
+         */
+        get: operations["MemberController_birthdays_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -975,6 +1035,23 @@ export interface paths {
         put?: never;
         /** Mark all unread notifications read, or only those pointing at the named screens, or only the named ids */
         post: operations["NotificationController_markAllRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clear (delete) the caller's own notifications by id */
+        post: operations["NotificationController_clearNotifications_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1440,6 +1517,23 @@ export interface paths {
         patch: operations["ChatController_editMessage_v1"];
         trace?: never;
     };
+    "/v1/channels/messages/{messageId}/forward": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Forward a message to a channel or DM, with an optional comment (idempotent on client_message_id) */
+        post: operations["ChatController_forwardMessage_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/messages/{messageId}/close": {
         parameters: {
             query?: never;
@@ -1573,6 +1667,23 @@ export interface paths {
         put?: never;
         /** Mark channel as read */
         post: operations["ChatController_markRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark a message unread: move the caller’s read cursor to just before it */
+        post: operations["ChatController_markMessageUnread_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1912,6 +2023,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every thread the caller follows or muted, across channels, newest activity first, with new-reply counts */
+        get: operations["MemberThreadController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chat-backgrounds/channels/{id}": {
         parameters: {
             query?: never;
@@ -2112,6 +2240,59 @@ export interface paths {
         get: operations["GifController_search_v1"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scheduled-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the caller's scheduled messages in this chapter (pending and failed), soonest first */
+        get: operations["ChatScheduledMessageController_list_v1"];
+        put?: never;
+        /** Schedule a message to post later: text, uploaded files, and a quote or a thread */
+        post: operations["ChatScheduledMessageController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scheduled-messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a scheduled message before it posts */
+        delete: operations["ChatScheduledMessageController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Change a scheduled message’s text or time (a failed one goes back in line) */
+        patch: operations["ChatScheduledMessageController_update_v1"];
+        trace?: never;
+    };
+    "/v1/scheduled-messages/{id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post a scheduled message now */
+        post: operations["ChatScheduledMessageController_sendNow_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4240,6 +4421,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/recap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get what the caller did last week
+         * @description The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.
+         */
+        get: operations["ActivityController_getRecap_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/unread-since": {
         parameters: {
             query?: never;
@@ -4275,6 +4476,30 @@ export interface paths {
          */
         post: operations["ActivityController_markRead_v1"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/snoozes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Snooze an item on the caller’s Activity until a time
+         * @description The row leaves the caller’s list and `needs_you_count` until `until`, then comes back, unread unless they open it again after that (`snoozed_until` on its row). Per member; snoozing again replaces the time. Like a read, nothing checks that the caller can see the item: a snooze is theirs alone and changes nothing anyone else sees. `spec/behavior/activity.md` § Snooze.
+         */
+        put: operations["ActivityController_snooze_v1"];
+        post?: never;
+        /**
+         * Bring a snoozed item back on the caller’s Activity now
+         * @description Idempotent. `spec/behavior/activity.md` § Snooze.
+         */
+        delete: operations["ActivityController_unsnooze_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4320,6 +4545,30 @@ export interface paths {
         post?: never;
         /** Undo an officer’s remove, so a link shows on Activity again (channels:manage) */
         delete: operations["ActivityController_restoreLink_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reminders/messages/{messageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Remind the caller about a message at a time, or move the reminder
+         * @description One reminder per member per message: setting it again moves it, and one already sent fires again at the new time (Activity’s snooze). Needs read access to the message’s channel.
+         */
+        put: operations["ChatReminderController_setReminder_v1"];
+        post?: never;
+        /**
+         * Clear the caller’s reminder on a message (idempotent)
+         * @description Done on Activity, or cancel. Works after the caller lost the channel, and answers 204 whether or not there was one.
+         */
+        delete: operations["ChatReminderController_clearReminder_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4961,6 +5210,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ai/ask/{ask_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Rate an answer: thumbs up or down
+         * @description Sets the caller’s thumbs on an answer they were given, replacing an earlier one. A `down` may carry one of four reasons. Nothing of the question or the answer is sent or kept: to send those, the member reports the answer (`POST /v1/ai/reports`). Kept with the answer’s trace, for at most 90 days.
+         */
+        put: operations["AskFeedbackController_rate_v1"];
+        post?: never;
+        /**
+         * Take a thumbs back
+         * @description Succeeds whether or not there was one.
+         */
+        delete: operations["AskFeedbackController_clear_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/{ask_id}/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Say what the member did with an answer
+         * @description One tap under an answer the caller was given: Try again, Think harder, a source opened, a proposed card confirmed or dismissed. Counted as an analytics event; nothing is stored.
+         */
+        post: operations["AskFeedbackController_signal_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/ai/ask/posts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post an Ask Frapp answer to a channel, or ask what posting would warn about
+         * @description The answer comes from the receipt the server sealed into it for the caller, so only an answer Frapp sent can be posted, and only by the member it was sent to. Before anything is written, everything the answer drew on is checked against everyone who can read the channel; `restricted` lists what not all of them could open. With `confirm` false nothing is written. With `confirm` true the answer is posted, by the Frapp sender, only when `acknowledged` names every entry of `restricted`; otherwise `posted` is false and the current list comes back. A posted answer notifies nobody. Posting the same answer to the same channel twice writes one row; the second call is refused.
+         */
+        post: operations["AskPostController_post_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/nudges/current": {
         parameters: {
             query?: never;
@@ -5235,6 +5548,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a client's first screen reads, in one request
+         * @description The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.
+         */
+        get: operations["BootstrapController_getBootstrap_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5338,6 +5671,17 @@ export interface components {
              * @example (518) 555-0142
              */
             phone?: string | null;
+            /** @description The member's birthday month, 1-12 (#4959). Sent with `birthday_day`; null on both clears the birthday (and its year). */
+            birthday_month?: number | null;
+            /** @description The day of `birthday_month`. It must exist in that month; 29 February is taken. */
+            birthday_day?: number | null;
+            /** @description The birth year, optional. Never shown to anyone but the member. Needs a month and day. */
+            birthday_year?: number | null;
+            /**
+             * @description Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default.
+             * @enum {string}
+             */
+            birthday_visibility?: "chapter" | "nobody";
         };
         RequestAvatarUploadUrlDto: {
             /** @description Original filename for the avatar image */
@@ -5586,6 +5930,11 @@ export interface components {
              * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise).
              */
             default_invite_role_id?: string | null;
+            /**
+             * Format: uuid
+             * @description The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived or the audit log (400 otherwise).
+             */
+            birthday_channel_id?: string | null;
         };
         CustomRoleDto: {
             id: string;
@@ -5735,6 +6084,12 @@ export interface components {
             permission_overrides?: {
                 [key: string]: boolean | null;
             };
+            /** @description Members may join and leave this role themselves (#4958). Only a role with no system key, outside the tiers, and holding no permission beyond `channels:read:<slug>` may be marked (400 `role.self_assignable_keyed`, `role.self_assignable_tiered` or `role.self_assignable_permissions`), and marking needs the caller to hold what it carries. A save that would leave a marked role unsafe is refused the same way unless it also sends false. */
+            self_assignable?: boolean;
+        };
+        SelfAssignRoleResultDto: {
+            /** @description The caller's role ids after the change, the role added (join) or taken off (leave). */
+            role_ids: string[];
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -5813,6 +6168,10 @@ export interface components {
             email: string;
             /** @description The member's own phone number (#3711), as they typed it, or null. Only they set it. */
             phone: string | null;
+            /** @description The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none. */
+            birthday_month: number | null;
+            /** @description The day of `birthday_month`, under the same rule. The year is never sent. */
+            birthday_day: number | null;
             /**
              * Format: uuid
              * @description The member's pledge class, one of `GET /v1/pledge-classes`, or null.
@@ -5837,6 +6196,15 @@ export interface components {
             avatar_url: string | null;
             /** @description Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
             role_color: string | null;
+        };
+        MemberBirthdayDto: {
+            /** @description users.id */
+            id: string;
+            display_name: string;
+            avatar_url: string | null;
+            birthday_month: number;
+            /** @description The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`). */
+            birthday_day: number;
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
@@ -5969,6 +6337,28 @@ export interface components {
             /** @description How many notifications this call marked read */
             updated: number;
         };
+        NotificationConversationDto: {
+            /**
+             * Format: uuid
+             * @description The chat channel (`data.target.channelId`)
+             */
+            channelId: string;
+            /**
+             * Format: uuid
+             * @description A thread's root message (`data.target.threadRootId`). Omit for the channel's own rows, which never include its threads'.
+             */
+            threadRootId?: string;
+        };
+        ClearNotificationsDto: {
+            /** @description The notifications to clear: the caller's own, in the active chapter. Ids that aren't are skipped. */
+            ids: string[];
+            /** @description Also clear every other row of this conversation the caller has in the chapter, created by now, except rows that mention them (each its own entry): rows past the page a client lists, or read rows its Unread filter hid. */
+            conversation?: components["schemas"]["NotificationConversationDto"];
+        };
+        ClearNotificationsResultDto: {
+            /** @description How many notifications this call cleared */
+            cleared: number;
+        };
         UpdateNotificationPreferenceDto: {
             /** @description Chapter ID */
             chapter_id: string;
@@ -6057,6 +6447,44 @@ export interface components {
             /** @description Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time. */
             mention_count: number;
         };
+        ForwardedGifDto: {
+            provider: string;
+            id: string;
+            title: string;
+            url: string;
+            width: number;
+            height: number;
+        };
+        ForwardedMessageDto: {
+            /**
+             * Format: uuid
+             * @description The original message.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Where the original lives. Never named in the copy: a reader shows the channel’s name only when its own channel list has it, so a private channel’s name never leaks.
+             */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description The original’s author; null for an imported archive message, and once the original is deleted.
+             */
+            sender_id: string | null;
+            /** @description The author’s name when it was forwarded (“Deleted User” after account deletion). Null once the original is deleted, or when masked. */
+            author_name: string | null;
+            /** @description The original’s text. Empty for a GIF or files only, once deleted, and when masked. Cut to 500 characters on Chat home’s preview. */
+            content: string;
+            gif: components["schemas"]["ForwardedGifDto"] | null;
+            /** @description How many files the original had. They are not copied; the card says “1 attachment” or “N attachments”. */
+            attachment_count: number;
+            /** @description When the original was sent. */
+            created_at: string;
+            /** @description True once the original was deleted: the copy keeps only where and when it was, and reads “Original message was deleted”. Absent or false otherwise. */
+            deleted?: boolean;
+            /** @description Set by a read that masks: true when the viewer blocked the original’s author, with the content, GIF, name and count withheld; false when cleared. Absent on the Realtime echo, which carries the copy raw: a client applies its own list. */
+            sender_blocked?: boolean;
+        };
         ChannelLatestMessageDto: {
             /** Format: uuid */
             channel_id: string;
@@ -6079,6 +6507,10 @@ export interface components {
             attachment_count: number;
             /** Format: date-time */
             created_at: string;
+            /** @description When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise. */
+            forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
+            /** @description The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”. */
+            has_gif: boolean;
         };
         ChannelAccessOptionDto: {
             /** @description The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`. */
@@ -6153,7 +6585,7 @@ export interface components {
              * @description The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route.
              * @enum {string}
              */
-            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form";
+            kind: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer";
             /**
              * @description Always null: the override is gone, and what the kind now falls back to depends on the channel.
              * @enum {string|null}
@@ -6285,6 +6717,8 @@ export interface components {
             kind: string | null;
             /** @description The reply’s `metadata.attachment_count`, or 0 when it has none. */
             attachment_count: number;
+            /** @description The reply is a GIF (#4657), so a preview reads “GIF”. False on a masked preview; absent on one written before GIF thread replies. */
+            has_gif?: boolean;
             created_at: string;
             /** @description Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list. */
             sender_blocked?: boolean;
@@ -6310,7 +6744,7 @@ export interface components {
              * @description Null on rows written before the column existed; read as 'text'.
              * @enum {string|null}
              */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | null;
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | null;
             /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
             payload?: Record<string, never> | null;
             client_message_id?: string | null;
@@ -6347,6 +6781,8 @@ export interface components {
             thread_recent_sender_ids?: string[];
             /** @description On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`). */
             thread_last_reply?: components["schemas"]["ChatThreadLastReplyDto"] | null;
+            /** @description Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it). */
+            forwarded_from?: components["schemas"]["ForwardedMessageDto"] | null;
             created_at: string;
             /** @description Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`. */
             sender_blocked: boolean;
@@ -6385,7 +6821,7 @@ export interface components {
             content: string;
             attachments?: components["schemas"]["MessageAttachmentDto"][];
             /** @enum {string} */
-            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form";
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer";
             gif?: components["schemas"]["MessageGifDto"];
             payload?: Record<string, never>;
             reply_to_id?: string;
@@ -6401,6 +6837,87 @@ export interface components {
         EditMessageDto: {
             content: string;
             mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        ForwardMessageDto: {
+            /**
+             * Format: uuid
+             * @description The channel or DM to forward to. It may be the channel the message is in.
+             */
+            channel_id: string;
+            /** @description The forwarder’s own comment, posted as the new message’s text. May be empty or left out. Its @mentions reach people as a message’s do. */
+            content?: string;
+            /**
+             * Format: uuid
+             * @description Client-generated idempotency key, as on a send: a retry with the same key in the same destination answers the forward already made.
+             */
+            client_message_id?: string;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        ForwardResultDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /**
+             * Format: uuid
+             * @description Null for an imported archive message, which names its author in author_name instead. Kept on a masked row: the blocker chose the block, so reading their own list back is not a disclosure — and without it a client cannot reconcile a server-masked row against the list it applies itself.
+             */
+            sender_id: string | null;
+            author_name?: string | null;
+            author_avatar_path?: string | null;
+            author_external_id?: string | null;
+            /** @description Reads the masking sentinel when `sender_blocked` is true, and “[message deleted]” once the message is deleted. **Never pattern-match either string** — the machine-readable signals are `sender_blocked` and `is_deleted`. */
+            content: string;
+            /** @enum {string} */
+            type: "TEXT" | "POLL";
+            /**
+             * @description Null on rows written before the column existed; read as 'text'.
+             * @enum {string|null}
+             */
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | null;
+            /** @description Inline card payload for rich kinds. Null on a masked row — a points / task / event card is authored by the acting member and interpolates their free text — and on a deleted one, whose card data the delete removed (#1575). */
+            payload?: Record<string, never> | null;
+            client_message_id?: string | null;
+            /** Format: uuid */
+            reply_to_id: string | null;
+            /** @description Free-form annotations; carries `attachment_count`, and `attachment_photos` (one `{width, height, thumbhash}` per photo) so a reader can size each photo before the attachments read returns. Empty on a masked row, which is what stops a masked message pulling the blocked member’s uploads. */
+            metadata: Record<string, never>;
+            is_pinned: boolean;
+            pinned_at: string | null;
+            /**
+             * @description The flag a member added after the message was sent (#3921), or null. Null on a masked row: a tombstone draws no flag.
+             * @enum {string|null}
+             */
+            flag?: "important" | "funny" | "interesting" | "question" | "hype" | "fyi" | null;
+            /**
+             * Format: uuid
+             * @description Who added the flag. Null when there is no flag, and also when the viewer blocked the member who added it: the flag stays, the name is withheld.
+             */
+            flagged_by?: string | null;
+            flagged_at?: string | null;
+            edited_at: string | null;
+            is_deleted: boolean;
+            /** @description `users.id` of everyone mentioned, plus a reply's quoted author, resolved server-side at send time. Null on a masked row: a mention overrides a per-channel mute, so leaving it would let a blocked member keep poking the blocker through a masked row. */
+            mentions?: string[] | null;
+            /**
+             * Format: uuid
+             * @description The parent message when this row is a reply inside a message thread (#3785). Thread replies never appear in the channel timeline; a client that receives one over Realtime must keep it out of the timeline.
+             */
+            thread_root_id?: string | null;
+            /** @description On a thread parent: its reply count, kept by a trigger so the parent’s Realtime UPDATE echo carries it. 0 on every other row. */
+            thread_reply_count?: number;
+            thread_last_reply_at?: string | null;
+            /** @description On a thread parent: up to three recent repliers, newest first. */
+            thread_recent_sender_ids?: string[];
+            /** @description On a thread parent: its newest reply that isn’t deleted, for the thread card’s preview (#4297). Kept by a trigger, so the parent’s Realtime UPDATE echo carries it. Null on every other row and on a parent whose replies are all deleted. A read that masks withholds it when the viewer blocked that replier (`sender_blocked: true`). */
+            thread_last_reply?: components["schemas"]["ChatThreadLastReplyDto"] | null;
+            /** @description Set when this message is a forward (#4864): a copy of the original, built by the server. `content` is then the forwarder’s comment, and may be empty. Null on every other row, on a deleted forward, and on a masked row. A read that masks withholds the copy when the viewer blocked the original’s author (`sender_blocked: true` inside it). */
+            forwarded_from?: components["schemas"]["ForwardedMessageDto"] | null;
+            created_at: string;
+            /** @description Whether the server masked this row against the caller’s block list. Present on **every** row, not only the masked ones: an absent-means-false flag cannot distinguish “this server does not mask” from “this message is fine”. Not sufficient on its own — rows arriving over the Realtime `postgres_changes` echo carry no viewer, so a client must also apply the list from `GET /v1/chat/blocks`. */
+            sender_blocked: boolean;
+            /** @description True when a retry on the same `client_message_id` answered the forward already made, rather than making a new one. */
+            deduplicated: boolean;
         };
         SetMessageFlagDto: {
             /**
@@ -6507,6 +7024,10 @@ export interface components {
              * @description The thread this message is a reply in (#3785), or null for a channel message. A client opens a saved reply in its thread (#3723). Null on a redacted row.
              */
             thread_root_id: string | null;
+            /** @description Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author. */
+            forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
+            /** @description The saved message is a GIF (#4657). A GIF has no text, so the row previews as “GIF”. False on a deleted row, a redacted one, and one whose sender the caller blocked. */
+            has_gif: boolean;
             /** @description Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows. */
             sender_blocked: boolean;
         };
@@ -6700,6 +7221,23 @@ export interface components {
         ThreadReadDto: {
             last_read_at: string;
         };
+        MemberThreadDto: {
+            /** Format: uuid */
+            thread_root_id: string;
+            /** @enum {string} */
+            state: "following" | "muted";
+            last_read_at: string | null;
+            /** @description Replies new to the caller; always 0 when muted. */
+            unread_count: number;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description When the newest reply landed; null before any reply. */
+            last_reply_at: string | null;
+            /** @description Replies in the thread, deleted ones included. */
+            reply_count: number;
+            /** @description The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier. */
+            root: components["schemas"]["ChatMessageDto"];
+        };
         ChatBackgroundResponseDto: {
             /**
              * @description What to draw behind the messages column.
@@ -6819,9 +7357,198 @@ export interface components {
             results: components["schemas"]["GifResultDto"][];
             next_page: number | null;
         };
+        ScheduledAttachmentDto: {
+            filename: string;
+            content_type: string;
+        };
+        ScheduledMessageDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            channel_id: string;
+            content: string;
+            mention_picks: components["schemas"]["MentionPickDto"][] | null;
+            /** @description The files it carries; empty for a text message. */
+            attachments: components["schemas"]["ScheduledAttachmentDto"][];
+            /**
+             * Format: uuid
+             * @description The message it quotes.
+             */
+            reply_to_id: string | null;
+            /**
+             * Format: uuid
+             * @description The thread it posts into.
+             */
+            thread_root_id: string | null;
+            /** Format: date-time */
+            send_at: string;
+            /**
+             * @description `failed`: it did not post at its time. Edit it to try again, or delete it.
+             * @enum {string}
+             */
+            status: "pending" | "failed";
+            /**
+             * @description Why a failed message did not post: `no_access` the author can no longer post there; `chapter_locked` the chapter is read-only for billing; `not_sendable` the channel refused the message; `send_failed` it kept failing.
+             * @enum {string|null}
+             */
+            failure_reason: "no_access" | "chapter_locked" | "not_sendable" | "send_failed" | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateScheduledMessageDto: {
+            /**
+             * Format: uuid
+             * @description The channel or DM to post in.
+             */
+            channel_id: string;
+            /** @description May be empty only when `attachments` is not, as on a send. */
+            content: string;
+            /** @description Files uploaded through `POST /v1/channels/{id}/upload-url`, as `SendMessageDto.attachments`. Deleted from storage if the scheduled message is deleted before it posts. */
+            attachments?: components["schemas"]["MessageAttachmentDto"][];
+            /**
+             * Format: uuid
+             * @description Quote this message, as `SendMessageDto.reply_to_id`. If it is gone when this posts, it posts without the quote.
+             */
+            reply_to_id?: string;
+            /**
+             * Format: uuid
+             * @description Post inside this message’s thread, as `SendMessageDto.thread_root_id`. Not with `reply_to_id`.
+             */
+            thread_root_id?: string;
+            /**
+             * Format: date-time
+             * @description When to post it: a date-time with its offset (`Z` or `±hh:mm`), at most 120 days ahead. The client picks it on the member’s own clock.
+             */
+            send_at: string;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        UpdateScheduledMessageDto: {
+            /** @description May be empty only on a message with files. Files, the quote and the thread can’t be changed. */
+            content?: string;
+            /** Format: date-time */
+            send_at?: string;
+            /** @description The `@` picks for the new `content`; read only with it. */
+            mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        EventAgendaItemDto: {
+            /** @description The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event. */
+            id: string;
+            text: string;
+            /** @description Checked off during the meeting. */
+            done: boolean;
+        };
+        EventAttachmentDto: {
+            /** @description The client's id for the attachment. Unique within the event. */
+            id: string;
+            /** @enum {string} */
+            kind: "link" | "document";
+            /** @description A `link` attachment's address: http or https only. */
+            url?: string;
+            /**
+             * Format: uuid
+             * @description A `document` attachment's Chapter Files document (`GET /v1/documents/{id}` opens it). An id that isn't the chapter's is a 400.
+             */
+            document_id?: string;
+            /** @description What the list shows. For a document, its name when it was attached. */
+            title: string;
+        };
         GeofenceCoordinateDto: {
             lat: number;
             lng: number;
+        };
+        EventResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            point_value: number;
+            is_mandatory: boolean;
+            recurrence_rule: string | null;
+            /** Format: uuid */
+            parent_event_id: string | null;
+            required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
+            notes: string | null;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments: components["schemas"]["EventAttachmentDto"][];
+            /** @description Optional check-in geofence. `null` means the event has no zone. */
+            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
+            check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             */
+            event_type_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        EventDetailResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            point_value: number;
+            is_mandatory: boolean;
+            recurrence_rule: string | null;
+            /** Format: uuid */
+            parent_event_id: string | null;
+            required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
+            notes: string | null;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments: components["schemas"]["EventAttachmentDto"][];
+            /** @description Optional check-in geofence. `null` means the event has no zone. */
+            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
+            check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             */
+            event_type_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether checking in now needs the officer's rotating code, so a client says to scan rather than offering a Check in the server would refuse. False when it cannot be worked out; the check-in route stays the authority. */
+            check_in_needs_code: boolean;
         };
         CreateEventDto: {
             name: string;
@@ -6850,6 +7577,10 @@ export interface components {
             /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older "only these roles" meaning, for a caller that predates this field. Omitted on update, it is left as stored. */
             others_invited?: boolean;
             notes?: string;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda?: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments?: components["schemas"]["EventAttachmentDto"][];
             /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
@@ -6889,6 +7620,10 @@ export interface components {
             /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
             others_invited: boolean | null;
             notes: string | null;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments: components["schemas"]["EventAttachmentDto"][];
             /** @description Optional check-in geofence. `null` means the event has no zone. */
             check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
             check_in_zone_name: string | null;
@@ -6928,6 +7663,10 @@ export interface components {
             /** @description Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older "only these roles" meaning. */
             others_invited?: boolean;
             notes?: string;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda?: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments?: components["schemas"]["EventAttachmentDto"][];
             /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */
             check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
             /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
@@ -8520,6 +9259,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityHoursEntryDto: {
             /** Format: uuid */
@@ -8539,6 +9283,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityProgressDto: {
             /** @description How many have answered: voted, or checked in. */
@@ -8580,6 +9329,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
             /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
             message: components["schemas"]["ChatMessageDto"];
         };
@@ -8614,6 +9368,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityNeedsYouDto: {
             /** @description Open tasks assigned to the caller, soonest due first. */
@@ -8662,6 +9421,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityLinkDto: {
             /** Format: uuid */
@@ -8705,6 +9469,51 @@ export interface components {
             posted_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
+        };
+        ActivityReminderDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description The message it is about: opening the row opens chat at this message, and `PUT`/`DELETE /v1/reminders/messages/{message_id}` snooze and clear it.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Set when the message is a thread reply, which the channel’s timeline doesn’t show: opening the row opens this thread.
+             */
+            thread_root_id: string | null;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description The channel’s name; null when the caller can no longer read the channel. A direct message’s is server-generated, so label those from `channel_type`. */
+            channel_name: string | null;
+            /**
+             * @description Null when the caller can no longer read the channel.
+             * @enum {string|null}
+             */
+            channel_type: "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM" | null;
+            /** @description Who wrote the message. Empty when they can’t be named: unresolved, blocked by the caller, or in a channel the caller can no longer read. */
+            author_name: string;
+            /** @description What the message says, cut as a push quotes it. The blocked-member tombstone for a member the caller blocked, `[message deleted]` for a deleted message, and an unavailable line when the caller can no longer read the channel. */
+            preview: string;
+            /** Format: date-time */
+            message_created_at: string;
+            /** @description False when the caller can no longer read the channel: the row can’t be opened, only cleared. */
+            message_available: boolean;
+            /** Format: date-time */
+            remind_at: string;
+            /**
+             * Format: date-time
+             * @description When the reminder’s push went out; null while it is still waiting.
+             */
+            fired_at: string | null;
+            /** @description Whether `remind_at` has passed. A due reminder waits on the caller and is counted in `needs_you_count` until they clear it. */
+            due: boolean;
         };
         ActivityFileDto: {
             /** Format: uuid */
@@ -8762,11 +9571,13 @@ export interface components {
             coming_up: components["schemas"]["ActivityEventDto"][];
             /** @description Sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels the caller can read and an officer has not left out of Activity. Never the caller’s own, a blocked member’s, one an officer removed, or one the caller marked Done or Hidden. Newest first, at most 25. Not counted in `needs_you_count`. */
             links: components["schemas"]["ActivityLinkDto"][];
+            /** @description Reminders the caller set on chat messages (#4957): those due that they haven’t cleared, newest first, then those still waiting, soonest first; at most 50 of each. Private to the caller. Due ones are counted in `needs_you_count` (so at most 50). */
+            reminders: components["schemas"]["ActivityReminderDto"][];
             made_by_you: components["schemas"]["ActivityMadeByYouDto"];
-            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
+            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`, less what the caller snoozed (`snoozed_until`). */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
-            unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links")[];
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links" | "reminders")[];
             /** @description How the caller’s week is going, for the ring at the top of the page (`spec/behavior/activity.md` § Week): what they finished since the week began and what is still theirs to do in it, by kind. Their own things only; what waits on their review is not counted. */
             week: components["schemas"]["ActivityWeekDto"];
             /**
@@ -8821,6 +9632,30 @@ export interface components {
             /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
             unavailable: ("points" | "required_events" | "service" | "study")[];
         };
+        ActivityRecapDto: {
+            /**
+             * Format: date-time
+             * @description Where last week began: seven days before the `week_start` sent (the start of the caller’s current week).
+             */
+            start: string;
+            /**
+             * Format: date-time
+             * @description Where last week ended: the `week_start` sent.
+             */
+            end: string;
+            /** @description Events that started last week, among those the caller can see, where they were marked present or late. Null when Events is off or couldn’t be read. */
+            events_attended: number | null;
+            /** @description The caller’s own tasks they marked done last week, confirmed or not; one sent back since is not counted. Null when Tasks is off or couldn’t be read. */
+            tasks_done: number | null;
+            /** @description Points awarded to the caller last week less points taken, from the ledger. Null when Points is off or couldn’t be read. */
+            points: number | null;
+            /** @description Service minutes the caller logged for last week’s days, approved or waiting. Null when Hours is off or couldn’t be read. */
+            service_minutes: number | null;
+            /** @description Minutes from the caller’s study sessions that started last week and have ended. Null when Hours is off or couldn’t be read. */
+            study_minutes: number | null;
+            /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
+            unavailable: ("events" | "tasks" | "points" | "service" | "study")[];
+        };
         ActivityItemRefDto: {
             /**
              * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
@@ -8834,12 +9669,46 @@ export interface components {
             /** @description The items the caller opened. At most 100. */
             items: components["schemas"]["ActivityItemRefDto"][];
         };
+        SnoozeActivityItemDto: {
+            /**
+             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
+             * @enum {string}
+             */
+            kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
+            /** Format: uuid */
+            item_id: string;
+            /**
+             * Format: date-time
+             * @description When the row comes back. In the future and at most 90 days away.
+             */
+            until: string;
+        };
         SetActivityLinkStateDto: {
             /**
              * @description `done`: the caller filled it in. `hidden`: not chapter business for them. Either takes it off their own list only.
              * @enum {string}
              */
             state: "done" | "hidden";
+        };
+        SetChatReminderDto: {
+            /**
+             * Format: date-time
+             * @description When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting a reminder again moves it, and one already sent fires again at the new time.
+             */
+            remind_at: string;
+        };
+        ChatReminderRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            message_id: string;
+            /** Format: date-time */
+            remind_at: string;
+            /**
+             * Format: date-time
+             * @description Always null after a set: a new time is a new reminder.
+             */
+            fired_at: string | null;
         };
         RoleGoalDto: {
             /** Format: uuid */
@@ -9137,6 +10006,8 @@ export interface components {
             available: boolean;
             /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
             linked: boolean;
+            /** @description The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543). */
+            discord_user_id: string | null;
             /** @description What Discord called the linked account when it was linked. Display only. */
             discord_username: string | null;
             linked_at: string | null;
@@ -9156,6 +10027,8 @@ export interface components {
             available: boolean;
             /** @description Whether the caller has linked a Discord account in this chapter. Linked, their imported Discord messages here are attributed to them. */
             linked: boolean;
+            /** @description The linked account's Discord user id (a snowflake, as text), which imported messages carry as `author_external_id`. A client uses it to find the cached messages a link or unlink reattributes (#4543). */
+            discord_user_id: string | null;
             /** @description What Discord called the linked account when it was linked. Display only. */
             discord_username: string | null;
             linked_at: string | null;
@@ -9270,6 +10143,25 @@ export interface components {
             answer: string;
             /** @description True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done. */
             suggested?: boolean;
+            /** @description How many cards that turn came with. A count only: the server writes the line that stands for them, so a follow-up is read knowing cards are already in front of the member. */
+            cards?: number;
+        };
+        AskFromDto: {
+            /**
+             * Format: uuid
+             * @description The channel the member had open.
+             */
+            channel_id?: string;
+            /**
+             * Format: uuid
+             * @description The event the member had open.
+             */
+            event_id?: string;
+            /**
+             * Format: uuid
+             * @description The task the member had open.
+             */
+            task_id?: string;
         };
         AskRequestDto: {
             /**
@@ -9283,11 +10175,20 @@ export interface components {
             history?: components["schemas"]["AskHistoryTurnDto"][];
             /** @description True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`. */
             actions?: boolean;
+            /** @description True when the client draws the cards an answer comes with (`answer.proposals` on `done`). Read only with `actions`, by a server that answers through the tool loop: a turn can then be an answer with cards under it, or up to five cards. Without it a turn comes with at most one card, sent as a `proposal` event in place of the answer. */
+            answer_cards?: boolean;
             /**
              * @description Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message.
              * @enum {string}
              */
             door?: "ask" | "chat_private";
+            /** @description What the member had open when they asked, so "this channel" or "this event" means something. Each id is looked up as the caller, and one they cannot open is dropped. Accepted from any client; read only by a server that answers through the tool loop, and not yet by that one. */
+            from?: components["schemas"]["AskFromDto"] | null;
+            /**
+             * @description How hard to work on the question: `default`, or `more` when the member asked Frapp to think harder. Accepted from any client; not read yet.
+             * @enum {string}
+             */
+            effort?: "default" | "more";
         };
         ActStatusDto: {
             /** @description The actions the caller could be offered now: `give_points`, `create_task`, `create_event`. Open: a client ignores one it does not know. */
@@ -9436,6 +10337,59 @@ export interface components {
             summary_id?: string | null;
             /** @description The exchange, sealed by the server and opaque to clients, to hand back unchanged with a report. Null when the server cannot keep reported text. */
             report_receipt?: string | null;
+        };
+        SetAskFeedbackDto: {
+            /** @enum {string} */
+            rating: "up" | "down";
+            /**
+             * @description With `down` only. A down can be sent first and sent again with its reason; each call replaces the one before.
+             * @enum {string|null}
+             */
+            reason?: "wrong" | "missed" | "too_long" | "other" | null;
+        };
+        AskFeedbackDto: {
+            /** Format: uuid */
+            ask_id: string;
+            /** @enum {string} */
+            rating: "up" | "down";
+            /** @enum {string|null} */
+            reason: "wrong" | "missed" | "too_long" | "other" | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        AskSignalDto: {
+            /**
+             * @description What the member did: `retried` (Try again), `think_harder`, `source_opened`, `card_confirmed` or `card_dismissed`.
+             * @enum {string}
+             */
+            signal: "retried" | "think_harder" | "source_opened" | "card_confirmed" | "card_dismissed";
+        };
+        AskPostDto: {
+            /**
+             * Format: uuid
+             * @description The channel to post in. The caller must be able to post there.
+             */
+            channel_id: string;
+            /** @description The answer’s `report_receipt`, exactly as the server sent it. Opaque to clients. What is posted is the answer inside it, never text from this request. */
+            receipt: string;
+            /** @description False only asks what posting would warn about and writes nothing. True posts, when `acknowledged` names every warning. */
+            confirm: boolean;
+            /** @description The `key` of each warning the asker was shown and accepted. A post whose warnings are not all named here is not made, and the current list is returned. */
+            acknowledged?: string[];
+        };
+        AskPostRestrictedDto: {
+            /** @description Stable for the same source, for `acknowledged`. */
+            key: string;
+            /** @description The kind of source, as an answer names it. */
+            kind: string;
+            /** @description The source’s name, or the records’ ("Your tasks"). */
+            title: string;
+        };
+        AskPostOutcomeDto: {
+            /** @description Whether the answer is now in the channel. */
+            posted: boolean;
+            /** @description What the answer drew on that not everyone who can read the channel could open, as of this call. */
+            restricted: components["schemas"]["AskPostRestrictedDto"][];
         };
         MemberNudgeDto: {
             /** Format: uuid */
@@ -9690,6 +10644,70 @@ export interface components {
              * @description The upload that finished.
              */
             upload_id: string;
+        };
+        BootstrapDto: {
+            /** @description As `GET /v1/users/me`. */
+            user?: {
+                [key: string]: unknown;
+            } | null;
+            /** @description As `GET /v1/users/me/permissions`. */
+            permissions?: components["schemas"]["MyPermissionsDto"] | null;
+            /** @description As `GET /v1/users/me/legal-acceptance`. */
+            legal_acceptance?: components["schemas"]["LegalAcceptanceDto"] | null;
+            /** @description As `GET /v1/users/me/whats-new`. */
+            whats_new?: components["schemas"]["WhatsNewSeenDto"] | null;
+            /** @description As `GET /v1/chapters`. */
+            chapters?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/chapters/current`. */
+            current_chapter?: components["schemas"]["CurrentChapterResponseDto"] | null;
+            /** @description As `GET /v1/settings`. */
+            settings?: components["schemas"]["UserSettingsDto"] | null;
+            /** @description As `GET /v1/channels`. */
+            channels?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/channels/unread`. */
+            channel_unread?: components["schemas"]["ChannelUnreadCountDto"][] | null;
+            /** @description As `GET /v1/channels/categories/list`. */
+            channel_categories?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/channels/notification-preferences`. */
+            channel_notification_preferences?: components["schemas"]["ChannelNotificationPreferenceDto"][] | null;
+            /** @description As `GET /v1/channels/mention-roles`. */
+            mention_roles?: components["schemas"]["MentionRoleDto"][] | null;
+            /** @description As `GET /v1/chat-sidebar`. */
+            chat_sidebar?: components["schemas"]["ChatSidebarDto"] | null;
+            /** @description As `GET /v1/chat/blocks`. */
+            chat_blocks?: components["schemas"]["ChatBlockListDto"] | null;
+            /** @description As `GET /v1/chat-backgrounds/default`. */
+            chat_background_default?: components["schemas"]["ChapterChatBackgroundResponseDto"] | null;
+            /** @description As `GET /v1/gifs/availability`. */
+            gif_availability?: components["schemas"]["GifAvailabilityDto"] | null;
+            /** @description As `GET /v1/bookmarks`. */
+            bookmarks?: components["schemas"]["BookmarkDto"][] | null;
+            /** @description As `GET /v1/roles`. */
+            roles?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/events`. */
+            events?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/geofences`. */
+            geofences?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/documents` with no folder or search. */
+            documents?: components["schemas"]["ChapterDocumentDto"][] | null;
+            /** @description As `GET /v1/members/roster`. */
+            member_roster?: components["schemas"]["MemberRosterEntryDto"][] | null;
+            /** @description As `GET /v1/notifications?limit=50`. */
+            notifications?: {
+                [key: string]: unknown;
+            }[] | null;
         };
     };
     responses: never;
@@ -10805,6 +11823,66 @@ export interface operations {
             };
         };
     };
+    RbacController_join_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfAssignRoleResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RbacController_leave_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfAssignRoleResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     RbacController_transferPresidency_v1: {
         parameters: {
             query?: never;
@@ -11117,6 +12195,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberRosterEntryDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberController_birthdays_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberBirthdayDto"][];
                 };
             };
             /** @description Error */
@@ -11751,6 +12857,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarkNotificationsReadResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    NotificationController_clearNotifications_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClearNotificationsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClearNotificationsResultDto"];
                 };
             };
             /** @description Error */
@@ -12864,6 +14002,40 @@ export interface operations {
             };
         };
     };
+    ChatController_forwardMessage_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForwardMessageDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForwardResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChatController_closeCard_v1: {
         parameters: {
             query?: never;
@@ -13176,6 +14348,34 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatController_markMessageUnread_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
             };
             cookie?: never;
         };
@@ -14004,6 +15204,34 @@ export interface operations {
             };
         };
     };
+    MemberThreadController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberThreadDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChatBackgroundController_getForChannel_v1: {
         parameters: {
             query?: never;
@@ -14439,6 +15667,161 @@ export interface operations {
             };
         };
     };
+    ChatScheduledMessageController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only this channel’s; every channel’s when left out. */
+                channel_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledMessageDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateScheduledMessageDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateScheduledMessageDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_sendNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     EventController_list_v1: {
         parameters: {
             query?: never;
@@ -14452,7 +15835,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EventResponseDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -14512,7 +15897,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EventDetailResponseDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -19456,6 +20843,48 @@ export interface operations {
             };
         };
     };
+    ActivityController_getRecap_v1: {
+        parameters: {
+            query?: {
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC. */
+                week_start?: string;
+                /** @description Where the caller’s last week began, in their own time zone (the Sunday before `week_start`, at midnight). Used when it is within three hours of seven days before `week_start` (a clock change moves it by an hour); otherwise, or omitted, seven days before `week_start`. */
+                last_week_start?: string;
+                /** @description The calendar date of the last week’s first day in the caller’s time zone, for service entries, which are dated by day. Used when it is within a day of the day the server works out; otherwise, or omitted, the server’s day. */
+                first_day?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityRecapDto"];
+                };
+            };
+            /** @description `week_start` is more than eight days back or a day ahead. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ActivityController_startUnread_v1: {
         parameters: {
             query?: never;
@@ -19494,6 +20923,73 @@ export interface operations {
                 "application/json": components["schemas"]["MarkActivityReadDto"];
             };
         };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_snooze_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnoozeActivityItemDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `until` is not in the future, or is more than 90 days away. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_unsnooze_v1: {
+        parameters: {
+            query: {
+                /** @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`). */
+                kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
+                item_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             204: {
                 headers: {
@@ -19606,6 +21102,68 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatReminderController_setReminder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChatReminderDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatReminderRefDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatReminderController_clearReminder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
             };
             cookie?: never;
         };
@@ -20991,6 +22549,181 @@ export interface operations {
             };
         };
     };
+    AskFeedbackController_rate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ask_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAskFeedbackDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskFeedbackDto"];
+                };
+            };
+            /** @description A reason sent with a thumbs up (`ai.ask.feedback.reason_needs_down`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskFeedbackController_clear_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ask_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskFeedbackController_signal_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ask_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskSignalDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or there is no answer with this id that the caller asked in this chapter (`ai.ask.feedback.not_found`). An ask that is someone else’s and one that does not exist answer the same. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AskPostController_post_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskPostDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskPostOutcomeDto"];
+                };
+            };
+            /** @description The receipt was not issued to the caller for an answer (`ai.ask.post.receipt_invalid`), is older than a day or from before answers could be posted (`ai.ask.post.too_old`), is not an answer (`ai.ask.post.not_an_answer`), the answer read chat messages (`ai.ask.post.read_chat`) or followed earlier questions (`ai.ask.post.follow_up`), or it is already in this channel (`ai.ask.post.already_posted`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The caller cannot post in this channel, Ask is off for the chapter (`ai.chapter_off`), or the caller has not turned Frapp AI on (`ai.consent.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or the channel does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     MemberNudgeController_current_v1: {
         parameters: {
             query?: never;
@@ -21680,6 +23413,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BootstrapController_getBootstrap_v1: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read. A name the API does not know is ignored, so a section a later API drops costs an older client only that section. */
+                include?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BootstrapDto"];
                 };
             };
             /** @description Error */

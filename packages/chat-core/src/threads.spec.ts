@@ -1,3 +1,4 @@
+import { TOMBSTONE_TEXT } from "./block-copy";
 import { describe, expect, test, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
@@ -7,14 +8,17 @@ import {
   fetchThread,
   fetchThreadUnread,
   loadThreadReplies,
+  outgoingGifOf,
   sendThreadReply,
   threadCardLabel,
   threadChipLabel,
   threadPreviewParts,
+  memberThreadPreview,
   threadVersion,
 } from "./threads";
 import { emptyCache } from "./cache";
 import type { ChannelCache, ChatMessage, RawChatMessage } from "./types";
+import { normalizeRow } from "./types";
 import type { FrappApiClient } from "./chat-client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -289,6 +293,72 @@ describe("sendThreadReply (#3785)", () => {
   });
 });
 
+describe("a GIF as a thread reply (#4657)", () => {
+  const GIF = {
+    provider: "klipy",
+    id: "g1",
+    title: "wave",
+    url: "https://static.klipy.com/g1.webp",
+    width: 200,
+    height: 150,
+    token: "signed",
+  };
+
+  test("posts the GIF with its token and no text, drawn at once", async () => {
+    const queryClient = new QueryClient();
+    let seen: ChannelCache | undefined;
+    const POST = vi.fn<
+      (
+        path: string,
+        init: unknown,
+      ) => Promise<{
+        data: undefined;
+        error: { message: string };
+        response: { status: number };
+      }>
+    >(async () => {
+      seen = cacheOf(queryClient);
+      return {
+        data: undefined,
+        error: { message: "offline" },
+        response: { status: 503 },
+      };
+    });
+    const api = { POST } as unknown as FrappApiClient;
+    await sendThreadReply(queryClient, api, {
+      channelId: CH,
+      rootId: ROOT,
+      senderId: "me",
+      content: "",
+      gif: GIF,
+      clientMessageId: "client-gif",
+    });
+    expect(POST.mock.calls[0]?.[1]).toMatchObject({
+      body: {
+        content: "",
+        thread_root_id: ROOT,
+        gif: {
+          id: "g1",
+          url: GIF.url,
+          width: 200,
+          height: 150,
+          token: "signed",
+        },
+      },
+    });
+    expect(seen?.byId["client-gif"]?.gif?.url).toBe(GIF.url);
+    // The failed row keeps the token, so Retry can send the GIF again.
+    const failed = cacheOf(queryClient)?.byId["client-gif"];
+    expect(outgoingGifOf(failed?.gif)).toEqual(GIF);
+  });
+
+  test("a confirmed GIF, which carries no token, is nothing to resend", () => {
+    const stored = { ...GIF, token: undefined };
+    expect(outgoingGifOf(stored)).toBeNull();
+    expect(outgoingGifOf(undefined)).toBeNull();
+  });
+});
+
 /**
  * A thread's reads bring the reactions and votes on what they read (#4034),
  * the way the timeline's pages do, so they show on first paint.
@@ -472,6 +542,7 @@ describe("threadPreviewParts and threadCardLabel (#4297)", () => {
     content,
     kind: "text" as const,
     attachment_count: 0,
+    has_gif: false,
     created_at: "2026-11-11T20:00:00.000Z",
     sender_blocked: false,
   });
@@ -499,6 +570,22 @@ describe("threadPreviewParts and threadCardLabel (#4297)", () => {
     ).toBe("2 attachments");
   });
 
+  test("reads a GIF reply as GIF (#4657)", () => {
+    // As the parent row carries it, through the defensive read.
+    const parent = normalizeRow({
+      ...reply("p0"),
+      id: "p0",
+      channel_id: CH,
+      thread_reply_count: 1,
+      thread_last_reply: { ...reply("u1", ""), has_gif: true },
+    } as unknown as RawChatMessage);
+    expect(parent.thread?.last_reply?.has_gif).toBe(true);
+    expect(
+      threadPreviewParts({ ...reply("u1", ""), has_gif: true }, null, names)
+        .text,
+    ).toBe("GIF");
+  });
+
   test("says only what the card draws", () => {
     expect(
       threadCardLabel({
@@ -516,5 +603,91 @@ describe("threadPreviewParts and threadCardLabel (#4297)", () => {
         preview: { name: null, text: "hi" },
       }),
     ).toBe("1 reply, latest: hi");
+  });
+});
+
+describe("memberThreadPreview (#4960)", () => {
+  const names = {
+    nameOf: (id: string) => (id === "u1" ? "Devin Okafor" : null),
+    fallbackLabel: (id: string) => `Member ${id.slice(0, 6)}`,
+  };
+  const raw = (over: Record<string, unknown> = {}) =>
+    ({
+      id: "root-1",
+      channel_id: "c1",
+      sender_id: "u2",
+      content: "who has the tent",
+      kind: "text",
+      is_deleted: false,
+      created_at: "2026-11-11T19:00:00.000Z",
+      thread_reply_count: 2,
+      thread_last_reply_at: "2026-11-11T20:00:00.000Z",
+      thread_last_reply: {
+        id: "r1",
+        sender_id: "u1",
+        content: "my truck",
+        kind: "text",
+        attachment_count: 0,
+        created_at: "2026-11-11T20:00:00.000Z",
+      },
+      ...over,
+    }) as never;
+
+  test("reads the parent and its latest reply as the channel does", () => {
+    expect(memberThreadPreview(raw(), "me", names)).toMatchObject({
+      root: { id: "root-1" },
+      rootText: "who has the tent",
+      reply: { name: "Devin", text: "my truck" },
+    });
+  });
+
+  test("reads a GIF or file-only message by what it holds, not as Message", () => {
+    const gif = memberThreadPreview(
+      raw({
+        content: "",
+        metadata: {
+          gif: { url: "https://static.klipy.com/gif/x.gif", width: 100, height: 100 },
+        },
+        thread_last_reply: {
+          id: "r1",
+          sender_id: "u1",
+          content: "",
+          kind: "text",
+          attachment_count: 2,
+          created_at: "2026-11-11T20:00:00.000Z",
+        },
+      }),
+      null,
+      names,
+    );
+    expect(gif.rootText).toBe("GIF");
+    expect(gif.reply?.text).toBe("2 attachments");
+  });
+
+  test("reads a blocked member's parent or reply as the tombstone, unnamed", () => {
+    const preview = memberThreadPreview(
+      raw({
+        sender_blocked: true,
+        thread_last_reply: {
+          id: "r1",
+          sender_id: "u1",
+          content: "",
+          kind: "text",
+          attachment_count: 0,
+          created_at: "2026-11-11T20:00:00.000Z",
+          sender_blocked: true,
+        },
+      }),
+      null,
+      names,
+    );
+    expect(preview.rootText).toBe(TOMBSTONE_TEXT);
+    expect(preview.reply).toEqual({ name: null, text: TOMBSTONE_TEXT });
+  });
+
+  test("has no reply line before any reply", () => {
+    expect(
+      memberThreadPreview(raw({ thread_last_reply: null }), null, names).reply,
+    ).toBeNull();
   });
 });

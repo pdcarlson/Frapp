@@ -235,3 +235,24 @@ export function checkCatchUpPoints(
   }
   return { points, dropped };
 }
+
+/**
+ * The channel types members talk in, the only ones a model reads. Never a
+ * DM or a group DM. One list for the database reads and for Ask's tools, so
+ * they cannot come to disagree about what a chapter channel is.
+ */
+export const CHAPTER_CHANNEL_TYPES = [
+  'PUBLIC',
+  'PRIVATE',
+  'ROLE_GATED',
+] as const;
+
+/**
+ * The message kinds a member wrote. Cards and system rows are not
+ * conversation. One list, for the same reason.
+ */
+export const WRITTEN_MESSAGE_KINDS = [
+  'text',
+  'announcement',
+  'imported',
+] as const;

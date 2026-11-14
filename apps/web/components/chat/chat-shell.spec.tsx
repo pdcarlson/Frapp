@@ -78,7 +78,10 @@ const {
   mockSendReturned,
   mockUseMyPermissions,
   searchHit,
+  mockScheduleMutate,
 } = vi.hoisted(() => ({
+  /** `useScheduleMessage().mutateAsync`: what a schedule sends (#4971). */
+  mockScheduleMutate: vi.fn(async () => ({})),
   mockScrollToMessage: vi.fn(),
   mockRefetch: vi.fn(),
   mockUseChatChannel: vi.fn(),
@@ -202,6 +205,9 @@ const mockBookmarkIsError = vi.fn(() => false);
 // Hide conversation (#2303). Each hide awaits its own `mutateAsync` promise,
 // so a case settles that promise to drive the shell's success and failure.
 const mockLeaveMutateAsync = vi.fn();
+const mockSetReminderAsync = vi.fn<
+  (vars: { messageId: string; remindAt: Date }) => Promise<void>
+>(() => Promise.resolve());
 const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
 // The rail's right-click menu (owner, 2026-11-06): what the shell hands it.
@@ -529,6 +535,28 @@ vi.mock("@/components/members/member-detail-sheet", () => ({
 const gifState = vi.hoisted(() => ({
   value: { available: false, provider: "" },
 }));
+// All threads (#4960): its list has its own spec; here it is two rows that
+// open a thread elsewhere, so the shell's half (switch channel, open the
+// thread) is what's under test.
+vi.mock("./all-threads-popover", () => ({
+  AllThreadsPopover: ({
+    onOpenThread,
+  }: {
+    onOpenThread: (channelId: string, rootId: string) => void;
+  }) => (
+    <>
+      <button
+        data-testid="all-threads-random"
+        onClick={() => onOpenThread("chan-random", "root-r")}
+      />
+      <button
+        data-testid="all-threads-new"
+        onClick={() => onOpenThread("chan-new", "root-n")}
+      />
+    </>
+  ),
+}));
+
 vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi
@@ -600,6 +628,8 @@ vi.mock("@repo/hooks", async () => ({
   // The rail's New channel panel (#3838).
   useCreateChannel: () => createChannelState,
   useChannelAccessOptions: () => ({ data: [], isPending: false }),
+  // The Forward dialog (#4907) mounts only once a row asks for it.
+  useForwardMessage: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMemberDisplayNames: () => ({
     byId: sidebarState.memberNames,
     nameFor: (id: string) => sidebarState.memberNames[id] ?? null,
@@ -714,6 +744,19 @@ vi.mock("@repo/hooks", async () => ({
   // the composer remount and delete wiring. `mockBookmarks` lets the bookmark
   // cases below drive the list without touching the other suites' setup.
   useBookmarks: () => mockBookmarks(),
+  // Scheduled messages (#4956): the composer's chevron and the bar above it.
+  // None scheduled, so the bar draws nothing.
+  useScheduleMessage: () => ({ mutateAsync: mockScheduleMutate }),
+  useScheduledMessages: () => ({ data: [] }),
+  useUpdateScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
+  useSendScheduledMessageNow: () => ({ mutate: vi.fn(), isPending: false }),
+  formatScheduledFor: () => "Tomorrow at 9:00 AM",
+  schedulePresets: (now: Date) => [
+    { key: "tomorrow", label: "Tomorrow at 9:00 AM", at: now },
+  ],
+  scheduleTimeProblem: () => null,
+  scheduledFailureCopy: () => "Not sent.",
   useBookmarkedMessageIds: () =>
     new Set(
       mockBookmarks().data.map((b: { message_id: string }) => b.message_id),
@@ -728,6 +771,7 @@ vi.mock("@repo/hooks", async () => ({
     reset: mockUnbookmarkReset,
     isError: false,
   }),
+  useSetMessageReminder: () => ({ mutateAsync: mockSetReminderAsync }),
   useLeaveChannel: () => ({ mutateAsync: mockLeaveMutateAsync }),
   useGetOrCreateDm: () => ({ mutate: mockReopenMutate }),
   canHideConversation: (channel: { type: string }) => channel.type === "DM",
@@ -1017,11 +1061,6 @@ vi.mock("@/components/ai/meet-frapp-ai", () => ({
     consentDialog: null,
   }),
 }));
-// Where Ask Frapp's conversation is drawn (#4702). Who gets one is the
-// host's question (`ask-host.spec.tsx`); here it only has to be in place.
-vi.mock("@/components/ask/ask-host", () => ({
-  AskSlot: () => <div data-testid="ask-slot" />,
-}));
 // `@Frapp` from a channel (#4713). What a channel asks with and which turns
 // it draws are `ask-in-channel.spec.tsx`'s; the shell only carries them to the
 // composer and the timeline. `ask` is null for a member without Ask.
@@ -1092,9 +1131,16 @@ vi.mock("./composer", () => ({
     onSendGif,
     ask,
     askUnknown,
+    onSchedule,
   }: {
     channelId: string;
     onSendGif?: unknown;
+    onSchedule?: (
+      body: string,
+      attachments: unknown[],
+      picks: unknown[],
+      at: Date,
+    ) => Promise<void>;
     ask?: { busy: boolean; send: (question: string) => void } | null;
     askUnknown?: boolean;
     dropAttachRef?: { current: ((files: File[]) => void) | null };
@@ -1196,6 +1242,28 @@ vi.mock("./composer", () => ({
         >
           send
         </button>
+        {onSchedule ? (
+          <button
+            data-testid="composer-schedule"
+            onClick={() =>
+              void onSchedule(
+                "Agenda",
+                [
+                  {
+                    storagePath: "chapters/c/chat/chan-general/a/agenda.pdf",
+                    filename: "agenda.pdf",
+                    contentType: "application/pdf",
+                    byteSize: 15,
+                  },
+                ],
+                [],
+                new Date("2026-11-15T14:00:00.000Z"),
+              ).catch(() => {})
+            }
+          >
+            schedule
+          </button>
+        ) : null}
         {/* The command-form seam (#3773): what the shell answers when the
             real composer offers it a command before dispatching. */}
         {[
@@ -1419,12 +1487,16 @@ vi.mock("./message-timeline", async () => {
       channelStart?: React.ReactNode;
       onOpenProfile?: (userId: string) => void;
       onOpenThread?: (message: { id: string }) => void;
+      onForward?: (message: { id: string }) => void;
       askTurns?: readonly { id: string }[];
+      onRemind?: (messageId: string, remindAt: Date) => void;
     }
   >(function MessageTimeline(
     {
       askTurns,
+      onRemind,
       onOpenThread,
+      onForward,
       onOpenProfile,
       messages,
       onDelete,
@@ -1469,6 +1541,9 @@ vi.mock("./message-timeline", async () => {
         {/* Edit is withheld the same way where the member can't post (#2775). */}
         <span data-testid="edit-offered">{String(!!onEdit)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+        <button onClick={() => onRemind?.("msg-1", new Date(2099, 0, 1, 9, 0))}>
+          trigger-remind
+        </button>
         <button onClick={() => onClosePoll?.("poll-1")}>
           trigger-close-poll
         </button>
@@ -1493,6 +1568,18 @@ vi.mock("./message-timeline", async () => {
             reply to {m.id}
           </button>
         ))}
+        {/* A row's Forward (#4907), withheld if the shell doesn't wire it. */}
+        {onForward
+          ? (messages ?? []).map((m) => (
+              <button
+                key={m.id}
+                data-testid={`trigger-forward-${m.id}`}
+                onClick={() => onForward(m)}
+              >
+                forward {m.id}
+              </button>
+            ))
+          : null}
         {/* The row's Start thread and the parent's chip both call
             `onOpenThread` (#3785); withheld where threads aren't offered. */}
         {onOpenThread
@@ -1674,23 +1761,6 @@ beforeEach(() => {
 // announcements channel (#3414); the shell tells the composer so, from that
 // channel's `can_post`, and only that: a chapter with no announcements channel
 // leaves `/announce` to dispatch, which says the channel is missing.
-/**
- * Ask Frapp opens over the chat, rising from the composer (#4702, Paul
- * 2026-11-13: "the ask for app either pops up on top of that"). The chat
- * column gives it the place: directly above the composer, in the column, so
- * the card is the thread's width and moves with the composer as a draft
- * grows.
- */
-describe("ChatShell gives Ask Frapp its place (#4702)", () => {
-  it("puts the slot directly above the composer, inside the chat column", () => {
-    render(<ChatShell />);
-    const slot = screen.getByTestId("ask-slot");
-    const composer = screen.getByTestId("composer");
-    expect(slot.nextElementSibling).toBe(composer);
-    expect(slot.parentElement).toBe(composer.parentElement);
-  });
-});
-
 describe("ChatShell /announce gate (#3414)", () => {
   afterEach(() => {
     channelsQueryState.value = {};
@@ -3531,6 +3601,42 @@ describe("ChatShell hide conversation (#2303)", () => {
   });
 });
 
+describe("ChatShell message reminders (#4957)", () => {
+  it("sets the reminder and says when it will come", async () => {
+    mockToast.mockClear();
+    mockSetReminderAsync.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "trigger-remind" }));
+
+    expect(mockSetReminderAsync).toHaveBeenCalledWith({
+      messageId: "msg-1",
+      remindAt: new Date(2099, 0, 1, 9, 0),
+    });
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Reminder set",
+        description: expect.stringMatching(/^I'll remind you .+ at 9:00/),
+      }),
+    );
+  });
+
+  it("toasts a failed write", async () => {
+    mockToast.mockClear();
+    mockSetReminderAsync.mockRejectedValueOnce(new Error("nope"));
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "trigger-remind" }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        variant: "destructive",
+        description: "Couldn't set the reminder. Try again.",
+      }),
+    );
+  });
+});
+
 describe("ChatShell bookmark write failure (#462)", () => {
   it("says nothing while writes are succeeding", () => {
     render(<ChatShell initialChannelId="chan-general" />);
@@ -3619,6 +3725,19 @@ describe("ChatShell reply-with-quote (#489)", () => {
       replyToId: null,
       attachments: [],
     });
+  });
+
+  it("opens Forward to on the row a member forwards from (#4907)", () => {
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(
+      screen.queryByRole("dialog", { name: "Forward to" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("trigger-forward-msg-1"));
+
+    const dialog = screen.getByRole("dialog", { name: "Forward to" });
+    expect(within(dialog).getByText("the original")).toBeInTheDocument();
   });
 
   it("carries the staged message's id through to channel.send", () => {
@@ -3873,6 +3992,53 @@ describe("ChatShell reply-with-quote (#489)", () => {
       replyToId: "msg-1",
       attachments: [],
     });
+  });
+
+  it("schedules the text, its files and the staged reply, then clears the strip (#4971)", async () => {
+    mockScheduleMutate.mockClear();
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-schedule"));
+
+    await waitFor(() =>
+      expect(mockScheduleMutate).toHaveBeenCalledWith({
+        channelId: "chan-general",
+        content: "Agenda",
+        sendAt: new Date("2026-11-15T14:00:00.000Z"),
+        mentionPicks: [],
+        attachments: [
+          {
+            storage_path: "chapters/c/chat/chan-general/a/agenda.pdf",
+            filename: "agenda.pdf",
+            content_type: "application/pdf",
+            byte_size: 15,
+            width: undefined,
+            height: undefined,
+            thumbhash: undefined,
+            preview_storage_path: undefined,
+          },
+        ],
+        replyToId: "msg-1",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none"),
+    );
+  });
+
+  it("keeps the reply staged when scheduling fails (#4971)", async () => {
+    mockScheduleMutate.mockClear();
+    mockScheduleMutate.mockRejectedValueOnce(new Error("down"));
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-schedule"));
+
+    await waitFor(() => expect(mockScheduleMutate).toHaveBeenCalled());
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
   });
 
   it("offers no Reply control to a member who cannot post here (alumni)", async () => {
@@ -6662,5 +6828,42 @@ describe("ChatShell's two lists (#3774)", () => {
       expect(rail()).toHaveAttribute("data-latest", "chan-dm");
       expect(previews().get("chan-dm")).toBe("see you at 7");
     });
+  });
+});
+
+describe("ChatShell All threads (#4960)", () => {
+  it("switches to the thread's channel and opens the thread there", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("composer");
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("all-threads-random"));
+
+    expect(await screen.findByTestId("thread-panel")).toBeInTheDocument();
+  });
+
+  it("keeps the thread for a channel the cached list hasn't brought in yet", async () => {
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("composer");
+
+    fireEvent.click(screen.getByTestId("all-threads-new"));
+    expect(mockRefetch).toHaveBeenCalled();
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+
+    // The refetch brings the new channel in.
+    const before = channelsQueryState.value;
+    channelsQueryState.value = {
+      ...before,
+      data: [
+        ...CHANNELS,
+        { id: "chan-new", name: "new", type: "PUBLIC", member_ids: [] },
+      ],
+    };
+    try {
+      rerender(<ChatShell initialChannelId="chan-general" />);
+      expect(await screen.findByTestId("thread-panel")).toBeInTheDocument();
+    } finally {
+      channelsQueryState.value = before;
+    }
   });
 });

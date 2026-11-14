@@ -254,14 +254,21 @@ export class ChatReportService {
         input.message_id,
         chapterId,
       );
+    // A posted Ask Frapp answer is the Frapp sender's row, but the member
+    // who chose to post it is who a report is about (#4713).
+    const postedBy =
+      message.kind === 'ask_answer' &&
+      typeof message.payload?.asked_by === 'string'
+        ? message.payload.asked_by
+        : null;
     const { report, created } = await this.reportRepo.create({
       chapter_id: chapterId,
       message_id: input.message_id,
       channel_id: message.channel_id,
       reporter_user_id: reporterUserId,
       reported_content: reportedContentSnapshot(message),
-      reported_sender_id: message.sender_id,
-      reported_author_name: message.author_name ?? null,
+      reported_sender_id: postedBy ?? message.sender_id,
+      reported_author_name: postedBy ? null : (message.author_name ?? null),
       reported_attachments: reportedAttachments,
       reason: input.reason,
       details: input.details ?? null,
@@ -1022,8 +1029,58 @@ export class ChatReportService {
  * `type: 'POLL'` with `metadata.options: string[]` (`PollService.createPoll`).
  * A malformed card falls back to `content`, the same as any other message:
  * this runs on the filing path and must not fail it.
+ *
+ * An Ask Frapp answer posted to a channel (`kind: 'ask_answer'`, #4713)
+ * keeps the question it answers on its own line first: `content` is the
+ * answer alone, and an answer is judged against what was asked. Its report
+ * names the member who posted it as the sender (`fileReport`).
+ *
+ * A forward (#4864) adds its copy of the original after its comment
+ * ({@link forwardedText}), unless the original was deleted.
  */
 export function reportedContentSnapshot(
+  message: Pick<
+    ChatMessage,
+    'content' | 'type' | 'kind' | 'payload' | 'metadata' | 'forwarded_from'
+  >,
+): string {
+  const own = ownContentSnapshot(message);
+  const copy = forwardedText(message.forwarded_from);
+  if (!copy) return own;
+  return own.trim() ? `${own}\n\n${copy}` : copy;
+}
+
+/**
+ * A forward's copy of its original (#4864). A forward with no comment has an
+ * empty `content`, and the copy is what the member saw, so the report keeps
+ * it after the comment. A copy whose original was deleted holds nothing of
+ * it, and a deleted original keeps nothing past its delete (§ Forward), so
+ * none is added.
+ */
+function forwardedText(
+  copy: ChatMessage['forwarded_from'] | undefined,
+): string | null {
+  if (!copy || typeof copy !== 'object' || copy.deleted === true) return null;
+  const author =
+    typeof copy.author_name === 'string' && copy.author_name.trim()
+      ? copy.author_name.trim()
+      : 'a member';
+  const lines: string[] = [];
+  const text = typeof copy.content === 'string' ? copy.content.trim() : '';
+  if (text) lines.push(`Forwarded from ${author}: ${text}`);
+  const gif = gifText({ gif: copy.gif });
+  if (gif) lines.push(`Forwarded ${gif}`);
+  if (lines.length === 0) {
+    const count = Number(copy.attachment_count);
+    if (!Number.isInteger(count) || count <= 0) return null;
+    lines.push(
+      `Forwarded from ${author}: ${count === 1 ? '1 attachment' : `${count} attachments`}`,
+    );
+  }
+  return lines.join('\n');
+}
+
+function ownContentSnapshot(
   message: Pick<
     ChatMessage,
     'content' | 'type' | 'kind' | 'payload' | 'metadata'
@@ -1031,6 +1088,12 @@ export function reportedContentSnapshot(
 ): string {
   const gif = gifText(message.metadata);
   if (gif) return gif;
+  if (message.kind === 'ask_answer') {
+    const question: unknown = message.payload?.question;
+    return typeof question === 'string' && question.trim()
+      ? `Asked Frapp: ${question.trim()}\n${message.content}`
+      : message.content;
+  }
   const poll = pollText(message);
   if (!poll || poll.labels.length === 0) return message.content;
   const lines = [message.content];

@@ -77,6 +77,21 @@ export const BAKE_OFF_CANDIDATES: readonly BakeOffCandidate[] = [
     paid: true,
   },
   {
+    id: 'claude-opus-5-5',
+    provider: 'anthropic',
+    model: 'claude-opus-5-5',
+    prices: [
+      {
+        from: '2026-01-01',
+        inputUsdPerMillionTokens: 4,
+        outputUsdPerMillionTokens: 20,
+      },
+    ],
+    priceSource:
+      "Anthropic's model table as cached 2026-11-03 ($4 in, $20 out; cache reads $0.20, which this estimate does not discount)",
+    paid: true,
+  },
+  {
     id: 'gemini-3.8-flash',
     provider: 'google',
     model: 'gemini-3.8-flash',

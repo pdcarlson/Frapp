@@ -58,7 +58,10 @@ import { NavGlyph } from "@/components/nav-glyph";
  * neutral (foundations.md §6, "Where the accent goes", 2026-11-05).
  */
 
-/** Minimal shapes — the generated SDK types for these routes infer as `never`. */
+/**
+ * Minimal shapes. `GET /v1/tasks` has no response schema; `GET /v1/events`
+ * has had one since #4867, and moving this onto it is #4952.
+ */
 interface UpNextEvent {
   id: string;
   name: string;

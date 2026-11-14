@@ -1,6 +1,7 @@
 // Runs under TZ=America/Los_Angeles (package.json), in the en-US locale.
 import { describe, expect, it } from "vitest";
 import {
+  formatWeekSpan,
   formatDay,
   formatDayHeading,
   formatDayRange,
@@ -324,5 +325,16 @@ describe("formatEndsLabel", () => {
     expect(
       formatEndsLabel("Ends", "2026-11-03T18:00:00-08:00", NOW),
     ).toBeNull();
+  });
+});
+
+describe("formatWeekSpan", () => {
+  it("names both days, month and day, without a year", () => {
+    expect(formatWeekSpan(new Date(2026, 10, 8), new Date(2026, 10, 14))).toBe(
+      "Nov 8 – Nov 14",
+    );
+    expect(formatWeekSpan(new Date(2026, 10, 29), new Date(2026, 11, 5))).toBe(
+      "Nov 29 – Dec 5",
+    );
   });
 });

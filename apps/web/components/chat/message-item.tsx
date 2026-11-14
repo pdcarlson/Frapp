@@ -6,6 +6,7 @@ import {
   Check,
   CircleAlert,
   Flag,
+  Forward,
   MoreHorizontal,
   Pencil,
   Tag,
@@ -22,6 +23,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -50,12 +52,15 @@ import {
   type MessageFlagView,
 } from "@repo/chat-core/flags";
 import { MessageAttachments } from "./message-attachments";
+import { MessageReminderMenu } from "./message-reminder-menu";
 import { MessageGifImage } from "./message-gif";
+import { ForwardedCard } from "./forwarded-card";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
 import {
   canActOnMessage,
   canBlockSender,
   canDeleteMessage,
+  canForwardMessage,
   canReportMessage,
   canEditMessage,
   isOwnMessage,
@@ -77,8 +82,10 @@ import {
 } from "@repo/chat-core/profile-targets";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import {
+  hiddenForwardedText,
   hiddenQuoteText,
   threadPreviewVisible,
+  withForwardedMasked,
   visibleReactions,
   type BlockState,
 } from "@repo/chat-core/blocks";
@@ -285,6 +292,12 @@ export interface MessageItemProps {
    * the viewer can see.
    */
   onToggleBookmark?: (messageId: string, next: boolean) => void;
+  /**
+   * "Remind me about this" (#4957): the viewer's own reminder on this
+   * message, set or moved. Optional, as Save's toggle is: a surface that
+   * doesn't wire it offers no control.
+   */
+  onRemind?: (messageId: string, remindAt: Date) => void;
   /** Gates the Delete affordance on messages that aren't the viewer's own. */
   canManageChannel?: boolean;
   /**
@@ -292,6 +305,12 @@ export interface MessageItemProps {
    * confirmed message (`canReportMessage`), never the viewer's own.
    */
   onReport?: (message: ChatMessage) => void;
+  /**
+   * Opens the Forward dialog for this message (#4907): anyone's confirmed
+   * plain-text message (`canForwardMessage`), first in the More menu, as on
+   * Discord's and Slack's desktop message menus.
+   */
+  onForward?: (message: ChatMessage) => void;
   /**
    * Asks to block this message's sender (#2687). Offered where
    * `canBlockSender` allows, which needs `isMember` too.
@@ -428,8 +447,10 @@ export function MessageItem({
   onFlag,
   isBookmarked,
   onToggleBookmark,
+  onRemind,
   canManageChannel,
   onReport,
+  onForward,
   onBlock,
   isMember,
   isTapRevealed,
@@ -467,10 +488,11 @@ export function MessageItem({
   );
   // The server resolved who this message pings (`chat_messages.mentions`),
   // so the row trusts that list rather than re-reading the body: it is the
-  // same set the notifier used. A viewer's own message never lights up.
+  // same set the notifier used. A viewer's own message lights up too when it
+  // reaches them (their own `@here`, a role they hold), as on Discord; only
+  // the push and the badge skip a sender's own message (Paul, 2026-11-13).
   const mentionsViewer =
     !!viewerId &&
-    message.sender_id !== viewerId &&
     // A deleted message no longer counts as a mention anywhere else (the
     // unread badge skips it, the push is gone), so its tombstone stays plain.
     !message.is_deleted &&
@@ -545,6 +567,9 @@ export function MessageItem({
   const canReport = canReportMessage(message, viewerId) && !!onReport;
   const canBlock =
     !!isMember && canBlockSender(message, viewerId, isMember) && !!onBlock;
+  // Forward is the phone's rule (#4864, #4907), on the viewer's own messages
+  // too, so the More button now shows on every forwardable row.
+  const canForward = canForwardMessage(message) && !!onForward;
 
   const [isEditing, setIsEditing] = useState(false);
   // The tokens the row paints as chips, which the editor opens as chips.
@@ -807,7 +832,15 @@ export function MessageItem({
               ? resolveAuthorLabel(replyParent, nameFor, viewerId)
               : null
           }
-          preview={replyParent ? replyPreviewText(replyParent) : null}
+          preview={
+            replyParent
+              ? // A forwarded parent's copy previews only where the list
+                // clears its author, as its own card draws it (#4864).
+                replyPreviewText(
+                  withForwardedMasked(replyParent, blockState, viewerId),
+                )
+              : null
+          }
           hidden={hiddenParent}
           onOpen={
             replyParent && onJumpToParent
@@ -817,6 +850,22 @@ export function MessageItem({
         />
       </div>
     ) : null;
+
+  /*
+   * A forward's card (#4864), under the forwarder's comment. Not on a deleted
+   * row: the server nulls the copy with the content, and a tombstone carries
+   * no one's words. Its author is classified on their own, so a blocked
+   * author's words draw as the block placeholder inside the forwarder's row.
+   */
+  const forwardedCopy = message.is_deleted ? null : message.forwarded_from;
+  const forwardedCard = forwardedCopy ? (
+    <ForwardedCard
+      forwarded={forwardedCopy}
+      hidden={hiddenForwardedText(forwardedCopy, message, blockState, viewerId)}
+      nameFor={nameFor}
+      viewerId={viewerId}
+    />
+  ) : null;
 
   /*
     Attachments render under the body for every kind, not inside the text
@@ -1032,8 +1081,9 @@ export function MessageItem({
           // old place, and where a long message's bar ends up anyway.
           "ml-auto",
           // Wraps rather than spilling past the row's left edge: on a coarse
-          // pointer every icon is 44px, and nine of them (your own message) are
-          // wider than a 375px thread, where the scroller would clip the first.
+          // pointer every icon is 44px, and ten of them (your own message, with
+          // More for Forward) are wider than a 375px thread, where the scroller
+          // would clip the first.
           "max-w-full flex-wrap justify-end",
           "rounded-[10px] border border-border bg-card p-0.5",
           "transition-opacity",
@@ -1101,6 +1151,11 @@ export function MessageItem({
             <BookmarkGlyph className="h-4 w-4" active={isBookmarked} />
           </button>
         ) : null}
+        {onRemind ? (
+          <MessageReminderMenu
+            onRemind={(remindAt) => onRemind(message.id, remindAt)}
+          />
+        ) : null}
         {canFlag ? (
           <MessageFlagMenu
             current={message.flag ?? null}
@@ -1130,7 +1185,7 @@ export function MessageItem({
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
         ) : null}
-        {canReport || canBlock ? (
+        {canForward || canReport || canBlock ? (
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
@@ -1143,6 +1198,15 @@ export function MessageItem({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {canForward ? (
+                <DropdownMenuItem onSelect={() => onForward?.(message)}>
+                  <Forward aria-hidden="true" />
+                  Forward
+                </DropdownMenuItem>
+              ) : null}
+              {canForward && (canReport || canBlock) ? (
+                <DropdownMenuSeparator />
+              ) : null}
               {canReport ? (
                 <DropdownMenuItem onSelect={() => onReport?.(message)}>
                   <Flag aria-hidden="true" />
@@ -1500,6 +1564,7 @@ export function MessageItem({
                   <div className="px-3">{flagCaption}</div>
                 ) : null}
                 {bubble}
+                {forwardedCard}
                 {attachments}
                 {trailingOnOwnLine && trailing && !isEditing ? (
                   <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>
@@ -1798,6 +1863,7 @@ export function MessageItem({
               ) : (
                 body
               )}
+              {forwardedCard}
               {attachments}
               {trailingOnOwnLine && trailing && !isEditing ? (
                 <div className="mt-1 leading-5 [&>span]:ml-0">{trailing}</div>

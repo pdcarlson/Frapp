@@ -34,7 +34,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { EventService } from './event.service';
 import { RbacService } from './rbac.service';
 import { NotificationService } from './notification.service';
-import { isInvited } from './event-role-targeting';
+import { isInvited, type EventViewer } from './event-role-targeting';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
@@ -277,6 +277,52 @@ export class MeetingService {
       rows
         .filter((row) =>
           this.readable(row, userId, access, (id) => visibleEventIds.has(id)),
+        )
+        .map((row) => row.id),
+    );
+  }
+
+  /**
+   * Of `meetingIds`, the minutes every one of `viewers` may read, by the same
+   * rule as `canRead` (`readable`), for members whose permissions and roles
+   * the caller already holds. An id that names no minutes is not in the
+   * answer. For a check made over a whole audience: who in a channel could
+   * open what an Ask Frapp answer drew on, before it is posted there (#4713).
+   */
+  async readableByAll(
+    chapterId: string,
+    meetingIds: readonly string[],
+    viewers: ReadonlyArray<EventViewer & { user_id: string }>,
+  ): Promise<Set<string>> {
+    const ids = [...new Set(meetingIds)];
+    if (ids.length === 0) return new Set();
+    const rows = (
+      await Promise.all(
+        ids.map((id) => this.meetingRepo.findById(chapterId, id)),
+      )
+    ).filter((row): row is Meeting => row !== null);
+    const canEditAny = (viewer: EventViewer) =>
+      viewer.permissions.has('*') ||
+      viewer.permissions.has(SystemPermissions.MEETINGS_EDIT);
+    // An editor reads every minutes whatever its event; the event only has
+    // to show itself to the rest.
+    const rest = viewers.filter((viewer) => !canEditAny(viewer));
+    const visibleToRest = await this.events.visibleToAll(
+      rows.flatMap((row) => (row.event_id ? [row.event_id] : [])),
+      chapterId,
+      rest,
+    );
+    return new Set(
+      rows
+        .filter((row) =>
+          viewers.every((viewer) =>
+            this.readable(
+              row,
+              viewer.user_id,
+              { canEditAny: canEditAny(viewer), canDelete: false },
+              (eventId) => visibleToRest.has(eventId),
+            ),
+          ),
         )
         .map((row) => row.id),
     );

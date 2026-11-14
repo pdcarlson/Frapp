@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Path } from "react-native-svg";
+import {
+  calendarBirthdayLabel,
+  type CalendarBirthday,
+} from "@repo/hooks/calendar-birthdays";
 import {
   CALENDAR_LAYERS,
   calendarTaskAccessibleLabel,
+  type CalendarItem,
   type CalendarLayer,
   type CalendarTask,
   type CalendarTaskState,
@@ -14,6 +20,7 @@ import { Chip } from "@/components/filter-chips";
 import { PressableRow } from "@/components/list-section";
 import { createEventRowStyles } from "@/components/events/event-rows";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
+import { Frame, paint } from "@/components/more/more-glyphs";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -70,11 +77,92 @@ function TaskMark({
 }
 
 /**
+ * A birthday's cake (#4959), web's Lucide `Cake`, so a member's birthday reads
+ * apart from an event's row and a task's ring on both apps.
+ */
+function CakeGlyph({ color, size }: { color: string; size: number }) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M20 21v-8a2 2 0 00-2-2H6a2 2 0 00-2 2v8" {...detail} />
+      <Path
+        d="M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2-1 2-1"
+        {...detail}
+      />
+      <Path
+        d="M2 21h20M7 8v3M12 8v3M17 8v3M7 4h.01M12 4h.01M17 4h.01"
+        {...detail}
+      />
+    </Frame>
+  );
+}
+
+/**
+ * A member's birthday under the picked day (#4959): the cake in the lead
+ * tile, their name, and "Birthday". Nothing to open: like Google Calendar's
+ * birthdays, it is a reminder, not an event.
+ */
+function BirthdayRow({
+  item,
+  isFirst,
+}: {
+  item: CalendarBirthday;
+  isFirst: boolean;
+}) {
+  const { tokens } = useFrappTheme();
+  const rowStyles = createEventRowStyles(tokens);
+  return (
+    <View
+      accessible
+      accessibilityLabel={calendarBirthdayLabel(item)}
+      style={[rowStyles.leadRow, isFirst ? null : rowStyles.flatDivider]}
+    >
+      <LeadTile size="lead" testID="calendar-birthday-lead">
+        <CakeGlyph color={tokens.color.text.mutedForeground} size={18} />
+      </LeadTile>
+      <View style={rowStyles.body}>
+        <Text numberOfLines={1} style={rowStyles.leadTitle}>
+          {item.title}
+        </Text>
+        <Text numberOfLines={1} style={rowStyles.meta}>
+          Birthday
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** A task or a birthday under the picked day. */
+export function CalendarTaskRow({
+  item,
+  isFirst,
+  nameOf,
+  onOpenTask,
+}: {
+  item: CalendarItem;
+  isFirst: boolean;
+  nameOf: (userId: string) => string;
+  onOpenTask: (taskId: string) => void;
+}) {
+  if (item.kind === "birthdays") {
+    return <BirthdayRow item={item} isFirst={isFirst} />;
+  }
+  return (
+    <TaskRow
+      item={item}
+      isFirst={isFirst}
+      nameOf={nameOf}
+      onOpenTask={onOpenTask}
+    />
+  );
+}
+
+/**
  * One task under the picked day. The member's own opens it on the Tasks
  * tab; one they assigned opens in place to list each assignee and where
  * they stand, since that is what an officer checks it for.
  */
-export function CalendarTaskRow({
+function TaskRow({
   item,
   isFirst,
   nameOf,
@@ -194,6 +282,35 @@ export function CalendarTaskRow({
  * assignees are a tap away on Month's day list.
  */
 export function CalendarTaskChip({
+  item,
+  onOpenTask,
+}: {
+  item: CalendarItem;
+  onOpenTask: (taskId: string) => void;
+}) {
+  if (item.kind === "birthdays") return <BirthdayChip item={item} />;
+  return <TaskChip item={item} onOpenTask={onOpenTask} />;
+}
+
+/** A birthday in the All day strip (#4959): the cake and the name. */
+function BirthdayChip({ item }: { item: CalendarBirthday }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View
+      accessible
+      accessibilityLabel={calendarBirthdayLabel(item)}
+      style={styles.chip}
+    >
+      <CakeGlyph color={tokens.color.text.mutedForeground} size={12} />
+      <Text numberOfLines={1} style={styles.chipTitle}>
+        {item.title}
+      </Text>
+    </View>
+  );
+}
+
+function TaskChip({
   item,
   onOpenTask,
 }: {

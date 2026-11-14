@@ -11,16 +11,12 @@ import {
   profileStatsErrorNote,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { can } from "@repo/validation";
+import { BIRTHDAY_COPY, can, formatBirthday } from "@repo/validation";
 import {
   PROFILE_PHOTO_SIZE,
   ProfilePhoto,
 } from "@/components/profile/profile-photo";
-import {
-  ListRow,
-  ListSection,
-  SectionHeader,
-} from "@/components/list-section";
+import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import {
   SkeletonBlock,
   SkeletonRegion,
@@ -207,6 +203,13 @@ export function ProfileDetails({
         />
         <ListRow
           variant="detail"
+          label={BIRTHDAY_COPY.label}
+          value={ownBirthdayLabel(profile)}
+          accessibilityHint={EDIT_HINT}
+          onPress={onEdit}
+        />
+        <ListRow
+          variant="detail"
           label="Major"
           value={profile?.major ?? "Not set"}
           accessibilityHint={EDIT_HINT}
@@ -378,4 +381,18 @@ function createStyles(tokens: SignetTokens) {
       opacity: 0.6,
     },
   });
+}
+
+/**
+ * Your birthday as "March 4", and who sees it (#4959), so the row answers
+ * both questions a member has about it without opening the editor.
+ */
+function ownBirthdayLabel(profile: ViewerProfile | null | undefined): string {
+  if (profile?.birthdayMonth == null || profile.birthdayDay == null) {
+    return "Not set";
+  }
+  const day = formatBirthday(profile.birthdayMonth, profile.birthdayDay);
+  return profile.birthdayVisibility === "chapter"
+    ? day
+    : `${day} · ${BIRTHDAY_COPY.visibility[profile.birthdayVisibility]}`;
 }

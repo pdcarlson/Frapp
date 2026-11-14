@@ -77,6 +77,20 @@ console.log("\n=== Functional: Report this (20261112220000) ===");
   // Ids, codes, statuses, model and prompt names: never text a person or a
   // model wrote. Explicit, so a new column is never waved through by name.
   const BOOKKEEPING = new Set([
+    // Ask traces and thumbs (#4902): each is a code, and a check on the
+    // column refuses anything else (`ai-ask-traces.mjs` proves each one).
+    "ai_ask_feedback.rating",
+    "ai_ask_feedback.reason",
+    "ai_ask_trace_steps.kind",
+    "ai_ask_trace_steps.outcome",
+    "ai_ask_trace_steps.tool",
+    "ai_ask_traces.door",
+    "ai_ask_traces.effort",
+    "ai_ask_traces.error_kind",
+    "ai_ask_traces.limit_kind",
+    "ai_ask_traces.model",
+    "ai_ask_traces.outcome",
+    "ai_ask_traces.prompt_version",
     "ai_reports.model",
     "ai_reports.prompt_version",
     "ai_reports.quoted_user_ids",

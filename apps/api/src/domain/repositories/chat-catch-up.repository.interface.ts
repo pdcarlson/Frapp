@@ -11,6 +11,14 @@ export interface CatchUpMessageRow {
   mentions: string[] | null;
 }
 
+/** Where one written message sits (#4900): what a read around it needs. */
+export interface CatchUpMessagePlace {
+  channel_id: string;
+  created_at: string;
+  /** Set when the message is a thread reply. */
+  thread_root_id: string | null;
+}
+
 export interface CatchUpStretch {
   /** The newest messages of the stretch under the limit, oldest first. */
   messages: CatchUpMessageRow[];
@@ -73,4 +81,31 @@ export interface IChatCatchUpRepository {
     rootId: string;
     limit: number;
   }): Promise<CatchUpStretch | null>;
+
+  /**
+   * A stretch of the channel bounded on either side (#4900): messages sent at
+   * or after `from` and before `before`, either bound optional, timeline
+   * messages and thread replies alike. Of a stretch longer than `limit`,
+   * `keep` says which end is read: its `newest` messages or its `oldest`.
+   * Oldest first either way, and `total` is the whole stretch.
+   */
+  readChannelWindow(input: {
+    chapterId: string;
+    channelId: string;
+    from?: string;
+    before?: string;
+    limit: number;
+    keep: 'newest' | 'oldest';
+  }): Promise<CatchUpStretch>;
+
+  /**
+   * Where a message is, when it is one this repository would read: written
+   * by a member, not deleted, in a chapter channel of this chapter, and not
+   * under a recruitment candidate's card. Null otherwise, so a message id
+   * from a direct message or another chapter finds nothing.
+   */
+  locateMessage(input: {
+    chapterId: string;
+    messageId: string;
+  }): Promise<CatchUpMessagePlace | null>;
 }

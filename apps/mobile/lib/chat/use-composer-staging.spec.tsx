@@ -373,6 +373,32 @@ describe("replyContextFor", () => {
       preview: TOMBSTONE_TEXT,
     });
   });
+
+  it("quotes a comment-less forward of a blocked member's message without its copy (#4864)", () => {
+    const forward = row("f1", FRIEND, {
+      content: "",
+      forwarded_from: {
+        message_id: "orig-1",
+        channel_id: "chan-2",
+        sender_id: BLOCKED,
+        author_name: "Blocked Member",
+        content: "their words",
+        gif: null,
+        attachment_count: 0,
+        created_at: "2026-09-29T17:00:00.000000+00:00",
+        deleted: false,
+      },
+    });
+    const context = replyContextFor(forward, VIEWER, nameFor, READY);
+    expect(context.preview).toBe("Forwarded a message");
+    expect(context.preview).not.toContain("their words");
+    expect(
+      replyContextFor(forward, VIEWER, nameFor, {
+        ...READY,
+        ids: new Set(),
+      }).preview,
+    ).toBe("Forwarded: their words");
+  });
 });
 
 describe("useComposerStaging — edit", () => {

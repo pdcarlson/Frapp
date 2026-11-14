@@ -34,6 +34,7 @@ import {
 } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { QUIET_LINK } from "@/components/ui/quiet-link";
 import {
   SubscriptionNotice,
   useSubscriptionGate,
@@ -51,12 +52,6 @@ interface EventCardProps {
   /** False while the optimistic chat row is not yet server-acked. */
   isConfirmed: boolean;
 }
-
-/** The two fields of the event read the card's Check in decides from. */
-type EventCheckInFields = {
-  check_in_zone?: unknown;
-  check_in_needs_code?: unknown;
-};
 
 /**
  * Event card. The chat message is an immutable creation-time snapshot (name,
@@ -79,7 +74,7 @@ type EventCheckInFields = {
  * the chapter it offers neither control and says why.
  *
  * Can't make it (#4660): a member the event requires, by the card's own role
- * fields (`useEventCardExcuse`), gets a secondary Can't make it that opens the
+ * fields (`useEventCardExcuse`), gets a quiet underlined Can't make it? that opens the
  * event's sheet with the excuse line open (`/events?event=<id>&excuse=1`), as
  * a calendar invite in Gmail or Slack carries its RSVP on the message. Once
  * they've sent one, the card says where it stands instead. Nobody else sees
@@ -141,8 +136,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   }
 
   const checkedIn = countCheckedIn(attendance);
-  // The SDK types this read loosely (the sheet casts it too).
-  const checkInFields = eventQuery.data as EventCheckInFields | undefined;
+  const checkInFields = eventQuery.data;
   // The server's window (`spec/behavior/events.md` § Check-In), above: the
   // event's lead before the start to the grace after the end. Inside it, the
   // sheet's rule for what the viewer's own check-in says.
@@ -251,11 +245,14 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
             </Button>
           ) : null}
           {offerExcuse ? (
-            <Button asChild size="sm" variant="secondary">
-              <Link href={eventDeepLink(payload.event_id, { excuse: true })}>
-                Can&apos;t make it
-              </Link>
-            </Button>
+            // A quiet underlined line, not a second button: declining reads
+            // quieter than checking in (#4933).
+            <Link
+              href={eventDeepLink(payload.event_id, { excuse: true })}
+              className={cn(QUIET_LINK, "self-center")}
+            >
+              Can&apos;t make it?
+            </Link>
           ) : null}
           {/*
             Scoped to the open check-in window, like the button it explains — a

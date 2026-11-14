@@ -35,6 +35,9 @@ export const ASK_HISTORY_MAX_TURNS = 6;
 /** An earlier answer is cut to this before it is sent back. */
 export const ASK_HISTORY_ANSWER_MAX_LENGTH = 2000;
 
+/** The most cards one answer can come with. */
+export const ASK_PROPOSALS_MAX = 5;
+
 /**
  * One earlier turn of the conversation: what the member typed, and what
  * Frapp answered. `answer` is empty when the turn had no answer to carry (a
@@ -51,6 +54,13 @@ export const AskHistoryTurnSchema = z.object({
    * is shown only what the member typed, does not.
    */
   suggested: z.boolean().optional(),
+  /**
+   * How many cards this turn's answer came with (`AskAnswer.proposals`), so
+   * a follow-up such as "make it 10 instead" is read knowing cards are
+   * already in front of the member. A count and nothing a card says: the
+   * server writes the line the model reads.
+   */
+  cards: z.number().int().min(1).max(ASK_PROPOSALS_MAX).optional(),
 });
 export type AskHistoryTurn = z.infer<typeof AskHistoryTurnSchema>;
 
@@ -62,6 +72,25 @@ export type AskHistoryTurn = z.infer<typeof AskHistoryTurnSchema>;
  */
 export const ASK_DOORS = ["ask", "chat_private"] as const;
 export type AskDoor = (typeof ASK_DOORS)[number];
+
+/**
+ * How hard Frapp should work on a question: `default`, or `more` when the
+ * member asked it to think harder. Open to more levels later.
+ */
+export const ASK_EFFORTS = ["default", "more"] as const;
+export type AskEffort = (typeof ASK_EFFORTS)[number];
+
+/**
+ * What the member had open when they asked: a channel, an event or a task.
+ * At most one is expected. The server looks each up as the asker and drops
+ * one they cannot open, so an id here can show nothing they could not see.
+ */
+export const AskFromSchema = z.object({
+  channel_id: z.string().uuid().optional(),
+  event_id: z.string().uuid().optional(),
+  task_id: z.string().uuid().optional(),
+});
+export type AskFrom = z.infer<typeof AskFromSchema>;
 
 /** `POST /v1/ai/ask`. */
 export const AskRequestSchema = z.object({
@@ -80,6 +109,15 @@ export const AskRequestSchema = z.object({
    */
   actions: z.boolean().optional(),
   /**
+   * The client draws the cards an answer comes with (`AskAnswer.proposals`),
+   * so one turn can be an answer with cards under it, or several cards.
+   * Read only with `actions`, and only by a server that answers through the
+   * tool loop (#4899). Without it a turn comes with at most one card, sent
+   * as a `proposal` event in place of the answer, which is all a build from
+   * before this can draw.
+   */
+  answer_cards: z.boolean().optional(),
+  /**
    * The client showed the "answers are being saved" line before this
    * question was sent. An exchange is kept by the beta diagnostics window
    * only when this is true, so a client that does not know about the window
@@ -92,6 +130,15 @@ export const AskRequestSchema = z.object({
    * which only have the Ask screen.
    */
   door: z.enum(ASK_DOORS).optional(),
+  /**
+   * What the member had open ({@link AskFromSchema}), so "this channel" and
+   * "this event" mean something. Unlike `door` it is read, by a server that
+   * answers through the tool loop (#4899, `AskFromService`). No build sends
+   * it yet (#4904 adds it), and Ask's own screen never will.
+   */
+  from: AskFromSchema.nullish(),
+  /** {@link ASK_EFFORTS}. Left out means `default`. */
+  effort: z.enum(ASK_EFFORTS).optional(),
 });
 export type AskRequest = z.infer<typeof AskRequestSchema>;
 
@@ -131,6 +178,12 @@ export interface AskStepDetail {
    * and conversations, each counted once.
    */
   found?: number | undefined;
+  /**
+   * The server's own words for the read that just started ("Searching
+   * #general"), from a server that answers through the tool loop. Shown as
+   * the whole line when present.
+   */
+  label?: string | undefined;
 }
 
 /**
@@ -209,6 +262,11 @@ const AskSourceSchema = z.object({
   /** When the source is from (ISO), or null for live data read just now. */
   date: z.string().nullable(),
   target: z.looseObject({ type: z.string() }).nullable(),
+  /**
+   * Chat: the display name of whose message it is, for a chip that says
+   * whose and when. Absent from older servers and on every other kind.
+   */
+  author: z.string().nullish(),
 });
 export type AskSource = z.infer<typeof AskSourceSchema>;
 
@@ -224,6 +282,19 @@ const AskCitationSchema = z.object({
   quote: z.string(),
 });
 export type AskCitation = z.infer<typeof AskCitationSchema>;
+
+/**
+ * A member or a channel the answer names. The text carries the plain name
+ * after `@` or `#`; a client links a name only when it is listed here, so a
+ * name a model made up is never a link.
+ */
+export const AskEntitySchema = z.object({
+  type: z.enum(["member", "channel"]),
+  id: z.string(),
+  /** Exactly as it follows the `@` or `#` in `text`. */
+  name: z.string(),
+});
+export type AskEntity = z.infer<typeof AskEntitySchema>;
 
 export const AskAnswerSchema = z.object({
   status: z.enum(ASK_ANSWER_STATUSES),
@@ -261,6 +332,27 @@ export const AskAnswerSchema = z.object({
    * AI-made to report; absent from servers before reports existed.
    */
   report_receipt: z.string().nullish(),
+  /**
+   * The members and channels `text` names ({@link AskEntitySchema}). Absent
+   * from servers before the tool loop.
+   */
+  entities: z.array(AskEntitySchema).nullish(),
+  /**
+   * Cards that came with this answer: the ids of suggestions waiting for
+   * the asker's Confirm, at most {@link ASK_PROPOSALS_MAX}. There is no
+   * read by id: a client lists the asker's waiting requests
+   * (`GET /v1/ai/suggestions?source_type=request&source_id=<asker>`) and
+   * keeps these ids. Nothing has been changed by any of them.
+   * Sent only to a client that asked with `answer_cards`. An answer that is
+   * cards and nothing else is `answered` with empty `text`: draw the cards.
+   */
+  proposals: z.array(z.string()).max(ASK_PROPOSALS_MAX).nullish(),
+  /**
+   * This ask's id, on an answer whose turn the server kept a record of, so
+   * feedback can name it (`ask-feedback.ts`). Absent when there is no
+   * record: a client offers no thumbs then.
+   */
+  ask_id: z.string().nullish(),
 });
 export type AskAnswer = z.infer<typeof AskAnswerSchema>;
 
@@ -276,6 +368,10 @@ export const AskStreamEventSchema = z.discriminatedUnion("type", [
     reads: z.array(z.string()).optional(),
     /** With `reading`: how many sources the search found. */
     found: z.number().int().nonnegative().optional(),
+    /** With `reading`, from the tool loop: the read that just started. */
+    tool: z.string().optional(),
+    /** With `tool`: the line to show for it (`AskStepDetail.label`). */
+    label: z.string().optional(),
   }),
   z.object({ v: version, type: z.literal("text"), delta: z.string() }),
   z.object({ v: version, type: z.literal("done"), answer: AskAnswerSchema }),
@@ -393,12 +489,14 @@ export function askHistory(
         answer.status === "answered" &&
         answer.read_chat !== true &&
         !answer.sources.some((source) => source.kind === "chat");
+      const cards = Math.min(answer?.proposals?.length ?? 0, ASK_PROPOSALS_MAX);
       return {
         question: cutWhole(question.trim(), ASK_QUESTION_MAX_LENGTH),
         answer: carried
           ? cutWhole(answer.text, ASK_HISTORY_ANSWER_MAX_LENGTH)
           : "",
         ...(suggested ? { suggested: true } : {}),
+        ...(cards > 0 ? { cards } : {}),
       };
     });
 }
@@ -581,7 +679,6 @@ export const ASK_COPY = {
   /** Under a finished answer: copies its words, without the markers. */
   copy_answer: "Copy answer",
   copied_answer: "Copied",
-  entry_label: "Ask a question about your chapter",
   /** Under Frapp's name in a composer's mention list (#4713). */
   mention_hint: "Only you see the answer",
   /**
@@ -718,6 +815,7 @@ export function askStepLine(
   detail?: AskStepDetail | null,
 ): string {
   if (step === "reading") {
+    if (detail?.label) return detail.label;
     const parts = readParts(detail);
     return parts.length === 0
       ? ASK_COPY.steps.reading

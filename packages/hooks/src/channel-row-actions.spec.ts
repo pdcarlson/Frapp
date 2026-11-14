@@ -88,7 +88,10 @@ describe("channelRowActions", () => {
   it("leaves out what the surface can't do", () => {
     expect(
       channelRowActions(
-        input({ surface: { copyLink: false, edit: false }, permissions: ["*"] }),
+        input({
+          surface: { copyLink: false, edit: false },
+          permissions: ["*"],
+        }),
       ),
     ).toEqual({ member: ["toggle-pin", "notifications"], officer: ["delete"] });
   });

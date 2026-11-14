@@ -53,6 +53,8 @@ export interface SearchFilters extends SearchMessageFilters {
 }
 
 const SEARCH_LIMIT = 10;
+/** The most {@link SearchService.searchMessagesIn} returns in one call. */
+const SEARCH_IN_CHANNELS_MAX = 40;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -193,6 +195,35 @@ export class SearchService {
       return emptyResult();
     }
     return this.collect(chapterId, userId, q, (_source, work) => work, filters);
+  }
+
+  /**
+   * The message half of {@link search} alone, held to `channelIds` (#4900):
+   * Ask's `search_messages` tool searches the chapter channels a member can
+   * open and nothing else. {@link search} cannot serve it: it also runs the
+   * backwork, event and member searches, and its ten newest hits are taken
+   * across direct messages too, so a member whose recent matches are in DMs
+   * would find no channel message at all.
+   *
+   * `channelIds` only narrows. Every id is still decided by
+   * `canAccessChannel` for this member, so an id they cannot read, or one
+   * from another chapter, matches nothing. Blocked senders are masked as in
+   * {@link search}. `limit` is held to {@link SEARCH_IN_CHANNELS_MAX}.
+   */
+  async searchMessagesIn(
+    chapterId: string,
+    userId: string,
+    query: string,
+    channelIds: readonly string[],
+    filters: SearchMessageFilters = {},
+    limit: number = SEARCH_LIMIT,
+  ): Promise<MaskedChatMessage[]> {
+    const q = runnableQuery(query, filters);
+    if (q === null || channelIds.length === 0) return [];
+    return this.searchMessages(chapterId, userId, q, filters, {
+      onlyChannelIds: channelIds,
+      limit: Math.min(Math.max(Math.trunc(limit), 1), SEARCH_IN_CHANNELS_MAX),
+    });
   }
 
   /**
@@ -384,8 +415,10 @@ export class SearchService {
     userId: string,
     query: string,
     filters: SearchFilters = {},
+    within: { onlyChannelIds?: readonly string[]; limit?: number } = {},
   ): Promise<MaskedChatMessage[]> {
     const { channelId } = filters;
+    const limit = within.limit ?? SEARCH_LIMIT;
     const messageFilters = messageFiltersOf(filters);
     // `sender_id` is a uuid column, so a malformed id would be a 22P02 and a
     // 500. No message has a sender that is not a uuid: the answer is empty.
@@ -423,9 +456,10 @@ export class SearchService {
     // channel the caller can read — still no privilege escalation, but the
     // wrong answer, returned confidently. Keeping the intersection makes the
     // narrow result true by construction rather than by query shape.
-    const channelIds = channelId
-      ? accessible.filter((id) => id === channelId)
-      : accessible;
+    const only = within.onlyChannelIds ? new Set(within.onlyChannelIds) : null;
+    const channelIds = (
+      channelId ? accessible.filter((id) => id === channelId) : accessible
+    ).filter((id) => only === null || only.has(id));
     if (!channelIds.length) return [];
 
     // The filters (#3958) go to the repository beside `channelIds`, never
@@ -433,13 +467,8 @@ export class SearchService {
     // caller has already been cleared to read, so no filter value can reach a
     // message outside that set.
     const messages = await (messageFilters
-      ? this.repo.searchMessages(
-          channelIds,
-          query,
-          SEARCH_LIMIT,
-          messageFilters,
-        )
-      : this.repo.searchMessages(channelIds, query, SEARCH_LIMIT));
+      ? this.repo.searchMessages(channelIds, query, limit, messageFilters)
+      : this.repo.searchMessages(channelIds, query, limit));
 
     // The caller's block list, applied to what search serves — the same rule
     // `ChatService.getMessages` applies, through the same pure function, so the

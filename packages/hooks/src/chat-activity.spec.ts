@@ -1,4 +1,9 @@
 import {
+  chatActivityStampsSettled,
+  holdChannelUnread,
+  releaseChannelUnread,
+} from "./read-cursor";
+import {
   afterEach,
   beforeEach,
   describe,
@@ -82,6 +87,36 @@ describe("createChatActivityHandler (#3698)", () => {
     // Never the whole prefix: that would re-read the channel list per message.
     expect(invalidatedKeys()).not.toContainEqual(CHANNEL_LIST_KEY);
     expect(markRead).not.toHaveBeenCalled();
+  });
+
+  test("a stamp queued for a channel Mark unread then holds is never sent (#3723)", async () => {
+    viewing = "c1";
+    const { handle } = handler();
+    handle(message("c1", OTHER));
+    // The member marks it unread inside the coalescing window.
+    holdChannelUnread("c1");
+    await vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS);
+    expect(markRead).not.toHaveBeenCalled();
+    releaseChannelUnread("c1");
+  });
+
+  test("Mark unread can wait for a round already sending (#3723)", async () => {
+    viewing = "c1";
+    let land!: () => void;
+    markRead.mockImplementation(
+      () =>
+        new Promise<undefined>((resolve) => (land = () => resolve(undefined))),
+    );
+    const { handle } = handler();
+    handle(message("c1", OTHER));
+    await vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS);
+    let settled = false;
+    void chatActivityStampsSettled().then(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    land();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(true);
   });
 
   test("a burst is one round of reads", async () => {

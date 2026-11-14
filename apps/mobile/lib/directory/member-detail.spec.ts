@@ -52,6 +52,7 @@ describe("selectMemberDetail", () => {
       initials: "AL",
       email: "ada@example.edu",
       phone: null,
+      birthday: null,
       graduationYear: 2027,
       bio: "Loves a good algorithm.",
       meta: "Acme Inc. · Chicago · '27",
@@ -66,6 +67,17 @@ describe("selectMemberDetail", () => {
       canRemove: false,
       canEditProfile: false,
     });
+  });
+
+  it("names a shared birthday, and nothing when it isn't shared (#4959)", () => {
+    expect(
+      selectMemberDetail(profile({ birthday_month: 3, birthday_day: 4 }))
+        ?.birthday,
+    ).toBe("March 4");
+    expect(
+      selectMemberDetail(profile({ birthday_month: null, birthday_day: null }))
+        ?.birthday,
+    ).toBeNull();
   });
 
   it("carries the phone and the API's viewer_can_edit_profile (#3711, #4367)", () => {

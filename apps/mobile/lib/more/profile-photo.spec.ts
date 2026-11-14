@@ -65,14 +65,15 @@ describe("pickAndSetProfilePhoto", () => {
 
     await expect(run()).resolves.toEqual({ status: "updated" });
 
+    // The downscaled re-encode is what goes up, at its own size on disk.
     expect(requestUploadUrl).toHaveBeenCalledWith({
       filename: "me.jpg",
       content_type: "image/jpeg",
-      size_bytes: 4096,
+      size_bytes: 2048,
     });
     expect(fs.uploadAsync).toHaveBeenCalledWith(
       TICKET.upload_url,
-      "file:///me.jpg",
+      "file:///out.jpg",
       expect.objectContaining({
         httpMethod: "PUT",
         headers: { "Content-Type": "image/jpeg" },
@@ -106,14 +107,49 @@ describe("pickAndSetProfilePhoto", () => {
     expect(requestUploadUrl).not.toHaveBeenCalled();
   });
 
+  it("stores the photo at 512px on its longest edge, as JPEG (#2912)", async () => {
+    granted();
+    picked({
+      uri: "file:///me.png",
+      fileName: "me.png",
+      mimeType: "image/png",
+      width: 3024,
+      height: 4032,
+    });
+    const { ImageManipulator, SaveFormat } =
+      await import("expo-image-manipulator");
+
+    await expect(run()).resolves.toEqual({ status: "updated" });
+
+    const context = vi.mocked(ImageManipulator.manipulate).mock.results[0]!
+      .value as {
+      resize: ReturnType<typeof vi.fn>;
+      renderAsync: ReturnType<typeof vi.fn>;
+    };
+    expect(context.resize).toHaveBeenCalledWith({ height: 512 });
+    const rendered = await context.renderAsync.mock.results[0]!.value;
+    expect(rendered.saveAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ format: SaveFormat.JPEG }),
+    );
+    expect(requestUploadUrl).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filename: "me.jpg",
+        content_type: "image/jpeg",
+      }),
+    );
+  });
+
   it("refuses an image over the size cap before minting", async () => {
     granted();
     picked({
       uri: "file:///big.png",
       fileName: "big.png",
       mimeType: "image/png",
-      fileSize: 26 * 1024 * 1024,
     });
+    fs.getInfoAsync.mockResolvedValue({
+      exists: true,
+      size: 26 * 1024 * 1024,
+    } as never);
 
     await expect(run()).resolves.toEqual({
       status: "refused",
@@ -124,7 +160,11 @@ describe("pickAndSetProfilePhoto", () => {
 
   it("refuses when the photo cannot be made an accepted type", async () => {
     granted();
-    picked({ uri: "file:///x.heic", fileName: "x.heic", mimeType: "image/heic" });
+    picked({
+      uri: "file:///x.heic",
+      fileName: "x.heic",
+      mimeType: "image/heic",
+    });
     const { ImageManipulator } = await import("expo-image-manipulator");
     vi.mocked(ImageManipulator.manipulate).mockImplementationOnce(() => {
       throw new Error("cannot decode");
@@ -139,7 +179,11 @@ describe("pickAndSetProfilePhoto", () => {
 
   it("does not confirm when the PUT is refused", async () => {
     granted();
-    picked({ uri: "file:///me.png", fileName: "me.png", mimeType: "image/png" });
+    picked({
+      uri: "file:///me.png",
+      fileName: "me.png",
+      mimeType: "image/png",
+    });
     fs.uploadAsync.mockResolvedValue({ status: 400, body: "" } as never);
 
     const result = await run();
@@ -158,7 +202,11 @@ describe("pickAndSetProfilePhoto", () => {
 
   it("never shows the API's field-named reason when the confirm is refused", async () => {
     granted();
-    picked({ uri: "file:///me.png", fileName: "me.png", mimeType: "image/png" });
+    picked({
+      uri: "file:///me.png",
+      fileName: "me.png",
+      mimeType: "image/png",
+    });
     // What a `@repo/hooks` mutation throws: the API's error body, not an Error.
     confirm.mockRejectedValue({
       statusCode: 400,
@@ -173,9 +221,15 @@ describe("pickAndSetProfilePhoto", () => {
 
   it("keeps platform jargon out: a native failure reads as the generic sentence", async () => {
     granted();
-    picked({ uri: "file:///me.png", fileName: "me.png", mimeType: "image/png" });
+    picked({
+      uri: "file:///me.png",
+      fileName: "me.png",
+      mimeType: "image/png",
+    });
     fs.uploadAsync.mockRejectedValue(
-      new Error("The operation couldn't be completed. (NSURLErrorDomain error -1009.)"),
+      new Error(
+        "The operation couldn't be completed. (NSURLErrorDomain error -1009.)",
+      ),
     );
 
     await expect(run()).resolves.toEqual({

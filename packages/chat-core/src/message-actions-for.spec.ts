@@ -72,6 +72,7 @@ describe("messageActionsFor", () => {
       canDelete: false,
       canReport: true,
       canBlock: true,
+      canForward: true,
     });
   });
 
@@ -83,6 +84,7 @@ describe("messageActionsFor", () => {
       canDelete: true,
       canReport: false,
       canBlock: false,
+      canForward: true,
     });
     expect(canOpenMessageActions(mine, VIEWER)).toBe(true);
   });

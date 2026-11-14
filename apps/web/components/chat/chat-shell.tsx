@@ -54,6 +54,7 @@ import {
   useMyPermissions,
   useBookmarks,
   useBookmarkedMessageIds,
+  useScheduleMessage,
   useBookmarkMessage,
   useUnbookmarkMessage,
   resolveAuthorLabel,
@@ -76,9 +77,11 @@ import {
   useChatCatchUpAvailable,
   gifToSend,
   useGifAvailability,
+  useSetMessageReminder,
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import { attachmentRequestBody } from "@repo/chat-core/adapters";
 import {
   channelPreviewLine,
   NO_MESSAGES_PREVIEW,
@@ -128,6 +131,7 @@ import {
 import { readLastChannel, writeLastChannel } from "@/lib/chat/last-channel";
 import type { ChatView } from "@/components/layout/shell-prefs";
 import { useToast } from "@/lib/hooks/use-toast";
+import { reminderSetDescription } from "@/lib/chat/reminder-copy";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { vocab } from "@repo/org-archetypes";
@@ -140,10 +144,10 @@ import {
   classifyMessage,
   hiddenQuoteText,
   visibleTypingUsers,
+  withForwardedMasked,
 } from "@repo/chat-core/blocks";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { AskSlot } from "@/components/ask/ask-host";
 import {
   useChannelAsk,
   useChannelAskAccess,
@@ -179,6 +183,7 @@ import {
   notifyDispatchOutcome,
   type CommandFormOutcome,
 } from "./composer";
+import { ScheduledMessagesBar } from "./schedule-send";
 import {
   canBlockSender,
   channelAllowsReplies,
@@ -216,6 +221,7 @@ import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
+import { AllThreadsPopover } from "./all-threads-popover";
 import type { ChannelRowActions } from "./channel-row-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
@@ -227,6 +233,8 @@ import {
   ReportMessageDialog,
   type ReportTarget,
 } from "./report-message-dialog";
+import { ForwardMessageDialog } from "./forward-message-dialog";
+import { forwardTargetOf, type ForwardTarget } from "@repo/chat-core/forward";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { useIsDesktopShell } from "@/components/layout/shell-layout";
 import {
@@ -937,11 +945,7 @@ export function ChatShell({
       const ownBack = backPending.current;
       if (isUnderThreadPaneEntry(event.state)) {
         unmarkUnderThreadPaneEntry();
-        if (
-          !ownBack &&
-          !openAfterBack.current &&
-          isDesktopShellRef.current
-        ) {
+        if (!ownBack && !openAfterBack.current && isDesktopShellRef.current) {
           // The browser's Back left a below-`lg` pick's entry from `lg` up,
           // where the list was already on screen: finish the press (#3836).
           onThreadEntry.current = false;
@@ -1426,6 +1430,20 @@ export function ChatShell({
     [activeChapterId, isMember, nameFor, requestBlock],
   );
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+  // The message the Forward dialog is open on (#4907), or null.
+  const [forwardTarget, setForwardTarget] = useState<ForwardTarget | null>(
+    null,
+  );
+  const handleForward = useCallback(
+    (message: ChatMessage) => {
+      // The row offered Forward (`canForwardMessage`), so this is always a
+      // target; the copy is what the card will draw, masked as the row's is.
+      setForwardTarget(
+        forwardTargetOf(message, true, blockState, userId ?? null) ?? null,
+      );
+    },
+    [blockState, userId],
+  );
   // Whose profile is open (#3726): a sender's name or photo, an `@` chip, or a
   // row of the member list opens the directory's own sheet by `users.id`, as
   // mobile's thread does. The id outlives the close so the sheet keeps its
@@ -1844,6 +1862,7 @@ export function ChatShell({
     [bookmarksQuery.data],
   );
   const bookmarkedMessageIds = useBookmarkedMessageIds();
+  const scheduleMessage = useScheduleMessage();
   const bookmarkMessage = useBookmarkMessage();
   const unbookmarkMessage = useUnbookmarkMessage();
   const handleToggleBookmark = useCallback(
@@ -1860,6 +1879,29 @@ export function ChatShell({
       else unbookmarkMessage.mutate(messageId);
     },
     [bookmarkMessage, unbookmarkMessage],
+  );
+  // "Remind me about this" (#4957). Unlike Save, nothing on the row shows
+  // the reminder, so both outcomes toast, as Slack confirms its own.
+  const setMessageReminder = useSetMessageReminder();
+  const setMessageReminderAsync = setMessageReminder.mutateAsync;
+  const handleRemind = useCallback(
+    (messageId: string, remindAt: Date) => {
+      // Per call, because `mutate`'s per-call callbacks run only for the
+      // latest call.
+      void setMessageReminderAsync({ messageId, remindAt }).then(
+        () =>
+          toast({
+            title: "Reminder set",
+            description: reminderSetDescription(remindAt),
+          }),
+        () =>
+          toast({
+            variant: "destructive",
+            description: "Couldn't set the reminder. Try again.",
+          }),
+      );
+    },
+    [setMessageReminderAsync, toast],
   );
   const bookmarkWriteFailed =
     bookmarkMessage.isError || unbookmarkMessage.isError;
@@ -2547,10 +2589,14 @@ export function ChatShell({
   } | null>(null);
   // Leaving the channel closes its thread, so coming back shows the timeline
   // (state adjusted during render, React's pattern for a reset on a prop).
+  // Not while the thread's channel is the one being switched to and the
+  // cached list hasn't brought it in yet: All threads (#4960) opens a thread
+  // in a channel that may be new to this tab, and its refetch lands after.
   if (
     openThread &&
     activeChannel &&
-    openThread.channelId !== activeChannel.id
+    openThread.channelId !== activeChannel.id &&
+    openThread.channelId !== selectedChannelId
   ) {
     setOpenThread(null);
   }
@@ -2588,6 +2634,31 @@ export function ChatShell({
     setThreadJump(null);
     setOpenThread(null);
   }, []);
+  // A channel reads `#name` in the All threads list; a DM its people.
+  const threadChannelLabel = useCallback(
+    (channelId: string) => {
+      const title = channelTitles.get(channelId);
+      if (!title) return null;
+      const type = channels.find((ch) => ch.id === channelId)?.type;
+      return type === "DM" || type === "GROUP_DM" ? title : `#${title}`;
+    },
+    [channelTitles, channels],
+  );
+  // All threads (#4960): a row may name another channel, so switch to it
+  // first, as a bookmark's jump does, and open its thread there.
+  const openThreadInChannel = useCallback(
+    (channelId: string, rootId: string) => {
+      if (channelId !== activeChannelId) {
+        setSelectedChannelId(channelId);
+        setChannelTargetDismissed(false);
+        void refetchChannels();
+      }
+      setThreadJump(null);
+      setOpenThread({ channelId, rootId });
+      setNarrowPane("thread");
+    },
+    [activeChannelId, refetchChannels],
+  );
 
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it, and only on a channel a
@@ -2812,7 +2883,9 @@ export function ChatShell({
     return {
       id: parent.id,
       author: resolveAuthorLabel(parent, nameFor, userId),
-      preview: replyPreviewText(parent),
+      preview: replyPreviewText(
+        withForwardedMasked(parent, blockState, userId),
+      ),
       hidden: hiddenQuoteText(parent, blockState, userId),
     };
   }, [
@@ -3217,9 +3290,11 @@ export function ChatShell({
           maskedRefresh={maskedRefresh}
           bookmarkedMessageIds={bookmarkedMessageIds}
           onToggleBookmark={handleToggleBookmark}
+          onRemind={handleRemind}
           canManageChannel={canManageChannel}
           onReport={handleReport}
           onBlock={handleBlock}
+          onForward={handleForward}
           onOpenProfile={openProfile}
           isMember={isMember}
           canReply={channelAllowsThreadReplies(activeChannel)}
@@ -3389,6 +3464,12 @@ export function ChatShell({
                 <MembersGlyph className="h-5 w-5" active={membersBeside} />
               </Button>
             ) : null}
+            <AllThreadsPopover
+              channelNameFor={threadChannelLabel}
+              nameFor={nameFor}
+              viewerId={userId}
+              onOpenThread={openThreadInChannel}
+            />
             <ChannelMenu
               activeChannelId={activeChannelId}
               messages={shownMessages}
@@ -3903,9 +3984,11 @@ export function ChatShell({
                   }
                   bookmarkedMessageIds={bookmarkedMessageIds}
                   onToggleBookmark={handleToggleBookmark}
+                  onRemind={handleRemind}
                   canManageChannel={canManageChannel}
                   onReport={handleReport}
                   onBlock={handleBlock}
+                  onForward={handleForward}
                   onOpenProfile={openProfile}
                   isMember={isMember}
                 />
@@ -3914,8 +3997,11 @@ export function ChatShell({
             <TypingLine label={typingLine} />
           </>
         ) : null}
-        {/* Where Ask Frapp's conversation rises from: the composer's top edge. */}
-        {activeChannel ? <AskSlot /> : null}
+        {/* Wherever the member can read: a message that failed because they
+            lost posting here is exactly the one they need to see and delete. */}
+        {activeChannel ? (
+          <ScheduledMessagesBar channelId={activeChannel.id} />
+        ) : null}
         {activeChannel ? (
           <Composer
             // Remounts the editor whenever the channel *or its resolved
@@ -3982,6 +4068,30 @@ export function ChatShell({
                 mentionPicks,
               });
             }}
+            // Scheduled to post later (#4956), where the member may post:
+            // the text, its files and the staged reply (#4971). The reply is
+            // read and cleared as a send does, only once it is scheduled.
+            onSchedule={
+              activeChannel.can_post !== false
+                ? async (body, attachments, mentionPicks, at) => {
+                    const target = replyTo?.id ?? null;
+                    await scheduleMessage.mutateAsync({
+                      channelId: activeChannel.id,
+                      content: body,
+                      sendAt: at,
+                      mentionPicks,
+                      attachments: attachments.map(attachmentRequestBody),
+                      replyToId: target,
+                    });
+                    // Unless another reply was staged while it was out.
+                    if (target) {
+                      setReplyTarget((current) =>
+                        current?.messageId === target ? null : current,
+                      );
+                    }
+                  }
+                : undefined
+            }
             // A GIF goes out as its own message (#4631); the reply strip
             // attaches to it as it would to typed text.
             onSendGif={
@@ -4160,6 +4270,17 @@ export function ChatShell({
         target={reportTarget}
         onClose={() => setReportTarget(null)}
       />
+      {/* Mounted only while open: its channel and roster reads have no
+          work to do for a closed dialog. */}
+      {forwardTarget ? (
+        <ForwardMessageDialog
+          key={forwardTarget.messageId}
+          target={forwardTarget}
+          nameFor={nameFor}
+          viewerId={userId ?? null}
+          onClose={() => setForwardTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }
