@@ -1,5 +1,6 @@
 export * from "./activity-agenda";
 export * from "./activity-faces";
+export * from "./activity-recap";
 export * from "./activity-rows";
 export * from "./activity-standing";
 export * from "./calendar-birthdays";
