@@ -216,6 +216,7 @@ import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
+import { AllThreadsPopover } from "./all-threads-popover";
 import type { ChannelRowActions } from "./channel-row-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
@@ -2588,6 +2589,31 @@ export function ChatShell({
     setThreadJump(null);
     setOpenThread(null);
   }, []);
+  // A channel reads `#name` in the All threads list; a DM its people.
+  const threadChannelLabel = useCallback(
+    (channelId: string) => {
+      const title = channelTitles.get(channelId);
+      if (!title) return null;
+      const type = channels.find((ch) => ch.id === channelId)?.type;
+      return type === "DM" || type === "GROUP_DM" ? title : `#${title}`;
+    },
+    [channelTitles, channels],
+  );
+  // All threads (#4960): a row may name another channel, so switch to it
+  // first, as a bookmark's jump does, and open its thread there.
+  const openThreadInChannel = useCallback(
+    (channelId: string, rootId: string) => {
+      if (channelId !== activeChannelId) {
+        setSelectedChannelId(channelId);
+        setChannelTargetDismissed(false);
+        void refetchChannels();
+      }
+      setThreadJump(null);
+      setOpenThread({ channelId, rootId });
+      setNarrowPane("thread");
+    },
+    [activeChannelId, refetchChannels],
+  );
 
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it, and only on a channel a
@@ -3391,6 +3417,12 @@ export function ChatShell({
                 <MembersGlyph className="h-5 w-5" active={membersBeside} />
               </Button>
             ) : null}
+            <AllThreadsPopover
+              channelNameFor={threadChannelLabel}
+              nameFor={nameFor}
+              viewerId={userId}
+              onOpenThread={openThreadInChannel}
+            />
             <ChannelMenu
               activeChannelId={activeChannelId}
               messages={shownMessages}

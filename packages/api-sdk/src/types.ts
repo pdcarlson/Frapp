@@ -1963,6 +1963,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every thread the caller follows or muted, across channels, newest activity first, with new-reply counts */
+        get: operations["MemberThreadController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chat-backgrounds/channels/{id}": {
         parameters: {
             query?: never;
@@ -6961,6 +6978,24 @@ export interface components {
         };
         ThreadReadDto: {
             last_read_at: string;
+        };
+        MemberThreadDto: {
+            /** Format: uuid */
+            thread_root_id: string;
+            /** @enum {string} */
+            state: "following" | "muted";
+            last_read_at: string | null;
+            /** @description Replies new to the caller; always 0 when muted. */
+            unread_count: number;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description When the newest reply landed; null before any reply. */
+            last_reply_at: string | null;
+            /** @description Replies in the thread, deleted ones included. */
+            reply_count: number;
+            root: components["schemas"]["ChatMessageDto"];
+            /** @description The newest reply not deleted; null when there is none. */
+            latest_reply: components["schemas"]["ChatMessageDto"] | null;
         };
         ChatBackgroundResponseDto: {
             /**
@@ -14452,6 +14487,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadReadDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberThreadController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberThreadDto"][];
                 };
             };
             /** @description Error */

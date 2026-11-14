@@ -529,6 +529,9 @@ vi.mock("@/components/members/member-detail-sheet", () => ({
 const gifState = vi.hoisted(() => ({
   value: { available: false, provider: "" },
 }));
+// All threads (#4960) has its own spec; the header only mounts it here.
+vi.mock("./all-threads-popover", () => ({ AllThreadsPopover: () => null }));
+
 vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi

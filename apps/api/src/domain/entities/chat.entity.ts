@@ -505,6 +505,19 @@ export interface FollowedThreadUnread {
 }
 
 /**
+ * One thread in the member's All threads list (#4960): a followed or muted
+ * thread in a channel they may read, as `get_member_threads` answers it.
+ */
+export interface MemberThreadRow extends FollowedThreadUnread {
+  channel_id: string;
+  /** The root's `thread_last_reply_at`; `null` before any reply. */
+  last_reply_at: string | null;
+  reply_count: number;
+  /** The newest reply not deleted, or `null` when there is none. */
+  latest_reply_id: string | null;
+}
+
+/**
  * A file attached to a chat message.
  *
  * A row, not a substring of the message body. The composer used to append

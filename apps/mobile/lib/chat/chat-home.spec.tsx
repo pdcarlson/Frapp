@@ -180,6 +180,11 @@ vi.mock("@/lib/account/own-status", () => ({
   useSaveOwnStatus: () => ({ save: vi.fn(), isSaving: false }),
 }));
 
+// All threads (#4960): the sheet has its own spec (`all-threads-sheet.spec.tsx`).
+vi.mock("@/components/chat/all-threads-sheet", () => ({
+  AllThreadsSheet: () => null,
+}));
+
 vi.mock("@repo/hooks", async () => {
   // The pure helpers run for real: the point is to catch the screen using
   // them wrongly, and a stub would decide the answer itself.
@@ -205,6 +210,9 @@ vi.mock("@repo/hooks", async () => {
     }),
     useChatBackground: () => query(undefined),
     useChapterChatBackground: () => query(undefined),
+    // All threads (#4960): the header's Threads door; its sheet has its own spec.
+    unreadThreadCount: actual.unreadThreadCount,
+    useMemberThreads: () => query([]),
     lastChannelLandingId: actual.lastChannelLandingId,
     lastChannelStorageKey: actual.lastChannelStorageKey,
     useActiveChapterId: () => "chapter-1",

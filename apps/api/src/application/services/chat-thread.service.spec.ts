@@ -302,8 +302,14 @@ describe('ChatThreadService', () => {
     setFollowState: jest.fn(),
     markRead: jest.fn(),
     findFollowedUnread: jest.fn(),
+    findMemberThreads: jest.fn(),
+    findFollowedChannelIds: jest.fn(),
+    findMessagesByIds: jest.fn(),
   };
-  const channelAccess = { assertChannelAccess: jest.fn() };
+  const channelAccess = {
+    assertChannelAccess: jest.fn(),
+    filterAccessibleChannelIds: jest.fn(),
+  };
   const chatBlocks = { listBlockedUserIds: jest.fn() };
   const notifications = { markChatChannelNotificationsRead: jest.fn() };
   let service: ChatThreadService;
@@ -438,5 +444,90 @@ describe('ChatThreadService', () => {
       service.setFollow('ch-chan-1', 'root-1', 'ch-1', 'user-1', 'following'),
     ).rejects.toThrow(BadRequestException);
     expect(threads.setFollowState).not.toHaveBeenCalled();
+  });
+
+  describe('getMemberThreads (#4960)', () => {
+    const row = {
+      thread_root_id: 'root-1',
+      channel_id: 'ch-chan-1',
+      state: 'following' as const,
+      last_read_at: null,
+      last_reply_at: reply.created_at,
+      reply_count: 1,
+      latest_reply_id: 'reply-1',
+      unread_count: 1,
+    };
+
+    beforeEach(() => {
+      threads.findFollowedChannelIds.mockResolvedValue([
+        'ch-chan-1',
+        'lost-chan',
+      ]);
+      channelAccess.filterAccessibleChannelIds.mockResolvedValue(
+        new Set(['ch-chan-1']),
+      );
+      threads.findMemberThreads.mockResolvedValue([row]);
+      threads.findMessagesByIds.mockResolvedValue([root, reply]);
+    });
+
+    it('reads only the channels the caller may still read, then joins the root and latest reply', async () => {
+      const result = await service.getMemberThreads('ch-1', 'user-1');
+
+      expect(channelAccess.filterAccessibleChannelIds).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+        ['ch-chan-1', 'lost-chan'],
+      );
+      expect(threads.findMemberThreads).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+        ['ch-chan-1'],
+        50,
+      );
+      expect(result).toEqual([
+        expect.objectContaining({
+          thread_root_id: 'root-1',
+          channel_id: 'ch-chan-1',
+          unread_count: 1,
+          root: expect.objectContaining({ id: 'root-1' }),
+          latest_reply: expect.objectContaining({ id: 'reply-1' }),
+        }),
+      ]);
+      expect(result[0]).not.toHaveProperty('latest_reply_id');
+    });
+
+    it('answers empty without reading threads when no followed channel is readable', async () => {
+      channelAccess.filterAccessibleChannelIds.mockResolvedValue(new Set());
+
+      await expect(service.getMemberThreads('ch-1', 'user-1')).resolves.toEqual(
+        [],
+      );
+      expect(threads.findMemberThreads).not.toHaveBeenCalled();
+    });
+
+    it('drops a thread whose root is gone and nulls a reply that is not the thread’s', async () => {
+      threads.findMemberThreads.mockResolvedValue([
+        row,
+        { ...row, thread_root_id: 'gone', latest_reply_id: null },
+      ]);
+      threads.findMessagesByIds.mockResolvedValue([
+        root,
+        { ...reply, thread_root_id: 'elsewhere' },
+      ]);
+
+      const result = await service.getMemberThreads('ch-1', 'user-1');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].latest_reply).toBeNull();
+    });
+
+    it('masks a blocked member’s root and reply', async () => {
+      chatBlocks.listBlockedUserIds.mockResolvedValue(['author-1', 'user-1']);
+
+      const [view] = await service.getMemberThreads('ch-1', 'user-1');
+
+      expect(view.root.content).not.toBe(root.content);
+      expect(view.latest_reply?.content).not.toBe(reply.content);
+    });
   });
 });

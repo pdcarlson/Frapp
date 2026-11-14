@@ -4,6 +4,7 @@ import type {
   ChatThreadFollowRowState,
   ChatThreadFollowState,
   FollowedThreadUnread,
+  MemberThreadRow,
 } from '../entities/chat.entity';
 
 export const CHAT_THREAD_REPOSITORY = 'CHAT_THREAD_REPOSITORY';
@@ -88,4 +89,21 @@ export interface IChatThreadRepository {
     channelId: string,
     userId: string,
   ): Promise<FollowedThreadUnread[]>;
+
+  /**
+   * The member's followed and muted threads across `channelIds` (which the
+   * caller has already authorized), newest activity first, at most `limit`.
+   */
+  findMemberThreads(
+    chapterId: string,
+    userId: string,
+    channelIds: string[],
+    limit: number,
+  ): Promise<MemberThreadRow[]>;
+
+  /** The distinct channels holding the member's followed or muted threads. */
+  findFollowedChannelIds(userId: string): Promise<string[]>;
+
+  /** Messages by id, in no particular order; ids that miss are left out. */
+  findMessagesByIds(ids: string[]): Promise<ChatMessage[]>;
 }
