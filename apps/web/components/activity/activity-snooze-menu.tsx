@@ -45,6 +45,9 @@ export function useActivitySnoozeActions(): ActivitySnoozeActions {
     entriesFor: (row) => {
       // Waiting on others waits on someone else: nothing to put off.
       if (!activityRowSnoozable(row)) return [];
+      // A reminder (#4957) names no item to snooze; it has its own Snooze.
+      const ref = row.readRef;
+      if (!ref) return [];
       // Built on each render, which the page's 30-second clock drives, so
       // "Later today" leaves the menu once the evening is under an hour off.
       const options = activitySnoozeOptions(new Date());
@@ -56,7 +59,7 @@ export function useActivitySnoozeActions(): ActivitySnoozeActions {
           label: option.menuLabel,
           icon: AlarmClock,
           onSelect: () =>
-            void snooze(row.readRef, option.until).then(
+            void snooze(ref, option.until).then(
               () =>
                 toast({
                   title: `Snoozed until ${option.hint}`,
@@ -65,9 +68,7 @@ export function useActivitySnoozeActions(): ActivitySnoozeActions {
                     <ToastAction
                       altText="Undo snooze"
                       onClick={() =>
-                        void unsnooze(row.readRef).catch(
-                          failed("Couldn't undo"),
-                        )
+                        void unsnooze(ref).catch(failed("Couldn't undo"))
                       }
                     >
                       Undo
@@ -84,8 +85,10 @@ export function useActivitySnoozeActions(): ActivitySnoozeActions {
       key: "unsnooze",
       label: "Unsnooze",
       icon: AlarmClockOff,
-      onSelect: () =>
-        void unsnooze(row.readRef).catch(failed("Couldn't unsnooze it")),
+      onSelect: () => {
+        if (row.readRef)
+          void unsnooze(row.readRef).catch(failed("Couldn't unsnooze it"));
+      },
     }),
   };
 }

@@ -21,8 +21,11 @@ import {
  * Whether a row can be snoozed: one that waits on the member (To do, To
  * review, Links), never Waiting on others, which waits on someone else.
  */
-export function activityRowSnoozable(row: Pick<ActivityRow, "key">): boolean {
-  return !row.key.startsWith("made:");
+export function activityRowSnoozable(
+  row: Pick<ActivityRow, "key"> & { readRef?: ActivityItemRef | null },
+): boolean {
+  // A reminder (#4957) names no item (`readRef` null): it has its own Snooze.
+  return row.readRef !== null && !row.key.startsWith("made:");
 }
 
 /** Whether a row's snooze still holds at `now`. */
@@ -119,6 +122,8 @@ export function activitySnoozedRows(
       ?.rows ?? []),
   ];
   const untilOf = (row: ActivityRow) => {
+    // A reminder (#4957) is put off with its own Snooze, never this one.
+    if (row.kind === "reminder") return null;
     const record =
       row.kind === "task"
         ? row.task
