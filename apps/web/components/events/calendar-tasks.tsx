@@ -35,6 +35,13 @@ import { cn } from "@/lib/utils";
  * Rules and words: `@repo/hooks` `calendar-tasks.ts`.
  */
 
+/**
+ * A chip's text on the month grid: the event chips' 11px (ledgered in
+ * `type-scale-call-sites.spec.ts`, #3075 decides), shared by the task and
+ * birthday chips that sit in the same day cell.
+ */
+const CHIP_TEXT = "text-[11px] font-medium";
+
 function TaskMark({
   state,
   className,
@@ -210,7 +217,7 @@ function BirthdayItem({
         "flex items-center text-left",
         row
           ? "min-h-11 w-full gap-3 px-2 py-1.5"
-          : "gap-1 px-1.5 py-1 text-[11px] font-medium",
+          : cn("gap-1 px-1.5 py-1", CHIP_TEXT),
       )}
     >
       <span className={cn("flex shrink-0 items-center", row ? "w-16" : null)}>
@@ -268,7 +275,8 @@ function TaskChip({
         title={item.title}
         aria-label={calendarTaskAccessibleLabel(item)}
         className={cn(
-          "flex items-center gap-1 rounded-xs px-1.5 py-1 text-left text-[11px] font-medium transition-colors",
+          "flex items-center gap-1 rounded-xs px-1.5 py-1 text-left transition-colors",
+          CHIP_TEXT,
           FOCUS_RING,
           "hover:bg-card-hover",
         )}
