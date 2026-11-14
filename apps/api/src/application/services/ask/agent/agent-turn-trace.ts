@@ -17,7 +17,8 @@ export type AgentTurnEnd =
   | {
       kind: 'ended';
       outcome: AgentLoopOutcome;
-      status: 'answered' | 'not_found' | 'refused' | 'unavailable';
+      /** `proposal`: it ended in a card in place of an answer. */
+      status: 'answered' | 'not_found' | 'refused' | 'unavailable' | 'proposal';
       citationsKept: number;
       readChat: boolean;
       truncated: boolean;
@@ -52,7 +53,7 @@ const CAPS: Readonly<Record<string, string>> = {
 function toolOutcome(call: AgentCallTrace): AskTraceToolStep['outcome'] {
   switch (call.outcome) {
     case 'ok':
-      return call.sources > 0 ? 'ok' : 'empty';
+      return call.sources > 0 || call.proposed === true ? 'ok' : 'empty';
     case 'bad_arguments':
       return 'invalid_args';
     case 'foreign_chapter':
@@ -166,6 +167,9 @@ export function agentTurnTrace(
     ...base,
     outcome: ended,
     limit,
+    // Cards left waiting for Confirm, not every propose call.
+    proposals: outcome.cards.filter((card) => card.status === 'proposed')
+      .length,
     steps: stepsOf(outcome, facts.task),
     sourcesRead: outcome.sources.length,
     citationsKept: end.citationsKept,
