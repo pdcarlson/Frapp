@@ -2186,6 +2186,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/scheduled-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the caller's scheduled messages in this chapter (pending and failed), soonest first */
+        get: operations["ChatScheduledMessageController_list_v1"];
+        put?: never;
+        /** Schedule a text message to post later */
+        post: operations["ChatScheduledMessageController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scheduled-messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a scheduled message before it posts */
+        delete: operations["ChatScheduledMessageController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Change a scheduled message’s text or time (a failed one goes back in line) */
+        patch: operations["ChatScheduledMessageController_update_v1"];
+        trace?: never;
+    };
+    "/v1/scheduled-messages/{id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post a scheduled message now */
+        post: operations["ChatScheduledMessageController_sendNow_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -7114,6 +7167,51 @@ export interface components {
         GifPageDto: {
             results: components["schemas"]["GifResultDto"][];
             next_page: number | null;
+        };
+        ScheduledMessageDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            channel_id: string;
+            content: string;
+            mention_picks: components["schemas"]["MentionPickDto"][] | null;
+            /** Format: date-time */
+            send_at: string;
+            /**
+             * @description `failed`: it did not post at its time. Edit it to try again, or delete it.
+             * @enum {string}
+             */
+            status: "pending" | "failed";
+            /**
+             * @description Why a failed message did not post: `no_access` the author can no longer post there; `chapter_locked` the chapter is read-only for billing; `not_sendable` the channel refused the message; `send_failed` it kept failing.
+             * @enum {string|null}
+             */
+            failure_reason: "no_access" | "chapter_locked" | "not_sendable" | "send_failed" | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateScheduledMessageDto: {
+            /**
+             * Format: uuid
+             * @description The channel or DM to post in.
+             */
+            channel_id: string;
+            content: string;
+            /**
+             * Format: date-time
+             * @description When to post it: a date-time with its offset (`Z` or `±hh:mm`), at most 120 days ahead. The client picks it on the member’s own clock.
+             */
+            send_at: string;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        UpdateScheduledMessageDto: {
+            content?: string;
+            /** Format: date-time */
+            send_at?: string;
+            /** @description The `@` picks for the new `content`; read only with it. */
+            mention_picks?: components["schemas"]["MentionPickDto"][];
         };
         EventAgendaItemDto: {
             /** @description The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event. */
@@ -14949,6 +15047,161 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GifPageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only this channel’s; every channel’s when left out. */
+                channel_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledMessageDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateScheduledMessageDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateScheduledMessageDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_sendNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
                 };
             };
             /** @description Error */

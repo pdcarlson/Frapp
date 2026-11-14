@@ -74,25 +74,32 @@ describe("readLiveRushCandidate", () => {
 describe("canReadCardRushCandidate", () => {
   it("asks only for a members:view holder, the one viewer the route answers", () => {
     expect(
-      canReadCardRushCandidate({ canViewMembers: true, permissionsKnown: true }),
+      canReadCardRushCandidate({
+        canViewMembers: true,
+        permissionsKnown: true,
+      }),
     ).toBe(true);
     expect(
-      canReadCardRushCandidate({ canViewMembers: false, permissionsKnown: true }),
+      canReadCardRushCandidate({
+        canViewMembers: false,
+        permissionsKnown: true,
+      }),
     ).toBe(false);
   });
 
   it("asks while permissions are unknown, so a failed permissions read doesn't empty the card", () => {
     expect(
-      canReadCardRushCandidate({ canViewMembers: false, permissionsKnown: false }),
+      canReadCardRushCandidate({
+        canViewMembers: false,
+        permissionsKnown: false,
+      }),
     ).toBe(true);
   });
 });
 
 describe("rushCardControls", () => {
   it("offers nothing until the live candidate is read", () => {
-    expect(rushCardControls({ live: null, recruitmentOff: false })).toEqual(
-      [],
-    );
+    expect(rushCardControls({ live: null, recruitmentOff: false })).toEqual([]);
   });
 
   it("offers nothing while Recruitment is off", () => {
@@ -144,9 +151,9 @@ describe("rushCardTally", () => {
   });
 
   it("says when the viewer is among them", () => {
-    expect(
-      rushCardTally(live({ vote_count: 1, viewer_has_voted: true })),
-    ).toBe("1 vote · you voted");
+    expect(rushCardTally(live({ vote_count: 1, viewer_has_voted: true }))).toBe(
+      "1 vote · you voted",
+    );
   });
 });
 
@@ -181,9 +188,7 @@ describe("rushCardGateRefusal", () => {
     expect(rushCardGateRefusal(refusal(moduleDisabledMessage("polls")))).toBe(
       null,
     );
-    expect(rushCardGateRefusal(new Error("Network request failed"))).toBe(
-      null,
-    );
+    expect(rushCardGateRefusal(new Error("Network request failed"))).toBe(null);
   });
 
   it("points at an officer, the only actor a member has", () => {

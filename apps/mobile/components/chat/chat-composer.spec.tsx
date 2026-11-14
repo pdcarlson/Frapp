@@ -273,6 +273,81 @@ describe("ChatComposer reply and edit strip (#2775)", () => {
   });
 });
 
+describe("ChatComposer scheduling (#4956)", () => {
+  // `byLabel` returns the first match, which is the Pressable that carries
+  // the label (its host child repeats it).
+  const send = (tree: ReactTestRenderer) => byLabel(tree, "Send message")!;
+
+  it("opens Schedule message from a long press on Send, or a screen reader's action", () => {
+    const onSchedule = vi.fn();
+    const { tree } = renderComposer({ value: "Chapter at 8", onSchedule });
+    expect(send(tree).props.accessibilityActions).toEqual([
+      { name: "schedule", label: "Schedule message" },
+    ]);
+    act(() => send(tree).props.onLongPress());
+    act(() =>
+      send(tree).props.onAccessibilityAction({
+        nativeEvent: { actionName: "schedule" },
+      }),
+    );
+    expect(onSchedule).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers nothing to schedule with nothing typed, or while editing", () => {
+    const onSchedule = vi.fn();
+    const empty = renderComposer({ value: "", onSchedule });
+    expect(send(empty.tree).props.onLongPress).toBeUndefined();
+    const editing = renderComposer({
+      value: "fixed",
+      onSchedule,
+      context: {
+        kind: "edit",
+        title: "Editing message",
+        preview: null,
+        onCancel: vi.fn(),
+      },
+    });
+    expect(
+      byLabel(editing.tree, "Save edit")!.props.onLongPress,
+    ).toBeUndefined();
+  });
+
+  it("opens the sheet for a draft naming @Frapp, which says why, rather than asking on release", () => {
+    const onSchedule = vi.fn();
+    const { tree } = renderComposer({
+      value: "@Frapp when is chapter?",
+      onSchedule,
+      ask: { naming: true },
+    });
+    const press = tree.root.findAll(
+      (node) => node.props?.onLongPress !== undefined,
+    );
+    expect(press).toHaveLength(1);
+    act(() => press[0]!.props.onLongPress());
+    expect(onSchedule).toHaveBeenCalled();
+  });
+
+  it("says how many are scheduled above the input, and opens the list", () => {
+    const onOpen = vi.fn();
+    const { tree } = renderComposer({
+      scheduled: { label: "2 scheduled messages", failed: 1, onOpen },
+    });
+    const line = byLabel(tree, "2 scheduled messages, 1 not sent")!;
+    act(() => line.props.onPress());
+    expect(onOpen).toHaveBeenCalled();
+  });
+
+  it("draws no line with nothing scheduled", () => {
+    const { tree } = renderComposer();
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props?.accessibilityHint === "Opens your scheduled messages.",
+      ),
+    ).toHaveLength(0);
+  });
+});
+
 /** A pressable's resting style, its array flattened left to right. */
 function restingStyle(node: ReactTestInstance) {
   return Object.assign(

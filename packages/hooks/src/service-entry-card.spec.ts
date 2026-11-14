@@ -61,7 +61,11 @@ describe("canReadCardServiceEntry", () => {
   it("lets only the member who logged it ask while permissions are unknown", () => {
     // Loading, or the permissions read failed: their own badge doesn't wait
     // on it, and nobody else's card sends a read likely to be refused.
-    const unknown = { canApprove: false, canViewMembers: false, permissionsKnown: false };
+    const unknown = {
+      canApprove: false,
+      canViewMembers: false,
+      permissionsKnown: false,
+    };
     expect(canReadCardServiceEntry({ ...unknown, isOwner: true })).toBe(true);
     expect(canReadCardServiceEntry({ ...unknown, isOwner: false })).toBe(false);
   });

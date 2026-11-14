@@ -58,10 +58,7 @@ export interface ChannelSections<
 export function groupChannelsByCategory<
   C extends GroupableChannel,
   K extends GroupableCategory,
->(
-  channels: readonly C[],
-  categories: readonly K[],
-): ChannelSections<C, K> {
+>(channels: readonly C[], categories: readonly K[]): ChannelSections<C, K> {
   const uncategorized: C[] = [];
   const direct: C[] = [];
   // Seeded from `categories` so a category with no channels still gets an

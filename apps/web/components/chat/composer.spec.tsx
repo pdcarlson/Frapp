@@ -89,6 +89,15 @@ vi.mock("@repo/hooks", () => ({
   useUploadSignedUrl: () => ({ mutateAsync: mockUploadSignedUrl }),
   useChapterRoster: () => ({ data: [] }),
   useMentionRoles: () => ({ data: [] }),
+  // The schedule chevron (#4956): one preset, tomorrow at 9.
+  schedulePresets: (now: Date) => {
+    const at = new Date(now);
+    at.setDate(at.getDate() + 1);
+    at.setHours(9, 0, 0, 0);
+    return [{ key: "tomorrow", label: "Tomorrow at 9:00 AM", at }];
+  },
+  formatScheduledFor: () => "Tomorrow at 9:00 AM",
+  scheduleTimeProblem: () => null,
 }));
 vi.mock("@/lib/chat/photo-preview", () => ({
   describeChatPhoto: mockDescribePhoto,
@@ -3075,5 +3084,101 @@ describe("Composer asks Frapp instead of posting (#4713)", () => {
       expect.objectContaining({ kind: "ask" }),
     ]);
     expect(items(null)).toEqual([]);
+  });
+});
+
+/** Schedule for later from the chevron beside Send (#4956). */
+describe("Composer schedule (#4956)", () => {
+  afterEach(() => {
+    editorDouble.current = null;
+  });
+
+  async function scheduleText(
+    text: string,
+    overrides: Partial<ComposerProps> = {},
+  ) {
+    const editor = fakeEditor(text);
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    const onSchedule = vi.fn(async () => {});
+    const onSend = vi.fn();
+    render(
+      <Composer
+        {...baseProps({ draft: text, onSchedule, onSend, ...overrides })}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+    );
+    return { editor, onSchedule, onSend };
+  }
+
+  it("schedules the text, clears the composer, and says when", async () => {
+    const { editor, onSchedule } = await scheduleText("Chapter at 8");
+    expect(onSchedule).toHaveBeenCalledWith(
+      "Chapter at 8",
+      expect.any(Array),
+      expect.any(Date),
+    );
+    expect(editor.isEmpty).toBe(true);
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: expect.stringMatching(/^Scheduled for/),
+      }),
+    );
+  });
+
+  it.each([
+    ["a slash command", '/poll "Formal?" Yes No', {}, /Commands/],
+    [
+      "a reply",
+      "sounds good",
+      {
+        replyTo: { id: "m-1", author: "A", preview: "x" },
+        onCancelReply: vi.fn(),
+      },
+      /Replies/,
+    ],
+    ["offline", "later", { isOffline: true }, /Reconnect/],
+    [
+      "a question for Frapp",
+      "@Frapp who's driving?",
+      { askUnknown: true },
+      /Frapp/,
+    ],
+  ])("refuses %s and keeps the text", async (_label, text, overrides, copy) => {
+    const { editor, onSchedule } = await scheduleText(
+      text,
+      overrides as Partial<ComposerProps>,
+    );
+    expect(onSchedule).not.toHaveBeenCalled();
+    expect(editor.getText()).toBe(text);
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: expect.stringMatching(copy) }),
+    );
+  });
+
+  it("schedules text that only starts with a slash, as Send posts it", async () => {
+    const { onSchedule } = await scheduleText("/r/fraternity has a thread");
+    expect(onSchedule).toHaveBeenCalled();
+  });
+
+  it("puts the text back when scheduling fails", async () => {
+    const editor = fakeEditor("Chapter at 8");
+    editorDouble.current = editor;
+    const onSchedule = vi.fn(async () => {
+      throw new Error("down");
+    });
+    render(<Composer {...baseProps({ draft: "Chapter at 8", onSchedule })} />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+    );
+    expect(editor.getText()).toBe("Chapter at 8");
   });
 });

@@ -14,62 +14,71 @@ const TARGET = {
   token: "signed-token",
   contentType: "audio/mp4",
 };
-const OPTIONS = { supabaseUrl: "http://supabase.test/", sleep: () => Promise.resolve() };
+const OPTIONS = {
+  supabaseUrl: "http://supabase.test/",
+  sleep: () => Promise.resolve(),
+};
 
 /** A Storage that keeps count of what it has, as the real one does. */
 function storage(fileSize: number) {
   let have = 0;
   const calls: { method: string; offset: string | null }[] = [];
   const fail: (Response | Error | "half")[] = [];
-  const send = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-    const headers = new Headers(init?.headers);
-    const method = init?.method ?? "GET";
-    calls.push({ method, offset: headers.get("Upload-Offset") });
-    // What the real server refuses a request without.
-    if (headers.get("Tus-Resumable") !== "1.0.0") {
-      return new Response(null, { status: 412 });
-    }
-    if (method === "POST") {
-      const meta = headers.get("Upload-Metadata") ?? "";
-      if (
-        headers.get("x-signature") !== TARGET.token ||
-        !meta.includes(`contentType ${btoa(TARGET.contentType)}`)
-      ) {
-        return new Response(null, { status: 400 });
+  const send = vi.fn(
+    async (url: string | URL | Request, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      const method = init?.method ?? "GET";
+      calls.push({ method, offset: headers.get("Upload-Offset") });
+      // What the real server refuses a request without.
+      if (headers.get("Tus-Resumable") !== "1.0.0") {
+        return new Response(null, { status: 412 });
       }
+      if (method === "POST") {
+        const meta = headers.get("Upload-Metadata") ?? "";
+        if (
+          headers.get("x-signature") !== TARGET.token ||
+          !meta.includes(`contentType ${btoa(TARGET.contentType)}`)
+        ) {
+          return new Response(null, { status: 400 });
+        }
+        return new Response(null, {
+          status: 201,
+          headers: { Location: "/storage/v1/upload/resumable/sign/abc" },
+        });
+      }
+      if (method === "HEAD") {
+        if (String(url).endsWith("/gone"))
+          return new Response(null, { status: 404 });
+        return new Response(null, {
+          status: 200,
+          headers: {
+            "Upload-Offset": String(have),
+            "Upload-Length": String(fileSize),
+          },
+        });
+      }
+      if (headers.get("Content-Type") !== "application/offset+octet-stream") {
+        return new Response(null, { status: 415 });
+      }
+      const planned = fail.shift();
+      const body = init?.body as Blob;
+      if (planned === "half") {
+        // The connection dropped after part of the piece arrived.
+        have += Math.floor(body.size / 2);
+        throw new TypeError("network");
+      }
+      if (planned instanceof Error) throw planned;
+      if (planned) return planned;
+      if (Number(headers.get("Upload-Offset")) !== have) {
+        return new Response(null, { status: 409 });
+      }
+      have += body.size;
       return new Response(null, {
-        status: 201,
-        headers: { Location: "/storage/v1/upload/resumable/sign/abc" },
+        status: 204,
+        headers: { "Upload-Offset": String(have) },
       });
-    }
-    if (method === "HEAD") {
-      if (String(url).endsWith("/gone")) return new Response(null, { status: 404 });
-      return new Response(null, {
-        status: 200,
-        headers: { "Upload-Offset": String(have), "Upload-Length": String(fileSize) },
-      });
-    }
-    if (headers.get("Content-Type") !== "application/offset+octet-stream") {
-      return new Response(null, { status: 415 });
-    }
-    const planned = fail.shift();
-    const body = init?.body as Blob;
-    if (planned === "half") {
-      // The connection dropped after part of the piece arrived.
-      have += Math.floor(body.size / 2);
-      throw new TypeError("network");
-    }
-    if (planned instanceof Error) throw planned;
-    if (planned) return planned;
-    if (Number(headers.get("Upload-Offset")) !== have) {
-      return new Response(null, { status: 409 });
-    }
-    have += body.size;
-    return new Response(null, {
-      status: 204,
-      headers: { "Upload-Offset": String(have) },
-    });
-  });
+    },
+  );
   return {
     send: send as unknown as typeof fetch,
     calls,
@@ -107,8 +116,8 @@ describe("uploadResumable", () => {
       RESUMABLE_CHUNK_BYTES * 2,
       size,
     ]);
-    const [url, init] = (server.send as unknown as ReturnType<typeof vi.fn>).mock
-      .calls[0]!;
+    const [url, init] = (server.send as unknown as ReturnType<typeof vi.fn>)
+      .mock.calls[0]!;
     expect(url).toBe("http://supabase.test/storage/v1/upload/resumable/sign");
     const headers = new Headers(init.headers);
     expect(headers.get("x-signature")).toBe("signed-token");
@@ -125,7 +134,10 @@ describe("uploadResumable", () => {
     const size = RESUMABLE_CHUNK_BYTES + 100;
     const server = storage(size);
     server.fail.push("half");
-    await uploadResumable(file(size), TARGET, { ...OPTIONS, fetch: server.send });
+    await uploadResumable(file(size), TARGET, {
+      ...OPTIONS,
+      fetch: server.send,
+    });
     expect(server.received()).toBe(size);
     expect(server.calls.slice(1, 4)).toEqual([
       { method: "PATCH", offset: "0" },
@@ -145,7 +157,10 @@ describe("uploadResumable", () => {
     const size = RESUMABLE_CHUNK_BYTES + 100;
     const server = storage(size);
     server.fail.push(new Response(null, { status: 409 }));
-    await uploadResumable(file(size), TARGET, { ...OPTIONS, fetch: server.send });
+    await uploadResumable(file(size), TARGET, {
+      ...OPTIONS,
+      fetch: server.send,
+    });
     expect(server.received()).toBe(size);
     expect(server.calls.slice(1, 4).map((call) => call.method)).toEqual([
       "PATCH",
@@ -166,11 +181,17 @@ describe("uploadResumable", () => {
     // `expo/fetch` rejects with `FetchError extends Error`: "fetch failed: ...".
     class FetchError extends Error {}
     const server = storage(10);
-    server.fail.push(new FetchError("fetch failed: The network connection was lost."));
+    server.fail.push(
+      new FetchError("fetch failed: The network connection was lost."),
+    );
     await uploadResumable(file(10), TARGET, { ...OPTIONS, fetch: server.send });
     expect(server.received()).toBe(10);
-    expect(isNetworkFailure(new FetchError("fetch failed: offline"))).toBe(true);
-    expect(isNetworkFailure(new TypeError("Network request failed"))).toBe(true);
+    expect(isNetworkFailure(new FetchError("fetch failed: offline"))).toBe(
+      true,
+    );
+    expect(isNetworkFailure(new TypeError("Network request failed"))).toBe(
+      true,
+    );
     // A bug, a refusal and a stop are not the network.
     expect(isNetworkFailure(new Error("boom"))).toBe(false);
     expect(isNetworkFailure(new ResumableUploadError("rejected"))).toBe(false);

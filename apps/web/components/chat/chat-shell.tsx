@@ -54,6 +54,7 @@ import {
   useMyPermissions,
   useBookmarks,
   useBookmarkedMessageIds,
+  useScheduleMessage,
   useBookmarkMessage,
   useUnbookmarkMessage,
   resolveAuthorLabel,
@@ -179,6 +180,7 @@ import {
   notifyDispatchOutcome,
   type CommandFormOutcome,
 } from "./composer";
+import { ScheduledMessagesBar } from "./schedule-send";
 import {
   canBlockSender,
   channelAllowsReplies,
@@ -938,11 +940,7 @@ export function ChatShell({
       const ownBack = backPending.current;
       if (isUnderThreadPaneEntry(event.state)) {
         unmarkUnderThreadPaneEntry();
-        if (
-          !ownBack &&
-          !openAfterBack.current &&
-          isDesktopShellRef.current
-        ) {
+        if (!ownBack && !openAfterBack.current && isDesktopShellRef.current) {
           // The browser's Back left a below-`lg` pick's entry from `lg` up,
           // where the list was already on screen: finish the press (#3836).
           onThreadEntry.current = false;
@@ -1845,6 +1843,7 @@ export function ChatShell({
     [bookmarksQuery.data],
   );
   const bookmarkedMessageIds = useBookmarkedMessageIds();
+  const scheduleMessage = useScheduleMessage();
   const bookmarkMessage = useBookmarkMessage();
   const unbookmarkMessage = useUnbookmarkMessage();
   const handleToggleBookmark = useCallback(
@@ -3952,6 +3951,11 @@ export function ChatShell({
             <TypingLine label={typingLine} />
           </>
         ) : null}
+        {/* Wherever the member can read: a message that failed because they
+            lost posting here is exactly the one they need to see and delete. */}
+        {activeChannel ? (
+          <ScheduledMessagesBar channelId={activeChannel.id} />
+        ) : null}
         {activeChannel ? (
           <Composer
             // Remounts the editor whenever the channel *or its resolved
@@ -4018,6 +4022,19 @@ export function ChatShell({
                 mentionPicks,
               });
             }}
+            // Text scheduled to post later (#4956), where the member may post.
+            onSchedule={
+              activeChannel.can_post !== false
+                ? async (body, mentionPicks, at) => {
+                    await scheduleMessage.mutateAsync({
+                      channelId: activeChannel.id,
+                      content: body,
+                      sendAt: at,
+                      mentionPicks,
+                    });
+                  }
+                : undefined
+            }
             // A GIF goes out as its own message (#4631); the reply strip
             // attaches to it as it would to typed text.
             onSendGif={

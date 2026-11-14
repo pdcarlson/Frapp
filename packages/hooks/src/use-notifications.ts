@@ -207,7 +207,10 @@ export function useNotifications(limit?: number) {
   // Every pending receipt, the push tap's `on-open` ones included: mutation
   // filters match by key prefix.
   const pendingReads = useMutationState({
-    filters: { mutationKey: markNotificationReadMutationKey, status: "pending" },
+    filters: {
+      mutationKey: markNotificationReadMutationKey,
+      status: "pending",
+    },
     select: (mutation) => {
       const id = mutation.state.variables;
       return typeof id === "string"
@@ -235,7 +238,7 @@ export function useNotifications(limit?: number) {
       pending.set(id, sentAt);
     }
     const clearing = new Set(clearingKey ? clearingKey.split("\n") : []);
-    return <T,>(data: T): T =>
+    return <T>(data: T): T =>
       withPendingReads(withoutCleared(data, clearing), pending);
   }, [pendingKey, clearingKey]);
   return useQuery({
@@ -329,7 +332,10 @@ export function useRemovePushToken() {
  * own defaults. Its failures group in Sentry under `notifications`, not
  * `unkeyed` (`@repo/observability`'s `query-errors.ts`).
  */
-export const markNotificationReadMutationKey = ["notifications", "read"] as const;
+export const markNotificationReadMutationKey = [
+  "notifications",
+  "read",
+] as const;
 
 /**
  * The read receipt a push tap sends as it opens the app: the same write, under
@@ -506,7 +512,8 @@ function withPendingReads<T>(data: T, pending: ReadonlyMap<string, string>): T {
   return withRowsRead(
     data,
     (row) => {
-      const sentAt = typeof row.id === "string" ? pending.get(row.id) : undefined;
+      const sentAt =
+        typeof row.id === "string" ? pending.get(row.id) : undefined;
       if (sentAt === undefined) return false;
       stamp = sentAt;
       return true;
@@ -566,7 +573,9 @@ export function refetchIfChannelNotificationsShown(
   channelId: string,
 ): void {
   const shown = queryClient
-    .getQueriesData({ predicate: (query) => isNotificationListKey(query.queryKey) })
+    .getQueriesData({
+      predicate: (query) => isNotificationListKey(query.queryKey),
+    })
     .some(
       ([, rows]) =>
         Array.isArray(rows) &&
@@ -628,7 +637,9 @@ export function useMarkNotificationRead({
       );
       const firstFetchInFlight = queryClient
         .getQueryCache()
-        .findAll({ predicate: (query) => isNotificationListKey(query.queryKey) })
+        .findAll({
+          predicate: (query) => isNotificationListKey(query.queryKey),
+        })
         .some(
           (query) =>
             query.state.data === undefined &&
@@ -793,7 +804,12 @@ export function useUpdateNotificationPreference() {
       const restore = previousEnabledFor(previous, body.category);
       const next = applyPreferenceToRows(previous, body);
       if (next) queryClient.setQueryData(queryKey, next);
-      return { queryKey, category: body.category, restore, wrote: next !== null };
+      return {
+        queryKey,
+        category: body.category,
+        restore,
+        wrote: next !== null,
+      };
     },
     onError: (_error, _body, context) => {
       if (!context?.wrote) return;

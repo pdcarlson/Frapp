@@ -44,7 +44,9 @@ export function readGoogleCalendarReturn(
   if (outcome === "confirm") {
     const code = params.get("gcal_code");
     const state = params.get("gcal_state");
-    return code && state ? { kind: "confirm", code, state } : { kind: "failed" };
+    return code && state
+      ? { kind: "confirm", code, state }
+      : { kind: "failed" };
   }
   if (outcome === "denied" || outcome === "expired") return { kind: outcome };
   return outcome ? { kind: "failed" } : null;

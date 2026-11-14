@@ -18,12 +18,16 @@ describe("isCardReadMiss", () => {
   });
 
   it("leaves a chapter-context mismatch to throw: it clears once the token catches up", () => {
-    expect(isCardReadMiss(refusal(403, "chapter.context.mismatch"))).toBe(false);
+    expect(isCardReadMiss(refusal(403, "chapter.context.mismatch"))).toBe(
+      false,
+    );
   });
 
   it("leaves every other failure to throw", () => {
     expect(isCardReadMiss(refusal(500))).toBe(false);
-    expect(isCardReadMiss(refusal(400, "chapter.context.required"))).toBe(false);
+    expect(isCardReadMiss(refusal(400, "chapter.context.required"))).toBe(
+      false,
+    );
     expect(isCardReadMiss(new Error("Network request failed"))).toBe(false);
   });
 });
