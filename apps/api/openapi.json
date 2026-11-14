@@ -6447,6 +6447,46 @@
         ]
       }
     },
+    "/v1/threads": {
+      "get": {
+        "operationId": "MemberThreadController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberThreadDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Every thread the caller follows or muted, across channels, newest activity first, with new-reply counts",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/chat-backgrounds/channels/{id}": {
       "get": {
         "operationId": "ChatBackgroundController_getForChannel_v1",
@@ -22480,6 +22520,61 @@
         },
         "required": [
           "last_read_at"
+        ]
+      },
+      "MemberThreadDto": {
+        "type": "object",
+        "properties": {
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "following",
+              "muted"
+            ]
+          },
+          "last_read_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "unread_count": {
+            "type": "number",
+            "description": "Replies new to the caller; always 0 when muted."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_reply_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "When the newest reply landed; null before any reply."
+          },
+          "reply_count": {
+            "type": "number",
+            "description": "Replies in the thread, deleted ones included."
+          },
+          "root": {
+            "description": "The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatMessageDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "thread_root_id",
+          "state",
+          "last_read_at",
+          "unread_count",
+          "channel_id",
+          "last_reply_at",
+          "reply_count",
+          "root"
         ]
       },
       "ChatBackgroundResponseDto": {

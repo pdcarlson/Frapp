@@ -1,9 +1,14 @@
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import { useNotifications } from "@repo/hooks";
+import {
+  unreadThreadCount,
+  useMemberThreads,
+  useNotifications,
+} from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { HeaderButton } from "@/components/header-button";
 import { NotificationsGlyph } from "@/components/more/more-glyphs";
+import { ThreadsGlyph } from "@/components/control-glyphs";
 import { NavGlyph } from "@/components/nav-glyph";
 import { useTourAnchor } from "@/components/onboarding/tour";
 import { selectUnreadNonChatCount } from "@/lib/more/notifications";
@@ -112,6 +117,28 @@ export function NotificationsButton() {
       badge={{ count: unread, tone: "inbox", testID: "notifications-badge" }}
     >
       <NotificationsGlyph color={tokens.color.text.foreground} neutral />
+    </HeaderButton>
+  );
+}
+
+/**
+ * All threads (#4960): the member's threads across channels, in a sheet over
+ * Chat home (`AllThreadsSheet`). Slack puts Threads at the top of its home,
+ * and Discord a threads icon in the channel header. Its badge counts threads
+ * with new replies, in house gold like the bell's: not direct address.
+ */
+export function ThreadsButton({ onPress }: { onPress: () => void }) {
+  const { tokens } = useFrappTheme();
+  const unread = unreadThreadCount(useMemberThreads().data);
+  return (
+    <HeaderButton
+      label="Threads"
+      hint="Opens the threads you're part of."
+      value={unread > 0 ? `${unread} with new replies` : undefined}
+      onPress={onPress}
+      badge={{ count: unread, tone: "inbox", testID: "threads-badge" }}
+    >
+      <ThreadsGlyph color={tokens.color.text.foreground} size={GLYPH} />
     </HeaderButton>
   );
 }

@@ -267,6 +267,9 @@ export async function createChatServiceFixture() {
     setFollowState: jest.fn().mockResolvedValue(undefined),
     markRead: jest.fn().mockResolvedValue(undefined),
     findFollowedUnread: jest.fn().mockResolvedValue([]),
+    findMemberThreads: jest.fn().mockResolvedValue([]),
+    findFollowedChannelIds: jest.fn().mockResolvedValue([]),
+    findMessagesByIds: jest.fn().mockResolvedValue([]),
   };
 
   const mockRbac = {

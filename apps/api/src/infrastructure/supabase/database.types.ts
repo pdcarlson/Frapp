@@ -82,6 +82,7 @@ import type {
   MemberCustomFieldValueRow,
   MemberNudge,
   MemberNudgeSettings,
+  MemberThreadRow,
   MessageReaction,
   Notification,
   NotificationPreference,
@@ -685,6 +686,28 @@ export interface Database {
       get_hidden_channel_ids: {
         Args: { p_chapter_id: string; p_user_id: string };
         Returns: { channel_id: string }[];
+      };
+      /**
+       * `20261114003341` (#4960). The distinct channels in a chapter holding
+       * the caller's followed or muted threads.
+       */
+      get_member_thread_channel_ids: {
+        Args: { p_chapter_id: string; p_user_id: string };
+        Returns: { channel_id: string }[];
+      };
+      /**
+       * `20261114003341` (#4960). The caller's followed and muted threads
+       * across `p_channel_ids` (already authorized by the service), newest
+       * activity first, with each one's new-reply count.
+       */
+      get_member_threads: {
+        Args: {
+          p_chapter_id: string;
+          p_user_id: string;
+          p_channel_ids: string[];
+          p_limit: number;
+        };
+        Returns: MemberThreadRow[];
       };
       /**
        * `20260906120001` — per-member point totals for one chapter, summed in

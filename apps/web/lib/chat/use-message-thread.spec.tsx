@@ -49,7 +49,10 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("@repo/hooks", () => ({ useFrappClient: () => ({}) }));
+vi.mock("@repo/hooks", () => ({
+  useFrappClient: () => ({}),
+  memberThreadKeys: { all: ["member-threads"] },
+}));
 
 // The client reactions are read with; the reads themselves are stubbed.
 const SUPABASE = vi.hoisted(() => ({ from: () => undefined }));
@@ -362,6 +365,16 @@ describe("useMessageThread clears the thread card's new count (#4297)", () => {
     await waitFor(() =>
       expect(invalidate).toHaveBeenCalledWith({
         queryKey: ["chat-followed-threads", "c1"],
+      }),
+    );
+  });
+
+  it("re-reads All threads too, so its unread mark clears (#4960)", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    open();
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: ["member-threads"],
       }),
     );
   });

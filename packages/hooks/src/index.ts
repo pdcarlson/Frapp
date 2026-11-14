@@ -26,6 +26,7 @@ export * from "./join-errors";
 export * from "./landing-channel";
 export * from "./legal-acceptance";
 export * from "./member-avatar-color";
+export * from "./member-threads";
 export * from "./open-chat-transport";
 export * from "./pay-errors";
 export * from "./permission-preview";

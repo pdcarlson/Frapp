@@ -15,6 +15,7 @@ import { ChatImportantController } from '../../interface/controllers/chat-import
 import { SupabaseChatImportantSeenRepository } from '../../infrastructure/supabase/repositories/supabase-chat-important-seen.repository';
 import { CHAT_IMPORTANT_SEEN_REPOSITORY } from '#domain/repositories/chat-important.repository.interface';
 import { ChatThreadController } from '../../interface/controllers/chat-thread.controller';
+import { MemberThreadController } from '../../interface/controllers/member-thread.controller';
 import { SupabaseChatThreadRepository } from '../../infrastructure/supabase/repositories/supabase-chat-thread.repository';
 import { CHAT_THREAD_REPOSITORY } from '#domain/repositories/chat-thread.repository.interface';
 import { ChatController } from '../../interface/controllers/chat.controller';
@@ -113,6 +114,7 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     // reason bookmarks are.
     ChatSidebarController,
     ChatThreadController,
+    MemberThreadController,
     // Chat backgrounds (#3973), at their own root for the reason bookmarks are.
     ChatBackgroundController,
     ChatOrderController,
