@@ -266,10 +266,16 @@ function TierList({
 
   const roleRow = (role: TieredRole) => {
     const editable = canManage && reachesRole(reach, role, tiers);
+    // A Non-chapter business role can't sit in a tier (#4958): the API
+    // refuses the move until it's unmarked on its role page, so the menu
+    // doesn't offer one.
+    const movable = !role.self_assignable;
     const entries: RowMenuEntry[] = [
-      { type: "label", key: "move-label", label: "Move to" },
+      ...(movable
+        ? [{ type: "label", key: "move-label", label: "Move to" } as const]
+        : []),
       ...tiers
-        .filter((tier) => tier.id !== role.tier_id)
+        .filter((tier) => movable && tier.id !== role.tier_id)
         .map((tier): RowMenuEntry => ({
           type: "item",
           key: `move-${tier.id}`,
@@ -291,7 +297,9 @@ function TierList({
       ...(role.is_system
         ? []
         : [
-            { type: "separator", key: "sep" } satisfies RowMenuEntry,
+            ...(movable
+              ? [{ type: "separator", key: "sep" } satisfies RowMenuEntry]
+              : []),
             {
               type: "item",
               key: "delete",
@@ -470,8 +478,8 @@ function TierList({
             </h3>
             <p className="text-caption text-muted-foreground">
               Members add and remove these themselves, like intramurals or a
-              study group. Each opens its channels and nothing else. Turn it on
-              from a role outside the {words.plural}.
+              study group. Each opens its channels, and any event that lists it
+              counts them in. Turn it on from a role outside the {words.plural}.
             </p>
           </div>
           <RoleList

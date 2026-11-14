@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
-import { useListChapters } from "./use-chapters";
+import { useListChapters, type ChapterMembershipSummary } from "./use-chapters";
 import { useRoles } from "./use-roles";
 import { alumniRoleIdOf } from "@repo/validation";
 import { parseChapterRoles, type ChapterRole } from "./chapter-roles";
@@ -15,28 +15,54 @@ import { parseChapterRoles, type ChapterRole } from "./chapter-roles";
  * interest roles. Web and the phone draw their own picker over these.
  */
 
-/** A pickable role, and whether the viewer holds it. */
-export type PickableRole = ChapterRole & { held: boolean };
+/**
+ * A role the picker lists: whether the viewer holds it, and whether they can
+ * join it. A row that can't be joined is one they hold and may only leave.
+ */
+export type PickableRole = ChapterRole & { held: boolean; joinable: boolean };
 
 /**
- * The chapter's self-assignable roles, by name, each with whether the viewer
- * holds it; none for an alum. The viewer's roles come from their membership summary
- * (`GET /v1/chapters`), which every member can read; the roles list needs
- * `members:view`, which every member who can open the picker holds.
+ * The roles the viewer can join or leave themselves, by name. Joinable: every
+ * marked role, unless the viewer is an alum (the API refuses an alum's join,
+ * since a picked role an event lists would let them check in past the
+ * alumni rule). Leave-only: a role they hold that they can't join but the API
+ * still lets them leave, which is any role with no `system_key` outside the
+ * tiers, so a role an officer unmarked, or one held when they became an alum,
+ * never traps them (`spec/behavior/rbac.md` § Self-assignable roles). The
+ * viewer's roles come from their membership summary (`GET /v1/chapters`),
+ * which every member can read; the roles list needs `members:view`, which
+ * every member who can open the picker holds.
  */
 export function selectPickableRoles(
   rolesData: unknown,
   heldRoleIds: readonly string[] | undefined,
 ): PickableRole[] {
   const held = new Set((heldRoleIds ?? []).map((id) => id.toLowerCase()));
-  // Alumni don't pick roles: the API refuses them, since a picked role an
-  // event lists would let them check in past the alumni rule.
   const alumniRoleId = alumniRoleIdOf(rolesData);
-  if (alumniRoleId && held.has(alumniRoleId.toLowerCase())) return [];
+  const isAlum = !!alumniRoleId && held.has(alumniRoleId.toLowerCase());
+  const tiered = tieredRoleIds(rolesData);
   return parseChapterRoles(rolesData)
-    .filter((role) => role.selfAssignable)
-    .map((role) => ({ ...role, held: held.has(role.id.toLowerCase()) }))
+    .flatMap((role): PickableRole[] => {
+      const holds = held.has(role.id.toLowerCase());
+      const joinable = role.selfAssignable && !isAlum;
+      const leavable =
+        holds && !role.system_key && !role.everyone && !tiered.has(role.id);
+      return joinable || leavable ? [{ ...role, held: holds, joinable }] : [];
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** The ids of roles placed in a tier; `ChapterRole` doesn't carry the tier. */
+function tieredRoleIds(rolesData: unknown): Set<string> {
+  if (!Array.isArray(rolesData)) return new Set();
+  return new Set(
+    rolesData.flatMap((row: unknown) => {
+      const role = row as { id?: unknown; tier_id?: unknown } | null;
+      return role && typeof role.id === "string" && role.tier_id
+        ? [role.id]
+        : [];
+    }),
+  );
 }
 
 export function usePickableRoles() {
@@ -81,7 +107,23 @@ export function useSetPickedRole() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // The answer carries the viewer's roles after the change: written into
+      // the membership summary at once, so each switch shows what was saved
+      // as soon as it unlocks, rather than its old state until the read
+      // below comes back.
+      const roleIds = (data as { role_ids?: unknown } | undefined)?.role_ids;
+      if (Array.isArray(roleIds)) {
+        queryClient.setQueryData<ChapterMembershipSummary[]>(
+          ["chapters", "accessible"],
+          (memberships) =>
+            memberships?.map((membership) =>
+              membership.chapter_id === chapterId
+                ? { ...membership, role_ids: roleIds as string[] }
+                : membership,
+            ),
+        );
+      }
       void queryClient.invalidateQueries({ queryKey: ["chapters"] });
       void queryClient.invalidateQueries({ queryKey: ["user", "me"] });
       void queryClient.invalidateQueries({ queryKey: ["members", chapterId] });

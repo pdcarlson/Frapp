@@ -27,6 +27,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * provisional (Shawn, 2026-11-14), and the sheet is self-contained so moving
  * its button is the whole move.
  */
+/**
+ * Under a role the member holds but can't join again: one an officer stopped
+ * offering, or any picked role once they're an alum. Leaving still works.
+ */
+export const LEAVE_ONLY_CAPTION = "No longer open to join. You can leave it.";
+
 export const PickRolesSheet = forwardRef<
   BottomSheetModal,
   { roles: readonly PickableRole[] }
@@ -78,11 +84,13 @@ export const PickRolesSheet = forwardRef<
         <ListSection>
           {roles.map((role) => {
             const failed = failure?.id === role.id ? failure.message : null;
+            const caption =
+              failed ?? (role.joinable ? null : LEAVE_ONLY_CAPTION);
             return (
               <ListRow
                 key={role.id}
                 label={role.name}
-                description={failed}
+                description={caption}
                 descriptionTone={failed ? "destructive" : "default"}
                 trailing={
                   <Toggle

@@ -18,6 +18,12 @@ import { getErrorMessage } from "@/lib/utils";
  * matter of where it is rendered. Nothing shows in a chapter with no such
  * roles.
  */
+/**
+ * Under a role the member holds but can't join again: one an officer stopped
+ * offering, or any picked role once they're an alum. Leaving still works.
+ */
+export const LEAVE_ONLY_CAPTION = "No longer open to join. You can leave it.";
+
 export function PickRolesSection() {
   const { toast } = useToast();
   const { roles, isLoading } = usePickableRoles();
@@ -59,8 +65,15 @@ export function PickRolesSection() {
                 className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/40"
                 style={role.color ? { backgroundColor: role.color } : undefined}
               />
-              <span className="truncate text-sm text-foreground">
-                {role.name}
+              <span className="min-w-0">
+                <span className="block truncate text-sm text-foreground">
+                  {role.name}
+                </span>
+                {role.joinable ? null : (
+                  <span className="block text-xs text-muted-foreground">
+                    {LEAVE_ONLY_CAPTION}
+                  </span>
+                )}
               </span>
             </span>
             <Switch

@@ -46,6 +46,23 @@ import {
   type TieredRole,
 } from "@repo/hooks/role-tiers";
 
+/**
+ * A role's permissions after a move: the tier's, plus its overrides that are
+ * on, minus those that are off. The API's `effectivePermissions` rule, which
+ * the database applies on the write.
+ */
+function permissionsAfterMove(
+  tierPermissions: readonly string[],
+  overrides: Readonly<Record<string, boolean>>,
+): string[] {
+  const result = new Set(tierPermissions);
+  for (const [permission, on] of Object.entries(overrides)) {
+    if (on) result.add(permission);
+    else result.delete(permission);
+  }
+  return [...result];
+}
+
 /** The Select's value for "outside the tiers"; Radix can't carry `""`. */
 const OUTSIDE = "__outside__";
 
@@ -176,10 +193,21 @@ function RoleBody({
   // the role themselves. Judged against the drafted placement, since a move
   // into a tier is what most often rules it out.
   const [pickable, setPickable] = useState(role.self_assignable);
+  const draftTierId = placement === OUTSIDE ? null : placement;
   const pickRefusal = selfAssignableRefusal({
     system_key: role.system_key,
-    tier_id: placement === OUTSIDE ? null : placement,
-    permissions: role.permissions,
+    tier_id: draftTierId,
+    // The permissions the save leaves it with, as the API judges them: its
+    // stored ones while it stays put, else the drafted tier's with its own
+    // overrides on top (a role moved out of a tier drops that tier's).
+    permissions:
+      draftTierId === (role.tier_id ?? null)
+        ? role.permissions
+        : permissionsAfterMove(
+            tiers.find((candidate) => candidate.id === draftTierId)
+              ?.permissions ?? [],
+            role.permission_overrides,
+          ),
   });
   const [order, setOrder] = useState(String(role.display_order));
 
@@ -448,7 +476,7 @@ function RoleBody({
                 >
                   {pickRefusal
                     ? SELF_ASSIGNABLE_REFUSAL_COPY[pickRefusal]
-                    : "Members add and remove this role themselves, like an intramurals team or a study group. It opens its channels and nothing else."}
+                    : "Members add and remove this role themselves, like an intramurals team or a study group. It opens its channels, and any event that lists it counts them in."}
                 </p>
               </div>
               <Switch
