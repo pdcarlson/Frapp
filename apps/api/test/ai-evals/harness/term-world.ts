@@ -301,6 +301,9 @@ export function createTermWorld(
     pledge_class_id: null,
     order_number: null,
     is_alumni: entry.role === 'Alumni',
+    // Nobody in the term chapter shares a birthday.
+    birthday_month: null,
+    birthday_day: null,
   }));
   const roster: MemberRosterEntry[] = chapter.members.map((entry) => ({
     user_id: termId(entry.id),
