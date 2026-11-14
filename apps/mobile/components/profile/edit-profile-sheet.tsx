@@ -8,7 +8,9 @@ import {
 import { useFieldReveal, useUpdateUser } from "@repo/hooks";
 import {
   BIRTHDAY_COPY,
+  BIRTHDAY_VISIBILITIES,
   MAJOR_MAX_LENGTH,
+  parseBirthdayVisibility,
   PHONE_MAX_LENGTH,
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
@@ -99,7 +101,7 @@ const copy = PROFILE_FIELD_COPY;
  */
 const YEAR_FIELD_WIDTH = 96;
 
-const VISIBILITY_OPTIONS = (["chapter", "nobody"] as const).map((value) => ({
+const VISIBILITY_OPTIONS = BIRTHDAY_VISIBILITIES.map((value) => ({
   value,
   label: BIRTHDAY_COPY.visibility[value],
 }));
@@ -389,9 +391,7 @@ export const EditProfileSheet = forwardRef<
           <Text style={styles.label}>{BIRTHDAY_COPY.visibilityLabel}</Text>
           <Segmented
             options={VISIBILITY_OPTIONS}
-            value={
-              shown.birthdayVisibility === "chapter" ? "chapter" : "nobody"
-            }
+            value={parseBirthdayVisibility(shown.birthdayVisibility)}
             onChange={(next) => edit("birthdayVisibility")(next)}
             accessibilityLabel={BIRTHDAY_COPY.visibilityLabel}
             disabled={updateUser.isPending}
@@ -399,7 +399,7 @@ export const EditProfileSheet = forwardRef<
           <Text style={styles.hint}>
             {
               BIRTHDAY_COPY.visibilityHint[
-                shown.birthdayVisibility === "chapter" ? "chapter" : "nobody"
+                parseBirthdayVisibility(shown.birthdayVisibility)
               ]
             }
           </Text>

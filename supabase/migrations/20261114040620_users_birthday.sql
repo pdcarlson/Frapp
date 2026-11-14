@@ -34,7 +34,11 @@ alter table public.users
   check (
     (birthday_month is null and birthday_day is null and birthday_year is null)
     or (
-      birthday_month between 1 and 12
+      -- Every branch states `is not null` outright: a CHECK passes on NULL,
+      -- so without them (5, null, null) or (null, null, 2004) would pass.
+      birthday_month is not null
+      and birthday_day is not null
+      and birthday_month between 1 and 12
       and birthday_day between 1 and (
         case
           when birthday_month = 2 then 29

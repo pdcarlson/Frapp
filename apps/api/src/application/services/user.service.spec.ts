@@ -160,6 +160,20 @@ describe('UserService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('refuses a month alone over a stored birthday, rather than moving it', async () => {
+      mockRepo.findById.mockResolvedValue(
+        userFixture({ birthday_month: 3, birthday_day: 4 }),
+      );
+
+      await expect(
+        service.update('user-1', { birthday_month: 4 }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.update('user-1', { birthday_day: 5 }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
     it('checks a year alone against the stored day', async () => {
       mockRepo.findById.mockResolvedValue(
         userFixture({ birthday_month: 2, birthday_day: 29 }),

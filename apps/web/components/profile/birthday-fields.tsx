@@ -5,6 +5,8 @@ import {
   BIRTH_YEAR_MIN,
   BIRTHDAY_COPY,
   BIRTHDAY_MONTH_NAMES,
+  BIRTHDAY_VISIBILITIES,
+  type BirthdayDraftProblem,
   type BirthdayVisibility,
   daysInBirthdayMonth,
 } from "@repo/validation";
@@ -28,7 +30,7 @@ export type BirthdayDraft = {
   visibility: BirthdayVisibility;
 };
 
-const VISIBILITY_OPTIONS = (["chapter", "nobody"] as const).map((value) => ({
+const VISIBILITY_OPTIONS = BIRTHDAY_VISIBILITIES.map((value) => ({
   value,
   label: BIRTHDAY_COPY.visibility[value],
 }));
@@ -42,14 +44,19 @@ const VISIBILITY_OPTIONS = (["chapter", "nobody"] as const).map((value) => ({
 export function BirthdayFields({
   value,
   onChange,
-  invalid,
+  problem,
 }: {
   value: BirthdayDraft;
   onChange: (next: BirthdayDraft) => void;
-  invalid: boolean;
+  /** The refusal from the last Save, on the field it names; null when none. */
+  problem: BirthdayDraftProblem | null;
 }) {
-  const days = daysInBirthdayMonth(value.month ?? 1, value.year);
-  const isSet = value.month !== null || value.day !== null;
+  // Without the year, so February always offers the 29th: a year that has
+  // none is the year's refusal ("That year has no February 29."), never a
+  // day that silently vanishes from the list.
+  const days = daysInBirthdayMonth(value.month ?? 1);
+  const isSet =
+    value.month !== null || value.day !== null || value.year !== null;
 
   return (
     <fieldset className="grid gap-3">
@@ -65,7 +72,7 @@ export function BirthdayFields({
             value={value.month === null ? "" : String(value.month)}
             onValueChange={(next) => {
               const month = Number(next);
-              const max = daysInBirthdayMonth(month, value.year);
+              const max = daysInBirthdayMonth(month);
               onChange({
                 ...value,
                 month,
@@ -75,7 +82,7 @@ export function BirthdayFields({
           >
             <SelectTrigger
               id="birthday-month"
-              aria-invalid={invalid || undefined}
+              aria-invalid={problem?.field === "month" || undefined}
               aria-describedby="birthday-hint"
             >
               <SelectValue placeholder={BIRTHDAY_COPY.monthLabel} />
@@ -99,7 +106,7 @@ export function BirthdayFields({
           >
             <SelectTrigger
               id="birthday-day"
-              aria-invalid={invalid || undefined}
+              aria-invalid={problem?.field === "day" || undefined}
               aria-describedby="birthday-hint"
             >
               <SelectValue placeholder={BIRTHDAY_COPY.dayLabel} />
@@ -121,6 +128,8 @@ export function BirthdayFields({
           </Label>
           <Input
             id="birthday-year"
+            aria-invalid={problem?.field === "year" || undefined}
+            aria-describedby="birthday-hint"
             type="number"
             inputMode="numeric"
             min={BIRTH_YEAR_MIN}
@@ -139,14 +148,14 @@ export function BirthdayFields({
       </div>
       <p
         id="birthday-hint"
-        role={invalid ? "alert" : undefined}
+        role={problem ? "alert" : undefined}
         className={
-          invalid
+          problem
             ? "text-caption text-destructive-text"
             : "text-caption text-muted-foreground"
         }
       >
-        {invalid ? BIRTHDAY_COPY.invalid : BIRTHDAY_COPY.yearHint}
+        {problem ? problem.message : BIRTHDAY_COPY.yearHint}
       </p>
       <div className="grid gap-2">
         <SegmentedChoice

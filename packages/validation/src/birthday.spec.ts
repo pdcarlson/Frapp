@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  BIRTHDAY_COPY,
   birthdayDateInYear,
+  birthdayDraftProblem,
   daysInBirthdayMonth,
   formatBirthday,
   isValidBirthday,
@@ -56,5 +58,31 @@ describe("birthdayDateInYear", () => {
     expect(birthdayDateInYear(2, 29, 2027)).toEqual({ month: 2, day: 28 });
     expect(birthdayDateInYear(2, 29, 2028)).toEqual({ month: 2, day: 29 });
     expect(birthdayDateInYear(7, 4, 2027)).toEqual({ month: 7, day: 4 });
+  });
+});
+
+describe("birthdayDraftProblem", () => {
+  it("takes a whole birthday, or nothing at all", () => {
+    expect(birthdayDraftProblem(3, 4, null)).toBeNull();
+    expect(birthdayDraftProblem(2, 29, 2004)).toBeNull();
+    expect(birthdayDraftProblem(null, null, null)).toBeNull();
+  });
+
+  it("names the part that's missing or wrong", () => {
+    expect(birthdayDraftProblem(null, 4, null)?.field).toBe("month");
+    expect(birthdayDraftProblem(3, null, null)?.field).toBe("day");
+    expect(birthdayDraftProblem(null, null, 2004)?.field).toBe("month");
+    expect(birthdayDraftProblem(4, 31, null)?.field).toBe("day");
+  });
+
+  it("puts a bad year on the year, with its own words", () => {
+    expect(birthdayDraftProblem(3, 4, 204)).toEqual({
+      field: "year",
+      message: BIRTHDAY_COPY.yearInvalid,
+    });
+    expect(birthdayDraftProblem(2, 29, 2003)).toEqual({
+      field: "year",
+      message: BIRTHDAY_COPY.notLeapYear,
+    });
   });
 });

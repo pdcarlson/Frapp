@@ -11,7 +11,7 @@ import {
   profileStatsErrorNote,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { can, formatBirthday } from "@repo/validation";
+import { BIRTHDAY_COPY, can, formatBirthday } from "@repo/validation";
 import {
   PROFILE_PHOTO_SIZE,
   ProfilePhoto,
@@ -203,7 +203,7 @@ export function ProfileDetails({
         />
         <ListRow
           variant="detail"
-          label="Birthday"
+          label={BIRTHDAY_COPY.label}
           value={ownBirthdayLabel(profile)}
           accessibilityHint={EDIT_HINT}
           onPress={onEdit}
@@ -392,5 +392,7 @@ function ownBirthdayLabel(profile: ViewerProfile | null | undefined): string {
     return "Not set";
   }
   const day = formatBirthday(profile.birthdayMonth, profile.birthdayDay);
-  return profile.birthdayVisibility === "chapter" ? day : `${day} · Only you`;
+  return profile.birthdayVisibility === "chapter"
+    ? day
+    : `${day} · ${BIRTHDAY_COPY.visibility[profile.birthdayVisibility]}`;
 }

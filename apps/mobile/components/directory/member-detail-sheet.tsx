@@ -22,7 +22,12 @@ import {
   useRoles,
   useViewerUserId,
 } from "@repo/hooks";
-import { can, resolveRoleChips, roleColorOrNull } from "@repo/validation";
+import {
+  BIRTHDAY_COPY,
+  can,
+  resolveRoleChips,
+  roleColorOrNull,
+} from "@repo/validation";
 import { usePledgeClassRows } from "@/lib/directory/pledge-class";
 import { MemberAvatar } from "@/components/member-avatar";
 import { AvatarWithPresence } from "@/components/avatar-with-presence";
@@ -534,7 +539,7 @@ export const MemberDetailSheet = forwardRef<
                 {detail.birthday ? (
                   <ListRow
                     variant="detail"
-                    label="Birthday"
+                    label={BIRTHDAY_COPY.label}
                     value={detail.birthday}
                   />
                 ) : null}

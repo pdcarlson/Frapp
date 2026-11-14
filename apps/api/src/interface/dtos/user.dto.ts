@@ -295,7 +295,9 @@ export class UpdateUserDto {
     description:
       "Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default.",
   })
-  @IsOptional()
+  // Not `@IsOptional()`: it skips null too, and the column is NOT NULL, so
+  // a null would pass here and fail as a 500. Omit is legal; null is a 400.
+  @ValidateIf((_obj, value) => value !== undefined)
   @IsIn(BIRTHDAY_VISIBILITIES)
   birthday_visibility?: BirthdayVisibility;
 }

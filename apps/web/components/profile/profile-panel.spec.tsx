@@ -374,6 +374,27 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
     expect(mocks.updateUser.mutateAsync).not.toHaveBeenCalled();
   });
 
+  it("puts a year without February 29 on the year, not the day (#4959)", async () => {
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      birthday_month: 2,
+      birthday_day: 29,
+      birthday_year: null,
+      birthday_visibility: "nobody",
+    } as typeof mocks.userQuery.data;
+    render(<ProfilePanel />);
+
+    const year = screen.getByLabelText("Year (optional)");
+    await userEvent.type(year, "2003");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "That year has no February 29.",
+    );
+    expect(year).toHaveAttribute("aria-invalid", "true");
+    expect(mocks.updateUser.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("refuses something that isn't a phone number, and says so", async () => {
     render(<ProfilePanel />);
 

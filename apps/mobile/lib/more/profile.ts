@@ -3,7 +3,10 @@
  * with web, in `@repo/hooks` (`profile-stats.ts`), as are the major · company ·
  * year line and `formatGraduationYear`.
  */
-import type { BirthdayVisibility } from "@repo/validation";
+import {
+  type BirthdayVisibility,
+  parseBirthdayVisibility,
+} from "@repo/validation";
 import { initialsFor, isRecord, num, str } from "./narrow";
 
 export interface ViewerProfile {
@@ -46,7 +49,8 @@ export function selectViewerProfile(data: unknown): ViewerProfile | null {
     birthdayMonth: num(data, "birthday_month"),
     birthdayDay: num(data, "birthday_day"),
     birthdayYear: num(data, "birthday_year"),
-    birthdayVisibility:
-      str(data, "birthday_visibility") === "chapter" ? "chapter" : "nobody",
+    birthdayVisibility: parseBirthdayVisibility(
+      str(data, "birthday_visibility"),
+    ),
   };
 }

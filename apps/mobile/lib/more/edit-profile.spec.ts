@@ -10,7 +10,7 @@ import {
   type ProfileDraft,
 } from "./edit-profile";
 import type { ViewerProfile } from "./profile";
-import { PHONE_INVALID_MESSAGE } from "@repo/validation";
+import { BIRTHDAY_COPY, PHONE_INVALID_MESSAGE } from "@repo/validation";
 
 /** #3387. s15's Edit sheet: what it opens on, and what a save sends. */
 
@@ -138,19 +138,33 @@ describe("profilePatch birthday (#4959)", () => {
     });
   });
 
-  it("refuses half a birthday or a day the month lacks", () => {
+  it("refuses on the part that is missing or wrong", () => {
     expect(
       profilePatch(ORIGINAL, edited({ birthdayMonth: "3" })),
-    ).toMatchObject({ ok: false, field: "birthdayMonth" });
+    ).toMatchObject({ ok: false, field: "birthdayDay" });
     expect(
       profilePatch(ORIGINAL, edited({ birthdayMonth: "4", birthdayDay: "31" })),
-    ).toMatchObject({ ok: false, field: "birthdayMonth" });
+    ).toMatchObject({ ok: false, field: "birthdayDay" });
     expect(
       profilePatch(
         ORIGINAL,
         edited({ birthdayMonth: "2", birthdayDay: "29", birthdayYear: "2003" }),
       ),
-    ).toMatchObject({ ok: false, field: "birthdayMonth" });
+    ).toMatchObject({
+      ok: false,
+      field: "birthdayYear",
+      message: BIRTHDAY_COPY.notLeapYear,
+    });
+    expect(
+      profilePatch(
+        ORIGINAL,
+        edited({ birthdayMonth: "3", birthdayDay: "4", birthdayYear: "204" }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      field: "birthdayYear",
+      message: BIRTHDAY_COPY.yearInvalid,
+    });
   });
 
   it("clears the birthday when every part is blanked", () => {

@@ -1,9 +1,10 @@
 import type { components } from "@repo/api-sdk";
 import {
-  BIRTHDAY_COPY,
+  birthdayDraftProblem,
+  type BirthdayDraftProblem,
   GRADUATION_YEAR_MESSAGE,
   isPhoneNumber,
-  isValidBirthday,
+  parseBirthdayVisibility,
   MAJOR_MAX_LENGTH,
   parseGraduationYear,
   PHONE_INVALID_MESSAGE,
@@ -71,15 +72,28 @@ export function draftFromProfile(profile: ViewerProfile | null): ProfileDraft {
   };
 }
 
+/** The draft field each part of a birthday refusal lands on. */
+const BIRTHDAY_DRAFT_FIELD: Record<
+  BirthdayDraftProblem["field"],
+  ProfileDraftField
+> = {
+  month: "birthdayMonth",
+  day: "birthdayDay",
+  year: "birthdayYear",
+};
+
 function digits(value: number | null | undefined): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-/** A typed whole number, `null` for blank, `undefined` for anything else. */
-function typedInt(value: string): number | null | undefined {
+/**
+ * A typed whole number, `null` for blank, and `NaN` for anything else, which
+ * `birthdayDraftProblem` refuses on that field.
+ */
+function typedNumber(value: string): number | null {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
-  return /^\d+$/.test(trimmed) ? Number(trimmed) : undefined;
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
 }
 
 /**
@@ -150,30 +164,28 @@ export function profilePatch(
     ["birthdayMonth", "birthdayDay", "birthdayYear"] as const
   ).some((key) => draft[key].trim() !== original[key].trim());
   if (birthdayChanged) {
-    const month = typedInt(draft.birthdayMonth);
-    const day = typedInt(draft.birthdayDay);
-    const year = typedInt(draft.birthdayYear);
-    const cleared = month === null && day === null && year === null;
-    if (
-      !cleared &&
-      (month == null ||
-        day == null ||
-        year === undefined ||
-        !isValidBirthday(month, day, year))
-    ) {
+    // Non-digit text is a part that isn't a number: NaN fails its check.
+    const month = typedNumber(draft.birthdayMonth);
+    const day = typedNumber(draft.birthdayDay);
+    const year = typedNumber(draft.birthdayYear);
+    const problem = birthdayDraftProblem(month, day, year);
+    if (problem) {
+      // On the part that is wrong, so it shows when the member leaves it.
       return {
         ok: false,
-        field: "birthdayMonth",
-        message: BIRTHDAY_COPY.invalid,
+        field: BIRTHDAY_DRAFT_FIELD[problem.field],
+        message: problem.message,
       };
     }
+    const cleared = month === null && day === null && year === null;
     patch.birthday_month = cleared ? null : month;
     patch.birthday_day = cleared ? null : day;
     patch.birthday_year = cleared ? null : year;
   }
   if (draft.birthdayVisibility !== original.birthdayVisibility) {
-    patch.birthday_visibility =
-      draft.birthdayVisibility === "chapter" ? "chapter" : "nobody";
+    patch.birthday_visibility = parseBirthdayVisibility(
+      draft.birthdayVisibility,
+    );
   }
 
   const bio = draft.bio.trim();

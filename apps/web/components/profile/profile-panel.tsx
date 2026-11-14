@@ -14,12 +14,13 @@ import {
 } from "@repo/hooks";
 import {
   BIRTHDAY_VISIBILITY_DEFAULT,
+  type BirthdayDraftProblem,
+  birthdayDraftProblem,
   type BirthdayVisibility,
   can,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   isPhoneNumber,
-  isValidBirthday,
   MAJOR_MAX_LENGTH,
   PHONE_INVALID_MESSAGE,
   PHONE_MAX_LENGTH,
@@ -102,7 +103,8 @@ export function ProfilePanel() {
   // (validate on submit, not per keystroke: components.md § Text input).
   const [phoneError, setPhoneError] = useState(false);
   // Set on a submit with half a birthday, or a day its month lacks (#4959).
-  const [birthdayError, setBirthdayError] = useState(false);
+  const [birthdayError, setBirthdayError] =
+    useState<BirthdayDraftProblem | null>(null);
 
   // The server payload the draft was last seeded from, so a re-seed can tell a
   // field the member edited from one they left alone.
@@ -189,12 +191,9 @@ export function ProfilePanel() {
     const month = profileDraft.birthday_month ?? null;
     const day = profileDraft.birthday_day ?? null;
     const year = profileDraft.birthday_year ?? null;
-    if (
-      (month === null) !== (day === null) ||
-      (month !== null && day !== null && !isValidBirthday(month, day, year)) ||
-      (month === null && year !== null)
-    ) {
-      setBirthdayError(true);
+    const birthdayProblem = birthdayDraftProblem(month, day, year);
+    if (birthdayProblem) {
+      setBirthdayError(birthdayProblem);
       return;
     }
     try {
@@ -489,9 +488,9 @@ export function ProfilePanel() {
                 visibility:
                   profile.birthday_visibility ?? BIRTHDAY_VISIBILITY_DEFAULT,
               }}
-              invalid={birthdayError}
+              problem={birthdayError}
               onChange={(next) => {
-                setBirthdayError(false);
+                setBirthdayError(null);
                 setProfileDraft((prev) => ({
                   ...prev,
                   birthday_month: next.month,

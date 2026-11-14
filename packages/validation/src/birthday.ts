@@ -2,8 +2,7 @@
  * A member's birthday (#4959): month and day, an optional year that is never
  * shown to anyone else, and who may see it. The API enforces these rules
  * (`UpdateUserDto`, the `users_birthday_valid` check); the profile forms on
- * web and the phone read them so a refusal comes before the round trip, and
- * both calendars place a birthday with {@link birthdayDateInYear}.
+ * web and the phone read them so a refusal comes before the round trip.
  *
  * Modelled on how people already meet birthdays: Facebook asks for month and
  * day with the year optional and lets the member pick who sees it; Discord
@@ -14,6 +13,13 @@
 export const BIRTHDAY_VISIBILITIES = ["chapter", "nobody"] as const;
 export type BirthdayVisibility = (typeof BIRTHDAY_VISIBILITIES)[number];
 export const BIRTHDAY_VISIBILITY_DEFAULT: BirthdayVisibility = "nobody";
+
+/** A stored or typed visibility, or the default for anything unknown. */
+export function parseBirthdayVisibility(value: unknown): BirthdayVisibility {
+  return (BIRTHDAY_VISIBILITIES as readonly unknown[]).includes(value)
+    ? (value as BirthdayVisibility)
+    : BIRTHDAY_VISIBILITY_DEFAULT;
+}
 
 /** The bounds the API and the database check take a birth year in. */
 export const BIRTH_YEAR_MIN = 1900;
@@ -74,6 +80,45 @@ export function isValidBirthday(
   return day <= daysInBirthdayMonth(month, year);
 }
 
+/** Which part of a birthday being typed is wrong, and what to tell the member. */
+export interface BirthdayDraftProblem {
+  field: "month" | "day" | "year";
+  message: string;
+}
+
+/**
+ * Why a birthday a member typed can't be saved, naming the part to fix, or
+ * null when it can (all three empty clears it). The profile forms on web and
+ * the phone both read it, so the refusal sits on the field that is wrong.
+ * The API's own check is {@link isValidBirthday}; this agrees with it.
+ */
+export function birthdayDraftProblem(
+  month: number | null,
+  day: number | null,
+  year: number | null,
+): BirthdayDraftProblem | null {
+  if (month === null && day === null && year === null) return null;
+  if (
+    year !== null &&
+    (!Number.isInteger(year) || year < BIRTH_YEAR_MIN || year > BIRTH_YEAR_MAX)
+  ) {
+    return { field: "year", message: BIRTHDAY_COPY.yearInvalid };
+  }
+  if (month === null || !Number.isInteger(month) || month < 1 || month > 12) {
+    return { field: "month", message: BIRTHDAY_COPY.invalid };
+  }
+  if (day === null || !Number.isInteger(day) || day < 1) {
+    return { field: "day", message: BIRTHDAY_COPY.invalid };
+  }
+  if (day > daysInBirthdayMonth(month, year)) {
+    // A real day for the month but not the year: 29 February.
+    return day <= daysInBirthdayMonth(month)
+      ? { field: "year", message: BIRTHDAY_COPY.notLeapYear }
+      : { field: "day", message: BIRTHDAY_COPY.invalid };
+  }
+  return null;
+}
+
 /** "March 4". The year is never part of it: no surface shows it. */
 export function formatBirthday(month: number, day: number): string {
   const name = BIRTHDAY_MONTH_NAMES[month - 1];
@@ -108,10 +153,11 @@ export const BIRTHDAY_COPY = {
     nobody: "Only you",
   } satisfies Record<BirthdayVisibility, string>,
   visibilityHint: {
-    chapter:
-      "Members of your chapter see the day on your profile and the calendar.",
-    nobody: "Nobody else sees it, and it stays off the calendar.",
+    chapter: "Members of your chapter see the day on your profile.",
+    nobody: "Nobody else sees it.",
   } satisfies Record<BirthdayVisibility, string>,
   invalid: "Pick a month and a day that exists in it.",
+  yearInvalid: `Enter a year from ${BIRTH_YEAR_MIN} to ${BIRTH_YEAR_MAX}, or leave it empty.`,
+  notLeapYear: "That year has no February 29.",
   clear: "Remove birthday",
 } as const;
