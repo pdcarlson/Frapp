@@ -17,6 +17,7 @@ import { EventRowFlat } from "@/components/events/event-rows";
 import { CalendarTaskRow } from "@/components/events/calendar-tasks";
 import { EventsTimeGrid } from "@/components/events/events-time-grid";
 import { Segmented } from "@/components/segmented";
+import { useRequiredOfViewer } from "@repo/hooks";
 import { consecutiveDays } from "@repo/hooks/calendar-time-grid";
 import type { CalendarItem } from "@repo/hooks/calendar-tasks";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -24,13 +25,14 @@ import {
   CALENDAR_RANGE_DAYS,
   type CalendarRange,
 } from "@/lib/events/events-view";
+import { monthCellSummary } from "@/lib/events/month-cell";
 import { selectSeriesCadence, type EventRow } from "@/lib/events/select";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * s06's Calendar view (#3792): a month grid with a dot under each day that has
- * an event, the selected day's events listed under it, and the month moved
- * with the chevrons or a sideways swipe.
+ * s06's Calendar view (#3792): a month grid that writes each day's events by
+ * title in its cell (#4987, `monthCellSummary`), the selected day's events
+ * listed under it, and the month moved with the chevrons or a sideways swipe.
  *
  * Every occurrence of a series is marked on its own day, while the List draws
  * a series once (#3792 § Notes). The grid is `@repo/formatting`'s `monthGrid`,
@@ -55,6 +57,10 @@ const RANGE_OPTIONS = [
 ] as const satisfies readonly { value: CalendarRange; label: string }[];
 
 const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"] as const;
+
+/** A month cell's title text: below the caption role, see `cellLine`. */
+const CELL_TEXT_SIZE = 11;
+const CELL_LINE_HEIGHT = 16;
 
 /** How far a finger travels sideways before a swipe turns the month. */
 const SWIPE_DISTANCE = 48;
@@ -119,6 +125,7 @@ export function EventsCalendar({
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
+  const requiredOf = useRequiredOfViewer();
   const styles = createStyles(tokens);
 
   const byDay = useMemo(() => {
@@ -184,9 +191,11 @@ export function EventsCalendar({
   const stepNoun =
     range === "month" ? "month" : range === "day" ? "day" : "3 days";
 
+  // `monthGrid` always draws six weeks; a week with no day of this month
+  // is dropped, so a five-week month gives that row to the day list.
   const weeks = Array.from({ length: 6 }, (_, row) =>
     days.slice(row * 7, row * 7 + 7),
-  );
+  ).filter((week) => week.some((day) => day.getMonth() === month.getMonth()));
 
   return (
     <View style={styles.root}>
@@ -258,26 +267,34 @@ export function EventsCalendar({
                 <View key={localIsoDate(week[0]!)} style={styles.week}>
                   {week.map((day) => {
                     const key = localIsoDate(day);
-                    const count = byDay.get(key)?.length ?? 0;
-                    const cellItems = tasksByDay.get(key) ?? [];
-                    const birthdayCount = cellItems.filter(
-                      (item) => item.kind === "birthdays",
-                    ).length;
-                    const taskCount = cellItems.length - birthdayCount;
-                    const hasOverdue = cellItems.some(
-                      (item) =>
-                        item.kind !== "birthdays" && item.state === "overdue",
+                    const cell = monthCellSummary(
+                      byDay.get(key) ?? [],
+                      tasksByDay.get(key) ?? [],
+                      requiredOf,
                     );
-                    const counts = [
-                      count === 0
+                    const spoken = [
+                      cell.eventCount === 0
                         ? null
-                        : `${count} ${count === 1 ? "event" : "events"}`,
-                      taskCount === 0
+                        : `${cell.eventCount} ${cell.eventCount === 1 ? "event" : "events"}`,
+                      ...cell.lines
+                        .filter((line) => line.kind === "event")
+                        .map((line) => line.title),
+                      cell.hidden > 0 ? `${cell.hidden} more` : null,
+                      cell.taskCount === 0
                         ? null
-                        : `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`,
-                      birthdayCount === 0
+                        : `${cell.taskCount} ${cell.taskCount === 1 ? "task" : "tasks"}`,
+                      cell.overdue ? "overdue" : null,
+                      cell.birthdayCount === 0
                         ? null
-                        : `${birthdayCount} ${birthdayCount === 1 ? "birthday" : "birthdays"}`,
+                        : `${cell.birthdayCount} ${cell.birthdayCount === 1 ? "birthday" : "birthdays"}`,
+                    ].filter(Boolean);
+                    const footer = [
+                      cell.hidden > 0 ? `+${cell.hidden}` : null,
+                      cell.taskCount === 0
+                        ? null
+                        : cell.overdue
+                          ? "Overdue"
+                          : `${cell.taskCount} ${cell.taskCount === 1 ? "task" : "tasks"}`,
                     ].filter(Boolean);
                     const inMonth = day.getMonth() === month.getMonth();
                     const isToday = key === todayKey;
@@ -291,7 +308,7 @@ export function EventsCalendar({
                       <Pressable
                         key={key}
                         accessibilityRole="button"
-                        accessibilityLabel={[label, ...counts].join(", ")}
+                        accessibilityLabel={[label, ...spoken].join(", ")}
                         accessibilityState={{ selected: isSelected }}
                         onPress={() => onSelectDay(day)}
                         style={styles.cell}
@@ -320,51 +337,51 @@ export function EventsCalendar({
                           </Text>
                         </View>
                         {/*
-                      A dot is an event, a ring is something due: red while
-                      any of the day's tasks is overdue.
+                      The day's events by title, then its birthdays (#4959)
+                      in the chapter accent; an event required of the viewer
+                      takes the accent too. One line under them folds what
+                      didn't fit and counts the tasks due, red while any is
+                      overdue.
                     */}
-                        <View style={styles.marks}>
-                          {count > 0 ? (
-                            <View
-                              testID={`event-dot-${key}`}
-                              style={[
-                                styles.dot,
-                                {
-                                  backgroundColor:
-                                    tokens.color.text.mutedForeground,
-                                },
-                              ]}
-                            />
-                          ) : null}
-                          {birthdayCount > 0 ? (
-                            // A birthday (#4959): a square in the chapter
-                            // accent, apart from an event's grey dot and a
-                            // task's ring by colour as well as shape.
-                            <View
-                              testID={`birthday-mark-${key}`}
-                              style={[
-                                styles.dot,
-                                styles.birthdayMark,
-                                { backgroundColor: accent },
-                              ]}
-                            />
-                          ) : null}
-                          {taskCount > 0 ? (
-                            <View
-                              testID={`task-ring-${key}`}
-                              style={[
-                                styles.dot,
-                                styles.ring,
-                                hasOverdue
-                                  ? {
-                                      borderColor:
-                                        tokens.color.semantic.destructiveText,
-                                    }
-                                  : null,
-                              ]}
-                            />
-                          ) : null}
-                        </View>
+                        {cell.lines.map((line) => (
+                          <Text
+                            key={line.key}
+                            testID={
+                              line.kind === "event"
+                                ? `event-title-${key}`
+                                : `birthday-mark-${key}`
+                            }
+                            numberOfLines={1}
+                            // Clipped, not "…": two more letters fit, as in
+                            // Google Calendar's month.
+                            ellipsizeMode="clip"
+                            style={[
+                              styles.cellLine,
+                              line.kind === "birthday" ||
+                              (line.kind === "event" && line.required)
+                                ? {
+                                    backgroundColor: tint(accent, 0.22),
+                                    color: accent,
+                                  }
+                                : null,
+                              inMonth ? null : styles.outsideLine,
+                            ]}
+                          >
+                            {line.title}
+                          </Text>
+                        ))}
+                        {footer.length > 0 ? (
+                          <Text
+                            testID={`cell-footer-${key}`}
+                            numberOfLines={1}
+                            style={[
+                              styles.cellFooter,
+                              cell.overdue ? styles.cellFooterOverdue : null,
+                            ]}
+                          >
+                            {footer.join(" · ")}
+                          </Text>
+                        ) : null}
                       </Pressable>
                     );
                   })}
@@ -460,7 +477,7 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
     },
     grid: {
-      gap: tokens.spacing.xs,
+      gap: 0,
     },
     week: {
       flexDirection: "row",
@@ -476,15 +493,21 @@ function createStyles(tokens: SignetTokens) {
     },
     cell: {
       flex: 1,
-      alignItems: "center",
+      minWidth: 0,
+      alignItems: "stretch",
       gap: 2,
-      minHeight: tokens.touch.minimum,
-      paddingVertical: 2,
+      // The day number and two lines; a day with more grows its week.
+      minHeight: 64,
+      paddingVertical: 3,
+      paddingHorizontal: 1,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: tokens.color.border.hairline,
     },
     dayChip: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
+      alignSelf: "center",
+      width: 26,
+      height: 26,
+      borderRadius: 13,
       alignItems: "center",
       justifyContent: "center",
       borderWidth: 1,
@@ -494,34 +517,41 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tokens.color.border.input,
     },
     dayNumber: {
-      ...typeRole(tokens.typography.role.body),
+      ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
     },
     todayNumber: {
       fontFamily: typeRole({
-        ...tokens.typography.role.body,
+        ...tokens.typography.role.label,
         weight: tokens.typography.weight.bold,
       }).fontFamily,
     },
     outsideMonth: {
       color: tokens.color.text.mutedForeground,
     },
-    marks: {
-      flexDirection: "row",
-      gap: 2,
-      height: 5,
+    cellLine: {
+      // Below the caption role on purpose: a cell is a seventh of a phone,
+      // and at 12.5 a title shows five letters (#4987).
+      ...typeRole({ ...tokens.typography.role.caption, size: CELL_TEXT_SIZE }),
+      lineHeight: CELL_LINE_HEIGHT,
+      height: CELL_LINE_HEIGHT,
+      paddingHorizontal: 2,
+      borderRadius: 4,
+      overflow: "hidden",
+      backgroundColor: tokens.color.surface.card,
+      color: tokens.color.text.foreground,
     },
-    dot: {
-      width: 5,
-      height: 5,
-      borderRadius: 2.5,
+    outsideLine: {
+      opacity: 0.6,
     },
-    ring: {
-      borderWidth: 1,
-      borderColor: tokens.color.text.mutedForeground,
+    cellFooter: {
+      ...typeRole({ ...tokens.typography.role.caption, size: CELL_TEXT_SIZE }),
+      lineHeight: CELL_LINE_HEIGHT,
+      paddingHorizontal: 3,
+      color: tokens.color.text.muted,
     },
-    birthdayMark: {
-      borderRadius: 1,
+    cellFooterOverdue: {
+      color: tokens.color.semantic.destructiveText,
     },
   });
 }

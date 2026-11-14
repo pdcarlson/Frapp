@@ -653,8 +653,8 @@ describe("Events view switch", () => {
     expect(
       tree.root.findAll(
         (node) =>
-          (node.type as unknown) === "View" &&
-          String(node.props.testID).startsWith("event-dot-"),
+          (node.type as unknown) === "Text" &&
+          String(node.props.testID).startsWith("event-title-"),
       ),
     ).toHaveLength(1);
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
@@ -723,7 +723,7 @@ describe("Events view switch", () => {
     const day = tree.root.find(
       (node) =>
         typeof node.props.onPress === "function" &&
-        String(node.props.accessibilityLabel).endsWith(", 1 event"),
+        String(node.props.accessibilityLabel).includes(", 1 event, "),
     );
     act(() => day.props.onPress());
     // Six weeks on, the tab still mounted.
@@ -777,7 +777,7 @@ describe("Events view switch", () => {
     const day = tree.root.find(
       (node) =>
         typeof node.props.onPress === "function" &&
-        String(node.props.accessibilityLabel).endsWith(", 1 event"),
+        String(node.props.accessibilityLabel).includes(", 1 event, "),
     );
     act(() => day.props.onPress());
     expect(screenText(tree)).toContain("Chapter meeting");
@@ -874,12 +874,12 @@ describe("Tasks on the Calendar", () => {
     expect(styleOf(tree, "Dues form").fontSize).toBe(
       signetDarkTokens.typography.role.label.size,
     );
-    // A ring marks the day, beside the event dot.
+    // The day's cell counts what's due under the event's title.
     expect(
       tree.root.findAll(
         (node) =>
-          (node.type as unknown) === "View" &&
-          String(node.props.testID).startsWith("task-ring-"),
+          (node.type as unknown) === "Text" &&
+          String(node.props.testID).startsWith("cell-footer-"),
       ),
     ).toHaveLength(1);
   });
