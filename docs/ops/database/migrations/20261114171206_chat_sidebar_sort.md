@@ -1,4 +1,4 @@
-# 20261114160211_chat_sidebar_sort.sql
+# 20261114171206_chat_sidebar_sort.sql
 
 <!-- One page per migration: its promotion entry and its rollback recipe.
      check:migration-safety reads the two headings below. Shared procedure
