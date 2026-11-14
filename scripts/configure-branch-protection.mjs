@@ -37,6 +37,11 @@
  * The PAT needs "repo" scope for public repos or "admin:repo" for private repos.
  *
  * Required status checks map to emitted GitHub check-run names.
+ *
+ * The merge queue is read and verified here but never written: it lives in the
+ * repository ruleset for `main`, which classic protection's API cannot reach,
+ * and turning it on is a human step in the ruleset UI (MERGE_QUEUE in
+ * `scripts/ci/lib/required-checks.mjs`).
  */
 
 import { execSync } from "node:child_process";
@@ -44,7 +49,7 @@ import { fileURLToPath } from "node:url";
 
 import { loadEnvFiles } from "./lib/env-file.mjs";
 import { ghRequest } from "./ci/lib/github.mjs";
-import { ALL_REQUIRED_CHECKS, REQUIRE_UP_TO_DATE } from "./ci/lib/required-checks.mjs";
+import { ALL_REQUIRED_CHECKS, MERGE_QUEUE, REQUIRE_UP_TO_DATE } from "./ci/lib/required-checks.mjs";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
@@ -428,6 +433,64 @@ export function assertRosterFloor(contexts) {
   }
 }
 
+// ── Merge queue (read and verified, never written) ──────────────────────────
+//
+// `GET /repos/{repo}/rules/branches/{branch}` returns every ruleset rule active
+// on the branch, flattened: `[{type: "merge_queue", parameters: {...}}, ...]`.
+// Classic protection's GET says nothing about the queue, so this is the only
+// read that can answer whether it is on.
+
+/** The active `merge_queue` rule's parameters, or null when there is none. */
+export function findMergeQueueRule(rules) {
+  if (!Array.isArray(rules)) return null;
+  const rule = rules.find((r) => r && typeof r === "object" && r.type === "merge_queue");
+  if (!rule) return null;
+  return rule.parameters && typeof rule.parameters === "object" ? rule.parameters : {};
+}
+
+/**
+ * How the live queue differs from `desired` (MERGE_QUEUE). The timeout is a
+ * floor, since a longer one only waits longer on a hung check; the merge method
+ * and grouping must match exactly.
+ *
+ * @param {{rules: unknown, desired: object|null}} input
+ */
+export function diffMergeQueue({ rules, desired }) {
+  const live = findMergeQueueRule(rules);
+  if (!desired) {
+    return { missing: false, unexpected: live !== null, changes: [] };
+  }
+  if (live === null) return { missing: true, unexpected: false, changes: [] };
+
+  const changes = [];
+  for (const field of ["merge_method", "grouping_strategy"]) {
+    if (desired[field] !== undefined && live[field] !== desired[field]) {
+      changes.push({ field, from: live[field], to: desired[field] });
+    }
+  }
+  const floor = desired.check_response_timeout_minutes;
+  if (typeof floor === "number" && !(Number(live.check_response_timeout_minutes) >= floor)) {
+    changes.push({
+      field: "check_response_timeout_minutes",
+      from: live.check_response_timeout_minutes,
+      to: `at least ${floor}`,
+    });
+  }
+  return { missing: false, unexpected: false, changes };
+}
+
+/** The merge queue diff as printable lines. Empty array means it matches. */
+export function formatMergeQueueDiff(diff) {
+  if (!diff || typeof diff !== "object") return [];
+  const lines = [];
+  if (diff.missing) lines.push("  ! merge queue is OFF — no ruleset rule requires one on this branch");
+  if (diff.unexpected) lines.push("  ! merge queue is ON, but the roster declares none");
+  for (const change of diff.changes ?? []) {
+    lines.push(`  ~ merge queue ${change.field}: ${String(change.from)} -> ${String(change.to)}`);
+  }
+  return lines;
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -461,6 +524,7 @@ async function main() {
   const verify = hasFlag("--verify");
   const driftedBranches = [];
   const unconfirmedBranches = [];
+  const queueDriftedBranches = [];
 
   console.log(`Repository: ${repoSlug}`);
   console.log(`Mode: ${verify ? "VERIFY (read-only)" : dryRun ? "DRY RUN" : "LIVE"}`);
@@ -606,17 +670,74 @@ async function main() {
       }
       console.log("");
     }
+
+    // ── Merge queue: read, report, never write ─────────────────────────────
+    console.log("  Merge queue (repository ruleset; this script never writes it):");
+    if (MERGE_QUEUE) {
+      console.log(
+        `    declared: ${MERGE_QUEUE.merge_method}, ${MERGE_QUEUE.grouping_strategy}, ` +
+          `checks timeout at least ${MERGE_QUEUE.check_response_timeout_minutes} min`,
+      );
+    } else {
+      console.log("    declared: none");
+    }
+    let rules = null;
+    let rulesFailure = null;
+    if (token) {
+      try {
+        rules = await callGitHubApi({
+          token,
+          method: "GET",
+          path: `/repos/${repoSlug}/rules/branches/${branch}`,
+        });
+      } catch (error) {
+        rulesFailure = describeError(error);
+      }
+    } else {
+      rulesFailure = "no token supplied, and --dry-run does not require one";
+    }
+    if (rulesFailure) {
+      console.log(`    Could not read the branch's ruleset rules: ${rulesFailure}`);
+      if (verify) {
+        throw new Error(
+          `--verify cannot confirm the merge queue on ${branch}: its rules are unreadable ` +
+            `(${rulesFailure}). An unreadable answer is not a passing one.`,
+        );
+      }
+    } else {
+      const queueLines = formatMergeQueueDiff(diffMergeQueue({ rules, desired: MERGE_QUEUE }));
+      if (queueLines.length === 0) {
+        console.log("    Live merge queue matches the roster.");
+      } else {
+        for (const line of queueLines) console.log(`  ${line}`);
+        console.log(
+          "    Set it in the repository ruleset for this branch (Settings, Rules, Rulesets): " +
+            "docs/ops/github-branch-protection-runbook.md § Merge queue.",
+        );
+        if (verify) queueDriftedBranches.push(branch);
+      }
+    }
+    console.log("");
   }
 
   if (verify) {
+    const failures = [];
     if (driftedBranches.length > 0) {
-      throw new Error(
+      failures.push(
         `Live branch protection does not match this roster for: ${driftedBranches.join(", ")}. ` +
           "Applying is a human step with an admin PAT: ask for `npm run configure:branch-protection` " +
           "to be run. Do not run it from an agent session — with no flags it is a live PUT of the " +
           "whole payload, and `--dry-run` without the `--` separator is swallowed by npm and applies.",
       );
     }
+    if (queueDriftedBranches.length > 0) {
+      failures.push(
+        `The merge queue does not match MERGE_QUEUE for: ${queueDriftedBranches.join(", ")}. ` +
+          "No script applies it: the owner sets it in the branch's repository ruleset " +
+          "(docs/ops/github-branch-protection-runbook.md § Merge queue).",
+      );
+    }
+    if (failures.length > 0) throw new Error(failures.join(" "));
     console.log("Verify complete. Live branch protection matches this roster.");
   } else if (dryRun) {
     console.log("Dry run complete. No changes were made.");

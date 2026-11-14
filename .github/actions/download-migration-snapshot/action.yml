@@ -33,8 +33,8 @@ description: >
 # ── Newer than the last deploy (`on-stale`) ─────────────────────────────────
 # Freshness matters only where the snapshot gates a merge: runs of the required
 # `migration-order` and `migration-replay` on any ref but `main`. That means a
-# pull request, and also a dispatch on a PR's branch, whose check runs land on
-# the PR's head too. Those callers pass `on-stale: wait`. The step then requires the snapshot to have been read
+# pull request, a merge queue entry (#4795), and also a dispatch on a PR's
+# branch, whose check runs land on the PR's head too. Those callers pass `on-stale: wait`. The step then requires the snapshot to have been read
 # after the latest finished `Deploy staging` or `Deploy production` run on `main`,
 # with no `Deploy staging` run in flight. Those are the only workflows that apply
 # migrations, and each triggers a publish when it finishes. While that is not

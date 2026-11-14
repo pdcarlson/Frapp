@@ -11,8 +11,8 @@ Three checks, deliberately different shapes:
 
 | Check                                                                                                 | When                                                   | Scope                      | On failure                     |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | -------------------------- | ------------------------------ |
-| `migration-order` ([`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml)) | Every PR and every push to `main` — **required check** | Staging **and** production | Blocks the merge               |
-| `migration-drift` (same workflow)                                                                     | Every PR and every push to `main` — **reports only**   | Staging only               | Reports; does not block        |
+| `migration-order` ([`migration-drift-gate.yml`](../../../.github/workflows/migration-drift-gate.yml)) | Every PR, merge queue entry and push to `main` — **required check** | Staging **and** production | Blocks the merge               |
+| `migration-drift` (same workflow)                                                                     | Every PR and every push to `main`, not the merge queue — **reports only** | Staging only               | Reports; does not block        |
 | [`check-migration-drift.yml`](../../../.github/workflows/check-migration-drift.yml)                   | Daily, 07:00 UTC                                       | Staging **and** production | Files/updates a tracking issue |
 
 All three are read-only, and none of them ever repairs anything. The daily
@@ -21,8 +21,8 @@ and sends no SQL. The two PR checks, and `migration-replay` in the same
 workflow, hold no credential at all (#2518). They read the snapshot of that same
 endpoint that
 [`migration-snapshot.yml`](../../../.github/workflows/migration-snapshot.yml)
-publishes from `main` after every deploy. Off `main` (a pull request, or a
-dispatch on a branch), when the snapshot predates the latest deploy,
+publishes from `main` after every deploy. Off `main` (a pull request, a merge
+queue entry, or a dispatch on a branch), when the snapshot predates the latest deploy,
 `migration-order` and `migration-replay` wait for the next publish (the
 budget is set in [`download-migration-snapshot`'s header](../../../.github/actions/download-migration-snapshot/action.yml)),
 then fail and name the publisher
@@ -67,6 +67,15 @@ environments because production is deployed manually and is routinely behind —
 the environment furthest ahead refuses first, and that is usually staging, which
 is exactly why `migration-replay` (which rebuilds _production's_ state) was
 structurally blind to #1373.
+
+In the merge queue it runs on the queue's own commit, built from `main` plus
+every PR ahead of it, and measures against `main`'s tip there, so the introduced
+set is every queued PR's migrations up to this one. It still compares them only
+with what a deployed database has applied, not with each other: two queued PRs
+whose new migrations sort the wrong way round both pass, as they would on PRs.
+`migration-replay` in the queue applies the whole pending set, the PRs ahead
+included, so two migrations that conflict in SQL fail the later PR there
+([`github-branch-protection-runbook.md` § Merge queue](../github-branch-protection-runbook.md#merge-queue)).
 
 ### `migration-drift` — reports, does not block
 
