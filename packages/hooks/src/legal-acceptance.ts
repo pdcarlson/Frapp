@@ -49,9 +49,7 @@ export function useLegalAcceptance(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: legalAcceptanceQueryKey(),
     queryFn: async () => {
-      const { data, error } = await client.GET(
-        "/v1/users/me/legal-acceptance",
-      );
+      const { data, error } = await client.GET("/v1/users/me/legal-acceptance");
       if (error) throw error;
       return data;
     },

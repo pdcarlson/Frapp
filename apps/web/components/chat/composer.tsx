@@ -1599,48 +1599,73 @@ export function Composer({
    * Schedules what is typed (#4956). Rejects, keeping the text, when it can't
    * be scheduled; the custom-time dialog stays open on a rejection.
    */
+  const schedulingRef = useRef(false);
   const schedule = useCallback(
     async (at: Date) => {
-      if (!editor || !onSchedule) return;
+      if (!editor || !onSchedule || schedulingRef.current) return;
       const typed = chatText(editor).trim();
-      const refusal =
-        pending.length > 0 || uploading.length > 0
+      const parsed = parseSlashInput(typed);
+      const command =
+        parsed.isSlash && parsed.command
+          ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
+          : null;
+      const refusal = isOffline
+        ? "Reconnect to schedule a message."
+        : pending.length > 0 || uploading.length > 0
           ? "Files can't be scheduled yet. Send them now, or remove them first."
           : replyTo
             ? "Replies can't be scheduled yet. Remove the reply first."
-            : parseSlashInput(typed).isSlash
+            : command?.implemented
               ? "Commands can't be scheduled. Send them now."
-              : typed.length === 0
-                ? "Type a message to schedule."
-                : null;
+              : // A question for Frapp is never posted (#4713); while it isn't
+                // known whether this member has Ask, it is held the same way.
+                askAccess !== "no" &&
+                  askMentionQuestion(typed, spacedNames) !== null
+                ? "Questions for Frapp can't be scheduled. Send them now."
+                : typed.length === 0
+                  ? "Type a message to schedule."
+                  : null;
       if (refusal) {
         toast({ title: refusal });
         throw new Error(refusal);
       }
       const picks = composerMentionPicks(channelId, editor);
+      // Cleared before the request, as a send is, so a second click finds
+      // nothing to schedule and typing during the request isn't wiped by it.
+      // Put back if it fails and the composer is still empty.
+      const sentDoc = editor.getJSON();
+      schedulingRef.current = true;
+      editor.commands.clearContent(true);
+      onChangeDraft("");
       try {
         await onSchedule(typed, picks, at);
       } catch (error) {
+        if (!editor.isDestroyed && editor.isEmpty) {
+          editor.commands.setContent(sentDoc, { emitUpdate: false });
+          onChangeDraft(chatText(editor));
+        }
         toast({
           title: "Couldn't schedule it",
           description: errorCopy(error),
           variant: "destructive",
         });
         throw error;
-      }
-      if (!editor.isDestroyed) {
-        editor.commands.clearContent(true);
-        onChangeDraft("");
+      } finally {
+        schedulingRef.current = false;
       }
       toast({ title: `Scheduled for ${formatScheduledFor(at, new Date())}` });
     },
     [
+      askAccess,
       channelId,
       editor,
+      isOffline,
       onChangeDraft,
       onSchedule,
       pending.length,
+      recruitmentVocab,
       replyTo,
+      spacedNames,
       toast,
       uploading.length,
     ],
@@ -2273,10 +2298,13 @@ export function Composer({
             </Button>
             {onSchedule ? (
               <ScheduleSendButton
+                // As Send's: a staged file alone enables it, so the refusal
+                // can say files can't be scheduled yet.
                 disabled={
                   !editor ||
-                  editor.isEmpty ||
-                  isBareSlash(chatText(editor).trim())
+                  uploading.length > 0 ||
+                  ((editor.isEmpty || isBareSlash(chatText(editor).trim())) &&
+                    pending.length === 0)
                 }
                 onSchedule={schedule}
               />

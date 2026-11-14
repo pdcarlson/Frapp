@@ -3915,7 +3915,9 @@ export function ChatShell({
             <TypingLine label={typingLine} />
           </>
         ) : null}
-        {activeChannel && activeChannel.can_post !== false ? (
+        {/* Wherever the member can read: a message that failed because they
+            lost posting here is exactly the one they need to see and delete. */}
+        {activeChannel ? (
           <ScheduledMessagesBar channelId={activeChannel.id} />
         ) : null}
         {activeChannel ? (

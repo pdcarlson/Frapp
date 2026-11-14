@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -68,6 +68,34 @@ describe("ScheduleSendButton (#4956)", () => {
     expect(at.getTime()).toBeGreaterThan(Date.now());
   });
 
+  it("custom time: refuses the past, and schedules a time it can use", async () => {
+    const onSchedule = vi.fn().mockResolvedValue(undefined);
+    render(<ScheduleSendButton disabled={false} onSchedule={onSchedule} />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Custom time…" }),
+    );
+    const date = await screen.findByLabelText("Date");
+    const time = screen.getByLabelText("Time");
+    fireEvent.change(date, { target: { value: "2020-01-01" } });
+    fireEvent.change(time, { target: { value: "09:00" } });
+    expect(screen.getByRole("alert")).toHaveTextContent(/future/);
+    expect(screen.getByRole("button", { name: "Schedule" })).toBeDisabled();
+    const soon = new Date(Date.now() + 2 * 86_400_000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    fireEvent.change(date, {
+      target: {
+        value: `${soon.getFullYear()}-${pad(soon.getMonth() + 1)}-${pad(soon.getDate())}`,
+      },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Schedule" }));
+    const at: Date | undefined = onSchedule.mock.calls[0]?.[0];
+    expect(at?.getHours()).toBe(9);
+    expect(at?.getDate()).toBe(soon.getDate());
+  });
+
   it("is disabled with nothing to schedule", () => {
     render(<ScheduleSendButton disabled onSchedule={vi.fn()} />);
     expect(
@@ -121,9 +149,11 @@ describe("ScheduledMessagesBar (#4956)", () => {
     await userEvent.clear(box);
     await userEvent.type(box, "Chapter at 9");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    // The time wasn't touched, so it isn't sent; the text's picks are.
     expect(mocks.update).toHaveBeenCalledWith(
-      { id: "s-1", content: "Chapter at 9", sendAt },
+      { id: "s-1", content: "Chapter at 9", mentionPicks: [] },
       expect.anything(),
     );
+    void sendAt;
   });
 });

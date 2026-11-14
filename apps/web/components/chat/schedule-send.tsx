@@ -14,6 +14,7 @@ import {
   type ScheduledMessage,
 } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
+import { mentionPicksIn } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -403,16 +404,18 @@ function ScheduledEditRow({
   const { toast } = useToast();
   const update = useUpdateScheduledMessage();
   const failed = row.status === "failed";
-  // A failed message's time has passed: offer the next preset instead.
-  const start = failed
-    ? schedulePresets(new Date())[0].at
-    : new Date(row.send_at);
-  const parts = localParts(start);
+  // A failed message's time has passed: its fields start empty, and left
+  // empty it goes at once (the API's next sweep).
+  const parts = failed
+    ? { date: "", time: "" }
+    : localParts(new Date(row.send_at));
   const [content, setContent] = useState(row.content);
   const [date, setDate] = useState(parts.date);
   const [time, setTime] = useState(parts.time);
+  const sendAtOnce = failed && !date && !time;
   const at = fromLocalParts(date, time);
-  const problem = scheduleTimeProblem(at, new Date());
+  const problem = sendAtOnce ? null : scheduleTimeProblem(at, new Date());
+  const timeChanged = date !== parts.date || time !== parts.time;
   const empty = content.trim() === "";
   return (
     <li className="rounded-md border border-border p-3">
@@ -425,8 +428,18 @@ function ScheduledEditRow({
           update.mutate(
             {
               id: row.id,
-              ...(changedText ? { content } : {}),
-              sendAt: at,
+              // The `@` picks the new text still writes (#3835), so a typo
+              // fix keeps its mentions reaching the members picked.
+              ...(changedText
+                ? {
+                    content,
+                    mentionPicks: mentionPicksIn(
+                      content,
+                      row.mention_picks ?? [],
+                    ),
+                  }
+                : {}),
+              ...(timeChanged && !sendAtOnce ? { sendAt: at } : {}),
             },
             {
               onSuccess: onDone,
@@ -456,6 +469,11 @@ function ScheduledEditRow({
           onTime={setTime}
           problem={problem}
         />
+        {failed ? (
+          <p className="text-caption text-muted-foreground">
+            Leave the time empty to send it as soon as you save.
+          </p>
+        ) : null}
         <div className="flex justify-end gap-2">
           <Button
             type="button"

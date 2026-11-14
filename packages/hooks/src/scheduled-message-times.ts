@@ -93,7 +93,9 @@ export function formatScheduledFor(at: Date, now: Date): string {
 export function scheduleTimeProblem(at: Date, now: Date): string | null {
   if (Number.isNaN(at.getTime())) return "Pick a date and time.";
   if (at.getTime() <= now.getTime()) return "Pick a time in the future.";
-  if (at.getTime() > addDays(now, SCHEDULE_MAX_DAYS).getTime()) {
+  // In milliseconds, as the API counts it, not calendar days: across a
+  // daylight-saving change those differ by an hour.
+  if (at.getTime() > now.getTime() + SCHEDULE_MAX_DAYS * 86_400_000) {
     return `Pick a time within ${SCHEDULE_MAX_DAYS} days.`;
   }
   return null;

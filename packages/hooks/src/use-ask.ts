@@ -135,10 +135,10 @@ export function useSetAskDiagnostics() {
       return result.data;
     },
     onSuccess: (diagnostics) => {
-      queryClient.setQueryData(
-        askStatusKey(chapterId),
-        (): AskStatus => ({ saved_until: diagnostics.ends_at, diagnostics }),
-      );
+      queryClient.setQueryData(askStatusKey(chapterId), (): AskStatus => ({
+        saved_until: diagnostics.ends_at,
+        diagnostics,
+      }));
     },
     onError: () => {
       // Already on in another tab, or the presidency moved: read it again.
@@ -564,7 +564,11 @@ function useAskConversation(): AskConversation {
   );
 
   const run = useCallback(
-    async (question: string, options: AskOptions | undefined, drop?: string) => {
+    async (
+      question: string,
+      options: AskOptions | undefined,
+      drop?: string,
+    ) => {
       const trimmed = question.trim();
       if (!trimmed) return;
       // One question at a time: a turn still waiting is abandoned.
@@ -673,7 +677,8 @@ function useAskConversation(): AskConversation {
           );
           return;
         }
-        const body = result.data as ReadableStream<Uint8Array> | null | undefined;
+        const body = result.data as
+          ReadableStream<Uint8Array> | null | undefined;
         if (!body) {
           update((current) => failed(current, ASK_COPY.failed));
           return;
@@ -686,7 +691,9 @@ function useAskConversation(): AskConversation {
         while (!ended) {
           const { done, value } = await reader.read();
           if (done) break;
-          for (const event of frames.feed(decoder.decode(value, { stream: true }))) {
+          for (const event of frames.feed(
+            decoder.decode(value, { stream: true }),
+          )) {
             update((current) => applyAskEvent(current, event));
             if (
               event.type === "done" ||

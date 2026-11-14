@@ -32,7 +32,9 @@ export function useScheduledMessages(channelId: string | null | undefined) {
       return data;
     },
     enabled: !!chapterId && !!channelId,
-    refetchInterval: REFETCH_MS,
+    // Only while there is something to watch: most members have nothing
+    // scheduled, and a row scheduled here invalidates the read itself.
+    refetchInterval: (query) => (query.state.data?.length ? REFETCH_MS : false),
   });
 }
 
