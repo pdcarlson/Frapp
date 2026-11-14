@@ -39,8 +39,8 @@ import {
 } from "@repo/hooks";
 import {
   CHAT_MESSAGE_CONTENT_MAX_LENGTH,
-  MAX_MENTION_PICKS,
   mentionPicksIn,
+  withMentionPick,
   type MentionPick,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
@@ -116,8 +116,8 @@ export interface ForwardSheetProps {
  * it (`ask-sheet.tsx`'s layout), so Send stays in reach however long the list
  * is (`spec/ui/mobile/patterns.md` § Bottom sheets).
  *
- * **@ in the comment** opens the composer's member list over the field
- * (#4907), and a member picked there is sent as a `mention_picks` entry, so
+ * **@ in the comment** opens the composer's member list in the
+ * conversations' place (#4907), and a member picked there is sent as a `mention_picks` entry, so
  * the comment reaches them as a post's mention does, by pick rather than by
  * the server matching the text. Frapp isn't offered: a forward can't ask.
  *
@@ -249,12 +249,7 @@ export function ForwardSheetBody({
     false,
   );
   const addMentionPick = useCallback((pick: MentionPick) => {
-    // The newest pick of a label wins, as the composer's
-    // (`use-composer-staging.ts`).
-    picksRef.current = [
-      pick,
-      ...picksRef.current.filter((held) => held.label !== pick.label),
-    ].slice(0, MAX_MENTION_PICKS);
+    picksRef.current = withMentionPick(picksRef.current, pick);
   }, []);
 
   const reset = useCallback(() => {
@@ -362,8 +357,26 @@ export function ForwardSheetBody({
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        {empty ? <Text style={styles.caption}>{empty}</Text> : null}
-        {shown.length > 0 ? (
+        {/* `@` in the comment takes the list's place while it is open, in
+            this sheet-aware scroll view: a nested plain ScrollView would lose
+            its drag to the sheet's pan (#4907). The pick stays marked. */}
+        {mention.open ? (
+          <MentionPicker
+            inScrollView
+            suggestions={mention.suggestions}
+            avatarFor={avatarFor}
+            avatarTintFor={avatarTintFor}
+            onPick={(entry) => {
+              mention.pick(entry.label);
+              const pick = mentionPickFor(entry);
+              if (pick) addMentionPick(pick);
+            }}
+          />
+        ) : null}
+        {!mention.open && empty ? (
+          <Text style={styles.caption}>{empty}</Text>
+        ) : null}
+        {!mention.open && shown.length > 0 ? (
           <View accessibilityRole="radiogroup" style={styles.list}>
             {shown.map((row, index) => {
               const selected = row.id === destination;
@@ -392,18 +405,6 @@ export function ForwardSheetBody({
         ) : null}
       </BottomSheetScrollView>
       <View style={styles.bottom}>
-        {mention.open ? (
-          <MentionPicker
-            suggestions={mention.suggestions}
-            avatarFor={avatarFor}
-            avatarTintFor={avatarTintFor}
-            onPick={(entry) => {
-              mention.pick(entry.label);
-              const pick = mentionPickFor(entry);
-              if (pick) addMentionPick(pick);
-            }}
-          />
-        ) : null}
         <BottomSheetTextInput
           // gorhom types this ref as gesture-handler's TextInput component,
           // not the instance it hands over, which is React Native's

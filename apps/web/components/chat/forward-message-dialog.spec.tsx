@@ -156,4 +156,40 @@ describe("ForwardMessageDialog (#4907)", () => {
     );
     expect(keys[1]).toBe(keys[0]);
   });
+
+  it("never sends from Enter in the search", async () => {
+    open();
+    await userEvent.click(screen.getByRole("radio", { name: "#random" }));
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: FORWARD_SEARCH_PLACEHOLDER }),
+      "ali{Enter}",
+    );
+    expect(mocks.forward).not.toHaveBeenCalled();
+  });
+
+  it("draws a new key once the message changes", async () => {
+    mocks.forward.mockRejectedValue({ statusCode: 502 });
+    open();
+    await userEvent.click(screen.getByRole("radio", { name: "#random" }));
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByRole("alert");
+    await userEvent.type(
+      screen.getByRole("textbox", { name: FORWARD_COMMENT_PLACEHOLDER }),
+      "!",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    const keys = mocks.forward.mock.calls.map(
+      ([input]) => (input as { clientMessageId: string }).clientMessageId,
+    );
+    expect(keys).toHaveLength(2);
+    expect(keys[1]).not.toBe(keys[0]);
+  });
+
+  it("can't be closed while the forward is out", async () => {
+    mocks.isPending = true;
+    const onClose = open();
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
 });

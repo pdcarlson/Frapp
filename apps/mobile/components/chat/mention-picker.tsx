@@ -163,11 +163,19 @@ export function MentionPicker({
   onPick,
   avatarFor,
   avatarTintFor,
+  inScrollView = false,
 }: {
   suggestions: readonly PickerEntry[];
   avatarFor?: (userId: string) => string | null;
   avatarTintFor?: (userId: string) => MemberAvatarTint;
   onPick: (entry: PickerEntry) => void;
+  /**
+   * Drawn inside a scroll view the caller owns (the Forward sheet's
+   * `BottomSheetScrollView`, #4907), so the rows go in a plain view at full
+   * length. A sheet's pan gesture would take a drag on a nested plain
+   * `ScrollView` (`spec/ui/mobile/patterns.md` § Bottom sheets).
+   */
+  inScrollView?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -179,93 +187,104 @@ export function MentionPicker({
       </View>
     );
   }
+  const rows = suggestions.map((entry) => {
+    if (entry.kind === "ask") {
+      return (
+        <Pressable
+          key="ask-frapp"
+          accessibilityRole="button"
+          accessibilityLabel={`${ASK_COPY.name}. ${ASK_COPY.mention_hint}`}
+          onPress={() => onPick(entry)}
+          style={({ pressed }) => [
+            styles.mentionRow,
+            pressed ? styles.mentionRowPressed : null,
+          ]}
+        >
+          {/* The crest in the chapter's colour, as the Ask Frapp bar
+                  draws it (`ask-bar.tsx`). */}
+          <View style={styles.mentionAvatar} testID="mention-ask-glyph">
+            <FrappCrest height={MENTION_ROLE_GLYPH_SIZE} color={accent} />
+          </View>
+          <Text numberOfLines={1} style={styles.mentionName}>
+            {entry.label}
+          </Text>
+          <Text style={styles.mentionKind}>{ASK_COPY.mention_hint}</Text>
+        </Pressable>
+      );
+    }
+    const name =
+      entry.kind === "member" ? entry.member.display_name : entry.role.name;
+    return (
+      <Pressable
+        key={
+          entry.kind === "member"
+            ? entry.member.user_id
+            : `role:${entry.role.role_id}`
+        }
+        accessibilityRole="button"
+        accessibilityLabel={
+          entry.kind === "member"
+            ? `Mention ${name}`
+            : reservedMentionName(name) !== null
+              ? `Mention @${name}. ${mentionRoleHint(name)}`
+              : `Mention everyone in the ${name} ${mentionRoleHint(name, entry.role.kind).toLowerCase()}`
+        }
+        onPress={() => onPick(entry)}
+        style={({ pressed }) => [
+          styles.mentionRow,
+          pressed ? styles.mentionRowPressed : null,
+        ]}
+      >
+        {entry.kind === "member" ? (
+          <MemberAvatar
+            uri={avatarFor?.(entry.member.user_id) ?? null}
+            initials={initialsFor(name)}
+            size={MENTION_AVATAR_SIZE}
+            tint={avatarTintFor?.(entry.member.user_id) ?? null}
+            style={styles.mentionAvatar}
+            textStyle={styles.mentionAvatarText}
+          />
+        ) : (
+          // A role has no face: the Roles nav glyph, as web's row and
+          // the web sidebar draw it, neutral (foundations.md §6).
+          <View style={styles.mentionAvatar}>
+            <NavGlyph
+              paths={NAV_GLYPHS.roles}
+              color={styles.mentionAvatarText.color}
+              size={MENTION_ROLE_GLYPH_SIZE}
+            />
+          </View>
+        )}
+        <Text numberOfLines={1} style={styles.mentionName}>
+          {name}
+        </Text>
+        {entry.kind === "role" ? (
+          // "Role", "Tier" or "Group", or who `@everyone` and `@here`
+          // reach (shared with web).
+          <Text style={styles.mentionKind}>
+            {mentionRoleHint(name, entry.role.kind)}
+          </Text>
+        ) : null}
+      </Pressable>
+    );
+  });
+  if (inScrollView) {
+    return (
+      <View
+        accessibilityLabel="Members and roles to mention"
+        style={styles.mentionList}
+      >
+        {rows}
+      </View>
+    );
+  }
   return (
     <ScrollView
       accessibilityLabel="Members and roles to mention"
       keyboardShouldPersistTaps="always"
       style={[styles.mentionList, styles.mentionListScroll]}
     >
-      {suggestions.map((entry) => {
-        if (entry.kind === "ask") {
-          return (
-            <Pressable
-              key="ask-frapp"
-              accessibilityRole="button"
-              accessibilityLabel={`${ASK_COPY.name}. ${ASK_COPY.mention_hint}`}
-              onPress={() => onPick(entry)}
-              style={({ pressed }) => [
-                styles.mentionRow,
-                pressed ? styles.mentionRowPressed : null,
-              ]}
-            >
-              {/* The crest in the chapter's colour, as the Ask Frapp bar
-                  draws it (`ask-bar.tsx`). */}
-              <View style={styles.mentionAvatar} testID="mention-ask-glyph">
-                <FrappCrest height={MENTION_ROLE_GLYPH_SIZE} color={accent} />
-              </View>
-              <Text numberOfLines={1} style={styles.mentionName}>
-                {entry.label}
-              </Text>
-              <Text style={styles.mentionKind}>{ASK_COPY.mention_hint}</Text>
-            </Pressable>
-          );
-        }
-        const name =
-          entry.kind === "member" ? entry.member.display_name : entry.role.name;
-        return (
-          <Pressable
-            key={
-              entry.kind === "member"
-                ? entry.member.user_id
-                : `role:${entry.role.role_id}`
-            }
-            accessibilityRole="button"
-            accessibilityLabel={
-              entry.kind === "member"
-                ? `Mention ${name}`
-                : reservedMentionName(name) !== null
-                  ? `Mention @${name}. ${mentionRoleHint(name)}`
-                  : `Mention everyone in the ${name} ${mentionRoleHint(name, entry.role.kind).toLowerCase()}`
-            }
-            onPress={() => onPick(entry)}
-            style={({ pressed }) => [
-              styles.mentionRow,
-              pressed ? styles.mentionRowPressed : null,
-            ]}
-          >
-            {entry.kind === "member" ? (
-              <MemberAvatar
-                uri={avatarFor?.(entry.member.user_id) ?? null}
-                initials={initialsFor(name)}
-                size={MENTION_AVATAR_SIZE}
-                tint={avatarTintFor?.(entry.member.user_id) ?? null}
-                style={styles.mentionAvatar}
-                textStyle={styles.mentionAvatarText}
-              />
-            ) : (
-              // A role has no face: the Roles nav glyph, as web's row and
-              // the web sidebar draw it, neutral (foundations.md §6).
-              <View style={styles.mentionAvatar}>
-                <NavGlyph
-                  paths={NAV_GLYPHS.roles}
-                  color={styles.mentionAvatarText.color}
-                  size={MENTION_ROLE_GLYPH_SIZE}
-                />
-              </View>
-            )}
-            <Text numberOfLines={1} style={styles.mentionName}>
-              {name}
-            </Text>
-            {entry.kind === "role" ? (
-              // "Role", "Tier" or "Group", or who `@everyone` and `@here`
-              // reach (shared with web).
-              <Text style={styles.mentionKind}>
-                {mentionRoleHint(name, entry.role.kind)}
-              </Text>
-            ) : null}
-          </Pressable>
-        );
-      })}
+      {rows}
     </ScrollView>
   );
 }

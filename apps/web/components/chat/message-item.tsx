@@ -1073,8 +1073,9 @@ export function MessageItem({
           // old place, and where a long message's bar ends up anyway.
           "ml-auto",
           // Wraps rather than spilling past the row's left edge: on a coarse
-          // pointer every icon is 44px, and nine of them (your own message) are
-          // wider than a 375px thread, where the scroller would clip the first.
+          // pointer every icon is 44px, and ten of them (your own message, with
+          // More for Forward) are wider than a 375px thread, where the scroller
+          // would clip the first.
           "max-w-full flex-wrap justify-end",
           "rounded-[10px] border border-border bg-card p-0.5",
           "transition-opacity",

@@ -69,11 +69,11 @@ export interface ForwardDestination {
 }
 
 /**
- * Every conversation the viewer can post in, channels first in the list's
- * own order and then direct messages, each A to Z. The current channel is
- * offered too (as Discord does). A row whose `can_post` is false is left
- * out, and so is the audit log, which only Frapp posts in; so is a DM the
- * member hid from their list, as the Messages list leaves it out.
+ * Every conversation the viewer can post in: channels A to Z, then direct
+ * messages A to Z. The current channel is offered too (as Discord does). A
+ * row whose `can_post` is false is left out, and so is the audit log, which
+ * only Frapp posts in; so is a DM the member hid from their list, as the
+ * Messages list leaves it out.
  */
 export function forwardDestinations(
   channels: readonly ForwardableChannel[],

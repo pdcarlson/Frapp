@@ -322,6 +322,31 @@ describe("ForwardSheet (#4864)", () => {
     );
   });
 
+  it("offers members in the conversations' place, and never Frapp, since a forward can't ask", () => {
+    const tree = render();
+    press(tree, "#random");
+    const comment = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "BottomSheetTextInput" &&
+        node.props.accessibilityLabel === FORWARD_COMMENT_PLACEHOLDER,
+    );
+    act(() => comment.props.onFocus?.());
+    // A bare `@` is where the composer offers Frapp first.
+    act(() => comment.props.onChangeText("@"));
+    const offered = tree.root
+      .findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function" &&
+          node.props.accessibilityRole === "button" &&
+          node.props.accessibilityLabel !== "Cancel",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(offered).toContain("Mention Alice Chen");
+    expect(offered.some((label) => label.includes("Frapp"))).toBe(false);
+    expect(rowLabels(tree)).toEqual([]);
+  });
+
   it("drops a pick the comment no longer writes", async () => {
     forward.mutateAsync.mockResolvedValue({ id: "m2", channel_id: "c-random" });
     const tree = render();

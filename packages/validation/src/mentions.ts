@@ -355,6 +355,22 @@ export interface MentionPick {
 /** Most picks one message carries; more is not a message, it is a list. */
 export const MAX_MENTION_PICKS = 50;
 
+/**
+ * The picks a draft holds after one more: the newest pick of a label wins,
+ * newest first, up to {@link MAX_MENTION_PICKS}. Every field that keeps `@`
+ * picks (the composer, the Forward comment) adds them through this, so a
+ * comment and a post resolve the same picks the same way (#4907).
+ */
+export function withMentionPick(
+  held: readonly MentionPick[],
+  pick: MentionPick,
+): MentionPick[] {
+  return [pick, ...held.filter((kept) => kept.label !== pick.label)].slice(
+    0,
+    MAX_MENTION_PICKS,
+  );
+}
+
 /** A pick's label as a spaced name, or `null` when it has no space or can't be one. */
 function spacedPickLabel(label: string): string | null {
   // A label that opens on `@Frapp` is read as the handle, never as a pick.

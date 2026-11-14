@@ -156,6 +156,11 @@ export function ForwardMessageDialog({
             aria-label={FORWARD_SEARCH_PLACEHOLDER}
             autoComplete="off"
             disabled={sending}
+            // Enter here searches; it never sends. In the form, it would
+            // submit to whatever is picked, which the search may have hidden.
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.preventDefault();
+            }}
           />
           <div className="max-h-64 min-h-0 overflow-y-auto">
             {empty ? (
