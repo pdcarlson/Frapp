@@ -450,8 +450,9 @@ busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeabl
     grace plus the wait for the next scheduled sweep, each time. A red auto-merge PR is updated by
     the per-PR pass, as before #3599, and while its new CI runs it counts as in flight, so a PR that
     stays red costs the queue about one CI run per merge.
-  - Merge queue is the platform version of this (option 3 in #3599). It needs a branch-protection
-    change, which is the owner's call.
+  - Merge queue is the platform version of this (option 3 in #3599). Paul chose it on 2026-11-14
+    (#4795); CI runs every required check on `merge_group`, and turning it on is a rule in the
+    `main` ruleset ([runbook § Merge queue](../ops/github-branch-protection-runbook.md#merge-queue)).
 - **Already in sync** → any stale base-sync wake comment is deleted and the sweep stays silent.
   Unknown mergeability (API error, `mergeable` never resolves) is skipped fail-safe: never
   blind-updated, never falsely accused of conflicts; the next base move re-sweeps.
