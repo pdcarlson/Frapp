@@ -215,6 +215,9 @@ describe('formatDevLogPost', () => {
     const text = formatDevLogPost(
       { event: 'update_pushed', run_id: '1' },
       NOTE,
+      // A day the note is still new on. Left to the real clock, this failed
+      // from 2026-11-14 on.
+      new Date('2026-11-11T15:00:00Z'),
     );
     expect(text).not.toContain('Phone app');
     expect(text).toContain("What's new (2026-11-10): Threads");
