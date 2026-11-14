@@ -42,6 +42,43 @@ describe('SupabaseUserRepository — batched reads', () => {
     ]);
   });
 
+  it('read only the birthdays their members share, never the year (#4959)', async () => {
+    const harness = createTenantHarness({
+      tables: {
+        users: [
+          {
+            ...userRow(USER_A, 'Ann'),
+            birthday_month: 3,
+            birthday_day: 4,
+            birthday_year: 2004,
+            birthday_visibility: 'chapter',
+          },
+          {
+            ...userRow(USER_B, 'Bob'),
+            birthday_month: 5,
+            birthday_day: 6,
+            birthday_year: null,
+            birthday_visibility: 'nobody',
+          },
+        ],
+      },
+      untenantedTables: ['users'],
+    });
+    const repo = new SupabaseUserRepository(harness.client);
+
+    const birthdays = await repo.findSharedBirthdaysByIds([USER_A, USER_B]);
+
+    expect(birthdays).toEqual([
+      {
+        id: USER_A,
+        display_name: 'Ann',
+        avatar_url: null,
+        birthday_month: 3,
+        birthday_day: 4,
+      },
+    ]);
+  });
+
   /** A client whose `users` reads answer each chunk with its own ids. */
   const chunkClient = (failOnChunk?: number) => {
     const selects: string[] = [];

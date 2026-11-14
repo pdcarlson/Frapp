@@ -19,9 +19,8 @@ import { db, miss } from "../harness.mjs";
 // roles it names before the member row, the order `delete_role` takes them.
 // Without that role lock a save giving a role can commit it after a
 // concurrent delete scanned for holders, which is the #4830 outcome. The
-// overlapping case was run by hand against local Postgres with two
-// connections when this landed (#4830); a harness that runs it in CI is
-// #4862.
+// overlap itself runs with two real connections in the same CI job, on a
+// Postgres service container: `scripts/db-race/role-lock-race.mjs` (#4862).
 //
 // Everything runs inside one transaction and is rolled back.
 console.log("\n=== Functional: set_member_role_ids (20261113184311) ===");

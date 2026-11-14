@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "@repo/hooks";
+import { memberThreadKeys, useFrappClient } from "@repo/hooks";
 import {
   chatRealtime,
   NO_TYPING_USERS,
@@ -192,9 +192,13 @@ export function useMessageThread(
     void markThreadRead(api, channelId, rootId)
       // The thread card's "2 new" re-reads once the server has the cursor.
       .then(() =>
-        queryClient.invalidateQueries({
-          queryKey: chatFollowedThreadsKey(channelId),
-        }),
+        Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: chatFollowedThreadsKey(channelId),
+          }),
+          // And All threads' unread mark (#4960), in every chapter's cache.
+          queryClient.invalidateQueries({ queryKey: memberThreadKeys.all }),
+        ]),
       )
       .catch(() => undefined);
   }, [api, queryClient, channelId, rootId, metaLoaded, newestId]);

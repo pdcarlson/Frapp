@@ -84,9 +84,12 @@ export function useBidRushCandidate() {
   return useMutation({
     mutationKey: ["rush", "bid-rush-candidate"],
     mutationFn: async (id: string) => {
-      const { data, error } = await client.POST("/v1/rush/candidates/{id}/bid", {
-        params: { path: { id } },
-      });
+      const { data, error } = await client.POST(
+        "/v1/rush/candidates/{id}/bid",
+        {
+          params: { path: { id } },
+        },
+      );
       if (error) throw error;
       return data;
     },

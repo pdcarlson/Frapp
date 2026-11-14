@@ -58,7 +58,7 @@ import {
   type Judge,
   type JudgeCriterion,
 } from './judge';
-import { scriptedRealAnswer } from './scripted';
+import { scriptedRealAnswer, scriptedRealLoop } from './scripted';
 import {
   QUESTION_GROUPS,
   type QuestionGroup,
@@ -127,6 +127,7 @@ export interface RealRunOptions {
 const SCRIPTED = {
   'ask.answer': scriptedRealAnswer,
   'ask.plan': scriptedAskPlanner,
+  'ask.agent': scriptedRealLoop,
   [JUDGE_TASK]: scriptedJudge,
 };
 

@@ -17,6 +17,7 @@ import {
   askHistory,
   createAskStreamReader,
   type AskAnswer,
+  type AskEffort,
   type AskStepDetail,
   type AskStreamEvent,
   type AskSuggestion,
@@ -135,10 +136,10 @@ export function useSetAskDiagnostics() {
       return result.data;
     },
     onSuccess: (diagnostics) => {
-      queryClient.setQueryData(
-        askStatusKey(chapterId),
-        (): AskStatus => ({ saved_until: diagnostics.ends_at, diagnostics }),
-      );
+      queryClient.setQueryData(askStatusKey(chapterId), (): AskStatus => ({
+        saved_until: diagnostics.ends_at,
+        diagnostics,
+      }));
     },
     onError: () => {
       // Already on in another tab, or the presidency moved: read it again.
@@ -232,6 +233,8 @@ export interface AskExchange {
   failure: { message: string; retryable: boolean } | null;
   /** Set when the turn was asked from a chat composer. */
   origin?: AskOrigin;
+  /** `more` when this is the answer to Think harder (#4904). */
+  effort?: AskEffort;
 }
 
 /** An answer no stream was opened for: the server refused before it began. */
@@ -376,6 +379,12 @@ export interface AskOptions {
   channelId?: string;
   /** With `channelId`: the newest message there now (`AskOrigin.after`). */
   afterMessage?: string | null;
+  /**
+   * `more` for Think harder (#4904): passed to `retry`, it asks the turn's
+   * question again in its place with more effort, and counts the tap against
+   * the answer it replaces. A turn asked again later keeps it.
+   */
+  effort?: AskEffort;
 }
 
 let nextExchange = 0;
@@ -564,7 +573,11 @@ function useAskConversation(): AskConversation {
   );
 
   const run = useCallback(
-    async (question: string, options: AskOptions | undefined, drop?: string) => {
+    async (
+      question: string,
+      options: AskOptions | undefined,
+      drop?: string,
+    ) => {
       const trimmed = question.trim();
       if (!trimmed) return;
       // One question at a time: a turn still waiting is abandoned.
@@ -572,7 +585,16 @@ function useAskConversation(): AskConversation {
       const abort = new AbortController();
       inFlight.current = abort;
       const id = `turn-${(nextExchange += 1)}`;
-      const earlier = latest.current.filter((exchange) => exchange.id !== drop);
+      // A turn asked again (Try again, Think harder) is answered where it
+      // stands: the turns after it keep their place, and only the turns
+      // before it are sent as the conversation so far, as they were the
+      // first time. So its answer is no more a follow-up than it was.
+      const at = drop
+        ? latest.current.findIndex((exchange) => exchange.id === drop)
+        : -1;
+      const earlier =
+        at >= 0 ? latest.current.slice(0, at) : latest.current.slice();
+      const later = at >= 0 ? latest.current.slice(at + 1) : [];
       const history = askHistoryOf(earlier);
       // A turn asked again stays where it was first asked: its place in the
       // channel, or Ask's own screen.
@@ -588,6 +610,11 @@ function useAskConversation(): AskConversation {
               after: options.afterMessage ?? null,
             }
           : undefined;
+      const effort = options?.effort ?? again?.effort;
+      // Think harder on an answer is counted against that answer's kept
+      // trace (`think_harder`), once the harder question is really sent.
+      const replaced =
+        options?.effort === "more" ? again?.answer?.ask_id : undefined;
       /** Applies a change unless this turn was abandoned. */
       const update = (change: (current: AskExchange) => AskExchange) => {
         if (inFlight.current === abort) patch(id, change);
@@ -610,7 +637,9 @@ function useAskConversation(): AskConversation {
           resolution: null,
           failure: null,
           ...(origin ? { origin } : {}),
+          ...(effort === "more" ? { effort } : {}),
         },
+        ...later,
       ]);
 
       try {
@@ -637,6 +666,17 @@ function useAskConversation(): AskConversation {
           if (abort.signal.aborted) return;
           update((current) => ({ ...current, step: "searching" }));
         }
+        if (replaced) {
+          // One word, and a count that fails is dropped.
+          void Promise.resolve()
+            .then(() =>
+              client.POST("/v1/ai/ask/{ask_id}/signals", {
+                params: { path: { ask_id: replaced } },
+                body: { signal: "think_harder" },
+              }),
+            )
+            .catch(() => undefined);
+        }
         const result = await client.POST("/v1/ai/ask", {
           body: {
             question: trimmed,
@@ -648,6 +688,14 @@ function useAskConversation(): AskConversation {
             // Only the new door is named: a server from before #4713
             // refuses a field it does not know, and "ask" is its default.
             ...(origin ? { door: "chat_private" as const } : {}),
+            // What the member had open, so "this channel" means something
+            // to the tool loop (#4904). Ask's own screen sends none. A server
+            // from before #4941 refuses the field; web deploys with the API
+            // and a phone build or update ships only after its API has.
+            ...(origin ? { from: { channel_id: origin.channelId } } : {}),
+            // Only ever sent from an answer the tool loop wrote, so the
+            // server that gets it knows the field.
+            ...(effort === "more" ? { effort } : {}),
           },
           parseAs: "stream",
           signal: abort.signal,
@@ -673,7 +721,8 @@ function useAskConversation(): AskConversation {
           );
           return;
         }
-        const body = result.data as ReadableStream<Uint8Array> | null | undefined;
+        const body = result.data as
+          ReadableStream<Uint8Array> | null | undefined;
         if (!body) {
           update((current) => failed(current, ASK_COPY.failed));
           return;
@@ -686,7 +735,9 @@ function useAskConversation(): AskConversation {
         while (!ended) {
           const { done, value } = await reader.read();
           if (done) break;
-          for (const event of frames.feed(decoder.decode(value, { stream: true }))) {
+          for (const event of frames.feed(
+            decoder.decode(value, { stream: true }),
+          )) {
             update((current) => applyAskEvent(current, event));
             if (
               event.type === "done" ||

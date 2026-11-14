@@ -400,6 +400,13 @@ export interface UseChatChannelResult {
   draft: string;
   setDraft: (body: string) => void;
   /**
+   * Puts `body` back as `channelId`'s saved draft, unless the member has
+   * written another there since: for a message that left the composer and
+   * then didn't go (a scheduled one the API refused, #4956) after the screen
+   * moved to another channel.
+   */
+  restoreDraftFor: (channelId: string, body: string) => void;
+  /**
    * Last send failure. `null` once a fresh `send` is attempted or the
    * member switches channels (#1431 — this used to outlive a channel
    * switch, unlike `reactionError`). Editing the draft or calling `retry`
@@ -787,6 +794,15 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       }, DRAFT_SAVE_DEBOUNCE_MS);
     },
     [channelId, cancelDraftTimer, drafts],
+  );
+
+  const restoreDraftFor = useCallback(
+    (target: string, body: string) => {
+      void drafts.load(target).then((held) => {
+        if (!held.trim()) return drafts.save(target, body);
+      });
+    },
+    [drafts],
   );
 
   /**
@@ -1501,6 +1517,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     retryPhoto,
     draft,
     setDraft,
+    restoreDraftFor,
     sendError,
     reactionError,
     clearReactionError,
