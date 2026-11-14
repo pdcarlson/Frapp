@@ -159,6 +159,17 @@ export const ASK_ANSWER_NOT_CARRIED =
   '(The answer to that question is not repeated here.)';
 
 /**
+ * What stands for the cards an earlier answer came with. The count is the
+ * client's; the words are the server's. It says what is true of any card:
+ * nothing happened, and it may still be waiting, so a follow-up that
+ * changes the request replaces a card and one that does not adds none.
+ */
+export function askCardsShown(count: number): string {
+  const cards = count === 1 ? 'a card' : `${count} cards`;
+  return `(Frapp put ${cards} in front of the member for that, to confirm or dismiss. Nothing has been done yet, and ${count === 1 ? 'it' : 'they'} may still be waiting: prepare a new card only if the member now asks for something different, and say it replaces the earlier one.)`;
+}
+
+/**
  * The answer call's turns: each earlier turn, then the question. A turn
  * whose answer is not carried keeps its question, with a fixed line in the
  * answer's place. `history` is caller input: a half character left by a cut
@@ -174,7 +185,14 @@ export function askAnswerMessages(
       { role: 'user', content: stripLoneSurrogates(turn.question) },
       {
         role: 'assistant',
-        content: answer === '' ? ASK_ANSWER_NOT_CARRIED : answer,
+        content:
+          turn.cards === undefined
+            ? answer === ''
+              ? ASK_ANSWER_NOT_CARRIED
+              : answer
+            : [answer, askCardsShown(turn.cards)]
+                .filter((part) => part !== '')
+                .join('\n\n'),
       },
     ];
   });

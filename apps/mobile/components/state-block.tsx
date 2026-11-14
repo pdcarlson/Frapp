@@ -4,11 +4,9 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useState,
   useSyncExternalStore,
 } from "react";
 import {
-  AccessibilityInfo,
   type DimensionValue,
   Pressable,
   type StyleProp,
@@ -22,12 +20,12 @@ import Animated, {
   Easing,
   type SharedValue,
   useAnimatedStyle,
-  useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
 import { NavigationContext } from "expo-router/react-navigation";
+import { useReduceMotion } from "@/lib/use-reduce-motion";
 import { SignetTokens, type SignetTypeRole } from "@repo/theme/signet";
 import { InlineNote } from "@/components/inline-note";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -349,41 +347,6 @@ export function SkeletonText({
       />
     </View>
   );
-}
-
-/**
- * The system's reduced-motion setting, as it is now. Reanimated's
- * `useReducedMotion` is the setting the app launched with and never changes,
- * so it only seeds the first frame here, before the system answers;
- * `AccessibilityInfo` reports the setting when the pulse mounts, and its
- * `reduceMotionChanged` every change after.
- */
-function useReduceMotion(): boolean {
-  const atLaunch = useReducedMotion();
-  // Seeded with the launch value, so an answer that matches it re-renders
-  // nothing.
-  const [now, setNow] = useState(atLaunch);
-
-  useEffect(() => {
-    // A change heard before the first read answers is newer than that read.
-    let heard = false;
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      (enabled) => {
-        heard = true;
-        setNow(enabled);
-      },
-    );
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (!heard) setNow(enabled);
-    });
-    return () => {
-      heard = true;
-      subscription.remove();
-    };
-  }, []);
-
-  return now;
 }
 
 /**

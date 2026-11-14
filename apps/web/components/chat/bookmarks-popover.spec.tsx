@@ -103,6 +103,14 @@ describe("BookmarksPanel", () => {
     expect(screen.getByText("Message")).toBeInTheDocument();
   });
 
+  it("previews a saved GIF as GIF (#4657)", () => {
+    renderPanel({
+      bookmarks: [entry({ message: message({ content: "", has_gif: true }) })],
+    });
+
+    expect(screen.getByText("GIF")).toBeInTheDocument();
+  });
+
   it("previews a forward with no comment as its copy (#4875)", () => {
     renderPanel({
       bookmarks: [

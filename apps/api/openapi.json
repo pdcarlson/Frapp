@@ -21151,6 +21151,10 @@
                 "$ref": "#/components/schemas/ForwardedMessageDto"
               }
             ]
+          },
+          "has_gif": {
+            "type": "boolean",
+            "description": "The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”."
           }
         },
         "required": [
@@ -21163,7 +21167,8 @@
           "payload",
           "attachment_count",
           "created_at",
-          "forwarded_from"
+          "forwarded_from",
+          "has_gif"
         ]
       },
       "ChannelAccessOptionDto": {
@@ -21713,6 +21718,10 @@
           "attachment_count": {
             "type": "number",
             "description": "The reply’s `metadata.attachment_count`, or 0 when it has none."
+          },
+          "has_gif": {
+            "type": "boolean",
+            "description": "The reply is a GIF (#4657), so a preview reads “GIF”. False on a masked preview; absent on one written before GIF thread replies."
           },
           "created_at": {
             "type": "string"
@@ -22658,6 +22667,10 @@
               }
             ]
           },
+          "has_gif": {
+            "type": "boolean",
+            "description": "The saved message is a GIF (#4657). A GIF has no text, so the row previews as “GIF”. False on a deleted row, a redacted one, and one whose sender the caller blocked."
+          },
           "sender_blocked": {
             "type": "boolean",
             "description": "Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows."
@@ -22672,6 +22685,7 @@
           "created_at",
           "thread_root_id",
           "forwarded_from",
+          "has_gif",
           "sender_blocked"
         ]
       },
@@ -31264,6 +31278,12 @@
           "suggested": {
             "type": "boolean",
             "description": "True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done."
+          },
+          "cards": {
+            "type": "number",
+            "description": "How many cards that turn came with. A count only: the server writes the line that stands for them, so a follow-up is read knowing cards are already in front of the member.",
+            "minimum": 1,
+            "maximum": 5
           }
         },
         "required": [

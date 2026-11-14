@@ -152,6 +152,11 @@ export interface ChatComposerProps {
    */
   onOpenPlus?: () => void;
   /**
+   * What the + says to a screen reader, where it opens something narrower
+   * than the full sheet: a message thread's + opens the GIF picker (#4657).
+   */
+  plusLabel?: string;
+  /**
    * Holds the + dark, still visible, where nothing it offers can work: a
    * channel the member can't post in. The reason rides `disabledHint`.
    */
@@ -213,6 +218,7 @@ export function ChatComposer({
   hintTone = "muted",
   photos = [],
   onOpenPlus,
+  plusLabel = "Add a photo, poll, event and more",
   plusDisabled = false,
   onRemovePhoto,
   onRetryPhoto,
@@ -416,7 +422,7 @@ export function ChatComposer({
         {onOpenPlus ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Add a photo, poll, event and more"
+            accessibilityLabel={plusLabel}
             accessibilityState={{ disabled: !canOpenPlus, busy: isPicking }}
             disabled={!canOpenPlus}
             onPress={onOpenPlus}
