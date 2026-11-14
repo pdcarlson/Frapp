@@ -3304,6 +3304,20 @@ export function ChatShell({
           onCatchUp={canCatchUpHere ? startThreadCatchUp : undefined}
           jumpTo={threadJump}
           askRefusal={replyAskRefusalFor}
+          // A reply scheduled into this thread (#5005): the API checks it as
+          // a thread reply, so it follows `canReply`, not `can_post`.
+          onSchedule={
+            channelAllowsThreadReplies(activeChannel)
+              ? async (content, at) => {
+                  await scheduleMessage.mutateAsync({
+                    channelId: activeChannel.id,
+                    content,
+                    sendAt: at,
+                    threadRootId,
+                  });
+                }
+              : undefined
+          }
         />
       </MentionChipTargetsContext.Provider>
     ) : null;

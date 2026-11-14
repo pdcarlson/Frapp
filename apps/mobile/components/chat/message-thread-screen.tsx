@@ -116,6 +116,8 @@ import { useMaskedRefresh } from "@/lib/chat/masked-refresh";
 import { threadHeaderLines } from "@/lib/chat/thread-header";
 import { threadLayout } from "@/lib/chat/thread-layout";
 import { useComposerStaging } from "@/lib/chat/use-composer-staging";
+import { scheduleRefusal } from "@/lib/chat/schedule-send";
+import { useScheduleSend } from "@/components/chat/use-schedule-send";
 import {
   useHeldChannelMessage,
   useMessageThread,
@@ -418,6 +420,25 @@ export function MessageThreadScreen({
     send: sendReply,
     sendInFlight: () => false,
     edit,
+  });
+  // Scheduling a reply into this thread (#5005): a long press on Send, as in
+  // the channel, and the line above the composer for this thread's own
+  // scheduled replies. The API checks it as a thread reply, so it follows
+  // `canReply`; the list needs only reading. A reply carries no photos.
+  const scheduleSend = useScheduleSend({
+    channelId,
+    threadRootId: rootId,
+    canSchedule: canReply,
+    showList: true,
+    draft,
+    refusal: scheduleRefusal({
+      text: draft,
+      photos: [],
+      asksFrapp: (askRefusal?.(draft.trim()) ?? null) !== null,
+      writeBlocked: writeBlockedReason,
+    }),
+    picksFor: staging.picksFor,
+    setDraft,
   });
   const { onChangeText: stagingChangeText, isEditing } = staging;
   const onChangeText = useCallback(
@@ -1011,6 +1032,12 @@ export function MessageThreadScreen({
               gifs.available && !staging.isEditing ? openGif : undefined
             }
             plusLabel="Send a GIF"
+            onSchedule={
+              !writeBlockedReason && !staging.isEditing
+                ? scheduleSend.openSchedule
+                : undefined
+            }
+            scheduled={scheduleSend.scheduled}
             plusDisabled={!!writeBlockedReason || !canReply}
             canSend={
               !!viewerId &&
@@ -1047,6 +1074,7 @@ export function MessageThreadScreen({
         </KeyboardAvoidingArea>
       </FormFillContext.Provider>
       {catchUp.sheets}
+      {scheduleSend.sheets}
       {gifs.available ? (
         <GifPickerSheet
           key={`gif-${channelId}-${rootId}`}

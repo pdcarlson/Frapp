@@ -36,6 +36,8 @@ import { useNetwork } from "@/lib/providers/network-provider";
 import { useMessageThread } from "@/lib/chat/use-message-thread";
 import { cn } from "@/lib/utils";
 import { PanelCloseButton } from "@/components/layout/tool-page-header";
+import { SendArrowGlyph } from "./chat-glyphs";
+import { ScheduleSendButton, ScheduledMessagesBar } from "./schedule-send";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import { ChatBackground } from "./chat-background";
 import { GifPickerButton } from "./gif-picker";
@@ -55,6 +57,8 @@ import {
   CHAT_CATCH_UP_MIN_MESSAGES,
   type MentionPick,
 } from "@repo/validation";
+import { errorCopy } from "@repo/hooks/error-copy";
+import { formatScheduledFor } from "@repo/hooks";
 
 /**
  * The row writes the shell's channel hook makes (`useChatChannel`), each
@@ -164,6 +168,12 @@ export interface ThreadPanelProps extends Pick<
    */
   askRefusal?: (text: string) => string | null;
   /**
+   * Schedules a reply into this thread to post later (#5005), as the channel
+   * composer's chevron does (`ScheduleSendButton`). Rejects when it couldn't
+   * be scheduled. Absent where the member can't reply.
+   */
+  onSchedule?: (content: string, at: Date) => Promise<void>;
+  /**
    * Drawn beside the chat on a wide window (#4297) rather than over it: the
    * channel stays in view, so the header closes the thread (X) rather than
    * going back to it.
@@ -244,6 +254,7 @@ export function ThreadPanel({
   onCatchUp,
   jumpTo,
   askRefusal,
+  onSchedule,
   beside = false,
   className,
 }: ThreadPanelProps) {
@@ -331,6 +342,45 @@ export function ThreadPanel({
     setDraft("");
     const { error } = await thread.send(content);
     notSent(error);
+  }
+
+  // Scheduling the reply to post later (#5005), with the channel composer's
+  // own chevron and refusals. The box clears as the request goes, as a send
+  // does, and the words come back on a failure if nothing new was typed.
+  const scheduling = useRef(false);
+  async function schedule(at: Date) {
+    if (!onSchedule || scheduling.current) return;
+    const content = draft.trim();
+    const refusal = isOffline
+      ? "Reconnect to schedule a message."
+      : !content
+        ? "Type a message to schedule."
+        : (askRefusal?.(content) ?? null) !== null
+          ? "Questions for Frapp can't be scheduled. Send them now."
+          : null;
+    if (refusal) {
+      toast({ title: refusal });
+      throw new Error(refusal);
+    }
+    scheduling.current = true;
+    setDraft("");
+    try {
+      await onSchedule(content, at);
+    } catch (error) {
+      const untouched = !threadDrafts.get(draftKey);
+      if (untouched) setDraft(content);
+      toast({
+        title: "Couldn't schedule it",
+        description: untouched
+          ? errorCopy(error)
+          : `${errorCopy(error)} It couldn't be put back in the reply box.`,
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      scheduling.current = false;
+    }
+    toast({ title: `Scheduled for ${formatScheduledFor(at, new Date())}` });
   }
 
   // The channel composer's GIF button, in the thread's too (#4657): a GIF is
@@ -674,6 +724,9 @@ export function ThreadPanel({
       <ImageViewer viewer={rootViewer} />
 
       <TypingLine label={typing} />
+      {/* This thread's scheduled replies (#5005), wherever the member can
+          read: one that failed for lost posting is the one to delete. */}
+      <ScheduledMessagesBar channelId={channelId} threadRootId={rootId} />
       <div className="shrink-0 border-t border-border p-3">
         {canReply ? (
           <>
@@ -690,11 +743,32 @@ export function ThreadPanel({
               }}
               onKeyDown={onComposerKey}
             />
-            {gifs.available && !isOffline ? (
-              <div className="mt-1 flex items-center gap-1">
+            <div className="mt-1 flex items-center gap-1">
+              {gifs.available && !isOffline ? (
                 <GifPickerButton provider={gifs.provider} onPick={sendGif} />
+              ) : null}
+              {/* Send and its schedule chevron, as the channel composer
+                  draws them (#5005); Enter still sends. */}
+              <div className="ml-auto flex items-center">
+                <Button
+                  type="button"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
+                  onClick={() => void submit()}
+                  aria-label="Send reply"
+                  title="Send (Enter)"
+                  disabled={isOffline || !draft.trim()}
+                >
+                  <SendArrowGlyph className="h-4 w-4" />
+                </Button>
+                {onSchedule ? (
+                  <ScheduleSendButton
+                    disabled={isOffline || !draft.trim()}
+                    onSchedule={schedule}
+                  />
+                ) : null}
               </div>
-            ) : null}
+            </div>
             {isOffline ? (
               <p className="mt-1 text-caption text-muted-foreground">
                 You&apos;re offline. You can reply once you&apos;re back online.

@@ -55,8 +55,9 @@ export const SCHEDULED_NOTE =
 
 export const ScheduledMessagesSheet = forwardRef<
   BottomSheetModal,
-  { channelId: string | null }
->(function ScheduledMessagesSheet({ channelId }, ref) {
+  /** With `threadRootId`, only that thread's scheduled replies (#5005). */
+  { channelId: string | null; threadRootId?: string | null }
+>(function ScheduledMessagesSheet({ channelId, threadRootId = null }, ref) {
   const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens, useChapterBranding().accent);
@@ -86,16 +87,22 @@ export const ScheduledMessagesSheet = forwardRef<
           <TallSheetHeader title={SCHEDULED_TITLE} onClose={closeSheet} />
         </View>
         <Text style={styles.note}>{SCHEDULED_NOTE}</Text>
-        <ScheduledRows channelId={channelId} />
+        <ScheduledRows channelId={channelId} threadRootId={threadRootId} />
       </BottomSheetScrollView>
     </BottomSheetModal>
   );
 });
 
-export function ScheduledRows({ channelId }: { channelId: string | null }) {
+export function ScheduledRows({
+  channelId,
+  threadRootId = null,
+}: {
+  channelId: string | null;
+  threadRootId?: string | null;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens, useChapterBranding().accent);
-  const query = useScheduledMessages(channelId);
+  const query = useScheduledMessages(channelId, threadRootId);
   const [editing, setEditing] = useState<string | null>(null);
 
   if (query.isError && query.data === undefined) {

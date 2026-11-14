@@ -227,10 +227,19 @@ export function ScheduleSendButton({
 
 /**
  * "2 scheduled messages" above the composer, while the member has any in this
- * channel; it opens the list. Nothing at all when they have none.
+ * channel; it opens the list. Nothing at all when they have none. With
+ * `threadRootId`, above a thread's reply box, only that thread's (#5005); the
+ * channel's line still counts them, since its list is everything the member
+ * has scheduled in the channel.
  */
-export function ScheduledMessagesBar({ channelId }: { channelId: string }) {
-  const { data } = useScheduledMessages(channelId);
+export function ScheduledMessagesBar({
+  channelId,
+  threadRootId,
+}: {
+  channelId: string;
+  threadRootId?: string;
+}) {
+  const { data } = useScheduledMessages(channelId, threadRootId);
   const [open, setOpen] = useState(false);
   const rows = data ?? [];
   if (rows.length === 0) return null;

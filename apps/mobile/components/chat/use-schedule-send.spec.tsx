@@ -17,8 +17,11 @@ const rows: { current: ScheduledMessage[] } = { current: [] };
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useScheduledMessages: (channelId: string | null) => {
-    listFor(channelId);
+  useScheduledMessages: (
+    channelId: string | null,
+    threadRootId?: string | null,
+  ) => {
+    listFor(channelId, threadRootId);
     return { data: channelId ? rows.current : undefined, isPending: false };
   },
   useScheduleMessage: () => ({ mutateAsync }),
@@ -117,6 +120,7 @@ describe("useScheduleSend", () => {
       mentionPicks: [JANE],
       attachments: [],
       replyToId: null,
+      threadRootId: null,
     });
   });
 
@@ -254,7 +258,51 @@ describe("useScheduleSend", () => {
 
   it("reads no list where there is none to show", () => {
     const { out } = setup({ showList: false });
-    expect(listFor).toHaveBeenLastCalledWith(null);
+    expect(listFor).toHaveBeenLastCalledWith(null, null);
     expect(out.current!.scheduled).toBeNull();
+  });
+
+  describe("in a thread (#5005)", () => {
+    it("schedules the reply into its thread and lists only that thread's", async () => {
+      mutateAsync.mockResolvedValue({});
+      const { out, sheet } = setup({ threadRootId: "root-1" });
+      expect(listFor).toHaveBeenLastCalledWith("general", "root-1");
+      act(() => out.current!.openSchedule!());
+      await act(() =>
+        sheet().props.onSchedule(new Date(Date.now() + 3_600_000)),
+      );
+      expect(mutateAsync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          channelId: "general",
+          threadRootId: "root-1",
+          replyToId: null,
+        }),
+      );
+    });
+
+    it("leaves a refused reply out of another thread opened in place", async () => {
+      let reject!: (error: Error) => void;
+      mutateAsync.mockReturnValue(
+        new Promise((_, no) => {
+          reject = no;
+        }),
+      );
+      const { out, props, sheet, rerender } = setup({
+        threadRootId: "root-1",
+        restoreDraftFor: undefined,
+      });
+      act(() => out.current!.openSchedule!());
+      let pending!: Promise<void>;
+      act(() => {
+        pending = sheet().props.onSchedule(new Date());
+      });
+      rerender({ threadRootId: "root-2", draft: "" });
+      await act(async () => {
+        reject(new Error("refused"));
+        await pending.catch(() => {});
+      });
+      // Cleared on the tap, and not typed into the other thread's composer.
+      expect(vi.mocked(props.setDraft).mock.calls).toEqual([[""]]);
+    });
   });
 });
