@@ -84,6 +84,16 @@ describe('validateDevLogEnv', () => {
 });
 
 describe('formatDevLogPost', () => {
+  // `formatDevLogPost` reads the clock to tell a fresh What's new entry from
+  // an old one, and NOTE is dated 2026-11-10: pinned, so the cases don't turn
+  // red as the calendar moves on (#4967).
+  beforeEach(() => {
+    jest.useFakeTimers({ now: new Date('2026-11-11T12:00:00.000Z') });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('says who started what, in which area, and who is already there', () => {
     expect(
       formatDevLogPost({
@@ -212,9 +222,12 @@ describe('formatDevLogPost', () => {
   });
 
   it('names only the web when the run shipped nothing for the phone', () => {
+    // Pinned like its neighbours: unpinned, NOTE (2026-11-10) aged past the
+    // fresh window on 2026-11-14 and the post said "No new What's new entry".
     const text = formatDevLogPost(
       { event: 'update_pushed', run_id: '1' },
       NOTE,
+      new Date('2026-11-11T15:00:00Z'),
     );
     expect(text).not.toContain('Phone app');
     expect(text).toContain("What's new (2026-11-10): Threads");

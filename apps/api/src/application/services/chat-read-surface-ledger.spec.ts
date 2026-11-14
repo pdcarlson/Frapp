@@ -663,6 +663,18 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
       },
     ],
   },
+  // Scheduled messages (#4956): tells the author their own message did not
+  // post. It names the channel only when the failure isn't lost access, so
+  // never one the author can no longer see; nothing another member wrote.
+  'application/services/chat-scheduled-message.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: "Tells the author their own scheduled message didn't post. A lost-access failure names no channel; any other names the channel the author can still post in. It quotes nothing another member wrote.",
+      },
+    ],
+  },
   // Absence excuses (#3735): the receiver's push quotes the reason the
   // member wrote for them, and the decision and reminder name the event.
   'application/services/event-excuse.service.ts': {

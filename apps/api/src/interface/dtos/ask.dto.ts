@@ -126,6 +126,14 @@ export class AskRequestDto {
   actions?: boolean;
 
   @ApiPropertyOptional({
+    description:
+      'True when the client draws the cards an answer comes with (`answer.proposals` on `done`). Read only with `actions`, by a server that answers through the tool loop: a turn can then be an answer with cards under it, or up to five cards. Without it a turn comes with at most one card, sent as a `proposal` event in place of the answer.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  answer_cards?: boolean;
+
+  @ApiPropertyOptional({
     enum: ASK_DOORS,
     description:
       'Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message.',

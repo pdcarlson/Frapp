@@ -242,9 +242,10 @@ export function usePatchOrgConfig() {
         let next = old as Record<string, unknown>;
         if (modules) {
           const current =
-            (next.enabled_modules as Record<string, boolean> | null | undefined) ??
-            {};
-          for (const key of Object.keys(modules)) touchedModules[key] = current[key];
+            (next.enabled_modules as
+              Record<string, boolean> | null | undefined) ?? {};
+          for (const key of Object.keys(modules))
+            touchedModules[key] = current[key];
           next = { ...next, enabled_modules: { ...current, ...modules } };
         }
         if (optOut !== undefined) {
@@ -264,7 +265,9 @@ export function usePatchOrgConfig() {
         qc.setQueryData(queryKey, context.previous);
       }
       const optOutBefore =
-        context && "touchedOptOut" in context ? context.touchedOptOut : undefined;
+        context && "touchedOptOut" in context
+          ? context.touchedOptOut
+          : undefined;
       if (optOutBefore) {
         qc.setQueryData(chapterKey, (old: unknown) =>
           old && typeof old === "object"
@@ -272,7 +275,8 @@ export function usePatchOrgConfig() {
             : old,
         );
       }
-      const touched = context && "touchedModules" in context ? context.touchedModules : null;
+      const touched =
+        context && "touchedModules" in context ? context.touchedModules : null;
       if (touched) {
         qc.setQueryData(chapterKey, (old: unknown) => {
           if (!old || typeof old !== "object") return old;
@@ -298,7 +302,8 @@ export function usePatchOrgConfig() {
     // back. During `onSettled` this mutation still counts as pending, so 1
     // means "only this one".
     onSettled: () => {
-      if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) > 1) return;
+      if (qc.isMutating({ mutationKey: configMutationKey(chapterId) }) > 1)
+        return;
       void qc.invalidateQueries({ queryKey });
       void qc.invalidateQueries({ queryKey: chapterKey });
     },

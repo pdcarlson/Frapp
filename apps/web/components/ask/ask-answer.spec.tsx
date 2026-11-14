@@ -12,6 +12,7 @@ import {
   ACT_COPY,
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_EFFORT_COPY,
   ASK_FEEDBACK_COPY,
   askReadLine,
   type AskAnswer,
@@ -27,6 +28,7 @@ const thumbs = vi.hoisted(() => ({
   askId: undefined as string | null | undefined,
   rate: vi.fn(),
   giveReason: vi.fn(),
+  signal: vi.fn(),
 }));
 const reportDialog = vi.hoisted(() => ({ opened: vi.fn() }));
 vi.mock("@/components/ai/report-ai", async (importOriginal) => ({
@@ -60,6 +62,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActEventAudience: () => ({ mutateAsync: vi.fn(), isPending: false }),
   // The hook has its own spec (`use-ask-feedback.spec.tsx`); here it is what
   // the row draws from.
+  useAskSignal: () => thumbs.signal,
   useAskThumbs: (askId: string | null | undefined) => {
     thumbs.askId = askId;
     return {
@@ -140,11 +143,15 @@ const show = (
     retry?: () => void;
     consent?: () => void;
     followMessage?: () => void;
+    thinkHarder?: () => void;
+    busy?: boolean;
   } = {},
 ) =>
   render(
     <AskTurn
       exchange={value}
+      busy={handlers.busy}
+      onThinkHarder={handlers.thinkHarder}
       onRetry={handlers.retry ?? (() => undefined)}
       onAnswerConsent={handlers.consent ?? (() => undefined)}
       onFollowMessage={handlers.followMessage}
@@ -694,6 +701,64 @@ describe("AskTurn", () => {
       );
       expect(screen.queryByText(ASK_FEEDBACK_COPY.prompt)).toBeNull();
       expect(reportDialog.opened).not.toHaveBeenCalled();
+    });
+
+    it("count a source opened from its chip or its marker, against the kept trace", () => {
+      kept(null);
+      thumbs.signal.mockClear();
+      const first = screen.getAllByRole("link", { name: /^Source 1:/ });
+      // The marker in the sentence and the chip under it.
+      expect(first.length).toBeGreaterThan(1);
+      for (const link of first) {
+        link.addEventListener("click", (event) => event.preventDefault());
+        fireEvent.click(link);
+      }
+      expect(thumbs.signal).toHaveBeenCalledTimes(first.length);
+      expect(thumbs.signal).toHaveBeenCalledWith("trace-1", "source_opened");
+    });
+
+    it("count nothing under an answer with no kept trace", () => {
+      thumbs.signal.mockClear();
+      show(exchange({ askId: "a-1" }));
+      const link = screen.getAllByRole("link", { name: /^Source 1:/ })[0]!;
+      link.addEventListener("click", (event) => event.preventDefault());
+      fireEvent.click(link);
+      expect(thumbs.signal).not.toHaveBeenCalled();
+    });
+
+    it("sit beside Think harder, which asks again once and waits while another turn is answered", async () => {
+      thumbs.state = { rating: null, reason: null };
+      const traced = { ...ANSWER, ask_id: "trace-1" };
+      const thinkHarder = vi.fn();
+      const { unmount } = show(exchange({ askId: "a-1", answer: traced }), {
+        thinkHarder,
+      });
+      await userEvent.click(
+        screen.getByRole("button", { name: ASK_EFFORT_COPY.action }),
+      );
+      expect(thinkHarder).toHaveBeenCalledTimes(1);
+      unmount();
+
+      // Not on the harder answer itself, not without a trace, not where the
+      // host offers none.
+      const none = (value: AskExchange, on = true) => {
+        const view = show(value, on ? { thinkHarder } : {});
+        expect(
+          screen.queryByRole("button", { name: ASK_EFFORT_COPY.action }),
+        ).toBeNull();
+        view.unmount();
+      };
+      none(exchange({ askId: "a-1", answer: traced, effort: "more" }));
+      none(exchange({ askId: "a-1" }));
+      none(exchange({ askId: "a-1", answer: traced }), false);
+
+      show(exchange({ askId: "a-1", answer: traced }), {
+        thinkHarder,
+        busy: true,
+      });
+      expect(
+        screen.getByRole("button", { name: ASK_EFFORT_COPY.action }),
+      ).toBeDisabled();
     });
 
     it("say so when a rating did not send", () => {

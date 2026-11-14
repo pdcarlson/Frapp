@@ -65,7 +65,8 @@ import { TaskModule } from '../task/task.module';
  *
  * `AskConversationService` is what the route calls: it runs a question
  * through `AskService` and, for a client that shows proposal cards, through
- * `ActService` (`ActModule`) beside it.
+ * `ActService` (`ActModule`) beside it. With the tool loop on, the cards
+ * are the loop's own: `ActModule` exports them as `AGENT_PROPOSE_TOOLS`.
  */
 @Module({
   imports: [

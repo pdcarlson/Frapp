@@ -532,6 +532,28 @@ vi.mock("@/components/members/member-detail-sheet", () => ({
 const gifState = vi.hoisted(() => ({
   value: { available: false, provider: "" },
 }));
+// All threads (#4960): its list has its own spec; here it is two rows that
+// open a thread elsewhere, so the shell's half (switch channel, open the
+// thread) is what's under test.
+vi.mock("./all-threads-popover", () => ({
+  AllThreadsPopover: ({
+    onOpenThread,
+  }: {
+    onOpenThread: (channelId: string, rootId: string) => void;
+  }) => (
+    <>
+      <button
+        data-testid="all-threads-random"
+        onClick={() => onOpenThread("chan-random", "root-r")}
+      />
+      <button
+        data-testid="all-threads-new"
+        onClick={() => onOpenThread("chan-new", "root-n")}
+      />
+    </>
+  ),
+}));
+
 vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi
@@ -717,6 +739,19 @@ vi.mock("@repo/hooks", async () => ({
   // the composer remount and delete wiring. `mockBookmarks` lets the bookmark
   // cases below drive the list without touching the other suites' setup.
   useBookmarks: () => mockBookmarks(),
+  // Scheduled messages (#4956): the composer's chevron and the bar above it.
+  // None scheduled, so the bar draws nothing.
+  useScheduleMessage: () => ({ mutateAsync: vi.fn() }),
+  useScheduledMessages: () => ({ data: [] }),
+  useUpdateScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
+  useSendScheduledMessageNow: () => ({ mutate: vi.fn(), isPending: false }),
+  formatScheduledFor: () => "Tomorrow at 9:00 AM",
+  schedulePresets: (now: Date) => [
+    { key: "tomorrow", label: "Tomorrow at 9:00 AM", at: now },
+  ],
+  scheduleTimeProblem: () => null,
+  scheduledFailureCopy: () => "Not sent.",
   useBookmarkedMessageIds: () =>
     new Set(
       mockBookmarks().data.map((b: { message_id: string }) => b.message_id),
@@ -6687,3 +6722,41 @@ describe("ChatShell's two lists (#3774)", () => {
     });
   });
 });
+
+describe("ChatShell All threads (#4960)", () => {
+  it("switches to the thread's channel and opens the thread there", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("composer");
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("all-threads-random"));
+
+    expect(await screen.findByTestId("thread-panel")).toBeInTheDocument();
+  });
+
+  it("keeps the thread for a channel the cached list hasn't brought in yet", async () => {
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("composer");
+
+    fireEvent.click(screen.getByTestId("all-threads-new"));
+    expect(mockRefetch).toHaveBeenCalled();
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+
+    // The refetch brings the new channel in.
+    const before = channelsQueryState.value;
+    channelsQueryState.value = {
+      ...before,
+      data: [
+        ...CHANNELS,
+        { id: "chan-new", name: "new", type: "PUBLIC", member_ids: [] },
+      ],
+    };
+    try {
+      rerender(<ChatShell initialChannelId="chan-general" />);
+      expect(await screen.findByTestId("thread-panel")).toBeInTheDocument();
+    } finally {
+      channelsQueryState.value = before;
+    }
+  });
+});
+

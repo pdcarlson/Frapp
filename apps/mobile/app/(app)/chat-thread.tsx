@@ -104,6 +104,8 @@ import { useAiSurfaces } from "@/lib/ai/availability";
 import { arrivalUnread } from "@/lib/chat/catch-up-arrival";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { useComposerPlus } from "@/components/chat/use-composer-plus";
+import { useScheduleSend } from "@/components/chat/use-schedule-send";
+import { scheduleRefusal } from "@/lib/chat/schedule-send";
 import {
   ImageViewer,
   ImageViewerContext,
@@ -377,6 +379,7 @@ function ChannelThreadScreen() {
     retryPhoto,
     draft,
     setDraft,
+    restoreDraftFor,
     sendError,
     reactionError,
     clearReactionError,
@@ -1595,6 +1598,29 @@ function ChannelThreadScreen() {
     onPhoto: handleAttach,
   });
 
+  // Scheduling the draft to post later (#4956): a long press on Send, and
+  // the line above the composer that opens the member's Scheduled list.
+  // Scheduling needs posting here; the list of what the member scheduled
+  // needs only reading, so a message that failed for lost posting can still
+  // be seen and deleted. The draft is set without a typing ping: it is not
+  // the member typing.
+  const scheduleSend = useScheduleSend({
+    channelId: channelId ?? null,
+    canSchedule: !postCapability.isAuditLog && channelCanPost,
+    showList: !postCapability.isAuditLog,
+    draft,
+    refusal: scheduleRefusal({
+      text: draft,
+      photos: photos.length,
+      replying: replyContext !== null,
+      asksFrapp: namesFrapp(draft),
+      writeBlocked: writeBlockedReason,
+    }),
+    picksFor: staging.picksFor,
+    setDraft,
+    restoreDraftFor,
+  });
+
   const notificationPrefsQuery = useChannelNotificationPreferences();
   const setNotificationLevel = useSetChannelNotificationLevel();
   const notificationLevel = useMemo(
@@ -2118,6 +2144,12 @@ function ChannelThreadScreen() {
               onRemovePhoto={removePhoto}
               onRetryPhoto={retryPhoto}
               isPicking={isPicking}
+              onSchedule={
+                canSend && !staging.isSavingEdit
+                  ? scheduleSend.openSchedule
+                  : undefined
+              }
+              scheduled={scheduleSend.scheduled}
             />
           )}
         </View>
@@ -2154,6 +2186,7 @@ function ChannelThreadScreen() {
         openChannelId={channelId ?? null}
       />
       {composerPlus.sheets}
+      {scheduleSend.sheets}
       {catchUp.sheets}
       {channelAsk?.sheets}
       <MessageActionsSheet
