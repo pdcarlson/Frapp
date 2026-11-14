@@ -91,22 +91,52 @@ describe("ScheduledRows (#4956)", () => {
     expect(button(tree, "Send now")).toBeUndefined();
   });
 
-  it("edits text and time in place, and puts a failed one at the next preset", () => {
+  it("saves a failed one with new text and no time, so it goes at once", () => {
     update.mockClear();
     const tree = render([
-      message({ status: "failed", failure_reason: "send_failed" }),
+      message({
+        status: "failed",
+        failure_reason: "send_failed",
+        content: "@Jane chapter is at 8",
+        mention_picks: [{ user_id: "u-jane", label: "Jane" }],
+      }),
     ]);
+    act(() => button(tree, "Edit")!.props.onPress());
+    expect(screenText(tree)).toContain("It sends as soon as you save.");
+    const input = tree.root.find(
+      (node) => (node.type as unknown) === "BottomSheetTextInput",
+    );
+    act(() => input.props.onChangeText("@Jane chapter is at 9"));
+    act(() => button(tree, "Save")!.props.onPress());
+    expect(update.mock.calls[0]![0]).toEqual({
+      id: "s1",
+      content: "@Jane chapter is at 9",
+      mentionPicks: [{ user_id: "u-jane", label: "Jane" }],
+    });
+  });
+
+  it("gives a failed one a new time from the next preset", () => {
+    update.mockClear();
+    const tree = render([message({ status: "failed" })]);
+    act(() => button(tree, "Edit")!.props.onPress());
+    act(() => button(tree, "Pick a time")!.props.onPress());
+    act(() => button(tree, "Save")!.props.onPress());
+    const vars = update.mock.calls[0]![0];
+    expect(vars.content).toBeUndefined();
+    expect(vars.sendAt.getHours()).toBe(9);
+    expect(vars.sendAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it("leaves the time alone when only the text changed", () => {
+    update.mockClear();
+    const tree = render([message({})]);
     act(() => button(tree, "Edit")!.props.onPress());
     const input = tree.root.find(
       (node) => (node.type as unknown) === "BottomSheetTextInput",
     );
     act(() => input.props.onChangeText("Chapter is at 9"));
     act(() => button(tree, "Save")!.props.onPress());
-    const vars = update.mock.calls[0]![0];
-    expect(vars.id).toBe("s1");
-    expect(vars.content).toBe("Chapter is at 9");
-    expect(vars.sendAt.getHours()).toBe(9);
-    expect(vars.sendAt.getTime()).toBeGreaterThan(Date.now());
+    expect(update.mock.calls[0]![0].sendAt).toBeUndefined();
   });
 
   it("won't save an emptied message", () => {

@@ -17,6 +17,7 @@ import {
   type ScheduledMessage,
 } from "@repo/hooks";
 import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
+import { mentionPicksIn } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -41,7 +42,7 @@ import { ScheduleWhenField } from "./schedule-send-sheet";
  * Scheduled list works. Only the member sees these. Each row says when it
  * goes, or why it didn't, and offers Edit (text and time, in place), Send now
  * and Delete. A row that didn't send has no Send now: Edit puts it back in
- * line, checked again.
+ * line, checked again, at once unless a new time is picked.
  *
  * The read lives in {@link ScheduledRows}, a child of the modal, so it runs
  * while the sheet is up; the line above the composer reads the same query.
@@ -208,16 +209,18 @@ function ScheduledEditRow({
   const brand = useChapterBranding();
   const styles = createStyles(tokens, brand.accent);
   const update = useUpdateScheduledMessage();
-  // A failed message's time has passed: offer the next preset instead.
-  const [at, setAt] = useState(() =>
-    row.status === "failed"
-      ? schedulePresets(new Date())[0].at
-      : new Date(row.send_at),
+  const failed = row.status === "failed";
+  // A failed message's time has passed, so it opens with none: saved so, it
+  // goes at the API's next sweep, as web's empty fields do. "Pick a time"
+  // starts the pickers at the next preset.
+  const [at, setAt] = useState<Date | null>(() =>
+    failed ? null : new Date(row.send_at),
   );
   const [content, setContent] = useState(row.content);
   const [focused, setFocused] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const problem = scheduleTimeProblem(at, new Date());
+  const problem = at ? scheduleTimeProblem(at, new Date()) : null;
+  const timeChanged = at !== null && at.toISOString() !== row.send_at;
   const empty = content.trim() === "";
   const blocked = update.isPending;
 
@@ -237,12 +240,23 @@ function ScheduledEditRow({
           focused ? styles.fieldFocused : null,
         ]}
       />
-      <ScheduleWhenField
-        value={at}
-        onChange={setAt}
-        disabled={blocked}
-        brand={brand}
-      />
+      {at ? (
+        <ScheduleWhenField
+          value={at}
+          onChange={setAt}
+          disabled={blocked}
+          brand={brand}
+        />
+      ) : (
+        <View style={styles.sendAtOnce}>
+          <Text style={styles.meta}>It sends as soon as you save.</Text>
+          <RowAction
+            label="Pick a time"
+            disabled={blocked}
+            onPress={() => setAt(schedulePresets(new Date())[0].at)}
+          />
+        </View>
+      )}
       {problem || error ? (
         <Text accessibilityLiveRegion="polite" style={styles.metaFailed}>
           {problem ?? error}
@@ -259,8 +273,18 @@ function ScheduledEditRow({
             update.mutate(
               {
                 id: row.id,
-                ...(content !== row.content ? { content } : {}),
-                sendAt: at,
+                // The `@` picks the new text still writes (#3835), so a
+                // typo fix keeps its mentions reaching the members picked.
+                ...(content !== row.content
+                  ? {
+                      content,
+                      mentionPicks: mentionPicksIn(
+                        content,
+                        row.mention_picks ?? [],
+                      ),
+                    }
+                  : {}),
+                ...(at && timeChanged ? { sendAt: at } : {}),
               },
               {
                 onSuccess: onDone,
@@ -341,6 +365,12 @@ function createStyles(tokens: SignetTokens, accent: string) {
     metaFailed: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructiveText,
+    },
+    sendAtOnce: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: tokens.spacing.md,
     },
     content: {
       ...typeRole(tokens.typography.role.body),
