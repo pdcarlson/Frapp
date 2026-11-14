@@ -22,7 +22,7 @@ import {
   LeadTileSkeleton,
   leadRowStyles,
 } from "@/components/lead-tile";
-import { MemberAvatar } from "@/components/member-avatar";
+import { FaceWithBadge } from "@/components/face-with-badge";
 import { NavGlyph } from "@/components/nav-glyph";
 import { SkeletonText } from "@/components/state-block";
 import { HairlineChip, StatusChip } from "@/components/status-chip";
@@ -30,8 +30,7 @@ import { tintedControlStyles } from "@/components/tinted-control";
 import { createUnreadDotStyles } from "@/components/unread-dot";
 import { activityBadgeHue } from "@/lib/activity/badge-hue";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { initialsFor } from "@/lib/chat/display-name";
-import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Resolves a row's `faceId` on the chapter roster (#4402, item 4). The screen
@@ -224,28 +223,21 @@ function ActivityRowLead({
     // The face of who the row is from, with its kind's glyph small on the
     // corner, as Teams' and Slack's Activity draw the actor (#4402, item 4).
     return (
-      <View
-        style={styles.face}
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
+      <FaceWithBadge
+        size={LEAD_SIZE}
+        avatarUrl={face.avatarUrl}
+        name={face.name ?? "?"}
+        tint={face.tint}
         testID={`activity-face-${row.glyph}`}
-      >
-        <MemberAvatar
-          uri={face.avatarUrl}
-          initials={initialsFor(face.name ?? "?")}
-          size={LEAD_SIZE}
-          tint={face.tint}
-          style={styles.faceCircle}
-          textStyle={styles.faceText}
-        />
-        <View style={styles.faceGlyph} testID="activity-face-glyph">
+        badgeTestID="activity-face-glyph"
+        badge={(glyph) => (
           <NavGlyph
             paths={NAV_GLYPHS[ACTIVITY_GLYPH_NAV[row.glyph]]}
-            color={tokens.color.text.mutedForeground}
-            size={FACE_GLYPH_SIZE}
+            color={glyph.color}
+            size={glyph.size}
           />
-        </View>
-      </View>
+        )}
+      />
     );
   }
   if (row.dateBlock) {
@@ -268,10 +260,6 @@ function ActivityRowLead({
     </LeadTile>
   );
 }
-
-/** The kind's glyph on a face's corner: web's 12px in a 20px disc. */
-const FACE_GLYPH_SIZE = 12;
-const FACE_GLYPH_DISC = 20;
 
 /**
  * A row's second line. A closing time or due time less than a day away
@@ -498,40 +486,6 @@ function createActivityRowStyles(tokens: SignetTokens) {
         weight: tokens.typography.weight.semibold,
       }).fontFamily,
       color: tokens.color.semantic.warning,
-    },
-    face: {
-      width: LEAD_SIZE,
-      height: LEAD_SIZE,
-      flexShrink: 0,
-    },
-    faceCircle: {
-      width: LEAD_SIZE,
-      height: LEAD_SIZE,
-      borderRadius: avatarRadius(LEAD_SIZE),
-      alignItems: "center",
-      justifyContent: "center",
-      overflow: "hidden",
-      backgroundColor: tokens.color.surface.popover,
-    },
-    faceText: {
-      ...typeRole({
-        ...tokens.typography.role.caption,
-        weight: tokens.typography.weight.bold,
-      }),
-      color: tokens.color.text.mutedForeground,
-    },
-    faceGlyph: {
-      position: "absolute",
-      right: -2,
-      bottom: -2,
-      width: FACE_GLYPH_DISC,
-      height: FACE_GLYPH_DISC,
-      borderRadius: avatarRadius(FACE_GLYPH_DISC),
-      alignItems: "center",
-      justifyContent: "center",
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
     },
     leadDate: {
       alignItems: "center",

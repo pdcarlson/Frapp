@@ -22,6 +22,7 @@ import {
   useViewerUserId,
 } from "@repo/hooks";
 import {
+  NOTIFICATION_BADGE,
   NOTIFICATION_KIND_LABEL,
   NOTIFICATION_TILE_GLYPH,
   NOTIFICATION_TILE_HUE,
@@ -63,10 +64,9 @@ import {
   openNotificationTarget,
 } from "@/lib/notifications/targets";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
-import { MemberAvatar } from "@/components/member-avatar";
+import { FaceWithBadge } from "@/components/face-with-badge";
 import { NavGlyph } from "@/components/nav-glyph";
 import { AnnouncementGlyph } from "@/components/chat/card-glyphs";
-import { initialsFor } from "@/lib/chat/display-name";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { InlineNote } from "@/components/inline-note";
 import { Segmented } from "@/components/segmented";
@@ -456,29 +456,13 @@ function NotificationPicture({
     );
   }
   const names = people.names;
-  return (
-    <View style={styles.picture}>
-      <MemberAvatar
-        uri={personId && names ? names.avatarFor(personId) : null}
-        initials={personName ? initialsFor(personName) : ""}
-        size={PICTURE_SIZE}
-        tint={personId && names ? names.avatarTintFor(personId) : null}
-        style={styles.avatar}
-        textStyle={styles.avatarText}
-      />
-      <KindBadge kind={kind} />
-    </View>
-  );
-}
-
-function KindBadge({ kind }: { kind: NotificationKind }) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  // What the badge holds, from the map web reads too (#4476).
+  const badge = NOTIFICATION_BADGE[kind];
   // The mention is the badge in gold: the in-body mention chip's fixed pair
   // (`components.md` § In-body mention chip), inverted so it reads at 18pt.
   // Fixed, never the chapter accent, so a mention looks alike in every
   // chapter (`foundations.md` §5, as changed in #4346). A join is the success
-  // green.
+  // green; any other kind is the neutral disc.
   const tone =
     kind === "mention"
       ? {
@@ -490,40 +474,35 @@ function KindBadge({ kind }: { kind: NotificationKind }) {
             fill: tokens.color.semantic.success,
             ink: tokens.color.surface.background,
           }
-        : {
-            fill: tokens.color.surface.popover,
-            ink: tokens.color.text.mutedForeground,
-          };
-  const mark =
-    kind === "mention"
-      ? "@"
-      : kind === "channel"
-        ? "#"
-        : kind === "join"
-          ? "+"
-          : null;
+        : undefined;
   return (
-    <View
-      style={[styles.badge, { backgroundColor: tone.fill }]}
-      testID={`notification-badge-${kind}`}
-    >
-      {mark ? (
-        <Text style={[styles.badgeMark, { color: tone.ink }]}>{mark}</Text>
-      ) : kind === "announcement" ? (
-        <AnnouncementGlyph
-          focused
-          accent={tone.ink}
-          muted={tone.ink}
-          size={BADGE_GLYPH_SIZE}
-        />
-      ) : (
-        <NavGlyph
-          paths={NAV_GLYPHS.chat}
-          color={tone.ink}
-          size={BADGE_GLYPH_SIZE}
-        />
-      )}
-    </View>
+    <FaceWithBadge
+      size={PICTURE_SIZE}
+      avatarUrl={personId && names ? names.avatarFor(personId) : null}
+      name={personName}
+      tint={personId && names ? names.avatarTintFor(personId) : null}
+      tone={tone}
+      badgeTestID={`notification-badge-${kind}`}
+      badge={
+        "mark" in badge
+          ? badge.mark
+          : (glyph) =>
+              "glyph" in badge ? (
+                <NavGlyph
+                  paths={NAV_GLYPHS[badge.glyph]}
+                  color={glyph.color}
+                  size={glyph.size}
+                />
+              ) : (
+                <AnnouncementGlyph
+                  focused
+                  accent={glyph.color}
+                  muted={glyph.color}
+                  size={glyph.size}
+                />
+              )
+      }
+    />
   );
 }
 
@@ -581,9 +560,6 @@ const LINE_HEIGHT = 20;
 
 /** The picture's circle: a notice row is a step roomier than chat's 32. */
 const PICTURE_SIZE = 36;
-/** The kind badge on the picture's corner, and the glyph inside it. */
-const BADGE_SIZE = 18;
-const BADGE_GLYPH_SIZE = 11;
 const TILE_GLYPH_SIZE = 20;
 
 function createStyles(tokens: SignetTokens) {
@@ -620,26 +596,6 @@ function createStyles(tokens: SignetTokens) {
     dotPlace: {
       marginTop: (PICTURE_SIZE - DOT_SIZE) / 2,
     },
-    picture: {
-      width: PICTURE_SIZE,
-      height: PICTURE_SIZE,
-    },
-    // Chat's author avatar (`message-item.tsx`), a step larger.
-    avatar: {
-      width: PICTURE_SIZE,
-      height: PICTURE_SIZE,
-      borderRadius: avatarRadius(PICTURE_SIZE),
-      backgroundColor: tokens.color.surface.popover,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    avatarText: {
-      ...typeRole({
-        ...tokens.typography.role.caption,
-        weight: tokens.typography.weight.bold,
-      }),
-      color: tokens.color.text.mutedForeground,
-    },
     // Rounded square, so a notice nobody sent never reads as a person.
     tile: {
       width: PICTURE_SIZE,
@@ -647,26 +603,6 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       alignItems: "center",
       justifyContent: "center",
-    },
-    // Ringed in the screen's own ground so it reads as sitting on the circle.
-    badge: {
-      position: "absolute",
-      right: -tokens.spacing.xs,
-      bottom: -tokens.spacing.xs,
-      width: BADGE_SIZE + 4,
-      height: BADGE_SIZE + 4,
-      borderRadius: (BADGE_SIZE + 4) / 2,
-      borderWidth: 2,
-      borderColor: tokens.color.surface.background,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    badgeMark: {
-      ...typeRole({
-        ...tokens.typography.role.caption,
-        weight: tokens.typography.weight.bold,
-      }),
-      lineHeight: BADGE_SIZE - 2,
     },
     rowText: {
       flex: 1,

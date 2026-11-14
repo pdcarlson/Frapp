@@ -648,12 +648,11 @@ They stay neutral: the page's colour is for asks and status.
 
 A row from another member leads with that member's face instead
 ([#4463](https://github.com/pdcarlson/Frapp/issues/4463), 2026-11-12): their
-photo or initials on their tint in a 40px circle, with the same kind glyph at
-12px in a 20px `--surface-1` disc with a 1px `--border` on the face's lower
-corner (on the phone, 12pt in a 20pt `surface1` disc with a hairline border).
-The glyph keeps its neutral colour there; only the member's own tint is
-coloured. Which rows take a face:
+photo or initials on their tint in a 40px circle, with the same kind glyph
+small on the face's lower corner. The glyph keeps its neutral colour there;
+only the member's own tint is coloured. Which rows take a face:
 [`spec/ui/web-dashboard/README.md` § Activity](../web-dashboard/README.md#activity).
+The face and its badge, and their measurements, are §6.2.5b's.
 
 | Row kind | Shape (nav set key, Phosphor name) |
 |---|---|
@@ -665,6 +664,39 @@ coloured. Which rows take a face:
 | Sign-up link | `link`, `link` (added for it) |
 | Sign-up sheet or headcount to answer (#3926) | `signup`, `list-checks` (added for it) |
 | Form to fill out (#3926) | `form`, `clipboard-text` (added for it) |
+
+### 6.2.5b A face with a kind badge (one recipe, #4476)
+
+Notifications (#4346) and Activity (#4463) both lead a row with a member's
+face and a small badge on its lower corner naming the kind, as Slack's and
+Teams' Activity draw the actor. Since
+[#4476](https://github.com/pdcarlson/Frapp/issues/4476) (2026-11-14) one
+component per platform draws both:
+[`apps/web/components/shared/face-with-badge.tsx`](../../../apps/web/components/shared/face-with-badge.tsx)
+and [`apps/mobile/components/face-with-badge.tsx`](../../../apps/mobile/components/face-with-badge.tsx).
+Each surface keeps its own face size (notifications 36, Activity 40); the
+badge is measured from it, by `@repo/hooks/face-badge`, which both clients read:
+
+| Part | Spec |
+|---|---|
+| Face | Photo, else initials on the member's tint (`avatarTintFor`), in a circle |
+| Badge | A disc half the face's diameter (18 on a 36 face, 20 on a 40) |
+| Glyph or mark | Three fifths of the disc (11 on 18, 12 on 20); a mark (`@`, `#`, `+`) at the caption size, bold. Which a notification kind wears is `NOTIFICATION_BADGE` in `@repo/hooks/notification-rows`, read by both clients |
+| Edge | A 1px `--border` hairline (on the phone, a 1pt `border.hairline` border, not `hairlineWidth`) |
+| Offset | The disc's edge 4px (4pt) past the face's lower right corner, so it clears the initials on the smaller 36 face |
+| Colour | Neutral: `--surface-1` with the glyph in `--muted-foreground`. A kind with a hue passes its own fill and ink (a mention's fixed gold, a join's success green; components.md § In-body mention chip) |
+
+It keeps Activity's hairline disc with the notifications list's offset. The
+list drew an 18px badge 4px past the corner, cut out of the face by a 2px ring in the
+popover's colour (on the phone, the screen's background); Activity drew the
+hairline disc 2px past the corner. Activity's 2px offset lands the badge on
+the initials of a 36 face, so the shared recipe takes the list's 4px. A ring cut in one ground's colour shows as a halo on any
+other ground, and the face sits on several: the popover, the page, a card,
+and a hovered or pressed row whose fill changes under it. The hairline reads
+on all of them. The neutral fill moved with it: the list's neutral badge was
+`--card-hover` on web and `popover` on the phone; both are `surface-1` now. A
+DM's badge is Direct messages' nav glyph on both clients: until #4476 web drew
+chat's two-bubble glyph for it and the phone fell back to the chat bubble.
 
 ### 6.2.6 Settings & Roles (Signet duotone) — no family file, deliberately
 

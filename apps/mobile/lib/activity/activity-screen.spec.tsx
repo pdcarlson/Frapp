@@ -1139,7 +1139,9 @@ describe("Activity screen (#3897)", () => {
     const face = lead("Book the venue", "activity-face-task");
     expect(face.length).toBeGreaterThan(0);
     expect(drawnText(face[0]!)).toContain("OO");
-    expect(face[0]!.props.accessibilityElementsHidden).toBe(true);
+    // The drawn View, not the shared `FaceWithBadge` that carries its id.
+    const drawn = face.find((node) => (node.type as unknown) === "View")!;
+    expect(drawn.props.accessibilityElementsHidden).toBe(true);
     // Her photo and tint reach the avatar, and the kind's glyph its corner.
     const avatar = face[0]!.findByType(MemberAvatar);
     expect(avatar.props.uri).toBe("https://photos.example/olive.png");
