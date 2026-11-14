@@ -13,6 +13,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
@@ -35,6 +36,8 @@ import {
   CreateEventDto,
   CreateEventResponseDto,
   DeleteEventQueryDto,
+  EventDetailResponseDto,
+  EventResponseDto,
   UpdateEventDto,
 } from '../dtos/event.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -51,20 +54,22 @@ export class EventController {
 
   @Get()
   @ApiOperation({ summary: 'List chapter events' })
+  @ApiOkResponse({ type: [EventResponseDto] })
   async list(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-  ) {
+  ): Promise<EventResponseDto[]> {
     return this.eventService.findByChapter(chapterId, userId);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get event by id' })
+  @ApiOkResponse({ type: EventDetailResponseDto })
   async getOne(
     @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
-  ) {
+  ): Promise<EventDetailResponseDto> {
     const event = await this.eventService.findById(id, chapterId, userId);
     // Additive (#4808): whether check-in now needs the officer's code, so web
     // says to scan rather than offering a Check in the server refuses. Never
