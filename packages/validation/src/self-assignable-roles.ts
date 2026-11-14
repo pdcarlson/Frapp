@@ -15,7 +15,7 @@
  *   it opens is the channels whose who-can-see and who-can-post lists name it.
  *
  * The database holds a second copy (`role_self_assignable_safe`, migration
- * `20261114043300`), whose constraint refuses any write that leaves a marked
+ * `20261114171856`), whose constraint refuses any write that leaves a marked
  * role unsafe. This copy is what the API answers 400 with and what clients
  * explain a disabled switch by. Each copy is tested on its own against the
  * same cases and nothing compares them, so change both together.
