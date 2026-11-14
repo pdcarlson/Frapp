@@ -35,9 +35,11 @@ export const CHAT_ACTIVITY_COALESCE_MS = 250;
 /**
  * How long after the inbox's first join the handler waits for a read of the
  * unread counts to start before it starts one itself (#4961). A read that
- * starts after the join counts every message the join could have missed. On a
- * cold open one usually follows within a few hundred milliseconds: opening a
- * thread stamps it read, and the stamp re-reads the counts.
+ * starts after the join counts every message the join could have missed.
+ * Opening a thread stamps it read, and the stamp re-reads the counts, so a
+ * cold open onto a thread needs no read of its own. A cold open anywhere else
+ * (another web page, the phone's chat home) has no such read, and pays this
+ * one, a second read of the counts and previews, to close the gap.
  */
 export const CHAT_JOIN_CHECK_MS = 1_000;
 
@@ -163,10 +165,21 @@ export function createChatActivityHandler(
   };
 
   /*
-    Watches for a read of the unread counts that starts after the join. A
-    `fetch` action is dispatched only when a request really starts (a read
-    already in flight is shared, not restarted), so one seen here was sent
-    after the join, and the server answers it from after the join too.
+    Decides, `joinCheckMs` after the join, whether a read of the unread counts
+    started after it. Such a read is seen two ways:
+    - a `fetch` action, dispatched when a read starts on an idle query;
+    - a promise other than the one in flight at the join. A refetch that
+      cancels and replaces a running one dispatches no `fetch` action, but
+      each request runs in a fresh retryer, whose promise `query.promise` is
+      until it settles, its `success` included.
+    A read already in flight at the join is shared, not restarted, and keeps
+    its promise: it may have read the server before the join, so it doesn't
+    count.
+
+    When no read started after the join, the resync's invalidation must not
+    be folded into a read still running from before it: a query with no data
+    yet hands an invalidation the running promise and sends nothing new. So
+    the resync waits for that read to settle first.
   */
   const checkJoin = () => {
     stopJoinCheck();
@@ -180,20 +193,44 @@ export function createChatActivityHandler(
       (unread.state.dataUpdatedAt === 0 &&
         unread.state.fetchStatus === "idle");
     if (neverRead) return;
+    const promiseAtJoin = unread.promise;
+    let readSinceJoin = false;
+    const sentSinceJoin = () =>
+      readSinceJoin ||
+      (unread.promise !== undefined && unread.promise !== promiseAtJoin) ||
+      cache.find({ queryKey: CHANNEL_UNREAD_COUNTS_KEY, exact: true }) !==
+        unread;
     const unsubscribe = cache.subscribe((event) => {
+      if (event.type !== "updated" || event.query !== unread) return;
       if (
-        event.type === "updated" &&
-        event.query.queryHash === unread.queryHash &&
-        event.action.type === "fetch"
+        event.action.type === "fetch" ||
+        (event.action.type === "success" && unread.promise !== promiseAtJoin)
       ) {
+        readSinceJoin = true;
         stopJoinCheck();
       }
     });
+    let stopped = false;
     const timeout = setTimeout(() => {
-      stopJoinCheck();
-      handle({ type: "resync" });
+      if (sentSinceJoin()) {
+        stopJoinCheck();
+        return;
+      }
+      const running =
+        unread.state.fetchStatus === "fetching" ? unread.promise : undefined;
+      const resync = () => {
+        if (stopped || sentSinceJoin()) {
+          stopJoinCheck();
+          return;
+        }
+        stopJoinCheck();
+        handle({ type: "resync" });
+      };
+      if (running) running.then(resync, resync);
+      else resync();
     }, joinCheckMs);
     stopJoinCheck = () => {
+      stopped = true;
       unsubscribe();
       clearTimeout(timeout);
       stopJoinCheck = () => {};

@@ -188,10 +188,8 @@ export interface ManagerContext {
  *   them should be read again.
  * - `joined`: the inbox's first join went straight through. Nothing was
  *   dropped, but a message that landed after the summaries were read and
- *   before this join reached no one (#4961). The client re-reads only if no
- *   summary read starts after the join: on a cold open the thread's own read
- *   stamp usually re-reads the counts just after it, and a second read would
- *   be the redundant request #4961 removed.
+ *   before this join reached no one (#4961). The client decides whether to
+ *   read them again (`createChatActivityHandler` in `@repo/hooks`).
  */
 export type MessageActivity =
   | {

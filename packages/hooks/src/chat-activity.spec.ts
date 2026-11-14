@@ -262,9 +262,12 @@ describe("createChatActivityHandler: the inbox's first join (#4961)", () => {
   let markRead: Mock<(channelId: string) => Promise<unknown>>;
   let viewing: string | null;
   let stopObserving: () => void;
+  /** Runs inside each read of `mountBadge`'s query, before it answers. */
+  let observerFn: () => Promise<void>;
 
   beforeEach(() => {
     vi.useFakeTimers();
+    observerFn = async () => {};
     serverUnread = 0;
     reads = 0;
     viewing = null;
@@ -297,6 +300,7 @@ describe("createChatActivityHandler: the inbox's first join (#4961)", () => {
       queryKey: CHANNEL_UNREAD_COUNTS_KEY,
       queryFn: async () => {
         reads += 1;
+        await observerFn();
         return [
           { channel_id: "c1", unread_count: serverUnread, mention_count: 0 },
         ];
@@ -378,6 +382,114 @@ describe("createChatActivityHandler: the inbox's first join (#4961)", () => {
     await vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS);
     expect(reads).toBe(2);
     expect(badge()).toBe(1);
+  });
+
+  test("a first read that outlasts the check is read again once it settles", async () => {
+    // A slow bootstrap: the counts' first read is still running, with no data
+    // yet, when the check gives up waiting. An invalidation now would be
+    // folded into that read and send nothing new.
+    let answer!: () => void;
+    const observer = new QueryObserver<ChannelUnreadCount[]>(queryClient, {
+      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+      queryFn: async () => {
+        reads += 1;
+        if (reads === 1) {
+          await new Promise<void>((resolve) => {
+            answer = resolve;
+          });
+        }
+        return [
+          { channel_id: "c1", unread_count: serverUnread, mention_count: 0 },
+        ];
+      },
+    });
+    stopObserving = observer.subscribe(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+
+    const { handle } = handler();
+    handle({ type: "joined" });
+    await vi.advanceTimersByTimeAsync(CHAT_JOIN_CHECK_MS * 3);
+    expect(reads).toBe(1);
+
+    // The message landed after that read's server read, before the join.
+    serverUnread = 1;
+    answer();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS);
+    expect(reads).toBe(2);
+    expect(badge()).toBe(1);
+  });
+
+  test("a refetch that cancels and replaces a running one counts as a read after the join", async () => {
+    viewing = "c1";
+    await mountBadge();
+    // A refetch running at the join (a remount's stale refetch).
+    let answerStale!: () => void;
+    let calls = 0;
+    observerFn = async () => {
+      calls += 1;
+      if (calls === 1) {
+        await new Promise<void>((resolve) => {
+          answerStale = resolve;
+        });
+      }
+    };
+    void queryClient.refetchQueries({ queryKey: CHANNEL_UNREAD_COUNTS_KEY });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reads).toBe(2);
+
+    const { handle } = handler();
+    handle({ type: "joined" });
+
+    // The thread's stamp invalidates the counts: TanStack silently cancels
+    // the running refetch and sends a new one, with no `fetch` action.
+    await vi.advanceTimersByTimeAsync(CHAT_JOIN_CHECK_MS / 4);
+    void queryClient.invalidateQueries({
+      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+      exact: true,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reads).toBe(3);
+    answerStale();
+
+    await vi.advanceTimersByTimeAsync(CHAT_JOIN_CHECK_MS * 2);
+    expect(reads).toBe(3);
+    expect(markRead).not.toHaveBeenCalled();
+  });
+
+  test("another query's read after the join doesn't count", async () => {
+    await mountBadge();
+    serverUnread = 1;
+    const { handle } = handler();
+    handle({ type: "joined" });
+
+    // The channel list, the inbox and the rest of the open read too.
+    await queryClient.fetchQuery({
+      queryKey: CHANNEL_LIST_KEY,
+      queryFn: async () => [],
+    });
+    await vi.advanceTimersByTimeAsync(CHAT_JOIN_CHECK_MS);
+    await vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS);
+    expect(reads).toBe(2);
+    expect(badge()).toBe(1);
+  });
+
+  test("counts cached but not read yet (waiting for the chapter) need nothing", async () => {
+    viewing = "c1";
+    const observer = new QueryObserver<ChannelUnreadCount[]>(queryClient, {
+      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+      queryFn: async () => {
+        reads += 1;
+        return [];
+      },
+      enabled: false,
+    });
+    stopObserving = observer.subscribe(() => {});
+    const { handle } = handler();
+    handle({ type: "joined" });
+    await vi.advanceTimersByTimeAsync(CHAT_JOIN_CHECK_MS * 2);
+    expect(reads).toBe(0);
+    expect(markRead).not.toHaveBeenCalled();
   });
 
   test("counts never read yet need nothing: their first read follows the join", async () => {
