@@ -35,15 +35,15 @@ export const ASK_HISTORY_MAX_TURNS = 6;
 /** An earlier answer is cut to this before it is sent back. */
 export const ASK_HISTORY_ANSWER_MAX_LENGTH = 2000;
 
+/** The most cards one answer can come with. */
+export const ASK_PROPOSALS_MAX = 5;
+
 /**
  * One earlier turn of the conversation: what the member typed, and what
  * Frapp answered. `answer` is empty when the turn had no answer to carry (a
  * proposal, "couldn't find that") or one that must not be sent again (it
  * drew on channel messages; see `askHistory`).
  */
-/** The most cards one answer can come with. */
-export const ASK_PROPOSALS_MAX = 5;
-
 export const AskHistoryTurnSchema = z.object({
   question: z.string().trim().min(1).max(ASK_QUESTION_MAX_LENGTH),
   answer: z.string().max(ASK_HISTORY_ANSWER_MAX_LENGTH),
