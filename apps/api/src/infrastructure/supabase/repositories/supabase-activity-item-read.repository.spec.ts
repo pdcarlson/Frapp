@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ACTIVITY_ITEM_READS_CONFLICT,
+  ACTIVITY_ITEM_SNOOZES_CONFLICT,
   ACTIVITY_UNREAD_STARTS_CONFLICT,
   SupabaseActivityItemReadRepository,
 } from './supabase-activity-item-read.repository';
@@ -41,6 +42,16 @@ const read = (overrides: Record<string, unknown> = {}) => ({
 });
 
 const STARTED = '2026-11-12T08:00:00.000Z';
+const UNTIL = '2026-11-15T09:00:00.000Z';
+
+const snooze = (overrides: Record<string, unknown> = {}) => ({
+  user_id: USER_SHARED,
+  kind: 'task',
+  item_id: ITEM,
+  until: UNTIL,
+  created_at: READ_AT,
+  ...overrides,
+});
 
 const seed = () => ({
   activity_item_reads: [
@@ -53,15 +64,29 @@ const seed = () => ({
     inA({ id: 'start-a', user_id: USER_SHARED, started_at: STARTED }),
     inB({ id: 'start-b', user_id: USER_SHARED, started_at: STARTED }),
   ],
+  activity_item_snoozes: [
+    inA({ id: 'snooze-a', ...snooze() }),
+    inB({ id: 'snooze-b', ...snooze() }),
+    inA({ id: 'snooze-a-other', ...snooze({ user_id: USER_A }) }),
+    inB({ id: 'snooze-b-other', ...snooze({ user_id: USER_A }) }),
+    inA({
+      id: 'snooze-a-old',
+      ...snooze({ item_id: OTHER_ITEM, until: '2026-10-01T09:00:00.000Z' }),
+    }),
+    inB({
+      id: 'snooze-b-old',
+      ...snooze({ item_id: OTHER_ITEM, until: '2026-10-01T09:00:00.000Z' }),
+    }),
+  ],
 });
 
 /** The primary key columns of `table` as the migration declares them. */
-function primaryKeyOf(table: string): string {
+function primaryKeyOf(
+  table: string,
+  migration = '20261111220000_activity_item_reads.sql',
+): string {
   const sql = readFileSync(
-    join(
-      __dirname,
-      '../../../../../../supabase/migrations/20261111220000_activity_item_reads.sql',
-    ),
+    join(__dirname, '../../../../../../supabase/migrations', migration),
     'utf8',
   );
   const body = new RegExp(
@@ -129,6 +154,75 @@ describe('SupabaseActivityItemReadRepository — tenant scope', () => {
       expect(ACTIVITY_UNREAD_STARTS_CONFLICT).toBe(
         primaryKeyOf('activity_unread_starts'),
       );
+      expect(ACTIVITY_ITEM_SNOOZES_CONFLICT).toBe(
+        primaryKeyOf(
+          'activity_item_snoozes',
+          '20261114040716_activity_item_snoozes.sql',
+        ),
+      );
+    });
+  });
+
+  describe('findSnoozes', () => {
+    it('reads only the member’s own snoozes in the chapter that end after the cut', async () => {
+      const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.findSnoozes(CHAPTER_A, USER_SHARED, '2026-11-01T00:00:00.000Z'),
+      );
+
+      expect(rows).toEqual([
+        expect.objectContaining({
+          chapter_id: CHAPTER_A,
+          user_id: USER_SHARED,
+          kind: 'task',
+          item_id: ITEM,
+          until: UNTIL,
+        }),
+      ]);
+    });
+  });
+
+  describe('snooze', () => {
+    it('replaces the member’s snooze of the item, and not the other chapter’s twin', async () => {
+      await harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.snooze(
+          CHAPTER_A,
+          USER_SHARED,
+          { kind: 'task', item_id: ITEM },
+          '2026-11-20T09:00:00.000Z',
+        ),
+      );
+
+      const mine = harness
+        .rows('activity_item_snoozes')
+        .filter((row) => row.user_id === USER_SHARED && row.item_id === ITEM);
+      expect(mine).toHaveLength(2);
+      expect(mine.find((row) => row.chapter_id === CHAPTER_A)?.until).toBe(
+        '2026-11-20T09:00:00.000Z',
+      );
+      expect(mine.find((row) => row.chapter_id === CHAPTER_B)?.until).toBe(
+        UNTIL,
+      );
+    });
+  });
+
+  describe('unsnooze', () => {
+    it('drops only the member’s snooze of the item in the chapter', async () => {
+      await harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.unsnooze(CHAPTER_A, USER_SHARED, { kind: 'task', item_id: ITEM }),
+      );
+
+      expect(
+        harness
+          .rows('activity_item_snoozes')
+          .map((row) => row.id)
+          .sort(),
+      ).toEqual([
+        'snooze-a-old',
+        'snooze-a-other',
+        'snooze-b',
+        'snooze-b-old',
+        'snooze-b-other',
+      ]);
     });
   });
 

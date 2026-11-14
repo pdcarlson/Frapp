@@ -40,10 +40,12 @@ import {
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
   ActivityDto,
+  ActivityItemRefDto,
   ActivityStandingDto,
   ActivityWeekQueryDto,
   MarkActivityReadDto,
   SetActivityLinkStateDto,
+  SnoozeActivityItemDto,
 } from '../dtos/activity.dto';
 
 /**
@@ -156,6 +158,48 @@ export class ActivityController {
     @Body() dto: MarkActivityReadDto,
   ): Promise<void> {
     await this.activityService.markRead(chapterId, userId, dto.items);
+  }
+
+  @Put('snoozes')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Snooze an item on the caller’s Activity until a time',
+    description:
+      'The row leaves the caller’s list and `needs_you_count` until `until`, then comes back, unread unless they open it again after that (`snoozed_until` on its row). Per member; snoozing again replaces the time. Like a read, nothing checks that the caller can see the item: a snooze is theirs alone and changes nothing anyone else sees. `spec/behavior/activity.md` § Snooze.',
+  })
+  @ApiNoContentResponse()
+  @ApiBadRequestResponse({
+    description: '`until` is not in the future, or is more than 90 days away.',
+  })
+  async snooze(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: SnoozeActivityItemDto,
+  ): Promise<void> {
+    await this.activityService.snooze(
+      chapterId,
+      userId,
+      { kind: dto.kind, item_id: dto.item_id },
+      new Date(dto.until),
+    );
+  }
+
+  @Delete('snoozes')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Bring a snoozed item back on the caller’s Activity now',
+    description: 'Idempotent. `spec/behavior/activity.md` § Snooze.',
+  })
+  @ApiNoContentResponse()
+  async unsnooze(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Query() item: ActivityItemRefDto,
+  ): Promise<void> {
+    await this.activityService.unsnooze(chapterId, userId, {
+      kind: item.kind,
+      item_id: item.item_id,
+    });
   }
 
   @Put('links/:id/state')

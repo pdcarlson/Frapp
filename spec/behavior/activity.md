@@ -268,6 +268,38 @@ gets `unread_since: null` begins the member's dots (below).
 - **A hint, not a section.** When the opens can't be read, every row is served as read and the
   failure is reported; the page doesn't fail and nothing lands in `unavailable`.
 
+## Snooze
+
+A member can snooze a row that waits on them until a time they pick, and it comes back then
+([#4982](https://github.com/pdcarlson/Frapp/issues/4982), item 7 of
+[#4402](https://github.com/pdcarlson/Frapp/issues/4402); Shawn, 2026-11-14), the way Gmail's
+Snooze and Slack's Later ("Remind me") work: the thing isn't done, it just isn't for now.
+
+- **Which rows.** The rows that can be unread ([§ Unread](#unread)): everything in Needs you,
+  Coming up and Links. Nothing in Made by you, which waits on others.
+- **Gone until then.** `PUT /v1/activity/snoozes` (the item's kind and id, as a read names it, and
+  `until`) takes it off the member's list. The read still serves the row, with `snoozed_until`,
+  so a client lists it under Snoozed and brings it back on its own clock; it is not counted in
+  `needs_you_count`, so the tab's badge drops with it. The week ring still counts it: snoozing
+  something doesn't finish it. Only the 25 task confirmations the read carries can be told apart,
+  so a snoozed confirmation past them is still counted.
+- **When.** In the future and at most 90 days away; anything else is a 400. A client offers a few
+  fixed times (later today, tomorrow morning, the weekend or next week) rather than a picker.
+  Snoozing again replaces the time; `DELETE /v1/activity/snoozes` with the kind and id brings it
+  back now.
+- **It comes back unread.** A snoozed row that comes back is unread unless the member opened it
+  after it came back, as Gmail brings a snoozed thread back to the top unread. An ended snooze
+  counts for this for 30 days, as long as a link shows.
+- **Nothing else changes.** A snoozed poll is still open in its channel and a snoozed task still
+  falls due; snooze is a view, not a deferral. It sends no push when it ends: the row and the
+  badge are the reminder.
+- **Per member, never shared.** Snoozes live in `activity_item_snoozes`, which only the API reads,
+  filtered on the member. As with a read, nothing checks that the member can see the item: a
+  snooze changes only their own view. They go with the membership: leaving the chapter or
+  deleting the account drops them ([`data-retention.md`](data-retention.md)).
+- **A hint, not a section.** When the snoozes can't be read, nothing is served as snoozed and the
+  failure is reported; the page doesn't fail.
+
 ## Polls and channel access
 
 A poll card is a chat message, so the page must not become a way around a channel's access rule,

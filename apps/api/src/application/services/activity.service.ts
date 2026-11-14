@@ -1,4 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import type { TaskProofKind } from '@repo/validation';
 import {
   CHECK_IN_GRACE_MINUTES,
@@ -11,7 +16,10 @@ import type {
   ActivityItemRef,
   IActivityItemReadRepository,
 } from '#domain/repositories/activity-item-read.repository.interface';
-import type { ActivityItemKind } from '#domain/entities/activity-item-read.entity';
+import type {
+  ActivityItemKind,
+  ActivityItemSnooze,
+} from '#domain/entities/activity-item-read.entity';
 import { CHAT_FORM_RESPONSE_REPOSITORY } from '#domain/repositories/chat-form-response.repository.interface';
 import type { IChatFormResponseRepository } from '#domain/repositories/chat-form-response.repository.interface';
 import { isCardClosed } from '#domain/utils/card-closing';
@@ -117,6 +125,12 @@ export interface ActivityTask {
    * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
 }
 
 /** A pending service entry, for a member who can approve it. */
@@ -134,6 +148,12 @@ export interface ActivityHoursEntry {
    * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
 }
 
 /**
@@ -164,6 +184,12 @@ export interface ActivityPoll {
    * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
   /**
    * The poll's chat message, as `GET /v1/channels/{id}/messages` serves it,
    * so a client can hand it to chat's own poll card. Its votes are not in it:
@@ -198,6 +224,12 @@ export interface ActivityCard {
    * (`spec/behavior/activity.md` § Unread).
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
 }
 
 /** An upcoming event the member is invited to. */
@@ -253,6 +285,12 @@ export interface ActivityEvent {
    * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
 }
 
 /** The kinds of thing the week counts, as `week.unavailable` names them. */
@@ -371,6 +409,28 @@ const COMING_UP_LIMIT = 10;
 const MADE_EVENTS_SCAN_LIMIT = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
+/**
+ * How long an ended snooze still counts for `unread`: a row that came back
+ * within it is unread unless opened since (`spec/behavior/activity.md` §
+ * Snooze). Links show for 30 days, so none outlives it.
+ */
+const SNOOZE_LOOKBACK_MS = 30 * DAY_MS;
+/** The furthest ahead a snooze may end. */
+export const SNOOZE_MAX_AHEAD_MS = 90 * DAY_MS;
+
+/** A member's snoozes, split by whether they still hold at `now`. */
+interface Snoozes {
+  /** `kind:id` → until, for snoozes that still hold. */
+  active: Map<string, string>;
+  /** `kind:id` → when the row came back, for snoozes that have ended. */
+  ended: Map<string, number>;
+}
+
+const NO_SNOOZES: Snoozes = { active: new Map(), ended: new Map() };
+
+function itemKey(kind: ActivityItemKind, id: string): string {
+  return `${kind}:${id}`;
+}
 
 /**
  * Whether an open task falls in the week that ends at `weekEnd`: due before
@@ -598,6 +658,10 @@ export class ActivityService {
         ).toISOString(),
       }));
 
+    // The member's snoozes, read beside the sections. A failure serves
+    // nothing as snoozed rather than failing the page.
+    const snoozesRead = this.readSnoozes(chapterId, userId, now);
+
     const [tasks, hours, polls, cards, events, madeEvents, links, weekEvents] =
       await Promise.all([
         this.settle('tasks', chapterId, () =>
@@ -688,25 +752,61 @@ export class ActivityService {
     const myEvents = valueOf('made_events', madeEvents, []);
     const myLinks = valueOf('links', links, []);
 
-    const needsYouCount =
-      taskLists.mine.length +
-      taskLists.confirmationsWaiting +
-      hoursApprovals.length +
-      pollLists.unvoted.length +
-      openCards.length +
-      comingUp.filter((event) => event.check_in_open && !event.checked_in)
-        .length;
+    const snoozes = await snoozesRead;
+    // A snoozed row is still served, carrying `snoozed_until`, so a client
+    // can list it under Snoozed and bring it back on its own clock. It is
+    // not counted: it doesn't wait on the member until it comes back.
+    const snoozed = (kind: ActivityItemKind, id: string) =>
+      snoozes.active.get(itemKey(kind, id)) ?? null;
+    const withSnooze = <T extends { snoozed_until: string | null }>(
+      kind: ActivityItemKind,
+      rows: T[],
+      idOf: (row: T) => string,
+    ): T[] =>
+      rows.map((row) => {
+        const until = snoozed(kind, idOf(row));
+        return until === null ? row : { ...row, snoozed_until: until };
+      });
+    const awake = <T extends { snoozed_until: string | null }>(rows: T[]) =>
+      rows.filter((row) => row.snoozed_until === null);
 
-    return this.withUnread(chapterId, userId, {
+    const myTasks = withSnooze('task', taskLists.mine, (row) => row.id);
+    const confirmations = withSnooze(
+      'task',
+      taskLists.confirmations,
+      (row) => row.id,
+    );
+    const approvals = withSnooze('hours_entry', hoursApprovals, (r) => r.id);
+    const unvoted = withSnooze('poll', pollLists.unvoted, (r) => r.message_id);
+    const unanswered = openCards.map((row) => {
+      const until = snoozed(cardReadKind(row), row.message_id);
+      return until === null ? row : { ...row, snoozed_until: until };
+    });
+    const upcoming = withSnooze('event', comingUp, (row) => row.id);
+
+    const needsYouCount =
+      awake(myTasks).length +
+      // Only the 25 read can be told apart; a snoozed one past them is
+      // still counted, which takes 26 waiting confirmations to matter.
+      taskLists.confirmationsWaiting -
+      (confirmations.length - awake(confirmations).length) +
+      awake(approvals).length +
+      awake(unvoted).length +
+      awake(unanswered).length +
+      awake(upcoming).filter(
+        (event) => event.check_in_open && !event.checked_in,
+      ).length;
+
+    return this.withUnread(chapterId, userId, snoozes.ended, {
       needs_you: {
-        tasks: taskLists.mine.slice(0, LIST_LIMIT),
-        task_confirmations: taskLists.confirmations.slice(0, LIST_LIMIT),
-        hours_approvals: hoursApprovals.slice(0, LIST_LIMIT),
-        polls: pollLists.unvoted.slice(0, LIST_LIMIT),
-        cards: openCards.slice(0, LIST_LIMIT),
+        tasks: myTasks.slice(0, LIST_LIMIT),
+        task_confirmations: confirmations.slice(0, LIST_LIMIT),
+        hours_approvals: approvals.slice(0, LIST_LIMIT),
+        polls: unvoted.slice(0, LIST_LIMIT),
+        cards: unanswered.slice(0, LIST_LIMIT),
       },
-      coming_up: comingUp,
-      links: myLinks,
+      coming_up: upcoming,
+      links: withSnooze('link', myLinks, (row) => row.id),
       made_by_you: {
         // Capped per state in `readPolls`: 25 open and 25 closed.
         polls: pollLists.mine,
@@ -763,6 +863,73 @@ export class ActivityService {
   }
 
   /**
+   * Snoozes one item for the caller until `until`, replacing any snooze it
+   * had (`spec/behavior/activity.md` § Snooze). Like a read, it is the
+   * caller's alone, so an item they can't see is stored and never matters.
+   */
+  async snooze(
+    chapterId: string,
+    userId: string,
+    item: ActivityItemRef,
+    until: Date,
+    now: Date = new Date(),
+  ): Promise<void> {
+    const ahead = until.getTime() - now.getTime();
+    if (!(ahead > 0) || ahead > SNOOZE_MAX_AHEAD_MS) {
+      throw new BadRequestException(
+        'until must be in the future and no more than 90 days away',
+      );
+    }
+    await this.readRepo.snooze(chapterId, userId, item, until.toISOString());
+  }
+
+  /** Brings a snoozed item back now. Idempotent. */
+  async unsnooze(
+    chapterId: string,
+    userId: string,
+    item: ActivityItemRef,
+  ): Promise<void> {
+    await this.readRepo.unsnooze(chapterId, userId, item);
+  }
+
+  /**
+   * The caller's snoozes that hold at `now` and those that ended within
+   * `SNOOZE_LOOKBACK_MS`. A failure is reported and nothing is snoozed: the
+   * rows show, and the page doesn't fail over a hint.
+   */
+  private async readSnoozes(
+    chapterId: string,
+    userId: string,
+    now: number,
+  ): Promise<Snoozes> {
+    let rows: ActivityItemSnooze[];
+    try {
+      rows = await this.readRepo.findSnoozes(
+        chapterId,
+        userId,
+        new Date(now - SNOOZE_LOOKBACK_MS).toISOString(),
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-snooze',
+        message: `Activity snoozes failed for chapter ${chapterId}; serving nothing as snoozed`,
+        error,
+      });
+      return NO_SNOOZES;
+    }
+    const snoozes: Snoozes = { active: new Map(), ended: new Map() };
+    for (const row of rows) {
+      const until = new Date(row.until).getTime();
+      if (Number.isNaN(until)) continue;
+      const key = itemKey(row.kind, row.item_id);
+      if (until > now) snoozes.active.set(key, row.until);
+      else snoozes.ended.set(key, until);
+    }
+    return snoozes;
+  }
+
+  /**
    * Records that the caller opened these items from Activity, so their rows
    * read as seen (`spec/behavior/activity.md` § Unread). The read is the
    * caller's own and names no one else, so an id the caller can't see, or
@@ -805,6 +972,7 @@ export class ActivityService {
   private async withUnread(
     chapterId: string,
     userId: string,
+    cameBack: Map<string, number>,
     view: ActivityView,
   ): Promise<ActivityView> {
     let unreadSince: string | null;
@@ -829,8 +997,12 @@ export class ActivityService {
       appearedAt: string | null,
       madeByCaller = false,
     ) => {
-      const at = appearedAt ? new Date(appearedAt).getTime() : NaN;
-      if (madeByCaller || Number.isNaN(at) || at < since) return;
+      const appeared = appearedAt ? new Date(appearedAt).getTime() : NaN;
+      if (madeByCaller || Number.isNaN(appeared)) return;
+      // A row back from a snooze appeared again when it came back, as Gmail
+      // brings a snoozed thread back unread.
+      const at = Math.max(appeared, cameBack.get(itemKey(kind, id)) ?? 0);
+      if (at < since) return;
       candidates.push({ kind, id, appearedAt: at });
     };
     const { needs_you } = view;
@@ -1052,6 +1224,7 @@ export class ActivityService {
       proof_kind: task.proof_kind ?? 'none',
       created_at: task.created_at,
       unread: false,
+      snoozed_until: null,
     });
     return {
       mine: mine.map(toRow),
@@ -1084,6 +1257,7 @@ export class ActivityService {
       description: entry.description,
       created_at: entry.created_at,
       unread: false,
+      snoozed_until: null,
     }));
   }
 
@@ -1184,6 +1358,7 @@ export class ActivityService {
         has_voted: votedIds.has(message.id),
         created_at: message.created_at,
         unread: false,
+        snoozed_until: null,
         // Through the mask every chat read uses, with the block list read
         // above. A blocked author's poll never reaches this line; the mask is
         // what gives the row chat's own shape (`sender_blocked` set).
@@ -1352,6 +1527,7 @@ export class ActivityService {
             : null,
         created_at: message.created_at,
         unread: false,
+        snoozed_until: null,
       };
     };
     const slotCount = (message: ChatMessage) => {
@@ -1587,6 +1763,7 @@ export class ActivityService {
           // Set for Coming up once the caller's reads are in
           // (`withUnread`); an event in Made by you is never unread.
           unread: false,
+          snoozed_until: null,
         };
       }),
     );
