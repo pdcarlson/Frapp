@@ -77,9 +77,9 @@ export const SELF_ASSIGNABLE_REFUSAL_COPY: Record<
   [SELF_ASSIGNABLE_KEYED_CODE]:
     "Built-in roles like President, Everyone, New Member and Alumni are always given by officers.",
   [SELF_ASSIGNABLE_TIERED_CODE]:
-    "Move this role outside the tiers first. Roles in a tier carry rank, so members can't pick them.",
+    "Roles members pick themselves sit outside the tiers, since a tier carries rank. Move it out, or turn off Non-chapter business.",
   [SELF_ASSIGNABLE_PERMISSIONS_CODE]:
-    "Turn off this role's permissions first. Members can only pick roles that open channels and nothing else.",
+    "Roles members pick themselves only open channels, so they can't carry permissions. Turn its permissions off, or turn off Non-chapter business.",
 };
 
 /**

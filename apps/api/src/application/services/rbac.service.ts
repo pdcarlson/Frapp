@@ -404,16 +404,12 @@ export class RbacService {
       permissions: after,
     });
     if (refusal) {
-      const copy = SELF_ASSIGNABLE_REFUSAL_COPY[refusal];
       throw new BadRequestException({
         // SELF_ASSIGNABLE_KEYED_CODE, SELF_ASSIGNABLE_TIERED_CODE or
         // SELF_ASSIGNABLE_PERMISSIONS_CODE, named so the error-code
         // classification spec sees all three.
         code: refusal,
-        message:
-          data.self_assignable === true
-            ? copy
-            : `Members pick this role themselves. ${copy} Or stop letting members pick it in the same save.`,
+        message: SELF_ASSIGNABLE_REFUSAL_COPY[refusal],
       });
     }
     if (data.self_assignable === true && role.self_assignable !== true) {
