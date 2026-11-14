@@ -951,9 +951,32 @@ WhatsApp marks the copy "Forwarded".
 - **Editing.**
   The forwarder can edit the comment, but not to empty: an edit needs some text, as on any message, because the edit re-resolves mentions and rewrites the forward's notifications from the comment.
   To drop a comment, delete the forward and forward again (#4875).
-- **Analytics.** Each forward records `message-forwarded` ([`observability.md`](../observability.md)).
+- **Analytics.**
+  Each forward records `message-forwarded` ([`observability.md`](../observability.md)).
 
-**No sender-extend on ephemerality.** Senders cannot extend the lifetime of their own message past channel retention rules. The two ways content becomes durable are a chapter-elevated **pin** (visible to everyone who can see the channel) or a **bookmark** (private to the bookmarker). This keeps ephemerality real — there's no third path that lets a sender unilaterally make their own content stick around.
+**Reminders (personal)** (#4957, Shawn, 2026-11-13):
+
+- "Remind me about this" on a message, as Slack's message menu has it: on web's hover bar beside Save, and on the phone's long-press sheet beside Save message.
+  It offers Slack's presets (in 20 minutes, in 1 hour, in 3 hours, tomorrow, next week; tomorrow and next week land at 9:00 AM in the member's own time zone, next week on Monday) and a custom date and time (`MESSAGE_REMINDER_PRESETS` in `@repo/hooks`).
+- **Private to the member,** held up exactly as bookmarks are (above): its own `chat_message_reminders` table with RLS on and no policies, no route that takes a user id, and no by-message query.
+  Any member can set one on any message they can read (authorized at `read`, as a bookmark is), including in a read-only channel.
+- **One reminder per member per message.**
+  Setting it again moves it (`PUT /v1/reminders/messages/:messageId` with `remind_at`, from now to 365 days ahead), and a reminder that already went off goes off again at the new time: that is Activity's snooze.
+  `DELETE` on the same path clears it (Done), always 204, and like un-Save it does not check the channel, so a member who lost the channel can still clear their own row.
+- **At the time,** a minute sweep (`ChatReminderSweepService`, every replica, each row claimed with a compare-and-set on its time) sends a push and an in-app notification titled "Reminder" that quotes the message as a chat push does, tied to the message (`chat_message_id`), so it opens chat at that message and a delete of the message removes it.
+  It is sent under category `reminder`, which no notification switch silences (the member asked for it); quiet hours still make it silent.
+  No push goes out for a message in a channel the member can no longer read, a blocked author's message is not quoted (and its in-app row is withheld as that author's chat is), and a deleted one says it was deleted.
+  What the push and row carry is [`../notifications.md` § Deep Linking](../notifications.md#deep-linking).
+- **On Activity,** the member's reminders, due and waiting, are listed in their own Reminders group until they clear them ([`../activity.md` § Reminders](../activity.md#reminders) owns which and how many).
+- **Not a bookmark with a due time.**
+  The issue asked whether it should be; it is not, because Save is one idempotent row per (member, message) that un-Save deletes: folded together, un-Save would cancel a reminder and every reminder would sit in Saved.
+  A reminder touches the message's lifecycle no more than a bookmark does.
+- **Account deletion** deletes the member's reminders in `anonymize_user`, beside their bookmarks.
+
+**No sender-extend on ephemerality.**
+Senders cannot extend the lifetime of their own message past channel retention rules.
+The two ways content becomes durable are a chapter-elevated **pin** (visible to everyone who can see the channel) or a **bookmark** (private to the bookmarker).
+This keeps ephemerality real — there's no third path that lets a sender unilaterally make their own content stick around.
 
 **Typing indicators:**
 
@@ -1199,8 +1222,23 @@ Shawn asked for it on 2026-11-13.)_
 A member can write a message now and have it post later, the way Slack's "Schedule for later" works: an officer writes Monday's reminder on Sunday night and it goes out at 8 AM.
 
 - **What can be scheduled.**
-  Text, with `@` mentions picked in the composer, in a channel or DM the member can post in.
-  Not yet: attachments, GIFs, cards, quote replies or thread replies.
+  What the composer holds, in a channel or DM the member can post in: text with `@` mentions picked in the composer, the files or photos staged with it, and a staged quote reply (added 2026-11-14, [#4971](https://github.com/pdcarlson/Frapp/issues/4971), Shawn asked).
+  A message may be files with no text, as a live send may.
+  The API also takes a reply inside a thread (`thread_root_id`, checked as a thread write, so a read-only channel's readers may schedule one); neither client offers it from a thread yet.
+  Not yet: GIFs and cards.
+- **Files.**
+  A file is uploaded when it is scheduled, as for a live send (`POST /v1/channels/{id}/upload-url`), and the scheduled message holds its storage path: the uploads must be finished first, so a file still uploading or one that failed is refused, keeping everything.
+  When it posts, the message takes the files as a live send's would.
+  Deleting a scheduled message deletes its uploads from storage, except any a posted message or another scheduled message also names, or a report holds as evidence, or when the API can't tell, which keeps them.
+  The other way round too: deleting a posted message, or releasing a report's evidence, keeps a file a scheduled message still names.
+  A failed message keeps its files until it is edited back in line or deleted.
+  A scheduled message removed by a cascade (the author leaves the chapter, the channel is deleted) leaves its uploads in storage, unreferenced, as an abandoned live upload does.
+  The files can't be changed by an edit; the text can, and may be emptied when there are files.
+- **Quotes.**
+  The quote is checked when it is scheduled by the live send's rules (a timeline message in the same channel).
+  At the time, a quoted message that no longer exists at all drops only the quote, and the message posts without it: the text was the point, and its author set it to go out then.
+  One its author deleted still exists as a tombstone and is quoted as a live reply would quote it.
+  A thread root that is gone refuses the send, so the message fails as `not_sendable`.
 - **When.**
   Any time from now to 120 days ahead (Slack's limit too).
   The clients offer a few presets and a custom date and time, on the member's own clock: a chapter has no time zone of its own.
@@ -1227,21 +1265,26 @@ A member can write a message now and have it post later, the way Slack's "Schedu
   A chevron beside Send opens "Schedule message": Tomorrow at 9:00 AM, Monday at 9:00 AM (left out when tomorrow is Monday), and Custom time… (a date and a time).
   The composer clears and a toast says when it goes.
   While the member has any in the channel, a line above the composer ("2 scheduled messages", with "· 1 not sent" when any failed) opens the list.
-  With a file, a reply, a slash command, a question for Frapp, or no connection, the composer says it can't be scheduled and keeps everything.
-  It clears as soon as a time is picked and puts the text back if scheduling fails.
+  The staged files and reply go with it (#4971).
+  With a file still uploading, a slash command, a question for Frapp, or no connection, the composer says it can't be scheduled and keeps everything.
+  It clears (text and files) as soon as a time is picked, and puts them back if scheduling fails, into a composer nothing new was staged in; the reply strip clears once it is scheduled.
+  Each row in the list says what it carries besides its text ("Reply · 2 photos · 1 file", the file names in its tooltip).
   A chapter-wide list (every channel at once) isn't built yet; the API's list takes no channel for it.
   `components/chat/schedule-send.tsx`.
 - **Phone.**
   A long press on Send (a screen reader's "Schedule message" action) opens Schedule message: the draft, the same two presets, and Custom time on the platform's date and time pickers.
-  With a photo or a reply staged, a question for Frapp, or no connection, it still opens, says why with the choices greyed, and keeps everything.
-  The draft clears on the tap and comes back if scheduling fails.
+  Uploaded photos and a staged reply go with it (#4971); with only photos, the sheet's preview says "2 photos".
+  With a photo still uploading or one that failed, a question for Frapp, or no connection, it still opens, says why with the choices greyed, and keeps everything.
+  The draft clears on the tap and comes back if scheduling fails; the photos leave the tray and the reply its strip only once it is scheduled.
+  Each row in the list says what it carries besides its text, as on web.
   The line above the composer also names the next time ("2 scheduled messages · next tomorrow at 9:00 AM") and opens the list in a tall sheet.
   Not offered while editing a message or in a thread.
   `components/chat/schedule-send-sheet.tsx`, `scheduled-messages-sheet.tsx`; the screen: [`../../ui/mobile/screens.md` § s05](../../ui/mobile/screens.md#s05-chat-thread).
 - **API.**
-  `GET /v1/scheduled-messages` (optionally `?channel_id=`), `POST /v1/scheduled-messages` with `{ channel_id, content, send_at, mention_picks? }`, `PATCH /v1/scheduled-messages/{id}` with any of `content`, `send_at`, `mention_picks`, `DELETE /v1/scheduled-messages/{id}`, and `POST /v1/scheduled-messages/{id}/send`.
+  `GET /v1/scheduled-messages` (optionally `?channel_id=`), `POST /v1/scheduled-messages` with `{ channel_id, content, send_at, mention_picks?, attachments?, reply_to_id?, thread_root_id? }` (the files as `SendMessageDto.attachments`;
+  the list answers each file's name and type only, never its path), `PATCH /v1/scheduled-messages/{id}` with any of `content`, `send_at`, `mention_picks`, `DELETE /v1/scheduled-messages/{id}`, and `POST /v1/scheduled-messages/{id}/send`.
   Every route reads or changes only the caller's own rows.
-  Stored in `chat_scheduled_messages` (migration `20261114055810`), which has RLS on and no policies: only the API reads it.
+  Stored in `chat_scheduled_messages` (migrations `20261114055810` and `20261114163052`), which has RLS on and no policies: only the API reads it.
   `ChatScheduledMessageService` holds the rules.
 
 ### Message flags

@@ -78,7 +78,10 @@ const {
   mockSendReturned,
   mockUseMyPermissions,
   searchHit,
+  mockScheduleMutate,
 } = vi.hoisted(() => ({
+  /** `useScheduleMessage().mutateAsync`: what a schedule sends (#4971). */
+  mockScheduleMutate: vi.fn(async () => ({})),
   mockScrollToMessage: vi.fn(),
   mockRefetch: vi.fn(),
   mockUseChatChannel: vi.fn(),
@@ -202,6 +205,9 @@ const mockBookmarkIsError = vi.fn(() => false);
 // Hide conversation (#2303). Each hide awaits its own `mutateAsync` promise,
 // so a case settles that promise to drive the shell's success and failure.
 const mockLeaveMutateAsync = vi.fn();
+const mockSetReminderAsync = vi.fn<
+  (vars: { messageId: string; remindAt: Date }) => Promise<void>
+>(() => Promise.resolve());
 const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
 // The rail's right-click menu (owner, 2026-11-06): what the shell hands it.
@@ -740,7 +746,7 @@ vi.mock("@repo/hooks", async () => ({
   useBookmarks: () => mockBookmarks(),
   // Scheduled messages (#4956): the composer's chevron and the bar above it.
   // None scheduled, so the bar draws nothing.
-  useScheduleMessage: () => ({ mutateAsync: vi.fn() }),
+  useScheduleMessage: () => ({ mutateAsync: mockScheduleMutate }),
   useScheduledMessages: () => ({ data: [] }),
   useUpdateScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
@@ -765,6 +771,7 @@ vi.mock("@repo/hooks", async () => ({
     reset: mockUnbookmarkReset,
     isError: false,
   }),
+  useSetMessageReminder: () => ({ mutateAsync: mockSetReminderAsync }),
   useLeaveChannel: () => ({ mutateAsync: mockLeaveMutateAsync }),
   useGetOrCreateDm: () => ({ mutate: mockReopenMutate }),
   canHideConversation: (channel: { type: string }) => channel.type === "DM",
@@ -1124,9 +1131,16 @@ vi.mock("./composer", () => ({
     onSendGif,
     ask,
     askUnknown,
+    onSchedule,
   }: {
     channelId: string;
     onSendGif?: unknown;
+    onSchedule?: (
+      body: string,
+      attachments: unknown[],
+      picks: unknown[],
+      at: Date,
+    ) => Promise<void>;
     ask?: { busy: boolean; send: (question: string) => void } | null;
     askUnknown?: boolean;
     dropAttachRef?: { current: ((files: File[]) => void) | null };
@@ -1228,6 +1242,28 @@ vi.mock("./composer", () => ({
         >
           send
         </button>
+        {onSchedule ? (
+          <button
+            data-testid="composer-schedule"
+            onClick={() =>
+              void onSchedule(
+                "Agenda",
+                [
+                  {
+                    storagePath: "chapters/c/chat/chan-general/a/agenda.pdf",
+                    filename: "agenda.pdf",
+                    contentType: "application/pdf",
+                    byteSize: 15,
+                  },
+                ],
+                [],
+                new Date("2026-11-15T14:00:00.000Z"),
+              ).catch(() => {})
+            }
+          >
+            schedule
+          </button>
+        ) : null}
         {/* The command-form seam (#3773): what the shell answers when the
             real composer offers it a command before dispatching. */}
         {[
@@ -1453,10 +1489,12 @@ vi.mock("./message-timeline", async () => {
       onOpenThread?: (message: { id: string }) => void;
       onForward?: (message: { id: string }) => void;
       askTurns?: readonly { id: string }[];
+      onRemind?: (messageId: string, remindAt: Date) => void;
     }
   >(function MessageTimeline(
     {
       askTurns,
+      onRemind,
       onOpenThread,
       onForward,
       onOpenProfile,
@@ -1503,6 +1541,9 @@ vi.mock("./message-timeline", async () => {
         {/* Edit is withheld the same way where the member can't post (#2775). */}
         <span data-testid="edit-offered">{String(!!onEdit)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+        <button onClick={() => onRemind?.("msg-1", new Date(2099, 0, 1, 9, 0))}>
+          trigger-remind
+        </button>
         <button onClick={() => onClosePoll?.("poll-1")}>
           trigger-close-poll
         </button>
@@ -3560,6 +3601,42 @@ describe("ChatShell hide conversation (#2303)", () => {
   });
 });
 
+describe("ChatShell message reminders (#4957)", () => {
+  it("sets the reminder and says when it will come", async () => {
+    mockToast.mockClear();
+    mockSetReminderAsync.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "trigger-remind" }));
+
+    expect(mockSetReminderAsync).toHaveBeenCalledWith({
+      messageId: "msg-1",
+      remindAt: new Date(2099, 0, 1, 9, 0),
+    });
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Reminder set",
+        description: expect.stringMatching(/^I'll remind you .+ at 9:00/),
+      }),
+    );
+  });
+
+  it("toasts a failed write", async () => {
+    mockToast.mockClear();
+    mockSetReminderAsync.mockRejectedValueOnce(new Error("nope"));
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "trigger-remind" }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        variant: "destructive",
+        description: "Couldn't set the reminder. Try again.",
+      }),
+    );
+  });
+});
+
 describe("ChatShell bookmark write failure (#462)", () => {
   it("says nothing while writes are succeeding", () => {
     render(<ChatShell initialChannelId="chan-general" />);
@@ -3915,6 +3992,53 @@ describe("ChatShell reply-with-quote (#489)", () => {
       replyToId: "msg-1",
       attachments: [],
     });
+  });
+
+  it("schedules the text, its files and the staged reply, then clears the strip (#4971)", async () => {
+    mockScheduleMutate.mockClear();
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-schedule"));
+
+    await waitFor(() =>
+      expect(mockScheduleMutate).toHaveBeenCalledWith({
+        channelId: "chan-general",
+        content: "Agenda",
+        sendAt: new Date("2026-11-15T14:00:00.000Z"),
+        mentionPicks: [],
+        attachments: [
+          {
+            storage_path: "chapters/c/chat/chan-general/a/agenda.pdf",
+            filename: "agenda.pdf",
+            content_type: "application/pdf",
+            byte_size: 15,
+            width: undefined,
+            height: undefined,
+            thumbhash: undefined,
+            preview_storage_path: undefined,
+          },
+        ],
+        replyToId: "msg-1",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none"),
+    );
+  });
+
+  it("keeps the reply staged when scheduling fails (#4971)", async () => {
+    mockScheduleMutate.mockClear();
+    mockScheduleMutate.mockRejectedValueOnce(new Error("down"));
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-schedule"));
+
+    await waitFor(() => expect(mockScheduleMutate).toHaveBeenCalled());
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
   });
 
   it("offers no Reply control to a member who cannot post here (alumni)", async () => {
@@ -6743,4 +6867,3 @@ describe("ChatShell All threads (#4960)", () => {
     }
   });
 });
-

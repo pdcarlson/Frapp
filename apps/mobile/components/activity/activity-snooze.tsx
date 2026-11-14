@@ -31,8 +31,11 @@ export function useActivitySnoozeMenu(): {
   const { snooze, unsnooze } = useActivitySnooze();
 
   const pick = (row: ActivityRow, option: ActivitySnoozeOption) => {
+    // A reminder (#4957) names no item to snooze; it has its own Snooze.
+    const ref = row.readRef;
+    if (!ref) return;
     const send = () => {
-      snooze(row.readRef, option.until).catch((error: unknown) =>
+      snooze(ref, option.until).catch((error: unknown) =>
         alertFailure({ title: "Couldn't snooze it", error, retry: send }),
       );
     };
@@ -40,8 +43,10 @@ export function useActivitySnoozeMenu(): {
   };
 
   const wake = (row: ActivityRow) => {
+    const ref = row.readRef;
+    if (!ref) return;
     const send = () => {
-      unsnooze(row.readRef).catch((error: unknown) =>
+      unsnooze(ref).catch((error: unknown) =>
         alertFailure({ title: "Couldn't unsnooze it", error, retry: send }),
       );
     };
