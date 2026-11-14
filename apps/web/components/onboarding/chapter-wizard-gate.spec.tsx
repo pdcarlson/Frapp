@@ -5,7 +5,9 @@ import userEvent from "@testing-library/user-event";
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
-const { wizard } = vi.hoisted(() => ({ wizard: { throws: null as Error | null } }));
+const { wizard } = vi.hoisted(() => ({
+  wizard: { throws: null as Error | null },
+}));
 vi.mock("@/components/onboarding/chapter-wizard", () => ({
   ChapterWizard: () => {
     if (wizard.throws) throw wizard.throws;

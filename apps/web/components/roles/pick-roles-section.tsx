@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { usePickableRoles, useSetPickedRole } from "@repo/hooks";
+import {
+  usePickableRoles,
+  useSetPickedRole,
+  type PickableRole,
+} from "@repo/hooks";
 import { Switch } from "@/components/ui/switch";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -19,12 +23,27 @@ import { getErrorMessage } from "@/lib/utils";
  * roles.
  */
 export function PickRolesSection() {
-  const { toast } = useToast();
   const { roles, isLoading } = usePickableRoles();
+  if (isLoading || roles.length === 0) return null;
+  return (
+    <ProfileSection id="your-roles" title="Your roles" hint={PICK_ROLES_HINT}>
+      <PickRolesList roles={roles} />
+    </ProfileSection>
+  );
+}
+
+/** The picker's one line of copy, shared with onboarding's step. */
+export const PICK_ROLES_HINT =
+  "Pick what you're into. Each role adds its channels to Chat, and you can leave any time.";
+
+/**
+ * One switch per pickable role, each saved on the flip. Profile's "Your roles"
+ * and the tutorial's `Pick your roles` slide both draw it.
+ */
+export function PickRolesList({ roles }: { roles: readonly PickableRole[] }) {
+  const { toast } = useToast();
   const setPicked = useSetPickedRole();
   const [pendingId, setPendingId] = useState<string | null>(null);
-
-  if (isLoading || roles.length === 0) return null;
 
   async function toggle(id: string, name: string, join: boolean) {
     setPendingId(id);
@@ -42,38 +61,30 @@ export function PickRolesSection() {
   }
 
   return (
-    <ProfileSection
-      id="your-roles"
-      title="Your roles"
-      hint="Pick what you're into. Each role adds its channels to Chat, and you can leave any time."
-    >
-      <ul className="divide-y divide-border rounded-[14px] border border-border bg-card">
-        {roles.map((role) => (
-          <li
-            key={role.id}
-            className="flex items-center justify-between gap-4 px-4 py-3"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <span
-                aria-hidden
-                className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/40"
-                style={role.color ? { backgroundColor: role.color } : undefined}
-              />
-              <span className="truncate text-sm text-foreground">
-                {role.name}
-              </span>
-            </span>
-            <Switch
-              aria-label={
-                role.held ? `Leave ${role.name}` : `Join ${role.name}`
-              }
-              checked={role.held}
-              disabled={pendingId !== null}
-              onCheckedChange={(on) => void toggle(role.id, role.name, on)}
+    <ul className="divide-y divide-border rounded-[14px] border border-border bg-card">
+      {roles.map((role) => (
+        <li
+          key={role.id}
+          className="flex items-center justify-between gap-4 px-4 py-3"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span
+              aria-hidden
+              className="h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/40"
+              style={role.color ? { backgroundColor: role.color } : undefined}
             />
-          </li>
-        ))}
-      </ul>
-    </ProfileSection>
+            <span className="truncate text-sm text-foreground">
+              {role.name}
+            </span>
+          </span>
+          <Switch
+            aria-label={role.held ? `Leave ${role.name}` : `Join ${role.name}`}
+            checked={role.held}
+            disabled={pendingId !== null}
+            onCheckedChange={(on) => void toggle(role.id, role.name, on)}
+          />
+        </li>
+      ))}
+    </ul>
   );
 }

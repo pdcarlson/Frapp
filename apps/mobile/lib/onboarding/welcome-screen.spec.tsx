@@ -92,6 +92,18 @@ const aiChoice = vi.hoisted(() => ({
   pending: false,
 }));
 
+// The chapter's self-assignable roles (#4958). None unless a spec gives
+// some, so the other beats' specs run as before.
+const pickable = vi.hoisted(() => ({
+  roles: [] as Array<{
+    id: string;
+    name: string;
+    held: boolean;
+    color: null;
+  }>,
+  setPicked: vi.fn(() => Promise.resolve({ role_ids: [] })),
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useFrappAiChoice: () => aiChoice,
@@ -112,6 +124,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateOnboarding: () => ({ mutateAsync: completeOnboarding }),
   useCurrentUser: () => ({ data: currentUser, dataUpdatedAt: 1 }),
   useUpdateUser: () => ({ mutateAsync: updateUser }),
+  usePickableRoles: () => ({ roles: pickable.roles, isLoading: false }),
+  useSetPickedRole: () => ({ mutateAsync: pickable.setPicked }),
 }));
 
 import { useRouter } from "expo-router";
@@ -476,6 +490,84 @@ describe("s03 welcome, Meet Frapp AI beat", () => {
     const { root } = await render();
 
     expect(onAiBeat(root)).toBe(false);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+});
+
+describe("s03 welcome, roles beat (#4958)", () => {
+  const onRolesBeat = (root: Node) =>
+    root
+      .findAllByType("Text" as never, { deep: true })
+      .some((text) => text.props.children === "Pick your roles");
+  const toggle = (root: Node, label: string) =>
+    root
+      .findAll((node) => node.props.accessibilityLabel === label, {
+        deep: true,
+      })
+      .find((node) => typeof node.props.onValueChange === "function");
+
+  beforeEach(() => {
+    pushAvailable = false;
+    permission = null;
+    currentUser = COMPLETE_USER;
+    pickable.roles = [
+      { id: "im", name: "Intramurals", held: false, color: null },
+    ];
+    pickable.setPicked.mockClear();
+    completeOnboarding.mockClear();
+    vi.mocked(vi.mocked(useRouter)().replace).mockClear();
+  });
+
+  afterEach(() => {
+    pickable.roles = [];
+  });
+
+  it("follows the display beat, saves a pick on the tap, then goes to chat", async () => {
+    const { root } = await render();
+
+    expect(onRolesBeat(root)).toBe(true);
+    await act(async () => {
+      toggle(root, "Join Intramurals")?.props.onValueChange(true);
+    });
+    expect(pickable.setPicked).toHaveBeenCalledWith({ id: "im", join: true });
+
+    await press(button(root, "Go to chat"));
+    expect(completeOnboarding).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
+  });
+
+  it("makes the display beat say Continue, as a beat follows it", async () => {
+    const { root } = await render({ passDisplay: false });
+
+    expect(onDisplayBeat(root)).toBe(true);
+    expect(button(root, "Continue")).toBeDefined();
+    expect(button(root, "Go to chat")).toBeUndefined();
+  });
+
+  it("comes before the notifications beat, and Android back walks back to it", async () => {
+    const { BackHandler } = await import("react-native");
+    const listen = vi.mocked(BackHandler.addEventListener);
+    listen.mockClear();
+    pushAvailable = true;
+    permission = OFF;
+    const { root } = await render();
+
+    expect(onRolesBeat(root)).toBe(true);
+    await press(button(root, "Continue"));
+    expect(button(root, "Turn on notifications")).toBeDefined();
+    const calls = listen.mock.calls as unknown as [string, () => boolean][];
+    const handler = calls.filter(([e]) => e === "hardwareBackPress").at(-1);
+    act(() => {
+      handler![1]();
+    });
+    expect(onRolesBeat(root)).toBe(true);
+  });
+
+  it("isn't shown when the chapter has no roles to pick", async () => {
+    pickable.roles = [];
+    const { root } = await render();
+
+    expect(onRolesBeat(root)).toBe(false);
     expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 });
