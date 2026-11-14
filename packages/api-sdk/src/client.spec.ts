@@ -303,6 +303,31 @@ describe("createFrappClient failed calls (#3394)", () => {
     expect(error).toEqual({ statusCode: 502, message: undefined });
   });
 
+  it.each(["GET", "PUT", "POST", "DELETE", "PATCH"] as const)(
+    "settles an empty-bodied 502 the same way through %s",
+    async (method) => {
+      answer(new Response(null, { status: 502 }));
+      const client = createFrappClient({ baseUrl: "http://api.test" });
+      const call = client[method] as unknown as (
+        path: string,
+        init?: unknown,
+      ) => Promise<{ error?: unknown }>;
+
+      const { error } = await call("/v1/events");
+
+      expect(statusOf(error)).toBe(502);
+    },
+  );
+
+  it("settles it through the generic request() too", async () => {
+    answer(new Response(null, { status: 502 }));
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    const { error } = await client.request("get", "/v1/events");
+
+    expect(statusOf(error)).toBe(502);
+  });
+
   it("still resolves a 204 with no body and no error", async () => {
     answer(new Response(null, { status: 204 }));
     const client = createFrappClient({ baseUrl: "http://api.test" });
@@ -386,7 +411,7 @@ describe("createFrappClient request timeout (#3433)", () => {
     },
   );
 
-  it("fails with the wording errorCopy and the Sentry reporter read as a dead request", async () => {
+  it("fails as React Native's own timeout, the shape every dead-request reader knows", async () => {
     vi.useFakeTimers();
     hang();
     const client = createFrappClient({
@@ -398,8 +423,68 @@ describe("createFrappClient request timeout (#3433)", () => {
     await vi.advanceTimersByTimeAsync(10);
     const error = (await call) as Error;
 
-    expect(error.name).toBe("TimeoutError");
+    // `@repo/observability`'s reporter reads the message only on a TypeError
+    // ("Network request timed out" is in its dead-fetch list), and mobile
+    // check-in reads `instanceof TypeError` as an attempt that got no answer.
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error.name).toBe("TypeError");
     expect(error.message).toBe("Network request timed out");
+  });
+
+  it("fails a response whose body stalls after its headers", async () => {
+    vi.useFakeTimers();
+    let bodySignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        bodySignal = init?.signal ?? undefined;
+        const stalled = new Response(
+          new ReadableStream({ start: () => undefined }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+        return Promise.resolve(stalled);
+      }),
+    );
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    const settled = expect(client.GET("/v1/events")).rejects.toSatisfy(
+      isRequestTimeout,
+    );
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS.read);
+
+    await settled;
+    expect(bodySignal?.aborted).toBe(true);
+  });
+
+  it("lets a stream run past the limit, and still stops it on the caller's abort", async () => {
+    vi.useFakeTimers();
+    let sent: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        sent = init?.signal ?? undefined;
+        return Promise.resolve(
+          new Response(new ReadableStream({ start: () => undefined }), {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream; charset=utf-8" },
+          }),
+        );
+      }),
+    );
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+    const stop = new AbortController();
+
+    const { data } = await client.POST("/v1/ai/ask", {
+      body: {} as never,
+      parseAs: "stream",
+      signal: stop.signal,
+    });
+    expect(data).toBeInstanceOf(ReadableStream);
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS.write * 2);
+    expect(sent?.aborted).toBe(false);
+
+    stop.abort();
+    expect(sent?.aborted).toBe(true);
   });
 
   it("aborts the request when the caller's signal does (a cancelled query)", async () => {

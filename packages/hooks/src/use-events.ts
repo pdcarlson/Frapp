@@ -2,7 +2,11 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
-import { serverMessageOf, type components } from "@repo/api-sdk";
+import {
+  isRequestTimeout,
+  serverMessageOf,
+  type components,
+} from "@repo/api-sdk";
 
 export function useEvents(options?: { enabled?: boolean }) {
   const client = useFrappClient();
@@ -82,16 +86,22 @@ export function useCreateEvent() {
       channel_id?: string;
       client_message_id?: string;
     }) => {
-      const { data, error, response } = await client.POST("/v1/events", {
-        body,
-      });
       // An answer that was lost is not a refusal: the origin may or may not
       // have written the row, and the route has no dedupe, so it rejects as
       // unconfirmed rather than "failed", which invites a duplicate (#1717).
-      // Two shapes: a gateway's own 502/503/504, whatever body it carries (an
-      // HTML or text page is a truthy `error`), and any non-2xx with no body,
-      // which the client hands back as a bare `{ statusCode }` with no
-      // message (#3394; openapi-fetch alone gives `undefined` or "").
+      // Three shapes: the client giving up on the answer (#3433), a gateway's
+      // own 502/503/504 whatever body it carries, and any other non-2xx that
+      // carries no message of the API's (an empty body, or an edge's page:
+      // the client hands both back as a bare `{ statusCode }`, #3394).
+      const result = await client
+        .POST("/v1/events", { body })
+        .catch((thrown: unknown) => {
+          if (isRequestTimeout(thrown)) {
+            throw new Error(EVENT_CREATE_UNCONFIRMED);
+          }
+          throw thrown;
+        });
+      const { data, error, response } = result;
       if (
         !response.ok &&
         (LOST_ANSWER_STATUSES.has(response.status) ||
@@ -102,6 +112,10 @@ export function useCreateEvent() {
       if (error) throw error;
       return data;
     },
+    // Not even web's default retry of a lost answer: the route has no dedupe,
+    // so a repeat of a create that landed is a second event (#1717). The
+    // member is told to check the calendar instead.
+    retry: false,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
     },

@@ -55,9 +55,9 @@ export interface FrappClientConfig {
 /**
  * How long an API request may wait for its response (#3433), as
  * `spec/ui/resilience/api-retry.md` § Per-Endpoint Timeout Configuration
- * sets it: 15s for a read, 20s for a write, 10s for the two the member is
- * watching (member search, a chat send), and 90s for the AI calls that answer
- * only once the model has.
+ * sets it: 15s for a read, 20s for a write, 10s for what the member is
+ * watching (search, a chat send), and 90s for the calls that answer only once
+ * slow work is done (a model call, a Discord scan).
  *
  * Nothing else bounds it on Android. React Native's OkHttp client is built
  * with connect, read and write timeouts of 0 ("no timeout"), so a request on a
@@ -66,9 +66,9 @@ export interface FrappClientConfig {
  * connections to the API host. Uploads don't go through this client (they
  * `PUT` to a signed storage URL), so they aren't held to it.
  *
- * It bounds the wait for the response itself, which is when `fetch` resolves:
- * the headers. A body read after that (the Ask stream, whose headers go out
- * before the model starts) is not cut off.
+ * It bounds the whole response, body included, except a streamed one (Ask's,
+ * whose headers go out before the model starts), which it bounds only up to
+ * its headers.
  */
 export const REQUEST_TIMEOUT_MS = {
   read: 15_000,
@@ -79,6 +79,7 @@ export const REQUEST_TIMEOUT_MS = {
 
 /** The requests whose limit isn't their method's, by `METHOD schemaPath`. */
 const TIMEOUT_BY_ROUTE: Readonly<Record<string, number>> = {
+  "GET /v1/search": REQUEST_TIMEOUT_MS.watched,
   "GET /v1/members/search": REQUEST_TIMEOUT_MS.watched,
   // Idempotent by `client_message_id`, so a send cut off here and sent again
   // lands once (`spec/ui/resilience/message-delivery.md`).
@@ -87,6 +88,9 @@ const TIMEOUT_BY_ROUTE: Readonly<Record<string, number>> = {
   "POST /v1/ai/act": REQUEST_TIMEOUT_MS.model,
   "POST /v1/ai/act/event-audience": REQUEST_TIMEOUT_MS.model,
   "POST /v1/ai/catch-up": REQUEST_TIMEOUT_MS.model,
+  // Walks the guild's channels and their threads through Discord's REST API
+  // (rate-limited) before it answers.
+  "POST /v1/discord-imports/{id}/discover": REQUEST_TIMEOUT_MS.model,
 };
 
 /** The limit {@link REQUEST_TIMEOUT_MS} sets for one request. */
@@ -97,61 +101,84 @@ export const requestTimeoutMs = (method: string, schemaPath: string): number =>
     : REQUEST_TIMEOUT_MS.write);
 
 /**
- * The message a timed-out request fails with. It is React Native's own
- * wording for a timeout, which `@repo/hooks`' `errorCopy` and the Sentry
- * query reporter (`@repo/observability`) already read as a dead request: the
- * screen shows its offline copy, and the call is retried as a dropped
- * connection is.
+ * What a request that ran out of time fails with: a `TypeError` reading
+ * "Network request timed out", the shape React Native's own timeout has. So
+ * every reader of a dead request already knows it: `@repo/hooks`' `errorCopy`
+ * and `canTryAgain` (the connection copy, with Try again), the Sentry query
+ * reporter (`@repo/observability`, one `network` issue rather than an
+ * exception per screen), mobile check-in's `instanceof TypeError`, and the
+ * retry predicates, which retry a statusless failure.
  */
-const REQUEST_TIMEOUT_MESSAGE = "Network request timed out";
-
-const requestTimeoutError = (): Error => {
-  const error = new Error(REQUEST_TIMEOUT_MESSAGE);
-  error.name = "TimeoutError";
-  return error;
-};
+export class RequestTimeoutError extends TypeError {
+  constructor() {
+    super("Network request timed out");
+  }
+}
 
 /** Whether `error` is a request this client gave up on (#3433). */
 export const isRequestTimeout = (error: unknown): boolean =>
-  error instanceof Error &&
-  error.name === "TimeoutError" &&
-  error.message === REQUEST_TIMEOUT_MESSAGE;
+  error instanceof RequestTimeoutError;
+
+/** A streamed answer, which runs as long as its body does: Ask's. */
+const isStream = (response: Response): boolean =>
+  (response.headers.get("Content-Type") ?? "").includes("text/event-stream");
+
+/** Statuses whose response may not carry a body (`new Response` refuses one). */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
 
 /**
- * `fetch`, failing after `timeoutOf(request)` without a response. The
- * caller's own `signal` (TanStack Query's, when a query is cancelled) still
- * aborts it: the request goes out on a controller that both abort. The global
- * `fetch` is read per call, so an instrumented one (Sentry's) installed after
- * the client was built is still the one used.
+ * `fetch`, failing with {@link RequestTimeoutError} when `timeoutOf(request)`
+ * runs out before the response is in, body included. A streamed response
+ * ({@link isStream}) is bounded only up to its headers, since its body runs as
+ * long as the answer does; any other body is read here, under the same limit,
+ * so a connection that goes half-open after the headers still fails.
  *
- * The timeout also rejects by itself rather than only aborting, so a `fetch`
- * that ignores its signal still lets the caller go.
+ * The caller's own `signal` (TanStack Query's when a query is cancelled,
+ * Ask's Stop) aborts the request for as long as it lives, body included: the
+ * request goes out on a controller that both abort. The global `fetch` is
+ * read per call, so an instrumented one (Sentry's) installed after the client
+ * was built is still the one used. The timeout also rejects by itself rather
+ * than only aborting, so a `fetch` that ignores its signal still lets go.
  */
 const fetchWithTimeout =
   (timeoutOf: (request: Request) => number) =>
   async (request: Request, init?: RequestInit): Promise<Response> => {
     const controller = new AbortController();
     const callerSignal = request.signal as AbortSignal | null | undefined;
-    const followCaller = () => controller.abort(callerSignal?.reason);
-    if (callerSignal?.aborted) followCaller();
-    else callerSignal?.addEventListener("abort", followCaller, { once: true });
+    // Never removed: a stream's body outlives this function, and the caller
+    // must still be able to stop it. It goes with the caller's signal.
+    if (callerSignal?.aborted) controller.abort(callerSignal.reason);
+    else
+      callerSignal?.addEventListener(
+        "abort",
+        () => controller.abort(callerSignal.reason),
+        { once: true },
+      );
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timedOut = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
-        const error = requestTimeoutError();
+        const error = new RequestTimeoutError();
         controller.abort(error);
         reject(error);
       }, timeoutOf(request));
     });
     try {
-      return await Promise.race([
+      const response = await Promise.race([
         globalThis.fetch(request, { ...init, signal: controller.signal }),
         timedOut,
       ]);
+      if (isStream(response)) return response;
+      const body = NULL_BODY_STATUSES.has(response.status)
+        ? null
+        : await Promise.race([response.text(), timedOut]);
+      return new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
     } finally {
       clearTimeout(timer);
-      callerSignal?.removeEventListener("abort", followCaller);
     }
   };
 

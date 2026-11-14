@@ -160,8 +160,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * any invoice invalidation, does cancel the read in flight and send a fresh
  * one. A tick doesn't restart a stuck read, because a read that is only slow
  * would be thrown away: the API client times every request out instead
- * (15s for a read, #3433), so a read that never answers ends in an error and
- * the next tick sends a fresh one.
+ * (15s for a read, #3433), so a read that never answers ends in an error
+ * after its one retry (about 30s) and the next tick sends a fresh one.
  *
  * ## What a visit resets
  *
