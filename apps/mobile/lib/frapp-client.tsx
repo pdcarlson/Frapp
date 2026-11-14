@@ -119,6 +119,9 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
         readFreshToken.forgetClockOffset();
         checkRejectedSession();
       },
+      // A launch or a return to the app fires its reads at once; the ones
+      // `GET /v1/bootstrap` covers go out as one request (#4709, #3728).
+      batchFirstScreenReads: true,
     });
   }, []);
   /* eslint-enable react-hooks/refs */

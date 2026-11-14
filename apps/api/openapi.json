@@ -18296,6 +18296,55 @@
           "Meetings"
         ]
       }
+    },
+    "/v1/bootstrap": {
+      "get": {
+        "description": "The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.",
+        "operationId": "BootstrapController_getBootstrap_v1",
+        "parameters": [
+          {
+            "name": "include",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read. A name the API does not know is ignored, so a section a later API drops costs an older client only that section.",
+            "schema": {
+              "example": "user,channels,channel_unread",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What a client's first screen reads, in one request",
+        "tags": [
+          "Bootstrap"
+        ]
+      }
     }
   },
   "info": {
@@ -32059,6 +32108,218 @@
         "required": [
           "upload_id"
         ]
+      },
+      "BootstrapDto": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "As `GET /v1/users/me`."
+          },
+          "permissions": {
+            "nullable": true,
+            "description": "As `GET /v1/users/me/permissions`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MyPermissionsDto"
+              }
+            ]
+          },
+          "legal_acceptance": {
+            "nullable": true,
+            "description": "As `GET /v1/users/me/legal-acceptance`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LegalAcceptanceDto"
+              }
+            ]
+          },
+          "whats_new": {
+            "nullable": true,
+            "description": "As `GET /v1/users/me/whats-new`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WhatsNewSeenDto"
+              }
+            ]
+          },
+          "chapters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/chapters`."
+          },
+          "current_chapter": {
+            "nullable": true,
+            "description": "As `GET /v1/chapters/current`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CurrentChapterResponseDto"
+              }
+            ]
+          },
+          "settings": {
+            "nullable": true,
+            "description": "As `GET /v1/settings`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserSettingsDto"
+              }
+            ]
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/channels`."
+          },
+          "channel_unread": {
+            "nullable": true,
+            "description": "As `GET /v1/channels/unread`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelUnreadCountDto"
+            }
+          },
+          "channel_categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/channels/categories/list`."
+          },
+          "channel_notification_preferences": {
+            "nullable": true,
+            "description": "As `GET /v1/channels/notification-preferences`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelNotificationPreferenceDto"
+            }
+          },
+          "mention_roles": {
+            "nullable": true,
+            "description": "As `GET /v1/channels/mention-roles`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionRoleDto"
+            }
+          },
+          "chat_sidebar": {
+            "nullable": true,
+            "description": "As `GET /v1/chat-sidebar`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatSidebarDto"
+              }
+            ]
+          },
+          "chat_blocks": {
+            "nullable": true,
+            "description": "As `GET /v1/chat/blocks`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatBlockListDto"
+              }
+            ]
+          },
+          "chat_background_default": {
+            "nullable": true,
+            "description": "As `GET /v1/chat-backgrounds/default`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChapterChatBackgroundResponseDto"
+              }
+            ]
+          },
+          "gif_availability": {
+            "nullable": true,
+            "description": "As `GET /v1/gifs/availability`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GifAvailabilityDto"
+              }
+            ]
+          },
+          "bookmarks": {
+            "nullable": true,
+            "description": "As `GET /v1/bookmarks`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookmarkDto"
+            }
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/roles`."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/events`."
+          },
+          "geofences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/geofences`."
+          },
+          "documents": {
+            "nullable": true,
+            "description": "As `GET /v1/documents` with no folder or search.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChapterDocumentDto"
+            }
+          },
+          "member_roster": {
+            "nullable": true,
+            "description": "As `GET /v1/members/roster`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemberRosterEntryDto"
+            }
+          },
+          "notifications": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/notifications?limit=50`."
+          }
+        }
       }
     }
   }

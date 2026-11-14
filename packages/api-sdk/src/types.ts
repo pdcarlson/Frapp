@@ -5440,6 +5440,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a client's first screen reads, in one request
+         * @description The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.
+         */
+        get: operations["BootstrapController_getBootstrap_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -10332,6 +10352,70 @@ export interface components {
              * @description The upload that finished.
              */
             upload_id: string;
+        };
+        BootstrapDto: {
+            /** @description As `GET /v1/users/me`. */
+            user?: {
+                [key: string]: unknown;
+            } | null;
+            /** @description As `GET /v1/users/me/permissions`. */
+            permissions?: components["schemas"]["MyPermissionsDto"] | null;
+            /** @description As `GET /v1/users/me/legal-acceptance`. */
+            legal_acceptance?: components["schemas"]["LegalAcceptanceDto"] | null;
+            /** @description As `GET /v1/users/me/whats-new`. */
+            whats_new?: components["schemas"]["WhatsNewSeenDto"] | null;
+            /** @description As `GET /v1/chapters`. */
+            chapters?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/chapters/current`. */
+            current_chapter?: components["schemas"]["CurrentChapterResponseDto"] | null;
+            /** @description As `GET /v1/settings`. */
+            settings?: components["schemas"]["UserSettingsDto"] | null;
+            /** @description As `GET /v1/channels`. */
+            channels?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/channels/unread`. */
+            channel_unread?: components["schemas"]["ChannelUnreadCountDto"][] | null;
+            /** @description As `GET /v1/channels/categories/list`. */
+            channel_categories?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/channels/notification-preferences`. */
+            channel_notification_preferences?: components["schemas"]["ChannelNotificationPreferenceDto"][] | null;
+            /** @description As `GET /v1/channels/mention-roles`. */
+            mention_roles?: components["schemas"]["MentionRoleDto"][] | null;
+            /** @description As `GET /v1/chat-sidebar`. */
+            chat_sidebar?: components["schemas"]["ChatSidebarDto"] | null;
+            /** @description As `GET /v1/chat/blocks`. */
+            chat_blocks?: components["schemas"]["ChatBlockListDto"] | null;
+            /** @description As `GET /v1/chat-backgrounds/default`. */
+            chat_background_default?: components["schemas"]["ChapterChatBackgroundResponseDto"] | null;
+            /** @description As `GET /v1/gifs/availability`. */
+            gif_availability?: components["schemas"]["GifAvailabilityDto"] | null;
+            /** @description As `GET /v1/bookmarks`. */
+            bookmarks?: components["schemas"]["BookmarkDto"][] | null;
+            /** @description As `GET /v1/roles`. */
+            roles?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/events`. */
+            events?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/geofences`. */
+            geofences?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/documents` with no folder or search. */
+            documents?: components["schemas"]["ChapterDocumentDto"][] | null;
+            /** @description As `GET /v1/members/roster`. */
+            member_roster?: components["schemas"]["MemberRosterEntryDto"][] | null;
+            /** @description As `GET /v1/notifications?limit=50`. */
+            notifications?: {
+                [key: string]: unknown;
+            }[] | null;
         };
     };
     responses: never;
@@ -22806,6 +22890,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BootstrapController_getBootstrap_v1: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read. A name the API does not know is ignored, so a section a later API drops costs an older client only that section. */
+                include?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BootstrapDto"];
                 };
             };
             /** @description Error */
