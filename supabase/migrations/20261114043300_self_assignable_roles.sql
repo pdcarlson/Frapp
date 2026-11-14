@@ -15,44 +15,59 @@
 --     or there are none. What it opens is the channels whose who-can-see and
 --     who-can-post lists name it.
 --
--- `role_self_assignable_safe` is that rule; `@repo/validation`'s
--- `selfAssignableRefusal` is the same rule for the API's 400 and the clients'
--- explanation, and the pglite proof keeps the two in step.
+-- `role_self_assignable_safe` is that rule. `@repo/validation`'s
+-- `selfAssignableRefusal` is a second copy, for the API's 400 and the clients'
+-- explanation; each is tested on its own against the same cases (the pglite
+-- tier and `self-assignable-roles.spec.ts`), and nothing compares the two, so
+-- change both together.
 --
--- `trg_roles_unsafe_clears_self_assignable` clears the flag on any write that
--- leaves a flagged role unsafe, whoever writes it (a Discord import, a role
--- save racing the flag). Same-timing triggers fire in name order, so it runs
--- after `trg_roles_sync_permissions` has rewritten `permissions` for the new
--- tier and overrides, and judges the list the row will hold. The API refuses
--- such a save outright (400) unless the save also clears the flag; this is
--- the backstop.
+-- `roles_self_assignable_safe` is a check constraint, so a write that leaves a
+-- marked role unsafe fails, whoever writes it, instead of landing. It is
+-- checked after `trg_roles_sync_permissions` has rewritten `permissions` for
+-- the new tier and overrides, so it judges the list the row will hold. The
+-- API refuses such a save first (400) unless it also unmarks the role; the
+-- constraint closes the race that check can't: a save that read the role
+-- unmarked, landing after an officer marked it and members joined, fails
+-- (the API answers 409) instead of handing those members a permission.
 --
 -- self_assign_role(p_chapter_id, p_member_id, p_role_id, p_join) adds the
--- role to the member's `role_ids` (p_join) or takes it off, only while the
--- role is flagged and safe. In one transaction it
+-- role to the member's `role_ids` (p_join) or takes it off. In one
+-- transaction it
 --
 --   share-locks the role, so a role save or `delete_role` (which locks it
---     `for update`) either commits first, and this sees the flag it left, or
+--     `for update`) either commits first, and this sees the row it left, or
 --     waits for this write;
 --   locks the member row and adds or removes the id, compared lower-cased
 --     as `delete_role` and the guard compare it.
 --
+-- Joining needs the role marked (the constraint keeps a marked role safe),
+-- and is refused to a member holding the Alumni role: an event that lists a
+-- role skips the alumni check-in rule for its holders, because listing it was
+-- an officer's choice of who attends, and a role an alum picked for
+-- themselves is not (spec/behavior/alumni.md).
+--
+-- Leaving needs only that the role has no `system_key` and sits outside the
+-- tiers, marked or not, so a member who picked a role can drop it after an
+-- officer unmarks it or gives it a permission. Leaving only takes from the
+-- caller, and the tiers and keyed roles stay the officers' to take away.
+--
 -- Locks are taken role first, member second, the order `delete_role` and
 -- `set_member_role_ids` take them, so none of the three can deadlock.
 --
--- Everyone is left as it is. The role grants nothing a member's access rests
--- on, so joining or leaving it cannot change whether `rolesAfterSave` would
--- give or take Everyone.
+-- Everyone is left as it is. A pickable role grants nothing a member's access
+-- rests on, so joining or leaving one can't change whether `rolesAfterSave`
+-- would give or take Everyone.
 --
 -- It answers one row: `outcome` is 'ok' with the written `role_ids`,
--- 'not_assignable' (no such role in the chapter, not flagged, or unsafe),
--- or 'no_member'. Security invoker, called by the API with the service role.
+-- 'not_assignable' (no such role in the chapter, or not one the member may
+-- join or leave), 'alumni', or 'no_member'. Security invoker, called by the
+-- API with the service role.
 
 alter table public.roles
   add column self_assignable boolean not null default false;
 
 comment on column public.roles.self_assignable is
-  'Members may join and leave this role themselves (#4958). Only while role_self_assignable_safe holds; trg_roles_unsafe_clears_self_assignable clears it otherwise.';
+  'Members may join and leave this role themselves (#4958). The roles_self_assignable_safe constraint holds it to role_self_assignable_safe.';
 
 create or replace function public.role_self_assignable_safe(
   p_system_key text,
@@ -76,39 +91,12 @@ $$;
 comment on function public.role_self_assignable_safe(text, uuid, text[]) is
   'Whether a role may be self-assignable (#4958): no system_key, outside the tiers, and no permission beyond channels:read:<slug>. Mirrors selfAssignableRefusal in @repo/validation.';
 
-create or replace function public.roles_unsafe_clears_self_assignable()
-returns trigger
-language plpgsql
-set search_path = public, pg_temp
-as $$
-begin
-  if new.self_assignable
-     and not public.role_self_assignable_safe(
-           new.system_key, new.tier_id, new.permissions
-         ) then
-    new.self_assignable := false;
-  end if;
-  return new;
-end;
-$$;
-
--- A trigger needs no grant; nobody calls it as an RPC.
-revoke execute on function public.roles_unsafe_clears_self_assignable() from public;
-
-do $$
-begin
-  if exists (select 1 from pg_roles where rolname = 'anon') then
-    revoke execute on function public.roles_unsafe_clears_self_assignable() from anon;
-  end if;
-  if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    revoke execute on function public.roles_unsafe_clears_self_assignable() from authenticated;
-  end if;
-end
-$$;
-
-create trigger trg_roles_unsafe_clears_self_assignable
-  before insert or update on public.roles
-  for each row execute function public.roles_unsafe_clears_self_assignable();
+alter table public.roles
+  add constraint roles_self_assignable_safe
+  check (
+    not self_assignable
+    or public.role_self_assignable_safe(system_key, tier_id, permissions)
+  );
 
 create or replace function public.self_assign_role(
   p_chapter_id uuid,
@@ -134,10 +122,9 @@ begin
      and r.chapter_id = p_chapter_id
      for share;
   if not found
-     or not v_role.self_assignable
-     or not public.role_self_assignable_safe(
-          v_role.system_key, v_role.tier_id, v_role.permissions
-        ) then
+     or v_role.system_key is not null
+     or v_role.tier_id is not null
+     or (p_join and not v_role.self_assignable) then
     return query select 'not_assignable'::text, null::text[];
     return;
   end if;
@@ -149,6 +136,18 @@ begin
      for update;
   if not found then
     return query select 'no_member'::text, null::text[];
+    return;
+  end if;
+
+  if p_join and exists (
+    select 1
+      from unnest(coalesce(v_current, array[]::text[])) as x
+      join public.roles a
+        on a.id::text = lower(x)
+       and a.chapter_id = p_chapter_id
+       and a.system_key = 'ALUMNI'
+  ) then
+    return query select 'alumni'::text, null::text[];
     return;
   end if;
 
@@ -182,7 +181,7 @@ end;
 $$;
 
 comment on function public.self_assign_role(uuid, uuid, uuid, boolean) is
-  'Adds (p_join) or removes a self-assignable role on a member, only while the role is flagged and safe, under locks ordered role then member as delete_role takes them (#4958). See 20261114043300_self_assignable_roles.sql.';
+  'Adds (p_join, a marked role, not to an alum) or removes (a role with no system_key outside the tiers) a role on a member, under locks ordered role then member as delete_role takes them (#4958). See 20261114043300_self_assignable_roles.sql.';
 
 revoke execute on function public.self_assign_role(uuid, uuid, uuid, boolean) from public;
 

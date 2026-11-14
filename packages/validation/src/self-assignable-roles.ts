@@ -14,14 +14,15 @@
  *   `channels:read:<slug>` keys (what a Discord import gives its roles). What
  *   it opens is the channels whose who-can-see and who-can-post lists name it.
  *
- * The database holds the same rule (`role_self_assignable_safe`, migration
- * `20261114043300`): it clears the flag on any write that breaks it, and
- * `self_assign_role` refuses a role that fails it. This copy is what the API
- * answers 400 with and what clients explain a disabled switch by.
+ * The database holds a second copy (`role_self_assignable_safe`, migration
+ * `20261114043300`), whose constraint refuses any write that leaves a marked
+ * role unsafe. This copy is what the API answers 400 with and what clients
+ * explain a disabled switch by. Each copy is tested on its own against the
+ * same cases and nothing compares them, so change both together.
  */
 
 /** The one permission prefix a self-assignable role may carry. */
-export const SELF_ASSIGNABLE_PERMISSION_PREFIX = "channels:read:";
+const SELF_ASSIGNABLE_PERMISSION_PREFIX = "channels:read:";
 
 /** A keyed role (President, Everyone, New Member, Alumni): 400. */
 export const SELF_ASSIGNABLE_KEYED_CODE = "role.self_assignable_keyed";
@@ -47,7 +48,7 @@ export interface SelfAssignableRoleFields {
 }
 
 /** Whether `permission` is one a self-assignable role may carry. */
-export function isSelfAssignablePermission(permission: string): boolean {
+function isSelfAssignablePermission(permission: string): boolean {
   return (
     permission.startsWith(SELF_ASSIGNABLE_PERMISSION_PREFIX) &&
     permission.length > SELF_ASSIGNABLE_PERMISSION_PREFIX.length
@@ -61,8 +62,9 @@ export function isSelfAssignablePermission(permission: string): boolean {
 export function selfAssignableRefusal(
   role: SelfAssignableRoleFields,
 ): SelfAssignableRefusal | null {
-  if (role.system_key) return SELF_ASSIGNABLE_KEYED_CODE;
-  if (role.tier_id) return SELF_ASSIGNABLE_TIERED_CODE;
+  // `!= null`, as the database's `is null`: an empty string is still a key.
+  if (role.system_key != null) return SELF_ASSIGNABLE_KEYED_CODE;
+  if (role.tier_id != null) return SELF_ASSIGNABLE_TIERED_CODE;
   if ((role.permissions ?? []).some((p) => !isSelfAssignablePermission(p))) {
     return SELF_ASSIGNABLE_PERMISSIONS_CODE;
   }
@@ -81,15 +83,3 @@ export const SELF_ASSIGNABLE_REFUSAL_COPY: Record<
   [SELF_ASSIGNABLE_PERMISSIONS_CODE]:
     "Roles members pick themselves only open channels, so they can't carry permissions. Turn its permissions off, or turn off Non-chapter business.",
 };
-
-/**
- * Whether a `GET /v1/roles` row is marked self-assignable. Read defensively,
- * since that route declares no response schema.
- */
-export function isSelfAssignableRole(role: unknown): boolean {
-  return (
-    !!role &&
-    typeof role === "object" &&
-    (role as Record<string, unknown>).self_assignable === true
-  );
-}

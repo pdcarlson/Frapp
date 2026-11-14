@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  isSelfAssignablePermission,
-  isSelfAssignableRole,
-  selfAssignableRefusal,
-} from "./self-assignable-roles";
+import { selfAssignableRefusal } from "./self-assignable-roles";
 
 describe("selfAssignableRefusal (#4958)", () => {
   const safe = { system_key: null, tier_id: null, permissions: [] };
@@ -48,14 +44,10 @@ describe("selfAssignableRefusal (#4958)", () => {
     );
   });
 
-  it("reads missing fields as empty", () => {
+  it("reads missing fields as empty, and an empty key as a key", () => {
     expect(selfAssignableRefusal({})).toBeNull();
-    expect(isSelfAssignablePermission("channels:read:x")).toBe(true);
-  });
-
-  it("reads the flag defensively", () => {
-    expect(isSelfAssignableRole({ self_assignable: true })).toBe(true);
-    expect(isSelfAssignableRole({ self_assignable: "true" })).toBe(false);
-    expect(isSelfAssignableRole(null)).toBe(false);
+    expect(selfAssignableRefusal({ system_key: "" })).toBe(
+      "role.self_assignable_keyed",
+    );
   });
 });

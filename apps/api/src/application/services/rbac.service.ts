@@ -37,6 +37,7 @@ import {
   type PermissionCatalogEntry,
 } from '#domain/constants/permissions';
 import { flattenPermissionSets } from '#domain/utils/permissions';
+import { PG_CHECK_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { isAiEnabled } from '../../config/ai-config';
 import {
   addedPermissions,
@@ -386,8 +387,9 @@ export class RbacService {
    * (`assertRolesWithinReach`). A save that would leave an already marked role
    * unsafe is refused unless it also unmarks it, so an officer never makes a
    * role everyone can pick into one that grants more without saying so. The
-   * database clears the flag on any write that slips past this (a race, or a
-   * Discord import): `trg_roles_unsafe_clears_self_assignable`.
+   * database refuses any write that slips past this (a save that read the
+   * role before it was marked): the `roles_self_assignable_safe` check, which
+   * `update` answers with 409.
    */
   private assertSelfAssignableSave(
     context: RankContext,
@@ -431,10 +433,18 @@ export class RbacService {
     join: boolean,
   ): Promise<{ role_ids: string[] }> {
     const role = await this.roleInChapter(roleId, chapterId);
-    if (role.self_assignable !== true || selfAssignableRefusal(role)) {
+    // Joining needs the role marked and safe. Leaving needs only a role with
+    // no key outside the tiers, so a member who picked it can drop it after
+    // an officer unmarks it or gives it a permission (#4958 review).
+    const allowed = join
+      ? role.self_assignable === true && !selfAssignableRefusal(role)
+      : !role.system_key && !role.tier_id;
+    if (!allowed) {
       throw new ForbiddenException({
         code: NOT_SELF_ASSIGNABLE_CODE,
-        message: 'Officers give this role. Ask one if you need it.',
+        message: join
+          ? 'Officers give this role. Ask one if you need it.'
+          : 'Officers take this role away. Ask one if you need it gone.',
       });
     }
     const member = await this.memberRepo.findByUserAndChapter(
@@ -450,6 +460,15 @@ export class RbacService {
     );
     if (result.outcome === 'no_member') {
       throw new NotFoundException('Member not found');
+    }
+    // An event that lists a role skips the alumni check-in rule for its
+    // holders, as an officer's choice of who attends; a role an alum picked
+    // for themselves is not one (spec/behavior/alumni.md).
+    if (result.outcome === 'alumni') {
+      throw new ForbiddenException({
+        code: NOT_SELF_ASSIGNABLE_CODE,
+        message: "Alumni don't pick roles. Ask an officer if you need one.",
+      });
     }
     if (result.outcome !== 'ok' || !result.role_ids) {
       throw new ConflictException({
@@ -696,7 +715,26 @@ export class RbacService {
     const updatable = { ...data };
     delete updatable.system_key;
 
-    const updated = await this.roleRepo.update(roleId, updatable);
+    let updated: Role;
+    try {
+      updated = await this.roleRepo.update(roleId, updatable);
+    } catch (error) {
+      // `roles_self_assignable_safe` (#4958): this save read the role
+      // unmarked, and an officer marked it before the write landed. Writing
+      // it would hand the members who joined since a permission they never
+      // picked, so it is refused and the officer reloads.
+      if (
+        (error as { code?: string }).code === PG_CHECK_VIOLATION &&
+        String((error as Error).message).includes('roles_self_assignable_safe')
+      ) {
+        throw new ConflictException({
+          code: NOT_SELF_ASSIGNABLE_CODE,
+          message:
+            'Members started picking this role while you were saving. Reload and try again.',
+        });
+      }
+      throw error;
+    }
     const diff = diffRole(role, updated);
     if (Object.keys(diff).length > 0) {
       await this.chapterAuditLogService.record({

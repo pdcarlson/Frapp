@@ -93,6 +93,6 @@ export interface IMemberRepository {
 
 /** What {@link IMemberRepository.setSelfAssignedRole} did. */
 export interface SelfAssignResult {
-  outcome: 'ok' | 'not_assignable' | 'no_member';
+  outcome: 'ok' | 'not_assignable' | 'alumni' | 'no_member';
   role_ids: string[] | null;
 }

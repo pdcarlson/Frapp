@@ -81,7 +81,9 @@ export class CreateRoleDto {
     description:
       'Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it.',
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets `null` through to a not-null column
+  // (a 500): absent is fine, `null` is refused like any non-boolean.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
   mentionable?: boolean;
 
@@ -141,7 +143,9 @@ export class UpdateRoleDto {
     description:
       'Whether any member may `@` this role in chat. Defaults to true. While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it.',
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets `null` through to a not-null column
+  // (a 500): absent is fine, `null` is refused like any non-boolean.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
   mentionable?: boolean;
 
@@ -173,7 +177,9 @@ export class UpdateRoleDto {
     description:
       'Members may join and leave this role themselves (#4958). Only a role with no system key, outside the tiers, and holding no permission beyond `channels:read:<slug>` may be marked (400 `role.self_assignable_keyed`, `role.self_assignable_tiered` or `role.self_assignable_permissions`), and marking needs the caller to hold what it carries. A save that would leave a marked role unsafe is refused the same way unless it also sends false.',
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets `null` through to a not-null column
+  // (a 500): absent is fine, `null` is refused like any non-boolean.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
   self_assignable?: boolean;
 }
@@ -286,7 +292,9 @@ export class UpdateRoleTierDto {
     description:
       'Whether any member may `@` the tier, which reaches everyone holding a role in it (#4076). While false, only a member holding `channels:manage` or `roles:manage` (or the wildcard) can ping it.',
   })
-  @IsOptional()
+  // Not `@IsOptional()`, which lets `null` through to a not-null column
+  // (a 500): absent is fine, `null` is refused like any non-boolean.
+  @ValidateIf((_object, value) => value !== undefined)
   @IsStrictBoolean()
   mentionable?: boolean;
 

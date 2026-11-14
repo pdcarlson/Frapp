@@ -2,23 +2,25 @@ import { db, miss } from "../harness.mjs";
 
 // ─── Functional: self-assignable roles (20261114043300) ──────────────────────
 //
-// #4958: officers mark a role members may join and leave themselves. A role
-// is pickable only while `role_self_assignable_safe` holds (no system key,
-// outside the tiers, no permission beyond `channels:read:<slug>`), so nobody
-// picks their way into power or into presidency's claim walk.
+// #4958: officers mark a role members may join and leave themselves. A marked
+// role must stay safe (`role_self_assignable_safe`: no system key, outside the
+// tiers, no permission beyond `channels:read:<slug>`), so nobody picks their
+// way into power or into presidency's claim walk.
 //
-// This tier proves the database half of that rule:
-//   - the trigger clears the flag on any write that leaves the role unsafe,
-//     whoever writes it, and leaves a safe role's flag alone;
-//   - `self_assign_role` adds and removes only a flagged, safe role of the
-//     member's own chapter, keeps every other id where it was, and writes
-//     nothing for a no-op;
+// This tier proves the database half:
+//   - `roles_self_assignable_safe` refuses any write that leaves a marked role
+//     unsafe, whoever writes it, and lets the same write through when it also
+//     unmarks the role;
+//   - `self_assign_role` joins only a marked role of the member's own chapter,
+//     never for an alum; leaves any unkeyed role outside the tiers, marked or
+//     not; keeps every other id where it was; and writes nothing for a no-op;
 //   - it takes the role's lock before the member's, the order `delete_role`
 //     and `set_member_role_ids` take them. PGlite is one connection, so the
 //     lock itself can't be waited on here; the tier checks the function
 //     still takes it, as `set-member-role-ids.mjs` does.
 //
-// Everything runs inside one transaction and is rolled back.
+// Everything runs inside one transaction and is rolled back; each write that
+// is expected to fail runs in its own savepoint.
 console.log("\n=== Functional: self-assignable roles (20261114043300) ===");
 {
   const A = "a4958000-0000-4000-8000-00000000000a";
@@ -29,6 +31,8 @@ console.log("\n=== Functional: self-assignable roles (20261114043300) ===");
     intramurals: "a4958000-0000-4000-8000-0000000000e2",
     study: "a4958000-0000-4000-8000-0000000000e3",
     chair: "a4958000-0000-4000-8000-0000000000e4",
+    closed: "a4958000-0000-4000-8000-0000000000e5",
+    alumni: "a4958000-0000-4000-8000-0000000000e6",
     other: "b4958000-0000-4000-8000-0000000000e1",
   };
   const U = [1, 2].map((n) => `a4958000-0000-4000-8000-00000000000${n}`);
@@ -61,6 +65,18 @@ console.log("\n=== Functional: self-assignable roles (20261114043300) ===");
         [chapter, member, role, join],
       )
     )[0];
+  // The SQLSTATE a write fails with, or null when it lands.
+  const refusal = async (text, params = []) => {
+    await db.exec("savepoint try_write");
+    try {
+      await db.query(text, params);
+      await db.exec("release savepoint try_write");
+      return null;
+    } catch (e) {
+      await db.exec("rollback to savepoint try_write");
+      return e?.code ?? String(e?.message ?? e);
+    }
+  };
 
   try {
     await db.exec(`
@@ -72,37 +88,69 @@ console.log("\n=== Functional: self-assignable roles (20261114043300) ===");
       insert into role_tiers (id, chapter_id, position, name, permissions) values
         ('${TIER}', '${A}', 1, 'Officers', '{}');
       insert into roles (id, chapter_id, name, system_key, is_system, display_order, permissions, self_assignable) values
-        ('${R.everyone}', '${A}', 'Everyone', 'MEMBER', true, 5, '{members:view}', true),
+        ('${R.everyone}', '${A}', 'Everyone', 'MEMBER', true, 5, '{members:view}', false),
+        ('${R.alumni}', '${A}', 'Alumni', 'ALUMNI', true, 6, '{members:view}', false),
         ('${R.intramurals}', '${A}', 'Intramurals', null, false, 7, '{}', true),
         ('${R.study}', '${A}', 'Study group', null, false, 8, '{channels:read:study}', true),
-        ('${R.chair}', '${A}', 'Chair', null, false, 2, '{members:view}', true),
+        ('${R.closed}', '${A}', 'Closed club', null, false, 9, '{}', false),
+        ('${R.chair}', '${A}', 'Chair', null, false, 2, '{members:view}', false),
         ('${R.other}', '${B}', 'Other', null, false, 7, '{}', true);
       insert into members (chapter_id, user_id, role_ids) values
-        ('${A}', '${U[0]}', '{${R.everyone}}');
+        ('${A}', '${U[0]}', '{${R.everyone}}'),
+        ('${A}', '${U[1]}', '{${R.alumni}}');
     `);
 
+    // The constraint.
     check(
-      "a keyed role can't be inserted self-assignable",
-      (await flag(R.everyone)) === false,
+      "a role outside the tiers with no permissions, or only channels:read, can be marked",
+      (await flag(R.intramurals)) === true && (await flag(R.study)) === true,
     );
     check(
-      "a role holding a real permission can't be inserted self-assignable",
-      (await flag(R.chair)) === false,
+      "a keyed role can't be marked",
+      (await refusal(`update roles set self_assignable = true where id = $1`, [
+        R.everyone,
+      ])) === "23514",
     );
     check(
-      "a role outside the tiers with no permissions keeps the flag",
-      (await flag(R.intramurals)) === true,
+      "a role holding a real permission can't be marked",
+      (await refusal(`update roles set self_assignable = true where id = $1`, [
+        R.chair,
+      ])) === "23514",
     );
     check(
-      "so does one holding only channels:read:<slug>",
-      (await flag(R.study)) === true,
+      "a marked role can't gain a real permission",
+      (await refusal(
+        `update roles set permissions = '{channels:read:study,events:update}' where id = $1`,
+        [R.study],
+      )) === "23514" && (await flag(R.study)) === true,
+    );
+    check(
+      "nor move into a tier, even an empty one",
+      (await refusal(`update roles set tier_id = $2 where id = $1`, [
+        R.study,
+        TIER,
+      ])) === "23514",
+    );
+    check(
+      "nor switch an override on, judged on the rewritten list",
+      (await refusal(
+        `update roles set permission_overrides = '{"events:create": true}' where id = $1`,
+        [R.study],
+      )) === "23514",
+    );
+    check(
+      "the same change lands when it also unmarks the role",
+      (await refusal(
+        `update roles set permissions = '{events:update}', self_assignable = false where id = $1`,
+        [R.study],
+      )) === null && (await flag(R.study)) === false,
     );
 
     // Join, rejoin, leave.
     const m = await memberId(U[0]);
     const joined = await assign(m, R.intramurals, true);
     check(
-      "a member joins a flagged role, after what they held",
+      "a member joins a marked role, after what they held",
       joined.outcome === "ok" &&
         same(await ids(U[0]), [R.everyone, R.intramurals]),
       { joined, after: await ids(U[0]) },
@@ -124,13 +172,40 @@ console.log("\n=== Functional: self-assignable roles (20261114043300) ===");
       { left, after: await ids(U[0]) },
     );
 
-    // Refusals.
+    // An unmarked role: no joining, but a member who holds it may leave it,
+    // even once it carries a permission.
+    const closedJoin = await assign(m, R.closed, true);
+    check(
+      "an unmarked role, however safe, can't be joined",
+      closedJoin.outcome === "not_assignable" &&
+        same(await ids(U[0]), [R.everyone]),
+      { closedJoin },
+    );
+    await assign(m, R.intramurals, true);
+    await rows(
+      `update roles set permissions = '{events:update}', self_assignable = false where id = $1`,
+      [R.intramurals],
+    );
+    const leftUnmarked = await assign(m, R.intramurals, false);
+    check(
+      "a member leaves a role they picked after an officer unmarks it and gives it a permission",
+      leftUnmarked.outcome === "ok" && same(await ids(U[0]), [R.everyone]),
+      { leftUnmarked, after: await ids(U[0]) },
+    );
+
+    // Refusals both ways.
     for (const [name, role] of [
       ["a keyed role", R.everyone],
-      ["a role with a real permission", R.chair],
+      ["a role in a tier", R.chair],
       ["another chapter's role", R.other],
       ["a role that doesn't exist", "a4958000-0000-4000-8000-0000000000ff"],
     ]) {
+      if (role === R.chair) {
+        await rows(`update roles set tier_id = $2 where id = $1`, [
+          R.chair,
+          TIER,
+        ]);
+      }
       const join = await assign(m, role, true);
       const leave = await assign(m, role, false);
       check(
@@ -141,48 +216,25 @@ console.log("\n=== Functional: self-assignable roles (20261114043300) ===");
         { join, leave, after: await ids(U[0]) },
       );
     }
+
+    // Alumni.
+    await rows(
+      `update roles set permissions = '{}', self_assignable = true where id = $1`,
+      [R.intramurals],
+    );
+    const alum = await memberId(U[1]);
+    const alumJoin = await assign(alum, R.intramurals, true);
+    check(
+      "an alum can't join a role, so an event's role invite can't skip the alumni check-in rule",
+      alumJoin.outcome === "alumni" && same(await ids(U[1]), [R.alumni]),
+      { alumJoin, after: await ids(U[1]) },
+    );
+
     const noMember = await assign(m, R.other, true, B);
     check(
       "a member of another chapter is not written",
       noMember.outcome === "no_member" && same(await ids(U[0]), [R.everyone]),
       { noMember },
-    );
-
-    // The trigger clears the flag whoever makes the role unsafe.
-    await rows(
-      `update roles set permissions = '{channels:read:study,events:update}' where id = $1`,
-      [R.study],
-    );
-    check(
-      "gaining a real permission clears the flag",
-      (await flag(R.study)) === false,
-    );
-    await rows(
-      `update roles set permissions = '{}', self_assignable = true where id = $1`,
-      [R.study],
-    );
-    check(
-      "and the flag can be set again once it's safe",
-      (await flag(R.study)) === true,
-    );
-    await rows(`update roles set tier_id = $2 where id = $1`, [R.study, TIER]);
-    check(
-      "moving into a tier, even an empty one, clears it",
-      (await flag(R.study)) === false,
-    );
-    await rows(
-      `update roles set permission_overrides = '{"events:create": true}' where id = $1`,
-      [R.intramurals],
-    );
-    check(
-      "an override switched on clears it, judged on the rewritten list",
-      (await flag(R.intramurals)) === false,
-    );
-    const afterUnflag = await assign(m, R.intramurals, true);
-    check(
-      "and a role that lost its flag can't be joined",
-      afterUnflag.outcome === "not_assignable",
-      { afterUnflag },
     );
 
     const [{ src }] = await rows(

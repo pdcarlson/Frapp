@@ -315,6 +315,24 @@ describe('RbacService self-assignable roles (#4958)', () => {
       });
     });
 
+    it('answers 409 when an officer marked the role after this save read it', async () => {
+      // The save read BRAND_NEW unmarked; meanwhile it was marked and members
+      // joined, so the database's constraint refuses the new permission.
+      roleRepo.update.mockRejectedValueOnce(
+        Object.assign(
+          new Error(
+            'new row for relation "roles" violates check constraint "roles_self_assignable_safe"',
+          ),
+          { code: '23514' },
+        ),
+      );
+      await expect(
+        service.updateAsMember(BRAND_NEW, CHAPTER_ID, USER.president, {
+          permissions: ['events:create'],
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+
     it('lets a rename or recolor through', async () => {
       await service.updateAsMember(INTRAMURALS, CHAPTER_ID, USER.riskChair, {
         name: 'IM sports',
@@ -357,8 +375,53 @@ describe('RbacService self-assignable roles (#4958)', () => {
       );
     });
 
+    it('refuses joining an unmarked role, but lets a holder leave it', async () => {
+      expect(
+        await codeOf(
+          service.setOwnSelfAssignableRole(
+            CHAPTER_ID,
+            USER.brother,
+            BRAND_NEW,
+            true,
+          ),
+        ),
+      ).toEqual({ type: ForbiddenException, code: 'role.not_self_assignable' });
+      expect(memberRepo.setSelfAssignedRole).not.toHaveBeenCalled();
+      // Unmarked since the member picked it, and now carrying a permission:
+      // leaving only takes from the caller, so it stays open.
+      roleById(BRAND_NEW).permissions = ['events:update'];
+      await service.setOwnSelfAssignableRole(
+        CHAPTER_ID,
+        USER.brother,
+        BRAND_NEW,
+        false,
+      );
+      expect(memberRepo.setSelfAssignedRole).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        'member-brother',
+        BRAND_NEW,
+        false,
+      );
+    });
+
+    it('refuses an alum, as the database answers', async () => {
+      memberRepo.setSelfAssignedRole.mockResolvedValueOnce({
+        outcome: 'alumni',
+        role_ids: null,
+      });
+      expect(
+        await codeOf(
+          service.setOwnSelfAssignableRole(
+            CHAPTER_ID,
+            USER.brother,
+            INTRAMURALS,
+            true,
+          ),
+        ),
+      ).toEqual({ type: ForbiddenException, code: 'role.not_self_assignable' });
+    });
+
     it.each([
-      ['an unmarked role', BRAND_NEW],
       ["an officer's role", ROLE.vicePresident],
       ["the President's role", ROLE.president],
       ['a pledge role in a tier', ROLE.pledge],
@@ -381,8 +444,8 @@ describe('RbacService self-assignable roles (#4958)', () => {
       expect(memberRepo.setSelfAssignedRole).not.toHaveBeenCalled();
     });
 
-    it('refuses a role whose flag is stale: marked but no longer safe', async () => {
-      // A row the database would have cleared; the API re-checks anyway.
+    it('refuses joining a role marked but not safe', async () => {
+      // A row the database's constraint rules out; the API re-checks anyway.
       Object.assign(roleById(INTRAMURALS), {
         permissions: ['roles:manage'],
       });

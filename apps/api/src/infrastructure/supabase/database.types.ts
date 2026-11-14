@@ -1077,10 +1077,11 @@ export interface Database {
         Returns: ChatMessage[];
       };
       /**
-       * `20261114043300` (#4958) — adds (`p_join`) or removes a
-       * self-assignable role on a member, only while the role is flagged and
-       * safe, under the role-then-member locks `delete_role` takes. One row:
-       * `ok` with the written `role_ids`, `not_assignable` or `no_member`.
+       * `20261114043300` (#4958) — adds (`p_join`: a marked role, never for
+       * an alum) or removes (any unkeyed role outside the tiers) a role on a
+       * member, under the role-then-member locks `delete_role` takes. One
+       * row: `ok` with the written `role_ids`, `not_assignable`, `alumni` or
+       * `no_member`.
        */
       self_assign_role: {
         Args: {
@@ -1090,7 +1091,7 @@ export interface Database {
           p_join: boolean;
         };
         Returns: {
-          outcome: 'ok' | 'not_assignable' | 'no_member';
+          outcome: 'ok' | 'not_assignable' | 'alumni' | 'no_member';
           role_ids: string[] | null;
         }[];
       };
