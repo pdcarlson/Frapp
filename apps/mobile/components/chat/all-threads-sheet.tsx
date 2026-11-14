@@ -6,16 +6,14 @@ import {
   ALL_THREADS_ERROR,
   ALL_THREADS_TITLE,
   resolveAuthorLabel,
+  resolveAuthorName,
   useMemberThreads,
-  type MemberThread,
   type NameResolver,
 } from "@repo/hooks";
-import { replyPreviewText } from "@repo/chat-core/reply-preview";
-import { forwardedFromOf } from "@repo/chat-core/types";
-import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
+import { memberThreadPreview } from "@repo/chat-core/threads";
+import type { RawChatMessage } from "@repo/chat-core/types";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { useChapterBranding } from "@/lib/chapter-branding";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { sentAtLabel } from "./message-actions-sheet";
 import {
@@ -40,25 +38,14 @@ export interface ThreadTarget {
   rootId: string;
 }
 
-type Message = MemberThread["root"];
-
-function previewOf(message: Message): string {
-  if ((message as { sender_blocked?: boolean }).sender_blocked === true) {
-    return TOMBSTONE_TEXT;
-  }
-  return replyPreviewText({
-    ...message,
-    // A forward with no comment previews its copy (#4875).
-    forwarded_from: forwardedFromOf(message.forwarded_from),
-  });
-}
-
 /**
  * All threads (#4960), the phone's face of web's `AllThreadsPopover`: every
  * thread the member started, replied in or was mentioned in, across channels,
  * newest activity first. Slack's Threads view is the model: each row names
- * the channel, the parent and the latest reply, bold with a "2 new" while
- * there is something unread. A row opens the thread (`onOpen`); the sheet
+ * the channel, the parent and the latest reply. Unread reads as a list in a
+ * sheet does (components.md: a dot in the foreground and a bolder title,
+ * never a New badge); the count is in the row's accessible name. Both lines
+ * come from chat-core's `memberThreadPreview`, web's rule too. A row opens the thread (`onOpen`); the sheet
  * closes first, since the push is the confirmation.
  *
  * The read lives in {@link ThreadRows}, a child of the modal, so it re-reads
@@ -136,11 +123,24 @@ export function ThreadRows({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const brand = useChapterBranding();
   const query = useMemberThreads({ refetchOnMount: true });
-  const rows = useMemo<ThreadRowModel[]>(
-    () =>
-      (query.data ?? []).map((thread) => ({
+  const rows = useMemo<ThreadRowModel[]>(() => {
+    const names = {
+      nameOf: (id: string) =>
+        resolveAuthorName({ sender_id: id, author_name: null }, nameFor),
+      fallbackLabel: (id: string) =>
+        resolveAuthorLabel({ sender_id: id, author_name: null }, nameFor, null),
+    };
+    return (query.data ?? []).map((thread) => {
+      const preview = memberThreadPreview(
+        thread.root as unknown as RawChatMessage,
+        viewerId,
+        names,
+      );
+      const rootAuthor = preview.root.sender_blocked
+        ? null
+        : resolveAuthorLabel(preview.root, nameFor, viewerId);
+      return {
         key: thread.thread_root_id,
         channelId: thread.channel_id,
         rootId: thread.thread_root_id,
@@ -148,15 +148,19 @@ export function ThreadRows({
         when: sentAtLabel(thread.last_reply_at ?? thread.root.created_at),
         unread: thread.unread_count,
         muted: thread.state === "muted",
-        rootLine: `${resolveAuthorLabel(thread.root, nameFor, viewerId)}: ${previewOf(thread.root)}`,
-        replyLine: thread.latest_reply
-          ? `${resolveAuthorLabel(thread.latest_reply, nameFor, viewerId)}: ${previewOf(thread.latest_reply)}`
+        rootLine: rootAuthor
+          ? `${rootAuthor}: ${preview.rootText}`
+          : preview.rootText,
+        replyLine: preview.reply
+          ? preview.reply.name
+            ? `${preview.reply.name}: ${preview.reply.text}`
+            : preview.reply.text
           : null,
         replies:
           thread.reply_count === 1 ? "1 reply" : `${thread.reply_count} replies`,
-      })),
-    [query.data, channelNameFor, nameFor, viewerId],
-  );
+      };
+    });
+  }, [query.data, channelNameFor, nameFor, viewerId]);
 
   if (query.isError && query.data === undefined) {
     return (
@@ -186,15 +190,13 @@ export function ThreadRows({
           style={({ pressed }) => [styles.row, pressed ? styles.pressed : null]}
         >
           <View style={styles.metaLine}>
+            {row.unread > 0 ? <View style={styles.unreadDot} /> : null}
             <Text
               style={[styles.channel, row.unread > 0 ? styles.unread : null]}
               numberOfLines={1}
             >
               {row.channel}
             </Text>
-            {row.unread > 0 ? (
-              <Text style={[styles.newCount, { color: brand.accent }]}>{`${row.unread} new`}</Text>
-            ) : null}
           </View>
           <Text style={styles.meta} numberOfLines={1}>
             {row.rootLine}
@@ -203,7 +205,7 @@ export function ThreadRows({
             <Text
               style={[
                 styles.preview,
-                row.unread > 0 ? null : styles.readPreview,
+                row.unread > 0 ? styles.unreadPreview : styles.readPreview,
               ]}
               numberOfLines={2}
             >
@@ -257,19 +259,24 @@ function createStyles(tokens: SignetTokens) {
     metaLine: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "space-between",
       gap: tokens.spacing.sm,
     },
+    unreadDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      backgroundColor: tokens.color.text.foreground,
+    },
+    // A read row's title is the caption's regular weight; an unread one the
+    // label's semibold, in the foreground: the "bolder title".
     channel: {
-      ...typeRole(tokens.typography.role.label),
+      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
       flexShrink: 1,
     },
     unread: {
-      color: tokens.color.text.foreground,
-    },
-    newCount: {
       ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     meta: {
       ...typeRole(tokens.typography.role.caption),
@@ -281,6 +288,9 @@ function createStyles(tokens: SignetTokens) {
     },
     readPreview: {
       color: tokens.color.text.mutedForeground,
+    },
+    unreadPreview: {
+      color: tokens.color.text.foreground,
     },
     empty: {
       ...typeRole(tokens.typography.role.body),

@@ -22558,12 +22558,7 @@
             "description": "Replies in the thread, deleted ones included."
           },
           "root": {
-            "$ref": "#/components/schemas/ChatMessageDto"
-          },
-          "latest_reply": {
-            "nullable": true,
-            "description": "The newest reply not deleted; null when there is none.",
-            "type": "object",
+            "description": "The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/ChatMessageDto"
@@ -22579,8 +22574,7 @@
           "channel_id",
           "last_reply_at",
           "reply_count",
-          "root",
-          "latest_reply"
+          "root"
         ]
       },
       "ChatBackgroundResponseDto": {

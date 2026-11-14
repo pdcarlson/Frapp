@@ -27,10 +27,6 @@ vi.mock("@repo/hooks", async () => ({
   useMemberThreads: () => read.value,
 }));
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({ accent: "#c8a24a" }),
-}));
-
 import { ThreadRows, type ThreadTarget } from "./all-threads-sheet";
 
 const NAMES: Record<string, string> = { u1: "Blake", u2: "Casey" };
@@ -44,6 +40,20 @@ function message(over: Record<string, unknown>) {
     is_deleted: false,
     created_at: "2026-11-13T18:00:00Z",
     thread_root_id: null,
+    thread_reply_count: 1,
+    thread_last_reply_at: "2026-11-13T19:00:00Z",
+    ...over,
+  };
+}
+
+function lastReply(over: Record<string, unknown> = {}) {
+  return {
+    id: "reply-1",
+    sender_id: "u2",
+    content: "Paid mine",
+    kind: "text",
+    attachment_count: 0,
+    created_at: "2026-11-13T19:00:00Z",
     ...over,
   };
 }
@@ -57,13 +67,7 @@ function thread(over: Record<string, unknown> = {}) {
     last_reply_at: "2026-11-13T19:00:00Z",
     reply_count: 1,
     unread_count: 2,
-    root: message({}),
-    latest_reply: message({
-      id: "reply-1",
-      sender_id: "u2",
-      content: "Paid mine",
-      thread_root_id: "root-1",
-    }),
+    root: message({ thread_last_reply: lastReply() }),
     ...over,
   };
 }
@@ -99,12 +103,13 @@ beforeEach(() => {
 });
 
 describe("All threads (#4960)", () => {
-  it("shows the channel, parent, latest reply and new count, and opens the thread", () => {
+  it("shows the channel, parent and latest reply, says what's new, and opens the thread", () => {
     const onOpen = vi.fn();
     const tree = render(onOpen);
     const shown = text(tree);
     expect(shown).toContain("#dues");
-    expect(shown).toContain("2 new");
+    // Unread is a dot and a bolder title, never a New badge (components.md).
+    expect(shown).not.toContain('"children":["2 new"]');
     expect(shown).toContain("Blake: Dues are due Friday");
     expect(shown).toContain("Casey: Paid mine");
     const row = tree.root.find(
@@ -117,18 +122,28 @@ describe("All threads (#4960)", () => {
     expect(onOpen).toHaveBeenCalledWith({ channelId: "c1", rootId: "root-1" });
   });
 
-  it("reads a blocked member's reply as the tombstone, not their words", () => {
+  it("reads a blocked member's reply as the tombstone, unnamed", () => {
     read.value.data = [
       thread({
-        latest_reply: message({
-          id: "reply-1",
-          sender_id: "u2",
-          content: "",
-          sender_blocked: true,
+        root: message({
+          thread_last_reply: lastReply({ content: "", sender_blocked: true }),
         }),
       }),
     ];
-    expect(text(render())).toContain(TOMBSTONE_TEXT);
+    const shown = text(render());
+    expect(shown).toContain(TOMBSTONE_TEXT);
+    expect(shown).not.toContain("Casey");
+  });
+
+  it("reads a file-only reply as the channel does, not as Message", () => {
+    read.value.data = [
+      thread({
+        root: message({
+          thread_last_reply: lastReply({ content: "", attachment_count: 2 }),
+        }),
+      }),
+    ];
+    expect(text(render())).toContain("Casey: 2 attachments");
   });
 
   it("says when there are none", () => {

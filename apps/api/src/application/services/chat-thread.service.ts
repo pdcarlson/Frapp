@@ -39,14 +39,12 @@ export interface ChatThreadView {
   last_read_at: string | null;
 }
 
-/** One row of `GET /v1/threads` (#4960). */
-export interface MemberThreadView extends Omit<
-  MemberThreadRow,
-  'latest_reply_id'
-> {
+/**
+ * One row of `GET /v1/threads` (#4960). The latest reply is the root's own
+ * `thread_last_reply`, masked with it, as the channel's thread card reads it.
+ */
+export interface MemberThreadView extends MemberThreadRow {
   root: MaskedChatMessage;
-  /** The newest reply, or `null` when every reply was deleted. */
-  latest_reply: MaskedChatMessage | null;
 }
 
 /** How many threads All threads shows; the newest activity wins. */
@@ -215,7 +213,10 @@ export class ChatThreadService {
     chapterId: string,
     userId: string,
   ): Promise<MemberThreadView[]> {
-    const followedIn = await this.threads.findFollowedChannelIds(userId);
+    const followedIn = await this.threads.findFollowedChannelIds(
+      chapterId,
+      userId,
+    );
     const readable = await this.channelAccess.filterAccessibleChannelIds(
       chapterId,
       userId,
@@ -229,33 +230,19 @@ export class ChatThreadService {
       MEMBER_THREADS_LIMIT,
     );
     if (rows.length === 0) return [];
-    const [messages, blocked] = await Promise.all([
-      this.threads.findMessagesByIds([
-        ...rows.map((row) => row.thread_root_id),
-        ...rows.flatMap((row) =>
-          row.latest_reply_id ? [row.latest_reply_id] : [],
-        ),
-      ]),
+    const [roots, blocked] = await Promise.all([
+      this.threads.findMessagesByIds(rows.map((row) => row.thread_root_id)),
       this.chatBlocks.listBlockedUserIds(chapterId, userId),
     ]);
     const byId = new Map(
-      maskBlockedMessages(messages, blocked).map((message) => [
-        message.id,
-        message,
-      ]),
+      maskBlockedMessages(roots, blocked).map((root) => [root.id, root]),
     );
     const views: MemberThreadView[] = [];
-    for (const { latest_reply_id, ...row } of rows) {
+    for (const row of rows) {
       const root = byId.get(row.thread_root_id);
       // A root removed between the two reads (a channel purge) drops out.
       if (!root || root.channel_id !== row.channel_id) continue;
-      const reply = latest_reply_id ? byId.get(latest_reply_id) : undefined;
-      views.push({
-        ...row,
-        root,
-        latest_reply:
-          reply && reply.thread_root_id === row.thread_root_id ? reply : null,
-      });
+      views.push({ ...row, root });
     }
     return views;
   }

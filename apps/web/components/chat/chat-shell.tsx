@@ -2548,10 +2548,14 @@ export function ChatShell({
   } | null>(null);
   // Leaving the channel closes its thread, so coming back shows the timeline
   // (state adjusted during render, React's pattern for a reset on a prop).
+  // Not while the thread's channel is the one being switched to and the
+  // cached list hasn't brought it in yet: All threads (#4960) opens a thread
+  // in a channel that may be new to this tab, and its refetch lands after.
   if (
     openThread &&
     activeChannel &&
-    openThread.channelId !== activeChannel.id
+    openThread.channelId !== activeChannel.id &&
+    openThread.channelId !== selectedChannelId
   ) {
     setOpenThread(null);
   }

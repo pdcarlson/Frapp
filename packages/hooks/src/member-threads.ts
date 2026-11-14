@@ -5,9 +5,12 @@
  * and counts what's new, so nothing here re-derives either.
  *
  * One query backs both the header button's unread mark and the list, so the
- * two never disagree. It re-reads whenever the list mounts (opening it shows
- * what's true now) and once a minute behind the button, which is how a thread
- * read on another device or tab clears here.
+ * two never disagree. It re-reads once a minute behind the button (how a
+ * thread read on another device clears here), right after a thread is read in
+ * this app (`use-message-thread.ts` invalidates `memberThreadKeys.all`), and
+ * when the list opens: the phone's sheet mounts a fresh observer, which
+ * `refetchOnMount` makes fetch; web's popover keeps its observer mounted, so
+ * it calls `refetch` on opening.
  */
 import { useQuery } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";

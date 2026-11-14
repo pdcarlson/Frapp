@@ -101,8 +101,11 @@ export interface IChatThreadRepository {
     limit: number,
   ): Promise<MemberThreadRow[]>;
 
-  /** The distinct channels holding the member's followed or muted threads. */
-  findFollowedChannelIds(userId: string): Promise<string[]>;
+  /**
+   * The distinct channels in a chapter holding the member's followed or muted
+   * threads, read in SQL so no follow row is cut by a row cap.
+   */
+  findFollowedChannelIds(chapterId: string, userId: string): Promise<string[]>;
 
   /** Messages by id, in no particular order; ids that miss are left out. */
   findMessagesByIds(ids: string[]): Promise<ChatMessage[]>;

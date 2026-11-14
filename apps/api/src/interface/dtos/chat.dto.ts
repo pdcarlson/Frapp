@@ -1696,13 +1696,10 @@ export class MemberThreadDto extends FollowedThreadDto {
   @ApiProperty({ description: 'Replies in the thread, deleted ones included.' })
   reply_count: number;
 
-  @ApiProperty({ type: () => ChatMessageDto })
-  root: ChatMessageDto;
-
   @ApiProperty({
     type: () => ChatMessageDto,
-    nullable: true,
-    description: 'The newest reply not deleted; null when there is none.',
+    description:
+      'The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier.',
   })
-  latest_reply: ChatMessageDto | null;
+  root: ChatMessageDto;
 }

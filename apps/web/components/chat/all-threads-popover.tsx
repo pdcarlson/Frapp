@@ -15,24 +15,14 @@ import {
   ALL_THREADS_ERROR,
   ALL_THREADS_TITLE,
   resolveAuthorLabel,
+  resolveAuthorName,
   unreadThreadCount,
   useMemberThreads,
-  type MemberThread,
 } from "@repo/hooks";
 import { formatRelativeDayTime } from "@repo/formatting";
-import { forwardedFromOf } from "@repo/chat-core/types";
-import { replyPreviewText } from "./reply-quote";
+import { memberThreadPreview } from "@repo/chat-core/threads";
+import type { RawChatMessage } from "@repo/chat-core/types";
 import { StartThreadGlyph } from "./chat-glyphs";
-
-type PreviewSource = MemberThread["root"];
-
-function previewOf(message: PreviewSource): string {
-  return replyPreviewText({
-    ...message,
-    // A forward with no comment previews its copy (#4875).
-    forwarded_from: forwardedFromOf(message.forwarded_from),
-  });
-}
 
 /**
  * All threads (#4960): the chat header's Threads button and its list of every
@@ -42,9 +32,15 @@ function previewOf(message: PreviewSource): string {
  * channel-header threads icon is where the door sits.
  *
  * A row opens its thread in the thread panel, switching channel first when it
- * is another one (`onOpenThread`). The list is the server's, so a thread read
- * here or anywhere else drops its unread mark on the next read: on opening the
- * list, and once a minute behind the button.
+ * is another one (`onOpenThread`). The list is the server's: it is re-read
+ * each time it opens, once a minute behind the button, and right after a
+ * thread is read here (`use-message-thread.ts`). The hook lives in this
+ * always-mounted trigger for the button's dot, so opening calls `refetch`
+ * itself; a `refetchOnMount` change would not fetch on a mounted observer.
+ *
+ * Unread reads as a list in a popover does (components.md: a dot in
+ * `--foreground` and a bolder title, never a New badge); the count is in the
+ * row's accessible name.
  */
 export function AllThreadsPopover({
   channelNameFor,
@@ -59,13 +55,25 @@ export function AllThreadsPopover({
   onOpenThread: (channelId: string, rootId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  // Opening re-reads, so the list never shows a mark the member just cleared.
-  const query = useMemberThreads({ refetchOnMount: open });
+  const query = useMemberThreads();
   const threads = query.data ?? [];
   const unread = unreadThreadCount(threads);
+  const names = {
+    nameOf: (id: string) =>
+      resolveAuthorName({ sender_id: id, author_name: null }, nameFor),
+    fallbackLabel: (id: string) =>
+      resolveAuthorLabel({ sender_id: id, author_name: null }, nameFor, null),
+  };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        // A read on another device left this list stale; opening shows now.
+        if (next) void query.refetch();
+      }}
+    >
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
@@ -116,8 +124,16 @@ export function AllThreadsPopover({
           <ul className="max-h-[min(28rem,70vh)] divide-y divide-border overflow-y-auto">
             {threads.map((thread) => {
               const isUnread = thread.unread_count > 0;
-              const channelName = channelNameFor(thread.channel_id);
-              const reply = thread.latest_reply;
+              const channelName =
+                channelNameFor(thread.channel_id) ?? "Conversation";
+              const preview = memberThreadPreview(
+                thread.root as unknown as RawChatMessage,
+                viewerId,
+                names,
+              );
+              const rootAuthor = preview.root.sender_blocked
+                ? null
+                : resolveAuthorLabel(preview.root, nameFor, viewerId);
               const when = formatRelativeDayTime(
                 thread.last_reply_at ?? thread.root.created_at,
               );
@@ -125,6 +141,9 @@ export function AllThreadsPopover({
                 <li key={thread.thread_root_id}>
                   <button
                     type="button"
+                    aria-label={`Thread in ${channelName}${
+                      isUnread ? `, ${thread.unread_count} new` : ""
+                    }`}
                     onClick={() => {
                       setOpen(false);
                       onOpenThread(thread.channel_id, thread.thread_root_id);
@@ -136,42 +155,53 @@ export function AllThreadsPopover({
                     )}
                   >
                     <span className="flex items-center justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-2">
+                        {isUnread ? (
+                          <span
+                            aria-hidden="true"
+                            className="h-2 w-2 shrink-0 rounded-full bg-foreground"
+                          />
+                        ) : null}
+                        <span
+                          className={cn(
+                            "truncate",
+                            isUnread
+                              ? "font-semibold text-foreground"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {channelName}
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-muted-foreground">
+                        {when}
+                      </span>
+                    </span>
+                    <span className="mt-1 block truncate text-muted-foreground">
+                      {rootAuthor ? (
+                        <>
+                          <span className="font-semibold">{rootAuthor}:</span>{" "}
+                        </>
+                      ) : null}
+                      {preview.rootText}
+                    </span>
+                    {preview.reply ? (
                       <span
                         className={cn(
-                          "truncate",
+                          "mt-1 line-clamp-2 block whitespace-pre-wrap text-base",
                           isUnread
                             ? "font-semibold text-foreground"
                             : "text-muted-foreground",
                         )}
                       >
-                        {channelName ?? "Conversation"}
-                      </span>
-                      <span className="shrink-0 text-muted-foreground">
-                        {isUnread ? (
-                          <span className="mr-2 font-semibold text-primary">
-                            {thread.unread_count} new
-                          </span>
+                        {preview.reply.name ? (
+                          <>
+                            <span className="font-semibold">
+                              {preview.reply.name}:
+                            </span>{" "}
+                          </>
                         ) : null}
-                        {when}
-                      </span>
-                    </span>
-                    <span className="mt-1 block truncate text-muted-foreground">
-                      <span className="font-semibold">
-                        {resolveAuthorLabel(thread.root, nameFor, viewerId)}:
-                      </span>{" "}
-                      {previewOf(thread.root)}
-                    </span>
-                    {reply ? (
-                      <span
-                        className={cn(
-                          "mt-1 line-clamp-2 block whitespace-pre-wrap text-base",
-                          isUnread ? "text-foreground" : "text-muted-foreground",
-                        )}
-                      >
-                        <span className="font-semibold">
-                          {resolveAuthorLabel(reply, nameFor, viewerId)}:
-                        </span>{" "}
-                        {previewOf(reply)}
+                        {preview.reply.text}
                       </span>
                     ) : null}
                     <span className="mt-1 block text-muted-foreground">

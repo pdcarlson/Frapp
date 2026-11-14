@@ -454,8 +454,15 @@ describe('ChatThreadService', () => {
       last_read_at: null,
       last_reply_at: reply.created_at,
       reply_count: 1,
-      latest_reply_id: 'reply-1',
       unread_count: 1,
+    };
+    const lastReply = {
+      id: 'reply-1',
+      sender_id: 'user-2',
+      content: 'In the thread',
+      kind: 'text',
+      attachment_count: 0,
+      created_at: reply.created_at,
     };
 
     beforeEach(() => {
@@ -467,12 +474,18 @@ describe('ChatThreadService', () => {
         new Set(['ch-chan-1']),
       );
       threads.findMemberThreads.mockResolvedValue([row]);
-      threads.findMessagesByIds.mockResolvedValue([root, reply]);
+      threads.findMessagesByIds.mockResolvedValue([
+        { ...root, thread_last_reply: lastReply },
+      ]);
     });
 
-    it('reads only the channels the caller may still read, then joins the root and latest reply', async () => {
+    it('reads only the chapter channels the caller may still read, then joins the roots', async () => {
       const result = await service.getMemberThreads('ch-1', 'user-1');
 
+      expect(threads.findFollowedChannelIds).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
       expect(channelAccess.filterAccessibleChannelIds).toHaveBeenCalledWith(
         'ch-1',
         'user-1',
@@ -484,16 +497,18 @@ describe('ChatThreadService', () => {
         ['ch-chan-1'],
         50,
       );
+      expect(threads.findMessagesByIds).toHaveBeenCalledWith(['root-1']);
       expect(result).toEqual([
         expect.objectContaining({
           thread_root_id: 'root-1',
           channel_id: 'ch-chan-1',
           unread_count: 1,
-          root: expect.objectContaining({ id: 'root-1' }),
-          latest_reply: expect.objectContaining({ id: 'reply-1' }),
+          root: expect.objectContaining({
+            id: 'root-1',
+            thread_last_reply: expect.objectContaining({ id: 'reply-1' }),
+          }),
         }),
       ]);
-      expect(result[0]).not.toHaveProperty('latest_reply_id');
     });
 
     it('answers empty without reading threads when no followed channel is readable', async () => {
@@ -505,29 +520,29 @@ describe('ChatThreadService', () => {
       expect(threads.findMemberThreads).not.toHaveBeenCalled();
     });
 
-    it('drops a thread whose root is gone and nulls a reply that is not the thread’s', async () => {
+    it('drops a thread whose root is gone or sits in another channel', async () => {
       threads.findMemberThreads.mockResolvedValue([
         row,
-        { ...row, thread_root_id: 'gone', latest_reply_id: null },
+        { ...row, thread_root_id: 'gone' },
+        { ...row, thread_root_id: 'moved' },
       ]);
       threads.findMessagesByIds.mockResolvedValue([
         root,
-        { ...reply, thread_root_id: 'elsewhere' },
+        { ...root, id: 'moved', channel_id: 'elsewhere' },
       ]);
 
       const result = await service.getMemberThreads('ch-1', 'user-1');
 
-      expect(result).toHaveLength(1);
-      expect(result[0].latest_reply).toBeNull();
+      expect(result.map((view) => view.thread_root_id)).toEqual(['root-1']);
     });
 
-    it('masks a blocked member’s root and reply', async () => {
-      chatBlocks.listBlockedUserIds.mockResolvedValue(['author-1', 'user-1']);
+    it('masks a blocked member’s root and their latest-reply preview', async () => {
+      chatBlocks.listBlockedUserIds.mockResolvedValue(['author-1', 'user-2']);
 
       const [view] = await service.getMemberThreads('ch-1', 'user-1');
 
       expect(view.root.content).not.toBe(root.content);
-      expect(view.latest_reply?.content).not.toBe(reply.content);
+      expect(view.root.thread_last_reply?.content).not.toBe(lastReply.content);
     });
   });
 });

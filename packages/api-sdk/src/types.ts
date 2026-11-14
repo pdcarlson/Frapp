@@ -6993,9 +6993,8 @@ export interface components {
             last_reply_at: string | null;
             /** @description Replies in the thread, deleted ones included. */
             reply_count: number;
+            /** @description The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier. */
             root: components["schemas"]["ChatMessageDto"];
-            /** @description The newest reply not deleted; null when there is none. */
-            latest_reply: components["schemas"]["ChatMessageDto"] | null;
         };
         ChatBackgroundResponseDto: {
             /**

@@ -180,9 +180,22 @@ vi.mock("@/lib/account/own-status", () => ({
   useSaveOwnStatus: () => ({ save: vi.fn(), isSaving: false }),
 }));
 
-// All threads (#4960): the sheet has its own spec (`all-threads-sheet.spec.tsx`).
+// All threads (#4960): the sheet's rows have their own spec
+// (`all-threads-sheet.spec.tsx`); here the screen's half, the badge and where
+// a tapped row goes, is under test.
+const allThreads = vi.hoisted(() => ({
+  data: [] as { unread_count: number }[],
+  onOpen: null as null | ((target: { channelId: string; rootId: string }) => void),
+}));
 vi.mock("@/components/chat/all-threads-sheet", () => ({
-  AllThreadsSheet: () => null,
+  AllThreadsSheet: ({
+    onOpen,
+  }: {
+    onOpen: (target: { channelId: string; rootId: string }) => void;
+  }) => {
+    allThreads.onOpen = onOpen;
+    return null;
+  },
 }));
 
 vi.mock("@repo/hooks", async () => {
@@ -212,7 +225,7 @@ vi.mock("@repo/hooks", async () => {
     useChapterChatBackground: () => query(undefined),
     // All threads (#4960): the header's Threads door; its sheet has its own spec.
     unreadThreadCount: actual.unreadThreadCount,
-    useMemberThreads: () => query([]),
+    useMemberThreads: () => query(allThreads.data),
     lastChannelLandingId: actual.lastChannelLandingId,
     lastChannelStorageKey: actual.lastChannelStorageKey,
     useActiveChapterId: () => "chapter-1",
@@ -2544,3 +2557,33 @@ describe("Chat home: the swipe to Messages", () => {
     expect(pan(tree).config?.enabled).toBe(false);
   });
 });
+
+describe("Chat home's Threads door (#4960)", () => {
+  const byTestId = (tree: ReactTestRenderer, testID: string) =>
+    tree.root.findAllByProps({ testID });
+  it("counts threads with new replies on its badge", () => {
+    allThreads.data = [{ unread_count: 2 }, { unread_count: 0 }];
+    try {
+      const tree = render();
+      const [badge] = byTestId(tree, "threads-badge").filter(
+        (node) => (node.type as unknown) === "View",
+      );
+      expect(screenTextOf(badge!)).toBe("1");
+      expect(
+        pressableLabelled(tree, "Threads").props.accessibilityValue,
+      ).toEqual({ text: "1 with new replies" });
+    } finally {
+      allThreads.data = [];
+    }
+  });
+
+  it("opens a tapped thread over its channel", () => {
+    render();
+    act(() => allThreads.onOpen?.({ channelId: "c-general", rootId: "root-1" }));
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "c-general", threadRootId: "root-1" },
+    });
+  });
+});
+

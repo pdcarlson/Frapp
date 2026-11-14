@@ -203,14 +203,16 @@ export class SupabaseChatThreadRepository implements IChatThreadRepository {
     }));
   }
 
-  async findFollowedChannelIds(userId: string): Promise<string[]> {
-    const { data, error } = await this.supabase
-      .from('chat_thread_follows')
-      .select('channel_id')
-      .eq('user_id', userId)
-      .in('state', ['following', 'muted']);
+  async findFollowedChannelIds(
+    chapterId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const { data, error } = await this.supabase.rpc(
+      'get_member_thread_channel_ids',
+      { p_chapter_id: chapterId, p_user_id: userId },
+    );
     if (error) throw new SupabaseQueryError(error);
-    return [...new Set((data ?? []).map((row) => row.channel_id))];
+    return (data ?? []).map((row) => row.channel_id);
   }
 
   async findMessagesByIds(ids: string[]): Promise<ChatMessage[]> {

@@ -513,8 +513,6 @@ export interface MemberThreadRow extends FollowedThreadUnread {
   /** The root's `thread_last_reply_at`; `null` before any reply. */
   last_reply_at: string | null;
   reply_count: number;
-  /** The newest reply not deleted, or `null` when there is none. */
-  latest_reply_id: string | null;
 }
 
 /**

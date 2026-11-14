@@ -688,9 +688,17 @@ export interface Database {
         Returns: { channel_id: string }[];
       };
       /**
+       * `20261114003341` (#4960). The distinct channels in a chapter holding
+       * the caller's followed or muted threads.
+       */
+      get_member_thread_channel_ids: {
+        Args: { p_chapter_id: string; p_user_id: string };
+        Returns: { channel_id: string }[];
+      };
+      /**
        * `20261114003341` (#4960). The caller's followed and muted threads
        * across `p_channel_ids` (already authorized by the service), newest
-       * activity first, with each one's latest reply and new-reply count.
+       * activity first, with each one's new-reply count.
        */
       get_member_threads: {
         Args: {
