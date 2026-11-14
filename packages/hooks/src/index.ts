@@ -115,6 +115,7 @@ export * from "./use-roles";
 export * from "./use-rush";
 export * from "./use-scheduled-messages";
 export * from "./use-search";
+export * from "./use-self-assignable-roles";
 export * from "./use-semesters";
 export * from "./use-service-entries";
 export * from "./use-study";

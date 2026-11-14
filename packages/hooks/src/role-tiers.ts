@@ -30,6 +30,11 @@ export type TieredRole = {
   tier_id: string | null;
   /** Permission to `true` (on whatever the tier says) or `false` (off). */
   permission_overrides: Record<string, boolean>;
+  /**
+   * Members add and remove it themselves (#4958): a "Non-chapter business"
+   * role. Only ever true for a role safe to pick (`selfAssignableRefusal`).
+   */
+  self_assignable: boolean;
 };
 
 export type TierRow = {
@@ -60,6 +65,7 @@ export function normalizeTieredRoles(data: unknown): TieredRole[] {
       mentionable: role.mentionable !== false,
       tier_id: typeof role.tier_id === "string" ? role.tier_id : null,
       permission_overrides: readOverrides(role.permission_overrides),
+      self_assignable: role.self_assignable === true,
     }));
 }
 
