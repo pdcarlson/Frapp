@@ -156,6 +156,11 @@ was applied and no foreign row was read or written. Follow
 `npm run test:e2e -w apps/api` boots `AppModule` with `SUPABASE_CLIENT` overridden and guards
 stubbed, so it needs no live services or secrets.
 
+Pin every clock a spec's code reads: pass a fixed `now`, or `jest.useFakeTimers({ now })`. A spec
+that falls through to `Date.now()` passes the day it merges and reds every PR on some later day.
+`clock-ahead-tests.yml` runs the API suites nightly a week ahead and alerts on one; reproduce
+with `faketime -f +7d npm run test -w apps/api -- <spec>` (`apt-get install faketime`).
+
 ## Contract and migration checks
 
 ### API contract (`check:api-contract`)
