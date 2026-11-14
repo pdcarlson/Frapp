@@ -168,7 +168,10 @@ export function notificationIdFrom(data: unknown): string | null {
  * `/chat-thread` with no `channelId` would render an error, so it is not
  * offered.
  */
-export function resolveNotificationTarget(data: unknown): NotificationTarget {
+export function resolveNotificationTarget(
+  data: unknown,
+  chatMessageId: string | null = null,
+): NotificationTarget {
   if (!isRecord(data)) return FALLBACK;
 
   const target = data.target;
@@ -192,14 +195,30 @@ export function resolveNotificationTarget(data: unknown): NotificationTarget {
     params: { [route.as ?? route.param]: value },
   };
 
+  // A message reminder (#4957) opens chat at the message it is about, as a
+  // reminder does in Slack. Its push carries the message as `messageId`
+  // (`NotificationService`); the in-app row as its `chat_message_id`, which
+  // the inbox passes in. Other chat pushes keep opening the conversation as
+  // they always have.
+  const focusMessageId =
+    screen === "chat" && data.reminder === true
+      ? (str(data, "messageId") ?? chatMessageId)
+      : null;
+
   // A thread reply's push names its root too (`spec/behavior/chat/README.md`
   // § Message threads → Notifications). The thread is the channel's route
   // pushed again with the root, over the channel (#4054).
   const threadRootId = screen === "chat" ? str(target, "threadRootId") : null;
-  if (!threadRootId) return resolved;
+  if (!threadRootId) {
+    return focusMessageId
+      ? { ...resolved, params: { ...resolved.params, focusMessageId } }
+      : resolved;
+  }
   return {
     pathname: route.pathname,
-    params: { channelId: value, threadRootId },
+    params: focusMessageId
+      ? { channelId: value, threadRootId, focusMessageId }
+      : { channelId: value, threadRootId },
     under: resolved,
   };
 }
