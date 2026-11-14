@@ -154,3 +154,33 @@ export const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS, ...DRIFT_CHECK
 // stops updating clean behind PRs and holding the auto-merge slot (#3599)
 // while it is off. Turn it back on here, and both follow.
 export const REQUIRE_UP_TO_DATE = false;
+
+// The merge queue on `main` (#4795, Paul 2026-11-14): a queued PR merges only
+// after the required checks pass on a commit built from `main` plus every PR
+// ahead of it in the queue, so two PRs that are each green but break together
+// stop at the queue instead of landing on `main`. Its settings live in the
+// repository ruleset named `main`, not in classic branch protection, whose REST
+// API has no merge queue field; a classic PUT therefore cannot erase it.
+// `configure-branch-protection.mjs` reads it back through the rules API and
+// `--verify` fails when it is off or differs from this, but it never writes it:
+// turning it on is Paul's step in the ruleset UI
+// (docs/ops/github-branch-protection-runbook.md § Merge queue).
+//
+// ROLLOUT: every workflow emitting a required check listens for `merge_group`
+// (merge-queue-triggers.test.mjs). Turn the queue on only after the PR adding
+// those triggers merges, or every queued PR waits out the timeout below on
+// checks nobody reports.
+//
+// Only the settings this repo depends on are declared; the rest (group sizes,
+// build concurrency) are tuning, left to whoever turns it on.
+export const MERGE_QUEUE = {
+  // Paul squash-merges, and `required_linear_history` forbids merge commits.
+  merge_method: "SQUASH",
+  // A failing entry is dropped and the ones behind it rebuilt without it, so one
+  // red PR never merges on the strength of a later entry's green.
+  grouping_strategy: "ALLGREEN",
+  // Longer than the slowest required job can take, including a runner wait:
+  // `migration-replay` may wait 25 minutes for the snapshot and has a 50-minute
+  // timeout (migration-drift-gate.yml).
+  check_response_timeout_minutes: 60,
+};

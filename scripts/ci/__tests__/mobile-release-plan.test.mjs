@@ -319,7 +319,7 @@ describe("the check runs on every PR, judging the PR's own change", () => {
     const install = steps.findIndex((s) => /install: ci/.test(s.body));
     assert.ok(install !== -1 && install < at, "it reads the installed tree, so it runs after npm ci");
     assert.match(steps[at].body, /run: npm run check:mobile-native-version/);
-    assert.match(steps[at].body, /BASE_SHA: \$\{\{ github\.event_name == 'pull_request' && 'HEAD\^1' \|\| '' \}\}/);
+    assert.match(steps[at].body, /BASE_SHA: \$\{\{ github\.event_name != 'push' && 'HEAD\^1' \|\| '' \}\}/);
     assert.doesNotMatch(steps[at].body, /\bif:/, "a required check that skips passes");
     const pkg = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8"));
     assert.equal(pkg.scripts["check:mobile-native-version"], "node scripts/check-mobile-native-version.mjs");

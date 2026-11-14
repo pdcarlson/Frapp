@@ -6,12 +6,15 @@ import {
   assertKnownArgs,
   assertRosterFloor,
   buildProtectionPayload,
+  diffMergeQueue,
   diffProtection,
+  findMergeQueueRule,
+  formatMergeQueueDiff,
   formatProtectionDiff,
   hasProtectionDrift,
   normalizeProtection,
 } from "../../configure-branch-protection.mjs";
-import { ALL_REQUIRED_CHECKS, REQUIRE_UP_TO_DATE } from "../lib/required-checks.mjs";
+import { ALL_REQUIRED_CHECKS, MERGE_QUEUE, REQUIRE_UP_TO_DATE } from "../lib/required-checks.mjs";
 
 // Before #1383 `configure-branch-protection.mjs` had exactly one API call and
 // exactly one method — PUT — so it could report only what it INTENDED to write.
@@ -504,5 +507,74 @@ describe("the apply instruction is guarded wherever a script prints one (#1585)"
         `the ${entry} ROLLOUT note lost its human-step / :verify guard`,
       );
     }
+  });
+});
+
+// The rules API's shape (`GET /repos/{repo}/rules/branches/{branch}`): every
+// active ruleset rule, flattened. `main` returned the first two on 2026-11-14.
+const queueRules = (parameters = {}) => [
+  { type: "deletion", ruleset_id: 1 },
+  { type: "pull_request", parameters: { allowed_merge_methods: ["merge", "rebase", "squash"] }, ruleset_id: 1 },
+  {
+    type: "merge_queue",
+    ruleset_id: 1,
+    parameters: {
+      check_response_timeout_minutes: 60,
+      grouping_strategy: "ALLGREEN",
+      max_entries_to_build: 5,
+      max_entries_to_merge: 5,
+      merge_method: "SQUASH",
+      min_entries_to_merge: 1,
+      min_entries_to_merge_wait_minutes: 5,
+      ...parameters,
+    },
+  },
+];
+
+describe("merge queue read-back", () => {
+  it("finds no queue in rules without one", () => {
+    assert.equal(findMergeQueueRule(queueRules().slice(0, 2)), null);
+    assert.equal(findMergeQueueRule(null), null);
+  });
+
+  it("reports a queue that is off as missing", () => {
+    const diff = diffMergeQueue({ rules: queueRules().slice(0, 2), desired: MERGE_QUEUE });
+    assert.equal(diff.missing, true);
+    assert.match(formatMergeQueueDiff(diff).join("\n"), /merge queue is OFF/);
+  });
+
+  it("matches the roster's own settings, whatever the tuning", () => {
+    const diff = diffMergeQueue({ rules: queueRules({ max_entries_to_build: 2 }), desired: MERGE_QUEUE });
+    assert.deepEqual(formatMergeQueueDiff(diff), []);
+  });
+
+  it("names a merge method or grouping that differs", () => {
+    const diff = diffMergeQueue({
+      rules: queueRules({ merge_method: "MERGE", grouping_strategy: "HEADGREEN" }),
+      desired: MERGE_QUEUE,
+    });
+    assert.deepEqual(
+      diff.changes.map((c) => c.field),
+      ["merge_method", "grouping_strategy"],
+    );
+  });
+
+  it("treats the timeout as a floor", () => {
+    const longer = diffMergeQueue({ rules: queueRules({ check_response_timeout_minutes: 90 }), desired: MERGE_QUEUE });
+    assert.deepEqual(longer.changes, []);
+    const shorter = diffMergeQueue({ rules: queueRules({ check_response_timeout_minutes: 30 }), desired: MERGE_QUEUE });
+    assert.deepEqual(shorter.changes.map((c) => c.field), ["check_response_timeout_minutes"]);
+  });
+
+  it("flags a live queue the roster does not declare", () => {
+    const diff = diffMergeQueue({ rules: queueRules(), desired: null });
+    assert.equal(diff.unexpected, true);
+  });
+
+  it("the writer never sends the queue anywhere", () => {
+    // Only the classic protection route is ever PUT; the rules route is read.
+    const src = read("../../configure-branch-protection.mjs");
+    assert.doesNotMatch(src, /method:\s*"(PUT|POST|PATCH)",\s*\n\s*path:\s*`[^`]*\/rules/);
+    assert.doesNotMatch(src, /\/rulesets/);
   });
 });

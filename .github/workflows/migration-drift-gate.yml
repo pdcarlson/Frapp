@@ -58,6 +58,13 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # The merge queue (#4795). `migration-order` and `migration-replay` are
+  # required, so they must report on the queue's test commit, measured against
+  # `merge_group.base_sha` as a PR is against its base. `migration-drift` skips
+  # there: it reports on main and staging, which the PR already showed.
+  # Pinned by merge-queue-triggers.test.mjs.
+  merge_group:
+    types: [checks_requested]
   # On demand, so `migration-replay`'s expensive path can be exercised without
   # waiting for a migration-bearing PR to come along. That path — Docker, a real
   # Supabase stack, a two-phase apply — does no work on a change that touches no
@@ -96,7 +103,9 @@ concurrency:
   # replaced the previous waiting run before it started. `migration-order` and
   # `migration-replay` never reported on 14 of 15 commits, and Deploy
   # production's empty-`sha` pick found nothing (run 43110385644, attempt 1).
-  # ci.yml keeps its per-ref group on purpose; its comment says why.
+  # ci.yml keeps its per-ref group on purpose; its comment says why. A merge
+  # queue entry has a ref of its own (`gh-readonly-queue/main/pr-<n>-<sha>`),
+  # so its run shares a group with nothing.
   group: migration-drift-gate-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   # Cancellable on a PR ref, never on main. With a per-commit group a main run
   # has nothing to cancel, but a main run cancelled for any reason leaves its
@@ -106,6 +115,11 @@ concurrency:
 
 jobs:
   migration-drift:
+    # Report-only, and about main and staging rather than the change: a merge
+    # queue run would only repeat the PR's answer, or go red on a staging deploy
+    # in flight beside a queue that cannot act on it. A skipped job reports
+    # Success, and nothing requires this one anyway.
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -197,7 +211,8 @@ jobs:
           # GitHub-supplied SHAs today, so this is consistency and habit rather
           # than a live injection hole — but the habit is the point.
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A PR's base, or the commit a merge queue entry was built on.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: |
@@ -218,7 +233,7 @@ jobs:
             exit 0
           fi
 
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
             RANGE="$BASE_SHA...$HEAD_SHA"
           else
             RANGE="$BEFORE_SHA..$HEAD_SHA"
@@ -407,6 +422,11 @@ jobs:
       # `push` is the exception and keeps `github.event.before`: HEAD is already
       # on main, so its merge base with main is itself and nothing would ever
       # read as introduced.
+      #
+      # A merge queue run takes the merge-base arm too. Its commit is built on
+      # main plus the entries ahead of it, so the merge base is main's tip and
+      # the introduced set is everything queued up to and including this PR,
+      # each judged against what staging and production have applied.
       - name: Resolve the base ref
         id: base
         env:
@@ -461,7 +481,8 @@ jobs:
         id: touched
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A PR's base, or the commit a merge queue entry was built on.
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: |
@@ -487,7 +508,7 @@ jobs:
             exit 0
           fi
 
-          if [ "$EVENT_NAME" = "pull_request" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
             RANGE="$BASE_SHA...$HEAD_SHA"
           else
             RANGE="$BEFORE_SHA..$HEAD_SHA"
