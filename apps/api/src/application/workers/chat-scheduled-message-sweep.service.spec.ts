@@ -4,6 +4,12 @@ import type { IChatScheduledMessageRepository } from '#domain/repositories/chat-
 import type { ChatScheduledMessage } from '#domain/entities/chat-scheduled-message.entity';
 
 const NOW = Date.parse('2026-11-14T13:00:00.000Z');
+/**
+ * The sweep's clock pinned to NOW. Left to its `Date.now` default, a tick
+ * that started at NOW reads as already over its budget once the wall clock
+ * passes NOW, and these specs began failing at 13:00 UTC on 2026-11-14.
+ */
+const atNow = () => NOW;
 
 const row = (id: string, attempts = 0) =>
   ({ id, chapter_id: 'ch-1', attempts }) as ChatScheduledMessage;
@@ -43,7 +49,7 @@ describe('ChatScheduledMessageSweepService', () => {
   });
 
   it('sends the row as the claim found it, so an edit since the read is what posts', async () => {
-    await sweep.sweep(NOW);
+    await sweep.sweep(NOW, atNow);
     expect(scheduled.deliver).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'a', content: 'claimed a' }),
     );
@@ -54,7 +60,7 @@ describe('ChatScheduledMessageSweepService', () => {
       .mockResolvedValueOnce([row('a')])
       .mockResolvedValueOnce([row('a'), row('d')])
       .mockResolvedValueOnce([row('a'), row('d')]);
-    await sweep.sweep(NOW);
+    await sweep.sweep(NOW, atNow);
     expect(scheduled.deliver).toHaveBeenCalledTimes(2);
     expect(repo.findDue).toHaveBeenCalledTimes(3);
   });
@@ -66,7 +72,7 @@ describe('ChatScheduledMessageSweepService', () => {
   });
 
   it('delivers each claimed row with the attempt it just spent', async () => {
-    await expect(sweep.sweep(NOW)).resolves.toEqual({
+    await expect(sweep.sweep(NOW, atNow)).resolves.toEqual({
       sent: 3,
       failed: 0,
       retry: 0,
@@ -80,7 +86,7 @@ describe('ChatScheduledMessageSweepService', () => {
     repo.claim.mockImplementation(
       async (r: ChatScheduledMessage) => r.id !== 'b',
     );
-    await sweep.sweep(NOW);
+    await sweep.sweep(NOW, atNow);
     expect(scheduled.deliver).toHaveBeenCalledTimes(2);
     expect(scheduled.deliver).not.toHaveBeenCalledWith(
       expect.objectContaining({ id: 'b' }),
@@ -92,7 +98,7 @@ describe('ChatScheduledMessageSweepService', () => {
       .mockRejectedValueOnce(new Error('db down'))
       .mockResolvedValueOnce({ outcome: 'failed', reason: 'no_access' })
       .mockResolvedValueOnce({ outcome: 'retry', cause: new Error('x') });
-    await expect(sweep.sweep(NOW)).resolves.toEqual({
+    await expect(sweep.sweep(NOW, atNow)).resolves.toEqual({
       sent: 0,
       failed: 1,
       retry: 2,
