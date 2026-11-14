@@ -50,7 +50,8 @@ const SEARCHES = ['search_records', 'search_messages'];
 /**
  * The scripted "model" for the tool loop (`ask.agent`). Its first round
  * searches documents and chat for the question and asks for each read the
- * question expects that takes no argument it would have to make up; its
+ * question expects, with no arguments (a read that needs one, such as a
+ * channel's name, is refused by the loop and returns nothing); its
  * second answers with the question's reference answer, citing the opening
  * words of one source a read returned.
  *

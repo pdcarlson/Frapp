@@ -10,9 +10,10 @@
  *   nothing a question forbids is in a request;
  * - a card a model asks for comes back as a proposal, and is offered only
  *   to a member who may act;
- * - a phone number, an email, a direct message, a channel the asker cannot
- *   open and a message whose author said no never reach the model, however
- *   the tools are called.
+ * - a phone number, an email, a direct message (even the asker's own) and
+ *   a message whose author said no never reach the model, however the tools
+ *   are called. Which channels the asker can open is the invocation's list,
+ *   not the product's channel service, so that rule is not proven here.
  *
  * Whether a model answers well with these tools is the bake-off's question
  * (`npm run ai:bake-off -- --task ask.real --agent loop`).
@@ -273,17 +274,31 @@ describe("what the loop's tools do with what a model asks for", () => {
     }
   });
 
-  it('never shows a direct message, a closed channel or an author who said no', async () => {
+  it('never shows a direct message, even to the member it was sent to', async () => {
     const secret = DIRECT_MESSAGES[0].body.slice(0, 40);
-    // A member, who cannot open #exec.
+    // Dante Reyes, who received it, searching for its words and listing his channels.
+    const { shown, results } = await askWith(
+      findQuestion('refuse-direct-message'),
+      [
+        { name: 'search_messages', input: { query: 'deposit check bounced' } },
+        { name: 'list_channels', input: {} },
+        { name: 'read_channel', input: { channel: 'Direct message' } },
+      ],
+    );
+    expect(shown).not.toContain(secret);
+    expect(shown).not.toContain('Direct message in');
+    expect(results[1].sources.length).toBeGreaterThan(0);
+    expect(results[2].sources).toEqual([]);
+  });
+
+  it("never shows a channel off the asker's list or an author who said no", async () => {
+    // A member, whose list has no #exec.
     const { shown, results } = await askWith(findQuestion('member-this-week'), [
-      { name: 'search_messages', input: { query: 'deposit check bounced' } },
       { name: 'read_channel', input: { channel: 'exec' } },
       { name: 'read_channel', input: { channel: 'general' } },
     ]);
-    expect(shown).not.toContain(secret);
-    expect(results[1].sources).toEqual([]);
-    expect(results[2].sources.length).toBeGreaterThan(0);
+    expect(results[0].sources).toEqual([]);
+    expect(results[1].sources.length).toBeGreaterThan(0);
     const saidNo = new Set(
       ROSTER.filter((person) => person.consent !== 'yes').map((p) => p.id),
     );

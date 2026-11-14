@@ -6,18 +6,23 @@
  *
  * **What is the product's here**, and so is what a run grades: all 22 read
  * tools (their arguments, their wording, what each leaves out), the three
- * card tools and `ActService` behind them, `ChatCatchUpService` (which
- * messages a model may be shown: the channel the asker can open, the
- * author's yes), `ConversationScope`, `AskFromService`, and the retrieval
- * service over `eval-corpus.ts`.
+ * card tools and `ActService` behind them, `ChatCatchUpService` (a message
+ * reaches a model only when its author said yes, and never from a direct
+ * message), `ConversationScope` (only chapter channels are searched or
+ * read), `AskFromService`, and the retrieval service over `eval-corpus.ts`.
  *
  * **What stands in for the database**, and so is NOT proven by a run: the
  * services under the chapter tools (`MemberService`, `TaskService`,
  * `EventService` and the rest) are replaced by the reads below, which
  * return the term chapter's records in each service's own shape. Who may
  * see which event or task is those services' rule and is covered by their
- * own specs. Message search by words is a plain every-word match, not the
- * app's full-text search.
+ * own specs. The same goes for which channels a member can open: that list
+ * is the invocation's (`caller.channelIds`), handed to the product's code
+ * as its channel service would hand it, so a bug in the product's channel
+ * access cannot show here. Every member can read every set of minutes, where
+ * the product asks who the meeting's event invites. Message search by words
+ * matches every word of the query that is not a common one, anywhere in the
+ * message: looser and cruder than the app's full-text search, which stems.
  *
  * **What the term chapter does not record**, so a tool says little about it:
  * points are one total per member for the term (no month view, no ledger),
@@ -122,6 +127,13 @@ export function termId(id: string): string {
 
 const UUID_IN =
   /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
+/** Words a full-text search drops, so the stand-in does not demand them. */
+const COMMON_WORDS = new Set(
+  'a an and are as at be but by did do does for from has have how i in is it me my of on or our that the their them they this to was we were what when where which who will with you your'.split(
+    ' ',
+  ),
+);
 
 const quietly = <T>(value: T): Promise<T> => Promise.resolve(value);
 
@@ -457,8 +469,8 @@ export function createTermWorld(
           (entry) =>
             asked === chapterId &&
             (!window ||
-              (Date.parse(entry.end_time) > Date.parse(window.endsAfter) &&
-                Date.parse(entry.start_time) <
+              (Date.parse(entry.end_time) >= Date.parse(window.endsAfter) &&
+                Date.parse(entry.start_time) <=
                   Date.parse(window.startsBefore))),
         ),
       ),
@@ -627,8 +639,10 @@ export function createTermWorld(
     findByUser: (asker: string): Promise<FinancialInvoice[]> => {
       const entry = person(asker);
       const owed = entry ? chapter.unpaidDues[entry.id] : undefined;
+      // Fall dues: $350, due Tuesday, October 7 (the October 5 minutes).
+      // Whoever is not on the unpaid list has paid.
       return quietly(
-        owed === undefined
+        !entry || entry.role === 'Alumni'
           ? []
           : [
               {
@@ -637,10 +651,10 @@ export function createTermWorld(
                 user_id: asker,
                 title: 'Fall dues',
                 description: null,
-                amount: owed,
-                status: 'OPEN',
-                due_date: '2026-09-15',
-                paid_at: null,
+                amount: owed ?? 350,
+                status: owed === undefined ? 'PAID' : 'OPEN',
+                due_date: '2026-10-07',
+                paid_at: owed === undefined ? '2026-10-05T17:00:00.000Z' : null,
                 stripe_payment_intent_id: null,
                 created_at: stamp,
               },
@@ -666,7 +680,11 @@ export function createTermWorld(
         mine
           .filter((row) => row.status === status)
           .reduce((sum, row) => sum + row.duration_minutes, 0);
-      const rank = board.findIndex((row) => row.user_id === asker);
+      // Equal totals share a place, as the standings do.
+      const own = board.find((row) => row.user_id === asker);
+      const rank = own ? board.findIndex((row) => row.total === own.total) : -1;
+      // A required event is optional for an alumnus (`memberAttendance`).
+      const alumnus = entry?.role === 'Alumni';
       const on = (key: string) => isModuleEnabled(enabledModules, key);
       return quietly({
         points: on('points')
@@ -679,8 +697,8 @@ export function createTermWorld(
           : null,
         required_events: on('events')
           ? {
-              required: required.length,
-              attended: required.length - missed,
+              required: alumnus ? 0 : required.length,
+              attended: alumnus ? 0 : required.length - missed,
               excused: 0,
             }
           : null,
@@ -730,28 +748,64 @@ export function createTermWorld(
     display_locked: false,
     created_by: null,
   }));
-  // Only the asker's own list is known: `caller.channelIds`.
+  // A direct message is a channel of its own, open to the two people in it,
+  // as the product holds it. It is here so that the product's code is what
+  // keeps it from a model, not its absence.
+  const dmId = (a: string, b: string) =>
+    termId(`dm:${[a, b].sort().join(':')}`);
+  const dmRows: ChatChannel[] = [
+    ...new Map(
+      chapter.directMessages.map((message): [string, ChatChannel] => {
+        const id = dmId(message.fromId, message.toId);
+        return [
+          id,
+          {
+            ...channelRows[0],
+            id,
+            name: 'Direct message',
+            type: 'DM',
+            member_ids: [termId(message.fromId), termId(message.toId)],
+          },
+        ];
+      }),
+    ).values(),
+  ];
+  // Only the asker's own list is known: `caller.channelIds`, and the direct
+  // messages they are in.
   const openTo = (asker: string): ChatChannel[] =>
-    asker === userId ? channelRows.filter((row) => openIds.has(row.id)) : [];
+    asker === userId
+      ? [
+          ...channelRows.filter((row) => openIds.has(row.id)),
+          ...dmRows.filter((row) => (row.member_ids ?? []).includes(asker)),
+        ]
+      : [];
   const channelReads = {
     list: (_chapterId: string, asker: string): Promise<ChatChannelView[]> =>
       quietly(openTo(asker).map((row) => ({ ...row, can_post: true }))),
     unreadCounts: (): Promise<ChannelUnreadCount[]> => quietly([]),
   };
-  // Channel messages only. A direct message is not a row here: no tool, and
-  // nothing a tool reads through, can reach one.
-  const messageRows = here
-    .filter((document) => isChat(document) && document.chat)
-    .map((document) => ({
-      id: u(document.id),
-      channel_id: termId(document.chat!.channelId),
-      sender_id: termId(document.chat!.authorMemberId),
-      content: document.body,
-      created_at: new Date(document.createdAt).toISOString(),
+  const messageRows = [
+    ...here
+      .filter((document) => isChat(document) && document.chat)
+      .map((document) => ({
+        id: u(document.id),
+        channel_id: termId(document.chat!.channelId),
+        sender_id: termId(document.chat!.authorMemberId),
+        content: document.body,
+        created_at: new Date(document.createdAt).toISOString(),
+        thread_root_id: null,
+        mentions: null,
+      })),
+    ...chapter.directMessages.map((message, index) => ({
+      id: termId(`dm-message:${index}`),
+      channel_id: dmId(message.fromId, message.toId),
+      sender_id: termId(message.fromId),
+      content: message.body,
+      created_at: new Date(message.createdAt).toISOString(),
       thread_root_id: null,
       mentions: null,
-    }))
-    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    })),
+  ].sort((a, b) => a.created_at.localeCompare(b.created_at));
   const asRow = (row: (typeof messageRows)[number]): CatchUpMessageRow => ({
     id: row.id,
     sender_id: row.sender_id,
@@ -869,7 +923,7 @@ export function createTermWorld(
       filters: { fromUserId?: string; after?: string; before?: string } = {},
       limit = 20,
     ): Promise<MaskedChatMessage[]> => {
-      const wanted = wordsOf(query);
+      const wanted = wordsOf(query).filter((word) => !COMMON_WORDS.has(word));
       const narrowed = Boolean(
         filters.fromUserId ?? filters.after ?? filters.before,
       );
