@@ -21,10 +21,12 @@ import { WILDCARD } from '#domain/constants/permissions';
  * - **It reads through the same application service the route calls,** with
  *   the chapter and the user from the request's guards. A tool never takes a
  *   chapter, a user or any other argument from a model.
- * - **`effect` is `read` for every tool Ask runs.** The acting agent (#718,
- *   `../act/act-tool.ts`) has `propose` tools, whose result is a saved
- *   proposal a person accepts (`ai.md` § Suggestions). Ask's loop refuses
- *   to run anything but `read`, so a question can never change anything.
+ * - **`effect` is `read` for every tool the one-shot path runs.** The
+ *   acting agent (#718, `../act/act-tool.ts`) has `propose` tools, whose
+ *   result is a saved proposal a person accepts (`ai.md` § Suggestions).
+ *   The tool loop runs a read or a propose and refuses anything else
+ *   (`agent/agent-loop.service.ts`), so a question can never change
+ *   anything.
  * - **Its result says which chapter it read,** and Ask drops a result whose
  *   chapter is not the request's.
  *

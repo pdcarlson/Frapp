@@ -88,7 +88,8 @@ interface AskInChannel {
   busy: boolean;
   /** Ask from `channelId`'s composer; `after` is its newest message's key. */
   send: (channelId: string, question: string, after: string | null) => void;
-  retry: (id: string) => void;
+  /** `harder` asks it again with more effort: Think harder (#4904). */
+  retry: (id: string, harder?: boolean) => void;
   setProposal: (id: string, proposal: ActResponse) => void;
   resolveProposal: (id: string, resolution: AskProposalResolution) => void;
   dismiss: (id: string) => void;
@@ -176,7 +177,8 @@ export function AskInChannelBridge({
     [ask, options],
   );
   const retryTurn = useCallback(
-    (id: string) => void retry(id, options()),
+    (id: string, harder?: boolean) =>
+      void retry(id, harder ? { ...options(), effort: "more" } : options()),
     [retry, options],
   );
 
@@ -335,6 +337,7 @@ export function AskChannelTurn({ id }: { id: string }) {
             exchange={exchange}
             busy={channel.busy && exchange.phase !== "working"}
             onRetry={() => channel.retry(exchange.id)}
+            onThinkHarder={() => channel.retry(exchange.id, true)}
             onAnswerConsent={() => channel.retry(exchange.id)}
             onProposal={(proposal) =>
               channel.setProposal(exchange.id, proposal)

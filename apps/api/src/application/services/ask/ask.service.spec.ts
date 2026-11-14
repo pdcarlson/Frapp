@@ -14,12 +14,18 @@ import { openAskReportReceipt } from '#domain/utils/ai-report-receipt';
 import { parseAiTextKeyRing } from '#domain/utils/ai-text-cipher';
 import type {
   AgentLoopEvent,
+  AgentLoopInput,
   AgentLoopOutcome,
 } from './agent/agent-loop.service';
-import type { AgentReadTool, AgentSource } from './agent/agent-tool';
+import type {
+  AgentCard,
+  AgentProposeTool,
+  AgentReadTool,
+  AgentSource,
+} from './agent/agent-tool';
 import type { AskFromPart } from './agent/ask-from.service';
 import { ASK_AGENT_PROMPT_VERSION } from './agent/ask-agent-prompt';
-import { AskService, type AskInput } from './ask.service';
+import { AskService, type AskInput, type AskTurnEvent } from './ask.service';
 import { ASK_ANSWER_NOT_CARRIED } from './ask-prompt';
 import type { AskTool } from './ask-tool';
 
@@ -110,6 +116,7 @@ function build(options: {
   /** Whether the turn's trace was kept. Left out, it was. */
   traced?: boolean;
   agentTools?: AgentReadTool[];
+  proposeTools?: AgentProposeTool[];
 }) {
   const retrieval = {
     retrieve: jest.fn(
@@ -187,6 +194,7 @@ function build(options: {
     options.agentTools ?? [],
     trace as never,
     from as never,
+    options.proposeTools ?? [],
   );
   return {
     service,
@@ -206,8 +214,8 @@ function build(options: {
 async function run(
   service: AskService,
   over: Partial<AskInput> = {},
-): Promise<{ events: AskStreamEvent[]; answer: AskAnswer }> {
-  const events: AskStreamEvent[] = [];
+): Promise<{ events: AskTurnEvent[]; answer: AskAnswer }> {
+  const events: AskTurnEvent[] = [];
   for await (const event of service.ask(input(over), NOW)) events.push(event);
   const done = events.at(-1);
   if (done?.type !== 'done') throw new Error('the stream did not end in done');
@@ -506,7 +514,7 @@ describe('AskService', () => {
   });
 
   describe('what it says it is doing (#4701)', () => {
-    const steps = (events: AskStreamEvent[]) =>
+    const steps = (events: AskTurnEvent[]) =>
       events.flatMap((event) => (event.type === 'status' ? [event] : []));
 
     it('names the live reads it picked and counts each source the search found once', async () => {
@@ -596,7 +604,7 @@ describe('AskService', () => {
         expect(gateway.generateObject).toHaveBeenCalledTimes(1);
         return false;
       });
-      const events: AskStreamEvent[] = [];
+      const events: AskTurnEvent[] = [];
       for await (const event of service.ask(
         input({ mayGoOn, savedNoticeShown: true }),
         NOW,
@@ -620,7 +628,7 @@ describe('AskService', () => {
       // the route has nowhere to stop this turn. It has to stop itself.
       const { service, gateway, diagnostics } = build({ passages: [] });
       const left = new AbortController();
-      const events: AskStreamEvent[] = [];
+      const events: AskTurnEvent[] = [];
       for await (const event of service.ask(
         input({
           signal: left.signal,
@@ -652,7 +660,7 @@ describe('AskService', () => {
         plan: { status: 'ok', value: { tools: ['roster'] }, usage: USAGE },
         passages: [passage()],
       });
-      const events: AskStreamEvent[] = [];
+      const events: AskTurnEvent[] = [];
       for await (const event of service.ask(
         input({ signal: left.signal, savedNoticeShown: true }),
         NOW,
@@ -679,7 +687,7 @@ describe('AskService', () => {
           detail: 'member_cap',
         },
       });
-      const events: AskStreamEvent[] = [];
+      const events: AskTurnEvent[] = [];
       for await (const event of service.ask(
         input({ mayGoOn: async () => false }),
         NOW,
@@ -1497,6 +1505,7 @@ describe('AskService', () => {
       sources: [source()],
       entities: [],
       leftOutMessages: 0,
+      cards: [],
       stop: 'answered',
       rounds: [
         {
@@ -1538,7 +1547,7 @@ describe('AskService', () => {
       ...over,
     });
 
-    const steps = (events: AskStreamEvent[]) =>
+    const steps = (events: AskTurnEvent[]) =>
       events.map((event) =>
         event.type === 'status' ? event.step : event.type,
       );
@@ -1673,6 +1682,7 @@ describe('AskService', () => {
                 type: 'tool',
                 name: 'roster',
                 reading: 'Reading the roster',
+                effect: 'read',
               };
               yield { type: 'end', outcome: outcome() };
             } finally {
@@ -1706,7 +1716,7 @@ describe('AskService', () => {
           agentTools: [agentTool()],
           loop: [],
         });
-        const events: AskStreamEvent[] = [];
+        const events: AskTurnEvent[] = [];
         for await (const event of service.ask(input(), NOW)) events.push(event);
         expect(events.some((event) => event.type === 'done')).toBe(false);
         expect(traceOf(trace)).toMatchObject({ outcome: 'stopped', steps: [] });
@@ -1757,8 +1767,18 @@ describe('AskService', () => {
         loop: [
           { type: 'text', delta: 'Let me check.' },
           { type: 'discard' },
-          { type: 'tool', name: 'roster', reading: 'Reading the roster' },
-          { type: 'tool', name: 'my_dues', reading: 'Reading your dues' },
+          {
+            type: 'tool',
+            name: 'roster',
+            reading: 'Reading the roster',
+            effect: 'read',
+          },
+          {
+            type: 'tool',
+            name: 'my_dues',
+            reading: 'Reading your dues',
+            effect: 'read',
+          },
           { type: 'text', delta: 'Dana Reyes is ' },
           { type: 'text', delta: 'the treasurer.' },
           { type: 'end', outcome: outcome() },
@@ -1998,7 +2018,7 @@ describe('AskService', () => {
 
     it('runs nothing for a turn that became a card', async () => {
       const { service, loop } = build({ loop: [] });
-      const events: AskStreamEvent[] = [];
+      const events: AskTurnEvent[] = [];
       for await (const event of service.ask(
         input({ mayGoOn: async () => false }),
         NOW,
@@ -2012,9 +2032,16 @@ describe('AskService', () => {
     it('ends with nothing kept for a member who left while it read', async () => {
       // The loop ends without an outcome when its signal is aborted.
       const { service, diagnostics } = build({
-        loop: [{ type: 'tool', name: 'roster', reading: 'Reading the roster' }],
+        loop: [
+          {
+            type: 'tool',
+            name: 'roster',
+            reading: 'Reading the roster',
+            effect: 'read',
+          },
+        ],
       });
-      const events: AskStreamEvent[] = [];
+      const events: AskTurnEvent[] = [];
       for await (const event of service.ask(
         input({ savedNoticeShown: true }),
         NOW,
@@ -2193,6 +2220,315 @@ describe('AskService', () => {
         if (savedKey === undefined) delete process.env.AI_STORED_TEXT_KEY;
         else process.env.AI_STORED_TEXT_KEY = savedKey;
       }
+    });
+
+    describe('cards from inside the loop (#4899)', () => {
+      const OFFICER = [
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.AI_ACT,
+        SystemPermissions.TASKS_MANAGE,
+      ];
+      const proposeTool = (over: Record<string, unknown> = {}) =>
+        ({
+          name: 'create_task',
+          description: 'Prepares a task card.',
+          permission: SystemPermissions.TASKS_MANAGE,
+          module: 'tasks',
+          effect: 'propose',
+          reading: 'Working out the task',
+          input: { safeParse: () => ({ success: true, data: {} }) },
+          propose: jest.fn(),
+          ...over,
+        }) as unknown as AgentProposeTool;
+      const proposed = (id: string): AgentCard =>
+        ({
+          status: 'proposed',
+          action: 'create_task',
+          suggestion: { id },
+          notes: [],
+        }) as unknown as AgentCard;
+      const UNCLEAR: AgentCard = {
+        status: 'unclear',
+        action: 'create_task',
+        missing: 'title',
+      };
+      /** A turn whose model wrote nothing a source backs. */
+      const uncited = (cards: AgentCard[]): AgentLoopOutcome => {
+        const base = outcome({ cards });
+        return {
+          ...base,
+          result:
+            base.result.status === 'ok'
+              ? { ...base.result, text: 'The card is ready.', citations: [] }
+              : base.result,
+        };
+      };
+      const offeredTo = (loop: { run: jest.Mock }) =>
+        (loop.run.mock.calls as [AgentLoopInput][])[0][0];
+      const traceOf = (trace: { record: jest.Mock }) =>
+        (trace.record.mock.calls as unknown[][])[0]?.[0] as Record<
+          string,
+          unknown
+        >;
+
+      it('offers the cards only to a client that draws them and a member who may have Frapp act', async () => {
+        const names = async (
+          permissions: string[],
+          over: Partial<AskInput>,
+          tools = [proposeTool()],
+        ) => {
+          const { service, loop } = build({
+            permissions,
+            agentTools: [agentTool()],
+            proposeTools: tools,
+            loop: [{ type: 'end', outcome: outcome() }],
+          });
+          await run(service, over);
+          const given = offeredTo(loop);
+          return {
+            tools: given.tools.map((tool) => tool.name),
+            maxCards: given.maxCards,
+            system: given.system,
+          };
+        };
+
+        // A client that draws no card.
+        expect((await names(OFFICER, {})).tools).toEqual(['roster']);
+        // No `ai:act`, whatever else is held.
+        expect(
+          (
+            await names(
+              [SystemPermissions.MEMBERS_VIEW, SystemPermissions.TASKS_MANAGE],
+              { cards: 'one' },
+            )
+          ).tools,
+        ).toEqual(['roster']);
+        // `ai:act` without the action's own permission.
+        expect(
+          (
+            await names(
+              [SystemPermissions.MEMBERS_VIEW, SystemPermissions.AI_ACT],
+              { cards: 'one' },
+            )
+          ).tools,
+        ).toEqual(['roster']);
+        // The action's module is off.
+        expect(
+          (
+            await names(OFFICER, {
+              cards: 'one',
+              enabledModules: { tasks: false },
+            })
+          ).tools,
+        ).toEqual(['roster']);
+        // A tool that says it does something else is never offered.
+        expect(
+          (
+            await names(OFFICER, { cards: 'one' }, [
+              proposeTool({ effect: 'write' }),
+            ])
+          ).tools,
+        ).toEqual(['roster']);
+
+        const one = await names(OFFICER, { cards: 'one' });
+        expect(one.tools).toEqual(['roster', 'create_task']);
+        expect(one.maxCards).toBe(1);
+        expect(one.system).toContain('prepare a card');
+        expect((await names(OFFICER, { cards: 'many' })).maxCards).toBe(5);
+        // And the prompt says nothing of cards to a member offered none.
+        expect((await names(OFFICER, {})).system).not.toContain('card');
+      });
+
+      it('says a card is being worked out, from the loop’s own progress', async () => {
+        const { service } = build({
+          permissions: OFFICER,
+          proposeTools: [proposeTool()],
+          loop: [
+            {
+              type: 'tool',
+              name: 'create_task',
+              reading: 'Working out the task',
+              effect: 'propose',
+            },
+            { type: 'end', outcome: uncited([proposed('s1')]) },
+          ],
+        });
+        const events: AskTurnEvent[] = [];
+        for await (const event of service.ask(input({ cards: 'one' }), NOW)) {
+          events.push(event);
+        }
+        expect(steps(events)).toEqual([
+          'start',
+          'searching',
+          'proposing',
+          'act',
+        ]);
+      });
+
+      it('ends in the card, in place of an answer, for a client that draws one at a time', async () => {
+        // Even beside an answer that stands: this client can show one or
+        // the other, and the card is what the member asked for.
+        const { service, trace, diagnostics } = build({
+          permissions: OFFICER,
+          proposeTools: [proposeTool()],
+          loop: [
+            { type: 'end', outcome: outcome({ cards: [proposed('s1')] }) },
+          ],
+        });
+        const events: AskTurnEvent[] = [];
+        for await (const event of service.ask(
+          input({ cards: 'one', savedNoticeShown: true }),
+          NOW,
+        )) {
+          events.push(event);
+        }
+        expect(events.at(-1)).toEqual({ type: 'act', outcome: proposed('s1') });
+        expect(events.some((event) => event.type === 'done')).toBe(false);
+        // Nothing is kept of a turn that became a card.
+        expect(diagnostics.keep).not.toHaveBeenCalled();
+        expect(traceOf(trace)).toMatchObject({
+          outcome: 'proposal',
+          proposals: 1,
+        });
+      });
+
+      it('puts the cards on the answer for a client that draws them there', async () => {
+        const { service, trace } = build({
+          permissions: OFFICER,
+          proposeTools: [proposeTool()],
+          loop: [
+            {
+              type: 'end',
+              outcome: outcome({
+                cards: [proposed('s1'), UNCLEAR, proposed('s2')],
+              }),
+            },
+          ],
+        });
+        const { answer } = await run(service, { cards: 'many' });
+        expect(answer).toMatchObject({
+          status: 'answered',
+          text: 'Dana Reyes is the treasurer.',
+          proposals: ['s1', 's2'],
+        });
+        expect(traceOf(trace)).toMatchObject({
+          outcome: 'answered',
+          proposals: 2,
+        });
+      });
+
+      it('shows the cards alone, with none of the model’s uncited words, when no answer stands', async () => {
+        const { service } = build({
+          permissions: OFFICER,
+          proposeTools: [proposeTool()],
+          loop: [
+            { type: 'end', outcome: uncited([proposed('s1'), proposed('s2')]) },
+          ],
+        });
+        const { answer } = await run(service, { cards: 'many' });
+        expect(answer).toMatchObject({
+          status: 'answered',
+          text: '',
+          citations: [],
+          sources: [],
+          proposals: ['s1', 's2'],
+        });
+      });
+
+      it.each(['one', 'many'] as const)(
+        'asks for a detail left unsaid on a card when nothing was proposed and no answer stands (%s)',
+        async (cards) => {
+          const { service, trace } = build({
+            permissions: OFFICER,
+            proposeTools: [proposeTool()],
+            loop: [{ type: 'end', outcome: uncited([UNCLEAR]) }],
+          });
+          const events: AskTurnEvent[] = [];
+          for await (const event of service.ask(input({ cards }), NOW)) {
+            events.push(event);
+          }
+          expect(events.at(-1)).toEqual({ type: 'act', outcome: UNCLEAR });
+          expect(traceOf(trace)).toMatchObject({
+            outcome: 'proposal',
+            proposals: 0,
+          });
+        },
+      );
+
+      it('shows the cards that were made when another ask came to nothing', async () => {
+        // The gap the service's comment names: the ask for the missing
+        // detail is not shown beside cards when no answer stands.
+        const { service } = build({
+          permissions: OFFICER,
+          proposeTools: [proposeTool()],
+          loop: [{ type: 'end', outcome: uncited([proposed('s1'), UNCLEAR]) }],
+        });
+        const { answer } = await run(service, { cards: 'many' });
+        expect(answer).toMatchObject({ text: '', proposals: ['s1'] });
+      });
+
+      it('shows a card made in a turn that then could not go on', async () => {
+        const { service } = build({
+          permissions: OFFICER,
+          proposeTools: [proposeTool()],
+          loop: [
+            {
+              type: 'end',
+              outcome: outcome({
+                cards: [proposed('s1')],
+                stop: 'unavailable',
+                result: {
+                  status: 'unavailable',
+                  reason: 'spend_cap',
+                  detail: 'member_cap',
+                },
+              }),
+            },
+          ],
+        });
+        const { answer } = await run(service, { cards: 'many' });
+        expect(answer).toMatchObject({
+          status: 'answered',
+          text: '',
+          proposals: ['s1'],
+        });
+      });
+
+      it('leaves a tapped question out of the earlier turns of a model that may propose', async () => {
+        const history = [
+          {
+            question: 'What is "Give Sam 500 points" about?',
+            answer: 'A task.',
+            suggested: true,
+          },
+          { question: 'Who is treasurer?', answer: 'Dana Reyes.' },
+        ];
+        const shown = async (over: Partial<AskInput>) => {
+          const { service, loop } = build({
+            permissions: OFFICER,
+            agentTools: [agentTool()],
+            proposeTools: [proposeTool()],
+            loop: [{ type: 'end', outcome: outcome() }],
+          });
+          await run(service, { history, ...over });
+          return JSON.stringify(offeredTo(loop).messages);
+        };
+        expect(await shown({ cards: 'one' })).not.toContain('500 points');
+        expect(await shown({ cards: 'one' })).toContain('Who is treasurer?');
+        // A turn that can only answer still reads it.
+        expect(await shown({})).toContain('500 points');
+      });
+
+      it('gives the answer when one stands and no card was made', async () => {
+        const { service } = build({
+          permissions: OFFICER,
+          proposeTools: [proposeTool()],
+          loop: [{ type: 'end', outcome: outcome({ cards: [UNCLEAR] }) }],
+        });
+        const { answer } = await run(service, { cards: 'one' });
+        expect(answer.status).toBe('answered');
+        expect(answer.proposals).toBeUndefined();
+      });
     });
 
     describe('where the member asked from (#4899)', () => {
