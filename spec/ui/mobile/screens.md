@@ -124,6 +124,7 @@ Top to bottom:
   An event the member has checked in to leaves the list.
   The row on the week card is not repeated here, and when it was the only one the section is not drawn.
   With nothing at all it says "Nothing to do right now."
+- **Reminders** (#4957; what is listed is [`../../behavior/activity.md` § Reminders](../../behavior/activity.md#reminders)): the member's reminders on chat messages, a due one first with a `Due` badge. A row opens a sheet like a link's: the message's words, `Open message` (chat at the message, its thread for a reply) and `Done`, then the five presets under `Snooze` (`Change the time` while it still waits). A row whose channel the member lost shows only a note and Done.
 - **Waiting on others**, then **Links**: what the member made (the polls they posted, the events they made, the tasks they assigned, by kind, three of each then "Show all N", with Archived polls behind its button) and the sign-up links posted for them, from the shared `activityGroups`.
   "Waiting on others" is the old "Made by you" renamed for what the member wants from it, on web too.
   Each is left out when it holds nothing, rather than drawn as an empty line, and both step back while the list is narrowed.

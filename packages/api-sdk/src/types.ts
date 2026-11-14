@@ -9112,7 +9112,7 @@ export interface components {
             coming_up: components["schemas"]["ActivityEventDto"][];
             /** @description Sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels the caller can read and an officer has not left out of Activity. Never the caller’s own, a blocked member’s, one an officer removed, or one the caller marked Done or Hidden. Newest first, at most 25. Not counted in `needs_you_count`. */
             links: components["schemas"]["ActivityLinkDto"][];
-            /** @description Reminders the caller set on chat messages (#4957), soonest first, at most 50: waiting ones and due ones they haven’t cleared. Private to the caller. Due ones are counted in `needs_you_count`. */
+            /** @description Reminders the caller set on chat messages (#4957): those due that they haven’t cleared, newest first, then those still waiting, soonest first; at most 50 of each. Private to the caller. Due ones are counted in `needs_you_count` (so at most 50). */
             reminders: components["schemas"]["ActivityReminderDto"][];
             made_by_you: components["schemas"]["ActivityMadeByYouDto"];
             /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`. */

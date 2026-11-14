@@ -20,8 +20,14 @@ import { chatPushPreview } from '../services/chat-push-preview';
 import { NotificationService } from '../services/notification.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
-/** Due reminders one tick reads; the rest wait a minute. */
+/** Due reminders one read takes. A tick keeps reading while a read comes back full. */
 export const REMINDER_SWEEP_BATCH = 50;
+/**
+ * Reads one tick makes at most, so a tick stays well inside its minute even
+ * when the 9:00 AM presets bring a crowd due at once: 500 a minute on each
+ * replica, and replicas share the work through the claim.
+ */
+export const REMINDER_SWEEP_MAX_BATCHES = 10;
 
 /**
  * The category a reminder push is sent under. Not one of the member's
@@ -72,8 +78,22 @@ export class ChatReminderSweepService {
 
   async sweep(now: number): Promise<{ fired: number; pushed: number }> {
     const at = new Date(now).toISOString();
-    const due = await this.reminderRepo.findDue(at, REMINDER_SWEEP_BATCH);
     const tally = { fired: 0, pushed: 0 };
+    for (let batch = 0; batch < REMINDER_SWEEP_MAX_BATCHES; batch++) {
+      const due = await this.reminderRepo.findDue(at, REMINDER_SWEEP_BATCH);
+      await this.fireAll(due, at, tally);
+      // A short read is the last of what is due. A full one may hold rows
+      // another replica claimed first, which drop out of the next read.
+      if (due.length < REMINDER_SWEEP_BATCH) break;
+    }
+    return tally;
+  }
+
+  private async fireAll(
+    due: StoredChatMessageReminder[],
+    at: string,
+    tally: { fired: number; pushed: number },
+  ): Promise<void> {
     for (const reminder of due) {
       if (!(await this.reminderRepo.claimDue(reminder, at))) continue;
       tally.fired += 1;
@@ -89,7 +109,6 @@ export class ChatReminderSweepService {
         });
       }
     }
-    return tally;
   }
 
   /** Sends the reminder's notification; false when there was none to send. */
@@ -103,6 +122,7 @@ export class ChatReminderSweepService {
       ),
     );
     const message = maskBlockedBookmarkMessage(reminder.message, blocked);
+    const quoted = !message.is_deleted && !message.sender_blocked;
     const body = message.is_deleted
       ? 'The message you asked about was deleted'
       : message.sender_blocked
@@ -121,10 +141,21 @@ export class ChatReminderSweepService {
             ? { screen: 'chat', channelId: channel.id, threadRootId }
             : { screen: 'chat', channelId: channel.id },
           reminder: true,
+          // The inbox withholds a chat row whose sender the member blocked,
+          // and every chat row with no sender once they block anyone
+          // (`notChatFrom`), so the row names one: the author, or for an
+          // imported author with no account, the member themselves, whom
+          // they can't block.
+          senderId: message.sender_id ?? reminder.user_id,
+          // Opens chat at this message; the push carries it as `messageId`.
+          messageId: message.id,
         },
-        // Ties the in-app row to the message (a delete removes it) and sends
-        // `messageId` in the push, which opens the chat at this message.
-        chatMessageId: message.id,
+        // Tying the row to the message (a delete removes it, an edit
+        // rewrites its body) only when the body quotes it. A deleted
+        // message's row would be dropped on insert by
+        // `notifications_skip_deleted_message`, and an edit would write a
+        // blocked author's words into a row this sweep kept them out of.
+        ...(quoted ? { chatMessageId: message.id } : {}),
       },
     );
     return true;

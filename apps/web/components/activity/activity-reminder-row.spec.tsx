@@ -115,6 +115,26 @@ describe("ActivityReminderRow (#4957)", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers no Snooze on a reminder the member can no longer read, which can only be cleared", async () => {
+    const user = userEvent.setup();
+    render(
+      <Page
+        row={rowFor({
+          message_available: false,
+          channel_name: null,
+          channel_type: null,
+        })}
+      />,
+    );
+    const more = screen.queryByRole("button", {
+      name: "More for Bring the banner Friday",
+    });
+    if (more) {
+      await user.click(more);
+      expect(screen.queryByRole("menuitem", { name: "Tomorrow" })).toBeNull();
+    }
+  });
+
   it("clears the reminder on Done and says so", async () => {
     const user = userEvent.setup();
     render(<Page row={rowFor()} />);

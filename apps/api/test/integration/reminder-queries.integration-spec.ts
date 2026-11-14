@@ -137,7 +137,12 @@ describeIntegration('Reminder queries against live PostgREST', () => {
     // Someone else's reminder on the same message is never in the caller's list.
     await repo.upsert(otherUserId, messageId, chapterId, minutesFromNow(5));
 
-    const rows = await repo.findByUserAndChapter(userId, chapterId, 50);
+    const rows = await repo.findByUserAndChapter(
+      userId,
+      chapterId,
+      new Date().toISOString(),
+      50,
+    );
 
     expect(rows.map((row) => row.message_id)).toEqual([
       messageId,
@@ -183,8 +188,18 @@ describeIntegration('Reminder queries against live PostgREST', () => {
 
   it('clears only the caller’s own reminder', async () => {
     await repo.delete(userId, messageId, chapterId);
-    const mine = await repo.findByUserAndChapter(userId, chapterId, 50);
-    const theirs = await repo.findByUserAndChapter(otherUserId, chapterId, 50);
+    const mine = await repo.findByUserAndChapter(
+      userId,
+      chapterId,
+      new Date().toISOString(),
+      50,
+    );
+    const theirs = await repo.findByUserAndChapter(
+      otherUserId,
+      chapterId,
+      new Date().toISOString(),
+      50,
+    );
     expect(mine.map((row) => row.message_id)).toEqual([laterMessageId]);
     expect(theirs.map((row) => row.message_id)).toEqual([messageId]);
   });

@@ -15,7 +15,10 @@ import { displayNamesById } from './display-names';
 
 /** How far ahead a reminder may be set. */
 export const REMINDER_MAX_AHEAD_DAYS = 365;
-/** Rows the Reminders section carries. */
+/**
+ * Rows the Reminders section carries of each kind: up to 50 due, newest
+ * first, then up to 50 still waiting, soonest first.
+ */
 export const REMINDER_LIST_LIMIT = 50;
 /**
  * How far in the past a new time may be and still count as "now": a client's
@@ -133,7 +136,8 @@ export class ChatReminderService {
   }
 
   /**
-   * The caller's reminders for Activity, soonest first. Channel access and
+   * The caller's reminders for Activity: due ones newest first, then waiting
+   * ones soonest first (see {@link REMINDER_LIST_LIMIT}). Channel access and
    * the block list are applied on every read, as for bookmarks, because the
    * embed reads the message as it is now: a channel the member lost redacts
    * the row (it stays, so they can clear it), and a blocked author's message
@@ -149,6 +153,7 @@ export class ChatReminderService {
     const rows = await this.reminderRepo.findByUserAndChapter(
       userId,
       chapterId,
+      new Date(now).toISOString(),
       REMINDER_LIST_LIMIT,
     );
     if (rows.length === 0) return [];

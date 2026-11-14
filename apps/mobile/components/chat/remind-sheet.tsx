@@ -224,7 +224,15 @@ export const RemindSheet = forwardRef<RemindSheetHandle, RemindSheetProps>(
               <SheetPrimaryButton
                 label={REMINDER_SET_LABEL}
                 onPress={() => {
-                  if (!customPast) remind(custom);
+                  // Re-checked against the clock now: `now` only moves when
+                  // a picker does, and the sheet may have sat open past the
+                  // picked time.
+                  const current = new Date();
+                  if (custom.getTime() <= current.getTime()) {
+                    setNow(current);
+                    return;
+                  }
+                  remind(custom);
                 }}
                 disabled={customPast}
                 accessibilityHint={customPast ? REMINDER_PAST_NOTE : undefined}

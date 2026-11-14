@@ -605,7 +605,7 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
         status: 'masked',
         proof: {
           spec: 'application/workers/chat-reminder-sweep.service.spec.ts',
-          test: 'does not quote a blocked author',
+          test: 'does not quote a blocked author, nor tie the row to the message an edit would rewrite it from',
         },
       },
     ],

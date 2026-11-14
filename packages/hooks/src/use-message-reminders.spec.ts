@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  findMessageReminder,
-  messageReminderPresetTime,
-} from "./use-message-reminders";
+import { messageReminderPresetTime } from "./use-message-reminders";
 
 describe("messageReminderPresetTime (#4957)", () => {
   // A Wednesday, mid-afternoon local time.
@@ -36,15 +33,5 @@ describe("messageReminderPresetTime (#4957)", () => {
     expect(
       messageReminderPresetTime("next-week", new Date(2026, 10, 15, 22)),
     ).toEqual(new Date(2026, 10, 16, 9));
-  });
-});
-
-describe("findMessageReminder", () => {
-  it("finds the member's reminder on a message, and none on a read without the field", () => {
-    const row = { message_id: "msg-1" } as never;
-    expect(findMessageReminder({ reminders: [row] }, "msg-1")).toBe(row);
-    expect(findMessageReminder({ reminders: [row] }, "msg-2")).toBeNull();
-    expect(findMessageReminder({} as never, "msg-1")).toBeNull();
-    expect(findMessageReminder(undefined, "msg-1")).toBeNull();
   });
 });

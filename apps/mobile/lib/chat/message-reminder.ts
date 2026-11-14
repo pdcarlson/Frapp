@@ -2,7 +2,7 @@ import { useCallback } from "react";
 import { AccessibilityInfo, Alert } from "react-native";
 import { useSetMessageReminder } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
-import { formatDayHeading, formatTimeOfDay } from "@repo/formatting";
+import { formatActedLabel, formatTimeOfDay } from "@repo/formatting";
 import { selectionHaptic } from "@/lib/haptics";
 
 /** The alert title when a reminder can't be set or moved. */
@@ -10,17 +10,13 @@ export const REMINDER_FAILED_TITLE = "Couldn't set the reminder";
 
 /**
  * When a reminder is for, in a sentence: "today at 3:40 PM", "tomorrow at
- * 9:00 AM", "Monday at 9:00 AM", "November 30 at 9:00 AM". The day as the
- * Events lists name one (`formatDayHeading`), lowered where it isn't a name.
+ * 9:00 AM", "Monday at 9:00 AM", "Nov 30 at 9:00 AM". The same words web's
+ * toast says (`formatActedLabel`, which both read), so the clients agree.
  */
 export function reminderAtLabel(at: Date, now: Date = new Date()): string {
-  // Both read an ISO string, not a `Date`.
-  const day = formatDayHeading(at.toISOString(), now);
-  const time = formatTimeOfDay(at.toISOString());
-  if (!day) return time;
-  const spoken =
-    day === "Today" || day === "Tomorrow" ? day.toLowerCase() : day;
-  return `${spoken} at ${time}`;
+  // `formatActedLabel` reads an ISO string, not a `Date`.
+  const said = formatActedLabel("", at.toISOString(), now);
+  return said ? said.trim() : formatTimeOfDay(at.toISOString());
 }
 
 /**

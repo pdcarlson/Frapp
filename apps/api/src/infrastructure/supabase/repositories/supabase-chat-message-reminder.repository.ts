@@ -13,10 +13,13 @@ const REMINDER_COLUMNS =
   'id, user_id, message_id, chapter_id, remind_at, fired_at, created_at, updated_at';
 
 /**
- * The message is embedded with a bookmark's narrow columns: a reminder row
- * draws the same author, time and preview, and opens the same way.
+ * The message is embedded with a bookmark's narrow columns, since a reminder
+ * row draws the same author, time and preview and opens the same way, plus
+ * `metadata`, which a message with no text needs for its preview.
  */
-const REMINDER_WITH_MESSAGE_SELECT = `${REMINDER_COLUMNS}, message:chat_messages!inner(${BOOKMARK_MESSAGE_COLUMNS})`;
+export const REMINDER_MESSAGE_COLUMNS = `${BOOKMARK_MESSAGE_COLUMNS}, metadata`;
+
+const REMINDER_WITH_MESSAGE_SELECT = `${REMINDER_COLUMNS}, message:chat_messages!inner(${REMINDER_MESSAGE_COLUMNS})`;
 
 /**
  * Private reminders on chat messages (#4957). Every member-facing query is
@@ -79,19 +82,33 @@ export class SupabaseChatMessageReminderRepository implements IChatMessageRemind
   async findByUserAndChapter(
     userId: string,
     chapterId: string,
+    now: string,
     limit: number,
   ): Promise<StoredChatMessageReminder[]> {
-    const { data, error } = await this.supabase
-      .from('chat_message_reminders')
-      .select(REMINDER_WITH_MESSAGE_SELECT)
-      .eq('user_id', userId)
-      .eq('chapter_id', chapterId)
-      .order('remind_at', { ascending: true })
-      .limit(limit);
-    if (error) throw new SupabaseQueryError(error);
+    const mine = () =>
+      this.supabase
+        .from('chat_message_reminders')
+        .select(REMINDER_WITH_MESSAGE_SELECT)
+        .eq('user_id', userId)
+        .eq('chapter_id', chapterId);
+    const [due, waiting] = await Promise.all([
+      mine()
+        .lte('remind_at', now)
+        .order('remind_at', { ascending: false })
+        .limit(limit),
+      mine()
+        .gt('remind_at', now)
+        .order('remind_at', { ascending: true })
+        .limit(limit),
+    ]);
+    if (due.error) throw new SupabaseQueryError(due.error);
+    if (waiting.error) throw new SupabaseQueryError(waiting.error);
     // PostgREST types an embed as `T | GenericStringError`, which it is only
     // when `error` is set, thrown above.
-    return (data ?? []) as unknown as StoredChatMessageReminder[];
+    return [
+      ...(due.data ?? []),
+      ...(waiting.data ?? []),
+    ] as unknown as StoredChatMessageReminder[];
   }
 
   async findDue(

@@ -3,6 +3,7 @@ import {
   ChatReminderSweepService,
   REMINDER_NOTIFICATION_CATEGORY,
   REMINDER_SWEEP_BATCH,
+  REMINDER_SWEEP_MAX_BATCHES,
 } from './chat-reminder-sweep.service';
 import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import type { StoredChatMessageReminder } from '#domain/repositories/chat-message-reminder.repository.interface';
@@ -99,6 +100,8 @@ describe('ChatReminderSweepService', () => {
         data: {
           target: { screen: 'chat', channelId: 'ch-1' },
           reminder: true,
+          senderId: 'author',
+          messageId: 'msg-1',
         },
         chatMessageId: 'msg-1',
       },
@@ -134,12 +137,24 @@ describe('ChatReminderSweepService', () => {
     },
   );
 
-  it('does not quote a blocked author', async () => {
+  it('does not quote a blocked author, nor tie the row to the message an edit would rewrite it from', async () => {
     const { sweep, chatBlocks, notificationService } = build();
     chatBlocks.listBlockedUserIds.mockResolvedValue(['author']);
     await sweep.sweep(NOW);
-    expect(notificationService.notifyUser.mock.calls[0][2].body).toBe(
-      'You asked to be reminded about a message',
+    const payload = notificationService.notifyUser.mock.calls[0][2];
+    expect(payload.body).toBe('You asked to be reminded about a message');
+    expect(payload).not.toHaveProperty('chatMessageId');
+    // Named as the author's, so the inbox withholds it as it does their chat.
+    expect(payload.data.senderId).toBe('author');
+  });
+
+  it('names the member as sender for an imported author, so a block list never hides it', async () => {
+    const { sweep, notificationService } = build([
+      reminder({ message: message({ sender_id: null }) }),
+    ]);
+    await sweep.sweep(NOW);
+    expect(notificationService.notifyUser.mock.calls[0][2].data.senderId).toBe(
+      'member',
     );
   });
 
@@ -150,9 +165,11 @@ describe('ChatReminderSweepService', () => {
       }),
     ]);
     await sweep.sweep(NOW);
-    expect(notificationService.notifyUser.mock.calls[0][2].body).toBe(
-      'The message you asked about was deleted',
-    );
+    const payload = notificationService.notifyUser.mock.calls[0][2];
+    expect(payload.body).toBe('The message you asked about was deleted');
+    // Tied to a deleted message, the row would be dropped on insert by
+    // `notifications_skip_deleted_message`, and so would its push.
+    expect(payload).not.toHaveProperty('chatMessageId');
   });
 
   it('reports a failed push and carries on with the next reminder', async () => {
@@ -173,6 +190,37 @@ describe('ChatReminderSweepService', () => {
       expect.objectContaining({ site: 'chat-reminder-push' }),
     );
     reported.mockRestore();
+  });
+
+  it('keeps reading while a read comes back full, and stops at a short one', async () => {
+    const full = Array.from({ length: REMINDER_SWEEP_BATCH }, (_, i) =>
+      reminder({ id: `rem-${i}` }),
+    );
+    const { sweep, reminderRepo } = build();
+    reminderRepo.findDue
+      .mockResolvedValueOnce(full)
+      .mockResolvedValueOnce([reminder({ id: 'rem-last' })]);
+
+    expect(await sweep.sweep(NOW)).toEqual({
+      fired: REMINDER_SWEEP_BATCH + 1,
+      pushed: REMINDER_SWEEP_BATCH + 1,
+    });
+    expect(reminderRepo.findDue).toHaveBeenCalledTimes(2);
+  });
+
+  it('stops after its last read in a tick even while reads stay full', async () => {
+    const full = Array.from({ length: REMINDER_SWEEP_BATCH }, (_, i) =>
+      reminder({ id: `rem-${i}` }),
+    );
+    const { sweep, reminderRepo } = build();
+    reminderRepo.findDue.mockResolvedValue(full);
+    // Every claim lost to another replica: nothing fires, nothing loops forever.
+    reminderRepo.claimDue.mockResolvedValue(false);
+
+    await sweep.sweep(NOW);
+    expect(reminderRepo.findDue).toHaveBeenCalledTimes(
+      REMINDER_SWEEP_MAX_BATCHES,
+    );
   });
 
   it('runs one tick at a time on a replica', async () => {

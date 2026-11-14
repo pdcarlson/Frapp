@@ -102,14 +102,22 @@ export function ActivityReminderRow({
   const router = useRouter();
   const href = reminderChatHref(row);
 
+  // A reminder whose channel the member lost can only be cleared: moving it
+  // needs read access, so Snooze would fail every time (the phone's sheet
+  // leaves it out the same way).
+  const snooze: RowMenuEntry[] = row.reminder.message_available
+    ? [
+        { type: "label", key: "snooze-label", label: "Snooze" },
+        ...MESSAGE_REMINDER_PRESETS.map((preset): RowMenuEntry => ({
+          type: "item",
+          key: `snooze-${preset.id}`,
+          label: preset.label,
+          onSelect: () => void actions.snooze(row, preset.id),
+        })),
+      ]
+    : [];
   const entries: RowMenuEntry[] = [
-    { type: "label", key: "snooze-label", label: "Snooze" },
-    ...MESSAGE_REMINDER_PRESETS.map((preset): RowMenuEntry => ({
-      type: "item",
-      key: `snooze-${preset.id}`,
-      label: preset.label,
-      onSelect: () => void actions.snooze(row, preset.id),
-    })),
+    ...snooze,
     ...(href
       ? ([
           { type: "separator", key: "chat-separator" },

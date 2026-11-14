@@ -1,7 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MessageReminderMenu } from "./message-reminder-menu";
+import {
+  customReminderProblem,
+  MessageReminderMenu,
+} from "./message-reminder-menu";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -83,5 +86,19 @@ describe("MessageReminderMenu (#4957)", () => {
     expect(
       await screen.findByText(/That time has already passed/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("customReminderProblem", () => {
+  const now = new Date(2026, 10, 14, 12);
+  it("takes from now to a year ahead, as the API does", () => {
+    expect(customReminderProblem(new Date(2026, 10, 14, 13), now)).toBeNull();
+    expect(customReminderProblem(new Date(2027, 10, 13, 12), now)).toBeNull();
+    expect(customReminderProblem(new Date(2026, 10, 14, 11), now)).toMatch(
+      /already passed/,
+    );
+    expect(customReminderProblem(new Date(2027, 11, 1, 12), now)).toBe(
+      "Pick a time within the next year.",
+    );
   });
 });

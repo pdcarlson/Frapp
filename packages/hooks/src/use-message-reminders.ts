@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { Activity, ActivityReminder } from "./activity-rows";
+import type { Activity } from "./activity-rows";
 import { activityKeys } from "./use-activity";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -26,6 +26,9 @@ export const MESSAGE_REMINDER_PRESETS: readonly MessageReminderPreset[] = [
   { id: "tomorrow", label: "Tomorrow" },
   { id: "next-week", label: "Next week" },
 ];
+
+/** How far ahead a reminder may be set; the API refuses anything later. */
+export const MESSAGE_REMINDER_MAX_AHEAD_DAYS = 365;
 
 /** What the message menu's row says, on both clients. */
 export const MESSAGE_REMINDER_LABEL = "Remind me about this";
@@ -67,16 +70,6 @@ export function messageReminderPresetTime(
       );
     }
   }
-}
-
-/** The member's own pending reminder on a message, read off Activity's cache. */
-export function findMessageReminder(
-  activity: Pick<Activity, "reminders"> | undefined,
-  messageId: string,
-): ActivityReminder | null {
-  return (
-    activity?.reminders?.find((row) => row.message_id === messageId) ?? null
-  );
 }
 
 function useReminderWrite<TVariables>(

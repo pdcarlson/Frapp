@@ -114,6 +114,8 @@ type Notification = {
     mentioned?: boolean;
     /** A message reminder that came due (#4957). */
     reminder?: boolean;
+    /** The message a reminder is about (#4957). */
+    messageId?: string;
   } | null;
   /** The chat message a chat row is about, kept in its own column. */
   chat_message_id?: string | null;
@@ -132,7 +134,8 @@ type Notification = {
  * A chat notification's `target` never carries a `messageId` (a chat push
  * carries one beside `target` for the phone's tray, and the in-app row keeps
  * it in a column, `spec/behavior/notifications.md` § Deep Linking). Only a
- * reminder (#4957) forwards that column, so it opens on the message the
+ * reminder (#4957) forwards it (its `data.messageId`, or the column on a
+ * row written before that field), so it opens on the message the
  * member asked about: its thread's first message for a reply, which is what
  * the channel's timeline holds. Any other chat row opens the channel.
  */
@@ -144,7 +147,9 @@ export function deepLinkFor(notification: Notification): string {
       return chatDeepLink({
         channelId: target.channelId,
         messageId: notification.data?.reminder
-          ? (target.threadRootId ?? notification.chat_message_id)
+          ? (target.threadRootId ??
+            notification.data?.messageId ??
+            notification.chat_message_id)
           : null,
       });
     case "events":

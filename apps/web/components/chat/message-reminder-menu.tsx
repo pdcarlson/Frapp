@@ -6,6 +6,7 @@ import { localIsoDate } from "@repo/formatting";
 // (`onRemind`), so a surface that renders messages needs no new hook.
 import {
   MESSAGE_REMINDER_LABEL,
+  MESSAGE_REMINDER_MAX_AHEAD_DAYS,
   MESSAGE_REMINDER_PRESETS,
   messageReminderPresetTime,
 } from "@repo/hooks/use-message-reminders";
@@ -106,6 +107,23 @@ export function MessageReminderMenu({
 }
 
 /**
+ * Why a custom time can't be set, or null when it can: the API takes from now
+ * to a year ahead (`MESSAGE_REMINDER_MAX_AHEAD_DAYS`).
+ */
+export function customReminderProblem(at: Date, now: Date): string | null {
+  if (at.getTime() <= now.getTime()) {
+    return "That time has already passed. Pick a later time.";
+  }
+  if (
+    at.getTime() >
+    now.getTime() + MESSAGE_REMINDER_MAX_AHEAD_DAYS * 24 * 60 * 60 * 1000
+  ) {
+    return "Pick a time within the next year.";
+  }
+  return null;
+}
+
+/**
  * Custom…: the shared date field (type `Friday` or `Nov 20`, or pick from the
  * month; a typed `Fri 5pm` carries its time) and a time beside it.
  */
@@ -128,8 +146,9 @@ function CustomReminderDialog({
       setError("Pick a day and a time.");
       return;
     }
-    if (at.getTime() <= Date.now()) {
-      setError("That time has already passed. Pick a later time.");
+    const problem = customReminderProblem(at, new Date());
+    if (problem) {
+      setError(problem);
       return;
     }
     onPick(at);

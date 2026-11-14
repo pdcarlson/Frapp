@@ -787,7 +787,7 @@ export class ActivityDto implements ActivityView {
   @ApiProperty({
     type: [ActivityReminderDto],
     description:
-      'Reminders the caller set on chat messages (#4957), soonest first, at most 50: waiting ones and due ones they haven’t cleared. Private to the caller. Due ones are counted in `needs_you_count`.',
+      'Reminders the caller set on chat messages (#4957): those due that they haven’t cleared, newest first, then those still waiting, soonest first; at most 50 of each. Private to the caller. Due ones are counted in `needs_you_count` (so at most 50).',
   })
   reminders: ActivityReminderDto[];
 

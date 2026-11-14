@@ -180,6 +180,7 @@ describe('ChatReminderService', () => {
       expect(reminderRepo.findByUserAndChapter).toHaveBeenCalledWith(
         USER,
         CHAPTER,
+        NOW.toISOString(),
         REMINDER_LIST_LIMIT,
       );
       expect(rows).toEqual([
@@ -194,6 +195,20 @@ describe('ChatReminderService', () => {
           due: false,
         }),
       ]);
+    });
+
+    it('says what a message with no text sent, as its chat push does', async () => {
+      const { service, reminderRepo } = build();
+      reminderRepo.findByUserAndChapter.mockResolvedValue([
+        stored({
+          message: {
+            ...message({ content: '' }),
+            metadata: { attachment_count: 2 },
+          },
+        }),
+      ]);
+      const [row] = await service.listFor(CHAPTER, USER, NOW.getTime(), READS);
+      expect(row.preview).toBe('Sent 2 attachments');
     });
 
     it('marks a reminder whose time has come as due', async () => {
