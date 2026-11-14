@@ -75,7 +75,10 @@ export class ChatScheduledMessageController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Schedule a text message to post later' })
+  @ApiOperation({
+    summary:
+      'Schedule a message to post later: text, uploaded files, and a quote or a thread',
+  })
   @ApiCreatedResponse({ type: ScheduledMessageDto })
   async create(
     @CurrentChapterId() chapterId: string,
@@ -133,6 +136,13 @@ function toView(row: ChatScheduledMessage): ScheduledMessageDto {
     channel_id: row.channel_id,
     content: row.content,
     mention_picks: row.mention_picks,
+    // Names and types only: the storage paths stay server-side.
+    attachments: row.attachments.map(({ filename, content_type }) => ({
+      filename,
+      content_type,
+    })),
+    reply_to_id: row.reply_to_id,
+    thread_root_id: row.thread_root_id,
     send_at: row.send_at,
     status: row.status,
     failure_reason: row.failure_reason,

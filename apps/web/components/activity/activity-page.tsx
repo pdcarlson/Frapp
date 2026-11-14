@@ -40,6 +40,11 @@ import {
   type ActivityLinkActions,
 } from "./activity-link-row";
 import { ActivityPanel } from "./activity-panel";
+import {
+  ActivityReminderRow,
+  useActivityReminderActions,
+  type ActivityReminderActions,
+} from "./activity-reminder-row";
 import { ActivityRowActionButton } from "./activity-row-action";
 import { activityRowActionGate } from "./activity-row-action-gate";
 import {
@@ -50,6 +55,11 @@ import {
   ActivityUnreadDot,
 } from "./activity-row-lead";
 import { ReviewCard } from "./review-card";
+import {
+  useActivitySnoozeActions,
+  type ActivitySnoozeActions,
+} from "./activity-snooze-menu";
+import { RowMenu } from "@/components/shared/row-menu";
 import { RecapCard } from "./recap-card";
 import { SemesterStrip, SemesterStripSkeleton } from "./semester-strip";
 import { WeekCard } from "./week-card";
@@ -57,12 +67,14 @@ import {
   ACTIVITY_SHOW_EVERYTHING,
   ACTIVITY_TO_DO_EMPTY,
   activityAgenda,
+  activityAwake,
   activityCouldNotLoad,
   activityNarrowedNote,
   activityBadgeIsAsk,
   activityGroups,
   activityReview,
   activityReviewQueue,
+  activitySnoozedRows,
   activityWeekSummary,
   findActivityTaskRow,
   activityRowAction,
@@ -73,6 +85,7 @@ import {
   useActivityRecap,
   useActivityStanding,
   useActivityUnread,
+  useActivitySnoozeWake,
   useActivityFaces,
   useNowDate,
   useMyPermissions,
@@ -165,15 +178,63 @@ function PanelRow({
   rowActions,
   onOpen,
   className,
+  snooze,
 }: {
   row: ActivityRow;
   rowActions: RowActions;
   onOpen: (row: ActivityRow) => void;
   className: string;
+  snooze: ActivitySnoozeActions;
 }) {
   const action = rowActions.gate ? activityRowAction(row) : null;
+  const entries = snooze.entriesFor(row);
+  if (entries.length === 0) {
+    return (
+      <li>
+        <PanelRowBody
+          row={row}
+          action={action}
+          rowActions={rowActions}
+          onOpen={onOpen}
+          className={className}
+        />
+      </li>
+    );
+  }
   return (
-    <li className={action ? "relative" : undefined}>
+    <RowMenu entries={entries} label={`More for ${row.title}`}>
+      {(menuButton) => (
+        <li className="group flex items-center gap-1">
+          <PanelRowBody
+            row={row}
+            action={action}
+            rowActions={rowActions}
+            onOpen={onOpen}
+            className={className}
+          />
+          {menuButton}
+        </li>
+      )}
+    </RowMenu>
+  );
+}
+
+/** The row's button and the ask laid over it, measured from its own edge. */
+function PanelRowBody({
+  row,
+  action,
+  rowActions,
+  onOpen,
+  className,
+}: {
+  row: ActivityRow;
+  action: ReturnType<typeof activityRowAction>;
+  rowActions: RowActions;
+  onOpen: (row: ActivityRow) => void;
+  className: string;
+}) {
+  return (
+    <div className="relative min-w-0 flex-1">
       <button type="button" className={className} onClick={() => onOpen(row)}>
         <RowContent row={row} askOnRow={action !== null} />
       </button>
@@ -192,7 +253,7 @@ function PanelRow({
           />
         </span>
       ) : null}
-    </li>
+    </div>
   );
 }
 
@@ -206,36 +267,51 @@ function CardRow({
   row,
   onOpen,
   className,
+  entries,
 }: {
   row: Extract<ActivityRow, { kind: "card" }>;
   onOpen: (row: ActivityRow) => void;
   className: string;
+  /** The row's menu: snooze, or on a snoozed row, Unsnooze. */
+  entries: RowMenuEntries;
 }) {
   return (
-    <li>
-      <Link
-        href={chatDeepLink({
-          channelId: row.card.channel_id,
-          messageId: row.card.message_id,
-        })}
-        className={className}
-        onClick={() => onOpen(row)}
-      >
-        <RowContent row={row} />
-      </Link>
-    </li>
+    <RowMenu entries={entries} label={`More for ${row.title}`}>
+      {(menuButton) => (
+        <li className="group flex items-center gap-1">
+          <Link
+            href={chatDeepLink({
+              channelId: row.card.channel_id,
+              messageId: row.card.message_id,
+            })}
+            className={cn(className, "min-w-0 flex-1")}
+            onClick={() => onOpen(row)}
+          >
+            <RowContent row={row} />
+          </Link>
+          {menuButton}
+        </li>
+      )}
+    </RowMenu>
   );
 }
+
+type RowMenuEntries = Parameters<typeof RowMenu>[0]["entries"];
 
 /** What every list on the page needs to draw one of its rows. */
 interface RowKit {
   canRemoveLinks: boolean;
+  snooze: ActivitySnoozeActions;
   linkActions: ActivityLinkActions;
+  reminderActions: ActivityReminderActions;
   rowActions: RowActions;
   onOpen: (row: ActivityRow) => void;
 }
 
-/** A row as its kind draws it: a link, a card that opens in chat, or a panel. */
+/**
+ * A row as its kind draws it: a link, a card or a reminder that opens in
+ * chat, or a panel.
+ */
 function Row({
   row,
   kit,
@@ -254,15 +330,28 @@ function Row({
       canRemove={kit.canRemoveLinks}
       actions={kit.linkActions}
       onOpen={kit.onOpen}
+      leadEntries={kit.snooze.entriesFor(row)}
     />
   ) : row.kind === "card" ? (
-    <CardRow row={row} onOpen={kit.onOpen} className={className} />
+    <CardRow
+      row={row}
+      onOpen={kit.onOpen}
+      className={className}
+      entries={kit.snooze.entriesFor(row)}
+    />
+  ) : row.kind === "reminder" ? (
+    <ActivityReminderRow
+      row={row}
+      rowClassName={className}
+      actions={kit.reminderActions}
+    />
   ) : (
     <PanelRow
       row={row}
       rowActions={kit.rowActions}
       onOpen={kit.onOpen}
       className={className}
+      snooze={kit.snooze}
     />
   );
 }
@@ -399,8 +488,9 @@ function DaySection({ day, kit }: { day: ActivityAgendaDay; kit: RowKit }) {
 }
 
 /**
- * A group under the To do list: Waiting on others (the polls the member
- * posted, the events they made, the tasks they assigned), or Links. The page
+ * A group under the To do list: Reminders (#4957), Waiting on others (the
+ * polls the member posted, the events they made, the tasks they assigned),
+ * or Links. The page
  * leaves a group with nothing in it out, so there is no empty line.
  */
 function GroupSection({ group, kit }: { group: ActivityGroup; kit: RowKit }) {
@@ -543,6 +633,87 @@ function GroupPart({
 }
 
 /**
+ * Snoozed (#4982, `spec/behavior/activity.md` § Snooze): the rows the member
+ * put off, soonest back first, each saying when. Closed until pressed, as
+ * Gmail keeps Snoozed in its own folder and Slack's Later keeps reminders
+ * apart, so a snoozed thing is out of sight but one press from found. Each
+ * row still opens its record, and its menu brings it back now.
+ */
+function SnoozedSection({ rows, kit }: { rows: ActivityRow[]; kit: RowKit }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section aria-label="Snoozed" className="space-y-1">
+      <Button
+        type="button"
+        variant="link"
+        size="sm"
+        className="px-2"
+        aria-expanded={open}
+        aria-controls={open ? "activity-snoozed" : undefined}
+        onClick={() => setOpen((shown) => !shown)}
+      >
+        {open ? "Hide snoozed" : `Snoozed (${rows.length})`}
+      </Button>
+      {open ? (
+        <ul id="activity-snoozed" className={denseListClassName}>
+          {rows.map((row) =>
+            row.kind === "link" ? (
+              // A snoozed link opens the link, and its menu wakes it.
+              <RowMenu
+                key={row.key}
+                entries={[kit.snooze.wakeEntry(row)]}
+                label={`More for ${row.title}`}
+              >
+                {(menuButton) => (
+                  <li className="group flex items-center gap-1">
+                    <a
+                      href={row.link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={cn(ROW_CLASS, "min-w-0 flex-1")}
+                    >
+                      <RowContent row={row} />
+                    </a>
+                    {menuButton}
+                  </li>
+                )}
+              </RowMenu>
+            ) : row.kind === "card" ? (
+              <CardRow
+                key={row.key}
+                row={row}
+                onOpen={kit.onOpen}
+                className={ROW_CLASS}
+                entries={[kit.snooze.wakeEntry(row)]}
+              />
+            ) : (
+              <RowMenu
+                key={row.key}
+                entries={[kit.snooze.wakeEntry(row)]}
+                label={`More for ${row.title}`}
+              >
+                {(menuButton) => (
+                  <li className="group flex items-center gap-1">
+                    <PanelRowBody
+                      row={row}
+                      action={null}
+                      rowActions={kit.rowActions}
+                      onOpen={kit.onOpen}
+                      className={ROW_CLASS}
+                    />
+                    {menuButton}
+                  </li>
+                )}
+              </RowMenu>
+            ),
+          )}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+/**
  * Reads `?review=<taskId>` (a "submitted a task" notification, `deepLinkFor`
  * in the bell) and hands it to the page once per link, then drops it from the
  * address so a refresh doesn't reopen the panel. Clicking the same link again
@@ -588,8 +759,9 @@ function ReviewParam({ open }: { open: (taskId: string) => Promise<void> }) {
  * 5. To do: the member's own events, tasks, polls and sign-ups by day
  *    (`activityAgenda`), three to a day before "Show more". A line of the
  *    week card narrows it to one kind.
- * 6. Waiting on others, then Links: what the member made and what was posted
- *    for them, each left out when it has nothing.
+ * 6. Reminders, Waiting on others, then Links: the messages the member asked
+ *    to be reminded about (#4957), what they made, and what was posted for
+ *    them, each left out when it has nothing.
  *
  * The page is usually a pane beside chat about a phone wide, and the whole
  * window when chat is closed, so it lays out by its own width (`@container`),
@@ -646,14 +818,33 @@ export function ActivityPage() {
     picked !== "all" && summary?.lines.some((line) => line.id === picked)
       ? picked
       : "all";
+  // What the lists show: the read less what the member snoozed, on the
+  // page's own clock, so a snoozed row comes back within a tick of its time
+  // (#4982). The week card counts from the whole read: snoozing something
+  // doesn't finish it.
+  const visible = useMemo(
+    () => (activity.data ? activityAwake(activity.data, now) : undefined),
+    [activity.data, now],
+  );
+  const snoozedRows = useMemo(
+    () => (activity.data ? activitySnoozedRows(activity.data, now) : []),
+    [activity.data, now],
+  );
+  const snoozeActions = useActivitySnoozeActions();
+  // A read when the soonest snooze ends, for its dot and the badge.
+  useActivitySnoozeWake(activity.data);
   const [opened, setOpened] = useState<ActivityRow | null>(null);
   // Dots (#4405): opening a row from here is what reads it; scrolling past
   // doesn't, and neither does acting on the item elsewhere in Frapp.
   const { markRead } = useActivityUnread(activity.data);
   const openFromList = (row: ActivityRow) => {
-    if (row.unread) markRead([row.readRef]);
-    // A link opens in a new tab, and a sign-up or form in chat: no panel.
-    if (row.kind !== "link" && row.kind !== "card") setOpened(row);
+    // A reminder row has no read to record (`readRef` is null) and is never
+    // unread.
+    if (row.unread && row.readRef) markRead([row.readRef]);
+    // A link opens in a new tab, and a sign-up, form or reminder in chat: no
+    // panel.
+    if (row.kind !== "link" && row.kind !== "card" && row.kind !== "reminder")
+      setOpened(row);
   };
   // `/activity?review=<taskId>`: a "submitted a task" notification
   // (`deepLinkFor` in the bell). Opens that task's panel once the read has
@@ -680,13 +871,14 @@ export function ActivityPage() {
   const permissions = useMyPermissions();
   const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
   const linkActions = useActivityLinkActions();
+  const reminderActions = useActivityReminderActions();
   const actionGate = activityRowActionGate(useSubscriptionGate());
   // Faces on the rows (#4402, item 4), from the roster chat already reads.
   const faceFor = useActivityFaces();
 
   const agenda = useMemo(
-    () => (activity.data ? activityAgenda(activity.data, filter, now) : null),
-    [activity.data, filter, now],
+    () => (visible ? activityAgenda(visible, filter, now) : null),
+    [visible, filter, now],
   );
   // Only for the roles that review: a member is never shown the card.
   const canConfirmTasks =
@@ -694,15 +886,19 @@ export function ActivityPage() {
     can("tasks:manage", permissions.data?.permissions);
   const review = useMemo(
     () =>
-      activity.data
-        ? activityReview(activity.data, { canConfirmTasks }, now)
+      visible && activity.data
+        ? activityReview(
+            visible,
+            { canConfirmTasks, served: activity.data },
+            now,
+          )
         : null,
-    [activity.data, canConfirmTasks, now],
+    [visible, activity.data, canConfirmTasks, now],
   );
   // What the member made, and the links posted for them, in order.
   const groups = useMemo(
-    () => (activity.data ? activityGroups(activity.data, now) : []),
-    [activity.data, now],
+    () => (visible ? activityGroups(visible, now) : []),
+    [visible, now],
   );
   // Narrowed to a kind, the page is the To do list alone.
   const below =
@@ -717,8 +913,8 @@ export function ActivityPage() {
   // The waiting reviews a review steps through (#4693), however the list is
   // narrowed.
   const reviewQueue = useMemo(
-    () => (activity.data ? activityReviewQueue(activity.data, now) : []),
-    [activity.data, now],
+    () => (visible ? activityReviewQueue(visible, now) : []),
+    [visible, now],
   );
   const openRow = useMemo(
     () =>
@@ -731,8 +927,9 @@ export function ActivityPage() {
               ...group.rows,
               ...(group.archive?.rows ?? []),
             ]),
+            ...snoozedRows,
           ].find((row) => row.key === opened.key) ?? opened),
-    [agenda, review, groups, opened],
+    [agenda, review, groups, snoozedRows, opened],
   );
 
   if (isOffline && anyReadUncached(activity)) {
@@ -779,12 +976,14 @@ export function ActivityPage() {
   const refresh = () => void reread();
   // Acting on an item from Activity reads it, as opening it does (#4402).
   const actedOnRow = (row: ActivityRow) => {
-    if (row.unread) markRead([row.readRef]);
+    if (row.unread && row.readRef) markRead([row.readRef]);
     return reread();
   };
   const kit: RowKit = {
     canRemoveLinks,
+    snooze: snoozeActions,
     linkActions,
+    reminderActions,
     rowActions: { gate: actionGate, onActed: actedOnRow },
     onOpen: openFromList,
   };
@@ -834,6 +1033,9 @@ export function ActivityPage() {
           {below.map((group) => (
             <GroupSection key={group.id} group={group} kit={kit} />
           ))}
+          {snoozedRows.length > 0 ? (
+            <SnoozedSection rows={snoozedRows} kit={kit} />
+          ) : null}
         </div>
 
         <Suspense fallback={null}>

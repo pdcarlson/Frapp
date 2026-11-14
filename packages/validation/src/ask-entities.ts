@@ -12,17 +12,7 @@
  * Web and the phone both cut an answer's text with `askEntityParts`, so the
  * same words are highlighted on both.
  */
-/**
- * Named apart from the wire type `AskEntity`, which `ask.ts` gains with the
- * core slice's wire shapes (#4899); this is the same three fields, and can
- * become that type once it is on `main`.
- */
-export interface AskNamedEntity {
-  type: "member" | "channel";
-  id: string;
-  /** The name as the text writes it, without its `@` or `#`. */
-  name: string;
-}
+import type { AskEntity } from "./ask";
 
 /** A run of answer text: plain, or one named member or channel. */
 export type AskEntityPart =
@@ -30,7 +20,7 @@ export type AskEntityPart =
   | { type: "member" | "channel"; id: string; name: string; text: string };
 
 /** `@` leads a member's name and `#` a channel's. */
-const SIGIL: Record<AskNamedEntity["type"], string> = {
+const SIGIL: Record<AskEntity["type"], string> = {
   member: "@",
   channel: "#",
 };
@@ -39,16 +29,16 @@ const SIGIL: Record<AskNamedEntity["type"], string> = {
  * The entities an answer came with, or none. An answer from a server that
  * predates the agent build has no list, and reads as it always did.
  *
- * It reads the field off the object rather than off `AskAnswer`, whose schema
- * (`ask.ts`) gains `entities` in the core slice's wire-shape change (#4899).
- * Anything that is not a well-formed entry is dropped, so a client never
- * draws a mention from a shape it does not know.
+ * Each entry is the wire's `AskEntity` (`ask.ts`). The list is read off the
+ * object and checked entry by entry, not trusted from the type: anything that
+ * is not a well-formed entry is dropped, an empty id or a blank name among
+ * them, so a client never draws a mention from a shape it does not know.
  */
-export function askAnswerEntities(answer: unknown): AskNamedEntity[] {
+export function askAnswerEntities(answer: unknown): AskEntity[] {
   const list = (answer as { entities?: unknown } | null)?.entities;
   if (!Array.isArray(list)) return [];
   return list.filter(
-    (entry): entry is AskNamedEntity =>
+    (entry): entry is AskEntity =>
       typeof entry === "object" &&
       entry !== null &&
       (entry.type === "member" || entry.type === "channel") &&
@@ -79,7 +69,7 @@ const WORD = /[\p{L}\p{N}_]/u;
  */
 export function askEntityParts(
   text: string,
-  entities: readonly AskNamedEntity[],
+  entities: readonly AskEntity[],
 ): AskEntityPart[] {
   if (text.length === 0) return [];
   const known = entities
