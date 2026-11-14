@@ -1085,7 +1085,7 @@ export interface Database {
         Returns: ChatMessage[];
       };
       /**
-       * `20261114144357` (#4958) — adds (`p_join`: a marked role, never for
+       * `20261114171856` (#4958) — adds (`p_join`: a marked role, never for
        * an alum) or removes (any unkeyed role outside the tiers) a role on a
        * member, under the role-then-member locks `delete_role` takes. One
        * row: `ok` with the written `role_ids`, `not_assignable`, `alumni` or

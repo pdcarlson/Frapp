@@ -792,7 +792,7 @@ export const EDITED_MIGRATION_EXCEPTIONS = Object.freeze([
     file: "supabase/migrations/20261114043300_self_assignable_roles.sql",
     removed: true,
     reason:
-      "Renamed to 20261114144357 with the same SQL. #4991 merged at 15:43Z after #4986 and " +
+      "Renamed to 20261114171856 with the same SQL. #4991 merged at 15:43Z after #4986 and " +
       "#4989's 20261114144355/144356 had reached staging, so db push refused 043300 and every " +
       "Deploy staging run halted (the #4795 race). Neither hosted database had applied it at the rename.",
   },

@@ -181,7 +181,7 @@ end;
 $$;
 
 comment on function public.self_assign_role(uuid, uuid, uuid, boolean) is
-  'Adds (p_join, a marked role, not to an alum) or removes (a role with no system_key outside the tiers) a role on a member, under locks ordered role then member as delete_role takes them (#4958). See 20261114144357_self_assignable_roles.sql.';
+  'Adds (p_join, a marked role, not to an alum) or removes (a role with no system_key outside the tiers) a role on a member, under locks ordered role then member as delete_role takes them (#4958). See 20261114171856_self_assignable_roles.sql.';
 
 revoke execute on function public.self_assign_role(uuid, uuid, uuid, boolean) from public;
 

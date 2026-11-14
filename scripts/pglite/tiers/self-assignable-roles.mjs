@@ -1,6 +1,6 @@
 import { db, miss } from "../harness.mjs";
 
-// ─── Functional: self-assignable roles (20261114144357) ──────────────────────
+// ─── Functional: self-assignable roles (20261114171856) ──────────────────────
 //
 // #4958: officers mark a role members may join and leave themselves. A marked
 // role must stay safe (`role_self_assignable_safe`: no system key, outside the
@@ -21,7 +21,7 @@ import { db, miss } from "../harness.mjs";
 //
 // Everything runs inside one transaction and is rolled back; each write that
 // is expected to fail runs in its own savepoint.
-console.log("\n=== Functional: self-assignable roles (20261114144357) ===");
+console.log("\n=== Functional: self-assignable roles (20261114171856) ===");
 {
   const A = "a4958000-0000-4000-8000-00000000000a";
   const B = "b4958000-0000-4000-8000-00000000000b";
