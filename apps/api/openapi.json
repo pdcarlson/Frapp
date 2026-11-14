@@ -2005,6 +2005,47 @@
         ]
       }
     },
+    "/v1/members/birthdays": {
+      "get": {
+        "description": "Month and day of every member who shares their birthday with their chapter (#4959), for the calendar. A member who keeps theirs to themselves is left out, and the year is never sent.",
+        "operationId": "MemberController_birthdays_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberBirthdayDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Birthdays members share with the chapter",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
     "/v1/members/by-user/{userId}": {
       "get": {
         "operationId": "MemberController_getByUser_v1",
@@ -6447,6 +6488,46 @@
         ]
       }
     },
+    "/v1/threads": {
+      "get": {
+        "operationId": "MemberThreadController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberThreadDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Every thread the caller follows or muted, across channels, newest activity first, with new-reply counts",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/chat-backgrounds/channels/{id}": {
       "get": {
         "operationId": "ChatBackgroundController_getForChannel_v1",
@@ -7109,13 +7190,258 @@
         ]
       }
     },
+    "/v1/scheduled-messages": {
+      "get": {
+        "operationId": "ChatScheduledMessageController_list_v1",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "required": false,
+            "in": "query",
+            "description": "Only this channel’s; every channel’s when left out.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScheduledMessageDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the caller's scheduled messages in this chapter (pending and failed), soonest first",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "post": {
+        "operationId": "ChatScheduledMessageController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateScheduledMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Schedule a text message to post later",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/scheduled-messages/{id}": {
+      "patch": {
+        "operationId": "ChatScheduledMessageController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateScheduledMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a scheduled message’s text or time (a failed one goes back in line)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatScheduledMessageController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a scheduled message before it posts",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/scheduled-messages/{id}/send": {
+      "post": {
+        "operationId": "ChatScheduledMessageController_sendNow_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post a scheduled message now",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EventResponseDto"
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -7199,7 +7525,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventDetailResponseDto"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -18194,6 +18527,35 @@
             "maxLength": 32,
             "description": "The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.",
             "example": "(518) 555-0142"
+          },
+          "birthday_month": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 12,
+            "description": "The member's birthday month, 1-12 (#4959). Sent with `birthday_day`; null on both clears the birthday (and its year)."
+          },
+          "birthday_day": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 31,
+            "description": "The day of `birthday_month`. It must exist in that month; 29 February is taken."
+          },
+          "birthday_year": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1900,
+            "maximum": 2100,
+            "description": "The birth year, optional. Never shown to anyone but the member. Needs a month and day."
+          },
+          "birthday_visibility": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "nobody"
+            ],
+            "description": "Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default."
           }
         }
       },
@@ -18836,6 +19198,12 @@
             "format": "uuid",
             "nullable": true,
             "description": "Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise)."
+          },
+          "birthday_channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived or the audit log (400 otherwise)."
           }
         }
       },
@@ -19556,6 +19924,16 @@
             "nullable": true,
             "description": "The member's own phone number (#3711), as they typed it, or null. Only they set it."
           },
+          "birthday_month": {
+            "type": "number",
+            "nullable": true,
+            "description": "The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none."
+          },
+          "birthday_day": {
+            "type": "number",
+            "nullable": true,
+            "description": "The day of `birthday_month`, under the same rule. The year is never sent."
+          },
           "pledge_class_id": {
             "type": "string",
             "format": "uuid",
@@ -19605,6 +19983,8 @@
           "current_company",
           "email",
           "phone",
+          "birthday_month",
+          "birthday_day",
           "pledge_class_id",
           "order_number",
           "is_alumni"
@@ -19636,6 +20016,40 @@
           "display_name",
           "avatar_url",
           "role_color"
+        ]
+      },
+      "MemberBirthdayDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "users.id"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "birthday_month": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "birthday_day": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 31,
+            "description": "The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`)."
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "avatar_url",
+          "birthday_month",
+          "birthday_day"
         ]
       },
       "UpdateMemberRolesDto": {
@@ -22496,6 +22910,61 @@
           "last_read_at"
         ]
       },
+      "MemberThreadDto": {
+        "type": "object",
+        "properties": {
+          "thread_root_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "following",
+              "muted"
+            ]
+          },
+          "last_read_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "unread_count": {
+            "type": "number",
+            "description": "Replies new to the caller; always 0 when muted."
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "last_reply_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "When the newest reply landed; null before any reply."
+          },
+          "reply_count": {
+            "type": "number",
+            "description": "Replies in the thread, deleted ones included."
+          },
+          "root": {
+            "description": "The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatMessageDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "thread_root_id",
+          "state",
+          "last_read_at",
+          "unread_count",
+          "channel_id",
+          "last_reply_at",
+          "reply_count",
+          "root"
+        ]
+      },
       "ChatBackgroundResponseDto": {
         "type": "object",
         "properties": {
@@ -22864,6 +23333,123 @@
           "next_page"
         ]
       },
+      "ScheduledMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "content": {
+            "type": "string"
+          },
+          "mention_picks": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
+          },
+          "send_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "failed"
+            ],
+            "description": "`failed`: it did not post at its time. Edit it to try again, or delete it."
+          },
+          "failure_reason": {
+            "type": "string",
+            "enum": [
+              "no_access",
+              "chapter_locked",
+              "not_sendable",
+              "send_failed"
+            ],
+            "nullable": true,
+            "description": "Why a failed message did not post: `no_access` the author can no longer post there; `chapter_locked` the chapter is read-only for billing; `not_sendable` the channel refused the message; `send_failed` it kept failing."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "channel_id",
+          "content",
+          "mention_picks",
+          "send_at",
+          "status",
+          "failure_reason",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateScheduledMessageDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel or DM to post in."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "send_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When to post it: a date-time with its offset (`Z` or `±hh:mm`), at most 120 days ahead. The client picks it on the member’s own clock."
+          },
+          "mention_picks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
+          }
+        },
+        "required": [
+          "channel_id",
+          "content",
+          "send_at"
+        ]
+      },
+      "UpdateScheduledMessageDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "send_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "mention_picks": {
+            "description": "The `@` picks for the new `content`; read only with it.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
+          }
+        }
+      },
       "EventAgendaItemDto": {
         "type": "object",
         "properties": {
@@ -22937,6 +23523,313 @@
         "required": [
           "lat",
           "lng"
+        ]
+      },
+      "EventResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "location": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "point_value": {
+            "type": "number"
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "nullable": true
+          },
+          "parent_event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "required_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "optional_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`)."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
+          },
+          "check_in_zone": {
+            "nullable": true,
+            "description": "Optional check-in geofence. `null` means the event has no zone.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
+          },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The chapter's event type this was made as, or null. Cleared when the type is deleted."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who made the event. Null for events made before it was recorded."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "description",
+          "location",
+          "start_time",
+          "end_time",
+          "point_value",
+          "is_mandatory",
+          "recurrence_rule",
+          "parent_event_id",
+          "required_role_ids",
+          "optional_role_ids",
+          "excluded_role_ids",
+          "others_invited",
+          "notes",
+          "agenda",
+          "attachments",
+          "check_in_zone",
+          "check_in_zone_name",
+          "check_in_opens_minutes",
+          "event_type_id",
+          "created_by",
+          "created_at"
+        ]
+      },
+      "EventDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "location": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "end_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "point_value": {
+            "type": "number"
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "nullable": true
+          },
+          "parent_event_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "required_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "optional_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_role_ids": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "others_invited": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`)."
+          },
+          "notes": {
+            "type": "string",
+            "nullable": true
+          },
+          "agenda": {
+            "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAgendaItemDto"
+            }
+          },
+          "attachments": {
+            "description": "This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventAttachmentDto"
+            }
+          },
+          "check_in_zone": {
+            "nullable": true,
+            "description": "Optional check-in geofence. `null` means the event has no zone.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "nullable": true
+          },
+          "check_in_opens_minutes": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 120,
+            "description": "Minutes before start_time that check-in opens; it closes 15 minutes after end_time."
+          },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The chapter's event type this was made as, or null. Cleared when the type is deleted."
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "Who made the event. Null for events made before it was recorded."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "check_in_needs_code": {
+            "type": "boolean",
+            "description": "Whether checking in now needs the officer's rotating code, so a client says to scan rather than offering a Check in the server would refuse. False when it cannot be worked out; the check-in route stays the authority."
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "name",
+          "description",
+          "location",
+          "start_time",
+          "end_time",
+          "point_value",
+          "is_mandatory",
+          "recurrence_rule",
+          "parent_event_id",
+          "required_role_ids",
+          "optional_role_ids",
+          "excluded_role_ids",
+          "others_invited",
+          "notes",
+          "agenda",
+          "attachments",
+          "check_in_zone",
+          "check_in_zone_name",
+          "check_in_opens_minutes",
+          "event_type_id",
+          "created_by",
+          "created_at",
+          "check_in_needs_code"
         ]
       },
       "CreateEventDto": {
@@ -29963,6 +30856,10 @@
           "actions": {
             "type": "boolean",
             "description": "True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`."
+          },
+          "answer_cards": {
+            "type": "boolean",
+            "description": "True when the client draws the cards an answer comes with (`answer.proposals` on `done`). Read only with `actions`, by a server that answers through the tool loop: a turn can then be an answer with cards under it, or up to five cards. Without it a turn comes with at most one card, sent as a `proposal` event in place of the answer."
           },
           "door": {
             "type": "string",

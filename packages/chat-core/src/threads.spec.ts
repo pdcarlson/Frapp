@@ -1,3 +1,4 @@
+import { TOMBSTONE_TEXT } from "./block-copy";
 import { describe, expect, test, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import {
@@ -12,6 +13,7 @@ import {
   threadCardLabel,
   threadChipLabel,
   threadPreviewParts,
+  memberThreadPreview,
   threadVersion,
 } from "./threads";
 import { emptyCache } from "./cache";
@@ -601,5 +603,91 @@ describe("threadPreviewParts and threadCardLabel (#4297)", () => {
         preview: { name: null, text: "hi" },
       }),
     ).toBe("1 reply, latest: hi");
+  });
+});
+
+describe("memberThreadPreview (#4960)", () => {
+  const names = {
+    nameOf: (id: string) => (id === "u1" ? "Devin Okafor" : null),
+    fallbackLabel: (id: string) => `Member ${id.slice(0, 6)}`,
+  };
+  const raw = (over: Record<string, unknown> = {}) =>
+    ({
+      id: "root-1",
+      channel_id: "c1",
+      sender_id: "u2",
+      content: "who has the tent",
+      kind: "text",
+      is_deleted: false,
+      created_at: "2026-11-11T19:00:00.000Z",
+      thread_reply_count: 2,
+      thread_last_reply_at: "2026-11-11T20:00:00.000Z",
+      thread_last_reply: {
+        id: "r1",
+        sender_id: "u1",
+        content: "my truck",
+        kind: "text",
+        attachment_count: 0,
+        created_at: "2026-11-11T20:00:00.000Z",
+      },
+      ...over,
+    }) as never;
+
+  test("reads the parent and its latest reply as the channel does", () => {
+    expect(memberThreadPreview(raw(), "me", names)).toMatchObject({
+      root: { id: "root-1" },
+      rootText: "who has the tent",
+      reply: { name: "Devin", text: "my truck" },
+    });
+  });
+
+  test("reads a GIF or file-only message by what it holds, not as Message", () => {
+    const gif = memberThreadPreview(
+      raw({
+        content: "",
+        metadata: {
+          gif: { url: "https://static.klipy.com/gif/x.gif", width: 100, height: 100 },
+        },
+        thread_last_reply: {
+          id: "r1",
+          sender_id: "u1",
+          content: "",
+          kind: "text",
+          attachment_count: 2,
+          created_at: "2026-11-11T20:00:00.000Z",
+        },
+      }),
+      null,
+      names,
+    );
+    expect(gif.rootText).toBe("GIF");
+    expect(gif.reply?.text).toBe("2 attachments");
+  });
+
+  test("reads a blocked member's parent or reply as the tombstone, unnamed", () => {
+    const preview = memberThreadPreview(
+      raw({
+        sender_blocked: true,
+        thread_last_reply: {
+          id: "r1",
+          sender_id: "u1",
+          content: "",
+          kind: "text",
+          attachment_count: 0,
+          created_at: "2026-11-11T20:00:00.000Z",
+          sender_blocked: true,
+        },
+      }),
+      null,
+      names,
+    );
+    expect(preview.rootText).toBe(TOMBSTONE_TEXT);
+    expect(preview.reply).toEqual({ name: null, text: TOMBSTONE_TEXT });
+  });
+
+  test("has no reply line before any reply", () => {
+    expect(
+      memberThreadPreview(raw({ thread_last_reply: null }), null, names).reply,
+    ).toBeNull();
   });
 });

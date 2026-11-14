@@ -9,7 +9,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { randomClientId } from "@repo/api-sdk";
 import type { MentionPick } from "@repo/validation";
-import { useFrappClient } from "@repo/hooks";
+import { memberThreadKeys, useFrappClient } from "@repo/hooks";
 import {
   chatRealtime,
   NO_TYPING_USERS,
@@ -209,9 +209,13 @@ export function useMessageThread(
       // The channel's thread cards re-read what's new once the server has
       // the cursor (#4297), as web's do.
       .then(() =>
-        queryClient.invalidateQueries({
-          queryKey: chatFollowedThreadsKey(channelId),
-        }),
+        Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: chatFollowedThreadsKey(channelId),
+          }),
+          // And All threads' unread mark (#4960), in every chapter's cache.
+          queryClient.invalidateQueries({ queryKey: memberThreadKeys.all }),
+        ]),
       )
       .catch(() => undefined);
   }, [api, queryClient, channelId, rootId, metaLoaded, newestId]);

@@ -1702,3 +1702,26 @@ export class FollowedThreadDto {
   })
   unread_count: number;
 }
+
+/** One row of `GET /v1/threads` (#4960): a thread the caller is part of, in any channel they may read. */
+export class MemberThreadDto extends FollowedThreadDto {
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'When the newest reply landed; null before any reply.',
+  })
+  last_reply_at: string | null;
+
+  @ApiProperty({ description: 'Replies in the thread, deleted ones included.' })
+  reply_count: number;
+
+  @ApiProperty({
+    type: () => ChatMessageDto,
+    description:
+      'The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier.',
+  })
+  root: ChatMessageDto;
+}

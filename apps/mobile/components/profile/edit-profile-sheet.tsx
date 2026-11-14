@@ -7,7 +7,10 @@ import {
 } from "@gorhom/bottom-sheet";
 import { useFieldReveal, useUpdateUser } from "@repo/hooks";
 import {
+  BIRTHDAY_COPY,
+  BIRTHDAY_VISIBILITIES,
   MAJOR_MAX_LENGTH,
+  parseBirthdayVisibility,
   PHONE_MAX_LENGTH,
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
@@ -27,6 +30,7 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { Segmented } from "@/components/segmented";
 import {
   applyEdit,
   draftFromProfile,
@@ -96,6 +100,11 @@ const copy = PROFILE_FIELD_COPY;
  * the field's padding, rounded up to the grid (foundations §9).
  */
 const YEAR_FIELD_WIDTH = 96;
+
+const VISIBILITY_OPTIONS = BIRTHDAY_VISIBILITIES.map((value) => ({
+  value,
+  label: BIRTHDAY_COPY.visibility[value],
+}));
 
 /** Matches the web profile form's bio field, which draws three lines. */
 const BIO_LINES = 3;
@@ -346,6 +355,55 @@ export const EditProfileSheet = forwardRef<
           })}
         </View>
         {rowError(["major", "graduationYear"])}
+        {/* The birthday (#4959): month, day and an optional year as digits,
+            then who can see it, beside it rather than behind a menu, the way
+            Facebook's birthday field shows its audience. */}
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>{BIRTHDAY_COPY.label}</Text>
+        </View>
+        <View style={styles.row}>
+          {field("birthdayMonth", BIRTHDAY_COPY.monthLabel, {
+            accessibleLabel: "Birthday month, 1 to 12",
+            placeholder: "MM",
+            keyboardType: "number-pad",
+            maxLength: 2,
+            grow: true,
+          })}
+          {field("birthdayDay", BIRTHDAY_COPY.dayLabel, {
+            accessibleLabel: "Birthday day",
+            placeholder: "DD",
+            keyboardType: "number-pad",
+            maxLength: 2,
+            grow: true,
+          })}
+          {field("birthdayYear", BIRTHDAY_COPY.yearLabel, {
+            accessibleLabel: "Birth year, optional",
+            placeholder: "YYYY",
+            keyboardType: "number-pad",
+            maxLength: 4,
+            grow: true,
+          })}
+        </View>
+        {rowError(["birthdayMonth", "birthdayDay", "birthdayYear"]) ?? (
+          <Text style={styles.hint}>{BIRTHDAY_COPY.yearHint}</Text>
+        )}
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>{BIRTHDAY_COPY.visibilityLabel}</Text>
+          <Segmented
+            options={VISIBILITY_OPTIONS}
+            value={parseBirthdayVisibility(shown.birthdayVisibility)}
+            onChange={(next) => edit("birthdayVisibility")(next)}
+            accessibilityLabel={BIRTHDAY_COPY.visibilityLabel}
+            disabled={updateUser.isPending}
+          />
+          <Text style={styles.hint}>
+            {
+              BIRTHDAY_COPY.visibilityHint[
+                parseBirthdayVisibility(shown.birthdayVisibility)
+              ]
+            }
+          </Text>
+        </View>
         {field("bio", copy.bio.label, {
           placeholder: copy.bio.placeholder,
           multiline: true,

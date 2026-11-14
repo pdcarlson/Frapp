@@ -26,7 +26,10 @@ const mocks = vi.hoisted(() => ({
   statusListeners: new Set<(status: string) => void>(),
 }));
 
-vi.mock("@repo/hooks", () => ({ useFrappClient: () => ({}) }));
+vi.mock("@repo/hooks", () => ({
+  useFrappClient: () => ({}),
+  memberThreadKeys: { all: ["member-threads"] },
+}));
 const SUPABASE = { from: () => ({}) };
 vi.mock("@/lib/supabase", () => ({ getSupabaseClient: () => SUPABASE }));
 vi.mock("@repo/chat-core/realtime-manager", () => ({

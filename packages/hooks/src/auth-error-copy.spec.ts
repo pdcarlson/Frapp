@@ -27,14 +27,19 @@ import { MemberFacingError } from "./error-copy";
  * never reached GoTrue is an `AuthRetryableFetchError` with status 0.
  */
 function authApiError(message: string, status: number, code?: string) {
-  return Object.assign(new Error(message), { name: "AuthApiError", status, code });
+  return Object.assign(new Error(message), {
+    name: "AuthApiError",
+    status,
+    code,
+  });
 }
 
 /**
  * The refusals production's auth log recorded on 2026-11-09, as GoTrue sends
  * them. Web read each as "Something went wrong"; mobile read the sentence.
  */
-const unconfirmed = () => authApiError("Email not confirmed", 400, "email_not_confirmed");
+const unconfirmed = () =>
+  authApiError("Email not confirmed", 400, "email_not_confirmed");
 const wrongPassword = () =>
   authApiError("Invalid login credentials", 400, "invalid_credentials");
 const cooldown = (seconds: number) =>
@@ -48,7 +53,9 @@ const COLLISION = "An account with this email already exists.";
 describe("password sign-in refusals", () => {
   it("names an unconfirmed address", () => {
     expect(isEmailNotConfirmed(unconfirmed())).toBe(true);
-    expect(describePasswordSignInError(unconfirmed())).toBe(UNCONFIRMED_EMAIL_COPY);
+    expect(describePasswordSignInError(unconfirmed())).toBe(
+      UNCONFIRMED_EMAIL_COPY,
+    );
   });
 
   it("recognises an unconfirmed address by message when the code is missing", () => {
@@ -56,7 +63,9 @@ describe("password sign-in refusals", () => {
   });
 
   it("says a wrong password doesn't match, without saying which half", () => {
-    expect(describePasswordSignInError(wrongPassword())).toBe(WRONG_CREDENTIALS_COPY);
+    expect(describePasswordSignInError(wrongPassword())).toBe(
+      WRONG_CREDENTIALS_COPY,
+    );
     expect(isEmailNotConfirmed(wrongPassword())).toBe(false);
   });
 
@@ -94,7 +103,9 @@ describe("the one-email-a-minute limit", () => {
 describe("email links switched off", () => {
   it("says so instead of asking to retry", () => {
     expect(
-      describeEmailSendError(authApiError("Signups not allowed for otp", 422, "otp_disabled")),
+      describeEmailSendError(
+        authApiError("Signups not allowed for otp", 422, "otp_disabled"),
+      ),
     ).toBe(EMAIL_LINKS_OFF_COPY);
   });
 });
@@ -102,7 +113,11 @@ describe("email links switched off", () => {
 describe("the project's hourly email cap", () => {
   // Same code as the per-address minute, no seconds: nothing went out.
   const capped = () =>
-    authApiError("Email rate limit exceeded", 429, "over_email_send_rate_limit");
+    authApiError(
+      "Email rate limit exceeded",
+      429,
+      "over_email_send_rate_limit",
+    );
 
   it("is not read as a cooldown", () => {
     expect(emailCooldownSeconds(capped())).toBeUndefined();
@@ -113,30 +128,44 @@ describe("the project's hourly email cap", () => {
   it("never says an email was just sent", () => {
     expect(describeEmailSendError(capped())).toBe(EMAIL_SEND_CAPPED_COPY);
     expect(describeEmailSendError(capped())).not.toMatch(/just sent/i);
-    expect(describeSignUpError(capped(), COLLISION)).toBe(EMAIL_SEND_CAPPED_COPY);
+    expect(describeSignUpError(capped(), COLLISION)).toBe(
+      EMAIL_SEND_CAPPED_COPY,
+    );
   });
 });
 
 describe("sign-up refusals", () => {
   const weak = (reasons: string[]) =>
-    Object.assign(authApiError("Password is known to be weak", 422, "weak_password"), {
-      reasons,
-    });
+    Object.assign(
+      authApiError("Password is known to be weak", 422, "weak_password"),
+      {
+        reasons,
+      },
+    );
 
   it("asks for a different password when it appeared in a breach", () => {
-    expect(describeSignUpError(weak(["pwned"]), COLLISION)).toMatch(/data breach/);
+    expect(describeSignUpError(weak(["pwned"]), COLLISION)).toMatch(
+      /data breach/,
+    );
   });
 
   it("asks for a longer password when it is too short", () => {
-    expect(describeSignUpError(weak(["length"]), COLLISION)).toMatch(/at least 6 characters/);
+    expect(describeSignUpError(weak(["length"]), COLLISION)).toMatch(
+      /at least 6 characters/,
+    );
   });
 
   it("sends an address that already has an account to sign-in, in the surface's words", () => {
     expect(
-      describeSignUpError(authApiError("User already registered", 422, "user_already_exists"), COLLISION),
+      describeSignUpError(
+        authApiError("User already registered", 422, "user_already_exists"),
+        COLLISION,
+      ),
     ).toBe(COLLISION);
     // GoTrue has sent this one without a code.
-    expect(describeSignUpError(new Error("User already registered"), COLLISION)).toBe(COLLISION);
+    expect(
+      describeSignUpError(new Error("User already registered"), COLLISION),
+    ).toBe(COLLISION);
   });
 
   it("reads GoTrue's stand-in user for a taken address", () => {
@@ -149,15 +178,21 @@ describe("sign-up refusals", () => {
 
 describe("isIdentityCollisionError", () => {
   it("matches GoTrue codes and the registered-email message", () => {
-    expect(isIdentityCollisionError({ code: "identity_already_exists" })).toBe(true);
-    expect(isIdentityCollisionError({ code: "user_already_exists" })).toBe(true);
+    expect(isIdentityCollisionError({ code: "identity_already_exists" })).toBe(
+      true,
+    );
+    expect(isIdentityCollisionError({ code: "user_already_exists" })).toBe(
+      true,
+    );
     expect(isIdentityCollisionError({ code: "email_exists" })).toBe(true);
     expect(
       isIdentityCollisionError({
         message: "A user with this email address has already been registered",
       }),
     ).toBe(true);
-    expect(isIdentityCollisionError({ message: "Invalid login credentials" })).toBe(false);
+    expect(
+      isIdentityCollisionError({ message: "Invalid login credentials" }),
+    ).toBe(false);
     expect(isIdentityCollisionError(null)).toBe(false);
   });
 });
@@ -173,23 +208,33 @@ describe("describeOAuthError", () => {
   it("maps each known refusal to the surface's sentence", () => {
     expect(describeOAuthError({ code: "email_exists" }, copy)).toBe(COLLISION);
     expect(
-      describeOAuthError({ message: "Unsupported provider: provider is not enabled" }, copy),
+      describeOAuthError(
+        { message: "Unsupported provider: provider is not enabled" },
+        copy,
+      ),
     ).toBe("Unavailable.");
-    expect(describeOAuthError(authApiError("x", 400, "provider_disabled"), copy)).toBe(
-      "Unavailable.",
-    );
+    expect(
+      describeOAuthError(authApiError("x", 400, "provider_disabled"), copy),
+    ).toBe("Unavailable.");
     expect(
       describeOAuthError(
-        authApiError("Email link is invalid or has expired", 403, "otp_expired"),
+        authApiError(
+          "Email link is invalid or has expired",
+          403,
+          "otp_expired",
+        ),
         copy,
       ),
     ).toBe("Dead link.");
   });
 
   it("shows the client's own member-facing sentence", () => {
-    expect(describeOAuthError(new MemberFacingError("Unable to finish sign-in."), copy)).toBe(
-      "Unable to finish sign-in.",
-    );
+    expect(
+      describeOAuthError(
+        new MemberFacingError("Unable to finish sign-in."),
+        copy,
+      ),
+    ).toBe("Unable to finish sign-in.");
   });
 
   it("never shows a provider's or the OS's sentence", () => {
@@ -197,7 +242,9 @@ describe("describeOAuthError", () => {
       "The operation couldn't be completed. (com.apple.AuthenticationServices.AuthorizationError error 1000.)",
     );
     expect(describeOAuthError(apple, copy)).toBe("Couldn't start.");
-    expect(describeOAuthError({ message: "Access denied" }, copy)).toBe("Couldn't start.");
+    expect(describeOAuthError({ message: "Access denied" }, copy)).toBe(
+      "Couldn't start.",
+    );
   });
 });
 
@@ -208,7 +255,9 @@ describe("authFallbackCopy", () => {
       status: 0,
     });
     expect(authFallbackCopy(unreachable)).toBe(OFFLINE_COPY);
-    expect(authFallbackCopy(new TypeError("Network request failed"))).toBe(OFFLINE_COPY);
+    expect(authFallbackCopy(new TypeError("Network request failed"))).toBe(
+      OFFLINE_COPY,
+    );
   });
 
   it("doesn't blame the member's connection for a GoTrue outage", () => {
@@ -220,13 +269,21 @@ describe("authFallbackCopy", () => {
   });
 
   it("says too many tries for any 429", () => {
-    expect(authFallbackCopy(authApiError("Request rate limit reached", 429, "over_request_rate_limit"))).toBe(
-      STATUS_ERROR_COPY[429],
-    );
+    expect(
+      authFallbackCopy(
+        authApiError(
+          "Request rate limit reached",
+          429,
+          "over_request_rate_limit",
+        ),
+      ),
+    ).toBe(STATUS_ERROR_COPY[429]);
   });
 
   it("never borrows the API's 401 or 403 lines before sign-in", () => {
-    expect(authFallbackCopy(authApiError("x", 403, "unexpected_failure"))).toBe(AUTH_FALLBACK_COPY);
+    expect(authFallbackCopy(authApiError("x", 403, "unexpected_failure"))).toBe(
+      AUTH_FALLBACK_COPY,
+    );
     expect(authFallbackCopy(authApiError("x", 401))).toBe(AUTH_FALLBACK_COPY);
   });
 });

@@ -99,6 +99,15 @@ export const AskRequestSchema = z.object({
    */
   actions: z.boolean().optional(),
   /**
+   * The client draws the cards an answer comes with (`AskAnswer.proposals`),
+   * so one turn can be an answer with cards under it, or several cards.
+   * Read only with `actions`, and only by a server that answers through the
+   * tool loop (#4899). Without it a turn comes with at most one card, sent
+   * as a `proposal` event in place of the answer, which is all a build from
+   * before this can draw.
+   */
+  answer_cards: z.boolean().optional(),
+  /**
    * The client showed the "answers are being saved" line before this
    * question was sent. An exchange is kept by the beta diagnostics window
    * only when this is true, so a client that does not know about the window
@@ -325,6 +334,8 @@ export const AskAnswerSchema = z.object({
    * Cards that came with this answer: the ids of suggestions waiting for
    * the asker's Confirm (`GET /v1/ai/suggestions/{id}`), at most
    * {@link ASK_PROPOSALS_MAX}. Nothing has been changed by any of them.
+   * Sent only to a client that asked with `answer_cards`. An answer that is
+   * cards and nothing else is `answered` with empty `text`: draw the cards.
    */
   proposals: z.array(z.string()).max(ASK_PROPOSALS_MAX).nullish(),
   /**

@@ -132,19 +132,29 @@ export function useSaveBackworkCourse() {
       // In the cache at once (replacing by id, or appended when new), for the
       // reason `patchNamedRow` gives; the refetch stays as the fallback.
       if (saved && typeof saved === "object" && "id" in saved) {
-        queryClient.setQueryData(["backwork", "courses"], (current: unknown) => {
-          if (!Array.isArray(current)) return current;
-          const found = current.some(
-            (row) => row && typeof row === "object" && "id" in row && row.id === saved.id,
-          );
-          return found
-            ? current.map((row) =>
-                row && typeof row === "object" && "id" in row && row.id === saved.id
-                  ? saved
-                  : row,
-              )
-            : [...current, saved];
-        });
+        queryClient.setQueryData(
+          ["backwork", "courses"],
+          (current: unknown) => {
+            if (!Array.isArray(current)) return current;
+            const found = current.some(
+              (row) =>
+                row &&
+                typeof row === "object" &&
+                "id" in row &&
+                row.id === saved.id,
+            );
+            return found
+              ? current.map((row) =>
+                  row &&
+                  typeof row === "object" &&
+                  "id" in row &&
+                  row.id === saved.id
+                    ? saved
+                    : row,
+                )
+              : [...current, saved];
+          },
+        );
       }
       queryClient.invalidateQueries({ queryKey: ["backwork", "courses"] });
     },
@@ -293,7 +303,10 @@ function patchNamedRow(
   queryClient.setQueryData(key, (current: unknown) => {
     if (!Array.isArray(current)) return current;
     return current.map((row) =>
-      row && typeof row === "object" && "id" in row && row.id === (updated as { id: unknown }).id
+      row &&
+      typeof row === "object" &&
+      "id" in row &&
+      row.id === (updated as { id: unknown }).id
         ? { ...row, ...updated }
         : row,
     );
@@ -355,13 +368,7 @@ export function useMergeDepartments() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["backwork", "merge-departments"],
-    mutationFn: async ({
-      id,
-      targetId,
-    }: {
-      id: string;
-      targetId: string;
-    }) => {
+    mutationFn: async ({ id, targetId }: { id: string; targetId: string }) => {
       const { data, error } = await client.POST(
         "/v1/backwork/departments/{id}/merge",
         { params: { path: { id } }, body: { target_id: targetId } },
@@ -432,13 +439,7 @@ export function useMergeProfessors() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["backwork", "merge-professors"],
-    mutationFn: async ({
-      id,
-      targetId,
-    }: {
-      id: string;
-      targetId: string;
-    }) => {
+    mutationFn: async ({ id, targetId }: { id: string; targetId: string }) => {
       const { data, error } = await client.POST(
         "/v1/backwork/professors/{id}/merge",
         { params: { path: { id } }, body: { target_id: targetId } },

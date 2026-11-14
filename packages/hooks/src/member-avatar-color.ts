@@ -21,9 +21,10 @@ import {
  * which read close to gray beside the neutral fallback. The order is part of
  * the hash contract: reordering it recolors every member, so the spec pins it.
  */
-export const MEMBER_HASH_HUES: readonly RoleColorHex[] = ROLE_COLOR_PALETTE.filter(
-  (swatch) => swatch.key !== "sand" && swatch.key !== "slate",
-).map((swatch) => swatch.hex);
+export const MEMBER_HASH_HUES: readonly RoleColorHex[] =
+  ROLE_COLOR_PALETTE.filter(
+    (swatch) => swatch.key !== "sand" && swatch.key !== "slate",
+  ).map((swatch) => swatch.hex);
 
 /**
  * The tint's opacity over `--card`. Until the 2026-11-12 surface ladder (#3826)

@@ -2,11 +2,12 @@
  * The agents the real-question set can be asked of, each behind the one
  * interface (`AgentUnderTest`), built over a gateway the runner meters.
  *
- * Today there is one: `one-shot`, the Ask that shipped before the agent
- * rebuild (one search, a planner that picks from five reads, one answer
- * call). It is the baseline the loop has to beat (#4903).
+ * Two today. `one-shot` is the Ask that shipped before the agent rebuild
+ * (one search, a planner that picks from five reads, one answer call): the
+ * baseline. `loop` is the tool loop that replaces it (#4899), and has to
+ * beat it (#4903).
  *
- * **Swapping the loop in (#4899).** Either add an entry here, or pass
+ * **Another agent.** Add an entry here, or pass
  * `--agent /abs/path/to/module` to the bake-off, where the module exports
  * `createRealQuestionAgent(deps): AgentUnderTest`. The agent gets each
  * question as an `AgentInvocation` carrying `asker`, `from` and `chapter`
@@ -20,6 +21,7 @@
  */
 import type { AiGatewayService } from '../../../src/application/services/ai/ai-gateway.service';
 import { createAskAgent } from '../harness/ask-agent';
+import { createLoopAgent } from '../harness/loop-agent';
 import type { AgentUnderTest } from '../harness/types';
 
 export interface RealQuestionAgentDeps {
@@ -63,10 +65,19 @@ function oneShot({ gateway }: RealQuestionAgentDeps): AgentUnderTest {
   };
 }
 
+/**
+ * The tool loop (#4899): the product's Ask on its loop path, with every tool
+ * the product gives it, over the term chapter (`harness/loop-agent.ts`).
+ */
+function loop({ gateway }: RealQuestionAgentDeps): AgentUnderTest {
+  return createLoopAgent({ gateway, name: 'Ask loop' });
+}
+
 export const REAL_QUESTION_AGENTS: Readonly<
   Record<string, RealQuestionAgentFactory>
 > = {
   'one-shot': oneShot,
+  loop,
 };
 
 /** An agent by name, or by the absolute path of a module that makes one. */

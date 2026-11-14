@@ -38,7 +38,11 @@ import {
   pasteAsLines,
   useMentionSourceRefs,
 } from "./chat-editor";
-import { useRequestChatUploadUrl, useUploadSignedUrl } from "@repo/hooks";
+import {
+  formatScheduledFor,
+  useRequestChatUploadUrl,
+  useUploadSignedUrl,
+} from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { describeChatPhoto } from "@/lib/chat/photo-preview";
@@ -81,6 +85,7 @@ import {
   type PlusMenuForm,
 } from "@repo/chat-core/plus-menu";
 import { QuotedMessage } from "./reply-quote";
+import { ScheduleSendButton } from "./schedule-send";
 import {
   getSlashCommand,
   paletteCommandArgs,
@@ -473,6 +478,17 @@ interface ComposerBaseProps {
      */
     mentionPicks: MentionPick[],
   ) => void | Promise<void>;
+  /**
+   * Schedule the composer's text to post later (#4956). Resolves once it is
+   * scheduled; the composer then clears. Text only: with a file staged, a
+   * reply staged, or a slash command typed, the composer says so and keeps
+   * everything. Omitted, there is no schedule control.
+   */
+  onSchedule?: (
+    body: string,
+    mentionPicks: MentionPick[],
+    at: Date,
+  ) => Promise<void>;
   /**
    * Asking Frapp from this composer (#4713), for a member with Ask: Frapp is
    * offered in the `@` list, and a message that names `@Frapp` is asked, not
@@ -998,6 +1014,7 @@ export function Composer({
   draft,
   onChangeDraft,
   onSend,
+  onSchedule,
   ask = null,
   askUnknown = false,
   onSendGif,
@@ -1578,6 +1595,81 @@ export function Composer({
   useLayoutEffect(() => {
     sendRef.current = submit;
   }, [submit]);
+  /**
+   * Schedules what is typed (#4956). Rejects, keeping the text, when it can't
+   * be scheduled; the custom-time dialog stays open on a rejection.
+   */
+  const schedulingRef = useRef(false);
+  const schedule = useCallback(
+    async (at: Date) => {
+      if (!editor || !onSchedule || schedulingRef.current) return;
+      const typed = chatText(editor).trim();
+      const parsed = parseSlashInput(typed);
+      const command =
+        parsed.isSlash && parsed.command
+          ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
+          : null;
+      const refusal = isOffline
+        ? "Reconnect to schedule a message."
+        : pending.length > 0 || uploading.length > 0
+          ? "Files can't be scheduled yet. Send them now, or remove them first."
+          : replyTo
+            ? "Replies can't be scheduled yet. Remove the reply first."
+            : command?.implemented
+              ? "Commands can't be scheduled. Send them now."
+              : // A question for Frapp is never posted (#4713); while it isn't
+                // known whether this member has Ask, it is held the same way.
+                askAccess !== "no" &&
+                  askMentionQuestion(typed, spacedNames) !== null
+                ? "Questions for Frapp can't be scheduled. Send them now."
+                : typed.length === 0
+                  ? "Type a message to schedule."
+                  : null;
+      if (refusal) {
+        toast({ title: refusal });
+        throw new Error(refusal);
+      }
+      const picks = composerMentionPicks(channelId, editor);
+      // Cleared before the request, as a send is, so a second click finds
+      // nothing to schedule and typing during the request isn't wiped by it.
+      // Put back if it fails and the composer is still empty.
+      const sentDoc = editor.getJSON();
+      schedulingRef.current = true;
+      editor.commands.clearContent(true);
+      onChangeDraft("");
+      try {
+        await onSchedule(typed, picks, at);
+      } catch (error) {
+        if (!editor.isDestroyed && editor.isEmpty) {
+          editor.commands.setContent(sentDoc, { emitUpdate: false });
+          onChangeDraft(chatText(editor));
+        }
+        toast({
+          title: "Couldn't schedule it",
+          description: errorCopy(error),
+          variant: "destructive",
+        });
+        throw error;
+      } finally {
+        schedulingRef.current = false;
+      }
+      toast({ title: `Scheduled for ${formatScheduledFor(at, new Date())}` });
+    },
+    [
+      askAccess,
+      channelId,
+      editor,
+      isOffline,
+      onChangeDraft,
+      onSchedule,
+      pending.length,
+      recruitmentVocab,
+      replyTo,
+      spacedNames,
+      toast,
+      uploading.length,
+    ],
+  );
   useLayoutEffect(() => {
     stagedRef.current = { pending, replyId: replyTo?.id ?? null };
   }, [pending, replyTo]);
@@ -2182,25 +2274,42 @@ export function Composer({
             something to send, muted when there isn't, so the button says
             whether Enter will do anything.
           */}
-          <Button
-            type="button"
-            size="icon"
-            className="h-8 w-8 shrink-0 rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
-            onClick={submit}
-            aria-label="Send message"
-            title="Send (Enter)"
-            /* An attached file is enough to send: an empty editor with a staged
+          {/* Send and its schedule chevron stay together at the row's end,
+              as Slack draws its split send button (#4956). */}
+          <div className="flex shrink-0 items-center">
+            <Button
+              type="button"
+              size="icon"
+              className="h-8 w-8 shrink-0 rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
+              onClick={submit}
+              aria-label="Send message"
+              title="Send (Enter)"
+              /* An attached file is enough to send: an empty editor with a staged
                attachment is a real message, and `submit` accepts it. A lone
                `/` is not, so it reads as empty (#3781). */
-            disabled={
-              !editor ||
-              uploading.length > 0 ||
-              ((editor.isEmpty || isBareSlash(chatText(editor).trim())) &&
-                pending.length === 0)
-            }
-          >
-            <SendArrowGlyph className="h-4 w-4" />
-          </Button>
+              disabled={
+                !editor ||
+                uploading.length > 0 ||
+                ((editor.isEmpty || isBareSlash(chatText(editor).trim())) &&
+                  pending.length === 0)
+              }
+            >
+              <SendArrowGlyph className="h-4 w-4" />
+            </Button>
+            {onSchedule ? (
+              <ScheduleSendButton
+                // As Send's: a staged file alone enables it, so the refusal
+                // can say files can't be scheduled yet.
+                disabled={
+                  !editor ||
+                  uploading.length > 0 ||
+                  ((editor.isEmpty || isBareSlash(chatText(editor).trim())) &&
+                    pending.length === 0)
+                }
+                onSchedule={schedule}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
       {paletteMounted ? (

@@ -138,7 +138,7 @@ export function SuggestedEvents({
         },
         staleTime: 30_000,
       });
-      const template = source as unknown as Record<string, unknown>;
+      const template = source;
       const start = sameWeekdayThisYear(template.start_time);
       // The end keeps its distance from the start, not its own next week.
       const end = sameWeekdayThisYear(template.end_time, start ?? undefined);

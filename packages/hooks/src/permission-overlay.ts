@@ -28,7 +28,11 @@ export type PermissionHolder = {
 export function usePermissionOverlay(
   holders: readonly PermissionHolder[],
   save: (holder: PermissionHolder, next: string[]) => Promise<unknown>,
-  onError: (holder: PermissionHolder, error: unknown, permission: string) => void,
+  onError: (
+    holder: PermissionHolder,
+    error: unknown,
+    permission: string,
+  ) => void,
 ) {
   const [overlay, setOverlay] = useState<Record<string, string[]>>({});
   const [pending, setPending] = useState<{
