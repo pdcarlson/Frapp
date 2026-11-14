@@ -132,7 +132,10 @@ jobs:
       # MIGRATION_SNAPSHOT_STAGING_DEPLOY. `use`: this job reports and does not
       # gate, so it never waits on a publish. It still notices a lagging one: a
       # migration past grace, read from a snapshot a Deploy staging run has
-      # overtaken, turns it red as `stale`, saying why.
+      # overtaken, turns it red as `stale`, saying why. While that Deploy
+      # staging run is still landing (running, or its publish not in yet), a
+      # migration merged under DRIFT_GATE_DEPLOY_ALLOWANCE_MINUTES ago reads as
+      # `applying`: a warning, not a red X (2026-11-14).
       - name: Download the migration snapshot
         uses: ./.github/actions/download-migration-snapshot
         with:
@@ -144,6 +147,7 @@ jobs:
           # state from the snapshot.
           DRIFT_GATE_MAIN_REF: refs/remotes/origin/main
           DRIFT_GATE_GRACE_MINUTES: "30"
+          DRIFT_GATE_DEPLOY_ALLOWANCE_MINUTES: "90"
         run: node scripts/ci/check-migration-drift-gate.mjs --snapshot "$MIGRATION_SNAPSHOT"
 
   # ── Production migration replay ─────────────────────────────────────────

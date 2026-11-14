@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DEFAULT_DEPLOY_ALLOWANCE_MINUTES,
   DEFAULT_GRACE_MINUTES,
   buildGateSummary,
   classifyGateDrift,
@@ -495,6 +496,60 @@ test("against a snapshot, grace runs from now, and a deploy since the capture ma
   assert.equal(foreign.status, "drift");
 });
 
+test("a deploy still landing reads as applying, not stale, until the allowance runs out", () => {
+  // 2026-11-14: migrations merged at 15:43Z and 15:45Z, applied by the Deploy
+  // staging run that finished at 16:16Z. Between 16:13Z and the publish, every
+  // PR's drift check went red with "Cannot verify" over an ordinary deploy.
+  const classify = (landedAgo, { snapshotBehind = true, deployInFlight = true } = {}) =>
+    classifyGateDrift({
+      main: [migration("20261114153147", "gif", NOW - landedAgo)],
+      applied: [],
+      nowMs: NOW,
+      graceMs,
+      snapshotBehind,
+      deployInFlight,
+    });
+
+  const landing = classify(40 * 60 * 1000);
+  assert.equal(landing.status, "applying");
+  assert.equal(landing.applying.length, 1);
+  assert.equal(landing.unverifiable.length, 0);
+
+  // Past the allowance: stale and red, so a stuck publisher still surfaces.
+  const late = classify(DEFAULT_DEPLOY_ALLOWANCE_MINUTES * 60 * 1000 + 1);
+  assert.equal(late.status, "stale");
+  assert.equal(late.unverifiable.length, 1);
+
+  // `unknown` deploy state is not a deploy in flight: no allowance.
+  assert.equal(classify(40 * 60 * 1000, { deployInFlight: false }).status, "stale");
+
+  // A current snapshot (the publish after a failed apply): drift, allowance or
+  // not. This is the shape of the 2026-11-14 ordering race that stuck staging.
+  assert.equal(classify(40 * 60 * 1000, { snapshotBehind: false }).status, "drift");
+
+  // An undatable migration never gets the allowance.
+  const undatable = classifyGateDrift({
+    main: [migration("20261114153147", "gif", null)],
+    applied: [],
+    nowMs: NOW,
+    graceMs,
+    snapshotBehind: true,
+    deployInFlight: true,
+  });
+  assert.equal(undatable.status, "stale");
+
+  // Drift beside a landing deploy is still drift.
+  const withForeign = classifyGateDrift({
+    main: [migration("20261114153147", "gif", NOW - 40 * 60 * 1000)],
+    applied: [{ version: "20250101000000", name: "foreign" }],
+    nowMs: NOW,
+    graceMs,
+    snapshotBehind: true,
+    deployInFlight: true,
+  });
+  assert.equal(withForeign.status, "drift");
+});
+
 function snapshotOf(capturedMs, migrations) {
   return buildSnapshot({
     capturedAt: new Date(capturedMs).toISOString(),
@@ -576,6 +631,43 @@ test("a snapshot a Deploy staging run has overtaken fails the gate, and the summ
   assert.doesNotMatch(unknown.summary, /If it failed, fix it/);
 });
 
+test("a deploy still landing exits 0 with a warning, for a running run and a finished one awaiting its publish", async () => {
+  const recent = [...MAIN.slice(0, 2), migration("20260902000000", "landing", NOW - 40 * 60 * 1000)];
+  for (const stagingDeploy of ["running", new Date(NOW - 5 * 60 * 1000).toISOString()]) {
+    const logs = [];
+    const { code, summary, errors } = await runAgainstSnapshot(
+      snapshotOf(NOW - 50 * 60 * 1000, applied(MAIN.slice(0, 2))),
+      {
+        runGit: makeGit({
+          paths: recent.map((m) => m.path),
+          times: Object.fromEntries(recent.map((m) => [m.path, m.landedMs / 1000])),
+        }),
+        snapshotBehind: true,
+        stagingDeploy,
+        log: (line) => logs.push(line),
+      },
+    );
+    assert.equal(code, 0, stagingDeploy);
+    assert.match(summary, /Deploy still landing/);
+    assert.match(summary, /20260902000000_landing/);
+    assert.doesNotMatch(summary, /Cannot verify|Drift detected/);
+    assert.equal(errors.length, 0);
+    assert.ok(logs.some((line) => line.startsWith("::warning::")));
+  }
+
+  // The same migration with the deploy state unreadable: red, as before.
+  const unknown = await runAgainstSnapshot(snapshotOf(NOW - 50 * 60 * 1000, applied(MAIN.slice(0, 2))), {
+    runGit: makeGit({
+      paths: recent.map((m) => m.path),
+      times: Object.fromEntries(recent.map((m) => [m.path, m.landedMs / 1000])),
+    }),
+    snapshotBehind: true,
+    stagingDeploy: "unknown",
+  });
+  assert.equal(unknown.code, 1);
+  assert.match(unknown.summary, /Cannot verify/);
+});
+
 test("a snapshot no Deploy staging run has overtaken reports a missing migration as drift", async () => {
   // The same data as above, but current: the publish after the failed apply
   // succeeded, so staging really lacks the migration.
@@ -610,6 +702,13 @@ test("the CLI wires a snapshot's deploy-since state to the classifier, and its c
     assert.equal(current.snapshotBehind, false);
     assert.equal("nowMs" in current, false, "the snapshot must not become the gate's clock");
     assert.equal(current.graceMinutes, DEFAULT_GRACE_MINUTES);
+    assert.equal(current.allowanceMinutes, DEFAULT_DEPLOY_ALLOWANCE_MINUTES);
+    assert.equal(
+      driftGateOptions(resolveSource(path, { MIGRATION_SNAPSHOT_STAGING_DEPLOY: "none" }), {
+        DRIFT_GATE_DEPLOY_ALLOWANCE_MINUTES: "45",
+      }).allowanceMinutes,
+      45,
+    );
 
     const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
     const overtaken = driftGateOptions(resolveSource(path, { MIGRATION_SNAPSHOT_STAGING_DEPLOY: since }), {});

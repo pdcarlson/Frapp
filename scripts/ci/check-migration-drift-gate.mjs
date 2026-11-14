@@ -85,6 +85,23 @@
 // says what Deploy staging has done since (`MIGRATION_SNAPSHOT_STAGING_DEPLOY`), and
 // `classifyGateDrift` then reports a missing migration as `stale`, not drift.
 //
+// ── A deploy still landing is not a red X (2026-11-14) ──────────────────────
+// The 30-minute grace is from merge to snapshot, and on a busy day a normal
+// deploy outruns it: on 2026-11-14 two migrations merged at 15:43Z and 15:45Z
+// were applied by the Deploy staging run that finished at 16:16Z, and every PR
+// pushed in between went red with "Cannot verify". Nothing was wrong, and a
+// red X that is usually nothing teaches people to ignore it. So a migration
+// past grace, read from a snapshot that a Deploy staging run in progress (or
+// one that finished with its publish still to come) has overtaken, is
+// `applying`: reported as a warning, exit 0, for up to
+// DRIFT_GATE_DEPLOY_ALLOWANCE_MINUTES from its merge (default 90). Past that
+// it is `stale` and red again, as before. Real drift is unaffected: a failed
+// apply triggers a publish (migration-snapshot.yml runs on every completed
+// Deploy staging, failed ones too), that snapshot is current, and the missing
+// migration reads as overdue. The 2026-11-14 ordering race (#4972/#4974,
+// staging stuck about nine hours) would still have gone red within 90 minutes
+// at worst. An unreadable deploy state (`unknown`) gets no allowance.
+//
 // ── Availability trade ──────────────────────────────────────────────────────
 // A required check that calls a third-party API makes repo-wide merge
 // availability depend on that API. That is a real cost and it was taken
@@ -112,10 +129,15 @@
 //                                but `none`, unset included, counts as overtaken.
 //   DRIFT_GATE_MAIN_REF        — optional, default "origin/main"
 //   DRIFT_GATE_GRACE_MINUTES   — optional, default 30
+//   DRIFT_GATE_DEPLOY_ALLOWANCE_MINUTES — optional, default 90: how long after
+//                                its merge a migration past grace may read as
+//                                `applying` while a Deploy staging run is
+//                                landing (see the 2026-11-14 note above)
 //   GITHUB_STEP_SUMMARY        — optional, written when present
 //
 // Exit codes:
-//   0 — staging holds every migration on main (or the stragglers are in grace)
+//   0 — staging holds every migration on main (or the stragglers are in grace,
+//       or `applying`: a Deploy staging run that may hold them is still landing)
 //   1 — drift; or `stale` (a migration is past grace, and a Deploy staging run
 //       since the snapshot may have applied it, or what Deploy staging did could
 //       not be read); or staging could not be read
@@ -135,6 +157,7 @@ import { DRIFT_AND_ORDERING, PROMOTION_RUNBOOK } from "./lib/ops-docs.mjs";
 
 export const DEFAULT_MAIN_REF = "origin/main";
 export const DEFAULT_GRACE_MINUTES = 30;
+export const DEFAULT_DEPLOY_ALLOWANCE_MINUTES = 90;
 export const MIGRATIONS_PREFIX = "supabase/migrations";
 
 // Bounded retry for the one network call. Three attempts over ~6s absorbs the
@@ -244,13 +267,30 @@ export function readMigrationsAtRef({ ref, runGit = defaultRunGit }) {
  * taken right after a failed apply is current, and both may predate the
  * migration's grace window.
  *
+ * One more split, only with `deployInFlight` (a Deploy staging run is running,
+ * or finished with its publish still to come, not merely `unknown`):
+ *
+ *   applying     — unverifiable, but merged less than `allowanceMs` ago. The
+ *                  run that is landing is the likely applier, so this is the
+ *                  ordinary end of a deploy, not a finding. Status `applying`,
+ *                  which exits 0 with a warning. Past the allowance it is
+ *                  unverifiable again.
+ *
  * `foreign` is never graced and is always drift. A version staging holds that
  * main does not is not just untidy: `supabase db push` refuses to run at all in
  * that state, so the next legitimate migration cannot be applied either. That
  * is a live outage of the promotion path, and it is exactly the shape of the
  * February row still sitting on production (#832).
  */
-export function classifyGateDrift({ main, applied, nowMs, graceMs, snapshotBehind = false }) {
+export function classifyGateDrift({
+  main,
+  applied,
+  nowMs,
+  graceMs,
+  snapshotBehind = false,
+  deployInFlight = false,
+  allowanceMs = DEFAULT_DEPLOY_ALLOWANCE_MINUTES * 60 * 1000,
+}) {
   const appliedVersions = new Set(applied.map((m) => m.version));
   const mainVersions = new Set(main.map((m) => m.version));
 
@@ -260,16 +300,24 @@ export function classifyGateDrift({ main, applied, nowMs, graceMs, snapshotBehin
   const overdue = [];
   const withinGrace = [];
   const unverifiable = [];
+  const applying = [];
   for (const migration of pending) {
-    const late = migration.landedMs === null || nowMs - migration.landedMs >= graceMs;
-    if (!late) withinGrace.push(migration);
-    else if (snapshotBehind) unverifiable.push(migration);
-    else overdue.push(migration);
+    const age = migration.landedMs === null ? Infinity : nowMs - migration.landedMs;
+    if (age < graceMs) withinGrace.push(migration);
+    else if (!snapshotBehind) overdue.push(migration);
+    else if (deployInFlight && age < allowanceMs) applying.push(migration);
+    else unverifiable.push(migration);
   }
 
   const status =
-    foreign.length > 0 || overdue.length > 0 ? "drift" : unverifiable.length > 0 ? "stale" : "clean";
-  return { pending, overdue, withinGrace, unverifiable, foreign, status };
+    foreign.length > 0 || overdue.length > 0
+      ? "drift"
+      : unverifiable.length > 0
+        ? "stale"
+        : applying.length > 0
+          ? "applying"
+          : "clean";
+  return { pending, overdue, withinGrace, unverifiable, applying, foreign, status };
 }
 
 // ── Reporting ───────────────────────────────────────────────────────────────
@@ -320,6 +368,17 @@ function staleReason({ capturedMs, stagingDeploy }) {
   };
 }
 
+/** Whether `stagingDeploy` says a Deploy staging run is landing right now. */
+export function isDeployInFlight(stagingDeploy) {
+  return stagingDeploy === "running" || isTimestamp(stagingDeploy);
+}
+
+function applyingReason({ stagingDeploy }) {
+  return isTimestamp(stagingDeploy)
+    ? `a Deploy staging run on main finished at ${stagingDeploy} and the snapshot publish it triggers has not landed yet`
+    : "a Deploy staging run on main is in progress and the snapshot predates what it applies";
+}
+
 const sentence = (clause) => `${clause[0].toUpperCase()}${clause.slice(1)}.`;
 
 export function buildGateSummary({
@@ -344,6 +403,17 @@ export function buildGateSummary({
         bullets(result.withinGrace, (m) => `\`${m.version}_${m.name}\``),
       );
     }
+    return lines.join("\n");
+  }
+
+  if (result.status === "applying") {
+    lines.push(
+      `**Deploy still landing.** ${sentence(applyingReason({ stagingDeploy }))} ${result.applying.length} migration(s)`,
+      `past the ${graceMinutes}m grace window are not in the snapshot yet, which is the ordinary end of a deploy, not drift.`,
+      "This turns red if they are still missing once a fresh snapshot lands, or past the deploy allowance.",
+      "",
+      bullets(result.applying, describeLanded),
+    );
     return lines.join("\n");
   }
 
@@ -449,6 +519,7 @@ export async function runDriftGate({
   projectRef,
   mainRef = DEFAULT_MAIN_REF,
   graceMinutes = DEFAULT_GRACE_MINUTES,
+  allowanceMinutes = DEFAULT_DEPLOY_ALLOWANCE_MINUTES,
   nowMs = Date.now(),
   capturedMs = null,
   snapshotBehind = false,
@@ -523,6 +594,8 @@ export async function runDriftGate({
     nowMs,
     graceMs: graceMinutes * 60 * 1000,
     snapshotBehind,
+    deployInFlight: isDeployInFlight(stagingDeploy),
+    allowanceMs: allowanceMinutes * 60 * 1000,
   });
 
   onSummary(
@@ -556,6 +629,15 @@ export async function runDriftGate({
     return 1;
   }
   if (result.status === "stale") return 1;
+  if (result.status === "applying") {
+    // A warning annotation, not an error: visible on the run, no red X.
+    log(
+      `::warning::${result.applying.length} migration(s) on ${mainRef} past grace are not in the snapshot yet (${result.applying
+        .map((m) => `${m.version}_${m.name}`)
+        .join(", ")}): ${applyingReason({ stagingDeploy })}. Reported as applying, not drift.`,
+    );
+    return 0;
+  }
 
   log(
     `  Staging matches ${mainRef}. ${result.withinGrace.length} pending within the ${graceMinutes}m grace window.`,
@@ -648,16 +730,23 @@ export function driftGateOptions(source, env = process.env) {
     stagingDeploy: source.stagingDeploy,
     mainRef: env.DRIFT_GATE_MAIN_REF || DEFAULT_MAIN_REF,
     graceMinutes: Number(env.DRIFT_GATE_GRACE_MINUTES || DEFAULT_GRACE_MINUTES),
+    allowanceMinutes: Number(
+      env.DRIFT_GATE_DEPLOY_ALLOWANCE_MINUTES || DEFAULT_DEPLOY_ALLOWANCE_MINUTES,
+    ),
   };
 }
 
 async function main() {
   const source = resolveSource(getArg("--snapshot"));
   const options = driftGateOptions(source);
-  const { projectRef, mainRef, graceMinutes } = options;
+  const { projectRef, mainRef, graceMinutes, allowanceMinutes } = options;
 
   if (!Number.isFinite(graceMinutes) || graceMinutes < 0) {
     console.error("::error::DRIFT_GATE_GRACE_MINUTES must be a non-negative number.");
+    process.exit(1);
+  }
+  if (!Number.isFinite(allowanceMinutes) || allowanceMinutes < 0) {
+    console.error("::error::DRIFT_GATE_DEPLOY_ALLOWANCE_MINUTES must be a non-negative number.");
     process.exit(1);
   }
 
@@ -665,6 +754,7 @@ async function main() {
   console.log("  Migration drift gate (staging)");
   console.log(`  Comparing: ${mainRef} → staging ${projectRef.slice(0, 8)}…`);
   console.log(`  Grace: ${graceMinutes} minute(s) from merge time`);
+  console.log(`  Deploy allowance: ${allowanceMinutes} minute(s) from merge time`);
   console.log(`  Source: ${source.description}`);
   console.log("══════════════════════════════════════════════════════════");
 

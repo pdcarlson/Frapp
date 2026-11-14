@@ -115,6 +115,13 @@ job summary's first line, because red has two meanings:
   If a migration is still missing after a fresh publish, that run reports
   drift.
 
+  The first two reasons are usually just a deploy landing, so they go red only
+  once the migration has been on `main` for 90 minutes
+  (`DRIFT_GATE_DEPLOY_ALLOWANCE_MINUTES`). Until then the check stays green and
+  its summary reads **Deploy still landing**, with a warning on the run
+  (2026-11-14: a normal Deploy staging run outran the 30-minute grace and
+  reddened every PR pushed in the gap). The third reason gets no allowance.
+
 A run can show both. The drift summary then also lists the migrations the
 snapshot cannot vouch for, with the reason and the step for each, so one run
 reports both problems.

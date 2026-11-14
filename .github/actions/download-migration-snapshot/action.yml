@@ -69,7 +69,8 @@ description: >
 # checks end `cancelled`. The drift job reports and does not gate. It
 # still catches a lagging publisher without waiting, from the export below: a
 # migration past its grace window, read from a snapshot a staging deploy has
-# overtaken, turns it red as `stale`, saying why (`classifyGateDrift`).
+# overtaken, turns it red as `stale`, saying why (`classifyGateDrift`), once
+# the Deploy staging run that overtook it has had its allowance to land.
 #
 # ── What it exports ─────────────────────────────────────────────────────────
 # `MIGRATION_SNAPSHOT`: the snapshot file's path.
