@@ -30,8 +30,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+import { Alert } from "react-native";
 import { ScheduleSendSheet } from "./schedule-send-sheet";
-import { useScheduleSend } from "./use-schedule-send";
+import { SCHEDULE_NOT_SENT_TITLE, useScheduleSend } from "./use-schedule-send";
 
 /**
  * The thread's half of scheduling (#4956): what the sheet is handed, what
@@ -89,6 +90,7 @@ function setup(overrides: Partial<Props> = {}) {
 }
 
 beforeEach(() => {
+  vi.mocked(Alert.alert).mockClear();
   mutateAsync.mockReset();
   listFor.mockClear();
   rows.current = [];
@@ -301,8 +303,62 @@ describe("useScheduleSend", () => {
         reject(new Error("refused"));
         await pending.catch(() => {});
       });
-      // Cleared on the tap, and not typed into the other thread's composer.
+      // Cleared on the tap, and not typed into the other thread's composer:
+      // an alert says it didn't go, with the words.
       expect(vi.mocked(props.setDraft).mock.calls).toEqual([[""]]);
+      expect(Alert.alert).toHaveBeenCalledWith(
+        SCHEDULE_NOT_SENT_TITLE,
+        expect.stringContaining("@Jane chapter is at 8"),
+      );
+    });
+
+    it("says a refused reply wasn't scheduled once the thread is gone", async () => {
+      let reject!: (error: Error) => void;
+      mutateAsync.mockReturnValue(
+        new Promise((_, no) => {
+          reject = no;
+        }),
+      );
+      const { out, sheet, tree } = setup({
+        threadRootId: "root-1",
+        restoreDraftFor: undefined,
+      });
+      act(() => out.current!.openSchedule!());
+      let pending!: Promise<void>;
+      act(() => {
+        pending = sheet().props.onSchedule(new Date());
+      });
+      act(() => tree.unmount());
+      await act(async () => {
+        reject(new Error("refused"));
+        await pending.catch(() => {});
+      });
+      expect(Alert.alert).toHaveBeenCalledWith(
+        SCHEDULE_NOT_SENT_TITLE,
+        expect.stringContaining("@Jane chapter is at 8"),
+      );
+    });
+
+    it("puts a refused reply back while the thread is still open", async () => {
+      mutateAsync.mockRejectedValue(new Error("refused"));
+      const { out, props, sheet, rerender } = setup({
+        threadRootId: "root-1",
+        restoreDraftFor: undefined,
+      });
+      act(() => out.current!.openSchedule!());
+      let pending!: Promise<void>;
+      act(() => {
+        pending = sheet().props.onSchedule(new Date());
+      });
+      rerender({ draft: "" });
+      await act(async () => {
+        await pending.catch(() => {});
+      });
+      expect(vi.mocked(props.setDraft).mock.calls).toEqual([
+        [""],
+        ["@Jane chapter is at 8"],
+      ]);
+      expect(Alert.alert).not.toHaveBeenCalled();
     });
   });
 });

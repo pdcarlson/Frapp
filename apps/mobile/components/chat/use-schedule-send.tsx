@@ -1,11 +1,13 @@
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { AccessibilityInfo, Keyboard } from "react-native";
+import { AccessibilityInfo, Alert, Keyboard } from "react-native";
+import { errorCopy } from "@repo/hooks/error-copy";
 import { useFocusEffect } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
@@ -52,6 +54,9 @@ import { ScheduledMessagesSheet } from "./scheduled-messages-sheet";
  * staged reply. They leave the tray and the strip only once it is scheduled
  * (`onScheduled`), so a refusal leaves them where they were.
  */
+/** The alert when a refused schedule can't go back into any composer (#5005). */
+export const SCHEDULE_NOT_SENT_TITLE = "Your message wasn't scheduled";
+
 export function useScheduleSend({
   channelId,
   threadRootId = null,
@@ -84,8 +89,8 @@ export function useScheduleSend({
   setDraft: (body: string) => void;
   /**
    * Puts a refused draft back into a channel no longer on screen. Absent in
-   * a thread, which keeps no draft once it is left; the sheet's error is
-   * then all that is left of the words.
+   * a thread, which keeps no draft once it is left: there an alert says it
+   * wasn't scheduled and carries the words.
    */
   restoreDraftFor?: (channelId: string, body: string) => void;
   /** The tray's photos; only uploaded ones are scheduled (`refusal` holds the rest). */
@@ -123,6 +128,14 @@ export function useScheduleSend({
   // The draft and channel on screen when a schedule settles, which may not be
   // the ones it was opened on.
   const shownRef = useRef({ channelId, threadRootId, draft });
+  // Whether the screen is still there when a schedule settles.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   useLayoutEffect(() => {
     shownRef.current = { channelId, threadRootId, draft };
   }, [channelId, threadRootId, draft]);
@@ -171,10 +184,18 @@ export function useScheduleSend({
       } catch (error) {
         if (cleared) {
           const now = shownRef.current;
-          if (
+          const moved =
             now.channelId !== target.channelId ||
-            now.threadRootId !== target.threadRootId
-          ) {
+            now.threadRootId !== target.threadRootId;
+          if (!restoreDraftFor && (moved || !mountedRef.current)) {
+            // A thread keeps no draft once it is left, and its sheet was
+            // dismissed with it: an alert outlives the screen, so the
+            // member learns it didn't go and has the words to send again.
+            Alert.alert(
+              SCHEDULE_NOT_SENT_TITLE,
+              `${errorCopy(error)}\n\n${target.text}`,
+            );
+          } else if (moved) {
             restoreDraftFor?.(target.channelId, target.text);
           } else if (!now.draft.trim()) {
             setDraft(target.text);

@@ -435,7 +435,9 @@ export function MessageThreadScreen({
       text: draft,
       photos: [],
       asksFrapp: (askRefusal?.(draft.trim()) ?? null) !== null,
-      writeBlocked: writeBlockedReason,
+      // Offline the long press isn't offered at all: a reply has no outbox,
+      // so Send is off, and the composer offers it only beside Send.
+      writeBlocked: null,
     }),
     picksFor: staging.picksFor,
     setDraft,

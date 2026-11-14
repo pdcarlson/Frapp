@@ -50,6 +50,23 @@ import { useToast } from "@/lib/hooks/use-toast";
  * the channel, where each can be edited, sent now or deleted.
  */
 
+/**
+ * What the channel composer and a thread's reply box say when scheduling
+ * (#5005), so the two say the same thing.
+ */
+export const SCHEDULE_COPY = {
+  offline: "Reconnect to schedule a message.",
+  empty: "Type a message to schedule.",
+  askFrapp: "Questions for Frapp can't be scheduled. Send them now.",
+  /** A second schedule while the first is still out: refused, not dropped. */
+  busy: "Wait for the last message to finish scheduling.",
+  failed: "Couldn't schedule it",
+  notPutBack: (detail: string, where: string) =>
+    `${detail} It couldn't be put back in the ${where}.`,
+  scheduled: (at: Date) =>
+    `Scheduled for ${formatScheduledFor(at, new Date())}`,
+} as const;
+
 /** `YYYY-MM-DD` and `HH:MM` for a local date, as the native inputs take them. */
 function localParts(at: Date): { date: string; time: string } {
   const pad = (n: number) => String(n).padStart(2, "0");

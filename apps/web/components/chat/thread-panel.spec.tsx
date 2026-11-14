@@ -336,6 +336,37 @@ describe("ThreadPanel (#3785)", () => {
       });
     });
 
+    it("refuses a second schedule while the first is still out, keeping the text", async () => {
+      let finish!: () => void;
+      const onSchedule = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      renderPanel({ onSchedule });
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      const pick = async () => {
+        await user.click(
+          screen.getByRole("button", { name: "Schedule message" }),
+        );
+        await user.click(
+          await screen.findByRole("menuitem", { name: /Tomorrow at 9/ }),
+        );
+      };
+      await user.type(box, "First");
+      await pick();
+      await user.type(box, "Second");
+      await pick();
+      expect(onSchedule).toHaveBeenCalledTimes(1);
+      expect(box).toHaveValue("Second");
+      expect(toastSpy).toHaveBeenCalledWith({
+        title: "Wait for the last message to finish scheduling.",
+      });
+      finish();
+    });
+
     it("offers no chevron without a way to schedule", () => {
       renderPanel();
       expect(

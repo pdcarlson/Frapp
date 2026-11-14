@@ -37,7 +37,11 @@ import { useMessageThread } from "@/lib/chat/use-message-thread";
 import { cn } from "@/lib/utils";
 import { PanelCloseButton } from "@/components/layout/tool-page-header";
 import { SendArrowGlyph } from "./chat-glyphs";
-import { ScheduleSendButton, ScheduledMessagesBar } from "./schedule-send";
+import {
+  SCHEDULE_COPY,
+  ScheduleSendButton,
+  ScheduledMessagesBar,
+} from "./schedule-send";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import { ChatBackground } from "./chat-background";
 import { GifPickerButton } from "./gif-picker";
@@ -58,7 +62,6 @@ import {
   type MentionPick,
 } from "@repo/validation";
 import { errorCopy } from "@repo/hooks/error-copy";
-import { formatScheduledFor } from "@repo/hooks";
 
 /**
  * The row writes the shell's channel hook makes (`useChatChannel`), each
@@ -349,15 +352,19 @@ export function ThreadPanel({
   // does, and the words come back on a failure if nothing new was typed.
   const scheduling = useRef(false);
   async function schedule(at: Date) {
-    if (!onSchedule || scheduling.current) return;
+    if (!onSchedule) return;
     const content = draft.trim();
-    const refusal = isOffline
-      ? "Reconnect to schedule a message."
-      : !content
-        ? "Type a message to schedule."
-        : (askRefusal?.(content) ?? null) !== null
-          ? "Questions for Frapp can't be scheduled. Send them now."
-          : null;
+    // The chevron is greyed offline and with no text, but a Custom time
+    // dialog opened before either can still submit.
+    const refusal = scheduling.current
+      ? SCHEDULE_COPY.busy
+      : isOffline
+        ? SCHEDULE_COPY.offline
+        : !content
+          ? SCHEDULE_COPY.empty
+          : (askRefusal?.(content) ?? null) !== null
+            ? SCHEDULE_COPY.askFrapp
+            : null;
     if (refusal) {
       toast({ title: refusal });
       throw new Error(refusal);
@@ -370,17 +377,17 @@ export function ThreadPanel({
       const untouched = !threadDrafts.get(draftKey);
       if (untouched) setDraft(content);
       toast({
-        title: "Couldn't schedule it",
+        title: SCHEDULE_COPY.failed,
         description: untouched
           ? errorCopy(error)
-          : `${errorCopy(error)} It couldn't be put back in the reply box.`,
+          : SCHEDULE_COPY.notPutBack(errorCopy(error), "reply box"),
         variant: "destructive",
       });
       throw error;
     } finally {
       scheduling.current = false;
     }
-    toast({ title: `Scheduled for ${formatScheduledFor(at, new Date())}` });
+    toast({ title: SCHEDULE_COPY.scheduled(at) });
   }
 
   // The channel composer's GIF button, in the thread's too (#4657): a GIF is
