@@ -17,7 +17,11 @@
 //      to do — merge origin/main itself, resolving conflicts if needed. The
 //      exception is a conflict only in the shipped-builds registry from a PR
 //      that only adds entries: its merge is mechanical, so the sweep pushes it
-//      itself with the app token (resolve-registry-conflict.mjs, #3783).
+//      itself with the app token (resolve-registry-conflict.mjs, #3783). So
+//      it does when every conflicted hunk is one where both sides only added
+//      lines: it keeps both, main's first, and pushes the merge
+//      (resolve-added-lines-conflict.mjs, 2026-11-14); a real conflict left
+//      anywhere in the PR gets the wake as before.
 //      Likewise a clean PR whose migrations now sort before main's newest
 //      (main took a later version first): the sweep merges main and renumbers
 //      them in one commit, as `npm run migration:renumber` would, and wakes no
@@ -49,7 +53,7 @@
 // lib/required-checks.mjs). A PR that is behind but merges cleanly can merge as
 // it is, so updating it would only restart its CI. While the flag is off the
 // sweep updates no clean PR and runs no slot: it handles conflicts (the wake,
-// or the registry merge) and migrations that no longer sort after main's (the
+// the registry merge, or the keep-both merge) and migrations that no longer sort after main's (the
 // renumber, or its wake), and clears wakes that no longer apply, and a slot
 // sweep (`mode: "checks"`) does nothing. Points 1 and 3 above, and the slot,
 // are what turning it back on restores. With nothing updated, the stale
@@ -74,9 +78,9 @@
 //   PR_BASE_SYNC_TOKEN  — optional GitHub App installation token (contents +
 //                         pull-requests write), minted in the workflow by
 //                         actions/create-github-app-token; writes only: update-branch,
-//                         and the registry merge's and the migration renumber's
-//                         tree, commit and non-forced ref update on a PR's head
-//                         branch (#3783, #4558)
+//                         and the registry merge's, the migration renumber's and
+//                         the keep-both merge's tree, commit and non-forced ref
+//                         update on a PR's head branch (#3783, #4558, 2026-11-14)
 //   GITHUB_REPOSITORY   — required, owner/repo
 //   GITHUB_REF_NAME     — required, the base branch that moved (main)
 //   GITHUB_SHA          — required, the new base tip
@@ -109,6 +113,7 @@ import {
   pushMigrationRenumber,
   readBaseMigrations,
 } from "./resolve-migration-order.mjs";
+import { planAddedLinesConflict, pushAddedLinesMerge } from "./resolve-added-lines-conflict.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { ALL_REQUIRED_CHECKS, REQUIRE_UP_TO_DATE } from "./lib/required-checks.mjs";
 import { ACCEPTED_CONCLUSIONS, fetchCheckRuns, latestRunsByName } from "./lib/check-runs.mjs";
@@ -679,8 +684,8 @@ export function isHeadMoved({ status, error }) {
  * (the slot sweep's rejected token, rate limit or stall).
  */
 /** A result that pushed to its PR (or lost the race to a push): it holds the slot. */
-// A renumber merges the base too (resolve-migration-order.mjs), so it is an update.
-const TAKES_SLOT = new Set(["updated", "raced", "registry-merged", "renumbered"]);
+// A renumber or a keep-both merge merges the base too, so it is an update.
+const TAKES_SLOT = new Set(["updated", "raced", "registry-merged", "renumbered", "added-lines-merged"]);
 
 async function runSlot({ queue, logger, tryUpdate, onHeld = async () => {}, fallback = async () => null }) {
   const results = [];
@@ -832,6 +837,11 @@ export async function processBaseMove({
   now = Date.now,
   // Branch protection's up-to-date rule; tests set it both ways.
   requireUpToDate = REQUIRE_UP_TO_DATE,
+  // The keep-both resolver for conflicts where both sides only added lines
+  // ({ plan, push }, resolve-added-lines-conflict.mjs). main() passes the real
+  // one; the tests pass a stub or none (null skips it), so the many conflict
+  // tests written before it don't have to mock its reads.
+  addedLines = null,
 }) {
   if (mode === "checks" && !requireUpToDate) {
     logger.log?.(
@@ -948,6 +958,7 @@ export async function processBaseMove({
       requireUpToDate,
       migrations,
       now,
+      addedLines,
     }).catch((error) => {
       logger.log?.(
         `[pr-base-sync] #${number}: unexpected error (${error.message}) — skipping, fail safe`,
@@ -1166,10 +1177,15 @@ async function reconcileTokenAlert({
   // that genuinely proves nothing, and it must not close a live alert. Nor does
   // a sweep whose behind PRs were all held behind the update slot (#3599): it
   // called update-branch on none of them, so "hit no failure" would be vacuous.
-  // Nor one whose only app-token write was a registry merge (#3783) or a migration
-  // renumber (#4558) that GitHub refused.
+  // Nor one whose only app-token write was a registry merge (#3783), a migration
+  // renumber (#4558) or a keep-both merge that GitHub refused.
   const untested = results.some(
-    (r) => r.action === "held" || r.action === "raced" || r.registryRefused || r.renumberRefused,
+    (r) =>
+      r.action === "held" ||
+      r.action === "raced" ||
+      r.registryRefused ||
+      r.renumberRefused ||
+      r.addedLinesRefused,
   );
   if (!updated && (!updateToken || untested)) return;
 
@@ -1227,6 +1243,7 @@ async function processOnePr({
   requireUpToDate = REQUIRE_UP_TO_DATE,
   migrations = sweepMigrations({ token, repo, baseSha, fetchImpl }),
   now = Date.now,
+  addedLines = null,
 }) {
   // An auto-merge PR was already read by assessAutoMergeQueue; reuse it,
   // including an unresolved mergeability (pr: null), which must not be polled
@@ -1261,6 +1278,7 @@ async function processOnePr({
 
   const postConflictComment = async () => {
     let registryRefused = false;
+    let addedLinesRefused = false;
     // A PR whose only change is new shipped-builds entries conflicts with every
     // other one that merges first, and its merge is mechanical (#3783). Only the
     // app token may push it: a push with GITHUB_TOKEN would start no CI.
@@ -1288,7 +1306,28 @@ async function processOnePr({
         // An app-token write failed: this sweep proves nothing about the token.
         registryRefused = true;
       } else {
-        logger.log?.(`[pr-base-sync] #${number}: conflict not resolved automatically: ${plan.reason}`);
+        logger.log?.(`[pr-base-sync] #${number}: not a registry-only conflict: ${plan.reason}`);
+      }
+    }
+    // Both sides only added lines at the same places: keep both and push, so
+    // no session wakes to do it by hand (2026-11-14 conflict plan).
+    if (updateToken && addedLines && !registryRefused) {
+      const plan = await addedLines.plan({ token, repo, pr, baseRef, baseSha, fetchImpl });
+      if (plan.ok) {
+        const fix = await addedLines.push({ token, pushToken: updateToken, repo, plan, baseRef, baseSha, fetchImpl });
+        if (fix.resolved) {
+          const cleared = await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
+          logger.log?.(
+            `[pr-base-sync] #${number}: both sides only added lines in ${plan.files.join(", ")} — kept both ` +
+              `(${plan.hunks} hunk(s)), merge commit ${fix.sha.slice(0, 12)}` +
+              `${cleared ? `, cleared ${cleared} stale wake comment(s)` : ""}`,
+          );
+          return { number, verdict: "conflict", action: "added-lines-merged" };
+        }
+        logger.log?.(`[pr-base-sync] #${number}: keep-both merge refused, so it gets the wake: ${fix.reason}`);
+        addedLinesRefused = true;
+      } else {
+        logger.log?.(`[pr-base-sync] #${number}: conflict left for a person: ${plan.reason}`);
       }
     }
     const wake = await postWakeComment({
@@ -1300,7 +1339,13 @@ async function processOnePr({
       fetchImpl,
       logger,
     });
-    return { number, verdict: "conflict", ...wake, ...(registryRefused ? { registryRefused } : {}) };
+    return {
+      number,
+      verdict: "conflict",
+      ...wake,
+      ...(registryRefused ? { registryRefused } : {}),
+      ...(addedLinesRefused ? { addedLinesRefused } : {}),
+    };
   };
 
   if (pr.mergeable === false) return postConflictComment();
@@ -1654,7 +1699,15 @@ async function main() {
   // A CI completion runs on the default branch's ref and tip, so baseRef and
   // baseSha still name `main`; only what the sweep may do changes.
   const mode = sweepModeFor(process.env.GITHUB_EVENT_NAME);
-  await processBaseMove({ token, updateToken, repo, baseRef, baseSha, mode });
+  await processBaseMove({
+    token,
+    updateToken,
+    repo,
+    baseRef,
+    baseSha,
+    mode,
+    addedLines: { plan: planAddedLinesConflict, push: pushAddedLinesMerge },
+  });
 }
 
 if (isInvokedDirectly(import.meta.url)) {
