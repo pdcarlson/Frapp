@@ -1,12 +1,10 @@
 import type { Middleware } from "openapi-fetch";
+import { INBOX_FIRST_PAGE_SIZE } from "@repo/validation";
 import { mintRequestId, REQUEST_ID_HEADER } from "./request-id";
 import type { components, paths } from "./types";
 
 /** A section `GET /v1/bootstrap` can answer. */
 export type BootstrapSection = keyof components["schemas"]["BootstrapDto"];
-
-/** The inbox page the bootstrap reads, and so the only one it can answer. */
-const BOOTSTRAP_NOTIFICATION_LIMIT = 50;
 
 /**
  * The reads `GET /v1/bootstrap` answers, by the route each stands in for
@@ -73,7 +71,7 @@ export function bootstrapSectionFor(
   );
   if (section === "notifications") {
     const onlyLimit = keys.length === 1 && keys[0] === "limit";
-    return onlyLimit && Number(query?.limit) === BOOTSTRAP_NOTIFICATION_LIMIT
+    return onlyLimit && Number(query?.limit) === INBOX_FIRST_PAGE_SIZE
       ? section
       : null;
   }

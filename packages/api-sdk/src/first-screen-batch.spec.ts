@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { INBOX_FIRST_PAGE_SIZE } from "@repo/validation";
 import { createFrappClient, REQUEST_ID_HEADER } from "./client";
 import {
   bootstrapSectionFor,
@@ -76,11 +77,17 @@ describe("bootstrapSectionFor", () => {
   });
 
   it("answers the inbox only at the page the bootstrap reads", () => {
-    expect(bootstrapSectionFor("GET", "/v1/notifications", { limit: 50 })).toBe(
-      "notifications",
-    );
+    // One definition in `@repo/validation`, which the API's bootstrap reads
+    // and `useNotifications` asks for by default (#4962).
     expect(
-      bootstrapSectionFor("GET", "/v1/notifications", { limit: 20 }),
+      bootstrapSectionFor("GET", "/v1/notifications", {
+        limit: INBOX_FIRST_PAGE_SIZE,
+      }),
+    ).toBe("notifications");
+    expect(
+      bootstrapSectionFor("GET", "/v1/notifications", {
+        limit: INBOX_FIRST_PAGE_SIZE - 1,
+      }),
     ).toBeNull();
     expect(
       bootstrapSectionFor("GET", "/v1/notifications", undefined),
