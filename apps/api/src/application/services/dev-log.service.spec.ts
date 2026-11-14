@@ -84,6 +84,16 @@ describe('validateDevLogEnv', () => {
 });
 
 describe('formatDevLogPost', () => {
+  // `formatDevLogPost` reads the clock to tell a fresh What's new entry from
+  // an old one, and NOTE is dated 2026-11-10: pinned, so the cases don't turn
+  // red as the calendar moves on (#4967).
+  beforeEach(() => {
+    jest.useFakeTimers({ now: new Date('2026-11-11T12:00:00.000Z') });
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it('says who started what, in which area, and who is already there', () => {
     expect(
       formatDevLogPost({
