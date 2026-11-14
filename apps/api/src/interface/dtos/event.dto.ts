@@ -324,21 +324,17 @@ export class CreateEventDto {
 }
 
 /**
- * Response contract for `POST /v1/events`.
+ * The event row as the API serves it: the shared body of the create, list and
+ * read responses.
  *
- * This route previously declared no response schema, which openapi-typescript
- * renders as `content?: never` — so `data` reached the SDK typed `never` and
- * `/event` could not read `card_posted` without an unchecked cast (#1717). The
- * event fields are flattened at the top level exactly as the route already
- * returned them: the **parent** row. Recurring children are side effects of
- * create and are not in this body; do not invent an `occurrences[]` field.
- *
- * Drift between this class and the event row is caught the same way as
- * `AdjustPointsResponseDto`: `implements Event` for type drift, and the
- * `Assert<Exclude<…>>` aliases below for key drift. `card_posted` is the one
- * deliberate extra field.
+ * These routes once declared no response schema, which openapi-typescript
+ * renders as `content?: never` (or no content at all), so callers cast the
+ * fields they read (#1717, #4867). Drift between this class and the event row
+ * is caught the same way as `AdjustPointsResponseDto`: `implements Event` for
+ * type drift, and the `Assert<Exclude<…>>` aliases at the end of this file for
+ * key drift.
  */
-export class CreateEventResponseDto implements Event {
+export class EventResponseDto implements Event {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
@@ -439,12 +435,32 @@ export class CreateEventResponseDto implements Event {
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;
+}
 
+/**
+ * Response contract for `POST /v1/events`: the **parent** row, flattened at the
+ * top level exactly as the route returns it. Recurring children are side
+ * effects of create and are not in this body; do not invent an
+ * `occurrences[]` field. `card_posted` is the one deliberate extra field.
+ */
+export class CreateEventResponseDto extends EventResponseDto {
   @ApiPropertyOptional({
     description:
       'Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the event row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch.',
   })
   card_posted?: boolean;
+}
+
+/**
+ * Response contract for `GET /v1/events/:id`: the row plus whether check-in
+ * now needs the officer's code (#4808).
+ */
+export class EventDetailResponseDto extends EventResponseDto {
+  @ApiProperty({
+    description:
+      "Whether checking in now needs the officer's rotating code, so a client says to scan rather than offering a Check in the server would refuse. False when it cannot be worked out; the check-in route stays the authority.",
+  })
+  check_in_needs_code: boolean;
 }
 
 /**
@@ -657,23 +673,23 @@ export class DeleteEventQueryDto {
 }
 
 /**
- * Compile-time key-drift guards between {@link CreateEventResponseDto} and the
+ * Compile-time key-drift guards between {@link EventResponseDto} and the
  * event row it publishes. Each resolves to `never` while the two agree; when
  * they diverge the alias stops satisfying `Assert`'s constraint and the build
  * fails naming the field.
  */
 type Assert<T extends never> = T;
 
-/** Event fields {@link CreateEventResponseDto} forgot to declare. Must be `never`. */
-export type CreateEventResponseDtoMissingFields = Assert<
-  Exclude<keyof Event, keyof CreateEventResponseDto>
+/** Event fields {@link EventResponseDto} forgot to declare. Must be `never`. */
+export type EventResponseDtoMissingFields = Assert<
+  Exclude<keyof Event, keyof EventResponseDto>
 >;
 
 /**
- * Fields {@link CreateEventResponseDto} declares that the event row does not
- * carry. Must be `never`. `card_posted` is excluded because it is this route's
- * own outcome flag, not a column — the one deliberate addition.
+ * Fields {@link EventResponseDto} declares that the event row does not carry.
+ * Must be `never`. Route-specific additions (`card_posted`,
+ * `check_in_needs_code`) live on the subclasses, not here.
  */
-export type CreateEventResponseDtoExtraFields = Assert<
-  Exclude<keyof CreateEventResponseDto, keyof Event | 'card_posted'>
+export type EventResponseDtoExtraFields = Assert<
+  Exclude<keyof EventResponseDto, keyof Event>
 >;

@@ -196,10 +196,7 @@ export function EventDetailSheet({
   const resolvedEvent = useMemo(() => {
     if (!event) return null;
     if (usingPreviewData) return event;
-    if (eventQuery.data && typeof eventQuery.data === "object") {
-      return eventQuery.data as EventRecord;
-    }
-    return event;
+    return eventQuery.data ?? event;
   }, [event, eventQuery.data, usingPreviewData]);
 
   const canMutate = !usingPreviewData && !eventQuery.isError;

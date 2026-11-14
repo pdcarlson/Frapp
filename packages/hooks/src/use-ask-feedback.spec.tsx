@@ -2,10 +2,14 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const client = vi.hoisted(() => ({ PUT: vi.fn(), DELETE: vi.fn() }));
+const client = vi.hoisted(() => ({
+  PUT: vi.fn(),
+  DELETE: vi.fn(),
+  POST: vi.fn(),
+}));
 vi.mock("./use-frapp-client", () => ({ useFrappClient: () => client }));
 
-import { useAskThumbs } from "./use-ask-feedback";
+import { useAskSignal, useAskThumbs } from "./use-ask-feedback";
 
 const ok = { data: {}, response: { ok: true, status: 200 } };
 const down = { error: { code: "x" }, response: { ok: false, status: 500 } };
@@ -103,5 +107,26 @@ describe("useAskThumbs", () => {
     act(() => result.current.rate("up"));
     expect(result.current.state.rating).toBeNull();
     expect(client.PUT).not.toHaveBeenCalled();
+  });
+});
+
+describe("useAskSignal", () => {
+  it("sends one word against the answer's id, and swallows a failure", async () => {
+    client.POST.mockReset().mockRejectedValue(new TypeError("offline"));
+    const { result } = renderHook(() => useAskSignal());
+    act(() => result.current("ask-1", "source_opened"));
+    await act(async () => {});
+    expect(client.POST).toHaveBeenCalledWith("/v1/ai/ask/{ask_id}/signals", {
+      ...PATH,
+      body: { signal: "source_opened" },
+    });
+  });
+
+  it("sends nothing for an answer with no kept trace", async () => {
+    client.POST.mockReset();
+    const { result } = renderHook(() => useAskSignal());
+    act(() => result.current(null, "source_opened"));
+    await act(async () => {});
+    expect(client.POST).not.toHaveBeenCalled();
   });
 });

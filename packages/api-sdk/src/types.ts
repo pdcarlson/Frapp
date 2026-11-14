@@ -1963,6 +1963,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every thread the caller follows or muted, across channels, newest activity first, with new-reply counts */
+        get: operations["MemberThreadController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chat-backgrounds/channels/{id}": {
         parameters: {
             query?: never;
@@ -2163,6 +2180,59 @@ export interface paths {
         get: operations["GifController_search_v1"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scheduled-messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the caller's scheduled messages in this chapter (pending and failed), soonest first */
+        get: operations["ChatScheduledMessageController_list_v1"];
+        put?: never;
+        /** Schedule a text message to post later */
+        post: operations["ChatScheduledMessageController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/scheduled-messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a scheduled message before it posts */
+        delete: operations["ChatScheduledMessageController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Change a scheduled message’s text or time (a failed one goes back in line) */
+        patch: operations["ChatScheduledMessageController_update_v1"];
+        trace?: never;
+    };
+    "/v1/scheduled-messages/{id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post a scheduled message now */
+        post: operations["ChatScheduledMessageController_sendNow_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6962,6 +7032,23 @@ export interface components {
         ThreadReadDto: {
             last_read_at: string;
         };
+        MemberThreadDto: {
+            /** Format: uuid */
+            thread_root_id: string;
+            /** @enum {string} */
+            state: "following" | "muted";
+            last_read_at: string | null;
+            /** @description Replies new to the caller; always 0 when muted. */
+            unread_count: number;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description When the newest reply landed; null before any reply. */
+            last_reply_at: string | null;
+            /** @description Replies in the thread, deleted ones included. */
+            reply_count: number;
+            /** @description The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier. */
+            root: components["schemas"]["ChatMessageDto"];
+        };
         ChatBackgroundResponseDto: {
             /**
              * @description What to draw behind the messages column.
@@ -7081,6 +7168,51 @@ export interface components {
             results: components["schemas"]["GifResultDto"][];
             next_page: number | null;
         };
+        ScheduledMessageDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            channel_id: string;
+            content: string;
+            mention_picks: components["schemas"]["MentionPickDto"][] | null;
+            /** Format: date-time */
+            send_at: string;
+            /**
+             * @description `failed`: it did not post at its time. Edit it to try again, or delete it.
+             * @enum {string}
+             */
+            status: "pending" | "failed";
+            /**
+             * @description Why a failed message did not post: `no_access` the author can no longer post there; `chapter_locked` the chapter is read-only for billing; `not_sendable` the channel refused the message; `send_failed` it kept failing.
+             * @enum {string|null}
+             */
+            failure_reason: "no_access" | "chapter_locked" | "not_sendable" | "send_failed" | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreateScheduledMessageDto: {
+            /**
+             * Format: uuid
+             * @description The channel or DM to post in.
+             */
+            channel_id: string;
+            content: string;
+            /**
+             * Format: date-time
+             * @description When to post it: a date-time with its offset (`Z` or `±hh:mm`), at most 120 days ahead. The client picks it on the member’s own clock.
+             */
+            send_at: string;
+            mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
+        UpdateScheduledMessageDto: {
+            content?: string;
+            /** Format: date-time */
+            send_at?: string;
+            /** @description The `@` picks for the new `content`; read only with it. */
+            mention_picks?: components["schemas"]["MentionPickDto"][];
+        };
         EventAgendaItemDto: {
             /** @description The client's id for the item, so it keeps its place while the list is reordered or checked off. Unique within the event. */
             id: string;
@@ -7106,6 +7238,98 @@ export interface components {
         GeofenceCoordinateDto: {
             lat: number;
             lng: number;
+        };
+        EventResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            point_value: number;
+            is_mandatory: boolean;
+            recurrence_rule: string | null;
+            /** Format: uuid */
+            parent_event_id: string | null;
+            required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
+            notes: string | null;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments: components["schemas"]["EventAttachmentDto"][];
+            /** @description Optional check-in geofence. `null` means the event has no zone. */
+            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
+            check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             */
+            event_type_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        EventDetailResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            name: string;
+            description: string | null;
+            location: string | null;
+            /** Format: date-time */
+            start_time: string;
+            /** Format: date-time */
+            end_time: string;
+            point_value: number;
+            is_mandatory: boolean;
+            recurrence_rule: string | null;
+            /** Format: uuid */
+            parent_event_id: string | null;
+            required_role_ids: string[] | null;
+            optional_role_ids: string[] | null;
+            excluded_role_ids: string[] | null;
+            /** @description Null on a row written without it: read it as true unless `required_role_ids` is non-empty (`eventOthersInvited` in `@repo/validation`). */
+            others_invited: boolean | null;
+            notes: string | null;
+            /** @description This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none. */
+            agenda: components["schemas"]["EventAgendaItemDto"][];
+            /** @description This meeting's attachments, in order: at most 10 titled links or Chapter Files documents. Sent whole; it replaces the stored list, and `[]` clears it. Per meeting, like `agenda`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since. */
+            attachments: components["schemas"]["EventAttachmentDto"][];
+            /** @description Optional check-in geofence. `null` means the event has no zone. */
+            check_in_zone: components["schemas"]["GeofenceCoordinateDto"][] | null;
+            check_in_zone_name: string | null;
+            /** @description Minutes before start_time that check-in opens; it closes 15 minutes after end_time. */
+            check_in_opens_minutes: number;
+            /**
+             * Format: uuid
+             * @description The chapter's event type this was made as, or null. Cleared when the type is deleted.
+             */
+            event_type_id: string | null;
+            /**
+             * Format: uuid
+             * @description Who made the event. Null for events made before it was recorded.
+             */
+            created_by: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @description Whether checking in now needs the officer's rotating code, so a client says to scan rather than offering a Check in the server would refuse. False when it cannot be worked out; the check-in route stays the authority. */
+            check_in_needs_code: boolean;
         };
         CreateEventDto: {
             name: string;
@@ -14465,6 +14689,34 @@ export interface operations {
             };
         };
     };
+    MemberThreadController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberThreadDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChatBackgroundController_getForChannel_v1: {
         parameters: {
             query?: never;
@@ -14900,6 +15152,161 @@ export interface operations {
             };
         };
     };
+    ChatScheduledMessageController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only this channel’s; every channel’s when left out. */
+                channel_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledMessageDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateScheduledMessageDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateScheduledMessageDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatScheduledMessageController_sendNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     EventController_list_v1: {
         parameters: {
             query?: never;
@@ -14913,7 +15320,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EventResponseDto"][];
+                };
             };
             /** @description Error */
             default: {
@@ -14973,7 +15382,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["EventDetailResponseDto"];
+                };
             };
             /** @description Error */
             default: {

@@ -581,6 +581,7 @@ describe("the Ask hooks", () => {
       expect(POST.mock.calls[1]![1].body).toMatchObject({
         question: "From a channel?",
         door: "chat_private",
+        from: { channel_id: "c1" },
       });
     });
 

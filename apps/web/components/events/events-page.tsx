@@ -341,12 +341,10 @@ export function EventsPage() {
     enabled: Boolean(activeChapterId),
   });
 
-  const events = useMemo(() => {
-    if (Array.isArray(eventsQuery.data)) {
-      return eventsQuery.data as EventRow[];
-    }
-    return [];
-  }, [eventsQuery.data]);
+  const events = useMemo<EventRow[]>(
+    () => eventsQuery.data ?? [],
+    [eventsQuery.data],
+  );
 
   // Reopen the editor the page was left with (#4593), once this viewer could
   // open it from the page: the create or edit permission and the

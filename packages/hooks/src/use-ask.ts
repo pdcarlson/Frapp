@@ -135,10 +135,10 @@ export function useSetAskDiagnostics() {
       return result.data;
     },
     onSuccess: (diagnostics) => {
-      queryClient.setQueryData(
-        askStatusKey(chapterId),
-        (): AskStatus => ({ saved_until: diagnostics.ends_at, diagnostics }),
-      );
+      queryClient.setQueryData(askStatusKey(chapterId), (): AskStatus => ({
+        saved_until: diagnostics.ends_at,
+        diagnostics,
+      }));
     },
     onError: () => {
       // Already on in another tab, or the presidency moved: read it again.
@@ -564,7 +564,11 @@ function useAskConversation(): AskConversation {
   );
 
   const run = useCallback(
-    async (question: string, options: AskOptions | undefined, drop?: string) => {
+    async (
+      question: string,
+      options: AskOptions | undefined,
+      drop?: string,
+    ) => {
       const trimmed = question.trim();
       if (!trimmed) return;
       // One question at a time: a turn still waiting is abandoned.
@@ -648,6 +652,11 @@ function useAskConversation(): AskConversation {
             // Only the new door is named: a server from before #4713
             // refuses a field it does not know, and "ask" is its default.
             ...(origin ? { door: "chat_private" as const } : {}),
+            // What the member had open, so "this channel" means something
+            // to the tool loop (#4904). Ask's own screen sends none. A server
+            // from before #4941 refuses the field; web deploys with the API
+            // and a phone build or update ships only after its API has.
+            ...(origin ? { from: { channel_id: origin.channelId } } : {}),
           },
           parseAs: "stream",
           signal: abort.signal,
@@ -673,7 +682,8 @@ function useAskConversation(): AskConversation {
           );
           return;
         }
-        const body = result.data as ReadableStream<Uint8Array> | null | undefined;
+        const body = result.data as
+          ReadableStream<Uint8Array> | null | undefined;
         if (!body) {
           update((current) => failed(current, ASK_COPY.failed));
           return;
@@ -686,7 +696,9 @@ function useAskConversation(): AskConversation {
         while (!ended) {
           const { done, value } = await reader.read();
           if (done) break;
-          for (const event of frames.feed(decoder.decode(value, { stream: true }))) {
+          for (const event of frames.feed(
+            decoder.decode(value, { stream: true }),
+          )) {
             update((current) => applyAskEvent(current, event));
             if (
               event.type === "done" ||

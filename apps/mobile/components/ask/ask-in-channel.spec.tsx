@@ -19,6 +19,7 @@ const hooks = vi.hoisted(() => ({
   exchanges: [] as unknown[],
   ask: vi.fn(),
   retry: vi.fn(),
+  signal: vi.fn(),
   dismiss: vi.fn(),
   hasAsk: true,
   mayAct: false,
@@ -57,6 +58,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     reset: vi.fn(),
   }),
   useDocumentDownloadUrl: () => ({ mutateAsync: vi.fn() }),
+  useAskSignal: () => hooks.signal,
 }));
 
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
