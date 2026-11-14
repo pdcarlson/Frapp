@@ -585,7 +585,16 @@ function useAskConversation(): AskConversation {
       const abort = new AbortController();
       inFlight.current = abort;
       const id = `turn-${(nextExchange += 1)}`;
-      const earlier = latest.current.filter((exchange) => exchange.id !== drop);
+      // A turn asked again (Try again, Think harder) is answered where it
+      // stands: the turns after it keep their place, and only the turns
+      // before it are sent as the conversation so far, as they were the
+      // first time. So its answer is no more a follow-up than it was.
+      const at = drop
+        ? latest.current.findIndex((exchange) => exchange.id === drop)
+        : -1;
+      const earlier =
+        at >= 0 ? latest.current.slice(0, at) : latest.current.slice();
+      const later = at >= 0 ? latest.current.slice(at + 1) : [];
       const history = askHistoryOf(earlier);
       // A turn asked again stays where it was first asked: its place in the
       // channel, or Ask's own screen.
@@ -603,18 +612,9 @@ function useAskConversation(): AskConversation {
           : undefined;
       const effort = options?.effort ?? again?.effort;
       // Think harder on an answer is counted against that answer's kept
-      // trace (`think_harder`): one word, and a count that fails is dropped.
-      const replaced = again?.answer?.ask_id;
-      if (options?.effort === "more" && replaced) {
-        void Promise.resolve()
-          .then(() =>
-            client.POST("/v1/ai/ask/{ask_id}/signals", {
-              params: { path: { ask_id: replaced } },
-              body: { signal: "think_harder" },
-            }),
-          )
-          .catch(() => undefined);
-      }
+      // trace (`think_harder`), once the harder question is really sent.
+      const replaced =
+        options?.effort === "more" ? again?.answer?.ask_id : undefined;
       /** Applies a change unless this turn was abandoned. */
       const update = (change: (current: AskExchange) => AskExchange) => {
         if (inFlight.current === abort) patch(id, change);
@@ -639,6 +639,7 @@ function useAskConversation(): AskConversation {
           ...(origin ? { origin } : {}),
           ...(effort === "more" ? { effort } : {}),
         },
+        ...later,
       ]);
 
       try {
@@ -664,6 +665,17 @@ function useAskConversation(): AskConversation {
           }
           if (abort.signal.aborted) return;
           update((current) => ({ ...current, step: "searching" }));
+        }
+        if (replaced) {
+          // One word, and a count that fails is dropped.
+          void Promise.resolve()
+            .then(() =>
+              client.POST("/v1/ai/ask/{ask_id}/signals", {
+                params: { path: { ask_id: replaced } },
+                body: { signal: "think_harder" },
+              }),
+            )
+            .catch(() => undefined);
         }
         const result = await client.POST("/v1/ai/ask", {
           body: {

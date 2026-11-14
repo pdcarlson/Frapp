@@ -594,6 +594,39 @@ describe("the Ask hooks", () => {
       expect(result.current.exchanges[0]!.effort).toBe("more");
     });
 
+    it("answers an older turn where it stands, with only the turns before it as history", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("First?", { channelId: "c1" }));
+      await act(() => result.current.ask("Second?"));
+      await act(() =>
+        result.current.retry(result.current.exchanges[0]!.id, { effort: "more" }),
+      );
+      expect(result.current.exchanges.map((turn) => turn.question)).toEqual([
+        "First?",
+        "Second?",
+      ]);
+      const harder = POST.mock.calls.filter(([path]) => path === "/v1/ai/ask")[2]![1].body;
+      expect(harder.question).toBe("First?");
+      expect(harder.history).toBeUndefined();
+      // Still the conversation's first question, so still one a channel can be given.
+      expect(result.current.exchanges[0]!.followedUp).toBeUndefined();
+      expect(result.current.exchanges[0]!.origin?.channelId).toBe("c1");
+    });
+
+    it("counts nothing when the member declines the AI question", async () => {
+      const POST = answering();
+      const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
+      await act(() => result.current.ask("What is quorum?"));
+      await act(() =>
+        result.current.retry(result.current.exchanges[0]!.id, {
+          effort: "more",
+          gate: () => Promise.resolve(false),
+        }),
+      );
+      expect(POST.mock.calls.filter(([path]) => path !== "/v1/ai/ask")).toHaveLength(0);
+    });
+
     it("keeps the effort when the harder turn is asked again, without counting twice", async () => {
       const POST = answering();
       const { result } = renderHook(() => useAsk(), { wrapper: wrapper({ POST }) });
