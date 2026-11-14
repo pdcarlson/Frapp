@@ -18,11 +18,18 @@
 // "Keep both" can still produce broken code, so a hunk is refused when:
 //   * both sides add the same line (other than blanks and lone punctuation),
 //     after lines the two blocks share at their edges are kept once;
-//   * outside prose, both sides add the same name: an import, an export, an
-//     object, JSON or YAML key, an identifier alone on its line (keyCollisions);
+//   * outside prose, both sides add the same name, in one hunk or across the
+//     file's hunks: an import, a declaration, an object, JSON or YAML key, an
+//     enum member, an identifier alone on its line (keyCollisions);
 //   * in code or data, either block's brackets don't balance on their own, so it
 //     is a fragment of something larger that keep-both could interleave;
-//   * in Markdown, either block opens or closes a code fence.
+//   * in Markdown, either block opens or closes a code fence;
+//   * the branch's block is indented deeper than main's, so placing it after
+//     main's would make it a child of main's lines (YAML, nested lists);
+//   * an insertion sits next to lines equal to its edges, so it could sit a
+//     line higher or lower and git might place it elsewhere: the file is
+//     merged with every insertion slid up and again slid down, and the two
+//     must agree.
 // And a PR is refused when:
 //   * a file both sides changed is not a text file all three commits have with
 //     one mode (modify/delete, add/add, binary, a mode change, a submodule);
@@ -30,6 +37,8 @@
 //     those), or a merged JSON file no longer parses;
 //   * this merge finds no conflict where GitHub found one: the two disagree, so
 //     a person looks;
+//   * auto-merge is on: the sweep's resolution would merge with no one reading it;
+//   * a version of a file both sides changed is not UTF-8;
 //   * the head branch is in a fork, or the branch changes `.github/workflows`:
 //     the base-sync App has no Workflows permission, and GitHub refuses it a ref
 //     whose workflows differ from main's (resolve-migration-order.mjs);
@@ -45,7 +54,9 @@
 // App token is in the job. Three recursive tree reads (merge base, head, base)
 // say which files each side changed. A file only the branch changed takes the
 // branch's blob; a file both changed gets a line-level three-way merge (diff3)
-// of its three blobs. The push is the registry merge's: one tree on the base's,
+// of its three blobs. Replayed on the 42 merges of main into PR branches from
+// 2026-11-11 to 11-14, it matched git's result on all 200 files both sides
+// changed that git merged cleanly, and settled 18 of the 57 conflicted files. The push is the registry merge's: one tree on the base's,
 // one two-parent commit (the head, then the base), and a non-forced ref update,
 // so a head that moved since it was read refuses it.
 
@@ -77,7 +88,8 @@ const PROSE = /\.(md|mdx|markdown|txt)$/i;
 
 /**
  * For each line of `a`, the index of the line of `b` it matches in a shortest
- * edit script (Myers, as git diffs by default), or -1. Null when the two differ
+ * edit script (Myers, `git diff`'s default; git's merge uses histogram, which can
+ * place an insertion differently, hence slideInsertions), or -1. Null when the two differ
  * in too many lines to trace. Pure.
  */
 export function lcsMatches(a, b) {
@@ -148,15 +160,63 @@ export function lcsMatches(a, b) {
 }
 
 /**
+ * Move every pure insertion in a match (`lcsMatches`) as far up, or down, as
+ * equal lines allow. An insertion next to lines equal to its own edges (a blank
+ * line, a closing brace) has no one right place: `a,"",X,""` against `a,""`
+ * is X added after the blank or before it, and git's merge may pick the other
+ * one. Pure.
+ *
+ * @param {Int32Array} match base index to `b` index, or -1
+ * @param {string[]} b the side the match points into
+ * @param {"up" | "down"} direction
+ */
+export function slideInsertions(match, b, direction) {
+  const m = Int32Array.from(match);
+  const n = m.length;
+  const at = (i) => (i < 0 ? -1 : i >= n ? b.length : m[i]);
+  if (direction === "up") {
+    let prev = -1;
+    for (let i = 0; i <= n; i++) {
+      if (i < n && m[i] < 0) continue;
+      if (prev === i - 1 && at(i) > at(prev) + 1) {
+        // b[s..e) is inserted between base lines prev and i.
+        let s = at(prev) + 1;
+        let e = at(i);
+        for (let k = prev; k >= 0 && at(k) === s - 1 && b[s - 1] === b[e - 1]; k--) {
+          m[k] = e - 1;
+          s--;
+          e--;
+        }
+      }
+      prev = i;
+    }
+  } else {
+    let next = n;
+    for (let i = n - 1; i >= -1; i--) {
+      if (i >= 0 && m[i] < 0) continue;
+      if (next === i + 1 && at(next) > at(i) + 1) {
+        let s = at(i) + 1;
+        let e = at(next);
+        for (let k = next; k < n && at(k) === e && b[s] === b[e]; k++) {
+          m[k] = s;
+          s++;
+          e++;
+        }
+      }
+      next = i;
+    }
+  }
+  return m;
+}
+
+/**
  * Three-way merge of line arrays: stable runs where all three agree, and
  * between them the region each side changed, taken from whichever side changed
  * it (or either, when both made the same change), else a conflict. Pure.
  *
  * @returns {Array<{ ok: string[] } | { conflict: { ours: string[], base: string[], theirs: string[] } }> | null}
  */
-export function diff3(base, ours, theirs) {
-  const mo = lcsMatches(base, ours);
-  const mt = lcsMatches(base, theirs);
+export function diff3(base, ours, theirs, { mo = lcsMatches(base, ours), mt = lcsMatches(base, theirs) } = {}) {
   if (!mo || !mt) return null;
   const chunks = [];
   const same = (x, y) => x.length === y.length && x.every((l, k) => l === y[k]);
@@ -204,9 +264,41 @@ export function diff3(base, ours, theirs) {
  */
 export function mergeFile({ path, base, ours, theirs }) {
   if ([base, ours, theirs].some((t) => t.includes("\0"))) return { ok: false, reason: `${path} is binary` };
-  const chunks = diff3(base.split("\n"), ours.split("\n"), theirs.split("\n"));
-  if (!chunks) return { ok: false, reason: `${path} changed too much on both sides to compare line by line` };
+  const lines = { base: base.split("\n"), ours: ours.split("\n"), theirs: theirs.split("\n") };
+  const mo = lcsMatches(lines.base, lines.ours);
+  const mt = lcsMatches(lines.base, lines.theirs);
+  if (!mo || !mt) return { ok: false, reason: `${path} changed too much on both sides to compare line by line` };
+  // Where an insertion could sit one line higher or lower, git may place it
+  // differently, and the merge (and where keep-both puts the branch's lines)
+  // depends on it. Merge with every insertion slid up, then down: only an
+  // answer both agree on is unambiguous.
+  const up = settle(path, diff3(lines.base, lines.ours, lines.theirs, {
+    mo: slideInsertions(mo, lines.ours, "up"),
+    mt: slideInsertions(mt, lines.theirs, "up"),
+  }));
+  if (!up.ok) return up;
+  const down = settle(path, diff3(lines.base, lines.ours, lines.theirs, {
+    mo: slideInsertions(mo, lines.ours, "down"),
+    mt: slideInsertions(mt, lines.theirs, "down"),
+  }));
+  if (!down.ok) return down;
+  if (up.text !== down.text || up.hunks !== down.hunks) {
+    return { ok: false, reason: `${path} has an insertion next to equal lines that could sit in more than one place` };
+  }
+  if (up.hunks > 0 && /\.json$/i.test(path)) {
+    try {
+      JSON.parse(up.text);
+    } catch {
+      return { ok: false, reason: `${path} would not parse as JSON after keeping both` };
+    }
+  }
+  return up;
+}
+
+/** Turn diff3's chunks into the merged text, keeping both in each conflict. Pure. */
+function settle(path, chunks) {
   const out = [];
+  const added = { ours: [], theirs: [] };
   let hunks = 0;
   for (const chunk of chunks) {
     if (chunk.ok) {
@@ -219,17 +311,18 @@ export function mergeFile({ path, base, ours, theirs }) {
     const verdict = keepBoth({ ...chunk.conflict, path });
     if (!verdict.ok) return verdict;
     out.push(...verdict.lines);
+    added.ours.push(...chunk.conflict.ours);
+    added.theirs.push(...chunk.conflict.theirs);
     hunks++;
   }
-  const text = out.join("\n");
-  if (hunks > 0 && /\.json$/i.test(path)) {
-    try {
-      JSON.parse(text);
-    } catch {
-      return { ok: false, reason: `${path} would not parse as JSON after keeping both` };
+  // The same name added in two different hunks of one file is a duplicate too.
+  if (hunks > 1 && !PROSE.test(path)) {
+    const collisions = keyCollisions(added.ours, added.theirs);
+    if (collisions.length) {
+      return { ok: false, reason: `${path}: both sides add ${collisions.map((k) => `\`${k}\``).join(", ")}` };
     }
   }
-  return { ok: true, text, hunks };
+  return { ok: true, text: out.join("\n"), hunks };
 }
 
 const meaningful = (line) => line.trim() !== "" && !/^[\s\p{P}\p{S}]*$/u.test(line);
@@ -272,6 +365,15 @@ export function keepBoth({ ours, theirs, path }) {
       }
     }
   }
+  // Main's block goes first, so the branch's now follows main's last line. A
+  // branch block indented deeper than main's would become its child: a YAML
+  // key under main's new key, a nested bullet under main's new bullet.
+  const indent = (l) => /^[ \t]*/.exec(l)[0].replace(/\t/g, "    ").length;
+  const firstOurs = a.find((l) => l.trim() !== "");
+  const theirsLines = b.filter((l) => l.trim() !== "");
+  if (firstOurs !== undefined && theirsLines.length && indent(firstOurs) > Math.min(...theirsLines.map(indent))) {
+    return { ok: false, reason: `${path}: the branch's added lines would nest under main's` };
+  }
   return { ok: true, lines: [...prefix, ...b, ...a, ...suffix] };
 }
 
@@ -285,9 +387,11 @@ const NAMED_LIST = new RegExp(`^\\s*(?:import|export)\\s+(?:type\\s+)?(?:${IDENT
 const DEFAULT_IMPORT = new RegExp(`^\\s*import\\s+(?:type\\s+)?(${IDENT})\\s*(?:,|from\\b)`);
 const NAMESPACE = new RegExp(`^\\s*(?:import|export)\\s+\\*\\s+as\\s+(${IDENT})`);
 const DECLARATION = new RegExp(
-  `^\\s*export\\s+(?:default\\s+)?(?:declare\\s+)?(?:async\\s+)?(?:abstract\\s+)?` +
+  `^\\s*(?:export\\s+)?(?:default\\s+)?(?:declare\\s+)?(?:async\\s+)?(?:abstract\\s+)?` +
     `(?:const|let|var|function\\*?|class|type|interface|enum|namespace)\\s+(${IDENT})`,
 );
+// `Name = value,` alone on its line: an enum member.
+const MEMBER = new RegExp(`^\\s*(${IDENT})\\s*=(?!=)[^;]*,?\\s*$`);
 // `key:` in an object, JSON or YAML, quoted or not, optionally `key?:` (a TS
 // member). `::` and `://` are not keys.
 const KEY = /^\s*(?:-\s+)?["']?([\w$@.-]+)["']?\??\s*:(?!:|\/\/)/;
@@ -310,7 +414,7 @@ export function namesOf(line) {
     if (m) names.push(m[1]);
   }
   if (names.length === 0) {
-    const key = KEY.exec(line) ?? BARE.exec(line);
+    const key = KEY.exec(line) ?? BARE.exec(line) ?? MEMBER.exec(line);
     if (key) names.push(key[1]);
   }
   return names;
@@ -377,6 +481,9 @@ export async function planAddedLinesConflict({ token, repo, pr, baseRef, baseSha
     return { ok: false, reason: "the head branch is not in this repository" };
   }
   if (branch === baseRef) return { ok: false, reason: "the head branch is the base branch" };
+  // Auto-merge would land the sweep's own resolution with nobody reading it;
+  // without it, Paul's review of the PR still sees the merge commit.
+  if (pr.auto_merge) return { ok: false, reason: "auto-merge is on, so a person resolves it before it merges" };
   const call = ghCaller({ token, fetchImpl });
   try {
     const compare = await call("GET", `/repos/${repo}/compare/${baseSha}...${headSha}`);
@@ -428,7 +535,12 @@ export async function planAddedLinesConflict({ token, repo, pr, baseRef, baseSha
     }
     const blob = async (sha) => {
       const data = await call("GET", `/repos/${repo}/git/blobs/${sha}`);
-      return Buffer.from(data?.content ?? "", data?.encoding === "base64" ? "base64" : "utf8").toString("utf8");
+      const bytes = Buffer.from(data?.content ?? "", data?.encoding === "base64" ? "base64" : "utf8");
+      const text = bytes.toString("utf8");
+      // The merged file goes back as a string; one that isn't UTF-8 would
+      // come back with replacement characters.
+      if (!Buffer.from(text, "utf8").equals(bytes)) throw new Error(`a version of a file both sides changed is not UTF-8 text`);
+      return text;
     };
     const files = [];
     let hunks = 0;
@@ -462,13 +574,16 @@ export async function planAddedLinesConflict({ token, repo, pr, baseRef, baseSha
 /**
  * Push a planned merge: a tree on the base's with the branch's changes and the
  * merged files, a two-parent commit (the PR head, then the base), and a
- * non-forced ref update. Reads through `token`; writes through `pushToken` (the
+ * non-forced ref update, after reading the head again. Reads through `token`;
+ * writes through `pushToken` (the
  * base-sync App's), because only a push through it starts the PR's CI.
  *
  * @returns {Promise<{ resolved: true, sha: string } | { resolved: false, reason: string }>}
  */
-export async function pushAddedLinesMerge({ pushToken, repo, plan, baseRef, baseSha, fetchImpl = fetch }) {
+export async function pushAddedLinesMerge({ token, pushToken, repo, plan, baseRef, baseSha, fetchImpl = fetch }) {
+  const read = ghCaller({ token, fetchImpl });
   const write = ghCaller({ token: pushToken, fetchImpl });
+  const ref = plan.branch.split("/").map(encodeURIComponent).join("/");
   try {
     const tree = await write("POST", `/repos/${repo}/git/trees`, { base_tree: plan.baseTree, tree: plan.entries });
     const commit = await write("POST", `/repos/${repo}/git/commits`, {
@@ -480,8 +595,15 @@ export async function pushAddedLinesMerge({ pushToken, repo, plan, baseRef, base
       tree: tree?.sha,
       parents: [plan.headSha, baseSha],
     });
-    // Not forced: a head that moved since it was read refuses the update.
-    const ref = plan.branch.split("/").map(encodeURIComponent).join("/");
+    // Not forced, so a head that moved on since it was read refuses the update.
+    // A head moved BACK (a force-push that dropped a commit) would still take it
+    // as a fast-forward and get the dropped commit back, so the head is read
+    // again first, as the migration renumber does (#4589). That narrows the
+    // window rather than closing it: REST has no compare-and-swap on a ref.
+    const now = await read("GET", `/repos/${repo}/git/ref/heads/${ref}`);
+    if (now?.object?.sha !== plan.headSha) {
+      return { resolved: false, reason: `the branch moved since the sweep read it (now ${String(now?.object?.sha).slice(0, 12)})` };
+    }
     await write("PATCH", `/repos/${repo}/git/refs/heads/${ref}`, { sha: commit?.sha, force: false });
     return { resolved: true, sha: commit.sha };
   } catch (error) {

@@ -475,6 +475,51 @@ test("a refused keep-both push falls back to the wake and marks the sweep untest
   assert.ok(calls.some((c) => c.method === "POST" && c.url.includes("/issues/52/comments")));
 });
 
+test("a keep-both merge clears the PR's stale wake, so its session doesn't redo the merge", async () => {
+  const pr = makePr(54, { mergeable: false, mergeable_state: "dirty" });
+  const { addedLines } = addedLinesStub({
+    plan: { ok: true, commit: "8".repeat(40), branch: pr.head.ref, headSha: pr.head.sha, files: ["a.ts"], hunks: 1 },
+  });
+  const stale = [{ id: 961, body: `${BASE_SYNC_MARKER}\nold wake` }];
+  const routes = conflictRoutes(pr).filter((r) => r !== emptyCommentsRoute);
+  const { calls } = await sweep({
+    routes: [...routes, { method: "GET", path: "/comments", body: stale }, { method: "DELETE", path: "/issues/comments/961", body: {} }],
+    updateToken: "pat",
+    addedLines,
+    requireUpToDate: false,
+  });
+  assert.ok(calls.some((c) => c.method === "DELETE" && c.url.includes("/issues/comments/961")));
+});
+
+test("after a refused registry merge the keep-both resolver is not asked: one refused write per PR", async () => {
+  const pr = makePr(55, { mergeable: false, mergeable_state: "dirty" });
+  const { addedLines, seen } = addedLinesStub({ plan: { ok: true } });
+  const routes = registryConflictRoutes(pr, [{ filename: REGISTRY }]).map((r) =>
+    r.method === "PATCH" ? { ...r, status: 403, body: { message: "Resource not accessible by integration" } } : r,
+  );
+  await sweep({
+    routes: [...routes, { method: "POST", path: "/issues/55/comments", status: 201, body: { id: 1 } }],
+    updateToken: "pat",
+    addedLines,
+    requireUpToDate: false,
+  });
+  assert.equal(seen.plans.length, 0);
+});
+
+test("a refused keep-both push never closes the token alert", async () => {
+  const pr = makePr(56, { mergeable: false, mergeable_state: "dirty" });
+  const { addedLines } = addedLinesStub({
+    plan: { ok: true, commit: "8".repeat(40), branch: pr.head.ref, headSha: pr.head.sha, files: ["a.ts"], hunks: 1 },
+    push: { resolved: false, reason: "POST /git/trees failed (HTTP 403)" },
+  });
+  const { calls } = await sweep({
+    routes: [...conflictRoutes(pr), { method: "POST", path: "/issues/56/comments", status: 201, body: { id: 4 } }, ...openAlertRoutes],
+    updateToken: "app",
+    addedLines,
+  });
+  assert.ok(!calls.some((c) => c.method === "PATCH" && c.url.includes("/issues/900")));
+});
+
 test("without the app token the keep-both resolver is never asked", async () => {
   const pr = makePr(53, { mergeable: false, mergeable_state: "dirty" });
   const { addedLines, seen } = addedLinesStub({ plan: { ok: true } });

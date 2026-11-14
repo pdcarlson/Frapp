@@ -53,7 +53,7 @@
 // lib/required-checks.mjs). A PR that is behind but merges cleanly can merge as
 // it is, so updating it would only restart its CI. While the flag is off the
 // sweep updates no clean PR and runs no slot: it handles conflicts (the wake,
-// or the registry merge) and migrations that no longer sort after main's (the
+// the registry merge, or the keep-both merge) and migrations that no longer sort after main's (the
 // renumber, or its wake), and clears wakes that no longer apply, and a slot
 // sweep (`mode: "checks"`) does nothing. Points 1 and 3 above, and the slot,
 // are what turning it back on restores. With nothing updated, the stale
@@ -1314,7 +1314,7 @@ async function processOnePr({
     if (updateToken && addedLines && !registryRefused) {
       const plan = await addedLines.plan({ token, repo, pr, baseRef, baseSha, fetchImpl });
       if (plan.ok) {
-        const fix = await addedLines.push({ pushToken: updateToken, repo, plan, baseRef, baseSha, fetchImpl });
+        const fix = await addedLines.push({ token, pushToken: updateToken, repo, plan, baseRef, baseSha, fetchImpl });
         if (fix.resolved) {
           const cleared = await clearWakeComments({ token, repo, prNumber: number, fetchImpl });
           logger.log?.(

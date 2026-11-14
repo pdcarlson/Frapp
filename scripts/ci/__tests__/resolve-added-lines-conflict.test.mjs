@@ -89,8 +89,46 @@ describe("mergeFile", () => {
   });
 
   it("refuses a JSON file that keep-both leaves unparseable", () => {
-    const r = mergeFile({ path: "x.json", base: lines("[", '  "a"', "]"), ours: lines("[", '  "a",', '  "b"', "]"), theirs: lines("[", '  "a",', '  "c"', "]") });
+    // Each side's line lacks the comma the other side's needs: only JSON.parse catches it.
+    const r = mergeFile({
+      path: "x.json",
+      base: lines("{", '  "a": 1,', '  "z": 0', "}"),
+      ours: lines("{", '  "a": 1,', '  "b": 2', '  "z": 0', "}"),
+      theirs: lines("{", '  "a": 1,', '  "c": 3', '  "z": 0', "}"),
+    });
+    assert.match(r.reason, /would not parse as JSON/);
+  });
+
+  it("refuses an insertion that could sit a line higher or lower (git may place it elsewhere)", () => {
+    const r = mergeFile({
+      path: "a.md",
+      base: "Intro\n\n## Setup\n\nRun it.\n\n",
+      ours: "Intro\n\n## Setup\n\nRun it.\nThen check the log.\n\n",
+      theirs: "New banner\nIntro\n\n## Setup\n\nRun it.\n\n## Deploy\n\nShip it.\n\n",
+    });
+    assert.match(r.reason, /more than one place/);
+  });
+
+  it("refuses a hidden conflict at the file's trailing blank line", () => {
+    const r = mergeFile({ path: "x.yml", base: "a: 1\n", ours: "a: 1\nb: 2\n", theirs: "a: 1\n\nb: 3\n" });
     assert.equal(r.ok, false);
+  });
+
+  it("refuses branch lines that would nest under main's (YAML, nested lists)", () => {
+    const yaml = mergeFile({ path: "x.yml", base: lines("a:", "  x: 1", "b:", "  y: 2"), ours: lines("a:", "  x: 1", "  z: 3", "b:", "  y: 2"), theirs: lines("a:", "  x: 1", "c:", "  w: 4", "b:", "  y: 2") });
+    assert.match(yaml.reason, /nest under main's/);
+    const list = mergeFile({ path: "l.md", base: lines("- p", "  - c1", "- q"), ours: lines("- p", "  - c1", "  - c2", "- q"), theirs: lines("- p", "  - c1", "- r", "- q") });
+    assert.match(list.reason, /nest under main's/);
+  });
+
+  it("refuses the same name added in two different hunks", () => {
+    const r = mergeFile({
+      path: "i.ts",
+      base: lines("x", "y", "z"),
+      ours: lines("x", 'import { foo } from "f";', "y", "P", "z"),
+      theirs: lines("x", 'import { bar } from "g";', "y", 'import { foo } from "h";', "z"),
+    });
+    assert.match(r.reason, /both sides add `foo`/);
   });
 
   it("keeps the comment when both sides pinned the same date but only one explained it", () => {
@@ -124,6 +162,11 @@ describe("keepBoth safety checks", () => {
   it("refuses two imports of the same name", () => {
     const r = keepBoth({ ours: ['import { foo } from "./a";'], theirs: ['import { bar, foo } from "./b";'], path: "x.ts" });
     assert.match(r.reason, /both sides add `foo`/);
+  });
+
+  it("refuses the same declaration or enum member, exported or not", () => {
+    assert.match(keepBoth({ ours: ["const LIMIT = 5;"], theirs: ["const LIMIT = 10;"], path: "x.ts" }).reason, /`LIMIT`/);
+    assert.match(keepBoth({ ours: ['  Pending = "pending",'], theirs: ['  Pending = "p",'], path: "x.ts" }).reason, /`Pending`/);
   });
 
   it("refuses the same object key", () => {
@@ -239,6 +282,9 @@ describe("planAddedLinesConflict + pushAddedLinesMerge", () => {
         const args = ["commit-tree", body.tree, ...body.parents.flatMap((p) => ["-p", p]), "-m", body.message];
         return json(201, { sha: git(args) });
       }
+      if (method === "GET" && (m = /^\/git\/ref\/heads\/(.+)$/.exec(path))) {
+        return json(200, { object: { sha: git(["rev-parse", `refs/heads/${decodeURIComponent(m[1])}`]) } });
+      }
       if (method === "PATCH" && (m = /^\/git\/refs\/heads\/(.+)$/.exec(path))) {
         const ref = `refs/heads/${decodeURIComponent(m[1])}`;
         const current = git(["rev-parse", ref]);
@@ -256,7 +302,7 @@ describe("planAddedLinesConflict + pushAddedLinesMerge", () => {
   }
 
   /** main and a PR branch cut from one base commit, each changing files. */
-  function scenario({ base, pr, main }) {
+  function scenario({ base, pr, main, prOver = {} }) {
     const branch = `claude/pr-${n}`;
     git(["checkout", "--quiet", "--orphan", `base-${n}`]);
     git(["rm", "-rf", "--quiet", "--ignore-unmatch", "."]);
@@ -266,7 +312,7 @@ describe("planAddedLinesConflict + pushAddedLinesMerge", () => {
     git(["checkout", "--quiet", "--detach", mergeBase]);
     const baseSha = commit(main);
     const { fetchImpl, calls } = fakeGitHub({ mergeBase });
-    const prObj = { head: { sha: headSha, ref: branch, repo: { full_name: REPO } } };
+    const prObj = { head: { sha: headSha, ref: branch, repo: { full_name: REPO } }, ...prOver };
     const args = { token: "t", repo: REPO, pr: prObj, baseRef: "main", baseSha, fetchImpl };
     return {
       branch,
@@ -274,7 +320,7 @@ describe("planAddedLinesConflict + pushAddedLinesMerge", () => {
       baseSha,
       calls,
       plan: () => planAddedLinesConflict(args),
-      push: (plan) => pushAddedLinesMerge({ pushToken: "pat", repo: REPO, plan, baseRef: "main", baseSha, fetchImpl }),
+      push: (plan) => pushAddedLinesMerge({ token: "t", pushToken: "pat", repo: REPO, plan, baseRef: "main", baseSha, fetchImpl }),
     };
   }
 
@@ -384,7 +430,59 @@ describe("planAddedLinesConflict + pushAddedLinesMerge", () => {
     const moved = commit({ "late.txt": "late\n" });
     const pushed = await s.push(plan);
     assert.equal(pushed.resolved, false);
-    assert.match(pushed.reason, /not a fast forward/);
+    assert.match(pushed.reason, /moved since the sweep read it/);
     assert.equal(git(["rev-parse", `refs/heads/${s.branch}`]), moved);
+  });
+
+  it("refuses the push when the head was force-pushed back to an ancestor", async () => {
+    // A fast-forward from the ancestor, so only the re-read catches it (#4589).
+    const s = scenario({ base: { "i.ts": barrel("a") }, pr: { "i.ts": barrel("a", "pr") }, main: { "i.ts": barrel("a", "main") } });
+    git(["checkout", "--quiet", s.branch]);
+    const dropped = commit({ "bad.txt": "bad\n" });
+    git(["update-ref", `refs/heads/${s.branch}`, dropped]);
+    const plan = await planAddedLinesConflict({
+      token: "t",
+      repo: REPO,
+      pr: { head: { sha: dropped, ref: s.branch, repo: { full_name: REPO } } },
+      baseRef: "main",
+      baseSha: s.baseSha,
+      fetchImpl: fakeGitHub({ mergeBase: git(["merge-base", dropped, s.baseSha]) }).fetchImpl,
+    });
+    assert.equal(plan.ok, true, plan.reason);
+    git(["update-ref", `refs/heads/${s.branch}`, s.headSha]);
+    const pushed = await s.push(plan);
+    assert.equal(pushed.resolved, false);
+    assert.equal(git(["rev-parse", `refs/heads/${s.branch}`]), s.headSha);
+  });
+
+  it("refuses a PR with auto-merge on, so a person sees the resolution", async () => {
+    const s = scenario({ base: { "i.ts": barrel("a") }, pr: { "i.ts": barrel("a", "pr") }, main: { "i.ts": barrel("a", "main") }, prOver: { auto_merge: { merge_method: "squash" } } });
+    assert.match((await s.plan()).reason, /auto-merge is on/);
+    assert.equal(s.calls.length, 0);
+  });
+
+  it("refuses a file both sides changed that is not UTF-8", async () => {
+    // A Latin-1 CSV has no NUL byte, but would come back with replacement characters.
+    const t = (() => {
+      git(["checkout", "--quiet", "--orphan", `latin-${n}`]);
+      git(["rm", "-rf", "--quiet", "--ignore-unmatch", "."]);
+      writeFileSync(join(dir, "f.csv"), Buffer.from("caf\xe9,1\n", "latin1"));
+      const mb = commit({});
+      git(["checkout", "--quiet", "-b", `claude/latin-${n}`]);
+      writeFileSync(join(dir, "f.csv"), Buffer.from("caf\xe9,1\npr,2\n", "latin1"));
+      const head = commit({});
+      git(["checkout", "--quiet", "--detach", mb]);
+      writeFileSync(join(dir, "f.csv"), Buffer.from("caf\xe9,1\nmain,3\n", "latin1"));
+      const baseSha = commit({});
+      return planAddedLinesConflict({
+        token: "t",
+        repo: REPO,
+        pr: { head: { sha: head, ref: `claude/latin-${n}`, repo: { full_name: REPO } } },
+        baseRef: "main",
+        baseSha,
+        fetchImpl: fakeGitHub({ mergeBase: mb }).fetchImpl,
+      });
+    })();
+    assert.match((await t).reason, /not UTF-8/);
   });
 });
