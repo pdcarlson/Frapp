@@ -653,6 +653,8 @@ export interface Database {
           attachment_count: number;
           created_at: string;
           forwarded_from: ChatForwardedMessage | null;
+          /** `20261114153147`: the latest message is a GIF (#4657). */
+          has_gif: boolean;
         }[];
       };
       /**
@@ -1079,6 +1081,25 @@ export interface Database {
           p_limit: number;
         };
         Returns: ChatMessage[];
+      };
+      /**
+       * `20261114043300` (#4958) — adds (`p_join`: a marked role, never for
+       * an alum) or removes (any unkeyed role outside the tiers) a role on a
+       * member, under the role-then-member locks `delete_role` takes. One
+       * row: `ok` with the written `role_ids`, `not_assignable`, `alumni` or
+       * `no_member`.
+       */
+      self_assign_role: {
+        Args: {
+          p_chapter_id: string;
+          p_member_id: string;
+          p_role_id: string;
+          p_join: boolean;
+        };
+        Returns: {
+          outcome: 'ok' | 'not_assignable' | 'alumni' | 'no_member';
+          role_ids: string[] | null;
+        }[];
       };
       /**
        * `20261113040007` (#4076): a manual group's members set to exactly

@@ -6,6 +6,7 @@ import {
   Check,
   CircleAlert,
   Flag,
+  Forward,
   MoreHorizontal,
   Pencil,
   Tag,
@@ -22,6 +23,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -58,6 +60,7 @@ import {
   canActOnMessage,
   canBlockSender,
   canDeleteMessage,
+  canForwardMessage,
   canReportMessage,
   canEditMessage,
   isOwnMessage,
@@ -303,6 +306,12 @@ export interface MessageItemProps {
    */
   onReport?: (message: ChatMessage) => void;
   /**
+   * Opens the Forward dialog for this message (#4907): anyone's confirmed
+   * plain-text message (`canForwardMessage`), first in the More menu, as on
+   * Discord's and Slack's desktop message menus.
+   */
+  onForward?: (message: ChatMessage) => void;
+  /**
    * Asks to block this message's sender (#2687). Offered where
    * `canBlockSender` allows, which needs `isMember` too.
    */
@@ -441,6 +450,7 @@ export function MessageItem({
   onRemind,
   canManageChannel,
   onReport,
+  onForward,
   onBlock,
   isMember,
   isTapRevealed,
@@ -557,6 +567,9 @@ export function MessageItem({
   const canReport = canReportMessage(message, viewerId) && !!onReport;
   const canBlock =
     !!isMember && canBlockSender(message, viewerId, isMember) && !!onBlock;
+  // Forward is the phone's rule (#4864, #4907), on the viewer's own messages
+  // too, so the More button now shows on every forwardable row.
+  const canForward = canForwardMessage(message) && !!onForward;
 
   const [isEditing, setIsEditing] = useState(false);
   // The tokens the row paints as chips, which the editor opens as chips.
@@ -1068,8 +1081,9 @@ export function MessageItem({
           // old place, and where a long message's bar ends up anyway.
           "ml-auto",
           // Wraps rather than spilling past the row's left edge: on a coarse
-          // pointer every icon is 44px, and nine of them (your own message) are
-          // wider than a 375px thread, where the scroller would clip the first.
+          // pointer every icon is 44px, and ten of them (your own message, with
+          // More for Forward) are wider than a 375px thread, where the scroller
+          // would clip the first.
           "max-w-full flex-wrap justify-end",
           "rounded-[10px] border border-border bg-card p-0.5",
           "transition-opacity",
@@ -1171,7 +1185,7 @@ export function MessageItem({
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
         ) : null}
-        {canReport || canBlock ? (
+        {canForward || canReport || canBlock ? (
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
@@ -1184,6 +1198,15 @@ export function MessageItem({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {canForward ? (
+                <DropdownMenuItem onSelect={() => onForward?.(message)}>
+                  <Forward aria-hidden="true" />
+                  Forward
+                </DropdownMenuItem>
+              ) : null}
+              {canForward && (canReport || canBlock) ? (
+                <DropdownMenuSeparator />
+              ) : null}
               {canReport ? (
                 <DropdownMenuItem onSelect={() => onReport?.(message)}>
                   <Flag aria-hidden="true" />

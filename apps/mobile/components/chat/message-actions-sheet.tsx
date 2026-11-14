@@ -52,7 +52,7 @@ import {
   ForwardSheet,
   type ForwardSheetHandle,
 } from "@/components/chat/forward-sheet";
-import type { ForwardTarget } from "@/lib/chat/forward";
+import type { ForwardTarget } from "@repo/chat-core/forward";
 import {
   RemindSheet,
   type RemindSheetHandle,

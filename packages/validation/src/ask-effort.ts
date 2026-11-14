@@ -13,15 +13,22 @@ export const ASK_EFFORT_COPY = {
 /**
  * Whether an answer offers Think harder: one the server kept a trace of (so
  * it came through the tool loop, which is what reads the effort), that said
- * something or found nothing, and was not already the harder answer.
+ * something or found nothing, and was not already the harder answer. An
+ * answer that came with cards is left out: asking again would make the cards
+ * a second time while the first ones still wait.
  */
 export function askOffersThinkHarder(
-  answer: { status: string; ask_id?: string | null },
+  answer: {
+    status: string;
+    ask_id?: string | null;
+    proposals?: readonly string[] | null;
+  },
   effort: AskEffort | null | undefined,
 ): boolean {
   return (
     !!answer.ask_id &&
     effort !== "more" &&
+    !answer.proposals?.length &&
     (answer.status === "answered" || answer.status === "not_found")
   );
 }

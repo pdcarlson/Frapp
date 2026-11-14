@@ -14,3 +14,14 @@ describe("askOffersThinkHarder", () => {
     expect(askOffersThinkHarder({ status: "unavailable", ask_id: "a" }, null)).toBe(false);
   });
 });
+
+describe("askOffersThinkHarder with cards", () => {
+  it("is not offered on an answer that came with cards", () => {
+    expect(
+      askOffersThinkHarder({ status: "answered", ask_id: "a", proposals: ["s1"] }, null),
+    ).toBe(false);
+    expect(
+      askOffersThinkHarder({ status: "answered", ask_id: "a", proposals: [] }, null),
+    ).toBe(true);
+  });
+});

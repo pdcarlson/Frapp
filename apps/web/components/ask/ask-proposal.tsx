@@ -7,11 +7,13 @@ import {
   errorCopy,
   useAcceptAiSuggestion,
   useActEventAudience,
+  useAskCards,
   useCurrentUser,
   useDismissAiSuggestion,
   useMembers,
   type ActResponse,
   type AiSuggestion,
+  type AskCardEnd,
   type AskProposalResolution,
   type PointsSuggestionEdits,
   type TaskSuggestionEdits,
@@ -21,6 +23,7 @@ import { codeOf } from "@repo/api-sdk";
 import { dueEntryFields, dueEntryFromTask } from "@repo/formatting";
 import {
   ACT_COPY,
+  ASK_CARDS_COPY,
   actActionLabel,
   actMissingLine,
   actNoteLine,
@@ -119,7 +122,12 @@ export function AskProposal({
   const [problem, setProblem] = useState<string | null>(null);
 
   if (resolution) {
-    return <ProposalReceipt proposal={proposal} resolution={resolution} />;
+    return (
+      <ProposalReceipt
+        headline={proposal.suggestion ? cardHeadline(proposal.suggestion) : null}
+        resolution={resolution}
+      />
+    );
   }
 
   async function pickEvent(eventId: string) {
@@ -161,9 +169,7 @@ export function AskProposal({
 }
 
 /** What the card was about, in a few words, once it is one line. */
-function proposalHeadline(proposal: ActResponse): string | null {
-  const suggestion = proposal.suggestion;
-  if (!suggestion) return null;
+function cardHeadline(suggestion: AiSuggestion): string | null {
   if (suggestion.task) return suggestion.task.title;
   if (suggestion.new_event) return suggestion.new_event.name;
   return suggestion.points?.reason ?? null;
@@ -177,13 +183,12 @@ function resolutionLine(resolution: AskProposalResolution): string {
 
 /** A card that ended: what happened, in the frame the card had. */
 function ProposalReceipt({
-  proposal,
+  headline,
   resolution,
 }: {
-  proposal: ActResponse;
+  headline: string | null;
   resolution: AskProposalResolution;
 }) {
-  const headline = proposalHeadline(proposal);
   const link =
     resolution.kind === "done" ? RESULT_LINKS[resolution.page ?? ""] : null;
   return (
@@ -206,6 +211,99 @@ function ProposalReceipt({
     </section>
   );
 }
+
+/**
+ * The cards an answer came with (`answer.proposals`, #4904): each waits for
+ * its own Confirm, under the words that led to it, the way Claude and ChatGPT
+ * stack one approval per action under a reply. A card that ended is one line
+ * in its frame, as a turn's single card is. One the server no longer holds
+ * (decided on another device, or a day passed) says so in the same frame.
+ *
+ * While the cards are being read, each holds a frame of a card's usual
+ * height, so the thread does not jump when they arrive.
+ */
+export function AskAnswerCards({
+  ids,
+  ended,
+  onEnded,
+}: {
+  ids: readonly string[];
+  /** How each card that is no longer waiting ended, by its id. */
+  ended: Readonly<Record<string, AskCardEnd>>;
+  onEnded: (suggestionId: string, end: AskCardEnd) => void;
+}) {
+  const waiting = useMemo(
+    () => ids.filter((id) => !ended[id]),
+    [ids, ended],
+  );
+  const cards = useAskCards(waiting);
+  return (
+    <div className="space-y-2" data-testid="ask-answer-cards">
+      {ids.map((id) => {
+        const end = ended[id];
+        if (end) {
+          return (
+            <ProposalReceipt
+              key={id}
+              headline={end.headline}
+              resolution={end.resolution}
+            />
+          );
+        }
+        const suggestion = cards.byId.get(id);
+        if (suggestion) {
+          const headline = cardHeadline(suggestion);
+          return (
+            <ActCard
+              key={id}
+              suggestion={suggestion}
+              notes={NO_NOTES}
+              onDone={(line, page) =>
+                onEnded(id, {
+                  resolution: { kind: "done", line, page },
+                  headline,
+                })
+              }
+              onCancelled={() =>
+                onEnded(id, { resolution: { kind: "cancelled" }, headline })
+              }
+              onGone={() =>
+                onEnded(id, { resolution: { kind: "gone" }, headline })
+              }
+            />
+          );
+        }
+        if (!cards.settled) {
+          // The list could not be read: the card may well still be waiting,
+          // so it is not called gone. It comes back when the list is read.
+          return cards.failed ? (
+            <section key={id} className={CARD_FRAME}>
+              <p role="alert" className="text-sm text-muted-foreground">
+                {ASK_CARDS_COPY.unread}
+              </p>
+            </section>
+          ) : (
+            <section
+              key={id}
+              aria-busy="true"
+              className={cn(CARD_FRAME, "h-28 opacity-60")}
+            />
+          );
+        }
+        return (
+          <ProposalReceipt
+            key={id}
+            headline={null}
+            resolution={{ kind: "gone" }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** A card under an answer carries no notes: they come only with a typed request. */
+const NO_NOTES: ActResponse["notes"] = [];
 
 function ActAnswer({
   response,

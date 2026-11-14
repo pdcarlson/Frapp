@@ -2245,6 +2245,42 @@ describe("MessageItem reaction chip ownership (#2243)", () => {
   });
 });
 
+describe("MessageItem Forward (#4907)", () => {
+  it("offers Forward first behind More, on the viewer's own message too", async () => {
+    const onForward = vi.fn();
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onForward,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getAllByRole("menuitem")[0]).toHaveTextContent("Forward");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Forward" }));
+    expect(onForward).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "msg-1" }),
+    );
+  });
+
+  it("puts Forward above Report and Block", async () => {
+    renderItemWithProps({
+      onForward: vi.fn(),
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: () => true,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["Forward", "Report message", "Block Alice Chen"]);
+  });
+
+  it("isn't offered without a handler, so the viewer's own row keeps no More", () => {
+    renderItemWithProps({ message: message({ sender_id: VIEWER }) });
+    expect(
+      screen.queryByRole("button", { name: "More actions" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("MessageItem Report and Block (#2687)", () => {
   const everyoneIsMember = () => true;
 

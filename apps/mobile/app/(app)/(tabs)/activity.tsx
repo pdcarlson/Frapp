@@ -14,6 +14,7 @@ import {
   activityWeekSummary,
   findActivityTaskRow,
   useActivity,
+  useActivityRecap,
   useActivityStanding,
   useActivityUnread,
   useNowDate,
@@ -54,6 +55,7 @@ import {
   type ReminderSheetActions,
 } from "@/components/activity/activity-sheet";
 import { NudgeCard } from "@/components/activity/nudge-card";
+import { RecapCard, recapDismissal } from "@/components/activity/recap-card";
 import { ReviewCard } from "@/components/activity/review-card";
 import {
   SemesterStrip,
@@ -137,6 +139,14 @@ export default function ActivityScreen() {
   // failure leaves the rest of the page as it is. `useActivityReread` reads
   // it again with the list, on each return and after an action here.
   const standing = useActivityStanding();
+  // Last week, on Sunday to Tuesday only (`useActivityRecap` reads nothing
+  // the rest of the week), drawn once it lands.
+  const recap = useActivityRecap();
+  // Read the stored dismissals now, well before the recap lands, so a card
+  // the member closed isn't drawn for a frame first.
+  useEffect(() => {
+    void recapDismissal.hydrate();
+  }, []);
   const router = useRouter();
   const openStanding = (destination: StandingDestination) => {
     // Calendar (the `events` route) is a tab: go to it rather than stack a
@@ -380,6 +390,7 @@ export default function ActivityScreen() {
             onSeen={() => nudgeActions.markSeen(nudge.id)}
           />
         ) : null}
+        {recap.data ? <RecapCard recap={recap.data} now={now} /> : null}
         {standing.isPending ? (
           <SemesterStripSkeleton />
         ) : standing.data ? (

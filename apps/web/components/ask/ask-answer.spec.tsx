@@ -74,6 +74,53 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   },
 }));
 
+// The cards have their own spec (`ask-proposal.spec.tsx`); here they are
+// where the answer puts them and what it counts when one ends.
+vi.mock("./ask-proposal", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./ask-proposal")>()),
+  AskAnswerCards: (props: {
+    ids: readonly string[];
+    onEnded: (id: string, end: unknown) => void;
+  }) => (
+    <div data-testid="cards">
+      {props.ids.map((id) => (
+        <span key={id}>
+          <button
+            type="button"
+            onClick={() =>
+              props.onEnded(id, {
+                resolution: { kind: "done", line: "Task created", page: "tasks" },
+                headline: null,
+              })
+            }
+          >
+            confirm {id}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              props.onEnded(id, {
+                resolution: { kind: "cancelled" },
+                headline: null,
+              })
+            }
+          >
+            cancel {id}
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              props.onEnded(id, { resolution: { kind: "gone" }, headline: null })
+            }
+          >
+            gone {id}
+          </button>
+        </span>
+      ))}
+    </div>
+  ),
+}));
+
 const { AskTurn } = await import("./ask-answer");
 import { askSourceHref } from "./ask-source-link";
 
@@ -157,6 +204,7 @@ const show = (
       onFollowMessage={handlers.followMessage}
       onProposal={() => undefined}
       onResolved={() => undefined}
+      onCardEnded={() => undefined}
     />,
   );
 
@@ -536,6 +584,7 @@ describe("AskTurn", () => {
         onAnswerConsent={() => undefined}
         onProposal={() => undefined}
         onResolved={() => undefined}
+        onCardEnded={() => undefined}
       />,
     );
     expect(
@@ -558,6 +607,7 @@ describe("AskTurn", () => {
         onAnswerConsent={() => undefined}
         onProposal={() => undefined}
         onResolved={() => undefined}
+        onCardEnded={() => undefined}
       />,
     );
     expect(
@@ -769,6 +819,60 @@ describe("AskTurn", () => {
         ASK_FEEDBACK_COPY.failed,
       );
       thumbs.failed = false;
+    });
+  });
+
+  describe("the cards an answer came with (#4904)", () => {
+    const withCards = (text: string) =>
+      exchange({
+        askId: "ask-1",
+        answer: {
+          ...ANSWER,
+          text,
+          citations: [],
+          sources: [],
+          ask_id: "ask-1",
+          proposals: ["s1", "s2"],
+        },
+      });
+
+    it("sit under the answer's words, and each one that ends is counted against the answer", async () => {
+      thumbs.signal.mockClear();
+      const ended = vi.fn();
+      render(
+        <AskTurn
+          exchange={withCards("Three members cleaned up.")}
+          onRetry={() => undefined}
+          onAnswerConsent={() => undefined}
+          onProposal={() => undefined}
+          onResolved={() => undefined}
+          onCardEnded={ended}
+        />,
+      );
+      const words = screen.getByText("Three members cleaned up.");
+      const cards = screen.getByTestId("cards");
+      expect(
+        words.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: "confirm s1" }));
+      expect(thumbs.signal).toHaveBeenLastCalledWith("ask-1", "card_confirmed");
+      await user.click(screen.getByRole("button", { name: "cancel s2" }));
+      expect(thumbs.signal).toHaveBeenLastCalledWith("ask-1", "card_dismissed");
+      expect(ended).toHaveBeenCalledTimes(2);
+      // One that had stopped waiting was neither.
+      await user.click(screen.getByRole("button", { name: "gone s2" }));
+      expect(thumbs.signal).toHaveBeenCalledTimes(2);
+      expect(ended).toHaveBeenCalledTimes(3);
+    });
+
+    it("stand alone when the answer is cards and nothing else, with no Copy and no Think harder", () => {
+      show(withCards(""), { thinkHarder: () => undefined });
+      expect(screen.getByTestId("cards")).toBeDefined();
+      expect(screen.queryByRole("button", { name: /copy/i })).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: ASK_EFFORT_COPY.action }),
+      ).toBeNull();
     });
   });
 });

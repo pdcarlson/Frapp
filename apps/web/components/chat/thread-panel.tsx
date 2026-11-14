@@ -21,7 +21,13 @@ import { typingLabel } from "@repo/chat-core/typing-label";
 import { TypingLine } from "./typing-line";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ClosableCardKind } from "@repo/chat-core/chat-client";
-import { resolveAuthorAvatar, useRosterCatchUp } from "@repo/hooks";
+import {
+  gifToSend,
+  resolveAuthorAvatar,
+  useGifAvailability,
+  useRosterCatchUp,
+  type GifResult,
+} from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -32,6 +38,7 @@ import { cn } from "@/lib/utils";
 import { PanelCloseButton } from "@/components/layout/tool-page-header";
 import { BlockedMessageTombstone } from "./blocked-message-tombstone";
 import { ChatBackground } from "./chat-background";
+import { GifPickerButton } from "./gif-picker";
 import {
   ImageViewer,
   ImageViewerProvider,
@@ -105,6 +112,7 @@ export interface ThreadPanelProps extends Pick<
   | "canManageChannel"
   | "onReport"
   | "onBlock"
+  | "onForward"
   | "onOpenProfile"
   | "isMember"
 > {
@@ -226,6 +234,7 @@ export function ThreadPanel({
   canManageChannel,
   onReport,
   onBlock,
+  onForward,
   onOpenProfile,
   isMember,
   canReply,
@@ -322,6 +331,15 @@ export function ThreadPanel({
     setDraft("");
     const { error } = await thread.send(content);
     notSent(error);
+  }
+
+  // The channel composer's GIF button, in the thread's too (#4657): a GIF is
+  // its own reply, so the typed draft stays where it is.
+  const gifs = useGifAvailability();
+  function sendGif(gif: GifResult) {
+    void thread.sendGif(gifToSend(gif, gifs.provider)).then(({ error }) => {
+      notSent(error);
+    });
   }
 
   function onComposerKey(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -503,6 +521,7 @@ export function ThreadPanel({
                 canManageChannel={canManageChannel}
                 onReport={onReport}
                 onBlock={onBlock}
+                onForward={onForward}
                 onOpenProfile={onOpenProfile}
                 isMember={isMember}
                 isTapRevealed={rootReveal.isRevealed(root)}
@@ -647,6 +666,7 @@ export function ThreadPanel({
           canManageChannel={canManageChannel}
           onReport={onReport}
           onBlock={onBlock}
+          onForward={onForward}
           onOpenProfile={onOpenProfile}
           isMember={isMember}
         />
@@ -670,6 +690,11 @@ export function ThreadPanel({
               }}
               onKeyDown={onComposerKey}
             />
+            {gifs.available && !isOffline ? (
+              <div className="mt-1 flex items-center gap-1">
+                <GifPickerButton provider={gifs.provider} onPick={sendGif} />
+              </div>
+            ) : null}
             {isOffline ? (
               <p className="mt-1 text-caption text-muted-foreground">
                 You&apos;re offline. You can reply once you&apos;re back online.

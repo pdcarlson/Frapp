@@ -4,8 +4,9 @@ The Activity page gathers, for one member, what is waiting on them and what they
 don't have to look through channels and module pages to find it (#3897). It is an inbox beside
 chat, not a home: chat stays the first screen ([`../product/surfaces.md`](../product/surfaces.md)).
 
-This file owns the reads behind the page, `GET /v1/activity` and its
-[standing](#standing), `GET /v1/activity/standing`. The page itself (where it sits, how
+This file owns the reads behind the page, `GET /v1/activity`, its
+[standing](#standing), `GET /v1/activity/standing`, and its [recap](#recap),
+`GET /v1/activity/recap`. The page itself (where it sits, how
 a row opens chat's own card to act in place) is
 [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) on web, and
 the phone's screen, the Activity tab (#4610), is in
@@ -221,6 +222,20 @@ judged for an average member, a committee chair and the president
 - **Study:** minutes from the caller's sessions that started this week and have ended, the way the Study screen counts its week. The read settles nothing: a paused session whose grace ran out counts once Study settles it. The client names where its week begins (`week_start`, Sunday at local midnight); the server accepts a start from eight days back to a day ahead, and uses Sunday at midnight UTC when none is given.
 - **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`. If the semester itself can't be read, the parts that depend on it fail rather than count all-time.
 - **Goals.** Each of points, service and study carries the caller's goal (`points.goal`, `service.goal_minutes`, `study.goal_minutes`), or `null` when the chapter sets none ([§ Goals](#goals)). A part with a goal reads "42 of 60" and draws a ring toward it, closed once the goal is met; a part without one draws no ring. Required events always have a target, the events themselves. If the goals can't be read, every goal is `null` and the numbers still show.
+
+## Recap
+
+`GET /v1/activity/recap` is the member's last finished week, the "Last week" card under the week card on both clients ([#4983](https://github.com/pdcarlson/Frapp/issues/4983); Shawn, 2026-11-14, after Slack's and Linear's weekly digests). The week card counts this week in progress; the recap sums up the one that just closed. It is a separate read from `GET /v1/activity` and from the standing, so the page's own read (on the app's resume path, #3728) carries none of it. It requires `members:view`, and every number is the caller's own, read through the module that owns it.
+
+- **The week** is the caller's last full week, Sunday to Sunday in their own time zone, ending at `week_start` (the start of their current week, as the standing reads it, under the same eight-days-back-to-a-day-ahead bound, refused with 400 outside it). The client also sends `last_week_start`, its own last Sunday at midnight, because a week that crosses a clock change is an hour longer or shorter than seven days; the server takes it when it is within three hours of seven days back, and counts seven days back otherwise. `start` and `end` say which week was read.
+- **Events attended:** events that started in the week, among those the caller can see, where they were marked present or late.
+- **Tasks done:** the caller's own tasks marked done in the week, confirmed or not, as the week card counts them. One sent back since is open again and not counted.
+- **Points:** the week's ledger rows for the caller, net: an award adds, a deduction takes away.
+- **Service:** minutes on the caller's entries dated on the week's seven days, approved or waiting, never rejected. Entries are dated by day, so the client sends `first_day`, the date of its last Sunday; the server takes it when it is within a day of the day it works out from `last_week_start` (the UTC day nearest that local midnight, right from UTC−12 to UTC+12), and uses its own otherwise.
+- **Study:** minutes from the caller's sessions that started in the week and have ended, as Study counts (one rule with the standing's, `endedStudyMinutes`).
+- **Not counted yet:** polls voted on and sign-ups answered, which #4983 also named. The week card already counts this week's; last week's would need the poll and card reads to take a window, which they don't. Left for a later change.
+- **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`.
+- **The card** and how it draws are the UI specs' ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity), [`../ui/mobile/screens.md`](../ui/mobile/screens.md)). The clients read the recap only on Sunday, Monday and Tuesday of the member's week. A weekly push of the same line is not built yet (#4985).
 
 ## Goals
 

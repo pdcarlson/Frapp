@@ -3,12 +3,14 @@ import { ChatBackground } from "@/components/chat/chat-background";
 import {
   Alert,
   FlatList,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useQueryClient } from "@tanstack/react-query";
 import { useIsFocused, useRouter } from "expo-router";
 import {
@@ -23,7 +25,7 @@ import {
   type BlockState,
   type ThreadRow,
 } from "@repo/chat-core/blocks";
-import { forwardTargetOf } from "@/lib/chat/forward";
+import { forwardTargetOf } from "@repo/chat-core/forward";
 import {
   channelAllowsThreadReplies,
   copyableText,
@@ -40,6 +42,7 @@ import type { ClosableCardKind } from "@repo/chat-core/chat-client";
 import {
   CHANNEL_LIST_KEY,
   resolveAuthorAvatar,
+  gifToSend,
   resolveAuthorLabel,
   resolveAuthorName,
   useActiveChapterId,
@@ -47,11 +50,13 @@ import {
   useBlockedUserIds,
   useChannel,
   useChapterRoster,
+  useGifAvailability,
   useMemberDisplayNames,
   useMentionRoles,
   usePermissionList,
   useRosterCatchUp,
   useViewerUserId,
+  type GifResult,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
 import { useReportOpenChatTransport } from "@repo/hooks/open-chat-transport";
@@ -73,6 +78,7 @@ import type { SendOptions } from "@/lib/chat/use-chat-channel";
 import { useJumpToImportant } from "@/lib/chat/use-jump-to-important";
 import { useJumpToMessage } from "@/lib/chat/use-jump-to-message";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { GifPickerSheet } from "@/components/chat/gif-picker-sheet";
 import {
   MessageActionsSheet,
   type MessageActionsSheetHandle,
@@ -331,7 +337,7 @@ export function MessageThreadScreen({
   const { writeBlockedReason } = useConnection();
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
-  const { send, retry, emitTyping } = thread;
+  const { send, sendGif, retry, emitTyping } = thread;
   // `@Frapp` in a reply (#4713), for a member with Ask. Frapp answers in the
   // channel, for the asker alone, and a thread has no place to draw that. So
   // the reply is refused, not posted: a member who expects a private answer
@@ -378,6 +384,24 @@ export function MessageThreadScreen({
       return Promise.resolve(true);
     },
     [send, askRefusal],
+  );
+  // A thread reply carries no files or cards, so the thread's + is the GIF
+  // picker itself rather than the channel's sheet with one row in it
+  // (#4657). A GIF is its own reply: the typed draft stays.
+  const gifs = useGifAvailability();
+  const gifSheetRef = useRef<BottomSheetModal>(null);
+  const openGif = useCallback(() => {
+    Keyboard.dismiss();
+    gifSheetRef.current?.present();
+  }, []);
+  const pickGif = useCallback(
+    (gif: GifResult) => {
+      setSendError(null);
+      void sendGif(gifToSend(gif, gifs.provider)).then(({ error }) =>
+        setSendError(error),
+      );
+    },
+    [sendGif, gifs.provider],
   );
   const { edit } = writes;
   // Edit opens in this composer, as it does in the channel's: the same strip,
@@ -982,6 +1006,12 @@ export function MessageThreadScreen({
             onChangeText={onChangeText}
             onSend={staging.submit}
             onPickMember={staging.addMentionPick}
+            // Search needs the network, and the + isn't offered while editing.
+            onOpenPlus={
+              gifs.available && !staging.isEditing ? openGif : undefined
+            }
+            plusLabel="Send a GIF"
+            plusDisabled={!!writeBlockedReason || !canReply}
             canSend={
               !!viewerId &&
               !writeBlockedReason &&
@@ -1017,6 +1047,14 @@ export function MessageThreadScreen({
         </KeyboardAvoidingArea>
       </FormFillContext.Provider>
       {catchUp.sheets}
+      {gifs.available ? (
+        <GifPickerSheet
+          key={`gif-${channelId}-${rootId}`}
+          ref={gifSheetRef}
+          provider={gifs.provider}
+          onPick={pickGif}
+        />
+      ) : null}
       <MessageActionsSheet
         ref={actionsSheetRef}
         target={sheetTarget}

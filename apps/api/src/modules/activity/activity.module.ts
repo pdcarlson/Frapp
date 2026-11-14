@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
 import { ActivityStandingService } from '../../application/services/activity-standing.service';
+import { ActivityRecapService } from '../../application/services/activity-recap.service';
 import { SupabaseChatMessageLinkRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-link.repository';
 import { CHAT_MESSAGE_LINK_REPOSITORY } from '#domain/repositories/chat-message-link.repository.interface';
 import { SupabaseActivityItemReadRepository } from '../../infrastructure/supabase/repositories/supabase-activity-item-read.repository';
@@ -69,6 +70,8 @@ import { TaskModule } from '../task/task.module';
     ActivityService,
     ActivityLinkService,
     ActivityStandingService,
+    // Last week's recap (`GET /v1/activity/recap`, #4983).
+    ActivityRecapService,
     // Links on Activity (#3897): this module is the table's only reader. The
     // database's triggers on `chat_messages` write its rows; the title sweep
     // below writes only their page titles.

@@ -152,6 +152,7 @@ describe('ChannelAccessService', () => {
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
     };
     mockRbac = {
       // Default: an active member holding nothing a list names.

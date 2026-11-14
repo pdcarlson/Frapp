@@ -625,6 +625,8 @@ vi.mock("@repo/hooks", async () => ({
   // The rail's New channel panel (#3838).
   useCreateChannel: () => createChannelState,
   useChannelAccessOptions: () => ({ data: [], isPending: false }),
+  // The Forward dialog (#4907) mounts only once a row asks for it.
+  useForwardMessage: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMemberDisplayNames: () => ({
     byId: sidebarState.memberNames,
     nameFor: (id: string) => sidebarState.memberNames[id] ?? null,
@@ -1453,6 +1455,7 @@ vi.mock("./message-timeline", async () => {
       channelStart?: React.ReactNode;
       onOpenProfile?: (userId: string) => void;
       onOpenThread?: (message: { id: string }) => void;
+      onForward?: (message: { id: string }) => void;
       askTurns?: readonly { id: string }[];
       onRemind?: (messageId: string, remindAt: Date) => void;
     }
@@ -1461,6 +1464,7 @@ vi.mock("./message-timeline", async () => {
       askTurns,
       onRemind,
       onOpenThread,
+      onForward,
       onOpenProfile,
       messages,
       onDelete,
@@ -1532,6 +1536,18 @@ vi.mock("./message-timeline", async () => {
             reply to {m.id}
           </button>
         ))}
+        {/* A row's Forward (#4907), withheld if the shell doesn't wire it. */}
+        {onForward
+          ? (messages ?? []).map((m) => (
+              <button
+                key={m.id}
+                data-testid={`trigger-forward-${m.id}`}
+                onClick={() => onForward(m)}
+              >
+                forward {m.id}
+              </button>
+            ))
+          : null}
         {/* The row's Start thread and the parent's chip both call
             `onOpenThread` (#3785); withheld where threads aren't offered. */}
         {onOpenThread
@@ -3677,6 +3693,19 @@ describe("ChatShell reply-with-quote (#489)", () => {
       replyToId: null,
       attachments: [],
     });
+  });
+
+  it("opens Forward to on the row a member forwards from (#4907)", () => {
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(
+      screen.queryByRole("dialog", { name: "Forward to" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("trigger-forward-msg-1"));
+
+    const dialog = screen.getByRole("dialog", { name: "Forward to" });
+    expect(within(dialog).getByText("the original")).toBeInTheDocument();
   });
 
   it("carries the staged message's id through to channel.send", () => {

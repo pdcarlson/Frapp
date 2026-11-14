@@ -692,6 +692,38 @@ describe("thumbs under an answer (#4904)", () => {
     );
   });
 
+  it("leave Think harder off an answer that came with cards, which sit under its words", () => {
+    thumbs.state = { rating: null, reason: null };
+    const withCards = exchange({
+      askId: "ask-1",
+      answer: answer({ ask_id: "trace-1", proposals: ["s1"] }),
+    });
+    const tree = render(withCards, {
+      onThinkHarder: vi.fn(),
+      cards: <Text>the cards</Text>,
+    });
+    expect(byLabel(tree, ASK_EFFORT_COPY.action)).toHaveLength(0);
+    const text = screenText(tree);
+    expect(text.indexOf("the cards")).toBeGreaterThan(
+      text.indexOf(withCards.answer!.text),
+    );
+
+    // An answer that is cards and nothing else: the cards, and no words.
+    const alone = render(
+      exchange({
+        askId: "ask-1",
+        answer: answer({
+          ask_id: "trace-1",
+          text: "",
+          citations: [],
+          proposals: ["s1"],
+        }),
+      }),
+      { cards: <Text>the cards</Text> },
+    );
+    expect(screenText(alone)).toContain("the cards");
+  });
+
   it("say so when a rating did not send", () => {
     thumbs.state = { rating: null, reason: null };
     thumbs.failed = true;

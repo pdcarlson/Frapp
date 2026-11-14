@@ -1,5 +1,6 @@
 export * from "./activity-agenda";
 export * from "./activity-faces";
+export * from "./activity-recap";
 export * from "./activity-rows";
 export * from "./activity-standing";
 export * from "./calendar-birthdays";
@@ -51,6 +52,7 @@ export * from "./use-ai";
 export * from "./use-ai-report";
 export * from "./use-ai-suggestions";
 export * from "./use-ask";
+export * from "./use-ask-cards";
 export * from "./use-ask-feedback";
 export * from "./use-ask-post";
 export * from "./use-attendance";

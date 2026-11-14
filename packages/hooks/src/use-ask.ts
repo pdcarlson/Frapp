@@ -229,6 +229,11 @@ export interface AskExchange {
   proposal: ActResponse | null;
   /** Set once the proposal was confirmed or dismissed. */
   resolution: AskProposalResolution | null;
+  /**
+   * How each card under the answer ended (`answer.proposals`, #4904), by the
+   * suggestion's id. A card not named here is still waiting.
+   */
+  cards?: Record<string, AskCardEnd>;
   /** Why it failed, in words to show, and whether asking again may work. */
   failure: { message: string; retryable: boolean } | null;
   /** Set when the turn was asked from a chat composer. */
@@ -389,6 +394,16 @@ export interface AskOptions {
 
 let nextExchange = 0;
 
+/**
+ * How one of an answer's cards ended. The headline is kept with it because a
+ * decided suggestion is no longer served, and the line that takes the card's
+ * place still says what it was about.
+ */
+export interface AskCardEnd {
+  resolution: AskProposalResolution;
+  headline: string | null;
+}
+
 /** The conversation, and what can be done to it. */
 export interface AskConversation {
   exchanges: AskExchange[];
@@ -400,6 +415,8 @@ export interface AskConversation {
   setProposal: (id: string, proposal: ActResponse) => void;
   /** Records that a turn's card was confirmed or dismissed. */
   resolveProposal: (id: string, resolution: AskProposalResolution) => void;
+  /** Records how one of the cards under a turn's answer ended. */
+  resolveCard: (id: string, suggestionId: string, end: AskCardEnd) => void;
   /**
    * Takes a turn asked from a channel out of that channel's view. It stays
    * in the conversation, so Ask's own screen still shows it.
@@ -681,8 +698,12 @@ function useAskConversation(): AskConversation {
           body: {
             question: trimmed,
             ...(history.length > 0 ? { history } : {}),
+            // With the card, the cards an answer can come with (#4904): both
+            // clients draw `answer.proposals`. A server from before #4980
+            // refuses the field; web deploys with the API and a phone build
+            // or update ships only after its API has.
             ...(options?.actions && !options.suggested
-              ? { actions: true }
+              ? { actions: true, answer_cards: true }
               : {}),
             ...(options?.savedNoticeShown ? { saved_notice_shown: true } : {}),
             // Only the new door is named: a server from before #4713
@@ -803,6 +824,15 @@ function useAskConversation(): AskConversation {
     [patch],
   );
 
+  const resolveCard = useCallback(
+    (id: string, suggestionId: string, end: AskCardEnd) =>
+      patch(id, (current) => ({
+        ...current,
+        cards: { ...current.cards, [suggestionId]: end },
+      })),
+    [patch],
+  );
+
   const dismissFromChannel = useCallback(
     (id: string) =>
       patch(id, (current) =>
@@ -820,6 +850,7 @@ function useAskConversation(): AskConversation {
     retry,
     setProposal,
     resolveProposal,
+    resolveCard,
     dismissFromChannel,
     stop,
     reset,
