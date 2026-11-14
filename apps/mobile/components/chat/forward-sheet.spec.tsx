@@ -53,7 +53,15 @@ vi.mock("@repo/hooks", async () => {
     ...actual,
     useChannels: () => ({ data: CHANNELS, isPending: false }),
     useForwardMessage: () => forward,
-    useMemberDisplayNames: () => ({ byId: { [ALICE]: "Alice Chen" } }),
+    useMemberDisplayNames: () => ({
+      byId: { [ALICE]: "Alice Chen" },
+      avatarFor: () => null,
+      avatarTintFor: () => null,
+    }),
+    useChapterRoster: () => ({
+      data: [{ user_id: ALICE, display_name: "Alice Chen" }],
+    }),
+    useMentionRoles: () => ({ data: [] }),
   };
 });
 
@@ -89,8 +97,8 @@ import {
   FORWARD_SEARCH_PLACEHOLDER,
   FORWARD_SHEET_TITLE,
   FORWARD_UNAVAILABLE_BODY,
-  type ForwardTarget,
-} from "@/lib/chat/forward";
+} from "@repo/hooks/forward-destinations";
+import { type ForwardTarget } from "@repo/chat-core/forward";
 
 const TARGET: ForwardTarget = {
   messageId: "m1",
@@ -270,6 +278,7 @@ describe("ForwardSheet (#4864)", () => {
       channelId: "c-random",
       content: "look",
       clientMessageId: expect.any(String),
+      mentionPicks: [],
     });
     expect(dismiss).toHaveBeenCalled();
     expect(haptics.selection).toHaveBeenCalled();
@@ -282,6 +291,81 @@ describe("ForwardSheet (#4864)", () => {
       queryClient.getQueryData<ChannelCache>(chatMessagesKey("c-random")),
     );
     expect(cached.map((message) => message.id)).toEqual(["m2"]);
+  });
+
+  it("offers the composer's @ list in the comment and sends the member picked as a mention pick (#4907)", async () => {
+    forward.mutateAsync.mockResolvedValue({ id: "m2", channel_id: "c-random" });
+    const tree = render();
+    press(tree, "#random");
+    const comment = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "BottomSheetTextInput" &&
+        node.props.accessibilityLabel === FORWARD_COMMENT_PLACEHOLDER,
+    );
+    act(() => comment.props.onFocus?.());
+    act(() => comment.props.onChangeText("for @ali"));
+    press(tree, "Mention Alice Chen");
+    expect(
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "BottomSheetTextInput" &&
+          node.props.accessibilityLabel === FORWARD_COMMENT_PLACEHOLDER,
+      ).props.value,
+    ).toBe("for @Alice Chen ");
+    act(() => sendButton(tree).props.onPress());
+    await flush();
+    expect(forward.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "for @Alice Chen ",
+        mentionPicks: [{ user_id: ALICE, label: "Alice Chen" }],
+      }),
+    );
+  });
+
+  it("offers members in the conversations' place, and never Frapp, since a forward can't ask", () => {
+    const tree = render();
+    press(tree, "#random");
+    const comment = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "BottomSheetTextInput" &&
+        node.props.accessibilityLabel === FORWARD_COMMENT_PLACEHOLDER,
+    );
+    act(() => comment.props.onFocus?.());
+    // A bare `@` is where the composer offers Frapp first.
+    act(() => comment.props.onChangeText("@"));
+    const offered = tree.root
+      .findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          typeof node.props.onPress === "function" &&
+          node.props.accessibilityRole === "button" &&
+          node.props.accessibilityLabel !== "Cancel",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    expect(offered).toContain("Mention Alice Chen");
+    expect(offered.some((label) => label.includes("Frapp"))).toBe(false);
+    expect(rowLabels(tree)).toEqual([]);
+  });
+
+  it("drops a pick the comment no longer writes", async () => {
+    forward.mutateAsync.mockResolvedValue({ id: "m2", channel_id: "c-random" });
+    const tree = render();
+    press(tree, "#random");
+    const comment = () =>
+      tree.root.find(
+        (node) =>
+          (node.type as unknown) === "BottomSheetTextInput" &&
+          node.props.accessibilityLabel === FORWARD_COMMENT_PLACEHOLDER,
+      );
+    act(() => comment().props.onFocus?.());
+    act(() => comment().props.onChangeText("@ali"));
+    press(tree, "Mention Alice Chen");
+    type(tree, FORWARD_COMMENT_PLACEHOLDER, "never mind");
+    act(() => sendButton(tree).props.onPress());
+    await flush();
+    expect(forward.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ mentionPicks: [] }),
+    );
   });
 
   it("stays up behind an alert on a refusal, saying a retry won't help", async () => {

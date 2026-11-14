@@ -477,6 +477,46 @@ export interface paths {
         patch: operations["RbacController_update_v1"];
         trace?: never;
     };
+    "/v1/roles/{id}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Join a self-assignable role
+         * @description Adds the role to the caller's own roles (#4958). 403 `role.not_self_assignable` unless an officer marked it and it is still safe to pick; 409 when it changed mid-save. Joining a role already held changes nothing.
+         */
+        post: operations["RbacController_join_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/{id}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave a self-assignable role
+         * @description Takes the role off the caller's own roles (#4958), with the same refusals as join. Leaving a role not held changes nothing.
+         */
+        post: operations["RbacController_leave_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/roles/transfer-presidency": {
         parameters: {
             query?: never;
@@ -636,6 +676,26 @@ export interface paths {
         };
         /** Display roster for the chapter — id, name, avatar and role color only */
         get: operations["MemberController_roster_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/birthdays": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Birthdays members share with the chapter
+         * @description Month and day of every member who shares their birthday with their chapter (#4959), for the calendar. A member who keeps theirs to themselves is left out, and the year is never sent.
+         */
+        get: operations["MemberController_birthdays_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4361,6 +4421,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/recap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get what the caller did last week
+         * @description The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.
+         */
+        get: operations["ActivityController_getRecap_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/unread-since": {
         parameters: {
             query?: never;
@@ -5444,6 +5524,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/bootstrap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a client's first screen reads, in one request
+         * @description The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.
+         */
+        get: operations["BootstrapController_getBootstrap_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5547,6 +5647,17 @@ export interface components {
              * @example (518) 555-0142
              */
             phone?: string | null;
+            /** @description The member's birthday month, 1-12 (#4959). Sent with `birthday_day`; null on both clears the birthday (and its year). */
+            birthday_month?: number | null;
+            /** @description The day of `birthday_month`. It must exist in that month; 29 February is taken. */
+            birthday_day?: number | null;
+            /** @description The birth year, optional. Never shown to anyone but the member. Needs a month and day. */
+            birthday_year?: number | null;
+            /**
+             * @description Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default.
+             * @enum {string}
+             */
+            birthday_visibility?: "chapter" | "nobody";
         };
         RequestAvatarUploadUrlDto: {
             /** @description Original filename for the avatar image */
@@ -5795,6 +5906,11 @@ export interface components {
              * @description Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise).
              */
             default_invite_role_id?: string | null;
+            /**
+             * Format: uuid
+             * @description The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived or the audit log (400 otherwise).
+             */
+            birthday_channel_id?: string | null;
         };
         CustomRoleDto: {
             id: string;
@@ -5944,6 +6060,12 @@ export interface components {
             permission_overrides?: {
                 [key: string]: boolean | null;
             };
+            /** @description Members may join and leave this role themselves (#4958). Only a role with no system key, outside the tiers, and holding no permission beyond `channels:read:<slug>` may be marked (400 `role.self_assignable_keyed`, `role.self_assignable_tiered` or `role.self_assignable_permissions`), and marking needs the caller to hold what it carries. A save that would leave a marked role unsafe is refused the same way unless it also sends false. */
+            self_assignable?: boolean;
+        };
+        SelfAssignRoleResultDto: {
+            /** @description The caller's role ids after the change, the role added (join) or taken off (leave). */
+            role_ids: string[];
         };
         TransferPresidencyDto: {
             /** Format: uuid */
@@ -6022,6 +6144,10 @@ export interface components {
             email: string;
             /** @description The member's own phone number (#3711), as they typed it, or null. Only they set it. */
             phone: string | null;
+            /** @description The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none. */
+            birthday_month: number | null;
+            /** @description The day of `birthday_month`, under the same rule. The year is never sent. */
+            birthday_day: number | null;
             /**
              * Format: uuid
              * @description The member's pledge class, one of `GET /v1/pledge-classes`, or null.
@@ -6046,6 +6172,15 @@ export interface components {
             avatar_url: string | null;
             /** @description Palette color of the member’s highest-ranked colored role (lowest `display_order`), or null when none of their roles has one. Chat paints the author’s name in it. */
             role_color: string | null;
+        };
+        MemberBirthdayDto: {
+            /** @description users.id */
+            id: string;
+            display_name: string;
+            avatar_url: string | null;
+            birthday_month: number;
+            /** @description The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`). */
+            birthday_day: number;
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
@@ -9385,6 +9520,30 @@ export interface components {
             /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
             unavailable: ("points" | "required_events" | "service" | "study")[];
         };
+        ActivityRecapDto: {
+            /**
+             * Format: date-time
+             * @description Where last week began: seven days before the `week_start` sent (the start of the caller’s current week).
+             */
+            start: string;
+            /**
+             * Format: date-time
+             * @description Where last week ended: the `week_start` sent.
+             */
+            end: string;
+            /** @description Events that started last week, among those the caller can see, where they were marked present or late. Null when Events is off or couldn’t be read. */
+            events_attended: number | null;
+            /** @description The caller’s own tasks they marked done last week, confirmed or not; one sent back since is not counted. Null when Tasks is off or couldn’t be read. */
+            tasks_done: number | null;
+            /** @description Points awarded to the caller last week less points taken, from the ledger. Null when Points is off or couldn’t be read. */
+            points: number | null;
+            /** @description Service minutes the caller logged for last week’s days, approved or waiting. Null when Hours is off or couldn’t be read. */
+            service_minutes: number | null;
+            /** @description Minutes from the caller’s study sessions that started last week and have ended. Null when Hours is off or couldn’t be read. */
+            study_minutes: number | null;
+            /** @description Parts that could not be read this time. Each is served null; the others are unaffected. */
+            unavailable: ("events" | "tasks" | "points" | "service" | "study")[];
+        };
         ActivityItemRefDto: {
             /**
              * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
@@ -9882,6 +10041,8 @@ export interface components {
             history?: components["schemas"]["AskHistoryTurnDto"][];
             /** @description True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`. */
             actions?: boolean;
+            /** @description True when the client draws the cards an answer comes with (`answer.proposals` on `done`). Read only with `actions`, by a server that answers through the tool loop: a turn can then be an answer with cards under it, or up to five cards. Without it a turn comes with at most one card, sent as a `proposal` event in place of the answer. */
+            answer_cards?: boolean;
             /**
              * @description Where the member asked from: Ask’s own screen (`ask`, the default), or `@Frapp` typed in a chat composer and answered to the asker alone (`chat_private`). It is counted and changes nothing about the answer. A question from `chat_private` is never kept in the beta diagnostics window, whatever `saved_notice_shown` says, because a channel shows no notice. No door writes to a channel: this route never posts a message.
              * @enum {string}
@@ -10349,6 +10510,70 @@ export interface components {
              * @description The upload that finished.
              */
             upload_id: string;
+        };
+        BootstrapDto: {
+            /** @description As `GET /v1/users/me`. */
+            user?: {
+                [key: string]: unknown;
+            } | null;
+            /** @description As `GET /v1/users/me/permissions`. */
+            permissions?: components["schemas"]["MyPermissionsDto"] | null;
+            /** @description As `GET /v1/users/me/legal-acceptance`. */
+            legal_acceptance?: components["schemas"]["LegalAcceptanceDto"] | null;
+            /** @description As `GET /v1/users/me/whats-new`. */
+            whats_new?: components["schemas"]["WhatsNewSeenDto"] | null;
+            /** @description As `GET /v1/chapters`. */
+            chapters?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/chapters/current`. */
+            current_chapter?: components["schemas"]["CurrentChapterResponseDto"] | null;
+            /** @description As `GET /v1/settings`. */
+            settings?: components["schemas"]["UserSettingsDto"] | null;
+            /** @description As `GET /v1/channels`. */
+            channels?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/channels/unread`. */
+            channel_unread?: components["schemas"]["ChannelUnreadCountDto"][] | null;
+            /** @description As `GET /v1/channels/categories/list`. */
+            channel_categories?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/channels/notification-preferences`. */
+            channel_notification_preferences?: components["schemas"]["ChannelNotificationPreferenceDto"][] | null;
+            /** @description As `GET /v1/channels/mention-roles`. */
+            mention_roles?: components["schemas"]["MentionRoleDto"][] | null;
+            /** @description As `GET /v1/chat-sidebar`. */
+            chat_sidebar?: components["schemas"]["ChatSidebarDto"] | null;
+            /** @description As `GET /v1/chat/blocks`. */
+            chat_blocks?: components["schemas"]["ChatBlockListDto"] | null;
+            /** @description As `GET /v1/chat-backgrounds/default`. */
+            chat_background_default?: components["schemas"]["ChapterChatBackgroundResponseDto"] | null;
+            /** @description As `GET /v1/gifs/availability`. */
+            gif_availability?: components["schemas"]["GifAvailabilityDto"] | null;
+            /** @description As `GET /v1/bookmarks`. */
+            bookmarks?: components["schemas"]["BookmarkDto"][] | null;
+            /** @description As `GET /v1/roles`. */
+            roles?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/events`. */
+            events?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/geofences`. */
+            geofences?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** @description As `GET /v1/documents` with no folder or search. */
+            documents?: components["schemas"]["ChapterDocumentDto"][] | null;
+            /** @description As `GET /v1/members/roster`. */
+            member_roster?: components["schemas"]["MemberRosterEntryDto"][] | null;
+            /** @description As `GET /v1/notifications?limit=50`. */
+            notifications?: {
+                [key: string]: unknown;
+            }[] | null;
         };
     };
     responses: never;
@@ -11464,6 +11689,66 @@ export interface operations {
             };
         };
     };
+    RbacController_join_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfAssignRoleResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    RbacController_leave_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SelfAssignRoleResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     RbacController_transferPresidency_v1: {
         parameters: {
             query?: never;
@@ -11776,6 +12061,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberRosterEntryDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MemberController_birthdays_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberBirthdayDto"][];
                 };
             };
             /** @description Error */
@@ -20396,6 +20709,48 @@ export interface operations {
             };
         };
     };
+    ActivityController_getRecap_v1: {
+        parameters: {
+            query?: {
+                /** @description Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC. */
+                week_start?: string;
+                /** @description Where the caller’s last week began, in their own time zone (the Sunday before `week_start`, at midnight). Used when it is within three hours of seven days before `week_start` (a clock change moves it by an hour); otherwise, or omitted, seven days before `week_start`. */
+                last_week_start?: string;
+                /** @description The calendar date of the last week’s first day in the caller’s time zone, for service entries, which are dated by day. Used when it is within a day of the day the server works out; otherwise, or omitted, the server’s day. */
+                first_day?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityRecapDto"];
+                };
+            };
+            /** @description `week_start` is more than eight days back or a day ahead. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ActivityController_startUnread_v1: {
         parameters: {
             query?: never;
@@ -22862,6 +23217,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BootstrapController_getBootstrap_v1: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read. A name the API does not know is ignored, so a section a later API drops costs an older client only that section. */
+                include?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BootstrapDto"];
                 };
             };
             /** @description Error */

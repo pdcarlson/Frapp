@@ -207,6 +207,7 @@ describe("Profile tap to edit (#3711)", () => {
       .map((row) => row.props.label);
     expect(tappable).toEqual([
       "Phone",
+      "Birthday",
       "Major",
       "Graduation",
       "City",
@@ -270,10 +271,11 @@ describe("Profile stat cards and Details", () => {
     const tree = render();
     const rows = tree.root
       .findAllByType(ListRow)
-      .slice(-7);
+      .slice(-8);
     expect(rows.map((row) => row.props.label)).toEqual([
       "Email",
       "Phone",
+      "Birthday",
       "Major",
       "Graduation",
       "City",
@@ -313,7 +315,7 @@ describe("Profile pledge class and order number (#3939)", () => {
     pledgeClasses = [{ id: "pc-1", name: "Alpha" }];
     const tree = render();
 
-    expect(detailRows(tree).slice(3, 6)).toEqual([
+    expect(detailRows(tree).slice(4, 7)).toEqual([
       ["Graduation", "Not set"],
       ["Pledge class", "Alpha"],
       ["Fraternal order", "14"],
@@ -327,7 +329,7 @@ describe("Profile pledge class and order number (#3939)", () => {
     vocabulary = { class: "Line", order: "line number" };
     const tree = render();
 
-    expect(detailRows(tree).slice(4, 6)).toEqual([
+    expect(detailRows(tree).slice(5, 7)).toEqual([
       ["Line", "Alpha"],
       ["line number", "14"],
     ]);
@@ -339,7 +341,7 @@ describe("Profile pledge class and order number (#3939)", () => {
     pledgeClasses = undefined;
     const tree = render();
 
-    expect(detailRows(tree)[4]).toEqual(["Pledge class", "Loading"]);
+    expect(detailRows(tree)[5]).toEqual(["Pledge class", "Loading"]);
     tree.unmount();
   });
 
@@ -364,6 +366,7 @@ describe("Profile pledge class and order number (#3939)", () => {
     expect(detailRows(tree).map(([label]) => label)).toEqual([
       "Email",
       "Phone",
+      "Birthday",
       "Major",
       "Graduation",
       "City",

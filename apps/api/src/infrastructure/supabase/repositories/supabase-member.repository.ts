@@ -5,7 +5,10 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import type {
+  IMemberRepository,
+  SelfAssignResult,
+} from '#domain/repositories/member.repository.interface';
 import { ChapterMemberIdentity, Member } from '#domain/entities/member.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { readOncePerRequest, readSharedInBurst } from '../request-reads';
@@ -180,6 +183,22 @@ export class SupabaseMemberRepository implements IMemberRepository {
     });
     if (error) throw new SupabaseQueryError(error);
     return data?.[0] ?? null;
+  }
+
+  async setSelfAssignedRole(
+    chapterId: string,
+    memberId: string,
+    roleId: string,
+    join: boolean,
+  ): Promise<SelfAssignResult> {
+    const { data, error } = await this.supabase.rpc('self_assign_role', {
+      p_chapter_id: chapterId,
+      p_member_id: memberId,
+      p_role_id: roleId,
+      p_join: join,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    return data?.[0] ?? { outcome: 'not_assignable', role_ids: null };
   }
 
   async delete(id: string): Promise<void> {

@@ -2,20 +2,23 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, Lightbulb } from "lucide-react";
 import {
   useAskSignal,
   useAskThumbs,
   type ActResponse,
   type AskExchange,
+  type AskCardEnd,
   type AskProposalResolution,
 } from "@repo/hooks";
 import {
   ASK_COPY,
+  ASK_EFFORT_COPY,
   ASK_POST_COPY,
   askAnswerEntities,
   askAnswerSegments,
   askLeftOutLine,
+  askOffersThinkHarder,
   askPostedSourceTitle,
   askReadLine,
   askSourceChip,
@@ -35,7 +38,7 @@ import {
   AskChannelOpens,
   onPlainClick,
 } from "@/components/ask/ask-entity-text";
-import { AskProposal } from "@/components/ask/ask-proposal";
+import { AskAnswerCards, AskProposal } from "@/components/ask/ask-proposal";
 import {
   askSourceHref,
   askSourceIsMessage,
@@ -87,9 +90,11 @@ export function AskTurn({
   busy = false,
   onFollowMessage,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   onProposal,
   onResolved,
+  onCardEnded,
 }: {
   exchange: AskExchange;
   /**
@@ -104,12 +109,19 @@ export function AskTurn({
   busy?: boolean;
   /** Asks the same thing again, after a failure that may not repeat. */
   onRetry: () => void;
+  /**
+   * Asks the same thing again in this turn's place with more effort (#4904).
+   * Left out, the answer offers no Think harder.
+   */
+  onThinkHarder?: () => void;
   /** Opens the AI sheet, for a turn refused because it is unanswered. */
   onAnswerConsent: () => void;
   /** An event pick answered with a new proposal for this turn. */
   onProposal: (proposal: ActResponse) => void;
   /** This turn's card was confirmed or dismissed. */
   onResolved: (resolution: AskProposalResolution) => void;
+  /** One of the cards under this turn's answer was confirmed or dismissed. */
+  onCardEnded: (suggestionId: string, end: AskCardEnd) => void;
 }) {
   return (
     <article className="space-y-3">
@@ -121,9 +133,11 @@ export function AskTurn({
         busy={busy}
         onFollowMessage={onFollowMessage}
         onRetry={onRetry}
+        onThinkHarder={onThinkHarder}
         onAnswerConsent={onAnswerConsent}
         onProposal={onProposal}
         onResolved={onResolved}
+        onCardEnded={onCardEnded}
       />
     </article>
   );
@@ -142,17 +156,22 @@ export function AskReply({
   busy = false,
   onFollowMessage,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   onProposal,
   onResolved,
+  onCardEnded,
 }: {
   exchange: AskExchange;
   busy?: boolean;
   onFollowMessage?: () => void;
   onRetry: () => void;
+  onThinkHarder?: () => void;
   onAnswerConsent: () => void;
   onProposal: (proposal: ActResponse) => void;
   onResolved: (resolution: AskProposalResolution) => void;
+  /** One of the cards under this turn's answer was confirmed or dismissed. */
+  onCardEnded: (suggestionId: string, end: AskCardEnd) => void;
 }) {
   return (
     <div aria-live="polite" className="space-y-3">
@@ -203,6 +222,14 @@ export function AskReply({
             onAnswerConsent={onAnswerConsent}
             onFollowMessage={onFollowMessage}
           />
+          {exchange.answer.proposals?.length ? (
+            <CountedAnswerCards
+              askId={exchange.answer.ask_id ?? null}
+              ids={exchange.answer.proposals}
+              ended={exchange.cards ?? NO_CARDS_ENDED}
+              onEnded={onCardEnded}
+            />
+          ) : null}
           {/* Anything Ask wrote, or chose not to, can be reported. An
                 answer that was never attempted has nothing AI-made in it. */}
           {exchange.answer.status !== "unavailable" && exchange.askId ? (
@@ -210,11 +237,45 @@ export function AskReply({
               key={exchange.askId}
               askId={exchange.askId}
               answer={exchange.answer}
+              busy={busy}
+              onThinkHarder={
+                onThinkHarder &&
+                askOffersThinkHarder(exchange.answer, exchange.effort)
+                  ? onThinkHarder
+                  : undefined
+              }
             />
           ) : null}
         </>
       ) : null}
     </div>
+  );
+}
+
+const NO_CARDS_ENDED: Readonly<Record<string, AskCardEnd>> = {};
+
+/**
+ * The cards under an answer, each one's end counted against the answer that
+ * proposed it (`card_confirmed`, `card_dismissed`). A card that had stopped
+ * waiting was neither.
+ */
+function CountedAnswerCards({
+  askId,
+  onEnded,
+  ...cards
+}: Parameters<typeof AskAnswerCards>[0] & { askId: string | null }) {
+  const signal = useAskSignal();
+  return (
+    <AskAnswerCards
+      {...cards}
+      onEnded={(suggestionId, end) => {
+        if (end.resolution.kind === "done") signal(askId, "card_confirmed");
+        else if (end.resolution.kind === "cancelled") {
+          signal(askId, "card_dismissed");
+        }
+        onEnded(suggestionId, end);
+      }}
+    />
   );
 }
 
@@ -227,7 +288,7 @@ const QUIET_ACTION =
   "h-8 w-8 text-muted-foreground/70 hover:text-foreground pointer-coarse:h-11 pointer-coarse:w-11";
 
 /**
- * Copy, the thumbs and Report under a finished answer, and under them what a
+ * Copy, the thumbs, Think harder and Report under a finished answer, and under them what a
  * thumbs down opens (`ask-thumbs.tsx`). The thumbs are drawn only for an
  * answer whose turn the server kept a trace of (`answer.ask_id`): a rating
  * has nothing to be recorded against otherwise.
@@ -235,10 +296,16 @@ const QUIET_ACTION =
 function AnswerActions({
   askId,
   answer,
+  busy = false,
+  onThinkHarder,
 }: {
   /** The turn's id, which Report this names. */
   askId: string;
   answer: AskAnswer;
+  /** Another turn is being answered, so asking this one again waits. */
+  busy?: boolean;
+  /** Set where this answer offers Think harder (`askOffersThinkHarder`). */
+  onThinkHarder?: () => void;
 }) {
   const target = {
     subject: "ask_answer" as const,
@@ -260,6 +327,16 @@ function AnswerActions({
             onRate={thumbs.rate}
             className={QUIET_ACTION}
           />
+        ) : null}
+        {onThinkHarder ? (
+          <IconButton
+            label={ASK_EFFORT_COPY.action}
+            className={QUIET_ACTION}
+            disabled={busy}
+            onClick={onThinkHarder}
+          >
+            <Lightbulb className="h-3.5 w-3.5" aria-hidden="true" />
+          </IconButton>
         ) : null}
         <ReportAiButton
           iconOnly
@@ -353,7 +430,10 @@ function AskAnswerBody({
   }
   const body = (
     <>
-      <AnswerText answer={answer} onFollowMessage={onFollowMessage} />
+      {/* An answer that is cards and nothing else has no words to draw. */}
+      {answer.text ? (
+        <AnswerText answer={answer} onFollowMessage={onFollowMessage} />
+      ) : null}
       {/* Where the step line was while it worked, in the same tone. */}
       {readLine ? (
         <p className="text-caption text-muted-foreground">{readLine}</p>

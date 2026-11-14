@@ -1536,6 +1536,100 @@
         ]
       }
     },
+    "/v1/roles/{id}/join": {
+      "post": {
+        "description": "Adds the role to the caller's own roles (#4958). 403 `role.not_self_assignable` unless an officer marked it and it is still safe to pick; 409 when it changed mid-save. Joining a role already held changes nothing.",
+        "operationId": "RbacController_join_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfAssignRoleResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Join a self-assignable role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/{id}/leave": {
+      "post": {
+        "description": "Takes the role off the caller's own roles (#4958), with the same refusals as join. Leaving a role not held changes nothing.",
+        "operationId": "RbacController_leave_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfAssignRoleResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Leave a self-assignable role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
     "/v1/roles/transfer-presidency": {
       "post": {
         "operationId": "RbacController_transferPresidency_v1",
@@ -2000,6 +2094,47 @@
           }
         ],
         "summary": "Display roster for the chapter — id, name, avatar and role color only",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/birthdays": {
+      "get": {
+        "description": "Month and day of every member who shares their birthday with their chapter (#4959), for the calendar. A member who keeps theirs to themselves is left out, and the year is never sent.",
+        "operationId": "MemberController_birthdays_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberBirthdayDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Birthdays members share with the chapter",
         "tags": [
           "Members"
         ]
@@ -14990,6 +15125,78 @@
         ]
       }
     },
+    "/v1/activity/recap": {
+      "get": {
+        "description": "The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.",
+        "operationId": "ActivityController_getRecap_v1",
+        "parameters": [
+          {
+            "name": "week_start",
+            "required": false,
+            "in": "query",
+            "description": "Where the caller’s week begins, in their own time zone (the Study screen’s week: Sunday at midnight). Between eight days ago and a day from now: outside that, the standing answers 400 and `GET /v1/activity` counts the default week. Omitted: last Sunday at midnight UTC.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "last_week_start",
+            "required": false,
+            "in": "query",
+            "description": "Where the caller’s last week began, in their own time zone (the Sunday before `week_start`, at midnight). Used when it is within three hours of seven days before `week_start` (a clock change moves it by an hour); otherwise, or omitted, seven days before `week_start`.",
+            "schema": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          {
+            "name": "first_day",
+            "required": false,
+            "in": "query",
+            "description": "The calendar date of the last week’s first day in the caller’s time zone, for service entries, which are dated by day. Used when it is within a day of the day the server works out; otherwise, or omitted, the server’s day.",
+            "schema": {
+              "example": "2026-11-08",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityRecapDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`week_start` is more than eight days back or a day ahead."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get what the caller did last week",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/activity/unread-since": {
       "put": {
         "description": "A client that draws dots calls it when `GET /v1/activity` serves `unread_since: null`. From then, a row that appears is unread until the caller opens it; nothing older ever is, since no client could have recorded the caller’s opens of it. Idempotent: once set it never moves. `spec/behavior/activity.md` § Unread.",
@@ -18356,6 +18563,55 @@
           "Meetings"
         ]
       }
+    },
+    "/v1/bootstrap": {
+      "get": {
+        "description": "The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.",
+        "operationId": "BootstrapController_getBootstrap_v1",
+        "parameters": [
+          {
+            "name": "include",
+            "required": false,
+            "in": "query",
+            "description": "Comma-separated sections to read; every section when omitted. A client batching its first-screen reads asks for the ones it is about to read. A name the API does not know is ignored, so a section a later API drops costs an older client only that section.",
+            "schema": {
+              "example": "user,channels,channel_unread",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootstrapDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What a client's first screen reads, in one request",
+        "tags": [
+          "Bootstrap"
+        ]
+      }
     }
   },
   "info": {
@@ -18587,6 +18843,35 @@
             "maxLength": 32,
             "description": "The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.",
             "example": "(518) 555-0142"
+          },
+          "birthday_month": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 12,
+            "description": "The member's birthday month, 1-12 (#4959). Sent with `birthday_day`; null on both clears the birthday (and its year)."
+          },
+          "birthday_day": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 31,
+            "description": "The day of `birthday_month`. It must exist in that month; 29 February is taken."
+          },
+          "birthday_year": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 1900,
+            "maximum": 2100,
+            "description": "The birth year, optional. Never shown to anyone but the member. Needs a month and day."
+          },
+          "birthday_visibility": {
+            "type": "string",
+            "enum": [
+              "chapter",
+              "nobody"
+            ],
+            "description": "Who may see the birthday: `chapter` (members of the member's chapters, on the profile, the calendar and the birthday post) or `nobody`, the default."
           }
         }
       },
@@ -19229,6 +19514,12 @@
             "format": "uuid",
             "nullable": true,
             "description": "Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise)."
+          },
+          "birthday_channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived or the audit log (400 otherwise)."
           }
         }
       },
@@ -19692,8 +19983,27 @@
               "service:approve": true,
               "polls:create": null
             }
+          },
+          "self_assignable": {
+            "type": "boolean",
+            "description": "Members may join and leave this role themselves (#4958). Only a role with no system key, outside the tiers, and holding no permission beyond `channels:read:<slug>` may be marked (400 `role.self_assignable_keyed`, `role.self_assignable_tiered` or `role.self_assignable_permissions`), and marking needs the caller to hold what it carries. A save that would leave a marked role unsafe is refused the same way unless it also sends false."
           }
         }
+      },
+      "SelfAssignRoleResultDto": {
+        "type": "object",
+        "properties": {
+          "role_ids": {
+            "description": "The caller's role ids after the change, the role added (join) or taken off (leave).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role_ids"
+        ]
       },
       "TransferPresidencyDto": {
         "type": "object",
@@ -19949,6 +20259,16 @@
             "nullable": true,
             "description": "The member's own phone number (#3711), as they typed it, or null. Only they set it."
           },
+          "birthday_month": {
+            "type": "number",
+            "nullable": true,
+            "description": "The member's birthday month, 1-12, when they share it with their chapter (#4959); null when they don't or set none."
+          },
+          "birthday_day": {
+            "type": "number",
+            "nullable": true,
+            "description": "The day of `birthday_month`, under the same rule. The year is never sent."
+          },
           "pledge_class_id": {
             "type": "string",
             "format": "uuid",
@@ -19998,6 +20318,8 @@
           "current_company",
           "email",
           "phone",
+          "birthday_month",
+          "birthday_day",
           "pledge_class_id",
           "order_number",
           "is_alumni"
@@ -20029,6 +20351,40 @@
           "display_name",
           "avatar_url",
           "role_color"
+        ]
+      },
+      "MemberBirthdayDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "users.id"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "birthday_month": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 12
+          },
+          "birthday_day": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 31,
+            "description": "The day of the month. A 29 February birthday falls on 28 February outside leap years (`birthdayDateInYear` in `@repo/validation`)."
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "avatar_url",
+          "birthday_month",
+          "birthday_day"
         ]
       },
       "UpdateMemberRolesDto": {
@@ -29524,6 +29880,70 @@
           "unavailable"
         ]
       },
+      "ActivityRecapDto": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Where last week began: seven days before the `week_start` sent (the start of the caller’s current week)."
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Where last week ended: the `week_start` sent."
+          },
+          "events_attended": {
+            "type": "number",
+            "nullable": true,
+            "description": "Events that started last week, among those the caller can see, where they were marked present or late. Null when Events is off or couldn’t be read."
+          },
+          "tasks_done": {
+            "type": "number",
+            "nullable": true,
+            "description": "The caller’s own tasks they marked done last week, confirmed or not; one sent back since is not counted. Null when Tasks is off or couldn’t be read."
+          },
+          "points": {
+            "type": "number",
+            "nullable": true,
+            "description": "Points awarded to the caller last week less points taken, from the ledger. Null when Points is off or couldn’t be read."
+          },
+          "service_minutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "Service minutes the caller logged for last week’s days, approved or waiting. Null when Hours is off or couldn’t be read."
+          },
+          "study_minutes": {
+            "type": "number",
+            "nullable": true,
+            "description": "Minutes from the caller’s study sessions that started last week and have ended. Null when Hours is off or couldn’t be read."
+          },
+          "unavailable": {
+            "type": "array",
+            "description": "Parts that could not be read this time. Each is served null; the others are unaffected.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "events",
+                "tasks",
+                "points",
+                "service",
+                "study"
+              ]
+            }
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "events_attended",
+          "tasks_done",
+          "points",
+          "service_minutes",
+          "study_minutes",
+          "unavailable"
+        ]
+      },
       "ActivityItemRefDto": {
         "type": "object",
         "properties": {
@@ -30896,6 +31316,10 @@
             "type": "boolean",
             "description": "True when the client can show a proposal card. Then, for a caller who also holds `ai:act` and `members:view`, words that ask for something to be done end the stream with a `proposal` event in place of `done`. Nothing is changed by it: the card is confirmed with `POST /v1/ai/suggestions/{id}/accept`."
           },
+          "answer_cards": {
+            "type": "boolean",
+            "description": "True when the client draws the cards an answer comes with (`answer.proposals` on `done`). Read only with `actions`, by a server that answers through the tool loop: a turn can then be an answer with cards under it, or up to five cards. Without it a turn comes with at most one card, sent as a `proposal` event in place of the answer."
+          },
           "door": {
             "type": "string",
             "enum": [
@@ -32108,6 +32532,218 @@
         "required": [
           "upload_id"
         ]
+      },
+      "BootstrapDto": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "additionalProperties": true,
+            "nullable": true,
+            "description": "As `GET /v1/users/me`."
+          },
+          "permissions": {
+            "nullable": true,
+            "description": "As `GET /v1/users/me/permissions`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MyPermissionsDto"
+              }
+            ]
+          },
+          "legal_acceptance": {
+            "nullable": true,
+            "description": "As `GET /v1/users/me/legal-acceptance`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LegalAcceptanceDto"
+              }
+            ]
+          },
+          "whats_new": {
+            "nullable": true,
+            "description": "As `GET /v1/users/me/whats-new`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/WhatsNewSeenDto"
+              }
+            ]
+          },
+          "chapters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/chapters`."
+          },
+          "current_chapter": {
+            "nullable": true,
+            "description": "As `GET /v1/chapters/current`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CurrentChapterResponseDto"
+              }
+            ]
+          },
+          "settings": {
+            "nullable": true,
+            "description": "As `GET /v1/settings`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserSettingsDto"
+              }
+            ]
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/channels`."
+          },
+          "channel_unread": {
+            "nullable": true,
+            "description": "As `GET /v1/channels/unread`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelUnreadCountDto"
+            }
+          },
+          "channel_categories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/channels/categories/list`."
+          },
+          "channel_notification_preferences": {
+            "nullable": true,
+            "description": "As `GET /v1/channels/notification-preferences`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelNotificationPreferenceDto"
+            }
+          },
+          "mention_roles": {
+            "nullable": true,
+            "description": "As `GET /v1/channels/mention-roles`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionRoleDto"
+            }
+          },
+          "chat_sidebar": {
+            "nullable": true,
+            "description": "As `GET /v1/chat-sidebar`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatSidebarDto"
+              }
+            ]
+          },
+          "chat_blocks": {
+            "nullable": true,
+            "description": "As `GET /v1/chat/blocks`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatBlockListDto"
+              }
+            ]
+          },
+          "chat_background_default": {
+            "nullable": true,
+            "description": "As `GET /v1/chat-backgrounds/default`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChapterChatBackgroundResponseDto"
+              }
+            ]
+          },
+          "gif_availability": {
+            "nullable": true,
+            "description": "As `GET /v1/gifs/availability`.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GifAvailabilityDto"
+              }
+            ]
+          },
+          "bookmarks": {
+            "nullable": true,
+            "description": "As `GET /v1/bookmarks`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BookmarkDto"
+            }
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/roles`."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/events`."
+          },
+          "geofences": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/geofences`."
+          },
+          "documents": {
+            "nullable": true,
+            "description": "As `GET /v1/documents` with no folder or search.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChapterDocumentDto"
+            }
+          },
+          "member_roster": {
+            "nullable": true,
+            "description": "As `GET /v1/members/roster`.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemberRosterEntryDto"
+            }
+          },
+          "notifications": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            },
+            "nullable": true,
+            "description": "As `GET /v1/notifications?limit=50`."
+          }
+        }
       }
     }
   }

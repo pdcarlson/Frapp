@@ -482,6 +482,8 @@ function build(model: ILanguageModel, captured: Captured) {
     ),
     // Asked from nowhere.
     { read: () => Promise.resolve([]) } as never,
+    // No card is offered.
+    [],
   );
   return new AskController(
     ask,

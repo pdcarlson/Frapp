@@ -55,6 +55,7 @@ import {
   type ActivitySnoozeActions,
 } from "./activity-snooze-menu";
 import { RowMenu } from "@/components/shared/row-menu";
+import { RecapCard } from "./recap-card";
 import { SemesterStrip, SemesterStripSkeleton } from "./semester-strip";
 import { WeekCard } from "./week-card";
 import {
@@ -76,6 +77,7 @@ import {
   activityStandingKeys,
   useActiveChapterId,
   useActivity,
+  useActivityRecap,
   useActivityStanding,
   useActivityUnread,
   useActivitySnoozeWake,
@@ -735,12 +737,13 @@ function ReviewParam({ open }: { open: (taskId: string) => Promise<void> }) {
  *
  * 1. The week card (`WeekCard`): done of total this week, a line per kind,
  *    and the one thing to do next.
- * 2. This semester (`SemesterStrip`): up to four gauges.
- * 3. To review (`ReviewCard`): for an officer with something to sign off.
- * 4. To do: the member's own events, tasks, polls and sign-ups by day
+ * 2. Last week (`RecapCard`), Sunday to Tuesday, until dismissed (#4983).
+ * 3. This semester (`SemesterStrip`): up to four gauges.
+ * 4. To review (`ReviewCard`): for an officer with something to sign off.
+ * 5. To do: the member's own events, tasks, polls and sign-ups by day
  *    (`activityAgenda`), three to a day before "Show more". A line of the
  *    week card narrows it to one kind.
- * 5. Waiting on others, then Links: what the member made and what was posted
+ * 6. Waiting on others, then Links: what the member made and what was posted
  *    for them, each left out when it has nothing.
  *
  * The page is usually a pane beside chat about a phone wide, and the whole
@@ -764,6 +767,9 @@ export function ActivityPage() {
   // How the member is doing this semester, under the week. Its own read:
   // when it fails the rest of the page is as it was.
   const standing = useActivityStanding();
+  // Last week, on Sunday to Tuesday only (`useActivityRecap` reads nothing
+  // the rest of the week). Its own read too, drawn only once it lands.
+  const recap = useActivityRecap();
   // The shared 30s clock the poll cards read: a poll whose time runs out
   // leaves the list within a tick, without a re-read (#4258), and the days
   // and Next stay current while the page is open.
@@ -976,6 +982,7 @@ export function ActivityPage() {
               onFilter={setPicked}
             />
           ) : null}
+          {recap.data ? <RecapCard recap={recap.data} now={now} /> : null}
           {standing.isPending ? (
             <SemesterStripSkeleton />
           ) : standing.data ? (

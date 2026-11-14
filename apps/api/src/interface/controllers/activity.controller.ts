@@ -28,6 +28,8 @@ import {
   acceptableWeekStart,
 } from '../../application/services/activity-standing.service';
 import type { ActivityStanding } from '../../application/services/activity-standing.service';
+import { ActivityRecapService } from '../../application/services/activity-recap.service';
+import type { ActivityRecap } from '../../application/services/activity-recap.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -41,6 +43,8 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import {
   ActivityDto,
   ActivityItemRefDto,
+  ActivityRecapDto,
+  ActivityRecapQueryDto,
   ActivityStandingDto,
   ActivityWeekQueryDto,
   MarkActivityReadDto,
@@ -76,6 +80,7 @@ export class ActivityController {
     private readonly activityService: ActivityService,
     private readonly linkService: ActivityLinkService,
     private readonly standingService: ActivityStandingService,
+    private readonly recapService: ActivityRecapService,
   ) {}
 
   @Get()
@@ -124,6 +129,33 @@ export class ActivityController {
     const now = new Date();
     return this.standingService.getStanding(chapterId, userId, enabledModules, {
       weekStart: weekStartOf(query, now),
+      now,
+    });
+  }
+
+  @Get('recap')
+  @ApiOperation({
+    summary: 'Get what the caller did last week',
+    description:
+      'The weekly recap on the Activity page (`spec/behavior/activity.md` § Recap): the caller’s last finished week, the week before `week_start` (the start of their current week, as the standing reads it), from `last_week_start` and `first_day` when the client sends them. Events attended, their own tasks marked done, net points, service minutes logged and study minutes, each read through the module that owns it. A module the chapter has off is served null, and a part that fails is served null and named in `unavailable`. Its own read, apart from `GET /v1/activity`, so the page’s read carries none of it.',
+  })
+  @ApiOkResponse({ type: ActivityRecapDto })
+  @ApiBadRequestResponse({
+    description: '`week_start` is more than eight days back or a day ahead.',
+  })
+  async getRecap(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+    @Query() query: ActivityRecapQueryDto,
+  ): Promise<ActivityRecap> {
+    const now = new Date();
+    return this.recapService.getRecap(chapterId, userId, enabledModules, {
+      weekStart: weekStartOf(query, now),
+      lastWeekStart: query.last_week_start
+        ? new Date(query.last_week_start)
+        : undefined,
+      firstDay: query.first_day,
       now,
     });
   }

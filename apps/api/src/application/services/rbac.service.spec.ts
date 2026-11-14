@@ -85,6 +85,7 @@ describe('RbacService', () => {
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
       findByUser: jest.fn(),
       findChapterMemberIdentities: jest.fn(),
     };
@@ -93,6 +94,7 @@ describe('RbacService', () => {
       findById: jest.fn(),
       findByIds: jest.fn(),
       isAnalyticsOptedOut: jest.fn(),
+      findWithBirthdayChannel: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),

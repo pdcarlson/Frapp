@@ -108,6 +108,7 @@ describe('ChapterService', () => {
       findById: jest.fn(),
       findByIds: jest.fn(),
       isAnalyticsOptedOut: jest.fn(),
+      findWithBirthdayChannel: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
@@ -165,6 +166,7 @@ describe('ChapterService', () => {
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
     };
 
     mockUserRepo = {
@@ -172,6 +174,7 @@ describe('ChapterService', () => {
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findContactsByIds: jest.fn(),
+      findSharedBirthdaysByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),

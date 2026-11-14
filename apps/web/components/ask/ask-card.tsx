@@ -130,6 +130,7 @@ export function AskCard({
     retry,
     setProposal,
     resolveProposal,
+    resolveCard,
     stop,
     reset,
   } = useAsk();
@@ -367,6 +368,12 @@ export function AskCard({
                         exchange={exchange}
                         busy={working && exchange.phase !== "working"}
                         onRetry={() => void retry(exchange.id, options())}
+                        onThinkHarder={() =>
+                          void retry(exchange.id, {
+                            ...options(),
+                            effort: "more",
+                          })
+                        }
                         onAnswerConsent={() =>
                           void retry(exchange.id, options())
                         }
@@ -375,6 +382,9 @@ export function AskCard({
                         }
                         onResolved={(resolution) =>
                           resolveProposal(exchange.id, resolution)
+                        }
+                        onCardEnded={(suggestionId, end) =>
+                          resolveCard(exchange.id, suggestionId, end)
                         }
                       />
                     ))
