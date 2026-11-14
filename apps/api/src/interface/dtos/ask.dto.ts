@@ -2,12 +2,15 @@ import {
   ArrayMaxSize,
   IsArray,
   IsIn,
+  IsInt,
   IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
@@ -17,6 +20,7 @@ import {
   ASK_EFFORTS,
   ASK_HISTORY_ANSWER_MAX_LENGTH,
   ASK_HISTORY_MAX_TURNS,
+  ASK_PROPOSALS_MAX,
   ASK_QUESTION_MAX_LENGTH,
   type AskDoor,
   type AskEffort,
@@ -53,6 +57,18 @@ export class AskHistoryTurnDto {
   @IsOptional()
   @IsStrictBoolean()
   suggested?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'How many cards that turn came with. A count only: the server writes the line that stands for them, so a follow-up is read knowing cards are already in front of the member.',
+    minimum: 1,
+    maximum: ASK_PROPOSALS_MAX,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(ASK_PROPOSALS_MAX)
+  cards?: number;
 }
 
 export class AskFromDto {

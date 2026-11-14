@@ -9949,6 +9949,8 @@ export interface components {
             answer: string;
             /** @description True when the member tapped one of the opening suggestions instead of typing. A suggestion can name a record another member wrote, so a turn marked this way is never read when working out whether later words ask for something to be done. */
             suggested?: boolean;
+            /** @description How many cards that turn came with. A count only: the server writes the line that stands for them, so a follow-up is read knowing cards are already in front of the member. */
+            cards?: number;
         };
         AskFromDto: {
             /**
