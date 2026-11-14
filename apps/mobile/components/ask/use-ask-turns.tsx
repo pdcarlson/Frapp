@@ -108,6 +108,8 @@ export function useAskTurns({
     },
     busy: working && exchange.phase !== "working",
     onRetry: () => void retry(exchange.id, options()),
+    onThinkHarder: () =>
+      void retry(exchange.id, { ...options(), effort: "more" as const }),
     onAnswerConsent: () => void retry(exchange.id, options()),
     report: reportFor(exchange, reporting),
     onOpenChannel: openChannel,

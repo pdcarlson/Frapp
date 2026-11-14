@@ -14,6 +14,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_EFFORT_COPY,
   ASK_FEEDBACK_COPY,
   ASK_FEEDBACK_REASONS,
   ASK_POST_COPY,
@@ -22,6 +23,7 @@ import {
   askAnswerSegments,
   askEntityParts,
   askLeftOutLine,
+  askOffersThinkHarder,
   askPostedSourceTitle,
   askReadLine,
   askSourceChip,
@@ -37,6 +39,7 @@ import {
   CheckGlyph,
   CopyGlyph,
   FlagGlyph,
+  LightbulbGlyph,
   ThumbDownGlyph,
   ThumbUpGlyph,
 } from "@/components/control-glyphs";
@@ -112,6 +115,7 @@ export function AskTurn({
   onOpenSource,
   busy = false,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   report,
   onOpenChannel,
@@ -131,6 +135,11 @@ export function AskTurn({
   onOpenSource: (source: AskSource) => void;
   /** Asks the same question again, after a failure that may not repeat. */
   onRetry: () => void;
+  /**
+   * Asks the same question again in this turn's place with more effort
+   * (#4904). Left out, the answer offers no Think harder.
+   */
+  onThinkHarder?: () => void;
   /** Opens the AI sheet, for an answer refused because it is unanswered. */
   onAnswerConsent: () => void;
   /**
@@ -166,6 +175,7 @@ export function AskTurn({
         onOpenSource={onOpenSource}
         busy={busy}
         onRetry={onRetry}
+        onThinkHarder={onThinkHarder}
         onAnswerConsent={onAnswerConsent}
         report={report}
         onOpenChannel={onOpenChannel}
@@ -191,6 +201,7 @@ export function AskReply({
   onOpenSource,
   busy = false,
   onRetry,
+  onThinkHarder,
   onAnswerConsent,
   report,
   onOpenChannel,
@@ -259,6 +270,12 @@ export function AskReply({
                   : null
               }
               report={exchange.askId ? (report ?? null) : null}
+              thinkHarder={
+                onThinkHarder &&
+                askOffersThinkHarder(exchange.answer, exchange.effort)
+                  ? { busy, onPress: onThinkHarder }
+                  : null
+              }
             />
           ) : (
             <AnswerActions
@@ -297,7 +314,14 @@ function AnswerActions({
   thumbs,
   text,
   report,
+  thinkHarder = null,
 }: {
+  /**
+   * Think harder, where this answer offers it (`askOffersThinkHarder`): the
+   * same question again in this turn's place with more effort. It waits
+   * while another turn is being answered.
+   */
+  thinkHarder?: { busy: boolean; onPress: () => void } | null;
   /** The answer's thumbs, or null when the server kept no trace to rate. */
   thumbs: ReturnType<typeof useAskThumbs> | null;
   /** The answer's words, without the markers, or null when there are none to copy. */
@@ -386,6 +410,17 @@ function AnswerActions({
             </IconButton>
           </>
         ) : null}
+        {thinkHarder ? (
+          <IconButton
+            label={ASK_EFFORT_COPY.action}
+            disabled={thinkHarder.busy}
+            onPress={thinkHarder.onPress}
+          >
+            <View style={thinkHarder.busy ? styles.dimmed : null}>
+              <LightbulbGlyph color={color} size={ACTION_GLYPH_SIZE} />
+            </View>
+          </IconButton>
+        ) : null}
         {report ? (
           <IconButton
             // Named for what it reports, as web's icon is: there are no
@@ -427,6 +462,7 @@ function RatedAnswerActions({
   askId: string;
   text: string | null;
   report: AskTurnReport | null;
+  thinkHarder: { busy: boolean; onPress: () => void } | null;
 }) {
   return <AnswerActions thumbs={useAskThumbs(askId)} {...row} />;
 }

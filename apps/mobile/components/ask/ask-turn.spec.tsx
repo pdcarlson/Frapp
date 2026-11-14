@@ -13,6 +13,7 @@ import type { AskExchange } from "@repo/hooks";
 import {
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_EFFORT_COPY,
   ASK_FEEDBACK_COPY,
   askLeftOutLine,
   askReadLine,
@@ -666,6 +667,29 @@ describe("thumbs under an answer (#4904)", () => {
     });
     expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.thanks);
     expect(screenText(tree)).not.toContain(ASK_FEEDBACK_COPY.prompt);
+  });
+
+  it("sit beside Think harder, which asks again once and waits while another turn is answered", () => {
+    thumbs.state = { rating: null, reason: null };
+    const onThinkHarder = vi.fn();
+    const tree = render(traced, { onThinkHarder });
+    act(() => byLabel(tree, ASK_EFFORT_COPY.action)[0]!.props.onPress());
+    expect(onThinkHarder).toHaveBeenCalledTimes(1);
+
+    // Not on the harder answer itself, not without a trace, not where the
+    // host offers none.
+    for (const quiet of [
+      render({ ...traced, effort: "more" }, { onThinkHarder }),
+      render(exchange({ askId: "ask-1", answer: answer() }), { onThinkHarder }),
+      render(traced),
+    ]) {
+      expect(byLabel(quiet, ASK_EFFORT_COPY.action)).toHaveLength(0);
+    }
+
+    const waiting = render(traced, { onThinkHarder, busy: true });
+    expect(byLabel(waiting, ASK_EFFORT_COPY.action)[0]!.props.disabled).toBe(
+      true,
+    );
   });
 
   it("say so when a rating did not send", () => {
