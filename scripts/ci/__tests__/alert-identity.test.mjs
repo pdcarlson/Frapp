@@ -12,6 +12,7 @@ import {
   resolveAlert,
 } from "../lib/alert-issue.mjs";
 import * as checkMigrationDrift from "../check-migration-drift.mjs";
+import * as clockAheadTests from "../clock-ahead-tests.mjs";
 import * as deployAlert from "../deploy-alert.mjs";
 import * as npmAuditWatch from "../npm-audit-watch.mjs";
 import * as prBaseSync from "../pr-base-sync.mjs";
@@ -58,6 +59,7 @@ function codeLines(source) {
 // per project and environment.
 const FLAT = {
   "check-migration-drift": checkMigrationDrift,
+  "clock-ahead-tests": clockAheadTests,
   "pr-base-sync": prBaseSync,
   "production-auth-conformance": productionAuthConformance,
   "production-backup-env": productionBackupEnv,
