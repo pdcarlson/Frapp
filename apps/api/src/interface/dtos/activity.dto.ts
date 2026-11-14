@@ -159,6 +159,15 @@ export class ActivityTaskDto implements ActivityTask {
       'Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 }
 
 export class ActivityHoursEntryDto implements ActivityHoursEntry {
@@ -190,6 +199,15 @@ export class ActivityHoursEntryDto implements ActivityHoursEntry {
       'Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 }
 
 export class ActivityPollDto implements ActivityPoll {
@@ -255,6 +273,15 @@ export class ActivityPollDto implements ActivityPoll {
   unread: boolean;
 
   @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
+
+  @ApiProperty({
     type: ChatMessageDto,
     description:
       'The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them.',
@@ -318,6 +345,15 @@ export class ActivityCardDto implements ActivityCard {
       'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 }
 
 export class ActivityEventDto implements ActivityEvent {
@@ -392,6 +428,15 @@ export class ActivityEventDto implements ActivityEvent {
       'Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 }
 
 /** A file the caller uploaded. Never served since #4291; see `ActivityMadeByYouDto.files`. */
@@ -479,6 +524,15 @@ export class ActivityLinkDto implements ActivityLink {
       'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 }
 
 /** `PUT /v1/activity/links/{id}/state`. */
@@ -505,6 +559,17 @@ export class ActivityItemRefDto implements ActivityItemRef {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   item_id: string;
+}
+
+/** `PUT /v1/activity/snoozes`. */
+export class SnoozeActivityItemDto extends ActivityItemRefDto {
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'When the row comes back. In the future and at most 90 days away.',
+  })
+  @IsISO8601({ strict: true })
+  until: string;
 }
 
 /** `POST /v1/activity/reads`. */
@@ -678,7 +743,7 @@ export class ActivityDto implements ActivityView {
 
   @ApiProperty({
     description:
-      'How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t.',
+      'How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, less what the caller snoozed (`snoozed_until`).',
   })
   needs_you_count: number;
 

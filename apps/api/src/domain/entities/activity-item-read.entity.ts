@@ -41,3 +41,17 @@ export interface ActivityItemRead {
   item_id: string;
   read_at: string;
 }
+
+/**
+ * One member's snooze of one Activity item (#4982, `spec/behavior/activity.md`
+ * § Snooze): the row leaves their list until `until`, then comes back. Kept
+ * after it ends, since when it came back decides whether it is unread.
+ */
+export interface ActivityItemSnooze {
+  user_id: string;
+  chapter_id: string;
+  kind: ActivityItemKind;
+  item_id: string;
+  until: string;
+  created_at: string;
+}

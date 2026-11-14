@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { Alert } from "react-native";
+import { ActionSheetIOS, Alert } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -203,6 +203,10 @@ vi.mock("@/lib/ai/availability", () => ({
 }));
 vi.mock("@/components/ask/ask-sheet", () => ({ AskSheet: () => null }));
 
+const snoozeWrites = vi.hoisted(() => ({
+  snooze: vi.fn(() => Promise.resolve()),
+  unsnooze: vi.fn(() => Promise.resolve()),
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMemberNudge: (options: { enabled?: boolean }) => {
@@ -215,6 +219,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     recheck: nudge.recheck,
   }),
   useSetMemberNudgesEnabled: () => ({ mutate: nudge.setEnabled }),
+  useActivitySnoozeWake: () => undefined,
+  useActivitySnooze: () => ({
+    snooze: snoozeWrites.snooze,
+    unsnooze: snoozeWrites.unsnooze,
+    isPending: false,
+  }),
   useActivity: () => activity.value,
   useActivityStanding: () => standing.value,
   useActivityRecap: () => recap.value,
@@ -1694,10 +1704,10 @@ describe("Activity screen (#3897)", () => {
         button(tree, "Food bank").props.onPress();
       });
       expect(button(tree, "Food bank").props.disabled).toBe(true);
-      // Nor is it offered to a screen reader any more.
-      expect(rowPress(tree, "Food bank").props.accessibilityActions).toBe(
-        undefined,
-      );
+      // Nor is it offered to a screen reader any more; Snooze still is.
+      expect(rowPress(tree, "Food bank").props.accessibilityActions).toEqual([
+        { name: "rowMenu", label: "Snooze" },
+      ]);
       await act(async () => {
         button(tree, "Food bank").props.onPress();
       });
@@ -2022,11 +2032,35 @@ describe("Activity screen (#3897)", () => {
       alert.mockRestore();
     });
 
+    it("offers Snooze on a row that waits on the member, and snoozes from the sheet", async () => {
+      // Whichever platform the test runs as: iOS's sheet or Android's dialog.
+      const sheet = vi
+        .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+        .mockImplementation((_options, pick) => pick(0));
+      const dialog = vi
+        .spyOn(Alert, "alert")
+        .mockImplementation((_title, _body, buttons) => {
+          buttons?.[0]?.onPress?.();
+        });
+      const tree = render();
+      const press = rowPress(tree, "Food bank");
+      await act(async () => {
+        press.props.onLongPress();
+      });
+      expect(sheet.mock.calls.length + dialog.mock.calls.length).toBe(1);
+      dialog.mockRestore();
+      expect(snoozeWrites.snooze).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "hours_entry" }),
+        expect.any(Date),
+      );
+      sheet.mockRestore();
+    });
     it("is offered to a screen reader as the row's named action", async () => {
       const tree = render();
       const press = rowPress(tree, "Food bank");
       expect(press.props.accessibilityActions).toEqual([
         { name: "rowAction", label: "Approve" },
+        { name: "rowMenu", label: "Snooze" },
       ]);
       // The button itself is no second focus stop inside the row's.
       expect(button(tree, "Food bank").props.accessible).toBe(false);

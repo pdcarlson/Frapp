@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "@repo/hooks";
 
@@ -49,6 +50,16 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityCouldNotLoad: actual.activityCouldNotLoad,
     activityNarrowedNote: actual.activityNarrowedNote,
     activityAgenda: actual.activityAgenda,
+    activityAwake: actual.activityAwake,
+    activityRowSnoozable: actual.activityRowSnoozable,
+    activitySnoozedRows: actual.activitySnoozedRows,
+    activitySnoozeOptions: actual.activitySnoozeOptions,
+    useActivitySnoozeWake: () => undefined,
+    useActivitySnooze: () => ({
+      snooze: mockSnooze,
+      unsnooze: mockUnsnooze,
+      isPending: false,
+    }),
     activityBadgeIsAsk: actual.activityBadgeIsAsk,
     activityGroups: actual.activityGroups,
     activityReview: actual.activityReview,
@@ -82,6 +93,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
         : null,
   };
 });
+const mockSnooze = vi.fn(() => Promise.resolve());
+const mockUnsnooze = vi.fn(() => Promise.resolve());
 // `?review=<taskId>` from a "submitted a task" notification.
 let mockSearch = new URLSearchParams();
 const mockReplace = vi.fn();
@@ -365,7 +378,9 @@ describe("ActivityPage", () => {
       // The soonest thing is on the card, and not repeated in the list.
       expect(within(card).getByText("Next")).toBeInTheDocument();
       expect(
-        within(card).getByRole("button", { name: /Formal venue\?/ }),
+        within(card).getByRole("button", {
+          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+        }),
       ).toBeInTheDocument();
       expect(within(toDo()).queryByText("Formal venue?")).toBeNull();
       expect(within(toDo()).getByText("Book the venue")).toBeInTheDocument();
@@ -408,7 +423,9 @@ describe("ActivityPage", () => {
       expect(within(toDo()).getByText("Formal venue?")).toBeInTheDocument();
       expect(within(toDo()).queryByText("Book the venue")).toBeNull();
       expect(
-        within(weekCard()).getByRole("button", { name: /Formal venue\?/ }),
+        within(weekCard()).getByRole("button", {
+          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+        }),
       ).toBeInTheDocument();
       expect(
         within(toDo()).getByText(/Showing only polls and sign-ups\./),
@@ -698,7 +715,9 @@ describe("ActivityPage", () => {
       expect(screen.queryByTestId("activity-week-ring")).toBeNull();
       const next = screen.getByRole("region", { name: "Next" });
       expect(
-        within(next).getByRole("button", { name: /Formal venue\?/ }),
+        within(next).getByRole("button", {
+          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+        }),
       ).toBeInTheDocument();
     });
 
@@ -722,7 +741,9 @@ describe("ActivityPage", () => {
       const label = within(weekCard()).getByText("Happening now");
       expect(label).toHaveClass("text-accent-text");
       expect(
-        within(weekCard()).getByRole("button", { name: /Chapter meeting/ }),
+        within(weekCard()).getByRole("button", {
+          name: /^(Unread:\s?)?Chapter meeting/,
+        }),
       ).toBeInTheDocument();
     });
 
@@ -1126,7 +1147,9 @@ describe("ActivityPage", () => {
 
       // The longest overdue is the next thing, and says so on its own row.
       expect(
-        within(weekCard()).getByRole("button", { name: /File the roster/ }),
+        within(weekCard()).getByRole("button", {
+          name: /^(Unread:\s?)?File the roster/,
+        }),
       ).toHaveTextContent("Overdue");
       const overdue = within(toDo()).getByTestId("activity-day-overdue");
       const heading = within(overdue).getByRole("heading", { level: 3 });
@@ -1137,7 +1160,7 @@ describe("ActivityPage", () => {
       expect(heading.nextElementSibling).toHaveTextContent(/^1$/);
       expect(heading).toHaveClass("text-warning");
       const row = within(overdue).getByRole("button", {
-        name: /Return the keys/,
+        name: /^(Unread:\s?)?Return the keys/,
       });
       // Its detail still says by how long; the chip would repeat the heading.
       expect(row).toHaveTextContent("Overdue by 1 day");
@@ -1185,7 +1208,9 @@ describe("ActivityPage", () => {
       render(<ActivityPage />);
 
       expect(
-        within(weekCard()).getByRole("button", { name: /Formal venue\?/ }),
+        within(weekCard()).getByRole("button", {
+          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+        }),
       ).toBeInTheDocument();
       expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
       expect(screen.queryByText("Nothing to do right now.")).toBeNull();
@@ -1465,7 +1490,9 @@ describe("ActivityPage", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Book the venue/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^(Unread:\s?)?Book the venue/ }),
+    );
 
     expect(screen.getByText("panel:Book the venue")).toBeInTheDocument();
   });
@@ -1567,8 +1594,12 @@ describe("ActivityPage", () => {
     );
     render(<ActivityPage />);
 
-    const pollRow = screen.getByRole("button", { name: /Formal venue\?/ });
-    const taskRow = screen.getByRole("button", { name: /Book the venue/ });
+    const pollRow = screen.getByRole("button", {
+      name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+    });
+    const taskRow = screen.getByRole("button", {
+      name: /^(Unread:\s?)?Book the venue/,
+    });
     expect(pollRow).toHaveAccessibleName(
       /^Unread:\s?From Olive Officer\.\s?Formal venue\?/,
     );
@@ -1586,7 +1617,11 @@ describe("ActivityPage", () => {
   it("keeps the panel open when the row has left the list after an action", () => {
     mockActivity.mockReturnValue(loaded());
     const { rerender } = render(<ActivityPage />);
-    fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
+    );
 
     // The vote landed: the re-read no longer lists the poll.
     mockActivity.mockReturnValue(
@@ -1596,14 +1631,20 @@ describe("ActivityPage", () => {
 
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /Formal venue\?/ }),
+      screen.queryByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
     ).not.toBeInTheDocument();
   });
 
   it("keeps the list and the open panel when a re-read fails", () => {
     mockActivity.mockReturnValue(loaded());
     const { rerender } = render(<ActivityPage />);
-    fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
+    );
 
     mockActivity.mockReturnValue({
       ...loaded(),
@@ -1636,13 +1677,21 @@ describe("ActivityPage", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "close" }));
     expect(screen.queryByTestId("panel")).toBeNull();
     expect(listRereads()).toBe(1);
     expect(standingRereads()).toBe(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "acted" }));
     fireEvent.click(screen.getByRole("button", { name: "settled close" }));
     expect(screen.queryByTestId("panel")).toBeNull();
@@ -1654,7 +1703,11 @@ describe("ActivityPage", () => {
   it("does not close the open row when another row's action answers late", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
-    fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "late close" }));
 
@@ -1756,7 +1809,7 @@ describe("ActivityPage", () => {
         screen.queryByRole("button", { name: "act:check-in:Philanthropy 5K" }),
       ).toBeNull();
       expect(
-        screen.getByRole("button", { name: /Philanthropy 5K/ }),
+        screen.getByRole("button", { name: /^(Unread:\s?)?Philanthropy 5K/ }),
       ).toHaveAccessibleName(/Check in/);
       // The ask moved out of the row: the row itself no longer names it,
       // and only holds its place for the button laid over it.
@@ -1771,7 +1824,9 @@ describe("ActivityPage", () => {
       expect(
         screen.queryByRole("button", { name: /^act:.*Formal/ }),
       ).toBeNull();
-      const vote = screen.getByRole("button", { name: /Formal venue\?/ });
+      const vote = screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      });
       expect(vote).toHaveTextContent("Vote");
       expect(vote).toHaveClass("hover:bg-surface-1");
 
@@ -1835,7 +1890,9 @@ describe("ActivityPage", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
 
-    const row = within(toDo()).getByRole("button", { name: /Book the venue/ });
+    const row = within(toDo()).getByRole("button", {
+      name: /^(Unread:\s?)?Book the venue/,
+    });
     expect(within(row).queryByText("To do")).toBeNull();
   });
 
@@ -1899,7 +1956,9 @@ describe("ActivityPage", () => {
       loaded({ needs_you: { ...nothingWaiting, polls: [poll] } }),
     );
     render(<ActivityPage />);
-    const row = screen.getByRole("button", { name: /Formal venue\?/ });
+    const row = screen.getByRole("button", {
+      name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+    });
     expect(row).toHaveAccessibleName(/^From Olive Officer\.\s?Formal venue\?/);
   });
 
@@ -1940,5 +1999,85 @@ describe("ActivityPage", () => {
     render(<ActivityPage />);
 
     expect(screen.queryByText("Chapter meeting")).toBeNull();
+  });
+
+  describe("snooze (#4982)", () => {
+    const later = (hours: number) =>
+      new Date(Date.now() + hours * 3_600_000).toISOString();
+
+    it("keeps a snoozed row off the list and under Snoozed, saying when it is back", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            tasks: [{ ...task, snoozed_until: later(5) }],
+            task_confirmations: [],
+            hours_approvals: [],
+            polls: [poll],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+
+      expect(
+        screen.queryByRole("button", { name: /^(Unread:\s?)?Book the venue/ }),
+      ).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Snoozed (1)" }));
+      expect(
+        within(document.getElementById("activity-snoozed")!).getByText(
+          "Book the venue",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(document.getElementById("activity-snoozed")!).getByText(
+          /^Back /,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("brings a snoozed row back from its menu under Snoozed", async () => {
+      const user = userEvent.setup();
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            tasks: [{ ...task, snoozed_until: later(5) }],
+            task_confirmations: [],
+            hours_approvals: [],
+            polls: [poll],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+
+      await user.click(screen.getByRole("button", { name: "Snoozed (1)" }));
+      await user.click(
+        screen.getByRole("button", { name: "More for Book the venue" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Unsnooze" }),
+      );
+
+      expect(mockUnsnooze).toHaveBeenCalledWith({
+        kind: "task",
+        item_id: "t1",
+      });
+    });
+
+    it("snoozes a row from its menu", async () => {
+      const user = userEvent.setup();
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+
+      await user.click(
+        screen.getByRole("button", { name: "More for Book the venue" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: /^Tomorrow · 8:00 AM/ }),
+      );
+
+      expect(mockSnooze).toHaveBeenCalledWith(
+        { kind: "task", item_id: "t1" },
+        expect.any(Date),
+      );
+    });
   });
 });
