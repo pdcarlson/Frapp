@@ -2249,35 +2249,39 @@ export function Composer({
             something to send, muted when there isn't, so the button says
             whether Enter will do anything.
           */}
-          <Button
-            type="button"
-            size="icon"
-            className="h-8 w-8 shrink-0 rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
-            onClick={submit}
-            aria-label="Send message"
-            title="Send (Enter)"
-            /* An attached file is enough to send: an empty editor with a staged
+          {/* Send and its schedule chevron stay together at the row's end,
+              as Slack draws its split send button (#4956). */}
+          <div className="flex shrink-0 items-center">
+            <Button
+              type="button"
+              size="icon"
+              className="h-8 w-8 shrink-0 rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
+              onClick={submit}
+              aria-label="Send message"
+              title="Send (Enter)"
+              /* An attached file is enough to send: an empty editor with a staged
                attachment is a real message, and `submit` accepts it. A lone
                `/` is not, so it reads as empty (#3781). */
-            disabled={
-              !editor ||
-              uploading.length > 0 ||
-              ((editor.isEmpty || isBareSlash(chatText(editor).trim())) &&
-                pending.length === 0)
-            }
-          >
-            <SendArrowGlyph className="h-4 w-4" />
-          </Button>
-          {onSchedule ? (
-            <ScheduleSendButton
               disabled={
                 !editor ||
-                editor.isEmpty ||
-                isBareSlash(chatText(editor).trim())
+                uploading.length > 0 ||
+                ((editor.isEmpty || isBareSlash(chatText(editor).trim())) &&
+                  pending.length === 0)
               }
-              onSchedule={schedule}
-            />
-          ) : null}
+            >
+              <SendArrowGlyph className="h-4 w-4" />
+            </Button>
+            {onSchedule ? (
+              <ScheduleSendButton
+                disabled={
+                  !editor ||
+                  editor.isEmpty ||
+                  isBareSlash(chatText(editor).trim())
+                }
+                onSchedule={schedule}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
       {paletteMounted ? (
