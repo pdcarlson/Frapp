@@ -38,6 +38,14 @@ export interface IChapterRepository {
    */
   findByIds(ids: string[]): Promise<Chapter[]>;
   /**
+   * Every chapter that picked a birthday post channel (#4959), with that
+   * channel: the birthday sweep's work list, across chapters by design. Only
+   * the two columns.
+   */
+  findWithBirthdayChannel(): Promise<
+    { id: string; birthday_channel_id: string }[]
+  >;
+  /**
    * Whether the chapter has opted out of product analytics
    * (`chapters.analytics_opt_out`). Reads that one column, because analytics
    * asks on every event. A chapter with no row reads as not opted out.

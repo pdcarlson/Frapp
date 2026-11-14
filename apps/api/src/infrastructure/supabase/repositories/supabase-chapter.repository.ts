@@ -50,6 +50,23 @@ export class SupabaseChapterRepository implements IChapterRepository {
     return data ?? [];
   }
 
+  async findWithBirthdayChannel(): Promise<
+    { id: string; birthday_channel_id: string }[]
+  > {
+    const { data, error } = await this.supabase
+      .from('chapters')
+      .select('id, birthday_channel_id')
+      .not('birthday_channel_id', 'is', null);
+    if (error) throw new SupabaseQueryError(error);
+    const rows: { id: string; birthday_channel_id: string }[] = [];
+    for (const row of data ?? []) {
+      if (row.birthday_channel_id) {
+        rows.push({ id: row.id, birthday_channel_id: row.birthday_channel_id });
+      }
+    }
+    return rows;
+  }
+
   async findBySubscriptionId(subscriptionId: string): Promise<Chapter | null> {
     const { data, error } = await this.supabase
       .from('chapters')

@@ -19198,6 +19198,12 @@
             "format": "uuid",
             "nullable": true,
             "description": "Role id new invites default to when the caller does not name one. Null clears the default, and invites fall back to the seeded Everyone role (once Member, #4191). Must belong to this chapter (400 otherwise)."
+          },
+          "birthday_channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The channel Frapp posts a happy-birthday message in on each member's birthday, for members who share theirs with the chapter (#4959). Null, the default, turns the posts off. Must be one of this chapter's public channels that isn't archived (400 otherwise)."
           }
         }
       },
