@@ -41,6 +41,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ThreadRow } from "@repo/chat-core/blocks";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { ScheduleSendSheet } from "@/components/chat/schedule-send-sheet";
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import {
@@ -524,6 +525,13 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useUnbookmarkMessage: () => bookmarkWrites.unsave,
     useBookmarks: () => ({ data: [], isPending: false, isError: false }),
     usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
+    // Scheduled messages (#4956): none, and a schedule that never lands.
+    useScheduledMessages: () => ({
+      data: [],
+      isPending: false,
+      isError: false,
+    }),
+    useScheduleMessage: () => ({ mutateAsync: vi.fn() }),
     useChannel: (id: string) =>
       channelRow === "found"
         ? {
@@ -843,6 +851,16 @@ describe("chat thread in the audit log", () => {
     expect(
       tree.root.findAllByProps({ testID: "chat-audit-log-note" }),
     ).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("offers Schedule message from the composer, with its sheets mounted (#4956)", () => {
+    const tree = render();
+    const composer = tree.root.findByType(ChatComposer);
+    expect(typeof composer.props.onSchedule).toBe("function");
+    // Nothing scheduled here: no line above the input.
+    expect(composer.props.scheduled).toBeNull();
+    expect(tree.root.findAllByType(ScheduleSendSheet)).toHaveLength(1);
     act(() => tree.unmount());
   });
 });

@@ -103,6 +103,8 @@ import { useAiSurfaces } from "@/lib/ai/availability";
 import { arrivalUnread } from "@/lib/chat/catch-up-arrival";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { useComposerPlus } from "@/components/chat/use-composer-plus";
+import { useScheduleSend } from "@/components/chat/use-schedule-send";
+import { scheduleRefusal } from "@/lib/chat/schedule-send";
 import {
   ImageViewer,
   ImageViewerContext,
@@ -1592,6 +1594,27 @@ function ChannelThreadScreen() {
     onPhoto: handleAttach,
   });
 
+  // Scheduling the draft to post later (#4956): a long press on Send, and
+  // the line above the composer that opens the member's Scheduled list.
+  const clearDraft = useCallback(
+    () => handleChangeText(""),
+    [handleChangeText],
+  );
+  const scheduleSend = useScheduleSend({
+    channelId: channelId ?? null,
+    enabled: !postCapability.isAuditLog && channelCanPost,
+    draft,
+    refusal: scheduleRefusal({
+      text: draft,
+      photos: photos.length,
+      replying: replyContext !== null,
+      asksFrapp: namesFrapp(draft),
+      writeBlocked: writeBlockedReason,
+    }),
+    picksFor: staging.picksFor,
+    clearDraft,
+  });
+
   const notificationPrefsQuery = useChannelNotificationPreferences();
   const setNotificationLevel = useSetChannelNotificationLevel();
   const notificationLevel = useMemo(
@@ -2115,6 +2138,12 @@ function ChannelThreadScreen() {
               onRemovePhoto={removePhoto}
               onRetryPhoto={retryPhoto}
               isPicking={isPicking}
+              onSchedule={
+                canSend && !staging.isSavingEdit
+                  ? scheduleSend.openSchedule
+                  : undefined
+              }
+              scheduled={scheduleSend.scheduled}
             />
           )}
         </View>
@@ -2151,6 +2180,7 @@ function ChannelThreadScreen() {
         openChannelId={channelId ?? null}
       />
       {composerPlus.sheets}
+      {scheduleSend.sheets}
       {catchUp.sheets}
       {channelAsk?.sheets}
       <MessageActionsSheet

@@ -18,6 +18,7 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import Svg, { Circle, Path } from "react-native-svg";
 import { MemberAvatar } from "@/components/member-avatar";
 import type { StagedPhoto } from "@/lib/chat/use-chat-channel";
 import type { MemberAvatarTint } from "@repo/hooks";
@@ -110,6 +111,12 @@ import {
  * called "Ask Frapp" and the screen says above the composer that only the
  * member will see it.
  *
+ * **A long press on Send schedules the message** (`onSchedule`, #4956), as
+ * Slack's phone app does: it opens Schedule message, and a screen reader gets
+ * the same as a "Schedule message" action on Send. While the member has
+ * messages scheduled in the channel, a line above the input says how many and
+ * when the next goes (`scheduled`), and opens their list.
+ *
  * This is a plain `TextInput`, deliberately. `BottomSheetTextInput` is mandatory
  * only *inside* a gorhom sheet (`spec/ui/mobile/patterns.md` § Bottom sheets);
  * the thread is a full route, so a plain input is correct and a sheet input
@@ -189,6 +196,18 @@ export interface ChatComposerProps {
    * Send will ask instead of posting. Null or absent for everyone else.
    */
   ask?: { naming: boolean } | null;
+  /**
+   * Opens Schedule message (#4956), from a long press on Send or a screen
+   * reader's "Schedule message" action. Omit where nothing can be scheduled
+   * (an edit, a channel the member can't post in).
+   */
+  onSchedule?: () => void;
+  /**
+   * The line above the input while the member has messages scheduled here:
+   * its words, how many didn't send, and what a tap on it opens. `null` for
+   * none.
+   */
+  scheduled?: { label: string; failed: number; onOpen: () => void } | null;
 }
 
 /** A role as the picker offers it: a subset of `MentionRoleDto`. */
@@ -223,6 +242,8 @@ export function ChatComposer({
   mentionRoles,
   onPickMember,
   ask = null,
+  onSchedule,
+  scheduled = null,
 }: ChatComposerProps) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
@@ -259,6 +280,8 @@ export function ChatComposer({
   // The sheet greys what can't work this second and says why, so the + itself
   // only waits for the photo library it opened and for the chat runtime.
   const canOpenPlus = !!onOpenPlus && !plusDisabled && !isPicking && canSend;
+  // Scheduling saves no edit and asks nothing: only an ordinary send offers it.
+  const canSchedule = !!onSchedule && isSendable && !isEditing && !ask?.naming;
 
   return (
     <View style={styles.wrapper}>
@@ -272,6 +295,34 @@ export function ChatComposer({
         >
           {disabledHint}
         </Text>
+      ) : null}
+
+      {scheduled ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            scheduled.failed > 0
+              ? `${scheduled.label}, ${scheduled.failed} not sent`
+              : scheduled.label
+          }
+          accessibilityHint="Opens your scheduled messages."
+          hitSlop={{ top: 8, bottom: 8 }}
+          onPress={scheduled.onOpen}
+          style={({ pressed }) => [
+            styles.scheduled,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <ScheduledGlyph color={tokens.color.text.mutedForeground} />
+          <Text numberOfLines={1} style={styles.scheduledText}>
+            {scheduled.label}
+            {scheduled.failed > 0 ? (
+              <Text style={styles.scheduledFailed}>
+                {` · ${scheduled.failed} not sent`}
+              </Text>
+            ) : null}
+          </Text>
+        </Pressable>
       ) : null}
 
       {context ? (
@@ -456,7 +507,16 @@ export function ChatComposer({
               : undefined
           }
           accessibilityState={{ disabled: !isSendable }}
+          accessibilityActions={
+            canSchedule
+              ? [{ name: "schedule", label: "Schedule message" }]
+              : undefined
+          }
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === "schedule") onSchedule?.();
+          }}
           disabled={!isSendable}
+          onLongPress={canSchedule ? onSchedule : undefined}
           onPress={() => {
             sendClear.markSent();
             onSend();
@@ -478,6 +538,34 @@ export function ChatComposer({
         </Pressable>
       </View>
     </View>
+  );
+}
+
+/**
+ * The scheduled line's mark: a clock, stroked like the task sheet's time
+ * field (`components/tasks/due-time-field.tsx`), where web draws lucide's
+ * `CalendarClock`.
+ */
+function ScheduledGlyph({ color }: { color: string }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24">
+      <Circle
+        cx={12}
+        cy={12}
+        r={8.5}
+        stroke={color}
+        strokeWidth={1.9}
+        fill="none"
+      />
+      <Path
+        d="M12 7.5V12l3 2"
+        stroke={color}
+        strokeWidth={1.9}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
   );
 }
 
@@ -869,6 +957,20 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       paddingBottom: tokens.spacing.sm + 2,
       gap: tokens.spacing.sm,
       backgroundColor: tokens.color.surface.background,
+    },
+    scheduled: {
+      flexDirection: "row",
+      alignItems: "center",
+      alignSelf: "flex-start",
+      gap: tokens.spacing.xs,
+    },
+    scheduledText: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      flexShrink: 1,
+    },
+    scheduledFailed: {
+      color: tokens.color.semantic.destructiveText,
     },
     hint: {
       ...typeRole(tokens.typography.role.caption),

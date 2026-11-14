@@ -287,6 +287,8 @@ The list's `renderItem` does not change when an answer arrives: each row reads i
 A source opens as it does from the Ask sheet, and Report and Meet Frapp AI open as sheets over the channel.
 Not while editing a message, and not in a thread: the thread screen refuses a reply that names `@Frapp` with "Ask Frapp from the channel, not from a reply." in its hint line and keeps the words.
 
+**A long press on Send schedules the message** (added in #4956, 2026-11-14; Shawn asked; [`../../behavior/chat/README.md` § Scheduled messages](../../behavior/chat/README.md#scheduled-messages)), as Slack's phone app does, and a screen reader gets "Schedule message" as an action on Send. It opens Schedule message (`components/chat/schedule-send-sheet.tsx`): the draft, then Tomorrow and Monday at 9, then Custom time with the platform's date and time pickers. A photo or a reply staged, a draft naming `@Frapp`, or offline still opens it, with the reason and the rows greyed, and the draft stays. Once scheduled the draft clears. While the member has messages scheduled in the channel, a caption line above the input says how many and when the next goes ("2 scheduled messages · next tomorrow at 9:00 AM", with "· 1 not sent" in the error tone); a tap opens the Scheduled list, a tall sheet where each row has Edit (text and time, in place), Send now and Delete (`components/chat/scheduled-messages-sheet.tsx`). Not while editing a message, and not in a thread.
+
 ### s06 Events list
 
 Route: `(app)/(tabs)/events.tsx`.
