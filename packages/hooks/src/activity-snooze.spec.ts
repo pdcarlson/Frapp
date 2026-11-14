@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Activity } from "./activity-rows";
 import {
   activityAwake,
+  activityNextWake,
   activityRowSnoozable,
   activitySnoozeOptions,
   activitySnoozedRows,
@@ -156,6 +157,12 @@ describe("activitySnoozeOptions", () => {
 
   it("offers Gmail's set midweek", () => {
     const options = activitySnoozeOptions(NOW);
+    expect(options.map((o) => o.menuLabel)).toEqual([
+      "Later today · 6:00 PM",
+      "Tomorrow · 8:00 AM",
+      "This weekend · Saturday 8:00 AM",
+      "Next week · Monday 8:00 AM",
+    ]);
     expect(options.map((o) => o.id)).toEqual([
       "later-today",
       "tomorrow",
@@ -187,5 +194,22 @@ describe("activityRowSnoozable", () => {
     expect(activityRowSnoozable({ key: "needs:task:t1" })).toBe(true);
     expect(activityRowSnoozable({ key: "link:l1" })).toBe(true);
     expect(activityRowSnoozable({ key: "made:poll:p1" })).toBe(false);
+  });
+});
+
+describe("activityNextWake", () => {
+  it("is when the soonest snooze still holding ends, or null", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [task("a", later(5)), task("b", later(-1))],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [],
+        cards: [],
+      },
+      links: [link("l", later(2))],
+    });
+    expect(activityNextWake(data, NOW)?.toISOString()).toBe(later(2));
+    expect(activityNextWake(activity(), NOW)).toBeNull();
   });
 });

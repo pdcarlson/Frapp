@@ -1768,6 +1768,61 @@ describe('ActivityService', () => {
         });
       });
 
+      it('leaves a snoozed hours entry, card and open check-in out of the count', async () => {
+        const { service, readRepo, messageRepo, eventService } =
+          buildEverySection();
+        serveCards(messageRepo, [
+          signupCard(
+            { id: 'sheet', created_at: at(-HOUR) },
+            { closes_at: at(48 * HOUR) },
+          ),
+        ]);
+        eventService.findByChapter.mockResolvedValue([
+          upcoming({
+            id: 'event-1',
+            start_time: at(-HOUR / 2),
+            end_time: at(HOUR / 2),
+          }),
+        ]);
+        const before = await service.getActivity(CHAPTER, ME, null);
+        expect(before.needs_you.cards).toHaveLength(1);
+        expect(before.coming_up[0].check_in_open).toBe(true);
+        readRepo.findSnoozes.mockResolvedValue([
+          snooze('hours_entry', 'entry-1', at(3 * HOUR)),
+          snooze('signup', 'sheet', at(3 * HOUR)),
+          snooze('event', 'event-1', at(3 * HOUR)),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.hours_approvals[0].snoozed_until).toBe(
+          at(3 * HOUR),
+        );
+        expect(view.needs_you.cards[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.coming_up[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.needs_you_count).toBe(before.needs_you_count - 3);
+      });
+
+      it('serves a snoozed row after every row still waiting, so it never pushes one out', async () => {
+        const { service, readRepo, taskService } = buildStarted();
+        serveTasks(taskService, [
+          task({ id: 'first', due_date: '2026-11-14' }),
+          task({ id: 'second', due_date: '2026-11-15' }),
+          task({ id: 'third', due_date: '2026-11-16' }),
+        ]);
+        readRepo.findSnoozes.mockResolvedValue([
+          snooze('task', 'first', at(3 * HOUR)),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.tasks.map((row) => row.id)).toEqual([
+          'second',
+          'third',
+          'first',
+        ]);
+      });
+
       it('serves nothing as snoozed when the snoozes cannot be read', async () => {
         const { service, readRepo } = buildEverySection();
         const before = await service.getActivity(CHAPTER, ME, null);

@@ -16,6 +16,7 @@ import {
   activityWeekSummary,
   findActivityTaskRow,
   useActivity,
+  useActivitySnoozeWake,
   useActivityStanding,
   useActivityUnread,
   useNowDate,
@@ -186,6 +187,8 @@ export default function ActivityScreen() {
     [activity.data, now],
   );
   const snoozeMenu = useActivitySnoozeMenu();
+  // A read when the soonest snooze ends, for its dot and the tab's badge.
+  useActivitySnoozeWake(activity.data);
   const agenda = useMemo(
     () => (visible ? activityAgenda(visible, filter, now) : null),
     [visible, filter, now],
@@ -193,17 +196,18 @@ export default function ActivityScreen() {
   // Only for the roles that review: a member is never shown the card.
   const review = useMemo(
     () =>
-      visible
+      visible && activity.data
         ? activityReview(
             visible,
             {
               canConfirmTasks:
                 moduleOn("tasks") && can("tasks:manage", permissions ?? []),
+              served: activity.data,
             },
             now,
           )
         : null,
-    [visible, permissions, moduleOn, now],
+    [visible, activity.data, permissions, moduleOn, now],
   );
   // What the member made, and the links posted for them, as the shared
   // groups build them, in order. Narrowed to a kind, the page is the To do
@@ -418,7 +422,7 @@ export default function ActivityScreen() {
             onOpen={open}
           />
         ))}
-        {filter === "all" && snoozedRows.length > 0 ? (
+        {snoozedRows.length > 0 ? (
           <SnoozedPart
             rows={snoozedRows}
             onOpen={open}

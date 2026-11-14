@@ -214,6 +214,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     recheck: nudge.recheck,
   }),
   useSetMemberNudgesEnabled: () => ({ mutate: nudge.setEnabled }),
+  useActivitySnoozeWake: () => undefined,
   useActivitySnooze: () => ({
     snooze: snoozeWrites.snooze,
     unsnooze: snoozeWrites.unsnooze,

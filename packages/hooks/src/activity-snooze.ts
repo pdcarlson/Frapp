@@ -158,8 +158,14 @@ function activitySnoozeTimeLabel(until: string, now: Date): string {
 export interface ActivitySnoozeOption {
   id: "later-today" | "tomorrow" | "weekend" | "next-week";
   label: string;
-  /** "6:00 PM", "Sat · 8:00 AM": when it comes back, beside the label. */
+  /** "Today · 6:00 PM", "Saturday · 8:00 AM": when it comes back, in full. */
   hint: string;
+  /**
+   * The label with its time, for a menu: "Later today · 6:00 PM",
+   * "This weekend · Saturday 8:00 AM" (the day only where the label doesn't
+   * already say it).
+   */
+  menuLabel: string;
   until: Date;
 }
 
@@ -193,40 +199,51 @@ export function activitySnoozeOptions(
   const options: ActivitySnoozeOption[] = [];
   const hint = (until: Date) =>
     activitySnoozeTimeLabel(until.toISOString(), now);
+  const option = (
+    id: ActivitySnoozeOption["id"],
+    label: string,
+    until: Date,
+    // Later today and Tomorrow name their day; the rest name it in the time.
+    withDay: boolean,
+  ): ActivitySnoozeOption => {
+    const full = hint(until);
+    const time = withDay
+      ? full.replace(" · ", " ")
+      : full.replace(/^.*? · /, "");
+    return { id, label, hint: full, menuLabel: `${label} · ${time}`, until };
+  };
   const evening = atHour(now, EVENING_HOUR);
   if (evening.getTime() - now.getTime() > 60 * 60 * 1000) {
-    options.push({
-      id: "later-today",
-      label: "Later today",
-      hint: hint(evening),
-      until: evening,
-    });
+    options.push(option("later-today", "Later today", evening, false));
   }
   const tomorrow = atHour(addDays(now, 1), MORNING_HOUR);
-  options.push({
-    id: "tomorrow",
-    label: "Tomorrow",
-    hint: hint(tomorrow),
-    until: tomorrow,
-  });
+  options.push(option("tomorrow", "Tomorrow", tomorrow, false));
   const weekday = now.getDay(); // 0 Sunday … 6 Saturday
   if (weekday >= 1 && weekday <= 4) {
     const saturday = atHour(addDays(now, 6 - weekday), MORNING_HOUR);
-    options.push({
-      id: "weekend",
-      label: "This weekend",
-      hint: hint(saturday),
-      until: saturday,
-    });
+    options.push(option("weekend", "This weekend", saturday, true));
   }
   const monday = atHour(addDays(now, (8 - weekday) % 7 || 7), MORNING_HOUR);
   // On a Sunday next week is tomorrow morning, already offered.
   if (monday.getTime() === tomorrow.getTime()) return options;
-  options.push({
-    id: "next-week",
-    label: "Next week",
-    hint: hint(monday),
-    until: monday,
-  });
+  options.push(option("next-week", "Next week", monday, true));
   return options;
+}
+
+/**
+ * When the soonest snooze in the read ends, or `null` when nothing is
+ * snoozed past `now`. A screen reads Activity again then, so the row comes
+ * back with its dot and the badge counts it (`useActivitySnoozeWake`).
+ */
+export function activityNextWake(activity: Activity, now: Date): Date | null {
+  let soonest: number | null = null;
+  mapWaiting(activity, (rows) => {
+    for (const row of rows) {
+      if (!asleep(row, now) || !row.snoozed_until) continue;
+      const until = Date.parse(row.snoozed_until);
+      if (soonest === null || until < soonest) soonest = until;
+    }
+    return rows;
+  });
+  return soonest === null ? null : new Date(soonest);
 }

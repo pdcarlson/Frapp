@@ -50,6 +50,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityRowSnoozable: actual.activityRowSnoozable,
     activitySnoozedRows: actual.activitySnoozedRows,
     activitySnoozeOptions: actual.activitySnoozeOptions,
+    useActivitySnoozeWake: () => undefined,
     useActivitySnooze: () => ({
       snooze: mockSnooze,
       unsnooze: mockUnsnooze,
@@ -1910,6 +1911,34 @@ describe("ActivityPage", () => {
           /^Back /,
         ),
       ).toBeInTheDocument();
+    });
+
+    it("brings a snoozed row back from its menu under Snoozed", async () => {
+      const user = userEvent.setup();
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            tasks: [{ ...task, snoozed_until: later(5) }],
+            task_confirmations: [],
+            hours_approvals: [],
+            polls: [poll],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+
+      await user.click(screen.getByRole("button", { name: "Snoozed (1)" }));
+      await user.click(
+        screen.getByRole("button", { name: "More for Book the venue" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Unsnooze" }),
+      );
+
+      expect(mockUnsnooze).toHaveBeenCalledWith({
+        kind: "task",
+        item_id: "t1",
+      });
     });
 
     it("snoozes a row from its menu", async () => {

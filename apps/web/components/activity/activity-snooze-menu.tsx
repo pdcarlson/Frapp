@@ -12,16 +12,6 @@ import { ToastAction } from "@/components/ui/toast";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
-/**
- * "6:00 PM" for today or tomorrow, whose label already names the day;
- * "Saturday 8:00 AM" otherwise.
- */
-function menuTime(hint: string): string {
-  return /^(Today|Tomorrow) · /.test(hint)
-    ? hint.replace(/^\w+ · /, "")
-    : hint.replace(" · ", " ");
-}
-
 /** What a row's menu needs to snooze it, or wake it from Snoozed. */
 export interface ActivitySnoozeActions {
   /**
@@ -63,7 +53,7 @@ export function useActivitySnoozeActions(): ActivitySnoozeActions {
         ...options.map((option): RowMenuEntry => ({
           type: "item",
           key: `snooze-${option.id}`,
-          label: `${option.label} · ${menuTime(option.hint)}`,
+          label: option.menuLabel,
           icon: AlarmClock,
           onSelect: () =>
             void snooze(row.readRef, option.until).then(

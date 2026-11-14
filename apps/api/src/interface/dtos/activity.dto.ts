@@ -737,7 +737,7 @@ export class ActivityDto implements ActivityView {
 
   @ApiProperty({
     description:
-      'How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t.',
+      'How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, less what the caller snoozed (`snoozed_until`).',
   })
   needs_you_count: number;
 

@@ -78,6 +78,7 @@ import {
   useActivity,
   useActivityStanding,
   useActivityUnread,
+  useActivitySnoozeWake,
   useActivityFaces,
   useNowDate,
   useMyPermissions,
@@ -807,6 +808,8 @@ export function ActivityPage() {
     [activity.data, now],
   );
   const snoozeActions = useActivitySnoozeActions();
+  // A read when the soonest snooze ends, for its dot and the badge.
+  useActivitySnoozeWake(activity.data);
   const [opened, setOpened] = useState<ActivityRow | null>(null);
   // Dots (#4405): opening a row from here is what reads it; scrolling past
   // doesn't, and neither does acting on the item elsewhere in Frapp.
@@ -854,8 +857,15 @@ export function ActivityPage() {
     (isModuleEnabled?.("tasks") ?? true) &&
     can("tasks:manage", permissions.data?.permissions);
   const review = useMemo(
-    () => (visible ? activityReview(visible, { canConfirmTasks }, now) : null),
-    [visible, canConfirmTasks, now],
+    () =>
+      visible && activity.data
+        ? activityReview(
+            visible,
+            { canConfirmTasks, served: activity.data },
+            now,
+          )
+        : null,
+    [visible, activity.data, canConfirmTasks, now],
   );
   // What the member made, and the links posted for them, in order.
   const groups = useMemo(
@@ -993,7 +1003,7 @@ export function ActivityPage() {
           {below.map((group) => (
             <GroupSection key={group.id} group={group} kit={kit} />
           ))}
-          {filter === "all" && snoozedRows.length > 0 ? (
+          {snoozedRows.length > 0 ? (
             <SnoozedSection rows={snoozedRows} kit={kit} />
           ) : null}
         </div>

@@ -100,7 +100,7 @@ member's own answer, not the event's default:
 [Links](#links).
 
 **`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
-now and hasn't. It is counted before the list cap, so a badge built from it does not stop at 25.
+now and hasn't, less what the member snoozed ([Snooze](#snooze)). It is counted before the list cap, so a badge built from it does not stop at 25.
 It is what the member can act on now, and so is not the week ring's "left", which also counts
 events still ahead ([Week](#week), settled 2026-11-13).
 
@@ -281,15 +281,19 @@ Snooze and Slack's Later ("Remind me") work: the thing isn't done, it just isn't
   `until`) takes it off the member's list. The read still serves the row, with `snoozed_until`,
   so a client lists it under Snoozed and brings it back on its own clock; it is not counted in
   `needs_you_count`, so the tab's badge drops with it. The week ring still counts it: snoozing
-  something doesn't finish it. Only the 25 task confirmations the read carries can be told apart,
-  so a snoozed confirmation past them is still counted.
+  something doesn't finish it. A snoozed row is served after every row still waiting, so it never
+  pushes one out of a list's 25. Three lists are capped before the snoozes are known (task
+  confirmations at 25, Coming up at 10, Links at 25), so there a snoozed row can still hold a slot,
+  and a snoozed confirmation past the 25 read is still counted.
 - **When.** In the future and at most 90 days away; anything else is a 400. A client offers a few
   fixed times (later today, tomorrow morning, the weekend or next week) rather than a picker.
   Snoozing again replaces the time; `DELETE /v1/activity/snoozes` with the kind and id brings it
   back now.
 - **It comes back unread.** A snoozed row that comes back is unread unless the member opened it
-  after it came back, as Gmail brings a snoozed thread back to the top unread. An ended snooze
-  counts for this for 30 days, as long as a link shows.
+  after it came back, as Gmail brings a snoozed thread back to the top unread, except what is never
+  unread ([§ Unread](#unread): a task the member set themselves, an event they made). An ended
+  snooze counts for this for 30 days, as long as a link shows. A client with the page open reads
+  Activity again when the soonest snooze ends, so the dot and the badge come back with the row.
 - **Nothing else changes.** A snoozed poll is still open in its channel and a snoozed task still
   falls due; snooze is a view, not a deferral. It sends no push when it ends: the row and the
   badge are the reminder.

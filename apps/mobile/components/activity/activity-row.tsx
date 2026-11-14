@@ -42,20 +42,6 @@ export const ActivityFaces = createContext<
   (userId: string) => ActivityFace | null
 >(() => null);
 
-/**
- * One Activity row on the phone (#4173, step 2): its lead (the face of who
- * it's from, its kind's glyph, or an event's date: `ActivityRowLead`), its
- * two lines, and what it asks of the member or the
- * state it is in. Web's row (`apps/web/components/activity/activity-page.tsx`)
- * on the phone's flush list recipe: on the screen background, split by
- * hairlines, the way the phone's Events and Tasks lists draw theirs
- * (`components/events/event-rows.tsx`), not in a rounded card.
- *
- * Every row opens something. A row whose ask is one press (Confirm,
- * Approve) carries it as a button where the ask was drawn (`action`, #4437),
- * so the common case takes one tap and the rest of the row still opens the
- * sheet, as web's rows do.
- */
 /** What a row's long press opens: its label, and how to open it. */
 export interface ActivityRowMenu {
   label: string;
@@ -71,6 +57,20 @@ export const ActivityRowMenuContext = createContext<
   (row: ActivityRow) => ActivityRowMenu | null
 >(() => null);
 
+/**
+ * One Activity row on the phone (#4173, step 2): its lead (the face of who
+ * it's from, its kind's glyph, or an event's date: `ActivityRowLead`), its
+ * two lines, and what it asks of the member or the
+ * state it is in. Web's row (`apps/web/components/activity/activity-page.tsx`)
+ * on the phone's flush list recipe: on the screen background, split by
+ * hairlines, the way the phone's Events and Tasks lists draw theirs
+ * (`components/events/event-rows.tsx`), not in a rounded card.
+ *
+ * Every row opens something. A row whose ask is one press (Confirm,
+ * Approve) carries it as a button where the ask was drawn (`action`, #4437),
+ * so the common case takes one tap and the rest of the row still opens the
+ * sheet, as web's rows do.
+ */
 export function ActivityListRow({
   row,
   isFirst,

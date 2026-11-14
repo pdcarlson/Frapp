@@ -16,14 +16,6 @@ import type { ActivityRowMenu } from "./activity-row";
  */
 const ANDROID_BUTTONS = 3;
 
-/** "Later today · 6:00 PM", "This weekend · Saturday 8:00 AM". */
-function optionLabel(option: ActivitySnoozeOption): string {
-  const time = /^(Today|Tomorrow) · /.test(option.hint)
-    ? option.hint.replace(/^\w+ · /, "")
-    : option.hint.replace(" · ", " ");
-  return `${option.label} · ${time}`;
-}
-
 /**
  * Snooze on the phone's Activity (#4982, `spec/behavior/activity.md` §
  * Snooze): a long press on a row that waits on the member (or VoiceOver's
@@ -59,7 +51,7 @@ export function useActivitySnoozeMenu(): {
   const openSnooze = (row: ActivityRow) => {
     // Read when the sheet opens, so "Later today" is never in the past.
     const options = activitySnoozeOptions(new Date());
-    const labels = options.map(optionLabel);
+    const labels = options.map((option) => option.menuLabel);
     if (Platform.OS === "ios") {
       const buttons = [...labels, "Cancel"];
       ActionSheetIOS.showActionSheetWithOptions(

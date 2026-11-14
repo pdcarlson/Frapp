@@ -378,7 +378,8 @@ export interface ActivityView {
   };
   /**
    * How many things wait on the caller: every `needs_you` row, counted before
-   * the per-list cap, plus events whose check-in is open and not yet used.
+   * the per-list cap, plus events whose check-in is open and not yet used,
+   * less what the caller snoozed (`snoozed_until`).
    */
   needs_you_count: number;
   /** Sections that could not be read this time and are served empty. */
@@ -769,6 +770,18 @@ export class ActivityService {
       });
     const awake = <T extends { snoozed_until: string | null }>(rows: T[]) =>
       rows.filter((row) => row.snoozed_until === null);
+    // What still waits keeps the list's slots: a snoozed row goes after
+    // every awake one, in its own order, so snoozing the first 25 never
+    // pushes the next ones out of the read (a stable sort keeps each group's
+    // order). A list read already capped (confirmations, Coming up, links)
+    // can only reorder what it holds.
+    const awakeFirst = <T extends { snoozed_until: string | null }>(
+      rows: T[],
+    ): T[] =>
+      [...rows].sort(
+        (a, b) =>
+          Number(a.snoozed_until !== null) - Number(b.snoozed_until !== null),
+      );
 
     const myTasks = withSnooze('task', taskLists.mine, (row) => row.id);
     const confirmations = withSnooze(
@@ -799,14 +812,14 @@ export class ActivityService {
 
     return this.withUnread(chapterId, userId, snoozes.ended, {
       needs_you: {
-        tasks: myTasks.slice(0, LIST_LIMIT),
-        task_confirmations: confirmations.slice(0, LIST_LIMIT),
-        hours_approvals: approvals.slice(0, LIST_LIMIT),
-        polls: unvoted.slice(0, LIST_LIMIT),
-        cards: unanswered.slice(0, LIST_LIMIT),
+        tasks: awakeFirst(myTasks).slice(0, LIST_LIMIT),
+        task_confirmations: awakeFirst(confirmations).slice(0, LIST_LIMIT),
+        hours_approvals: awakeFirst(approvals).slice(0, LIST_LIMIT),
+        polls: awakeFirst(unvoted).slice(0, LIST_LIMIT),
+        cards: awakeFirst(unanswered).slice(0, LIST_LIMIT),
       },
-      coming_up: upcoming,
-      links: withSnooze('link', myLinks, (row) => row.id),
+      coming_up: awakeFirst(upcoming),
+      links: awakeFirst(withSnooze('link', myLinks, (row) => row.id)),
       made_by_you: {
         // Capped per state in `readPolls`: 25 open and 25 closed.
         polls: pollLists.mine,
