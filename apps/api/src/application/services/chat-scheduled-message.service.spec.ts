@@ -11,7 +11,11 @@ import {
 } from './chat-scheduled-message.service';
 import type { ChatScheduledMessage } from '#domain/entities/chat-scheduled-message.entity';
 import type { IChatScheduledMessageRepository } from '#domain/repositories/chat-scheduled-message.repository.interface';
-import type { IChatChannelRepository } from '#domain/repositories/chat.repository.interface';
+import type {
+  IChatChannelRepository,
+  IChatMessageRepository,
+} from '#domain/repositories/chat.repository.interface';
+import type { IChapterRepository } from '#domain/repositories/chapter.repository.interface';
 import type { ChannelAccessService } from './channel-access.service';
 import type { ChatService } from './chat.service';
 import type { NotificationService } from './notification.service';
@@ -27,6 +31,7 @@ const row = (
   chapter_id: 'ch-1',
   channel_id: 'chan-1',
   user_id: 'u-1',
+  member_id: 'm-1',
   content: 'Chapter at 8',
   mention_picks: null,
   send_at: new Date(NOW - 1000).toISOString(),
@@ -45,6 +50,8 @@ describe('ChatScheduledMessageService', () => {
   let access: { assertChannelAccess: jest.Mock };
   let chat: { sendMessage: jest.Mock };
   let notifications: { notifyUser: jest.Mock };
+  let messageRepo: { findByClientMessageId: jest.Mock };
+  let chapterRepo: { findById: jest.Mock };
   let service: ChatScheduledMessageService;
 
   beforeEach(() => {
@@ -52,12 +59,15 @@ describe('ChatScheduledMessageService', () => {
       listForAuthor: jest.fn().mockResolvedValue([]),
       findForAuthor: jest.fn(),
       create: jest.fn(async (input) => row({ ...input, id: 'new' })),
-      updateForAuthor: jest.fn(async (_c, _u, id, patch) =>
+      updateForAuthor: jest.fn(async (_c, _u, id, patch, _now) =>
         row({ id, ...patch }),
       ),
-      deleteForAuthor: jest.fn().mockResolvedValue(true),
+      countPending: jest.fn().mockResolvedValue(0),
+      deleteForAuthor: jest.fn().mockResolvedValue('deleted'),
       findDue: jest.fn(),
-      claim: jest.fn().mockResolvedValue(true),
+      claim: jest.fn(async (r, _lease: string, _now: string, _due?: string) =>
+        row({ ...r, attempts: r.attempts + 1 }),
+      ),
       removeSent: jest.fn().mockResolvedValue(undefined),
       markFailed: jest.fn().mockResolvedValue(undefined),
     };
@@ -73,9 +83,18 @@ describe('ChatScheduledMessageService', () => {
         .mockResolvedValue({ message: { id: 'msg-1' }, deduplicated: false }),
     };
     notifications = { notifyUser: jest.fn().mockResolvedValue(undefined) };
+    messageRepo = { findByClientMessageId: jest.fn().mockResolvedValue(null) };
+    chapterRepo = {
+      findById: jest.fn().mockResolvedValue({
+        subscription_status: 'active',
+        past_due_since: null,
+      }),
+    };
     service = new ChatScheduledMessageService(
       repo,
       channelRepo as unknown as IChatChannelRepository,
+      messageRepo as unknown as IChatMessageRepository,
+      chapterRepo as unknown as IChapterRepository,
       access as unknown as ChannelAccessService,
       chat as unknown as ChatService,
       notifications as unknown as NotificationService,
@@ -90,7 +109,7 @@ describe('ChatScheduledMessageService', () => {
     });
 
     it('checks the author may post there now, and stores the instant', async () => {
-      await service.schedule('ch-1', 'u-1', input(NOW + DAY), NOW);
+      await service.schedule('ch-1', 'u-1', 'm-1', input(NOW + DAY), NOW);
       expect(access.assertChannelAccess).toHaveBeenCalledWith(
         'chan-1',
         'ch-1',
@@ -111,6 +130,7 @@ describe('ChatScheduledMessageService', () => {
       await service.schedule(
         'ch-1',
         'u-1',
+        'm-1',
         {
           channel_id: 'chan-1',
           content: 'x',
@@ -125,41 +145,37 @@ describe('ChatScheduledMessageService', () => {
 
     it('refuses a time in the past, beyond a minute’s grace', async () => {
       await expect(
-        service.schedule('ch-1', 'u-1', input(NOW - 2 * 60 * 1000), NOW),
+        service.schedule('ch-1', 'u-1', 'm-1', input(NOW - 2 * 60 * 1000), NOW),
       ).rejects.toBeInstanceOf(BadRequestException);
       await expect(
-        service.schedule('ch-1', 'u-1', input(NOW - 30 * 1000), NOW),
+        service.schedule('ch-1', 'u-1', 'm-1', input(NOW - 30 * 1000), NOW),
       ).resolves.toBeDefined();
     });
 
     it('refuses more than 120 days ahead', async () => {
       await expect(
-        service.schedule('ch-1', 'u-1', input(NOW + 121 * DAY), NOW),
+        service.schedule('ch-1', 'u-1', 'm-1', input(NOW + 121 * DAY), NOW),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('refuses empty text', async () => {
       await expect(
-        service.schedule('ch-1', 'u-1', input(NOW + DAY, ' ￼ '), NOW),
+        service.schedule('ch-1', 'u-1', 'm-1', input(NOW + DAY, ' ￼ '), NOW),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
     it('refuses when the author cannot post there', async () => {
       access.assertChannelAccess.mockRejectedValue(new ForbiddenException());
       await expect(
-        service.schedule('ch-1', 'u-1', input(NOW + DAY), NOW),
+        service.schedule('ch-1', 'u-1', 'm-1', input(NOW + DAY), NOW),
       ).rejects.toBeInstanceOf(ForbiddenException);
       expect(repo.create).not.toHaveBeenCalled();
     });
 
     it('caps the pending messages one member holds', async () => {
-      repo.listForAuthor.mockResolvedValue(
-        Array.from({ length: SCHEDULE_MAX_PENDING }, (_, i) =>
-          row({ id: `s-${i}` }),
-        ),
-      );
+      repo.countPending.mockResolvedValue(SCHEDULE_MAX_PENDING);
       await expect(
-        service.schedule('ch-1', 'u-1', input(NOW + DAY), NOW),
+        service.schedule('ch-1', 'u-1', 'm-1', input(NOW + DAY), NOW),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
@@ -211,10 +227,46 @@ describe('ChatScheduledMessageService', () => {
   });
 
   it('remove is a 404 when there was nothing to delete', async () => {
-    repo.deleteForAuthor.mockResolvedValue(false);
+    repo.deleteForAuthor.mockResolvedValue('missing');
     await expect(service.remove('ch-1', 'u-1', 'x')).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+
+  it('remove is a 409 while a send holds it, since it may already be posting', async () => {
+    repo.deleteForAuthor.mockResolvedValue('held');
+    await expect(service.remove('ch-1', 'u-1', 'x')).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+  });
+
+  it('refuses a time with no offset, which the server would read on its own clock', async () => {
+    for (const sendAt of ['2026-11-16T08:00:00', '2026-11-16']) {
+      await expect(
+        service.schedule(
+          'ch-1',
+          'u-1',
+          'm-1',
+          { channel_id: 'chan-1', content: 'x', send_at: sendAt },
+          NOW,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    }
+  });
+
+  it('update refuses null text with a 400', async () => {
+    await expect(
+      service.update('ch-1', 'u-1', 'sched-1', { content: null }, NOW),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('update refuses a row whose message already posted', async () => {
+    repo.findForAuthor.mockResolvedValue(row({ attempts: 1 }));
+    messageRepo.findByClientMessageId.mockResolvedValue({ id: 'msg-1' });
+    await expect(
+      service.update('ch-1', 'u-1', 'sched-1', { content: 'x' }, NOW),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(repo.updateForAuthor).not.toHaveBeenCalled();
   });
 
   describe('deliver', () => {
@@ -236,6 +288,40 @@ describe('ChatScheduledMessageService', () => {
       );
     });
 
+    it('answers an earlier send that posted, without sending or judging again', async () => {
+      messageRepo.findByClientMessageId.mockResolvedValue({ id: 'msg-0' });
+      chat.sendMessage.mockRejectedValue(new ForbiddenException());
+      await expect(service.deliver(row({ attempts: 2 }))).resolves.toEqual({
+        outcome: 'sent',
+        message: { id: 'msg-0' },
+      });
+      expect(chat.sendMessage).not.toHaveBeenCalled();
+      expect(repo.removeSent).toHaveBeenCalled();
+      expect(notifications.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['canceled', null],
+      ['past_due', '2026-11-01T00:00:00.000Z'],
+    ])(
+      'does not post into a chapter read-only for billing (%s)',
+      async (status, since) => {
+        chapterRepo.findById.mockResolvedValue({
+          subscription_status: status,
+          past_due_since: since,
+        });
+        await expect(service.deliver(row())).resolves.toMatchObject({
+          outcome: 'failed',
+          reason: 'chapter_locked',
+        });
+        expect(chat.sendMessage).not.toHaveBeenCalled();
+        expect(repo.markFailed).toHaveBeenCalledWith(
+          expect.anything(),
+          'chapter_locked',
+        );
+      },
+    );
+
     it('marks it failed and tells the author when they lost access to post', async () => {
       chat.sendMessage.mockRejectedValue(new ForbiddenException());
       const result = await service.deliver(row());
@@ -250,18 +336,22 @@ describe('ChatScheduledMessageService', () => {
         'ch-1',
         expect.objectContaining({
           title: 'Scheduled message not sent',
-          body: expect.stringContaining('#general'),
+          body: expect.not.stringContaining('#general'),
           data: { target: { screen: 'chat', channelId: 'chan-1' } },
         }),
       );
     });
 
-    it('names no channel for a DM', async () => {
-      channelRepo.findById.mockResolvedValue({ name: 'dm', type: 'DM' });
-      chat.sendMessage.mockRejectedValue(new ForbiddenException());
+    it('names the channel only where the author can still see it', async () => {
+      chat.sendMessage.mockRejectedValue(new BadRequestException());
       await service.deliver(row());
       expect(notifications.notifyUser.mock.calls[0][2].body).toContain(
-        'that conversation',
+        '#general',
+      );
+      channelRepo.findById.mockResolvedValue({ name: 'dm', type: 'DM' });
+      await service.deliver(row());
+      expect(notifications.notifyUser.mock.calls[1][2].body).toContain(
+        'a conversation',
       );
     });
 
@@ -320,7 +410,7 @@ describe('ChatScheduledMessageService', () => {
 
     it('is a 409 when the sweep already holds it', async () => {
       repo.findForAuthor.mockResolvedValue(row());
-      repo.claim.mockResolvedValue(false);
+      repo.claim.mockResolvedValue(null);
       await expect(
         service.sendNow('ch-1', 'u-1', 'sched-1', NOW),
       ).rejects.toBeInstanceOf(ConflictException);

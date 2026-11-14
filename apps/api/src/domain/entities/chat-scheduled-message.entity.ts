@@ -7,18 +7,22 @@ export type ChatScheduledMessageStatus = 'pending' | 'failed';
 
 /**
  * Why a scheduled message did not post. `no_access`: the author can no longer
- * post in the channel (or is no longer in the chapter). `not_sendable`: the
+ * post in the channel. `chapter_locked`: the chapter is read-only for billing
+ * (canceled, or past due beyond grace), as a live post would be refused.
+ * `not_sendable`: the
  * send refused the message itself (the channel was deleted, the message is no
  * longer valid there). `send_failed`: it kept failing for some other reason.
  */
 export type ChatScheduledMessageFailure =
-  'no_access' | 'not_sendable' | 'send_failed';
+  'no_access' | 'chapter_locked' | 'not_sendable' | 'send_failed';
 
 export interface ChatScheduledMessage {
   id: string;
   chapter_id: string;
   channel_id: string;
   user_id: string;
+  /** The author's membership; the row goes with it. */
+  member_id: string;
   content: string;
   /** The composer's `@` picks (#3835), as `{ user_id, label }[]`. */
   mention_picks: { user_id: string; label: string }[] | null;

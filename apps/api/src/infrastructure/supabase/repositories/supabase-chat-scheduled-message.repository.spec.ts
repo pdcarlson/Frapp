@@ -24,6 +24,8 @@ const ROW_A_OTHERS = '0a000000-0000-4000-8000-000000004957';
 const ROW_A_LATER = '0a000000-0000-4000-8000-000000004958';
 const ROW_B_OTHERS = '0b000000-0000-4000-8000-000000004957';
 const ROW_B_LATER = '0b000000-0000-4000-8000-000000004958';
+const ROW_A_FAILED = '0a000000-0000-4000-8000-000000004959';
+const ROW_B_FAILED = '0b000000-0000-4000-8000-000000004959';
 const CHANNEL_A = '0a000000-0000-4000-8000-0000000c4956';
 const CHANNEL_B = '0b000000-0000-4000-8000-0000000c4956';
 
@@ -32,6 +34,7 @@ const DUE = '2026-11-14T12:59:00.000Z';
 const LATER = '2026-11-15T13:00:00.000Z';
 
 const row = (columns: Record<string, unknown>) => ({
+  member_id: 'member-1',
   content: 'Chapter at 8',
   mention_picks: null,
   status: 'pending',
@@ -93,6 +96,26 @@ const seed = () => ({
         send_at: LATER,
       }),
     ),
+    inA(
+      row({
+        id: ROW_A_FAILED,
+        user_id: USER_SHARED,
+        channel_id: CHANNEL_A,
+        send_at: DUE,
+        status: 'failed',
+        failure_reason: 'no_access',
+      }),
+    ),
+    inB(
+      row({
+        id: ROW_B_FAILED,
+        user_id: USER_SHARED,
+        channel_id: CHANNEL_B,
+        send_at: DUE,
+        status: 'failed',
+        failure_reason: 'no_access',
+      }),
+    ),
   ],
 });
 
@@ -103,7 +126,9 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
   beforeEach(() => {
     harness = createTenantHarness({
       tables: seed(),
-      collisionExempt: { chat_scheduled_messages: ['channel_id'] },
+      collisionExempt: {
+        chat_scheduled_messages: ['channel_id', 'member_id'],
+      },
     });
     repo = new SupabaseChatScheduledMessageRepository(harness.client);
   });
@@ -115,7 +140,9 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
     const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
       repo.listForAuthor(CHAPTER_A, USER_SHARED),
     );
-    expect(rows.map((r) => r.id)).toEqual([ROW_A, ROW_A_LATER]);
+    expect(rows.map((r) => r.id).sort()).toEqual(
+      [ROW_A, ROW_A_FAILED, ROW_A_LATER].sort(),
+    );
   });
 
   it('listForAuthor narrows to one channel', async () => {
@@ -143,6 +170,7 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
         chapter_id: CHAPTER_A,
         channel_id: CHANNEL_A,
         user_id: USER_SHARED,
+        member_id: 'member-1',
         content: 'Dues are due',
         mention_picks: null,
         send_at: LATER,
@@ -213,20 +241,40 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
   it('deleteForAuthor deletes only the author’s own row in the chapter', async () => {
     await expect(
       harness.expectTenantScoped(CHAPTER_A, () =>
-        repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_B),
+        repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_B, NOW),
       ),
-    ).resolves.toBe(false);
+    ).resolves.toBe('missing');
     await expect(
-      repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_A_OTHERS),
-    ).resolves.toBe(false);
+      repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_A_OTHERS, NOW),
+    ).resolves.toBe('missing');
     await expect(
-      repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_A),
-    ).resolves.toBe(true);
+      repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_A, NOW),
+    ).resolves.toBe('deleted');
     expect(stored(ROW_A)).toBeUndefined();
     expect(stored(ROW_B)).toBeDefined();
   });
 
-  it('findDue reads due, unheld pending rows from every chapter', async () => {
+  it('deleteForAuthor leaves a row a send holds', async () => {
+    await repo.claim(
+      { id: ROW_A, chapter_id: CHAPTER_A, attempts: 0 },
+      LATER,
+      NOW,
+    );
+    await expect(
+      repo.deleteForAuthor(CHAPTER_A, USER_SHARED, ROW_A, NOW),
+    ).resolves.toBe('held');
+    expect(stored(ROW_A)).toBeDefined();
+  });
+
+  it('countPending counts only the author’s pending rows in the chapter', async () => {
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.countPending(CHAPTER_A, USER_SHARED),
+      ),
+    ).resolves.toBe(2);
+  });
+
+  it('findDue reads due, unheld pending rows from every chapter, never a failed one', async () => {
     const rows = await repo.findDue(NOW, 10);
     expect(rows.map((r) => r.id).sort()).toEqual(
       [ROW_A, ROW_A_OTHERS, ROW_B, ROW_B_OTHERS].sort(),
@@ -252,15 +300,56 @@ describe('SupabaseChatScheduledMessageRepository — tenant scope', () => {
           NOW,
         ),
       ),
-    ).resolves.toBe(true);
+    ).resolves.toMatchObject({ id: ROW_A, attempts: 1 });
     expect(stored(ROW_A)).toMatchObject({ attempts: 1, lease_until: LATER });
     await expect(
       repo.claim({ id: ROW_A, chapter_id: CHAPTER_A, attempts: 0 }, LATER, NOW),
-    ).resolves.toBe(false);
+    ).resolves.toBeNull();
     // The other chapter's row by its id, under this chapter.
     await expect(
       repo.claim({ id: ROW_B, chapter_id: CHAPTER_A, attempts: 0 }, LATER, NOW),
-    ).resolves.toBe(false);
+    ).resolves.toBeNull();
+    // A failed row is never claimed.
+    await expect(
+      repo.claim(
+        { id: ROW_A_FAILED, chapter_id: CHAPTER_A, attempts: 0 },
+        LATER,
+        NOW,
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it('claim with dueBy leaves a row an edit moved later, and answers the edited row', async () => {
+    await repo.updateForAuthor(
+      CHAPTER_A,
+      USER_SHARED,
+      ROW_A,
+      { content: 'New' },
+      NOW,
+    );
+    await expect(
+      repo.claim(
+        { id: ROW_A, chapter_id: CHAPTER_A, attempts: 0 },
+        LATER,
+        NOW,
+        NOW,
+      ),
+    ).resolves.toMatchObject({ content: 'New' });
+    await repo.updateForAuthor(
+      CHAPTER_A,
+      USER_SHARED,
+      ROW_A_LATER,
+      { send_at: LATER },
+      NOW,
+    );
+    await expect(
+      repo.claim(
+        { id: ROW_A_LATER, chapter_id: CHAPTER_A, attempts: 0 },
+        LATER,
+        NOW,
+        NOW,
+      ),
+    ).resolves.toBeNull();
   });
 
   it('removeSent and markFailed write only inside the row’s chapter', async () => {

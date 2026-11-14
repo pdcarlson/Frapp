@@ -7149,10 +7149,10 @@ export interface components {
              */
             status: "pending" | "failed";
             /**
-             * @description Why a failed message did not post: `no_access` the author can no longer post there; `not_sendable` the channel refused the message; `send_failed` it kept failing.
+             * @description Why a failed message did not post: `no_access` the author can no longer post there; `chapter_locked` the chapter is read-only for billing; `not_sendable` the channel refused the message; `send_failed` it kept failing.
              * @enum {string|null}
              */
-            failure_reason: "no_access" | "not_sendable" | "send_failed" | null;
+            failure_reason: "no_access" | "chapter_locked" | "not_sendable" | "send_failed" | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -7167,7 +7167,7 @@ export interface components {
             content: string;
             /**
              * Format: date-time
-             * @description When to post it: an instant, at most 120 days ahead. The client picks it on the member’s own clock.
+             * @description When to post it: a date-time with its offset (`Z` or `±hh:mm`), at most 120 days ahead. The client picks it on the member’s own clock.
              */
             send_at: string;
             mention_picks?: components["schemas"]["MentionPickDto"][];
