@@ -749,6 +749,31 @@ describe('AiGatewayService', () => {
       ]);
     });
 
+    it('runs a round the member asked more thought of at the catalog’s higher effort', async () => {
+      const h = harness({
+        'ask.agent': () => ({ text: '', toolCalls: [CALL] }),
+      });
+      await agentEvents(
+        h.gateway.streamAgentRound(
+          'ask.agent',
+          { ...QUESTION, more: true },
+          CONTEXT,
+        ),
+      );
+      // What that means stays the catalog's to say, not the caller's: more
+      // effort, and more room, since thinking is spent from the same tokens.
+      expect(h.requests[0]).toMatchObject({
+        model: 'claude-sonnet-5-5',
+        effort: 'high',
+        maxOutputTokens: 8_000,
+      });
+      // And it is reserved at that ceiling, before the call is made.
+      expect(h.spend.reserve).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ maxOutputTokens: 8_000 }),
+      );
+    });
+
     it('checks a citation against what the rounds returned, and nothing else', async () => {
       const h = harness({
         'ask.agent': () => ({

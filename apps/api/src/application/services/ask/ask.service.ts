@@ -163,11 +163,11 @@ export interface AskInput {
   history?: readonly AskHistoryTurn[];
   /**
    * What the member had open when they asked. Ids from the client: each is
-   * looked up as the asker before anything about it reaches a model. Carried
-   * to here and not read yet (#4899).
+   * looked up as the asker before anything about it reaches a model
+   * (`AskFromService`). Read by the tool loop only.
    */
   from?: AskFrom;
-  /** How hard to work on it. Carried to here and not read yet (#4899). */
+  /** How hard to work on it (`AGENT_LIMITS`). Read by the tool loop only. */
   effort?: AskEffort;
   /** Where the member asked from. Counted in the turn's trace, never read. */
   door?: AskDoor;
@@ -754,16 +754,18 @@ export class AskService {
     const turn = this.loop.run({
       task: 'ask.agent',
       promptVersion: ASK_AGENT_PROMPT_VERSION,
-      system: askAgentSystem(longDate(now, input.timeZone), {
-        asker: asker !== null,
-        from: openAt.length > 0,
-      }),
+      system: askAgentSystem(
+        longDate(now, input.timeZone),
+        { asker: asker !== null, from: openAt.length > 0 },
+        input.effort === 'more',
+      ),
       messages: askAnswerMessages(input.question, input.history),
       context,
       tools: offered,
       toolContext,
       call: { chapterId: input.chapterId, actingUserId: input.userId },
       titleOf,
+      ...(input.effort === undefined ? {} : { effort: input.effort }),
       ...(input.signal === undefined ? {} : { signal: input.signal }),
     });
     try {

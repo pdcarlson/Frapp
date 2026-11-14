@@ -7,6 +7,7 @@ import type {
 } from '../../ai/ai-gateway.service';
 import {
   AGENT_MAX_CALLS,
+  AGENT_LIMITS,
   AGENT_MAX_ROUNDS,
   AGENT_READ_BUDGET_MS,
   AgentLoopService,
@@ -393,6 +394,68 @@ describe('AgentLoopService', () => {
       ]);
       expect(prompts[1].mustAnswer).toBe(true);
       expect(outcome?.stop).toBe('call_limit');
+    });
+
+    it('gives a turn asked to think harder more rounds and more reads, and tells every round so', async () => {
+      const more = AGENT_LIMITS.more;
+      expect(more.rounds).toBeGreaterThan(AGENT_MAX_ROUNDS);
+      expect(more.calls).toBeGreaterThan(AGENT_MAX_CALLS);
+      expect(more.readBudgetMs).toBeGreaterThan(
+        AGENT_LIMITS.default.readBudgetMs,
+      );
+
+      const asking = build([round({ toolCalls: [call('search_messages')] })]);
+      const rounds = await run(asking.loop, input({ effort: 'more' }));
+      expect(asking.prompts).toHaveLength(more.rounds);
+      expect(asking.prompts.every((prompt) => prompt.more === true)).toBe(true);
+      expect(asking.prompts.at(-1)?.mustAnswer).toBe(true);
+      expect(rounds.outcome?.stop).toBe('round_limit');
+
+      const search = tool('search_messages');
+      const many = Array.from({ length: more.calls + 1 }, (_, index) =>
+        call('search_messages', { query: 'dues' }, `call-${index}`),
+      );
+      const reading = build([
+        round({ toolCalls: many }),
+        round({ text: 'done' }),
+      ]);
+      const calls = await run(
+        reading.loop,
+        input({ tools: [search], effort: 'more' }),
+      );
+      expect(search.run).toHaveBeenCalledTimes(more.calls);
+      expect(calls.outcome?.stop).toBe('call_limit');
+    });
+
+    it('says nothing of more thought on an ordinary turn', async () => {
+      const { loop, prompts } = build([round({ text: 'done' })]);
+      await run(loop, input());
+      expect(prompts[0].more).toBeUndefined();
+    });
+
+    it('gives a turn asked to think harder longer to read', async () => {
+      let now = 0;
+      // Each read takes what an ordinary turn has in all.
+      const slow = tool('search_messages', () => {
+        now += AGENT_READ_BUDGET_MS;
+        return Promise.resolve(found());
+      });
+      const { loop, prompts } = build([
+        round({ toolCalls: [call('search_messages')] }),
+        round({ toolCalls: [call('search_messages')] }),
+        round({ text: 'done' }),
+      ]);
+
+      const { outcome } = await run(
+        loop,
+        input({ tools: [slow], clock: () => now, effort: 'more' }),
+      );
+
+      // Still reading after the first, and stopped by the second.
+      expect(prompts[1].mustAnswer ?? false).toBe(false);
+      expect(prompts[2].mustAnswer).toBe(true);
+      expect(slow.run).toHaveBeenCalledTimes(2);
+      expect(outcome?.stop).toBe('time_limit');
     });
 
     it('tells the model to answer once the read budget is spent', async () => {

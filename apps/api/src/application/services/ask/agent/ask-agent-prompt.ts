@@ -10,7 +10,7 @@ import { ASK_ASKER_SOURCE_TITLE } from '../ask-prompt';
  * everything a tool returns, travel as data beside the question, never in
  * here (`docs/security/ai-prompt-injection.md` C1).
  */
-export const ASK_AGENT_PROMPT_VERSION = 'ask.agent@v3';
+export const ASK_AGENT_PROMPT_VERSION = 'ask.agent@v4';
 
 /**
  * The title every "where the member asked from" block starts with
@@ -22,6 +22,8 @@ export function askAgentSystem(
   today: string,
   /** Which blocks travel beside the question this turn. */
   beside: { asker: boolean; from: boolean },
+  /** The member asked Frapp to think harder about this one. */
+  more = false,
 ): string {
   return [
     "You are Frapp, the assistant inside a fraternity or sorority chapter's own app. You answer one member about their own chapter.",
@@ -38,6 +40,11 @@ export function askAgentSystem(
     ...(beside.from
       ? [
           `A block whose title starts "${ASK_FROM_SOURCE_TITLE}" says what the member had open when they asked. "This channel", "here", "this event" and "this task" mean that. It only tells you what they mean: read it with a tool before you state anything about it, and do not cite the block.`,
+        ]
+      : []),
+    ...(more
+      ? [
+          'The member asked you to think harder about this one. Read more widely before you answer: look in more than one place, check what you find against a second source where there is one, and follow up on anything the first reads leave open. Then give a fuller answer than usual, still led by the answer itself and still only what the sources support.',
         ]
       : []),
     'If you have read what there is to read and it does not answer the question, say so in one sentence and stop. Do not pad it with what you did find unless it helps.',

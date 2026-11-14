@@ -158,8 +158,9 @@ export interface AskTraceToolStep {
 export type AskTraceStep = AskTraceModelStep | AskTraceToolStep;
 
 /**
- * The most steps one trace keeps. The loop stops at six rounds and ten tool
- * calls, so sixteen is the most a turn makes; anything past this is a bug
+ * The most steps one trace keeps. A turn asked to think harder is the
+ * longest the loop makes: ten rounds, sixteen tool calls and one call past
+ * the limit kept (`AGENT_LIMITS`), so twenty-seven; anything past this is a bug
  * upstream, and the trace keeps the first of them instead of failing.
  */
 export const ASK_TRACE_MAX_STEPS = 32;

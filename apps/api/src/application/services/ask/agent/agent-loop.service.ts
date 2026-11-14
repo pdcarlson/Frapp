@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
+import type { AskEffort } from '@repo/validation';
 import type { AiCallContext } from '#domain/adapters/ai-call-context';
 import {
   LanguageModelError,
@@ -39,6 +40,30 @@ export const AGENT_MAX_CALLS = 10;
  */
 export const AGENT_READ_BUDGET_MS = 45_000;
 
+/** What bounds one turn. */
+export interface AgentLimits {
+  rounds: number;
+  calls: number;
+  readBudgetMs: number;
+}
+
+/**
+ * A turn's bounds by how hard the member asked Frapp to work (`AskEffort`).
+ * "Think harder" is the same loop with more room: more rounds, more reads
+ * and longer to read them, and the model's own effort raised by the gateway
+ * (`AiAgentPrompt.more`). Each round is still admitted against the member's
+ * and the chapter's caps on its own, so more room is never more than they
+ * may spend. Both sets fit a trace (`ASK_TRACE_MAX_STEPS`).
+ */
+export const AGENT_LIMITS: Record<AskEffort, AgentLimits> = {
+  default: {
+    rounds: AGENT_MAX_ROUNDS,
+    calls: AGENT_MAX_CALLS,
+    readBudgetMs: AGENT_READ_BUDGET_MS,
+  },
+  more: { rounds: 10, calls: 16, readBudgetMs: 75_000 },
+};
+
 /** A read started with less than this left of the budget still gets it. */
 const AGENT_READ_MIN_MS = 2_000;
 
@@ -61,6 +86,8 @@ export interface AgentLoopInput {
   /** What the model reads as a source's name. */
   titleOf: (source: AgentSource) => string;
   signal?: AbortSignal;
+  /** {@link AGENT_LIMITS}. Left out: `default`. */
+  effort?: AskEffort;
   /** The clock, for the read budget. A test passes its own. */
   clock?: () => number;
 }
@@ -178,6 +205,8 @@ export class AgentLoopService {
     input: AgentLoopInput,
   ): AsyncGenerator<AgentLoopEvent, void, void> {
     const clock = input.clock ?? Date.now;
+    const limits = AGENT_LIMITS[input.effort ?? 'default'];
+    const more = input.effort === 'more';
     const startedAt = clock();
     const offered = new Map(input.tools.map((tool) => [tool.name, tool]));
     const tools = input.tools.map(toModelTool);
@@ -206,7 +235,7 @@ export class AgentLoopService {
 
     for (;;) {
       // The last round allowed is one that writes.
-      if (limit === null && rounds.length >= AGENT_MAX_ROUNDS - 1) {
+      if (limit === null && rounds.length >= limits.rounds - 1) {
         limit = 'round_limit';
       }
       const roundStartedAt = clock();
@@ -222,6 +251,7 @@ export class AgentLoopService {
           context: input.context,
           rounds,
           ...(limit === null ? {} : { mustAnswer: true }),
+          ...(more ? { more: true } : {}),
           ...(input.signal === undefined ? {} : { signal: input.signal }),
         },
         input.call,
@@ -282,7 +312,7 @@ export class AgentLoopService {
       const pending: Promise<RanCall>[] = [];
       for (const call of result.toolCalls) {
         const tool = offered.get(call.name);
-        if (callsRun >= AGENT_MAX_CALLS) {
+        if (callsRun >= limits.calls) {
           pending.push(
             Promise.resolve(
               notRun(call, 'over_limit', 'The limit on reads was reached.'),
@@ -301,7 +331,7 @@ export class AgentLoopService {
             input,
             clock,
             Math.max(
-              AGENT_READ_BUDGET_MS - (clock() - startedAt),
+              limits.readBudgetMs - (clock() - startedAt),
               AGENT_READ_MIN_MS,
             ),
           ),
@@ -352,8 +382,8 @@ export class AgentLoopService {
         })),
       });
 
-      if (callsRun >= AGENT_MAX_CALLS) limit = 'call_limit';
-      else if (clock() - startedAt >= AGENT_READ_BUDGET_MS) {
+      if (callsRun >= limits.calls) limit = 'call_limit';
+      else if (clock() - startedAt >= limits.readBudgetMs) {
         limit = 'time_limit';
       }
     }
