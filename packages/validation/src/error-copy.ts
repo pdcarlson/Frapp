@@ -13,7 +13,6 @@ import { askPostRefusalCopy } from "./ask-post";
 import { moduleRefusalFromServerMessage } from "./module-refusal";
 import { subscriptionRefusalFromServerMessage } from "./subscription";
 import {
-  NOT_SELF_ASSIGNABLE_CODE,
   SELF_ASSIGNABLE_REFUSAL_COPY,
   type SelfAssignableRefusal,
 } from "./self-assignable-roles";
@@ -69,13 +68,12 @@ export function copyForErrorCode(code: string | null): string | null {
   if (code.startsWith("chapter.context.")) {
     return "Your chapter changed in another tab. Refresh and try again.";
   }
-  // Self-assignable roles (#4958): marking a role members can't safely pick,
-  // or picking one an officer changed since the list loaded.
+  // Self-assignable roles (#4958): marking a role members can't safely pick.
+  // `role.not_self_assignable` has no copy of its own: the API sends it for a
+  // refused join or leave, an alum's join, and two save races (one an
+  // officer's), each with its own sentence, read from SERVER_MESSAGE_COPY.
   if (code in SELF_ASSIGNABLE_REFUSAL_COPY) {
     return SELF_ASSIGNABLE_REFUSAL_COPY[code as SelfAssignableRefusal];
-  }
-  if (code === NOT_SELF_ASSIGNABLE_CODE) {
-    return "Officers changed this role. Reload to see the roles you can pick.";
   }
   if (code === "service_entry.receipt_required") {
     return "Add a photo of your proof, then submit.";
@@ -126,6 +124,20 @@ export const CHECK_IN_NEEDS_CODE_COPY =
  * vaguer but never wrong.
  */
 export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
+  // Self-assignable roles (#4958, `RbacService`), each sent with the code
+  // `role.not_self_assignable` and already in its reader's words: a member's
+  // refused join or leave, an alum's join, a pick that raced an officer's
+  // change, and an officer's save that raced a mark.
+  "Officers give this role. Ask one if you need it.":
+    "Officers give this role. Ask one if you need it.",
+  "Officers take this role away. Ask one if you need it gone.":
+    "Officers take this role away. Ask one if you need it gone.",
+  "Alumni don't pick roles. Ask an officer if you need one.":
+    "Alumni don't pick roles. Ask an officer if you need one.",
+  "This role changed while you were saving. Reload and try again.":
+    "This role changed while you were saving. Reload and try again.",
+  "Members started picking this role while you were saving. Reload and try again.":
+    "Members started picking this role while you were saving. Reload and try again.",
   // A chat sign-up sheet's claim on a slot that filled first (#3926,
   // `ChatReactionService.claimSignupSlots`, 409). Already in a member's words.
   "That slot is full. Someone took the last spot just before you.":

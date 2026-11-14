@@ -30,6 +30,7 @@ const {
       id: string;
       name: string;
       held: boolean;
+      joinable: boolean;
       color: null;
     }>,
   },
@@ -140,7 +141,13 @@ describe("the slides", () => {
 
   it("asks for roles after the display pick when the chapter has some (#4958)", async () => {
     pickable.roles = [
-      { id: "im", name: "Intramurals", held: false, color: null },
+      {
+        id: "im",
+        name: "Intramurals",
+        held: false,
+        joinable: true,
+        color: null,
+      },
     ];
     setPicked.mutateAsync.mockResolvedValue({ role_ids: ["im"] });
     const user = userEvent.setup();
@@ -169,7 +176,13 @@ describe("the slides", () => {
     const { rerender } = render(<OnboardingTutorial />);
     await user.click(screen.getByRole("button", { name: "Next" }));
     pickable.roles = [
-      { id: "im", name: "Intramurals", held: false, color: null },
+      {
+        id: "im",
+        name: "Intramurals",
+        held: false,
+        joinable: true,
+        color: null,
+      },
     ];
     rerender(<OnboardingTutorial />);
     expect(screen.getByText("Step 2 of 9")).toBeInTheDocument();

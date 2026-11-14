@@ -119,6 +119,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     findAllActionsOnMessages: jest.fn().mockResolvedValue([]),
   };
   const linkService = { listFor: jest.fn().mockResolvedValue([]) };
+  const reminderService = { listFor: jest.fn().mockResolvedValue([]) };
   const userRepo = {
     findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([
       { id: ME, display_name: 'Me Member', avatar_url: null },
@@ -156,6 +157,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     chatBlocks as never,
     rbacService as never,
     linkService as never,
+    reminderService as never,
     messageRepo as never,
     actionRepo as never,
     userRepo as never,
@@ -179,6 +181,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     messageRepo,
     actionRepo,
     linkService,
+    reminderService,
   };
 }
 
@@ -381,7 +384,7 @@ describe('ActivityService', () => {
       expect(chatBlocks.listBlockedUserIds).toHaveBeenCalledWith(CHAPTER, ME);
     });
 
-    it('serves no polls, cards or links, and says so, when the block list cannot be read', async () => {
+    it('serves no polls, cards, links or reminders, and says so, when the block list cannot be read', async () => {
       const { service, messageRepo, chatBlocks } = build();
       chatBlocks.listBlockedUserIds.mockRejectedValue(new Error('db down'));
       servePolls(messageRepo, [pollCard({ id: 'poll-1' })]);
@@ -394,7 +397,13 @@ describe('ActivityService', () => {
       // fail with it rather than list a blocked member's card or link.
       expect(view.needs_you.cards).toEqual([]);
       expect(view.links).toEqual([]);
-      expect(view.unavailable).toEqual(['polls', 'cards', 'links']);
+      expect(view.reminders).toEqual([]);
+      expect(view.unavailable).toEqual([
+        'polls',
+        'cards',
+        'links',
+        'reminders',
+      ]);
     });
 
     it('serves the caller’s links, uncounted in needs_you_count (#3897)', async () => {
@@ -426,6 +435,39 @@ describe('ActivityService', () => {
       );
       expect(view.links).toEqual([row]);
       expect(view.needs_you_count).toBe(0);
+    });
+
+    it('serves the caller’s reminders and counts the due ones in needs_you_count (#4957)', async () => {
+      const { service, reminderService, chatService } = build();
+      const waiting = { id: 'rem-1', message_id: 'msg-1', due: false };
+      const due = { id: 'rem-2', message_id: 'msg-2', due: true };
+      reminderService.listFor.mockResolvedValue([due, waiting]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(reminderService.listFor).toHaveBeenCalledWith(
+        CHAPTER,
+        ME,
+        expect.any(Number),
+        {
+          channels: [{ id: READABLE, name: 'general', type: 'PUBLIC' }],
+          blockedUserIds: [],
+        },
+      );
+      expect(view.reminders).toEqual([due, waiting]);
+      expect(view.needs_you_count).toBe(1);
+      // Shares chat's channel read with polls and links.
+      expect(chatService.getChannels).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves no reminders, and says so, when the reminders read fails', async () => {
+      const { service, reminderService } = build();
+      reminderService.listFor.mockRejectedValue(new Error('db down'));
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.reminders).toEqual([]);
+      expect(view.unavailable).toEqual(['reminders']);
     });
 
     it('reads chat’s channel list and the block list once for polls and links', async () => {

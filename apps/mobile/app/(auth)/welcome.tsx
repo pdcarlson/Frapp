@@ -164,6 +164,9 @@ export default function Welcome() {
   // change whether it was shown.
   const [rolesShown, setRolesShown] = useState(false);
   const pickable = usePickableRoles();
+  // Asked only when there's a role to join; leave-only rows wait for the
+  // Directory's Add roles.
+  const offerRolesBeat = pickable.roles.some((role) => role.joinable);
   // Whether there was a photo when the beat opened, so its event can tell a
   // photo chosen on it from one the member already had.
   const [hadPhoto, setHadPhoto] = useState(false);
@@ -220,7 +223,7 @@ export default function Welcome() {
 
   function leaveDisplay() {
     if (leaving) return;
-    if (pickable.roles.length > 0) {
+    if (offerRolesBeat) {
       setRolesShown(true);
       setStep("roles");
     } else {
@@ -455,7 +458,7 @@ export default function Welcome() {
           ) : step === "display" ? (
             <OnboardingPrimaryButton
               label={
-                primer.showPrimer || ai.show || pickable.roles.length > 0
+                primer.showPrimer || ai.show || offerRolesBeat
                   ? "Continue"
                   : "Go to chat"
               }

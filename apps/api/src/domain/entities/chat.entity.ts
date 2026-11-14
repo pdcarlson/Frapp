@@ -725,6 +725,22 @@ export interface ChatMessageBookmark {
 export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
 
 /**
+ * A member's private reminder on a chat message (#4957), as stored in
+ * `chat_message_reminders`.
+ */
+export interface ChatMessageReminder {
+  id: string;
+  user_id: string;
+  message_id: string;
+  chapter_id: string;
+  remind_at: string;
+  /** When the sweep sent its push; null until then. */
+  fired_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * The message as the bookmarks endpoint serves it — a narrow projection, not a
  * whole {@link ChatMessage}.
  *

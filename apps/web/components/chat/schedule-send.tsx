@@ -1,11 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarClock, ChevronDown } from "lucide-react";
+import {
+  CalendarClock,
+  ChevronDown,
+  CornerUpLeft,
+  Paperclip,
+} from "lucide-react";
 import {
   formatScheduledFor,
   schedulePresets,
   scheduledFailureCopy,
+  scheduledMessageExtras,
   scheduleTimeProblem,
   useDeleteScheduledMessage,
   useScheduledMessages,
@@ -337,9 +343,12 @@ function ScheduledRow({
           ? scheduledFailureCopy(row.failure_reason)
           : formatScheduledFor(new Date(row.send_at), now)}
       </p>
-      <p className="line-clamp-4 whitespace-pre-wrap break-words text-sm">
-        {row.content}
-      </p>
+      {row.content.trim() ? (
+        <p className="line-clamp-4 whitespace-pre-wrap break-words text-sm">
+          {row.content}
+        </p>
+      ) : null}
+      <ScheduledExtras row={row} />
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
@@ -394,6 +403,30 @@ function ScheduledRow({
   );
 }
 
+/** "Reply · 2 photos" under the text, naming the files (#4971). */
+function ScheduledExtras({ row }: { row: ScheduledMessage }) {
+  const extras = scheduledMessageExtras(row);
+  if (!extras) return null;
+  const names = row.attachments.map((file) => file.filename).join(", ");
+  return (
+    <p
+      className="flex items-center gap-1.5 text-caption text-muted-foreground"
+      data-scheduled-extras=""
+      title={names || undefined}
+    >
+      {row.attachments.length > 0 ? (
+        <Paperclip className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      ) : (
+        <CornerUpLeft className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      )}
+      <span className="truncate">
+        {extras}
+        {names ? <span className="sr-only">: {names}</span> : null}
+      </span>
+    </p>
+  );
+}
+
 function ScheduledEditRow({
   row,
   onDone,
@@ -416,7 +449,8 @@ function ScheduledEditRow({
   const at = fromLocalParts(date, time);
   const problem = sendAtOnce ? null : scheduleTimeProblem(at, new Date());
   const timeChanged = date !== parts.date || time !== parts.time;
-  const empty = content.trim() === "";
+  // Files go with or without text; the text is all a text message has.
+  const empty = content.trim() === "" && row.attachments.length === 0;
   return (
     <li className="rounded-md border border-border p-3">
       <form
@@ -462,6 +496,7 @@ function ScheduledEditRow({
           onChange={(event) => setContent(event.target.value)}
           rows={3}
         />
+        <ScheduledExtras row={row} />
         <ScheduleTimeFields
           date={date}
           time={time}

@@ -210,7 +210,7 @@ describe("sign-up and form cards (#3926 step 4)", () => {
     });
     const rows = todoRows(withCards([soon, later, gone]), NOW);
 
-    expect(rows.map((row) => row.readRef.item_id)).toEqual(["soon", "later"]);
+    expect(rows.map((row) => row.readRef?.item_id)).toEqual(["soon", "later"]);
     expect(rows[0]!.soon).toBe("closes in 3 hours");
     expect(rows[1]!.soon).toBeNull();
   });
@@ -226,8 +226,9 @@ describe("sign-up and form cards (#3926 step 4)", () => {
 });
 
 describe("activityGroups", () => {
-  it("draws Waiting on others, then Links", () => {
+  it("draws Reminders, Waiting on others, then Links", () => {
     expect(activityGroups(activity()).map((group) => group.label)).toEqual([
+      "Reminders",
       "Waiting on others",
       "Links",
     ]);
@@ -307,7 +308,7 @@ describe("activityGroups", () => {
       stored_status: "COMPLETED",
       assignee_name: "Ada",
     };
-    const [made] = activityGroups(
+    const [, made] = activityGroups(
       activity({
         made_by_you: {
           polls: [],
@@ -333,12 +334,19 @@ describe("activityGroups", () => {
   it("names each section that could not be read, under every group that draws it", () => {
     const groups = activityGroups(
       activity({
-        unavailable: ["tasks", "hours_approvals", "made_events", "links"],
+        unavailable: [
+          "tasks",
+          "hours_approvals",
+          "made_events",
+          "links",
+          "reminders",
+        ],
       }),
     );
 
     // Hours waiting on approval are the To review card's to name.
     expect(groups.map((group) => group.unavailable)).toEqual([
+      ["reminders"],
       ["made_events", "tasks"],
       ["links"],
     ]);
@@ -559,6 +567,7 @@ describe("activityGroups", () => {
     });
 
     expect(rowsOf(data)).toEqual({
+      reminders: [],
       "made-by-you": [],
       links: ["link:Google Form:-"],
     });
@@ -1048,5 +1057,70 @@ describe("review steps (#4693)", () => {
     expect(findActivityTaskRow(feed, "both")?.key).toBe(
       "needs-confirm:task:both",
     );
+  });
+});
+
+describe("reminders (#4957)", () => {
+  const NOW = new Date("2026-11-14T12:00:00.000Z");
+  const reminder = (overrides: Record<string, unknown> = {}) => ({
+    id: "rem-1",
+    message_id: "msg-1",
+    thread_root_id: null,
+    channel_id: "ch-1",
+    channel_name: "general",
+    channel_type: "PUBLIC",
+    author_name: "Alex",
+    preview: "dues are due Friday",
+    message_created_at: "2026-11-13T12:00:00.000Z",
+    message_available: true,
+    remind_at: "2026-11-14T12:20:00.000Z",
+    fired_at: null,
+    due: false,
+    ...overrides,
+  });
+
+  it("lists the member's reminders, a due one badged Due", () => {
+    const data = activity({
+      reminders: [
+        reminder({
+          id: "due",
+          remind_at: "2026-11-14T11:00:00.000Z",
+          fired_at: "2026-11-14T11:00:00.000Z",
+          due: true,
+        }),
+        reminder({ id: "waiting", preview: "bring the banner" }),
+      ],
+    });
+    const group = activityGroups(data, NOW).find(
+      (candidate) => candidate.id === "reminders",
+    )!;
+    expect(group.rows.map(say)).toEqual([
+      "reminder:dues are due Friday:Due",
+      "reminder:bring the banner:-",
+    ]);
+    expect(group.rows[0]!.detail).toMatch(/^Alex · #general · Reminded /);
+    expect(group.rows[1]!.detail).toMatch(/^Alex · #general · Remind me /);
+    expect(group.rows[0]!.readRef).toBeNull();
+    expect(group.rows[0]!.unread).toBe(false);
+  });
+
+  it("names no channel for a reminder the member can no longer open", () => {
+    const data = activity({
+      reminders: [
+        reminder({
+          message_available: false,
+          channel_name: null,
+          channel_type: null,
+          author_name: "",
+        }),
+      ],
+    });
+    const [group] = activityGroups(data, NOW);
+    expect(group!.rows[0]!.detail).toMatch(/^Remind me /);
+  });
+
+  it("reads an API from before reminders as none", () => {
+    const [group] = activityGroups(activity(), NOW);
+    expect(group!.rows).toEqual([]);
   });
 });

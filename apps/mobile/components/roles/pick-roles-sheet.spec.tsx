@@ -33,14 +33,15 @@ const ROLES = [
   everyone: false,
   grantsBase: false,
   selfAssignable: true,
+  joinable: true,
 }));
 
-function render(): ReactTestRenderer {
+function render(roles = ROLES): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <PickRolesSheet roles={ROLES} />
+        <PickRolesSheet roles={roles} />
       </FrappThemeProvider>,
     );
   });
@@ -81,14 +82,32 @@ describe("PickRolesSheet (#4958)", () => {
 
   it("says a refusal on the role's own row", async () => {
     state.mutateAsync.mockRejectedValueOnce({
+      statusCode: 409,
       code: "role.not_self_assignable",
+      message: "This role changed while you were saving. Reload and try again.",
     });
     const tree = render();
     await act(async () => {
       toggle(tree, "Join Study group").props.onValueChange(true);
     });
     expect(screenText(tree)).toContain(
-      "Officers changed this role. Reload to see the roles you can pick.",
+      "This role changed while you were saving. Reload and try again.",
     );
+  });
+
+  it("captions a held role that can't be joined again, and still leaves it", async () => {
+    const tree = render([
+      { ...ROLES[0]!, selfAssignable: false, joinable: false },
+    ]);
+    expect(screenText(tree)).toContain(
+      "No longer open to join. You can leave it.",
+    );
+    await act(async () => {
+      toggle(tree, "Leave Intramurals").props.onValueChange(false);
+    });
+    expect(state.mutateAsync).toHaveBeenCalledWith({
+      id: "im",
+      join: false,
+    });
   });
 });

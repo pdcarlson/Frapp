@@ -81,5 +81,5 @@ export const SELF_ASSIGNABLE_REFUSAL_COPY: Record<
   [SELF_ASSIGNABLE_TIERED_CODE]:
     "Roles members pick themselves sit outside the tiers, since a tier carries rank. Move it out, or turn off Non-chapter business.",
   [SELF_ASSIGNABLE_PERMISSIONS_CODE]:
-    "Roles members pick themselves only open channels, so they can't carry permissions. Turn its permissions off, or turn off Non-chapter business.",
+    "Roles members pick themselves can't carry permissions, since anyone can join them. Turn its permissions off, or turn off Non-chapter business.",
 };

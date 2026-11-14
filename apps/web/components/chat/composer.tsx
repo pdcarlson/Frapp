@@ -479,13 +479,16 @@ interface ComposerBaseProps {
     mentionPicks: MentionPick[],
   ) => void | Promise<void>;
   /**
-   * Schedule the composer's text to post later (#4956). Resolves once it is
-   * scheduled; the composer then clears. Text only: with a file staged, a
-   * reply staged, or a slash command typed, the composer says so and keeps
-   * everything. Omitted, there is no schedule control.
+   * Schedule what the composer holds to post later (#4956): the text, the
+   * staged files (#4971), and the staged reply, which the parent reads as it
+   * does for `onSend`. Resolves once it is scheduled; the composer then
+   * clears, and the parent clears its reply. A file still uploading, a slash
+   * command, or a question for Frapp is refused, keeping everything.
+   * Omitted, there is no schedule control.
    */
   onSchedule?: (
     body: string,
+    attachments: OutboxAttachment[],
     mentionPicks: MentionPick[],
     at: Date,
   ) => Promise<void>;
@@ -1609,22 +1612,21 @@ export function Composer({
         parsed.isSlash && parsed.command
           ? getSlashCommand(parsed.command, { recruitment: recruitmentVocab })
           : null;
+      const text = isBareSlash(typed) ? "" : typed;
       const refusal = isOffline
         ? "Reconnect to schedule a message."
-        : pending.length > 0 || uploading.length > 0
-          ? "Files can't be scheduled yet. Send them now, or remove them first."
-          : replyTo
-            ? "Replies can't be scheduled yet. Remove the reply first."
-            : command?.implemented
-              ? "Commands can't be scheduled. Send them now."
-              : // A question for Frapp is never posted (#4713); while it isn't
-                // known whether this member has Ask, it is held the same way.
-                askAccess !== "no" &&
-                  askMentionQuestion(typed, spacedNames) !== null
-                ? "Questions for Frapp can't be scheduled. Send them now."
-                : typed.length === 0
-                  ? "Type a message to schedule."
-                  : null;
+        : uploading.length > 0
+          ? "Wait for your files to finish uploading."
+          : command?.implemented
+            ? "Commands can't be scheduled. Send them now."
+            : // A question for Frapp is never posted (#4713); while it isn't
+              // known whether this member has Ask, it is held the same way.
+              askAccess !== "no" &&
+                askMentionQuestion(text, spacedNames) !== null
+              ? "Questions for Frapp can't be scheduled. Send them now."
+              : text.length === 0 && pending.length === 0
+                ? "Type a message to schedule."
+                : null;
       if (refusal) {
         toast({ title: refusal });
         throw new Error(refusal);
@@ -1633,20 +1635,38 @@ export function Composer({
       // Cleared before the request, as a send is, so a second click finds
       // nothing to schedule and typing during the request isn't wiped by it.
       // Put back if it fails and the composer is still empty.
+      // The files go back with the text, and only into a composer the
+      // member hasn't staged anything new in since, as a refused send's do.
       const sentDoc = editor.getJSON();
+      const sentPending = pending;
+      const sentUploads = uploadsStartedRef.current;
       schedulingRef.current = true;
       editor.commands.clearContent(true);
       onChangeDraft("");
+      setPending([]);
       try {
-        await onSchedule(typed, picks, at);
+        await onSchedule(text, sentPending, picks, at);
       } catch (error) {
-        if (!editor.isDestroyed && editor.isEmpty) {
+        // A file started since would land beside the restored ones, over
+        // the cap the composer counted against an empty tray.
+        // All or nothing, as a refused send: otherwise the message is gone,
+        // and the toast says so.
+        const staged = stagedRef.current;
+        const untouched =
+          !editor.isDestroyed &&
+          editor.isEmpty &&
+          (staged.pending.length === 0 || staged.pending === sentPending) &&
+          uploadsStartedRef.current === sentUploads;
+        if (untouched) {
           editor.commands.setContent(sentDoc, { emitUpdate: false });
           onChangeDraft(chatText(editor));
+          setPending(sentPending);
         }
         toast({
           title: "Couldn't schedule it",
-          description: errorCopy(error),
+          description: untouched
+            ? errorCopy(error)
+            : `${errorCopy(error)} It couldn't be put back in the composer.`,
           variant: "destructive",
         });
         throw error;
@@ -1662,9 +1682,8 @@ export function Composer({
       isOffline,
       onChangeDraft,
       onSchedule,
-      pending.length,
+      pending,
       recruitmentVocab,
-      replyTo,
       spacedNames,
       toast,
       uploading.length,
@@ -2298,8 +2317,7 @@ export function Composer({
             </Button>
             {onSchedule ? (
               <ScheduleSendButton
-                // As Send's: a staged file alone enables it, so the refusal
-                // can say files can't be scheduled yet.
+                // As Send's: a staged file alone is a message to schedule.
                 disabled={
                   !editor ||
                   uploading.length > 0 ||

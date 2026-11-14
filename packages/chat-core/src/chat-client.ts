@@ -54,6 +54,7 @@ import {
   upsertOptimistic,
 } from "./cache";
 import {
+  attachmentRequestBody,
   browserNetworkState,
   type KeyValueStore,
   type NetworkState,
@@ -577,17 +578,7 @@ export async function sendMessage(
           payload: (args.payload ?? undefined) as unknown as undefined,
           reply_to_id: args.replyToId ?? undefined,
           attachments: attachments?.length
-            ? attachments.map((attachment) => ({
-                storage_path: attachment.storagePath,
-                filename: attachment.filename,
-                content_type: attachment.contentType,
-                byte_size: attachment.byteSize ?? undefined,
-                width: attachment.width ?? undefined,
-                height: attachment.height ?? undefined,
-                thumbhash: attachment.thumbhash ?? undefined,
-                preview_storage_path:
-                  attachment.previewStoragePath ?? undefined,
-              }))
+            ? attachments.map(attachmentRequestBody)
             : undefined,
           gif: args.gif ? gifRequestBody(args.gif) : undefined,
           mention_picks: intent.mentionPicks ?? undefined,

@@ -33,8 +33,8 @@ description: >
 # ── Newer than the last deploy (`on-stale`) ─────────────────────────────────
 # Freshness matters only where the snapshot gates a merge: runs of the required
 # `migration-order` and `migration-replay` on any ref but `main`. That means a
-# pull request, and also a dispatch on a PR's branch, whose check runs land on
-# the PR's head too. Those callers pass `on-stale: wait`. The step then requires the snapshot to have been read
+# pull request, a merge queue entry (#4795), and also a dispatch on a PR's
+# branch, whose check runs land on the PR's head too. Those callers pass `on-stale: wait`. The step then requires the snapshot to have been read
 # after the latest finished `Deploy staging` or `Deploy production` run on `main`,
 # with no `Deploy staging` run in flight. Those are the only workflows that apply
 # migrations, and each triggers a publish when it finishes. While that is not
@@ -69,7 +69,10 @@ description: >
 # checks end `cancelled`. The drift job reports and does not gate. It
 # still catches a lagging publisher without waiting, from the export below: a
 # migration past its grace window, read from a snapshot a staging deploy has
-# overtaken, turns it red as `stale`, saying why (`classifyGateDrift`).
+# overtaken, turns it red as `stale`, saying why (`classifyGateDrift`). While
+# a Deploy staging run that may hold the migration is running or awaiting its
+# publish, it waits up to 90 minutes from the migration's merge first; with the
+# deploy state `unknown` it does not wait.
 #
 # ── What it exports ─────────────────────────────────────────────────────────
 # `MIGRATION_SNAPSHOT`: the snapshot file's path.

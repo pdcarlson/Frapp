@@ -47,11 +47,21 @@ function useInvalidateScheduled() {
     });
 }
 
+/** A staged file as the schedule takes it (`MessageAttachmentDto`). */
+export type ScheduledAttachmentInput =
+  components["schemas"]["MessageAttachmentDto"];
+
 export interface ScheduleMessageVariables {
   channelId: string;
   content: string;
   sendAt: Date;
   mentionPicks?: { user_id: string; label: string }[];
+  /** Files already uploaded to the channel (#4971). */
+  attachments?: ScheduledAttachmentInput[];
+  /** The message it quotes, root-normalized as a live reply's (#4971). */
+  replyToId?: string | null;
+  /** The thread it posts into (#4971). */
+  threadRootId?: string | null;
 }
 
 export function useScheduleMessage() {
@@ -68,6 +78,11 @@ export function useScheduleMessage() {
           ...(vars.mentionPicks?.length
             ? { mention_picks: vars.mentionPicks }
             : {}),
+          ...(vars.attachments?.length
+            ? { attachments: vars.attachments }
+            : {}),
+          ...(vars.replyToId ? { reply_to_id: vars.replyToId } : {}),
+          ...(vars.threadRootId ? { thread_root_id: vars.threadRootId } : {}),
         },
       });
       if (error) throw error;
@@ -144,4 +159,23 @@ export function useSendScheduledMessageNow() {
     },
     onSettled: invalidate,
   });
+}
+
+/**
+ * What a scheduled message carries besides its text (#4971), as its list row
+ * says it: "Reply · 2 photos", "In a thread · 1 file". `null` for plain text.
+ */
+export function scheduledMessageExtras(
+  row: Pick<ScheduledMessage, "attachments" | "reply_to_id" | "thread_root_id">,
+): string | null {
+  const parts: string[] = [];
+  if (row.thread_root_id) parts.push("In a thread");
+  else if (row.reply_to_id) parts.push("Reply");
+  const photos = row.attachments.filter((file) =>
+    file.content_type.startsWith("image/"),
+  ).length;
+  const files = row.attachments.length - photos;
+  if (photos > 0) parts.push(photos === 1 ? "1 photo" : `${photos} photos`);
+  if (files > 0) parts.push(files === 1 ? "1 file" : `${files} files`);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }

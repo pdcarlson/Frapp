@@ -1,4 +1,5 @@
 import type {
+  ChatScheduledAttachment,
   ChatScheduledMessage,
   ChatScheduledMessageFailure,
 } from '../entities/chat-scheduled-message.entity';
@@ -13,6 +14,9 @@ export interface NewChatScheduledMessage {
   member_id: string;
   content: string;
   mention_picks: { user_id: string; label: string }[] | null;
+  attachments: ChatScheduledAttachment[];
+  reply_to_id: string | null;
+  thread_root_id: string | null;
   send_at: string;
 }
 
@@ -59,15 +63,30 @@ export interface IChatScheduledMessageRepository {
   /** The author's pending rows in the chapter. */
   countPending(chapterId: string, userId: string): Promise<number>;
   /**
-   * Deletes the author's row unless a send holds it right now. `held` when a
-   * send does, `missing` when there is no such row.
+   * Deletes the author's row unless a send holds it right now, answering the
+   * row deleted. `held` when a send does, `missing` when there is no such row.
    */
   deleteForAuthor(
     chapterId: string,
     userId: string,
     id: string,
     now: string,
-  ): Promise<'deleted' | 'held' | 'missing'>;
+  ): Promise<
+    | { outcome: 'deleted'; row: ChatScheduledMessage }
+    | { outcome: 'held' }
+    | { outcome: 'missing' }
+  >;
+  /**
+   * Of these `chat` storage paths, the ones a scheduled row in the chapter
+   * still names, as an attachment or as a photo's preview: storage that a
+   * message not yet posted needs, so no delete may take it (#4971). With
+   * `excludingId`, that row doesn't count (the one being deleted).
+   */
+  findPathsInUse(
+    chapterId: string,
+    paths: readonly string[],
+    excludingId: string | null,
+  ): Promise<string[]>;
   /** Pending rows due by `now` that no send holds, soonest first. */
   findDue(now: string, limit: number): Promise<ChatScheduledMessage[]>;
   /**

@@ -100,8 +100,11 @@ member's own answer, not the event's default:
 **Links:** sign-up links posted in channels the caller can read, newest first. See
 [Links](#links).
 
+**Reminders:** the reminders the caller set on chat messages, due ones first. See
+[Reminders](#reminders).
+
 **`needs_you_count`** is every "Needs you" row plus each event the member can check in to right
-now and hasn't, less what the member snoozed ([Snooze](#snooze)). It is counted before the list cap, so a badge built from it does not stop at 25.
+now and hasn't, plus each due reminder, less what the member snoozed ([Snooze](#snooze)). It is counted before the list cap, so a badge built from it does not stop at 25; due reminders are counted from the up to 50 the read serves.
 It is what the member can act on now, and so is not the week ring's "left", which also counts
 events still ahead ([Week](#week), settled 2026-11-13).
 
@@ -114,7 +117,8 @@ page on both clients. See [Week](#week).
   (`tasks`, `hours`, `polls`, `events`) and does not read it while the
   chapter has it off ([`../product/modules.md`](../product/modules.md)). Links, sign-ups and forms
   come from chat, which has no switch, so they are always read.
-- **Each list carries at most 25 rows**, except Made by you's polls: 25 open and 25 closed.
+- **Each list carries at most 25 rows**, except Made by you's polls (25 open and 25 closed) and
+  Reminders (50 due and 50 waiting).
 - **One section failing does not fail the page.** The sections are read independently. One that
   fails is served empty and named in `unavailable`, so a client can say that part couldn't load
   rather than show it as empty.
@@ -193,7 +197,8 @@ judged for an average member, a committee chair and the president
   it, and officers already have the word for what counts: required.
 - **The tab's badge is not the ring's "left", and the two are not meant to match.** The badge
   (`needs_you_count`) is what the member can act on right now: their open tasks, unanswered polls
-  and sign-ups, an event open for check-in, and, for who reviews, what waits on their sign-off. It
+  and sign-ups, an event open for check-in, a due reminder, and, for who reviews, what waits on
+  their sign-off. It
   falls with each thing they do and reaches zero. The ring is the week, which also counts events
   that have not happened yet, and nobody can clear those today: a badge built from it would sit at
   3 until Saturday and stop being read. Review items stay in the badge because a member's points
@@ -374,6 +379,32 @@ channel rules (#3926 step 4):
   time, as polls are, and share the week card's "Polls and sign-ups" line with them
   (Changed in #4766 by `pdcarlson`, 2026-11-13: until then they were Now within a day of their
   end time, and showed under the All and Needs you chips with no chip or tile of their own).
+
+## Reminders
+
+The member's own reminders on chat messages ("Remind me about this", #4957; the rule is
+[`chat/README.md` § Reminders (personal)](chat/README.md)), served as `reminders` on
+`GET /v1/activity` (`ChatReminderService.listFor`), the way Slack's Later tab holds a member's
+reminders beside what they saved. Where each client draws them is
+[`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity) and
+[`../ui/mobile/screens.md`](../ui/mobile/screens.md).
+
+- **What is listed.** The reminders the member set in this chapter, until they mark one Done: up
+  to 50 whose time came (`due`), newest first, then up to 50 still waiting, soonest first. The two
+  are read apart, so old due reminders the member never cleared can't push a newer one off the
+  list. A due one carries a Due badge and counts in `needs_you_count`.
+- **What a row says.** The message as a push quotes it, who wrote it and where, and when the
+  reminder is for. Channel access and the member's block list are applied on every read, as for
+  Saved: a reminder in a channel the member can no longer read stays listed with its words
+  withheld (`message_available: false`) so they can clear it, and a blocked author's message reads
+  as the timeline's tombstone. A channel an officer left out of Activity still lists reminders: the
+  member asked for each one.
+- **What a row does.** Opening it opens chat at the message. For a thread reply the phone opens
+  the thread; web, whose chat links can't open a thread yet, lands on the thread's first message in
+  the channel, as a Links row does. Snooze moves it to a preset time
+  (`PUT /v1/reminders/messages/:messageId`) and Done clears it (`DELETE`); a row whose channel the
+  member lost offers only Done. A row carries no unread dot: the member set it themselves, and a due one is marked by
+  its badge.
 
 ## Links
 

@@ -99,6 +99,7 @@ const pickable = vi.hoisted(() => ({
     id: string;
     name: string;
     held: boolean;
+    joinable: boolean;
     color: null;
   }>,
   setPicked: vi.fn(() => Promise.resolve({ role_ids: [] })),
@@ -511,7 +512,13 @@ describe("s03 welcome, roles beat (#4958)", () => {
     permission = null;
     currentUser = COMPLETE_USER;
     pickable.roles = [
-      { id: "im", name: "Intramurals", held: false, color: null },
+      {
+        id: "im",
+        name: "Intramurals",
+        held: false,
+        joinable: true,
+        color: null,
+      },
     ];
     pickable.setPicked.mockClear();
     completeOnboarding.mockClear();

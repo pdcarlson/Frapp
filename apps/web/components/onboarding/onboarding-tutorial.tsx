@@ -261,7 +261,7 @@ function OnboardingTutorialDialog({
   // that lands later must not add a slide ahead of the member, which would
   // move them back a slide. The switches still show what the read says now.
   const [offerRoles, setOfferRoles] = useState<boolean | null>(null);
-  const withRoles = offerRoles ?? roles.length > 0;
+  const withRoles = offerRoles ?? roles.some((role) => role.joinable);
   const steps = withRoles ? withRolesStep(roles) : STEPS;
   const step = steps[stepIndex] ?? steps[0]!;
   const isLast = stepIndex === steps.length - 1;

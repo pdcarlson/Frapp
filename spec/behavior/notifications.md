@@ -92,6 +92,19 @@ when the message is deleted (#4418). The in-app row records the same id in its
 `chat_message_id` column instead, not in `data`, so the list's rows carry none; a
 client deep-links from `target` alone.
 
+A **reminder** (#4957, [`chat/README.md`](./chat/README.md) § Reminders (personal)) is the
+one chat row that opens at its message rather than the channel. Its `data` adds
+`reminder: true` and the message as `messageId`, in the row as well as the push, and a
+client that sees `reminder` opens chat at that message (the phone through
+`focusMessageId`; web through `?message=`, at the thread's first message for a reply).
+Its `senderId` is the message's author, or the member themselves for an imported author
+with no account, so the in-app list keeps it for a member with a block list and
+withholds it as it does that author's chat when they blocked the author. Its row is tied
+to the message by `chat_message_id` only when its body quotes the message: not for a
+deleted message, whose row the insert trigger would drop, and not for a blocked
+author's, whose edits would rewrite the body. It carries no `chatKind`; its title,
+`Reminder`, says what it is.
+
 Since #4346 every chat row also says what the in-app list draws it by, so no client
 parses a title: `chatKind` (`dm`, `group`, `announcement` or `channel`, the
 announcement test being the push's own), `channelName` when the channel has a name a
@@ -448,6 +461,7 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 | Chat          | Reply to your message, as an @mention of you (#3844; Discord's default, "@ON" when replying; who it skips: [`chat/README.md` § Mentions](chat/README.md#mentions))                                                                                                                                                                                                                             | NORMAL                      |
 | Chat          | DM received                                                                                                                                                                                                                                                                                                                                                                                    | NORMAL                      |
 | Chat          | New message in unmuted channel                                                                                                                                                                                                                                                                                                                                                                 | NORMAL                      |
+| Chat          | Reminder you set on a message ("Remind me about this", #4957): title `Reminder`, the message quoted as a chat push quotes it, category `reminder`, which no switch silences; quiet hours still apply ([`chat/README.md` § Reminders (personal)](chat/README.md))                                                                                                                               | NORMAL                      |
 | Announcements | New announcement posted                                                                                                                                                                                                                                                                                                                                                                        | URGENT                      |
 | Events        | Upcoming event reminder (30min before — see below)                                                                                                                                                                                                                                                                                                                                             | NORMAL                      |
 | Events        | New event created                                                                                                                                                                                                                                                                                                                                                                              | SILENT                      |

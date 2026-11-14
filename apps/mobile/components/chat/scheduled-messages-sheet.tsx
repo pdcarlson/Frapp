@@ -9,6 +9,7 @@ import {
   formatScheduledFor,
   schedulePresets,
   scheduledFailureCopy,
+  scheduledMessageExtras,
   scheduleTimeProblem,
   useDeleteScheduledMessage,
   useScheduledMessages,
@@ -157,13 +158,28 @@ function ScheduledRow({
   const when = failed
     ? scheduledFailureCopy(row.failure_reason)
     : formatScheduledFor(new Date(row.send_at), now);
+  // What it carries besides its text (#4971): "Reply · 2 photos".
+  const extras = scheduledMessageExtras(row);
+  const names = row.attachments.map((file) => file.filename).join(", ");
+  const extrasLabel = extras && names ? `${extras}: ${names}` : undefined;
 
   return (
     <View style={styles.row} testID={`scheduled-row-${row.status}`}>
       <Text style={failed ? styles.metaFailed : styles.meta}>{when}</Text>
-      <Text style={styles.content} numberOfLines={4}>
-        {row.content}
-      </Text>
+      {row.content.trim() ? (
+        <Text style={styles.content} numberOfLines={4}>
+          {row.content}
+        </Text>
+      ) : null}
+      {extras ? (
+        <Text
+          style={styles.meta}
+          accessibilityLabel={extrasLabel}
+          testID="scheduled-extras"
+        >
+          {extras}
+        </Text>
+      ) : null}
       <View style={styles.actions}>
         <RowAction label="Edit" onPress={onEdit} disabled={busy} />
         {failed ? null : (
@@ -226,7 +242,8 @@ function ScheduledEditRow({
   // passes while its text is fixed still saves, and the sweep takes it.
   const problem =
     at && timeChanged ? scheduleTimeProblem(at, new Date()) : null;
-  const empty = content.trim() === "";
+  // With photos, the text may go; a text message needs its text.
+  const empty = content.trim() === "" && row.attachments.length === 0;
   const blocked = update.isPending;
 
   return (

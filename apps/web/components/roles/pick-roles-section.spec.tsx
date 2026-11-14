@@ -2,7 +2,13 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({
-  roles: [] as Array<{ id: string; name: string; held: boolean; color: null }>,
+  roles: [] as Array<{
+    id: string;
+    name: string;
+    held: boolean;
+    joinable: boolean;
+    color: null;
+  }>,
   isLoading: false,
   mutateAsync: vi.fn(),
   toast: vi.fn(),
@@ -20,8 +26,14 @@ import { PickRolesSection } from "./pick-roles-section";
 
 beforeEach(() => {
   h.roles = [
-    { id: "im", name: "Intramurals", held: true, color: null },
-    { id: "study", name: "Study group", held: false, color: null },
+    { id: "im", name: "Intramurals", held: true, joinable: true, color: null },
+    {
+      id: "study",
+      name: "Study group",
+      held: false,
+      joinable: true,
+      color: null,
+    },
   ];
   h.isLoading = false;
   h.mutateAsync.mockReset().mockResolvedValue({ role_ids: [] });
@@ -70,9 +82,37 @@ describe("PickRolesSection (#4958)", () => {
     h.roles = [];
     const { container, rerender } = render(<PickRolesSection />);
     expect(container).toBeEmptyDOMElement();
-    h.roles = [{ id: "im", name: "Intramurals", held: false, color: null }];
+    h.roles = [
+      {
+        id: "im",
+        name: "Intramurals",
+        held: false,
+        joinable: true,
+        color: null,
+      },
+    ];
     h.isLoading = true;
     rerender(<PickRolesSection />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("captions a held role that can't be joined again, and still leaves it", async () => {
+    h.roles = [
+      {
+        id: "im",
+        name: "Intramurals",
+        held: true,
+        joinable: false,
+        color: null,
+      },
+    ];
+    render(<PickRolesSection />);
+    expect(
+      screen.getByText("No longer open to join. You can leave it."),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("switch", { name: "Leave Intramurals" }));
+    await waitFor(() =>
+      expect(h.mutateAsync).toHaveBeenCalledWith({ id: "im", join: false }),
+    );
   });
 });

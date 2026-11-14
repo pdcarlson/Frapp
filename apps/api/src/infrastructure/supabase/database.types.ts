@@ -49,6 +49,7 @@ import type {
   ChatMessageBookmark,
   ChatMessageImportantSeen,
   ChatMessageLink,
+  ChatMessageReminder,
   ChatMessageReport,
   ChatNotificationPreference,
   ChatPushDispatch,
@@ -200,6 +201,7 @@ export interface Database {
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
       chat_message_important_seen: TableDefinition<ChatMessageImportantSeen>;
       chat_message_links: TableDefinition<ChatMessageLink>;
+      chat_message_reminders: TableDefinition<ChatMessageReminder>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
       chat_messages: TableDefinition<ChatMessage>;
       chat_notification_preferences: TableDefinition<ChatNotificationPreference>;
