@@ -131,7 +131,7 @@ describe('BirthdayPostSweepService (#4959)', () => {
       memberRepo as never,
       userRepo as never,
       settingsRepo as never,
-      claims as never,
+      claims,
     );
     return { service, channelRepo, messageRepo, userRepo, claims };
   }
