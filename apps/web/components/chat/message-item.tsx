@@ -50,6 +50,7 @@ import {
   type MessageFlagView,
 } from "@repo/chat-core/flags";
 import { MessageAttachments } from "./message-attachments";
+import { MessageReminderMenu } from "./message-reminder-menu";
 import { MessageGifImage } from "./message-gif";
 import { ForwardedCard } from "./forwarded-card";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
@@ -288,6 +289,12 @@ export interface MessageItemProps {
    * the viewer can see.
    */
   onToggleBookmark?: (messageId: string, next: boolean) => void;
+  /**
+   * "Remind me about this" (#4957): the viewer's own reminder on this
+   * message, set or moved. Optional, as Save's toggle is: a surface that
+   * doesn't wire it offers no control.
+   */
+  onRemind?: (messageId: string, remindAt: Date) => void;
   /** Gates the Delete affordance on messages that aren't the viewer's own. */
   canManageChannel?: boolean;
   /**
@@ -431,6 +438,7 @@ export function MessageItem({
   onFlag,
   isBookmarked,
   onToggleBookmark,
+  onRemind,
   canManageChannel,
   onReport,
   onBlock,
@@ -1128,6 +1136,11 @@ export function MessageItem({
           >
             <BookmarkGlyph className="h-4 w-4" active={isBookmarked} />
           </button>
+        ) : null}
+        {onRemind ? (
+          <MessageReminderMenu
+            onRemind={(remindAt) => onRemind(message.id, remindAt)}
+          />
         ) : null}
         {canFlag ? (
           <MessageFlagMenu

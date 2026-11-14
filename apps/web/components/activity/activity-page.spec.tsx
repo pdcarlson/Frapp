@@ -169,6 +169,15 @@ vi.mock("./activity-link-row", () => ({
   }) => <li>{`link:${row.title}:${canRemove ? "officer" : "member"}`}</li>,
 }));
 
+// The reminder row's actions are its own spec's
+// (`activity-reminder-row.spec.tsx`); this page owes the Reminders group.
+vi.mock("./activity-reminder-row", () => ({
+  useActivityReminderActions: () => ({}),
+  ActivityReminderRow: ({ row }: { row: ActivityRow }) => (
+    <li>{`reminder:${row.title}`}</li>
+  ),
+}));
+
 const { ActivityPage } = await import("./activity-page");
 
 const task = {
@@ -1569,6 +1578,53 @@ describe("ActivityPage", () => {
     });
     render(<ActivityPage />);
     expect(screen.getByText("link:Google Form:officer")).toBeInTheDocument();
+  });
+
+  it("lists the member's message reminders first under the To do list (#4957)", () => {
+    const link = {
+      id: "l1",
+      url: "https://forms.gle/abc",
+      host: "forms.gle",
+      title: null,
+      message_id: "m1",
+      thread_root_id: null,
+      channel_id: "c1",
+      channel_name: "rush",
+      channel_type: "PUBLIC",
+      posted_by: "olive",
+      posted_by_name: "Olive",
+      posted_at: "2026-11-10T15:00:00.000Z",
+    };
+    const reminder = {
+      id: "r1",
+      message_id: "m9",
+      thread_root_id: null,
+      channel_id: "c1",
+      channel_name: "general",
+      channel_type: "PUBLIC",
+      author_name: "Olive",
+      preview: "Bring the banner Friday",
+      message_created_at: "2026-11-10T15:00:00.000Z",
+      message_available: true,
+      remind_at: "2099-01-01T14:00:00.000Z",
+      fired_at: null,
+      due: false,
+    };
+    mockActivity.mockReturnValue(
+      loaded({ links: [link], reminders: [reminder] }),
+    );
+    render(<ActivityPage />);
+
+    const reminders = screen.getByRole("region", { name: "Reminders" });
+    expect(
+      within(reminders).getByText("reminder:Bring the banner Friday"),
+    ).toBeInTheDocument();
+    const order = screen
+      .getAllByRole("region")
+      .map((region) => region.getAttribute("aria-labelledby"));
+    expect(order.indexOf("activity-reminders")).toBeLessThan(
+      order.indexOf("activity-links"),
+    );
   });
 
   describe("asks on the row (#4402)", () => {

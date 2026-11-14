@@ -101,6 +101,7 @@ export interface ThreadPanelProps extends Pick<
   | "maskedRefresh"
   | "bookmarkedMessageIds"
   | "onToggleBookmark"
+  | "onRemind"
   | "canManageChannel"
   | "onReport"
   | "onBlock"
@@ -221,6 +222,7 @@ export function ThreadPanel({
   maskedRefresh,
   bookmarkedMessageIds,
   onToggleBookmark,
+  onRemind,
   canManageChannel,
   onReport,
   onBlock,
@@ -497,6 +499,7 @@ export function ThreadPanel({
                 onCloseCard={onCloseCard}
                 isBookmarked={bookmarkedMessageIds?.has(root.id)}
                 onToggleBookmark={onToggleBookmark}
+                onRemind={onRemind}
                 canManageChannel={canManageChannel}
                 onReport={onReport}
                 onBlock={onBlock}
@@ -640,6 +643,7 @@ export function ThreadPanel({
           onCloseCard={onCloseCard}
           bookmarkedMessageIds={bookmarkedMessageIds}
           onToggleBookmark={onToggleBookmark}
+          onRemind={onRemind}
           canManageChannel={canManageChannel}
           onReport={onReport}
           onBlock={onBlock}

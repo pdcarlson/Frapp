@@ -94,6 +94,8 @@ type Notification = {
       screen?: string;
       channelId?: string;
       messageId?: string;
+      /** A thread's first message, when the row is about a reply in it. */
+      threadRootId?: string;
       eventId?: string;
       /** "Minutes posted" (`meeting.service.ts`) names the minutes too. */
       meetingId?: string;
@@ -110,7 +112,11 @@ type Notification = {
     memberUserId?: string;
     chatKind?: string;
     mentioned?: boolean;
+    /** A message reminder that came due (#4957). */
+    reminder?: boolean;
   } | null;
+  /** The chat message a chat row is about, kept in its own column. */
+  chat_message_id?: string | null;
   read_at: string | null;
   created_at: string;
 };
@@ -125,15 +131,22 @@ type Notification = {
  *
  * A chat notification's `target` never carries a `messageId` (a chat push
  * carries one beside `target` for the phone's tray, and the in-app row keeps
- * it in a column, `spec/behavior/notifications.md` § Deep Linking), so this
- * only ever forwards `channelId` through `chatDeepLink`.
+ * it in a column, `spec/behavior/notifications.md` § Deep Linking). Only a
+ * reminder (#4957) forwards that column, so it opens on the message the
+ * member asked about: its thread's first message for a reply, which is what
+ * the channel's timeline holds. Any other chat row opens the channel.
  */
 export function deepLinkFor(notification: Notification): string {
   const target = notification.data?.target;
   if (!target) return "/chat";
   switch (target.screen) {
     case "chat":
-      return chatDeepLink({ channelId: target.channelId });
+      return chatDeepLink({
+        channelId: target.channelId,
+        messageId: notification.data?.reminder
+          ? (target.threadRootId ?? notification.chat_message_id)
+          : null,
+      });
     case "events":
       return target.meetingId ? `/meetings/${target.meetingId}` : "/events";
     case "points":

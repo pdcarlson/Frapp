@@ -1614,6 +1614,34 @@ describe("MessageItem bookmark toggle (#462)", () => {
 });
 
 /**
+ * "Remind me about this" (#4957): Slack's presets and Custom… beside Save.
+ * The menu itself is `message-reminder-menu.spec.tsx`'s; the row owes the
+ * control, gated on its callback, and the message id with the pick.
+ */
+describe("MessageItem reminder (#4957)", () => {
+  it("offers no reminder control on a surface that doesn't wire one", () => {
+    renderItemWithProps();
+    expect(
+      screen.queryByRole("button", { name: "Remind me about this" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hands the picked time on with the message id", async () => {
+    const onRemind = vi.fn();
+    renderItemWithProps({ onRemind });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remind me about this" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "In 1 hour" }),
+    );
+
+    expect(onRemind).toHaveBeenCalledWith("msg-1", expect.any(Date));
+  });
+});
+
+/**
  * #1733 — the `unconfirmed` row: a heavy command whose response was lost.
  *
  * The row must read as "we don't know", not as a failure, and its only action
