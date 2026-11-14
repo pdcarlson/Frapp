@@ -2,16 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   askAnswerEntities,
   askEntityParts,
-  type AskNamedEntity,
+  type AskEntity,
 } from "./ask-entities";
 
-const sam: AskNamedEntity = { type: "member", id: "m-sam", name: "Sam" };
-const samA: AskNamedEntity = {
+const sam: AskEntity = { type: "member", id: "m-sam", name: "Sam" };
+const samA: AskEntity = {
   type: "member",
   id: "m-sama",
   name: "Sam Abernathy",
 };
-const general: AskNamedEntity = {
+const general: AskEntity = {
   type: "channel",
   id: "c-gen",
   name: "general",
@@ -59,7 +59,7 @@ describe("askEntityParts", () => {
   });
 
   it("matches a name with punctuation in it, at the end of the text", () => {
-    const obrien: AskNamedEntity = {
+    const obrien: AskEntity = {
       type: "member",
       id: "m-ob",
       name: "Pat O'Brien",
