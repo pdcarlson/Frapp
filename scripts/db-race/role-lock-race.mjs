@@ -11,8 +11,15 @@
 // opens real connections and overlaps the two for real: one side runs inside
 // an open transaction, the other is called meanwhile and must wait on it
 // (seen in `pg_blocking_pids`, not guessed from a sleep), and once the first
-// commits, the end state is checked. A deadlock, a lock wait past
-// `lock_timeout`, or a call that didn't wait fails the case.
+// commits, the end state is checked. A call that didn't wait, an error, or a
+// lock wait past `lock_timeout` fails the case.
+//
+// What this does not test is deadlock. The held side has taken every lock it
+// will take before the other side starts, so the two never wait on each other
+// and a deadlock can't arise here: a `set_member_role_ids` that locked the
+// member row before the roles (an order that can deadlock against
+// `delete_role`) passes all four cases. The lock order itself is guarded by
+// the PGlite tier, which checks it in the function's source.
 //
 // Cases (the issue's three, the third in both orders):
 //   1. delete held, save gives the role to a member who lacks it: the save
@@ -60,8 +67,7 @@ const BLOCK_WAIT_MS = 5_000;
 const connect = async () => {
   const c = new pg.Client({ connectionString: DATABASE_URL });
   await c.connect();
-  // A lock wait this long is a hang, not a slow machine. Postgres reports a
-  // deadlock after `deadlock_timeout` (1s), well inside it.
+  // A lock wait this long is a hang, not a slow machine.
   await c.query(`set lock_timeout = '10s'; set statement_timeout = '20s'`);
   return c;
 };
@@ -184,6 +190,8 @@ const del = (c, s) =>
  * another, check it waits, commit, and hand both results to `verify`, which
  * returns a list of problems.
  */
+const DID_NOT_WAIT = "the second call did not wait on the held transaction";
+
 async function overlap(
   name,
   first,
@@ -205,7 +213,7 @@ async function overlap(
       (e) => ({ e }),
     );
     if (!(await waitsOn(waiterPid, holderPid, call))) {
-      problems.push("the second call did not wait on the held transaction");
+      problems.push(DID_NOT_WAIT);
     }
     await holder.query("commit");
     const { r, e } = await outcome;
@@ -373,9 +381,11 @@ try {
   await createMutant();
   try {
     const mutantProblems = await case1("set_member_role_ids_no_role_lock");
-    if (mutantProblems.length === 0) {
+    // Red for the reason it exists: the save went ahead instead of waiting.
+    // Any other problem (an error, a timeout) proves nothing about the lock.
+    if (!mutantProblems.includes(DID_NOT_WAIT)) {
       failures.push(
-        "case 1 passed without `for key share`: it can't see the race",
+        "case 1 without `for key share` did not fail by not waiting: it can't be shown to see the race",
       );
       console.log("FAIL  case 1 did not notice the role lock was gone");
     } else {
@@ -406,5 +416,5 @@ if (failures.length) {
   process.exit(1);
 }
 console.log(
-  "\nOK — every overlap waited, ended right, and nothing deadlocked.",
+  "\nOK — every overlap waited and ended right, and the save without its role lock went red.",
 );

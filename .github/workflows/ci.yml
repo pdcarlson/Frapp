@@ -907,9 +907,10 @@ jobs:
         run: npm run check:pglite-migrations
 
       # Two connections overlap `delete_role` and `set_member_role_ids` for real
-      # (#4862): each order waits, ends right, and doesn't deadlock, and the
-      # save without its role lock goes red. About a second after the migrations
-      # apply.
+      # (#4862): in each order the second call waits on the first and ends
+      # right, and the save without its role lock goes red. It can't produce a
+      # deadlock (the held side takes all its locks first); the PGlite tier
+      # checks the lock order. About a second after the migrations apply.
       - name: Role delete vs member-roles save, two real connections
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres

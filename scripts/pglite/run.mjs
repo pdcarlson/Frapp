@@ -44,6 +44,11 @@
 // runs that spec in this job, so a missing extension fails the same PR. A
 // missing role does not: migrations guard role-targeted statements on
 // `pg_roles`, so both harnesses skip them silently.
+//
+// The same job also applies every migration to a real Postgres service
+// container (`pgvector/pgvector:pg17`, see `ci.yml`) for the two-connection
+// lock harness in `scripts/db-race/`. That image has contrib and `vector` and
+// nothing else, so an extension outside those needs the image changed too.
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
