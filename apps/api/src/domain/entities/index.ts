@@ -23,6 +23,7 @@ export * from './chat-important.entity';
 export * from './chat-moderation.entity';
 export * from './chat-notification-preference.entity';
 export * from './chat-push-dispatch.entity';
+export * from './chat-scheduled-message.entity';
 export * from './chat-sidebar.entity';
 export * from './chat.entity';
 export * from './corpus.entity';

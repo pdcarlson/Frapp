@@ -647,6 +647,18 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
       },
     ],
   },
+  // Scheduled messages (#4956): tells the author their own message did not
+  // post, naming the channel. The author's own text, and a channel name the
+  // author can see; nothing another member wrote.
+  'application/services/chat-scheduled-message.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: "Tells the author their own scheduled message didn't post, naming the channel; it quotes nothing another member wrote.",
+      },
+    ],
+  },
   // Absence excuses (#3735): the receiver's push quotes the reason the
   // member wrote for them, and the decision and reminder name the event.
   'application/services/event-excuse.service.ts': {

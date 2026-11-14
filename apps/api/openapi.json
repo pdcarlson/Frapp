@@ -7109,6 +7109,241 @@
         ]
       }
     },
+    "/v1/scheduled-messages": {
+      "get": {
+        "operationId": "ChatScheduledMessageController_list_v1",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "required": false,
+            "in": "query",
+            "description": "Only this channel’s; every channel’s when left out.",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ScheduledMessageDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the caller's scheduled messages in this chapter (pending and failed), soonest first",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "post": {
+        "operationId": "ChatScheduledMessageController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateScheduledMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Schedule a text message to post later",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/scheduled-messages/{id}": {
+      "patch": {
+        "operationId": "ChatScheduledMessageController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateScheduledMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduledMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change a scheduled message’s text or time (a failed one goes back in line)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatScheduledMessageController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a scheduled message before it posts",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/scheduled-messages/{id}/send": {
+      "post": {
+        "operationId": "ChatScheduledMessageController_sendNow_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Post a scheduled message now",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -22849,6 +23084,122 @@
           "results",
           "next_page"
         ]
+      },
+      "ScheduledMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "content": {
+            "type": "string"
+          },
+          "mention_picks": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
+          },
+          "send_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "failed"
+            ],
+            "description": "`failed`: it did not post at its time. Edit it to try again, or delete it."
+          },
+          "failure_reason": {
+            "type": "string",
+            "enum": [
+              "no_access",
+              "not_sendable",
+              "send_failed"
+            ],
+            "nullable": true,
+            "description": "Why a failed message did not post: `no_access` the author can no longer post there; `not_sendable` the channel refused the message; `send_failed` it kept failing."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "channel_id",
+          "content",
+          "mention_picks",
+          "send_at",
+          "status",
+          "failure_reason",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateScheduledMessageDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel or DM to post in."
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "send_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When to post it: an instant, at most 120 days ahead. The client picks it on the member’s own clock."
+          },
+          "mention_picks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
+          }
+        },
+        "required": [
+          "channel_id",
+          "content",
+          "send_at"
+        ]
+      },
+      "UpdateScheduledMessageDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
+          },
+          "send_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "mention_picks": {
+            "description": "The `@` picks for the new `content`; read only with it.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MentionPickDto"
+            }
+          }
+        }
       },
       "EventAgendaItemDto": {
         "type": "object",

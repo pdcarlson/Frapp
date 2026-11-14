@@ -69,6 +69,11 @@ import { ChatMentionService } from '../../application/services/chat-mention.serv
 import { ChapterPresenceReader } from '../../application/services/chapter-presence-reader.service';
 import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
+import { ChatScheduledMessageController } from '../../interface/controllers/chat-scheduled-message.controller';
+import { ChatScheduledMessageService } from '../../application/services/chat-scheduled-message.service';
+import { ChatScheduledMessageSweepService } from '../../application/workers/chat-scheduled-message-sweep.service';
+import { SupabaseChatScheduledMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-scheduled-message.repository';
+import { CHAT_SCHEDULED_MESSAGE_REPOSITORY } from '#domain/repositories/chat-scheduled-message.repository.interface';
 
 @Module({
   // RbacModule → RbacService, which the delete-message route uses to resolve
@@ -120,6 +125,9 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
     ChatImportantController,
     // GIF search for the composer's picker (#4631).
     GifController,
+    // A member's own scheduled messages (#4956), for the reason bookmarks are
+    // separate.
+    ChatScheduledMessageController,
   ],
   providers: [
     // Provided directly rather than by importing `ChatPushWorkerModule`, which
@@ -132,6 +140,14 @@ import { ChatBlockModule } from '../chat-block/chat-block.module';
       useClass: SupabaseChatNotificationPreferenceRepository,
     },
     ChatService,
+    // Scheduled messages (#4956): the send goes through `ChatService`, so the
+    // service and its minute sweep live beside it.
+    ChatScheduledMessageService,
+    ChatScheduledMessageSweepService,
+    {
+      provide: CHAT_SCHEDULED_MESSAGE_REPOSITORY,
+      useClass: SupabaseChatScheduledMessageRepository,
+    },
     // `@`-mention resolution and the picker's roles (2026-11-06).
     ChatMentionService,
     ChapterPresenceReader,

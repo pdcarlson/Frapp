@@ -50,6 +50,7 @@ import type {
   ChatMessageReport,
   ChatNotificationPreference,
   ChatPushDispatch,
+  ChatScheduledMessage,
   ChatSidebarPin,
   ChatSidebarPreferences,
   ChatThreadFollow,
@@ -198,6 +199,7 @@ export interface Database {
       chat_messages: TableDefinition<ChatMessage>;
       chat_notification_preferences: TableDefinition<ChatNotificationPreference>;
       chat_push_dispatches: TableDefinition<ChatPushDispatch>;
+      chat_scheduled_messages: TableDefinition<ChatScheduledMessage>;
       chat_sidebar_pins: TableDefinition<ChatSidebarPin>;
       chat_sidebar_preferences: TableDefinition<ChatSidebarPreferences>;
       chat_thread_follows: TableDefinition<ChatThreadFollow>;
