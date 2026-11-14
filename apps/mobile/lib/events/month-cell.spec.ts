@@ -39,9 +39,9 @@ function birthday(key: string, title: string): CalendarItem {
 }
 
 describe("monthCellSummary", () => {
-  it("writes the day's events by start time, then its birthdays", () => {
+  it("writes the day's events in the order given, then its birthdays", () => {
     const cell = monthCellSummary(
-      [event("b", "Chapter Meeting", 20, true), event("a", "Exec Sync", 15)],
+      [event("a", "Exec Sync", 15), event("b", "Chapter Meeting", 20, true)],
       [birthday("u1", "Ava Chen")],
       requiredOf,
     );
@@ -51,7 +51,7 @@ describe("monthCellSummary", () => {
       { kind: "birthday", key: "u1", title: "Ava Chen" },
     ]);
     expect(cell.hidden).toBe(0);
-    expect(cell.birthdayCount).toBe(1);
+    expect(cell.birthdayNames).toEqual(["Ava Chen"]);
   });
 
   it("folds what doesn't fit into a count when the line under is needed", () => {
@@ -63,6 +63,8 @@ describe("monthCellSummary", () => {
     expect(cell.lines.map((line) => line.title)).toEqual(["One", "Two"]);
     expect(cell.hidden).toBe(1);
     expect(cell.taskCount).toBe(1);
+    // Spoken, every event is named, not only the two drawn.
+    expect(cell.eventTitles).toEqual(["One", "Two", "Three"]);
   });
 
   it("shows a third title instead of +1 when no task needs the line", () => {
@@ -85,6 +87,30 @@ describe("monthCellSummary", () => {
     expect(cell.hidden).toBe(2);
   });
 
+  it("keeps a line for a birthday on a busy day", () => {
+    const withTask = monthCellSummary(
+      [event("a", "One", 13), event("b", "Two", 14)],
+      [task("t1"), birthday("u1", "Ava Chen")],
+      requiredOf,
+    );
+    expect(withTask.lines.map((line) => line.title)).toEqual([
+      "One",
+      "Ava Chen",
+    ]);
+    expect(withTask.hidden).toBe(1);
+
+    const crowded = monthCellSummary(
+      ["a", "b", "c"].map((id, index) => event(id, id, 13 + index)),
+      [birthday("u1", "Ava Chen"), birthday("u2", "Ben Ortiz")],
+      requiredOf,
+    );
+    expect(crowded.lines.map((line) => line.kind)).toEqual([
+      "event",
+      "birthday",
+    ]);
+    expect(crowded.hidden).toBe(3);
+  });
+
   it("counts tasks apart from birthdays and notes an overdue one", () => {
     const cell = monthCellSummary(
       [],
@@ -93,15 +119,15 @@ describe("monthCellSummary", () => {
     );
     expect(cell.taskCount).toBe(2);
     expect(cell.overdue).toBe(true);
-    expect(cell.eventCount).toBe(0);
+    expect(cell.eventTitles).toEqual([]);
   });
 
   it("is empty for an empty day", () => {
     expect(monthCellSummary([], [], requiredOf)).toEqual({
       lines: [],
       hidden: 0,
-      eventCount: 0,
-      birthdayCount: 0,
+      eventTitles: [],
+      birthdayNames: [],
       taskCount: 0,
       overdue: false,
     });

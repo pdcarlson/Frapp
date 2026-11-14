@@ -36,9 +36,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Every occurrence of a series is marked on its own day, while the List draws
  * a series once (#3792 § Notes). The grid is `@repo/formatting`'s `monthGrid`,
- * the same six weeks from the Sunday on or before the 1st that web's calendar
- * draws (web moves onto the shared helper in #3822); a day is the viewer's
- * local calendar day (`localIsoDate`), as on web.
+ * the weeks from the Sunday on or before the 1st that web's calendar draws
+ * (web moves onto the shared helper in #3822), less any week at the end with
+ * no day of the month, so the phone's month is four to six weeks tall; a day
+ * is the viewer's local calendar day (`localIsoDate`), as on web.
  *
  * The month and the selected day are the screen's state, not this
  * component's, so switching to List and back keeps the member's place.
@@ -191,8 +192,9 @@ export function EventsCalendar({
   const stepNoun =
     range === "month" ? "month" : range === "day" ? "day" : "3 days";
 
-  // `monthGrid` always draws six weeks; a week with no day of this month
-  // is dropped, so a five-week month gives that row to the day list.
+  // `monthGrid` always gives six weeks; every week with no day of this
+  // month (one for a five-week month, two for a four-week February) is
+  // dropped, so its room goes to the day list.
   const weeks = Array.from({ length: 6 }, (_, row) =>
     days.slice(row * 7, row * 7 + 7),
   ).filter((week) => week.some((day) => day.getMonth() === month.getMonth()));
@@ -272,21 +274,18 @@ export function EventsCalendar({
                       tasksByDay.get(key) ?? [],
                       requiredOf,
                     );
+                    // Spoken, a day names every event and birthday, not only
+                    // the ones its square has room for.
                     const spoken = [
-                      cell.eventCount === 0
+                      cell.eventTitles.length === 0
                         ? null
-                        : `${cell.eventCount} ${cell.eventCount === 1 ? "event" : "events"}`,
-                      ...cell.lines
-                        .filter((line) => line.kind === "event")
-                        .map((line) => line.title),
-                      cell.hidden > 0 ? `${cell.hidden} more` : null,
+                        : `${cell.eventTitles.length} ${cell.eventTitles.length === 1 ? "event" : "events"}`,
+                      ...cell.eventTitles,
                       cell.taskCount === 0
                         ? null
                         : `${cell.taskCount} ${cell.taskCount === 1 ? "task" : "tasks"}`,
                       cell.overdue ? "overdue" : null,
-                      cell.birthdayCount === 0
-                        ? null
-                        : `${cell.birthdayCount} ${cell.birthdayCount === 1 ? "birthday" : "birthdays"}`,
+                      ...cell.birthdayNames.map((name) => `${name}'s birthday`),
                     ].filter(Boolean);
                     const footer = [
                       cell.hidden > 0 ? `+${cell.hidden}` : null,
@@ -352,9 +351,6 @@ export function EventsCalendar({
                                 : `birthday-mark-${key}`
                             }
                             numberOfLines={1}
-                            // Clipped, not "…": two more letters fit, as in
-                            // Google Calendar's month.
-                            ellipsizeMode="clip"
                             style={[
                               styles.cellLine,
                               line.kind === "birthday" ||
@@ -377,6 +373,7 @@ export function EventsCalendar({
                             style={[
                               styles.cellFooter,
                               cell.overdue ? styles.cellFooterOverdue : null,
+                              inMonth ? null : styles.outsideLine,
                             ]}
                           >
                             {footer.join(" · ")}

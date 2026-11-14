@@ -663,6 +663,57 @@ describe("Events view switch", () => {
     );
   });
 
+  it("writes a day's events by title in its square, a required one in the accent", () => {
+    events = [
+      EVENT,
+      {
+        ...EVENT,
+        id: "evt-2",
+        name: "Initiation",
+        start_time: new Date(START.getTime() + 2 * 3_600_000).toISOString(),
+        end_time: new Date(START.getTime() + 3 * 3_600_000).toISOString(),
+        is_mandatory: true,
+      },
+    ];
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+    const titles = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        String(node.props.testID).startsWith("event-title-"),
+    );
+    expect(titles.map((node) => node.props.children)).toEqual([
+      "Chapter meeting",
+      "Initiation",
+    ]);
+    expect(StyleSheet.flatten(titles[0]!.props.style).color).not.toBe(ACCENT);
+    expect(StyleSheet.flatten(titles[1]!.props.style).color).toBe(ACCENT);
+    // The day's spoken label names both.
+    expect(
+      tree.root.findAll((node) =>
+        String(node.props.accessibilityLabel).includes(
+          ", 2 events, Chapter meeting, Initiation",
+        ),
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("leaves off the weeks at the end with no day of the month", () => {
+    const tree = render();
+    act(() => viewSwitch(tree, "Calendar").props.onPress());
+    const month = new Date(START.getFullYear(), START.getMonth(), 1);
+    const last = new Date(START.getFullYear(), START.getMonth() + 1, 0);
+    const weeks = Math.ceil((month.getDay() + last.getDate()) / 7);
+    const dayButtons = tree.root.findAll(
+      (node) =>
+        node.props.accessibilityRole === "button" &&
+        typeof node.props.onPress === "function" &&
+        node.props.accessibilityState?.selected !== undefined,
+    );
+    expect(weeks).toBeLessThan(6);
+    expect(dayButtons).toHaveLength(weeks * 7);
+  });
+
   it("opens on Calendar after a restart when Calendar was the last pick", async () => {
     // A fresh process: the screen's own subscription reads storage.
     vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("calendar");
@@ -874,14 +925,18 @@ describe("Tasks on the Calendar", () => {
     expect(styleOf(tree, "Dues form").fontSize).toBe(
       signetDarkTokens.typography.role.label.size,
     );
-    // The day's cell counts what's due under the event's title.
-    expect(
-      tree.root.findAll(
-        (node) =>
-          (node.type as unknown) === "Text" &&
-          String(node.props.testID).startsWith("cell-footer-"),
-      ),
-    ).toHaveLength(1);
+    // The day's square says it's overdue under the event's title, in the
+    // destructive text hue, rather than counting the tasks.
+    const footers = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Text" &&
+        String(node.props.testID).startsWith("cell-footer-"),
+    );
+    expect(footers).toHaveLength(1);
+    expect(footers[0]!.props.children).toBe("Overdue");
+    expect(StyleSheet.flatten(footers[0]!.props.style).color).toBe(
+      signetDarkTokens.color.semantic.destructiveText,
+    );
   });
 
   it("opens an assigned task in place to show each assignee", () => {
