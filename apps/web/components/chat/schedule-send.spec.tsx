@@ -62,7 +62,7 @@ describe("ScheduleSendButton (#4956)", () => {
     await userEvent.click(
       await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
     );
-    const at: Date = onSchedule.mock.calls[0][0];
+    const at: Date = onSchedule.mock.calls[0]?.[0];
     expect(at.getHours()).toBe(9);
     expect(at.getMinutes()).toBe(0);
     expect(at.getTime()).toBeGreaterThan(Date.now());

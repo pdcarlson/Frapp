@@ -101,11 +101,14 @@ export function scheduleTimeProblem(at: Date, now: Date): string | null {
 
 /** Why a scheduled message didn't post, for its row in the Scheduled list. */
 export function scheduledFailureCopy(
-  reason: "no_access" | "not_sendable" | "send_failed" | null,
+  reason:
+    "no_access" | "chapter_locked" | "not_sendable" | "send_failed" | null,
 ): string {
   switch (reason) {
     case "no_access":
       return "Not sent: you can no longer post here.";
+    case "chapter_locked":
+      return "Not sent: the chapter is read-only right now.";
     case "not_sendable":
       return "Not sent: this channel didn't take it.";
     default:
