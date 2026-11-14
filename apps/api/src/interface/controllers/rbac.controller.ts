@@ -3,7 +3,9 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -31,6 +33,7 @@ import {
   TransferPresidencyDto,
   PresidencyClaimStatusDto,
   PermissionCatalogEntryDto,
+  SelfAssignRoleResultDto,
 } from '../dtos/rbac.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 
@@ -85,6 +88,51 @@ export class RbacController {
     @Body() dto: UpdateRoleDto,
   ) {
     return this.rbacService.updateAsMember(id, chapterId, userId, dto);
+  }
+
+  // Behind the controller's `members:view` only: any member joins and leaves
+  // a role an officer marked self-assignable (#4958). The service refuses
+  // every other role, whatever the caller holds.
+  @Post(':id/join')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Join a self-assignable role',
+    description:
+      "Adds the role to the caller's own roles (#4958). 403 `role.not_self_assignable` unless an officer marked it and it is still safe to pick; 409 when it changed mid-save. Joining a role already held changes nothing.",
+  })
+  @ApiOkResponse({ type: SelfAssignRoleResultDto })
+  async join(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<SelfAssignRoleResultDto> {
+    return this.rbacService.setOwnSelfAssignableRole(
+      chapterId,
+      userId,
+      id,
+      true,
+    );
+  }
+
+  @Post(':id/leave')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Leave a self-assignable role',
+    description:
+      "Takes the role off the caller's own roles (#4958), with the same refusals as join. Leaving a role not held changes nothing.",
+  })
+  @ApiOkResponse({ type: SelfAssignRoleResultDto })
+  async leave(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<SelfAssignRoleResultDto> {
+    return this.rbacService.setOwnSelfAssignableRole(
+      chapterId,
+      userId,
+      id,
+      false,
+    );
   }
 
   @Delete(':id')
