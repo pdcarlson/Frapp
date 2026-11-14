@@ -38,7 +38,11 @@ import {
   pasteAsLines,
   useMentionSourceRefs,
 } from "./chat-editor";
-import { useRequestChatUploadUrl, useUploadSignedUrl } from "@repo/hooks";
+import {
+  formatScheduledFor,
+  useRequestChatUploadUrl,
+  useUploadSignedUrl,
+} from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { describeChatPhoto } from "@/lib/chat/photo-preview";
@@ -81,6 +85,7 @@ import {
   type PlusMenuForm,
 } from "@repo/chat-core/plus-menu";
 import { QuotedMessage } from "./reply-quote";
+import { ScheduleSendButton } from "./schedule-send";
 import {
   getSlashCommand,
   paletteCommandArgs,
@@ -473,6 +478,17 @@ interface ComposerBaseProps {
      */
     mentionPicks: MentionPick[],
   ) => void | Promise<void>;
+  /**
+   * Schedule the composer's text to post later (#4956). Resolves once it is
+   * scheduled; the composer then clears. Text only: with a file staged, a
+   * reply staged, or a slash command typed, the composer says so and keeps
+   * everything. Omitted, there is no schedule control.
+   */
+  onSchedule?: (
+    body: string,
+    mentionPicks: MentionPick[],
+    at: Date,
+  ) => Promise<void>;
   /**
    * Asking Frapp from this composer (#4713), for a member with Ask: Frapp is
    * offered in the `@` list, and a message that names `@Frapp` is asked, not
@@ -998,6 +1014,7 @@ export function Composer({
   draft,
   onChangeDraft,
   onSend,
+  onSchedule,
   ask = null,
   askUnknown = false,
   onSendGif,
@@ -1578,6 +1595,56 @@ export function Composer({
   useLayoutEffect(() => {
     sendRef.current = submit;
   }, [submit]);
+  /**
+   * Schedules what is typed (#4956). Rejects, keeping the text, when it can't
+   * be scheduled; the custom-time dialog stays open on a rejection.
+   */
+  const schedule = useCallback(
+    async (at: Date) => {
+      if (!editor || !onSchedule) return;
+      const typed = chatText(editor).trim();
+      const refusal =
+        pending.length > 0 || uploading.length > 0
+          ? "Files can't be scheduled yet. Send them now, or remove them first."
+          : replyTo
+            ? "Replies can't be scheduled yet. Remove the reply first."
+            : parseSlashInput(typed).isSlash
+              ? "Commands can't be scheduled. Send them now."
+              : typed.length === 0
+                ? "Type a message to schedule."
+                : null;
+      if (refusal) {
+        toast({ title: refusal });
+        throw new Error(refusal);
+      }
+      const picks = composerMentionPicks(channelId, editor);
+      try {
+        await onSchedule(typed, picks, at);
+      } catch (error) {
+        toast({
+          title: "Couldn't schedule it",
+          description: errorCopy(error),
+          variant: "destructive",
+        });
+        throw error;
+      }
+      if (!editor.isDestroyed) {
+        editor.commands.clearContent(true);
+        onChangeDraft("");
+      }
+      toast({ title: `Scheduled for ${formatScheduledFor(at, new Date())}` });
+    },
+    [
+      channelId,
+      editor,
+      onChangeDraft,
+      onSchedule,
+      pending.length,
+      replyTo,
+      toast,
+      uploading.length,
+    ],
+  );
   useLayoutEffect(() => {
     stagedRef.current = { pending, replyId: replyTo?.id ?? null };
   }, [pending, replyTo]);
@@ -2201,6 +2268,16 @@ export function Composer({
           >
             <SendArrowGlyph className="h-4 w-4" />
           </Button>
+          {onSchedule ? (
+            <ScheduleSendButton
+              disabled={
+                !editor ||
+                editor.isEmpty ||
+                isBareSlash(chatText(editor).trim())
+              }
+              onSchedule={schedule}
+            />
+          ) : null}
         </div>
       </div>
       {paletteMounted ? (

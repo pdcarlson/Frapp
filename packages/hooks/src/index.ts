@@ -61,6 +61,8 @@ export * from "./use-chat-background";
 export * from "./use-chat-catch-up";
 export * from "./use-chat-reports";
 export * from "./use-chat-safety";
+export * from "./use-scheduled-messages";
+export * from "./scheduled-message-times";
 // `useChatSidebar` and its query keys stay module-private: every surface reads
 // the arrangement through `useSidebarPreferences`.
 export {

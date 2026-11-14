@@ -714,6 +714,19 @@ vi.mock("@repo/hooks", async () => ({
   // the composer remount and delete wiring. `mockBookmarks` lets the bookmark
   // cases below drive the list without touching the other suites' setup.
   useBookmarks: () => mockBookmarks(),
+  // Scheduled messages (#4956): the composer's chevron and the bar above it.
+  // None scheduled, so the bar draws nothing.
+  useScheduleMessage: () => ({ mutateAsync: vi.fn() }),
+  useScheduledMessages: () => ({ data: [] }),
+  useUpdateScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
+  useSendScheduledMessageNow: () => ({ mutate: vi.fn(), isPending: false }),
+  formatScheduledFor: () => "Tomorrow at 9:00 AM",
+  schedulePresets: (now: Date) => [
+    { key: "tomorrow", label: "Tomorrow at 9:00 AM", at: now },
+  ],
+  scheduleTimeProblem: () => null,
+  scheduledFailureCopy: () => "Not sent.",
   useBookmarkedMessageIds: () =>
     new Set(
       mockBookmarks().data.map((b: { message_id: string }) => b.message_id),
