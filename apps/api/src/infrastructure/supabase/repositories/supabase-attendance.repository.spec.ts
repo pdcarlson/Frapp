@@ -149,6 +149,21 @@ describe('SupabaseAttendanceRepository — tenant scope', () => {
     expect(harness.ops).toHaveLength(2);
   });
 
+  it('findByEvents reads only the named events, past the first chunk of 100 ids', async () => {
+    // Activity counts check-ins per event the caller made (#4792): a row on
+    // another event would count toward theirs.
+    const filler = Array.from(
+      { length: 150 },
+      (_, i) => `0b000000-0000-4000-8000-${String(i).padStart(12, '0')}`,
+    );
+    const rows = await repo.findByEvents([...filler, EVENT_B]);
+
+    expect(rows.map((r) => r.id)).toEqual([ATTEND_B]);
+    // Paged within each chunk, past the server's row cap: an empty page is
+    // what proves a chunk ran out, so the chunk with a row takes a second.
+    expect(harness.ops).toHaveLength(3);
+  });
+
   it('update stays inside the caller chapter and filters on the row id alone', async () => {
     // Two things at once. The guard proves the write stayed in chapter B —
     // `parentTenant` resolves the row's chapter through its event, so a filter

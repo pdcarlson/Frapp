@@ -21,6 +21,8 @@ export type ActivityLink = components["schemas"]["ActivityLinkDto"];
 export type ActivityReminder = components["schemas"]["ActivityReminderDto"];
 /** A sign-up sheet, headcount or form waiting on the member's answer (#3926). */
 export type ActivityCard = components["schemas"]["ActivityCardDto"];
+/** How many have answered something the member made, of how many can (#4792). */
+export type ActivityProgress = components["schemas"]["ActivityProgressDto"];
 export type ActivitySection = Activity["unavailable"][number];
 /** What `POST /v1/activity/reads` names: an item's kind and id. */
 export type ActivityItemRef = components["schemas"]["ActivityItemRefDto"];
@@ -130,12 +132,43 @@ interface RowBase {
    * dot. Never on a Waiting on others row.
    */
   unread: boolean;
-  /** The item `POST /v1/activity/reads` records when the row is opened. */
   /**
    * What opening the row records as read. Null for a row that has no unread
    * dot to clear: a reminder (#4957), which is the member's own.
    */
   readRef: ActivityItemRef | null;
+  /**
+   * How far along a Waiting on others row is (#4792): an open poll the member
+   * posted, or an event they made once its check-in has opened. A client
+   * draws it as a thin bar with `label` beside it. `null` on every other row,
+   * and when the read has no count for it (never "0 of 0").
+   */
+  progress: ActivityRowProgress | null;
+}
+
+/** A row's progress, ready to draw (#4792). */
+export interface ActivityRowProgress {
+  done: number;
+  /** Never 0. */
+  total: number;
+  /** "41 of 60", drawn beside the bar. */
+  label: string;
+  /** "41 of 60 voted", for a screen reader. */
+  spoken: string;
+}
+
+/**
+ * The read's count as a row draws it. An API read from before the field
+ * existed has none, and a count with nobody to answer is not drawn.
+ */
+function rowProgress(
+  progress: ActivityProgress | null | undefined,
+  verb: string,
+): ActivityRowProgress | null {
+  if (!progress || progress.total <= 0) return null;
+  const done = Math.min(Math.max(progress.done, 0), progress.total);
+  const label = `${done} of ${progress.total}`;
+  return { done, total: progress.total, label, spoken: `${label} ${verb}` };
 }
 
 /** Whether a row's badge asks the member to act, rather than naming a state. */
@@ -337,6 +370,10 @@ function pollRow(
     dateBlock: null,
     unread: group !== "made" && poll.unread,
     readRef: { kind: "poll", item_id: poll.message_id },
+    // A closed poll waits on nobody; the read sends no count for one, and a
+    // poll that closes after the read stops drawing its bar on the same tick.
+    progress:
+      group === "made" && !closed ? rowProgress(poll.progress, "voted") : null,
   };
 }
 
@@ -419,6 +456,7 @@ function cardRow(
       kind: card.kind === "form" ? "form" : "signup",
       item_id: card.message_id,
     },
+    progress: null,
   };
 }
 
@@ -487,6 +525,7 @@ function taskRow(
     dateBlock: null,
     unread: role !== "assigned" && task.unread,
     readRef: { kind: "task", item_id: task.id },
+    progress: null,
   };
 }
 
@@ -509,6 +548,7 @@ function hoursRow(entry: ActivityHours): ActivityRow {
     dateBlock: null,
     unread: entry.unread,
     readRef: { kind: "hours_entry", item_id: entry.id },
+    progress: null,
   };
 }
 
@@ -556,6 +596,8 @@ function eventRow(
     dateBlock: when === "timed" ? null : dateBlock(event),
     unread: group !== "made" && event.unread,
     readRef: { kind: "event", item_id: event.id },
+    progress:
+      group === "made" ? rowProgress(event.progress, "checked in") : null,
   };
 }
 
@@ -587,6 +629,7 @@ function linkRow(link: ActivityLink, now: Date): ActivityRow {
     dateBlock: null,
     unread: link.unread,
     readRef: { kind: "link", item_id: link.id },
+    progress: null,
   };
 }
 
@@ -621,6 +664,7 @@ function reminderRow(reminder: ActivityReminder, now: Date): ActivityRow {
     dateBlock: null,
     unread: false,
     readRef: null,
+    progress: null,
   };
 }
 
