@@ -24,7 +24,7 @@ import {
   type ChapterBranding,
   useChapterBranding,
 } from "@/lib/chapter-branding";
-import { withDay } from "@/lib/chat/schedule-send";
+import { withDay } from "@/lib/events/create-event";
 import {
   SheetBackToClose,
   SheetGrabber,
@@ -56,20 +56,26 @@ export interface ScheduleSendSheetProps {
   preview: string;
   /** Why it can't be scheduled now, or `null`. */
   refusal: string | null;
+  /**
+   * When the long press opened it, which the presets count from. The sheet is
+   * mounted with the thread, which outlives a night on the nightstand, so its
+   * own mount time would offer yesterday's "Tomorrow".
+   */
+  openedAt: Date | null;
   onSchedule: (at: Date) => Promise<void>;
 }
 
 export const ScheduleSendSheet = forwardRef<
   BottomSheetModal,
   ScheduleSendSheetProps
->(function ScheduleSendSheet({ preview, refusal, onSchedule }, ref) {
+>(function ScheduleSendSheet({ preview, refusal, openedAt, onSchedule }, ref) {
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const closeSheet = useSheetClose(ref);
-  const [now, setNow] = useState(() => new Date());
-  const presets = schedulePresets(now);
+  const [mountedAt] = useState(() => new Date());
+  const presets = schedulePresets(openedAt ?? mountedAt);
   const [custom, setCustom] = useState<Date | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,9 +99,8 @@ export const ScheduleSendSheet = forwardRef<
     [closeSheet, onSchedule],
   );
 
-  // Each visit starts fresh: the presets read the clock as it opens.
+  // Each visit starts fresh.
   const reset = () => {
-    setNow(new Date());
     setCustom(null);
     setError(null);
   };
@@ -219,12 +224,21 @@ export function ScheduleWhenField({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const today = new Date();
+  // A held value already below today (a pending message just past due, which
+  // the sweep hasn't taken) lowers the floor to its own day, as New event's
+  // pickers do: iOS draws a value under its minimum as the minimum, which
+  // would show a day the field doesn't hold.
+  const floor = value < today ? value : today;
   const minimumDate = new Date(
+    floor.getFullYear(),
+    floor.getMonth(),
+    floor.getDate(),
+  );
+  const maximumDate = new Date(
     today.getFullYear(),
     today.getMonth(),
     today.getDate(),
   );
-  const maximumDate = new Date(minimumDate);
   maximumDate.setDate(maximumDate.getDate() + SCHEDULE_MAX_DAYS);
   const day = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
@@ -249,13 +263,13 @@ export function ScheduleWhenField({
           minimumDate={minimumDate}
           maximumDate={maximumDate}
           accessibilityLabel={`Day, ${day}`}
-          onValueChange={(_event, picked) => onChange(withDay(picked, value))}
+          onValueChange={(_event, picked) => onChange(withDay(value, picked))}
         />
         <DateTimePicker
           {...shared}
           mode="time"
           accessibilityLabel={`Time, ${time}`}
-          onValueChange={(_event, picked) => onChange(withDay(value, picked))}
+          onValueChange={(_event, picked) => onChange(withDay(picked, value))}
         />
       </View>
     );
@@ -269,7 +283,7 @@ export function ScheduleWhenField({
       ...(mode === "date" ? { minimumDate, maximumDate } : {}),
       onValueChange: (_event, picked) =>
         onChange(
-          mode === "date" ? withDay(picked, value) : withDay(value, picked),
+          mode === "date" ? withDay(value, picked) : withDay(picked, value),
         ),
     });
   }

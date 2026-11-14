@@ -396,6 +396,7 @@ function channelState(
     retryPhoto: vi.fn(),
     draft: "",
     setDraft: vi.fn(),
+    restoreDraftFor: vi.fn(),
     sendError: null,
     reactionError: null,
     clearReactionError: vi.fn(),
@@ -431,6 +432,8 @@ let channelLocked = false;
 let channelReadAt = 1_000;
 /** A read-only channel (announcements) the viewer can only read. */
 let channelIsReadOnly = false;
+// Which channel the Scheduled list was read for (#4956).
+const scheduledListFor = vi.fn();
 /** The open channel is the chapter's audit log (#3909). */
 let channelIsAuditLog = false;
 /** The viewer's permissions, and the chapter's modules, for the + (#3701). */
@@ -526,7 +529,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useBookmarks: () => ({ data: [], isPending: false, isError: false }),
     usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
     // Scheduled messages (#4956): none, and a schedule that never lands.
-    useScheduledMessages: () => ({
+    useScheduledMessages: (channelId: string | null) => ({
+      ...(scheduledListFor(channelId) as object),
       data: [],
       isPending: false,
       isError: false,
@@ -861,6 +865,41 @@ describe("chat thread in the audit log", () => {
     // Nothing scheduled here: no line above the input.
     expect(composer.props.scheduled).toBeNull();
     expect(tree.root.findAllByType(ScheduleSendSheet)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("hands Schedule message the reason a staged photo can't be scheduled (#4956)", () => {
+    channel = channelState({
+      draft: "Chapter at 8",
+      photos: [
+        {
+          key: "p1",
+          previewUri: "file:///a.jpg",
+          width: 10,
+          height: 10,
+          status: "ready",
+          attachment: null,
+          reason: null,
+        },
+      ],
+    } as unknown as Partial<UseChatChannelResult>);
+    const tree = render();
+    act(() => tree.root.findByType(ChatComposer).props.onSchedule());
+    expect(tree.root.findByType(ScheduleSendSheet).props.refusal).toMatch(
+      /^Photos can't be scheduled yet/,
+    );
+    expect(tree.root.findByType(ScheduleSendSheet).props.preview).toBe(
+      "Chapter at 8",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("keeps the Scheduled list where the member can't post (#4956)", () => {
+    channelIsReadOnly = true;
+    scheduledListFor.mockClear();
+    const tree = render();
+    expect(tree.root.findByType(ChatComposer).props.onSchedule).toBeUndefined();
+    expect(scheduledListFor).toHaveBeenLastCalledWith(CHANNEL);
     act(() => tree.unmount());
   });
 });

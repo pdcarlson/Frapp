@@ -219,8 +219,13 @@ function ScheduledEditRow({
   const [content, setContent] = useState(row.content);
   const [focused, setFocused] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const problem = at ? scheduleTimeProblem(at, new Date()) : null;
-  const timeChanged = at !== null && at.toISOString() !== row.send_at;
+  // Compared as instants: the API returns PostgREST's `+00:00` form.
+  const timeChanged =
+    at !== null && at.getTime() !== new Date(row.send_at).getTime();
+  // Only a time the member set is checked: a pending message whose time
+  // passes while its text is fixed still saves, and the sweep takes it.
+  const problem =
+    at && timeChanged ? scheduleTimeProblem(at, new Date()) : null;
   const empty = content.trim() === "";
   const blocked = update.isPending;
 

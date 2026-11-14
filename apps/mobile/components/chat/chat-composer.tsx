@@ -280,8 +280,10 @@ export function ChatComposer({
   // The sheet greys what can't work this second and says why, so the + itself
   // only waits for the photo library it opened and for the chat runtime.
   const canOpenPlus = !!onOpenPlus && !plusDisabled && !isPicking && canSend;
-  // Scheduling saves no edit and asks nothing: only an ordinary send offers it.
-  const canSchedule = !!onSchedule && isSendable && !isEditing && !ask?.naming;
+  // Scheduling saves no edit, so an edit doesn't offer it. A draft naming
+  // `@Frapp` does: the sheet says it can't be scheduled, where a long press
+  // that fell through to Send would ask Frapp on release.
+  const canSchedule = !!onSchedule && isSendable && !isEditing;
 
   return (
     <View style={styles.wrapper}>

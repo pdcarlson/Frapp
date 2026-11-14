@@ -1,7 +1,8 @@
 /**
  * The phone's rules for scheduling a chat message (#4956), kept out of the
- * sheets so they can be tested. The times themselves (presets, limits,
- * wording) are shared with web in `@repo/hooks` (`scheduled-message-times`).
+ * sheets so they can be tested. The times themselves (presets, limits, how a
+ * time reads) are shared with web in `@repo/hooks` (`scheduled-message-times`);
+ * the line's count is the phone's own, since it also names the next time.
  */
 import { formatScheduledFor, type ScheduledMessage } from "@repo/hooks";
 import { withoutObjectReplacement } from "@repo/validation";
@@ -33,17 +34,11 @@ export function scheduleRefusal(input: ScheduleRefusalInput): string | null {
     return "Replies can't be scheduled yet. Remove the reply first.";
   }
   if (input.asksFrapp) return "A question for Frapp can't be scheduled.";
+  // A belt: the long press is offered only on a sendable draft.
   if (withoutObjectReplacement(input.text).trim().length === 0) {
     return "Type a message to schedule.";
   }
   return input.writeBlocked;
-}
-
-/** `day`'s date at `time`'s hour and minute, on the device's clock. */
-export function withDay(day: Date, time: Date): Date {
-  const at = new Date(day);
-  at.setHours(time.getHours(), time.getMinutes(), 0, 0);
-  return at;
 }
 
 /**

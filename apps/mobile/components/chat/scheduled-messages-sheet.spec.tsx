@@ -139,6 +139,22 @@ describe("ScheduledRows (#4956)", () => {
     expect(update.mock.calls[0]![0].sendAt).toBeUndefined();
   });
 
+  it("saves a text fix on a message whose time just passed, in the API's +00:00 form", () => {
+    update.mockClear();
+    const due = new Date(Date.now() - 30_000);
+    const tree = render([
+      message({ send_at: due.toISOString().replace(".000Z", "+00:00") }),
+    ]);
+    act(() => button(tree, "Edit")!.props.onPress());
+    const input = tree.root.find(
+      (node) => (node.type as unknown) === "BottomSheetTextInput",
+    );
+    act(() => input.props.onChangeText("Chapter is at 9"));
+    expect(button(tree, "Save")!.props.disabled).toBe(false);
+    act(() => button(tree, "Save")!.props.onPress());
+    expect(update.mock.calls[0]![0].sendAt).toBeUndefined();
+  });
+
   it("won't save an emptied message", () => {
     const tree = render([message({})]);
     act(() => button(tree, "Edit")!.props.onPress());

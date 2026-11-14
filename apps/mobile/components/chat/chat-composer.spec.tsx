@@ -293,7 +293,7 @@ describe("ChatComposer scheduling (#4956)", () => {
     expect(onSchedule).toHaveBeenCalledTimes(2);
   });
 
-  it("offers nothing to schedule with nothing typed, while editing, or while asking Frapp", () => {
+  it("offers nothing to schedule with nothing typed, or while editing", () => {
     const onSchedule = vi.fn();
     const empty = renderComposer({ value: "", onSchedule });
     expect(send(empty.tree).props.onLongPress).toBeUndefined();
@@ -310,14 +310,21 @@ describe("ChatComposer scheduling (#4956)", () => {
     expect(
       byLabel(editing.tree, "Save edit")!.props.onLongPress,
     ).toBeUndefined();
-    const asking = renderComposer({
+  });
+
+  it("opens the sheet for a draft naming @Frapp, which says why, rather than asking on release", () => {
+    const onSchedule = vi.fn();
+    const { tree } = renderComposer({
       value: "@Frapp when is chapter?",
       onSchedule,
       ask: { naming: true },
     });
-    expect(
-      asking.tree.root.findAll((node) => node.props?.onLongPress !== undefined),
-    ).toHaveLength(0);
+    const press = tree.root.findAll(
+      (node) => node.props?.onLongPress !== undefined,
+    );
+    expect(press).toHaveLength(1);
+    act(() => press[0]!.props.onLongPress());
+    expect(onSchedule).toHaveBeenCalled();
   });
 
   it("says how many are scheduled above the input, and opens the list", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scheduledLine, scheduleRefusal, withDay } from "./schedule-send";
+import { scheduledLine, scheduleRefusal } from "./schedule-send";
 
 const base = {
   text: "Chapter at 8",
@@ -40,16 +40,6 @@ describe("scheduleRefusal", () => {
     expect(
       scheduleRefusal({ ...base, photos: 2, writeBlocked: "You're offline." }),
     ).toMatch(/^Photos/);
-  });
-});
-
-describe("withDay", () => {
-  it("puts one date's clock on another's day", () => {
-    const at = withDay(
-      new Date(2026, 10, 20, 1, 2, 3),
-      new Date(2026, 0, 1, 8, 30, 45),
-    );
-    expect(at).toEqual(new Date(2026, 10, 20, 8, 30, 0, 0));
   });
 });
 

@@ -23,6 +23,7 @@ const dismiss = vi.fn();
 
 function render(props: {
   refusal?: string | null;
+  openedAt?: Date | null;
   onSchedule?: (at: Date) => Promise<void>;
 }) {
   const onSchedule = props.onSchedule ?? vi.fn(() => Promise.resolve());
@@ -34,6 +35,7 @@ function render(props: {
           ref={React.createRef<never>()}
           preview="Chapter is at 8 tonight"
           refusal={props.refusal ?? null}
+          openedAt={props.openedAt ?? null}
           onSchedule={onSchedule}
         />
       </FrappThemeProvider>,
@@ -72,6 +74,20 @@ describe("ScheduleSendSheet", () => {
     expect(at.getHours()).toBe(9);
     expect(at.getMinutes()).toBe(0);
     expect(dismiss).toHaveBeenCalled();
+  });
+
+  it("counts its presets from the long press, not from when the thread mounted", async () => {
+    // A Sunday night long press: tomorrow is Monday, so Monday isn't offered
+    // twice, and "Tomorrow" is the Monday after that night.
+    const openedAt = new Date(2030, 0, 6, 22, 0);
+    const { tree, onSchedule } = render({ openedAt });
+    expect(screenText(tree)).not.toMatch(/Monday at/);
+    await act(async () => {
+      row(tree, /^Tomorrow at /).props.onPress();
+    });
+    expect(vi.mocked(onSchedule).mock.calls[0]![0]).toEqual(
+      new Date(2030, 0, 7, 9, 0),
+    );
   });
 
   it("keeps the sheet open with the reason when scheduling fails", async () => {
