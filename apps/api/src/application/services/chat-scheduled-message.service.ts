@@ -16,8 +16,15 @@ import {
 } from '#domain/repositories/chat-scheduled-message.repository.interface';
 import {
   CHAT_CHANNEL_REPOSITORY,
+  CHAT_MESSAGE_REPOSITORY,
   type IChatChannelRepository,
+  type IChatMessageRepository,
 } from '#domain/repositories/chat.repository.interface';
+import {
+  CHAPTER_REPOSITORY,
+  type IChapterRepository,
+} from '#domain/repositories/chapter.repository.interface';
+import { freeTierWriteAllowed } from '#domain/constants/subscription-grace';
 import type {
   ChatScheduledMessage,
   ChatScheduledMessageFailure,
@@ -76,6 +83,10 @@ export class ChatScheduledMessageService {
     private readonly repo: IChatScheduledMessageRepository,
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
+    @Inject(CHAT_MESSAGE_REPOSITORY)
+    private readonly messageRepo: IChatMessageRepository,
+    @Inject(CHAPTER_REPOSITORY)
+    private readonly chapterRepo: IChapterRepository,
     private readonly channelAccess: ChannelAccessService,
     private readonly chat: ChatService,
     private readonly notifications: NotificationService,
@@ -92,6 +103,7 @@ export class ChatScheduledMessageService {
   async schedule(
     chapterId: string,
     userId: string,
+    memberId: string,
     input: ScheduleMessageInput,
     now = Date.now(),
   ): Promise<ChatScheduledMessage> {
@@ -103,10 +115,9 @@ export class ChatScheduledMessageService {
       userId,
       'post',
     );
-    const pending = (await this.repo.listForAuthor(chapterId, userId)).filter(
-      (row) => row.status === 'pending',
-    );
-    if (pending.length >= SCHEDULE_MAX_PENDING) {
+    // A soft cap: two requests at once may land one over it.
+    const pending = await this.repo.countPending(chapterId, userId);
+    if (pending >= SCHEDULE_MAX_PENDING) {
       throw new BadRequestException(
         `You can have at most ${SCHEDULE_MAX_PENDING} scheduled messages at once`,
       );
@@ -115,6 +126,7 @@ export class ChatScheduledMessageService {
       chapter_id: chapterId,
       channel_id: input.channel_id,
       user_id: userId,
+      member_id: memberId,
       content,
       mention_picks: input.mention_picks ?? null,
       send_at: sendAt,
@@ -129,10 +141,22 @@ export class ChatScheduledMessageService {
     chapterId: string,
     userId: string,
     id: string,
-    input: Partial<Omit<ScheduleMessageInput, 'channel_id'>>,
+    input: {
+      content?: string | null;
+      send_at?: string;
+      mention_picks?: { user_id: string; label: string }[] | null;
+    },
     now = Date.now(),
   ): Promise<ChatScheduledMessage> {
+    if (input.content === null) {
+      throw new BadRequestException('A scheduled message needs text');
+    }
     const row = await this.requireOwn(chapterId, userId, id);
+    // A send that posted and then died before deleting the row leaves it
+    // here; an edit to it would be lost to the post's replay.
+    if (await this.alreadyPosted(row)) {
+      throw new ConflictException('This message has already been sent');
+    }
     const patch: ChatScheduledMessagePatch = {};
     if (input.content !== undefined) {
       patch.content = cleanContent(input.content);
@@ -168,9 +192,27 @@ export class ChatScheduledMessageService {
     return updated;
   }
 
-  async remove(chapterId: string, userId: string, id: string): Promise<void> {
-    const deleted = await this.repo.deleteForAuthor(chapterId, userId, id);
-    if (!deleted) throw new NotFoundException('Scheduled message not found');
+  /** Refused (409) while a send holds it: it may already be posting. */
+  async remove(
+    chapterId: string,
+    userId: string,
+    id: string,
+    now = Date.now(),
+  ): Promise<void> {
+    const outcome = await this.repo.deleteForAuthor(
+      chapterId,
+      userId,
+      id,
+      new Date(now).toISOString(),
+    );
+    if (outcome === 'missing') {
+      throw new NotFoundException('Scheduled message not found');
+    }
+    if (outcome === 'held') {
+      throw new ConflictException(
+        'This message is being sent right now and can no longer be deleted',
+      );
+    }
   }
 
   /**
@@ -197,7 +239,7 @@ export class ChatScheduledMessageService {
     if (!claimed) {
       throw new ConflictException('This message is already being sent');
     }
-    const result = await this.deliver({ ...row, attempts: row.attempts + 1 });
+    const result = await this.deliver(claimed);
     if (result.outcome === 'sent') return result.message;
     throw result.cause;
   }
@@ -211,6 +253,30 @@ export class ChatScheduledMessageService {
   async deliver(row: ChatScheduledMessage): Promise<ScheduledSendOutcome> {
     let message: ChatMessage;
     try {
+      // A send before this one may have posted it and died before deleting
+      // the row: answer that post rather than judging the send again.
+      const posted = row.attempts > 1 ? await this.alreadyPosted(row) : null;
+      if (posted) {
+        await this.repo.removeSent(row);
+        return { outcome: 'sent', message: posted };
+      }
+      // `ChapterGuard`'s billing lock, which a live post meets on its way in
+      // and the sweep never passes through.
+      const chapter = await this.chapterRepo.findById(row.chapter_id);
+      if (
+        chapter &&
+        !freeTierWriteAllowed(
+          chapter.subscription_status,
+          chapter.past_due_since,
+        )
+      ) {
+        await this.fail(row, 'chapter_locked');
+        return {
+          outcome: 'failed',
+          reason: 'chapter_locked',
+          cause: new ForbiddenException('This chapter is read-only'),
+        };
+      }
       ({ message } = await this.chat.sendMessage({
         chapter_id: row.chapter_id,
         channel_id: row.channel_id,
@@ -252,20 +318,24 @@ export class ChatScheduledMessageService {
   ): Promise<void> {
     await this.repo.markFailed(row, reason);
     try {
-      const channel = await this.channelRepo.findById(
-        row.channel_id,
-        row.chapter_id,
-      );
+      // The channel is named only where the author can still see it: losing
+      // access may mean losing sight of it, and of a rename since.
+      const channel =
+        reason === 'no_access'
+          ? null
+          : await this.channelRepo.findById(row.channel_id, row.chapter_id);
       const where =
         channel && !isDirectChannel({ type: channel.type })
           ? `#${channel.name}`
-          : 'that conversation';
+          : 'a conversation';
       await this.notifications.notifyUser(row.user_id, row.chapter_id, {
         title: 'Scheduled message not sent',
         body:
           reason === 'no_access'
-            ? `Your message to ${where} didn't send: you can no longer post there.`
-            : `Your message to ${where} didn't send. Open it to edit or delete it.`,
+            ? "Your scheduled message didn't send: you can no longer post where it was going."
+            : reason === 'chapter_locked'
+              ? `Your message to ${where} didn't send: the chapter is read-only right now.`
+              : `Your message to ${where} didn't send. Open it to edit or delete it.`,
         priority: 'NORMAL',
         category: 'chat',
         data: { target: { screen: 'chat', channelId: row.channel_id } },
@@ -278,6 +348,19 @@ export class ChatScheduledMessageService {
         error,
       });
     }
+  }
+
+  /** The message an earlier send of this row posted, if one did. */
+  private alreadyPosted(
+    row: ChatScheduledMessage,
+  ): Promise<ChatMessage | null> {
+    return row.attempts > 0
+      ? this.messageRepo.findByClientMessageId(
+          row.channel_id,
+          row.user_id,
+          row.id,
+        )
+      : Promise.resolve(null);
   }
 
   private async requireOwn(
@@ -299,7 +382,17 @@ function cleanContent(raw: string): string {
   return content;
 }
 
+/** A date-time that names its offset: `Z`, or `+hh:mm` / `-hhmm`. */
+const HAS_OFFSET = /T.*(?:Z|[+-]\d{2}:?\d{2})$/i;
+
 function checkSendAt(raw: string, now: number): string {
+  // Without an offset the time would be read on the server's clock, not the
+  // member's, and post hours off with no error.
+  if (!HAS_OFFSET.test(raw)) {
+    throw new BadRequestException(
+      'send_at must be a date and time with a time zone offset',
+    );
+  }
   const at = Date.parse(raw);
   if (Number.isNaN(at)) throw new BadRequestException('send_at is not a time');
   if (at < now - SCHEDULE_PAST_GRACE_MS) {

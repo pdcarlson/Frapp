@@ -27,9 +27,11 @@ import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
+  CurrentMember,
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
+import type { MemberContext } from '../types/request-context.types';
 import { ChatMessageDto } from '../dtos/chat.dto';
 import {
   CreateScheduledMessageDto,
@@ -78,9 +80,12 @@ export class ChatScheduledMessageController {
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
+    @CurrentMember() member: MemberContext,
     @Body() dto: CreateScheduledMessageDto,
   ): Promise<ScheduledMessageDto> {
-    return toView(await this.scheduled.schedule(chapterId, userId, dto));
+    return toView(
+      await this.scheduled.schedule(chapterId, userId, member.id, dto),
+    );
   }
 
   @Patch(':id')

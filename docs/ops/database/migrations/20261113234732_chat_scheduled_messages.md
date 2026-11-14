@@ -9,7 +9,7 @@ Adds `chat_scheduled_messages`, the chat messages members schedule to send later
 
 ## Promotion
 
-- **Purpose**: one row per message a member scheduled. The API's minute sweep posts each due row into its channel as its author and deletes it; a row the author can no longer post stays as `failed` with a reason code until they delete it. Rows go with the chapter, the channel and the author's account. RLS is on with no policies: the API is the only reader and writer.
+- **Purpose**: one row per message a member scheduled. The API's minute sweep posts each due row into its channel as its author and deletes it; a row the author can no longer post stays as `failed` with a reason code until they delete it. Rows go with the chapter, the channel and the author's membership, so leaving the chapter or deleting the account (which deletes the memberships) removes them. RLS is on with no policies: the API is the only reader and writer.
 - **Checks**:
   - `select count(*) from chat_scheduled_messages;` runs and returns 0.
   - `select relrowsecurity from pg_class where relname = 'chat_scheduled_messages';` returns `t`.

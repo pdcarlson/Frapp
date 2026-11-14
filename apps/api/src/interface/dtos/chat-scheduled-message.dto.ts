@@ -32,7 +32,7 @@ export class CreateScheduledMessageDto {
   @ApiProperty({
     format: 'date-time',
     description:
-      'When to post it: an instant, at most 120 days ahead. The client picks it on the member’s own clock.',
+      'When to post it: a date-time with its offset (`Z` or `±hh:mm`), at most 120 days ahead. The client picks it on the member’s own clock.',
   })
   @IsISO8601({ strict: true })
   send_at: string;
@@ -112,12 +112,13 @@ export class ScheduledMessageDto {
   status: 'pending' | 'failed';
 
   @ApiProperty({
-    enum: ['no_access', 'not_sendable', 'send_failed'],
+    enum: ['no_access', 'chapter_locked', 'not_sendable', 'send_failed'],
     nullable: true,
     description:
-      'Why a failed message did not post: `no_access` the author can no longer post there; `not_sendable` the channel refused the message; `send_failed` it kept failing.',
+      'Why a failed message did not post: `no_access` the author can no longer post there; `chapter_locked` the chapter is read-only for billing; `not_sendable` the channel refused the message; `send_failed` it kept failing.',
   })
-  failure_reason: 'no_access' | 'not_sendable' | 'send_failed' | null;
+  failure_reason:
+    'no_access' | 'chapter_locked' | 'not_sendable' | 'send_failed' | null;
 
   @ApiProperty({ format: 'date-time' })
   created_at: string;

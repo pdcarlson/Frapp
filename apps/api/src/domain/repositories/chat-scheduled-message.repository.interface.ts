@@ -10,6 +10,7 @@ export interface NewChatScheduledMessage {
   chapter_id: string;
   channel_id: string;
   user_id: string;
+  member_id: string;
   content: string;
   mention_picks: { user_id: string; label: string }[] | null;
   send_at: string;
@@ -55,23 +56,33 @@ export interface IChatScheduledMessageRepository {
     patch: ChatScheduledMessagePatch,
     now: string,
   ): Promise<ChatScheduledMessage | null>;
-  /** Deletes the author's row. False when there was none. */
+  /** The author's pending rows in the chapter. */
+  countPending(chapterId: string, userId: string): Promise<number>;
+  /**
+   * Deletes the author's row unless a send holds it right now. `held` when a
+   * send does, `missing` when there is no such row.
+   */
   deleteForAuthor(
     chapterId: string,
     userId: string,
     id: string,
-  ): Promise<boolean>;
+    now: string,
+  ): Promise<'deleted' | 'held' | 'missing'>;
   /** Pending rows due by `now` that no send holds, soonest first. */
   findDue(now: string, limit: number): Promise<ChatScheduledMessage[]>;
   /**
    * Takes the row for one send: a compare-and-set on its `attempts`, so on
    * several replicas only one wins. Sets `lease_until` and spends an attempt.
+   * With `dueBy`, only while `send_at` is still at or before it, so a row
+   * moved later by an edit after it was read is left alone. Answers the row as
+   * it now stands, which is what is sent, or null when the claim lost.
    */
   claim(
     row: Pick<ChatScheduledMessage, 'id' | 'chapter_id' | 'attempts'>,
     leaseUntil: string,
     now: string,
-  ): Promise<boolean>;
+    dueBy?: string,
+  ): Promise<ChatScheduledMessage | null>;
   /** The message posted: the row is done. */
   removeSent(
     row: Pick<ChatScheduledMessage, 'id' | 'chapter_id'>,

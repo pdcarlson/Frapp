@@ -102,20 +102,37 @@ export class SupabaseChatScheduledMessageRepository implements IChatScheduledMes
     return data;
   }
 
+  async countPending(chapterId: string, userId: string): Promise<number> {
+    const { count, error } = await this.supabase
+      .from(TABLE)
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .eq('user_id', userId)
+      .eq('status', 'pending');
+    if (error) throw new SupabaseQueryError(error);
+    return count ?? 0;
+  }
+
   async deleteForAuthor(
     chapterId: string,
     userId: string,
     id: string,
-  ): Promise<boolean> {
+    now: string,
+  ): Promise<'deleted' | 'held' | 'missing'> {
     const { data, error } = await this.supabase
       .from(TABLE)
       .delete()
       .eq('chapter_id', chapterId)
       .eq('user_id', userId)
       .eq('id', id)
+      .or(`lease_until.is.null,lease_until.lt."${now}"`)
       .select('id');
     if (error) throw new SupabaseQueryError(error);
-    return (data ?? []).length > 0;
+    if ((data ?? []).length > 0) return 'deleted';
+    // Nothing deleted: either no such row, or a send holds it.
+    return (await this.findForAuthor(chapterId, userId, id))
+      ? 'held'
+      : 'missing';
   }
 
   async findDue(now: string, limit: number): Promise<ChatScheduledMessage[]> {
@@ -135,23 +152,25 @@ export class SupabaseChatScheduledMessageRepository implements IChatScheduledMes
     row: Pick<ChatScheduledMessage, 'id' | 'chapter_id' | 'attempts'>,
     leaseUntil: string,
     now: string,
-  ): Promise<boolean> {
+    dueBy?: string,
+  ): Promise<ChatScheduledMessage | null> {
     const update: TablesUpdate<'chat_scheduled_messages'> = {
       attempts: row.attempts + 1,
       lease_until: leaseUntil,
       updated_at: now,
     };
-    const { data, error } = await this.supabase
+    let query = this.supabase
       .from(TABLE)
       .update(update)
       .eq('chapter_id', row.chapter_id)
       .eq('id', row.id)
       .eq('status', 'pending')
       .eq('attempts', row.attempts)
-      .or(`lease_until.is.null,lease_until.lt."${now}"`)
-      .select('id');
+      .or(`lease_until.is.null,lease_until.lt."${now}"`);
+    if (dueBy) query = query.lte('send_at', dueBy);
+    const { data, error } = await query.select('*').maybeSingle();
     if (error) throw new SupabaseQueryError(error);
-    return (data ?? []).length > 0;
+    return data;
   }
 
   async removeSent(
