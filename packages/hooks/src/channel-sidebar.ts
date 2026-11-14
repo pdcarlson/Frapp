@@ -2,6 +2,7 @@ import {
   categorySectionKey,
   isDirectChannel,
   type SidebarSectionKey,
+  type SidebarSort,
 } from "@repo/validation";
 import type { ChannelSections, GroupableChannel } from "./channel-sections";
 
@@ -53,6 +54,18 @@ export interface ArrangeSidebarInput<C extends SidebarChannelLike> {
   pinnedIds: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
   filters: SidebarFilters;
+  /**
+   * How rows sort inside every section, Pinned included. Absent reads as
+   * `chapter`, the order from before the member could choose.
+   */
+  sort?: SidebarSort;
+  /**
+   * Each channel's latest message time (`GET /v1/channels/latest`), which the
+   * `recent` sort reads; a channel with no entry has no message. `undefined`
+   * means the times are not known yet, and `recent` then draws the chapter's
+   * order, so the list never reads as A to Z on missing data.
+   */
+  latestAtByChannelId?: ReadonlyMap<string, string> | undefined;
   /** The channel open right now, which always shows. */
   activeChannelId: string | null;
   /** The title the row shows, which is also what it sorts by. */
@@ -337,6 +350,8 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     titleOf,
     unreadByChannelId,
     mutedChannelIds,
+    sort = "chapter",
+    latestAtByChannelId,
   } = input;
 
   // The counts the filters and the folded headers read (rows read the
@@ -380,6 +395,23 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
     // Deterministic between two rows that show the same title.
     (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
   const byOrder = compareChannelOrder(titleOf);
+  // The member's sort (#2877). Chapter order keeps Pinned A to Z, since pins
+  // carry no chapter order; the other two sort every section alike.
+  const sortRows = ((): ((isPinned: boolean) => (a: C, b: C) => number) => {
+    if (sort === "alpha") return () => byTitle;
+    if (sort === "recent" && latestAtByChannelId) {
+      const newest = compareLatestFirst<C>(
+        (channel) => latestAtByChannelId.get(channel.id),
+        titleOf,
+      );
+      // `compareLatestFirst` ends on the title; the id keeps two rows with
+      // one time and one title in the same order every render.
+      const byRecent = (a: C, b: C) =>
+        newest(a, b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      return () => byRecent;
+    }
+    return (isPinned) => (isPinned ? byTitle : byOrder);
+  })();
 
   const pinned: C[] = [];
   const rest = sections.map((section) => ({
@@ -404,7 +436,7 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
   ): ArrangedSidebarSection<C> | null => {
     const kept = channels
       .filter((c) => passes(c, isPinned))
-      .sort(isPinned ? byTitle : byOrder);
+      .sort(sortRows(isPinned));
     if (kept.length === 0) return null;
     let unreadCount = 0;
     let mentionCount = 0;
@@ -455,12 +487,30 @@ export function arrangeChannelSidebar<C extends SidebarChannelLike>(
 export const PIN_TO_TOP_LABEL = "Pin to top";
 export const UNPIN_FROM_TOP_LABEL = "Unpin from top";
 
+/** The sort control's name and each answer's label, in the order both clients draw them. */
+export const SORT_CHANNELS_LABEL = "Sort";
+export const SIDEBAR_SORT_OPTIONS: readonly {
+  value: SidebarSort;
+  label: string;
+}[] = [
+  { value: "chapter", label: "Chapter order" },
+  { value: "recent", label: "Recent" },
+  { value: "alpha", label: "A–Z" },
+];
+
 export const UNREAD_ONLY_LABEL = "Unread only";
 export const HIDE_MUTED_LABEL = "Hide muted";
 
-/** The control both clients keep the two filters behind (mobile since 2026-11-06). */
-export const FILTER_CHANNELS_LABEL = "Filter channels";
-export const FILTER_CHANNELS_ON_LABEL = "Filter channels, filters on";
+/**
+ * The control both clients keep the sort and the two filters behind (mobile
+ * since 2026-11-06; the sort joined it in #2877). "Filters on" names only the
+ * filters: a sort shortens nothing, so it lights no dot.
+ */
+export const FILTER_CHANNELS_LABEL = "Sort and filter channels";
+export const FILTER_CHANNELS_ON_LABEL = "Sort and filter channels, filters on";
+/** The same control where it offers no sort: web's Direct messages panel. */
+export const FILTER_ONLY_CHANNELS_LABEL = "Filter channels";
+export const FILTER_ONLY_CHANNELS_ON_LABEL = "Filter channels, filters on";
 
 export const NO_MATCHING_CHANNELS = "No channels match your filters.";
 export const SHOW_ALL_CHANNELS_LABEL = "Show all channels";

@@ -55,3 +55,28 @@ export function isSidebarSectionKey(key: string): key is SidebarSectionKey {
     categoryIdFromSectionKey(key) !== null
   );
 }
+
+/**
+ * How the channels inside each sidebar section sort, the member's own choice
+ * (#2877), stored on `chat_sidebar_preferences.sort`:
+ *
+ * - `chapter`: the chapter's own order (officers drag it, #4178), then A to Z.
+ *   The default.
+ * - `recent`: the newest latest message first (`GET /v1/channels/latest`),
+ *   a channel with no message after every one with one, then A to Z.
+ * - `alpha`: A to Z by the name the row shows.
+ *
+ * The API refuses anything else, and the migration's check holds the same list.
+ */
+export const SIDEBAR_SORTS = ["chapter", "recent", "alpha"] as const;
+
+export type SidebarSort = (typeof SIDEBAR_SORTS)[number];
+
+export const DEFAULT_SIDEBAR_SORT: SidebarSort = "chapter";
+
+export function isSidebarSort(value: unknown): value is SidebarSort {
+  return (
+    typeof value === "string" &&
+    (SIDEBAR_SORTS as readonly string[]).includes(value)
+  );
+}

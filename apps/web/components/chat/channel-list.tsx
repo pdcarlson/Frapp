@@ -21,6 +21,8 @@ import {
   HIDDEN_CONVERSATIONS_LABEL,
   FILTER_CHANNELS_LABEL,
   FILTER_CHANNELS_ON_LABEL,
+  FILTER_ONLY_CHANNELS_LABEL,
+  FILTER_ONLY_CHANNELS_ON_LABEL,
   foldedSectionAnnouncement,
   HIDE_MUTED_LABEL,
   isAddressed,
@@ -29,6 +31,8 @@ import {
   otherMemberId,
   SHOW_ALL_CHANNELS_LABEL,
   sidebarSections,
+  SIDEBAR_SORT_OPTIONS,
+  SORT_CHANNELS_LABEL,
   UNREAD_ONLY_LABEL,
   type DisplayNameMap,
   type MemberAvatarTint,
@@ -36,7 +40,7 @@ import {
   type SidebarPreferences,
   type SidebarUnreadCounts,
 } from "@repo/hooks";
-import type { SidebarSectionKey } from "@repo/validation";
+import type { SidebarSectionKey, SidebarSort } from "@repo/validation";
 import { isDirectChannel } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,6 +51,7 @@ import {
 } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { SegmentedChoice } from "@/components/ui/segmented";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AuditGlyph, LockGlyph, MuteGlyph } from "./chat-glyphs";
@@ -174,6 +179,7 @@ const DEFAULT_PREFERENCES: SidebarPreferences = {
   pinnedIds: new Set(),
   collapsed: new Set(),
   filters: { unreadOnly: false, hideMuted: false },
+  sort: "chapter",
 };
 
 /**
@@ -294,10 +300,12 @@ export interface ChannelListProps {
    */
   kind?: "channels" | "direct";
   /**
-   * Direct messages only: each conversation's latest message time
-   * (`GET /v1/channels/latest`), which orders the list newest first, as the
-   * phone's Messages screen does. Absent until that read answers, when the
-   * list keeps its A–Z order rather than reordering under the pointer twice.
+   * Each conversation's or channel's latest message time
+   * (`GET /v1/channels/latest`). Direct messages always sort by it, newest
+   * first, as the phone's Messages screen does; the channels rail sorts by it
+   * only when the member picked Recent (#2877). Absent until that read
+   * answers, when the list keeps its other order rather than reordering under
+   * the pointer twice.
    */
   latestAt?: ReadonlyMap<string, string>;
   /**
@@ -594,6 +602,10 @@ export function ChannelList({
             )
           : preferences.collapsed,
       filters: preferences.filters,
+      // The member's sort (#2877). The Direct messages panel ignores it and
+      // re-sorts newest first below.
+      sort: preferences.sort,
+      latestAtByChannelId: kind === "channels" ? latestAt : undefined,
       activeChannelId,
       titleOf: titleFor,
       unreadByChannelId,
@@ -636,6 +648,12 @@ export function ChannelList({
   ]);
 
   // ── Drag to reorder (#4178) ──────────────────────────────────────────────
+  // Channel rows drag only while the member sorts by Chapter order (#2877):
+  // under Recent or A–Z the rows aren't drawn in the chapter's order, so a
+  // drop would save an order nobody sees. Categories still draw in the
+  // chapter's order under every sort, so they keep dragging, and an empty
+  // category keeps its heading and its +.
+  const rowsInChapterOrder = preferences.sort === "chapter";
   const [announcement, setAnnouncement] = useState("");
   // Which row or heading to give focus back to once a keyboard move redraws
   // it: React moves the node, and moving a focused node blurs it.
@@ -655,6 +673,7 @@ export function ChannelList({
     ): { position: number; of: number; label: string } | null => {
       if (!reorder) return null;
       if (drag.kind === "channel") {
+        if (!rowsInChapterOrder) return null;
         const section =
           drop.kind === "row" || drop.kind === "header" ? drop.section : null;
         if (!section || !isOrderableSection(section)) return null;
@@ -690,7 +709,7 @@ export function ChannelList({
       reorder.onReorderCategories(next);
       return { position: at + 1, of: next.length, label: "categories" };
     },
-    [reorder, sectionOrder, categories, sectionLabel],
+    [reorder, rowsInChapterOrder, sectionOrder, categories, sectionLabel],
   );
 
   const nameOfDrag = useCallback(
@@ -809,9 +828,13 @@ export function ChannelList({
     const offersHide =
       !!onHide && canHideConversation(channel) && !channel.hidden;
     // A row an officer can drag (#4178): one in the default group or a
-    // category, never Pinned, Direct messages, System or Hidden.
+    // category, never Pinned, Direct messages, System or Hidden, and only
+    // while the rows are drawn in the chapter's order (#2877).
     const draggable =
-      !!reorder && sectionKey !== undefined && isOrderableSection(sectionKey);
+      !!reorder &&
+      rowsInChapterOrder &&
+      sectionKey !== undefined &&
+      isOrderableSection(sectionKey);
     const drag: RailDrag | null = draggable
       ? { kind: "channel", id: channel.id, section: sectionKey }
       : null;
@@ -1455,18 +1478,30 @@ function ChannelMark({
 }
 
 /**
- * The rail's two filters (#2877), behind one control in the Channels header.
+ * The rail's sort and two filters (#2877), behind one control in the Channels
+ * header.
  *
- * A popover of two switches rather than two chips: the channels column is
- * 240px wide and its header already carries the column title. The trigger
- * shows a dot while any filter is on, so a shortened list never reads as a
- * chapter that simply has fewer channels.
+ * A popover rather than chips: the channels column is 240px wide and its
+ * header already carries the column title. The sort is a three-way segmented
+ * control on top, the way Slack's sidebar menu offers "Sort" above its
+ * filters, so the held answer is always in view. The trigger shows a dot
+ * while any filter is on, so a shortened list never reads as a chapter that
+ * simply has fewer channels; a sort shortens nothing, so it lights no dot.
  */
 export function ChannelFilters({
   filters,
+  sort,
+  reorderable = false,
   onChange,
 }: {
   filters: SidebarPreferences["filters"];
+  /** The member's sort. Absent, the popover offers none (the Direct messages panel). */
+  sort?: SidebarSort;
+  /**
+   * The member may drag the rail into the chapter's order, which only works
+   * while they sort by it: the popover says so under any other sort.
+   */
+  reorderable?: boolean;
   onChange: (change: SidebarFilterChange) => void;
 }) {
   const active = filters.unreadOnly || filters.hideMuted;
@@ -1479,7 +1514,15 @@ export function ChannelFilters({
           variant="ghost"
           size="icon"
           className={cn(compactControlClassName, "relative ml-auto")}
-          aria-label={active ? FILTER_CHANNELS_ON_LABEL : FILTER_CHANNELS_LABEL}
+          aria-label={
+            sort
+              ? active
+                ? FILTER_CHANNELS_ON_LABEL
+                : FILTER_CHANNELS_LABEL
+              : active
+                ? FILTER_ONLY_CHANNELS_ON_LABEL
+                : FILTER_ONLY_CHANNELS_LABEL
+          }
         >
           <ListFilter className="h-4 w-4" aria-hidden="true" />
           {active ? (
@@ -1490,7 +1533,30 @@ export function ChannelFilters({
           ) : null}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-60 space-y-3 p-3">
+      <PopoverContent align="end" className="w-64 space-y-3 p-3">
+        {sort ? (
+          <div className="space-y-1.5">
+            <p
+              className="text-caption text-muted-foreground"
+              aria-hidden="true"
+            >
+              {SORT_CHANNELS_LABEL}
+            </p>
+            <SegmentedChoice
+              label={SORT_CHANNELS_LABEL}
+              options={SIDEBAR_SORT_OPTIONS}
+              value={sort}
+              onChange={(next) => onChange({ sort: next })}
+              fill
+              dense
+            />
+            {reorderable && sort !== "chapter" ? (
+              <p className="text-caption text-muted-foreground">
+                Switch to Chapter order to drag channels.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex items-center justify-between gap-3">
           <Label htmlFor={unreadId}>{UNREAD_ONLY_LABEL}</Label>
           <Switch

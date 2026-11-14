@@ -141,6 +141,93 @@ describe("arrangeChannelSidebar", () => {
     });
   });
 
+  // The member's own sort (#2877), on top of the chapter's order.
+  describe("member sort", () => {
+    const ordered = {
+      key: "channels" as const,
+      label: "Channels",
+      channels: [
+        { ...general, display_order: 1 },
+        { ...zeta, display_order: 0 },
+        social,
+        alumni,
+      ],
+    };
+    const latest = new Map([
+      ["social", "2026-11-14T10:00:00.000Z"],
+      ["general", "2026-11-14T12:00:00.000Z"],
+      ["alumni", "2026-11-13T09:00:00.000Z"],
+      ["exec", "2026-11-14T11:00:00.000Z"],
+    ]);
+
+    it("A–Z ignores the chapter's order", () => {
+      const result = arrange({ sections: [ordered], sort: "alpha" });
+      expect(layout(result)).toEqual([
+        "channels: alumni, general, social, zeta",
+      ]);
+    });
+
+    it("Recent puts the newest latest message first, a channel with none last", () => {
+      const result = arrange({
+        sections: [ordered],
+        sort: "recent",
+        latestAtByChannelId: latest,
+      });
+      expect(layout(result)).toEqual([
+        "channels: general, social, alumni, zeta",
+      ]);
+    });
+
+    it("Recent sorts Pinned by activity too", () => {
+      const result = arrange({
+        sort: "recent",
+        latestAtByChannelId: latest,
+        pinnedIds: new Set(["alumni", "exec", "zeta"]),
+      });
+      expect(layout(result)[0]).toBe("pinned: exec, alumni, zeta");
+    });
+
+    it("Recent draws the chapter's order until the times are known", () => {
+      const result = arrange({
+        sections: [ordered],
+        sort: "recent",
+        latestAtByChannelId: undefined,
+      });
+      expect(layout(result)).toEqual([
+        "channels: zeta, general, alumni, social",
+      ]);
+    });
+
+    it("no sort reads as the chapter's order", () => {
+      expect(layout(arrange({ sections: [ordered] }))).toEqual(
+        layout(arrange({ sections: [ordered], sort: "chapter" })),
+      );
+    });
+
+    it("Unread only still applies under Recent", () => {
+      const result = arrange({
+        sections: [ordered],
+        sort: "recent",
+        latestAtByChannelId: latest,
+        filters: { unreadOnly: true, hideMuted: false },
+        unreadByChannelId: counts({ zeta: [2, 0], alumni: [1, 0] }),
+      });
+      expect(layout(result)).toEqual(["channels: alumni, zeta"]);
+    });
+
+    it("a muted channel's quiet unread is dropped by Unread only under any sort", () => {
+      const result = arrange({
+        sections: [ordered],
+        sort: "alpha",
+        filters: { unreadOnly: true, hideMuted: false },
+        unreadByChannelId: counts({ zeta: [2, 0], alumni: [1, 1] }),
+        mutedChannelIds: new Set(["zeta", "alumni"]),
+      });
+      // alumni's mention gets past the mute; zeta's plain unread does not.
+      expect(layout(result)).toEqual(["channels: alumni"]);
+    });
+  });
+
   describe("pinned", () => {
     it("moves pinned rows into a Pinned section on top, sorted the same way", () => {
       const result = arrange({ pinnedIds: new Set(["zeta", "dm-m", "exec"]) });

@@ -1898,7 +1898,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Switch the sidebar filters. A filter left out keeps its stored value. */
+        /** Switch the sidebar filters or sort. A setting left out keeps its stored value. */
         patch: operations["ChatSidebarController_updateSidebar_v1"];
         trace?: never;
     };
@@ -7175,11 +7175,18 @@ export interface components {
             blocked_user_id: string;
             created_at: string;
         };
+        /**
+         * @description How channels sort inside each section: chapter (the chapter's own order, then A to Z; the default), recent (newest latest message first) or alpha (A to Z by the name the row shows).
+         * @enum {string}
+         */
+        ChatSidebarSort: "chapter" | "recent" | "alpha";
         ChatSidebarDto: {
             /** @description Show only channels with something unread, a mention included. Pinned channels and the open channel still show. */
             unread_only: boolean;
             /** @description Leave out channels whose notification level is off. A muted channel with an unread @-mention still shows. */
             hide_muted: boolean;
+            /** @description How channels sort inside each section: chapter (the chapter's own order, then A to Z; the default), recent (newest latest message first) or alpha (A to Z by the name the row shows). */
+            sort: components["schemas"]["ChatSidebarSort"];
             /** @description Section keys the member folded: pinned, channels, direct, system, or category:<uuid>. */
             collapsed_sections: string[];
             /** @description Channels the member pinned to the top, limited to channels they can still read. Carries no order: the sidebar sorts the Pinned section like any other. */
@@ -7188,6 +7195,7 @@ export interface components {
         UpdateChatSidebarDto: {
             unread_only?: boolean;
             hide_muted?: boolean;
+            sort?: components["schemas"]["ChatSidebarSort"];
         };
         FollowedThreadDto: {
             /** Format: uuid */

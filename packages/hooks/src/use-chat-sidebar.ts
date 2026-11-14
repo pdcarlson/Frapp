@@ -8,7 +8,12 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
-import type { SidebarSectionKey } from "@repo/validation";
+import {
+  DEFAULT_SIDEBAR_SORT,
+  isSidebarSort,
+  type SidebarSectionKey,
+  type SidebarSort,
+} from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import type { SidebarFilters } from "./channel-sidebar";
@@ -57,12 +62,14 @@ export interface SidebarPreferences {
   pinnedIds: ReadonlySet<string>;
   collapsed: ReadonlySet<string>;
   filters: SidebarFilters;
+  sort: SidebarSort;
 }
 
 const NO_PREFERENCES: SidebarPreferences = {
   pinnedIds: new Set(),
   collapsed: new Set(),
   filters: { unreadOnly: false, hideMuted: false },
+  sort: DEFAULT_SIDEBAR_SORT,
 };
 
 /**
@@ -84,6 +91,8 @@ export function useSidebarPreferences(): SidebarPreferences {
               unreadOnly: data.unread_only,
               hideMuted: data.hide_muted,
             },
+            // A cached answer from an API older than the sort has none.
+            sort: isSidebarSort(data.sort) ? data.sort : DEFAULT_SIDEBAR_SORT,
           }
         : NO_PREFERENCES,
     [data],
@@ -210,12 +219,13 @@ function useSidebarWrite<TVars>(
   });
 }
 
-/** What a filter write sends: either filter, or both. */
+/** What a filter write sends: a filter, the sort, or several at once. */
 export type SidebarFilterChange =
-  | { unread_only: boolean; hide_muted?: boolean }
-  | { unread_only?: boolean; hide_muted: boolean };
+  | { unread_only: boolean; hide_muted?: boolean; sort?: SidebarSort }
+  | { unread_only?: boolean; hide_muted: boolean; sort?: SidebarSort }
+  | { unread_only?: boolean; hide_muted?: boolean; sort: SidebarSort };
 
-/** Switch one filter, or both. A filter left out keeps its stored value. */
+/** Change a filter or the sort. A setting left out keeps its stored value. */
 export function useSetSidebarFilter(options?: SidebarWriteOptions) {
   const client = useFrappClient();
   return useSidebarWrite(
