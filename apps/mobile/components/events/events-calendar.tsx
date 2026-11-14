@@ -99,14 +99,15 @@ export function EventsCalendar({
    */
   emptyNote?: string | null;
   /**
-   * The member's tasks and the ones they assigned, by due day, narrowed to
-   * the kinds switched on (#4144). Listed under the day's events.
+   * Everything that isn't an event, by day, narrowed to the kinds switched
+   * on: the member's tasks and the ones they assigned (#4144), and members'
+   * shared birthdays (#4959). Listed under the day's events.
    */
   tasksByDay?: Map<string, CalendarItem[]>;
   nameOf?: (userId: string) => string;
   /** The member's own task, opened on the task board. */
   onOpenTask?: (taskId: string) => void;
-  /** The Events / My tasks / Assigned by me chips, under the month. */
+  /** The Events / My tasks / Assigned by me / Birthdays chips, under the month. */
   layerChips?: ReactNode;
   /** Month, 3 days or Day; the switch shows only with `onRangeChange`. */
   range?: CalendarRange;
@@ -336,17 +337,15 @@ export function EventsCalendar({
                             />
                           ) : null}
                           {birthdayCount > 0 ? (
-                            // A birthday (#4959): a filled square, apart
-                            // from an event's dot and a task's ring.
+                            // A birthday (#4959): a square in the chapter
+                            // accent, apart from an event's grey dot and a
+                            // task's ring by colour as well as shape.
                             <View
                               testID={`birthday-mark-${key}`}
                               style={[
                                 styles.dot,
                                 styles.birthdayMark,
-                                {
-                                  backgroundColor:
-                                    tokens.color.text.mutedForeground,
-                                },
+                                { backgroundColor: accent },
                               ]}
                             />
                           ) : null}

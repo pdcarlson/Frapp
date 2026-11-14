@@ -87,14 +87,14 @@ type EventsCalendarProps = {
   view: CalendarView;
   onViewChange: (next: CalendarView) => void;
   /**
-   * The viewer's tasks and the tasks they assigned, by due day, already
-   * narrowed to the kinds switched on (#4144). A day lists them after its
-   * events.
+   * Everything that isn't an event, by day, already narrowed to the kinds
+   * switched on: the viewer's tasks and the tasks they assigned (#4144), and
+   * members' shared birthdays (#4959). A day lists them after its events.
    */
   tasksByDay?: Map<string, CalendarItem[]>;
   /** A member's name, for who assigned a task and who it went to. */
   nameOf?: (userId: string) => string;
-  /** The Events / My tasks / Assigned by me toggles, under the month. */
+  /** The Events / My tasks / Assigned by me / Birthdays toggles, under the month. */
   layerToggles?: ReactNode;
 };
 
@@ -102,7 +102,7 @@ const NO_TASKS = new Map<string, CalendarItem[]>();
 const fallbackName = () => "A member";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-/** Events and tasks together: a busy day shows three, then "+N more". */
+/** Events, tasks and birthdays together: a busy day shows three, then "+N more". */
 const MAX_VISIBLE_EVENTS_PER_DAY = 3;
 /**
  * Below this calendar width the month goes compact (#4022): a day cell is

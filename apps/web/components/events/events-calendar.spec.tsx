@@ -555,10 +555,13 @@ describe("EventsCalendar with birthdays (#4959)", () => {
     stubCalendarWidth(360);
     renderWithBirthdays();
 
-    expect(
-      screen.getByRole("button", {
-        name: /November 12, no events, 1 birthday/,
-      }),
-    ).toBeInTheDocument();
+    const day = screen.getByRole("button", {
+      name: /November 12, no events, 1 birthday/,
+    });
+    fireEvent.click(day);
+    // Listed under the picked day, as a birthday rather than an event.
+    expect(screen.getByTitle("Dana Lowe's birthday")).toHaveTextContent(
+      "Birthday",
+    );
   });
 });

@@ -8,6 +8,7 @@ import { EVENTS_COPY, eventsCount } from "@repo/validation";
 import {
   useActiveChapterId,
   useCalendarBirthdays,
+  useMemberBirthdays,
   useCalendarTasks,
   useChapterRoster,
   useEvents,
@@ -19,6 +20,7 @@ import {
   ALL_CALENDAR_LAYERS,
   calendarTasksByDay,
   parseCalendarLayers,
+  serializeCalendarLayers,
   type CalendarLayer,
 } from "@repo/hooks/calendar-tasks";
 import { memberLabel } from "@repo/hooks/display-names";
@@ -209,12 +211,14 @@ export default function EventsScreen() {
     const next = new Set(shownLayers);
     if (next.has(layer)) next.delete(layer);
     else next.add(layer);
-    setCalendarLayersRaw(JSON.stringify([...next]));
+    setCalendarLayersRaw(serializeCalendarLayers(next));
   }
 
   // The same read `useCalendarTasks` draws from, so a pull refreshes both.
   const tasksQuery = useTasks();
-  const refresh = useRefetchAll([eventsQuery, tasksQuery]);
+  // The birthdays read too (#4959): a pull shows a birthday someone just shared.
+  const birthdaysQuery = useMemberBirthdays();
+  const refresh = useRefetchAll([eventsQuery, tasksQuery, birthdaysQuery]);
 
   function openEvent(eventId: string) {
     // Object form, because s07 now takes a param. Covered by the `pathname:`

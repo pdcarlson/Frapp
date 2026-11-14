@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calendarBirthdayLabel,
+  calendarBirthdayYears,
   selectCalendarBirthdays,
 } from "./calendar-birthdays";
 import {
@@ -46,6 +47,22 @@ describe("selectCalendarBirthdays (#4959)", () => {
       selectCalendarBirthdays([{ ...dana, display_name: " " }], [2026]),
     ).toEqual([]);
     expect(selectCalendarBirthdays(undefined, [2026])).toEqual([]);
+  });
+
+  it("covers a week that crosses New Year from either side", () => {
+    const jan2 = { ...dana, birthday_month: 1, birthday_day: 2 };
+    const dec30 = { ...dana, birthday_month: 12, birthday_day: 30 };
+    // A week of 28 Dec 2026 – 3 Jan 2027, anchored in December or January.
+    const fromDecember = selectCalendarBirthdays(
+      [jan2],
+      calendarBirthdayYears(2026),
+    ).map((item) => item.day);
+    const fromJanuary = selectCalendarBirthdays(
+      [dec30],
+      calendarBirthdayYears(2027),
+    ).map((item) => item.day);
+    expect(fromDecember).toContain("2027-01-02");
+    expect(fromJanuary).toContain("2026-12-30");
   });
 
   it("says whose birthday it is", () => {

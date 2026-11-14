@@ -100,7 +100,16 @@ export function useCalendarBirthdays(anchor: Date): CalendarBirthday[] {
   const query = useMemberBirthdays();
   const year = anchor.getFullYear();
   return useMemo(
-    () => selectCalendarBirthdays(query.data, [year - 1, year, year + 1]),
+    () => selectCalendarBirthdays(query.data, calendarBirthdayYears(year)),
     [query.data, year],
   );
+}
+
+/**
+ * The years a calendar on `year` draws birthdays for: that one and its
+ * neighbours, so a Week or a month grid that crosses New Year shows both
+ * sides.
+ */
+export function calendarBirthdayYears(year: number): number[] {
+  return [year - 1, year, year + 1];
 }

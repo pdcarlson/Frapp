@@ -53,22 +53,62 @@ export const ALL_CALENDAR_LAYERS: ReadonlySet<CalendarLayer> = new Set(
   CALENDAR_LAYERS.map((layer) => layer.value),
 );
 
-/** Reads a stored layer list back, keeping only names it knows. */
+/**
+ * Layers added after the stored list was a list of what's shown: a list saved
+ * before one existed can't name it, so it reads as on (#4959).
+ */
+const LAYERS_ADDED_SINCE_SHOWN_LISTS: readonly CalendarLayer[] = ["birthdays"];
+
+/**
+ * Reads the stored layer choice back as the layers to show, keeping only
+ * names it knows; `null` when nothing (or nothing readable) is stored.
+ *
+ * Stored as `{ "hidden": [...] }` since #4959, so a layer added later starts
+ * on for everyone, as a new calendar does in Google Calendar. A bare array is
+ * the older form, the shown layers, and gains the layers added since.
+ */
 export function parseCalendarLayers(
   raw: string | null | undefined,
 ): Set<CalendarLayer> | null {
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    return new Set(
-      parsed.filter((value): value is CalendarLayer =>
-        ALL_CALENDAR_LAYERS.has(value as CalendarLayer),
-      ),
-    );
+    if (Array.isArray(parsed)) {
+      const shown = new Set(knownLayers(parsed));
+      for (const layer of LAYERS_ADDED_SINCE_SHOWN_LISTS) shown.add(layer);
+      return shown;
+    }
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      Array.isArray((parsed as { hidden?: unknown }).hidden)
+    ) {
+      const hidden = new Set(
+        knownLayers((parsed as { hidden: unknown[] }).hidden),
+      );
+      return new Set(
+        [...ALL_CALENDAR_LAYERS].filter((layer) => !hidden.has(layer)),
+      );
+    }
+    return null;
   } catch {
     return null;
   }
+}
+
+/** The stored form of `shown`: the layers it hides. */
+export function serializeCalendarLayers(
+  shown: ReadonlySet<CalendarLayer>,
+): string {
+  return JSON.stringify({
+    hidden: [...ALL_CALENDAR_LAYERS].filter((layer) => !shown.has(layer)),
+  });
+}
+
+function knownLayers(values: unknown[]): CalendarLayer[] {
+  return values.filter((value): value is CalendarLayer =>
+    ALL_CALENDAR_LAYERS.has(value as CalendarLayer),
+  );
 }
 
 export interface CalendarTaskAssignee {
