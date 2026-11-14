@@ -59,11 +59,7 @@ export function OpsSetupNudge() {
     chapterId: activeChapterId,
     enabled: !!activeChapterId,
   });
-  const enabledModules = (
-    currentChapter.data as
-      | { enabled_modules?: Record<string, boolean> | null }
-      | undefined
-  )?.enabled_modules ?? undefined;
+  const enabledModules = currentChapter.data?.enabled_modules;
   // No `chapterId` argument: the hook reads the active chapter itself and
   // already disables the query until one resolves.
   const { data: permissionsPayload } = useMyPermissions();
