@@ -14,6 +14,10 @@ import {
   useScheduleMessage,
 } from "@repo/hooks";
 import type { MentionPick } from "@repo/validation";
+import {
+  attachmentRequestBody,
+  type OutboxAttachment,
+} from "@repo/chat-core/adapters";
 import { scheduledLine } from "@/lib/chat/schedule-send";
 import { ScheduleSendSheet } from "./schedule-send-sheet";
 import { ScheduledMessagesSheet } from "./scheduled-messages-sheet";
@@ -42,6 +46,11 @@ import { ScheduledMessagesSheet } from "./scheduled-messages-sheet";
  * to be sent a second time. Back on a refusal, into the composer when the
  * channel is still on screen, or into that channel's saved draft when it
  * isn't; either way only where nothing new was typed.
+ *
+ * **Photos and the reply go with it (#4971)**, as the long press found them:
+ * photos already uploaded (the refusal holds one still uploading), and the
+ * staged reply. They leave the tray and the strip only once it is scheduled
+ * (`onScheduled`), so a refusal leaves them where they were.
  */
 export function useScheduleSend({
   channelId,
@@ -52,6 +61,9 @@ export function useScheduleSend({
   picksFor,
   setDraft,
   restoreDraftFor,
+  photos = [],
+  replyToId = null,
+  onScheduled,
 }: {
   channelId: string | null;
   /** The member may post here: not the audit log, not off a who-can-post list. */
@@ -65,6 +77,16 @@ export function useScheduleSend({
   /** Sets the draft of the channel on screen. */
   setDraft: (body: string) => void;
   restoreDraftFor: (channelId: string, body: string) => void;
+  /** The tray's photos; only uploaded ones are scheduled (`refusal` holds the rest). */
+  photos?: readonly { key: string; attachment: OutboxAttachment | null }[];
+  /** The staged reply's message, or `null`. */
+  replyToId?: string | null;
+  /** Scheduled: take these photos out of the tray, and this reply off the strip. */
+  onScheduled?: (scheduled: {
+    channelId: string;
+    photoKeys: string[];
+    replyToId: string | null;
+  }) => void;
 }): {
   openSchedule: (() => void) | undefined;
   scheduled: { label: string; failed: number; onOpen: () => void } | null;
@@ -80,6 +102,9 @@ export function useScheduleSend({
   const [target, setTarget] = useState<{
     channelId: string;
     text: string;
+    photoKeys: string[];
+    attachments: OutboxAttachment[];
+    replyToId: string | null;
     refusal: string | null;
     openedAt: Date;
   } | null>(null);
@@ -93,14 +118,18 @@ export function useScheduleSend({
   const openSchedule = useCallback(() => {
     if (!channelId) return;
     Keyboard.dismiss();
+    const uploaded = photos.filter((photo) => photo.attachment !== null);
     setTarget({
       channelId,
       text: draft.trim(),
+      photoKeys: uploaded.map((photo) => photo.key),
+      attachments: uploaded.map((photo) => photo.attachment!),
+      replyToId,
       refusal,
       openedAt: new Date(),
     });
     scheduleRef.current?.present();
-  }, [channelId, draft, refusal]);
+  }, [channelId, draft, photos, refusal, replyToId]);
 
   const openList = useCallback(() => {
     Keyboard.dismiss();
@@ -121,6 +150,8 @@ export function useScheduleSend({
           content: target.text,
           sendAt: at,
           mentionPicks: picksFor(target.text),
+          attachments: target.attachments.map(attachmentRequestBody),
+          replyToId: target.replyToId,
         });
       } catch (error) {
         if (cleared) {
@@ -133,11 +164,16 @@ export function useScheduleSend({
         }
         throw error;
       }
+      onScheduled?.({
+        channelId: target.channelId,
+        photoKeys: target.photoKeys,
+        replyToId: target.replyToId,
+      });
       AccessibilityInfo.announceForAccessibility(
         `Scheduled for ${formatScheduledFor(at, new Date())}`,
       );
     },
-    [create, picksFor, restoreDraftFor, setDraft, target],
+    [create, onScheduled, picksFor, restoreDraftFor, setDraft, target],
   );
 
   // Leaving the channel closes both, as the + sheet's forms close.
@@ -157,7 +193,7 @@ export function useScheduleSend({
     <>
       <ScheduleSendSheet
         ref={scheduleRef}
-        preview={target?.text ?? ""}
+        preview={target ? schedulePreview(target) : ""}
         refusal={target?.refusal ?? null}
         openedAt={target?.openedAt ?? null}
         onSchedule={schedule}
@@ -171,4 +207,11 @@ export function useScheduleSend({
     scheduled: line ? { ...line, onOpen: openList } : null,
     sheets,
   };
+}
+
+/** The sheet's line for what is being scheduled: the text, else its photos. */
+function schedulePreview(target: { text: string; attachments: unknown[] }) {
+  if (target.text) return target.text;
+  const count = target.attachments.length;
+  return count === 1 ? "1 photo" : count > 1 ? `${count} photos` : "";
 }

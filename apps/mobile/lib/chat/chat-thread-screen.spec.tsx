@@ -868,7 +868,7 @@ describe("chat thread in the audit log", () => {
     act(() => tree.unmount());
   });
 
-  it("hands Schedule message the reason a staged photo can't be scheduled (#4956)", () => {
+  it("hands Schedule message the reason a photo still uploading can't be scheduled (#4971)", () => {
     channel = channelState({
       draft: "Chapter at 8",
       photos: [
@@ -886,7 +886,7 @@ describe("chat thread in the audit log", () => {
     const tree = render();
     act(() => tree.root.findByType(ChatComposer).props.onSchedule());
     expect(tree.root.findByType(ScheduleSendSheet).props.refusal).toMatch(
-      /^Photos can't be scheduled yet/,
+      /^Wait for your photos/,
     );
     expect(tree.root.findByType(ScheduleSendSheet).props.preview).toBe(
       "Chapter at 8",

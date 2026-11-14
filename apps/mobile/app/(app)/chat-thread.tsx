@@ -1,6 +1,13 @@
 import { firstParam } from "@/lib/route-params";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   useFocusEffect,
   useIsFocused,
@@ -1595,6 +1602,30 @@ function ChannelThreadScreen() {
     onPhoto: handleAttach,
   });
 
+  // The channel and reply on screen when a schedule settles, which may not
+  // be the ones it was opened on.
+  const scheduledReplyRef = useRef({
+    channelId,
+    replyToId: staging.replyToId,
+  });
+  useLayoutEffect(() => {
+    scheduledReplyRef.current = { channelId, replyToId: staging.replyToId };
+  }, [channelId, staging.replyToId]);
+  const cancelReply = replyContext?.onCancel;
+  const handleScheduled = useCallback(
+    (done: {
+      channelId: string;
+      photoKeys: string[];
+      replyToId: string | null;
+    }) => {
+      const shown = scheduledReplyRef.current;
+      if (shown.channelId !== done.channelId) return;
+      for (const key of done.photoKeys) removePhoto(key);
+      if (done.replyToId && shown.replyToId === done.replyToId) cancelReply?.();
+    },
+    [cancelReply, removePhoto],
+  );
+
   // Scheduling the draft to post later (#4956): a long press on Send, and
   // the line above the composer that opens the member's Scheduled list.
   // Scheduling needs posting here; the list of what the member scheduled
@@ -1608,14 +1639,18 @@ function ChannelThreadScreen() {
     draft,
     refusal: scheduleRefusal({
       text: draft,
-      photos: photos.length,
-      replying: replyContext !== null,
+      photos,
       asksFrapp: namesFrapp(draft),
       writeBlocked: writeBlockedReason,
     }),
     picksFor: staging.picksFor,
     setDraft,
     restoreDraftFor,
+    // The photos and the reply go with it (#4971), and leave the tray and
+    // the strip once it is scheduled, if they are still the ones on screen.
+    photos,
+    replyToId: staging.replyToId,
+    onScheduled: handleScheduled,
   });
 
   const notificationPrefsQuery = useChannelNotificationPreferences();

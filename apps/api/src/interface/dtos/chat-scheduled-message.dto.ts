@@ -154,6 +154,7 @@ export class ScheduledMessageDto {
   attachments: ScheduledAttachmentDto[];
 
   @ApiProperty({
+    type: String,
     format: 'uuid',
     nullable: true,
     description: 'The message it quotes.',
@@ -161,6 +162,7 @@ export class ScheduledMessageDto {
   reply_to_id: string | null;
 
   @ApiProperty({
+    type: String,
     format: 'uuid',
     nullable: true,
     description: 'The thread it posts into.',

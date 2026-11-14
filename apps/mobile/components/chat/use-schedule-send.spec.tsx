@@ -115,7 +115,64 @@ describe("useScheduleSend", () => {
       content: "@Jane chapter is at 8",
       sendAt: at,
       mentionPicks: [JANE],
+      attachments: [],
+      replyToId: null,
     });
+  });
+
+  it("schedules uploaded photos and the reply, clearing them once scheduled (#4971)", async () => {
+    mutateAsync.mockResolvedValue({});
+    const onScheduled = vi.fn();
+    const photo = {
+      storagePath: "chapters/c/chat/general/a/IMG_1.jpg",
+      filename: "IMG_1.jpg",
+      contentType: "image/jpeg",
+      width: 4,
+      height: 3,
+    };
+    const { out, sheet } = setup({
+      draft: "",
+      photos: [{ key: "p1", attachment: photo }],
+      replyToId: "m-1",
+      onScheduled,
+    });
+    act(() => out.current!.openSchedule!());
+    expect(sheet().props.preview).toBe("1 photo");
+    const at = new Date(Date.now() + 3_600_000);
+    await act(() => sheet().props.onSchedule(at));
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: "",
+        replyToId: "m-1",
+        attachments: [
+          expect.objectContaining({
+            storage_path: photo.storagePath,
+            filename: "IMG_1.jpg",
+            content_type: "image/jpeg",
+            width: 4,
+            height: 3,
+          }),
+        ],
+      }),
+    );
+    expect(onScheduled).toHaveBeenCalledWith({
+      channelId: "general",
+      photoKeys: ["p1"],
+      replyToId: "m-1",
+    });
+  });
+
+  it("leaves the photos and the reply when the API refuses it (#4971)", async () => {
+    mutateAsync.mockRejectedValue(new Error("refused"));
+    const onScheduled = vi.fn();
+    const { out, sheet } = setup({ replyToId: "m-1", onScheduled });
+    act(() => out.current!.openSchedule!());
+    await act(() =>
+      sheet()
+        .props.onSchedule(new Date(Date.now() + 3_600_000))
+        .catch(() => {}),
+    );
+    expect(onScheduled).not.toHaveBeenCalled();
   });
 
   it("puts the draft back when the API refuses it", async () => {
@@ -177,6 +234,9 @@ describe("useScheduleSend", () => {
         channel_id: "general",
         content: "Dues Friday",
         mention_picks: null,
+        attachments: [],
+        reply_to_id: null,
+        thread_root_id: null,
         send_at: new Date().toISOString(),
         status: "failed",
         failure_reason: "no_access",

@@ -3120,6 +3120,7 @@ describe("Composer schedule (#4956)", () => {
     const { editor, onSchedule } = await scheduleText("Chapter at 8");
     expect(onSchedule).toHaveBeenCalledWith(
       "Chapter at 8",
+      [],
       expect.any(Array),
       expect.any(Date),
     );
@@ -3133,15 +3134,6 @@ describe("Composer schedule (#4956)", () => {
 
   it.each([
     ["a slash command", '/poll "Formal?" Yes No', {}, /Commands/],
-    [
-      "a reply",
-      "sounds good",
-      {
-        replyTo: { id: "m-1", author: "A", preview: "x" },
-        onCancelReply: vi.fn(),
-      },
-      /Replies/,
-    ],
     ["offline", "later", { isOffline: true }, /Reconnect/],
     [
       "a question for Frapp",
@@ -3159,6 +3151,56 @@ describe("Composer schedule (#4956)", () => {
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: expect.stringMatching(copy) }),
     );
+  });
+
+  it("schedules with a reply staged, leaving the reply to the parent (#4971)", async () => {
+    const onCancelReply = vi.fn();
+    const { onSchedule } = await scheduleText("sounds good", {
+      replyTo: { id: "m-1", author: "A", preview: "x" },
+      onCancelReply,
+    });
+    expect(onSchedule).toHaveBeenCalledWith(
+      "sounds good",
+      [],
+      expect.any(Array),
+      expect.any(Date),
+    );
+  });
+
+  it("schedules a staged file with no text, and clears the tray (#4971)", async () => {
+    const editor = fakeEditor("");
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    const onSchedule = vi.fn(async () => {});
+    const { container } = render(
+      <Composer {...baseProps({ draft: "", onSchedule })} />,
+    );
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await screen.findByRole("button", { name: "Remove notes.pdf" });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+    );
+    expect(onSchedule).toHaveBeenCalledWith(
+      "",
+      [expect.objectContaining({ filename: "notes.pdf" })],
+      expect.any(Array),
+      expect.any(Date),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Remove notes.pdf" }),
+    ).not.toBeInTheDocument();
   });
 
   it("schedules text that only starts with a slash, as Send posts it", async () => {

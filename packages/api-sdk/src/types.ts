@@ -7326,12 +7326,12 @@ export interface components {
              * Format: uuid
              * @description The message it quotes.
              */
-            reply_to_id: Record<string, never> | null;
+            reply_to_id: string | null;
             /**
              * Format: uuid
              * @description The thread it posts into.
              */
-            thread_root_id: Record<string, never> | null;
+            thread_root_id: string | null;
             /** Format: date-time */
             send_at: string;
             /**
