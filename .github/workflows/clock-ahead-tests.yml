@@ -5,9 +5,9 @@ name: Clock-ahead tests
 # A test that reads the wall clock passes the day it merges and fails on some
 # later day with no commit to blame; PR CI tests each PR merged with main, so
 # that morning every open PR goes red. Two did on 2026-11-14 (dev-log and the
-# chat scheduled-message sweep specs). This runs the suites `api-tests` in
-# ci.yml runs, under libfaketime 7 days ahead, so such a test fails here up to a
-# week early, and raises one `incident` alert, which emails the owner. When it
+# chat scheduled-message sweep specs). This runs the three suites `api-tests`
+# in ci.yml runs (unit, E2E, AI evals) under libfaketime 7 days ahead, so such
+# a test fails here up to a week early, and raises one `incident` alert, which emails the owner. When it
 # fires and clears: docs/ops/alert-routing.md.
 #
 # Two jobs, so the one that installs dependencies and runs test code holds no
@@ -42,8 +42,9 @@ jobs:
   tests:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    # ci.yml's api-tests budget, plus the libfaketime install.
-    timeout-minutes: 25
+    # Three suites, each stopped by the script at 15 minutes if it hangs, plus
+    # install, package build and the libfaketime install.
+    timeout-minutes: 60
     outputs:
       result: ${{ steps.run.outputs.result }}
     steps:
@@ -72,9 +73,10 @@ jobs:
 
   alert:
     needs: tests
-    # Also when `tests` failed or was cancelled: no result is no verdict, and
-    # that raises rather than looking like a quiet night.
-    if: always() && github.ref == 'refs/heads/main'
+    # Also when `tests` failed or timed out: no result is no verdict, and that
+    # raises rather than looking like a quiet night. Not when a person
+    # cancelled the run on purpose (ci.yml's `!cancelled()` for the same reason).
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

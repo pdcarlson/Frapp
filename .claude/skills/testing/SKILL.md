@@ -158,7 +158,7 @@ stubbed, so it needs no live services or secrets.
 
 Pin every clock a spec's code reads: pass a fixed `now`, or `jest.useFakeTimers({ now })`. A spec
 that falls through to `Date.now()` passes the day it merges and reds every PR on some later day.
-`clock-ahead-tests.yml` runs both API suites nightly a week ahead and alerts on one; reproduce
+`clock-ahead-tests.yml` runs the API suites nightly a week ahead and alerts on one; reproduce
 with `faketime -f +7d npm run test -w apps/api -- <spec>` (`apt-get install faketime`).
 
 ## Contract and migration checks

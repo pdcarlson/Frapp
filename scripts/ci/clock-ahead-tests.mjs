@@ -10,7 +10,7 @@
 // sweep's budget clock left at `Date.now`). Each PR's session then patched the
 // same spec on its own branch, and the copies conflicted.
 //
-// This runs the same API suites PR CI runs (`api-tests` in ci.yml), under
+// This runs the three API suites PR CI runs (`api-tests` in ci.yml), under
 // libfaketime with the clock OFFSET_DAYS ahead, so a test like that fails here
 // up to a week before it fails on main, and raises one `incident` alert, which
 // emails the owner as the assignee. Against the two specs as they were before
@@ -48,7 +48,7 @@
 // (`npm run test:ci-scripts`).
 
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
@@ -63,11 +63,18 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 /** How far ahead the clock runs. A test that will break within this many days fails tonight. */
 export const OFFSET_DAYS = 7;
 
-/** The API suites `api-tests` in ci.yml runs, by their apps/api npm script. */
+/**
+ * The three suites `api-tests` in ci.yml runs, by their apps/api npm script,
+ * each with the env that job gives it. A test pins this list to ci.yml both ways.
+ */
 export const SUITES = [
-  { name: "API unit tests", script: "test" },
-  { name: "API E2E tests", script: "test:e2e" },
+  { name: "API unit tests", script: "test", env: {} },
+  { name: "API E2E tests", script: "test:e2e", env: {} },
+  { name: "API AI evals", script: "test:ai-evals", env: { AI_EVALS_REQUIRE_AGENT: "1" } },
 ];
+
+/** A suite still running after this long is stopped and reported, inside the job's budget. */
+export const SUITE_TIMEOUT_MS = 15 * 60_000;
 
 /** How many failing tests an alert lists. The run log has the rest. */
 export const MAX_LISTED_FAILURES = 30;
@@ -146,45 +153,90 @@ export function outputTail(text, limit = OUTPUT_TAIL_LINES) {
   return lines.length > limit ? `… ${lines.length - limit} earlier lines in the run log\n${kept}` : kept;
 }
 
+/** Keeps only the last `max` characters it is given: enough for an alert's tail, never the whole log. */
+function tailBuffer(max = 64 * 1024) {
+  let text = "";
+  return {
+    push(chunk) {
+      text = (text + chunk).slice(-max);
+    },
+    get text() {
+      return text;
+    },
+  };
+}
+
+/**
+ * Run one suite under faketime, streaming its output live so a hung suite's
+ * log still shows where it stopped, and stopping it at SUITE_TIMEOUT_MS. A
+ * timed-out or killed suite has status null, which reads as failed.
+ */
 function defaultRunSuite(suite, outputFile) {
-  const result = spawnSync(
-    "faketime",
-    faketimeArgs(["npm", "run", suite.script, "-w", "apps/api", "--", "--ci", "--json", `--outputFile=${outputFile}`]),
-    { cwd: ROOT, encoding: "utf8", env: faketimeEnv(), maxBuffer: 256 * 1024 * 1024 },
-  );
-  // Streamed after the fact, so the run log reads like ci.yml's.
-  process.stdout.write(result.stdout ?? "");
-  process.stderr.write(result.stderr ?? "");
-  let report = null;
-  try {
-    report = JSON.parse(readFileSync(outputFile, "utf8"));
-  } catch {
-    // No report: jest crashed before writing one. The exit code and output say why.
-  }
-  return { status: result.status, output: `${result.stdout ?? ""}\n${result.stderr ?? ""}`, report };
+  return new Promise((resolve) => {
+    const tail = tailBuffer();
+    const child = spawn(
+      "faketime",
+      faketimeArgs(["npm", "run", suite.script, "-w", "apps/api", "--", "--ci", "--json", `--outputFile=${outputFile}`]),
+      { cwd: ROOT, env: faketimeEnv({ ...process.env, ...suite.env }), stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const timer = setTimeout(() => {
+      tail.push(`\n[clock-ahead-tests] ${suite.name} still running after ${SUITE_TIMEOUT_MS / 60_000} minutes; stopped.\n`);
+      child.kill("SIGKILL");
+    }, SUITE_TIMEOUT_MS);
+    child.stdout.on("data", (chunk) => {
+      process.stdout.write(chunk);
+      tail.push(chunk.toString());
+    });
+    child.stderr.on("data", (chunk) => {
+      process.stderr.write(chunk);
+      tail.push(chunk.toString());
+    });
+    const finish = (status, extra = "") => {
+      clearTimeout(timer);
+      if (extra) tail.push(extra);
+      let report = null;
+      try {
+        report = JSON.parse(readFileSync(outputFile, "utf8"));
+      } catch {
+        // No report: jest crashed or was stopped before writing one. The exit code and output say why.
+      }
+      resolve({ status, output: tail.text, report });
+    };
+    child.on("error", (error) => finish(null, `\nspawn failed: ${error.message}\n`));
+    child.on("close", (code) => finish(code));
+  });
+}
+
+/** Every failing test of a suite as one sorted id list, so the alert's key doesn't depend on jest's finishing order. */
+export function failureHash(script, failures) {
+  const ids = failures.map((f) => `${script}|${f.file}|${f.test ?? ""}`).sort();
+  return createHash("sha256").update(ids.join("\n")).digest("hex").slice(0, 16);
 }
 
 /** Run every suite under the shifted clock. Returns the result the alert job reads. */
-export function runSuites({ shift = checkShift, runSuite = defaultRunSuite } = {}) {
+export async function runSuites({ shift = checkShift, runSuite = defaultRunSuite } = {}) {
   const checked = shift();
   if (!checked.ok) return { offsetDays: OFFSET_DAYS, shiftOk: false, shiftDetail: checked.detail, suites: [] };
 
   const dir = mkdtempSync(join(tmpdir(), "clock-ahead-"));
   try {
-    const suites = SUITES.map((suite, index) => {
-      const ran = runSuite(suite, join(dir, `report-${index}.json`));
+    const suites = [];
+    for (const [index, suite] of SUITES.entries()) {
+      const ran = await runSuite(suite, join(dir, `report-${index}.json`));
       const failures = failuresFromReport(ran.report);
-      return {
+      suites.push({
         name: suite.name,
         script: suite.script,
         status: ran.status,
         tests: ran.report?.numTotalTests ?? null,
         failures: failures.slice(0, MAX_LISTED_FAILURES),
         failureCount: failures.length,
+        // Over every failure, not just the listed ones, and in sorted order.
+        failureHash: failureHash(suite.script, failures),
         // Only a suite that failed without naming a test needs its output in the alert.
         tail: ran.status !== 0 && failures.length === 0 ? outputTail(ran.output) : "",
-      };
-    });
+      });
+    }
     return { offsetDays: OFFSET_DAYS, shiftOk: true, shiftedTo: checked.shiftedTo, suites };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -215,22 +267,28 @@ export function classify(raw) {
   return { verdict: "passed", result, why: "" };
 }
 
-function failureLine({ file, test, message }) {
-  return test ? `- \`${file}\`: ${test}` : `- \`${file}\` failed to run${message ? `: ${message}` : ""}`;
+/**
+ * Text from a test run as inline code: test names hold `@word`s
+ * (`@RequirePermissions`, `@sentry/cli`) that GitHub would turn into mentions.
+ */
+export function code(text) {
+  return `\`${String(text).replaceAll("`", "'").replace(/\s+/g, " ")}\``;
 }
 
+function failureLine({ file, test, message }) {
+  return test ? `- ${code(file)}: ${code(test)}` : `- ${code(file)} failed to run${message ? `: ${code(message)}` : ""}`;
+}
+
+const NO_VERDICT_KEY = "no-verdict";
+
 /** A stable key for what is failing, so the alert comments when it changes and not every night. */
-export function failureKey({ verdict, result, why }) {
-  if (verdict === "no-verdict") return `no-verdict:${why.split(":")[0]}`;
-  const ids = result.suites
+export function failureKey({ verdict, result }) {
+  if (verdict === "no-verdict") return NO_VERDICT_KEY;
+  const parts = result.suites
     .filter((suite) => suite.status !== 0)
-    .flatMap((suite) =>
-      suite.failures.length > 0
-        ? suite.failures.map((f) => `${suite.script}|${f.file}|${f.test ?? ""}`)
-        : [`${suite.script}|exit ${suite.status}`],
-    )
+    .map((suite) => (suite.failureCount > 0 ? `${suite.script}|${suite.failureHash}` : `${suite.script}|exit ${suite.status}`))
     .sort();
-  return createHash("sha256").update(ids.join("\n")).digest("hex").slice(0, 16);
+  return createHash("sha256").update(parts.join("\n")).digest("hex").slice(0, 16);
 }
 
 const MARKER_PREFIX = "<!-- clock-ahead-failing:";
@@ -322,8 +380,17 @@ export async function runAlert({
     logger.log?.(`::error::API tests a week ahead: ${verdict === "failed" ? "failed" : `no verdict (${classified.why})`}.`);
     const lookup = await findAlertIssuesDetailed({ token, repo, fetchImpl, alert: ALERT });
     const open = lookup.lookupOk ? lookup.issues.find((issue) => issue.state === "open") : null;
-    // One email per change in what fails, not one a night.
-    if (open && markerLine(open.body, MARKER_PREFIX) === marker(classified)) {
+    const openMarker = open ? markerLine(open.body, MARKER_PREFIX) : null;
+    if (!lookup.lookupOk) {
+      // Without the open alert's marker this run can't tell a change from a repeat,
+      // and raising blind could file a duplicate. The run goes red; tomorrow reads again.
+      alert = { action: "unread", issueNumber: null };
+    } else if (open && openMarker === marker(classified)) {
+      // One email per change in what fails, not one a night.
+      alert = { action: "unchanged", issueNumber: open.number };
+    } else if (open && verdict === "no-verdict" && openMarker !== null) {
+      // A night that established nothing leaves an open alert's failing tests in place:
+      // overwriting them, then writing them back the next night, would be two emails for no change.
       alert = { action: "unchanged", issueNumber: open.number };
     } else {
       alert = await raiseAlert({
@@ -337,6 +404,9 @@ export async function runAlert({
         // The body holds the marker, so it has to track what fails now.
         refreshBodyOnRaise: true,
       });
+      if (alert.bodyRefreshFailed) {
+        logger.log?.("::warning::The comment was posted, but the issue body still holds the earlier marker, so tomorrow's run comments again.");
+      }
     }
   }
   logger.log?.(`[clock-ahead-tests] verdict ${verdict}; alert ${alert.action}${alert.issueNumber ? ` #${alert.issueNumber}` : ""}`);
@@ -360,7 +430,7 @@ export function exitCodeFor({ verdict, alert }) {
 export async function main({ argv = process.argv.slice(2), env = process.env, run = runSuites, alert = runAlert } = {}) {
   const [mode] = argv;
   if (mode === "run") {
-    writeOutput(run());
+    writeOutput(await run());
     return 0;
   }
   if (mode === "alert") {

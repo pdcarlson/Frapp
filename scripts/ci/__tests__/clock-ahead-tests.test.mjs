@@ -9,8 +9,10 @@ import {
   OFFSET_DAYS,
   SUITES,
   checkShift,
+  code,
   classify,
   exitCodeFor,
+  failureHash,
   failureKey,
   failuresFromReport,
   main,
@@ -27,23 +29,26 @@ const WORKFLOW = join(REPO_ROOT, ".github", "workflows", "clock-ahead-tests.yml"
 const REPO = "pdcarlson/Frapp";
 const DAY_MS = 86_400_000;
 
-const passing = (script) => ({ name: script, script, status: 0, tests: 10, failures: [], failureCount: 0, tail: "" });
-const SWEEP_FAIL = {
+const passing = (script) => ({ name: script, script, status: 0, tests: 10, failures: [], failureCount: 0, failureHash: failureHash(script, []), tail: "" });
+const failing = (failures, extra = {}) => ({
   name: "API unit tests",
   script: "test",
   status: 1,
   tests: 10,
-  failures: [{ file: "apps/api/src/sweep.spec.ts", test: "sweep sends the row" }],
-  failureCount: 1,
+  failures,
+  failureCount: failures.length,
+  failureHash: failureHash("test", failures),
   tail: "",
-};
+  ...extra,
+});
+const SWEEP_FAIL = failing([{ file: "apps/api/src/sweep.spec.ts", test: "sweep sends the row" }]);
 
 function result(suites, extra = {}) {
   return JSON.stringify({ offsetDays: OFFSET_DAYS, shiftOk: true, shiftedTo: "2026-11-21T05:30:00.000Z", suites, ...extra });
 }
 
-const PASSED = result([passing("test"), passing("test:e2e")]);
-const FAILED = result([SWEEP_FAIL, passing("test:e2e")]);
+const PASSED = result([passing("test"), passing("test:e2e"), passing("test:ai-evals")]);
+const FAILED = result([SWEEP_FAIL, passing("test:e2e"), passing("test:ai-evals")]);
 
 function github({ issues = [], lookupStatus = 200 } = {}) {
   return makeFetchMock([
@@ -62,14 +67,17 @@ const alertArgs = (gh, raw) => ({ token: "t", repo: REPO, raw, fetchImpl: gh.fet
 const posts = (gh) => gh.calls.filter((c) => c.method === "POST");
 
 describe("clock-ahead-tests: the clock shift", () => {
-  it("runs the suites PR CI's api-tests job runs, a week ahead", () => {
+  it("runs every suite PR CI's api-tests job runs, and nothing else, a week ahead", () => {
     assert.equal(OFFSET_DAYS, 7);
-    assert.deepEqual(
-      SUITES.map((s) => s.script),
-      ["test", "test:e2e"],
-    );
     const ci = readFileSync(join(REPO_ROOT, ".github", "workflows", "ci.yml"), "utf8");
-    for (const { script } of SUITES) assert.match(ci, new RegExp(`npm run ${script} -w apps/api`));
+    const start = ci.indexOf("\n  api-tests:\n");
+    const job = ci.slice(start, ci.indexOf("\n  # ──", start + 1));
+    const inCi = [...job.matchAll(/npm run ([\w:-]+) -w apps\/api/g)].map((m) => m[1]);
+    assert.ok(inCi.length >= 3, `read api-tests' suites: ${inCi}`);
+    assert.deepEqual(SUITES.map((s) => s.script), inCi);
+    // The env api-tests gives the evals.
+    assert.match(job, /AI_EVALS_REQUIRE_AGENT: '1'/);
+    assert.equal(SUITES.find((s) => s.script === "test:ai-evals").env.AI_EVALS_REQUIRE_AGENT, "1");
   });
 
   it("accepts a process that sees the clock a week ahead", () => {
@@ -93,15 +101,15 @@ describe("clock-ahead-tests: the clock shift", () => {
     assert.match(shift.detail, /did not run.*ENOENT/);
   });
 
-  it("runs no suite when the shift did not take", () => {
+  it("runs no suite when the shift did not take", async () => {
     let ran = 0;
-    const out = runSuites({ shift: () => ({ ok: false, detail: "nope" }), runSuite: () => ran++ });
+    const out = await runSuites({ shift: () => ({ ok: false, detail: "nope" }), runSuite: () => ran++ });
     assert.equal(ran, 0);
     assert.equal(out.shiftOk, false);
     assert.equal(classify(JSON.stringify(out)).verdict, "no-verdict");
   });
 
-  it("hands on each suite's exit, test count and failures", () => {
+  it("hands on each suite's exit, test count and failures", async () => {
     const report = {
       numTotalTests: 3,
       testResults: [
@@ -116,7 +124,7 @@ describe("clock-ahead-tests: the clock shift", () => {
         },
       ],
     };
-    const out = runSuites({
+    const out = await runSuites({
       shift: () => ({ ok: true, shiftedTo: "2026-11-21T00:00:00.000Z" }),
       runSuite: (suite) => (suite.script === "test" ? { status: 1, output: "", report } : { status: 0, output: "", report: { numTotalTests: 2, testResults: [] } }),
     });
@@ -125,13 +133,14 @@ describe("clock-ahead-tests: the clock shift", () => {
       [
         ["test", 1, 3, 1],
         ["test:e2e", 0, 2, 0],
+        ["test:ai-evals", 0, 2, 0],
       ],
     );
     assert.deepEqual(out.suites[0].failures, [{ file: "apps/api/b.spec.ts", test: "b breaks a week out" }]);
   });
 
-  it("keeps a crashed suite's output when it names no test", () => {
-    const out = runSuites({
+  it("keeps a crashed suite's output when it names no test", async () => {
+    const out = await runSuites({
       shift: () => ({ ok: true }),
       runSuite: () => ({ status: 1, output: "line\nCannot find module x", report: null }),
     });
@@ -168,14 +177,19 @@ describe("clock-ahead-tests: verdict", () => {
   it("reads an empty, unparsable or partial result as no verdict", () => {
     assert.equal(classify("").verdict, "no-verdict");
     assert.equal(classify("{oops").verdict, "no-verdict");
-    assert.equal(classify(result([passing("test")])).verdict, "no-verdict");
+    assert.equal(classify(result([passing("test"), passing("test:e2e")])).verdict, "no-verdict");
   });
 
-  it("keys the alert on what fails, not on the order or the night", () => {
-    const swapped = result([passing("test:e2e"), SWEEP_FAIL].reverse());
-    assert.equal(failureKey(classify(FAILED)), failureKey(classify(swapped)));
-    const other = result([{ ...SWEEP_FAIL, failures: [{ file: "apps/api/src/dev-log.spec.ts", test: "names the web" }] }, passing("test:e2e")]);
-    assert.notEqual(failureKey(classify(FAILED)), failureKey(classify(other)));
+  it("keys the alert on every failure, whatever order jest finished them in", () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({ file: `apps/api/src/f${i}.spec.ts`, test: `t${i}` }));
+    const night1 = result([failing(many.slice(0, 30), { failureCount: 40, failureHash: failureHash("test", many) }), passing("test:e2e"), passing("test:ai-evals")]);
+    const shuffled = [...many].reverse();
+    const night2 = result([failing(shuffled.slice(0, 30), { failureCount: 40, failureHash: failureHash("test", shuffled) }), passing("test:e2e"), passing("test:ai-evals")]);
+    assert.equal(failureKey(classify(night1)), failureKey(classify(night2)));
+    // A change past the 30 listed still changes the key.
+    const changed = [...many.slice(0, 39), { file: "apps/api/src/other.spec.ts", test: "new" }];
+    const night3 = result([failing(changed.slice(0, 30), { failureCount: 40, failureHash: failureHash("test", changed) }), passing("test:e2e"), passing("test:ai-evals")]);
+    assert.notEqual(failureKey(classify(night1)), failureKey(classify(night3)));
   });
 
   it("is non-zero unless the suites passed and the alert is known closed or absent", () => {
@@ -194,7 +208,7 @@ describe("clock-ahead-tests: the alert", () => {
     assert.deepEqual(out.alert, { action: "created", issueNumber: 99 });
     const filed = JSON.parse(posts(gh).at(-1).body);
     assert.equal(filed.title, ALERT.title);
-    assert.match(filed.body, /`apps\/api\/src\/sweep\.spec\.ts`: sweep sends the row/);
+    assert.match(filed.body, /`apps\/api\/src\/sweep\.spec\.ts`: `sweep sends the row`/);
     assert.match(filed.body, /2026-11-21/);
     assert.match(filed.body, /faketime -f \+7d/);
     assert.ok(filed.body.includes(marker(classify(FAILED))));
@@ -208,10 +222,36 @@ describe("clock-ahead-tests: the alert", () => {
     assert.equal(exitCodeFor(out), 1, "the run still goes red");
   });
 
-  it("comments when what fails changes", async () => {
+  it("comments when what fails changes, and moves the body's marker so the next night stays quiet", async () => {
     const gh = github({ issues: [openIssue(42, "<!-- clock-ahead-failing: something-else -->")] });
     const out = await runAlert(alertArgs(gh, FAILED));
     assert.equal(out.alert.action, "commented");
+    const patched = gh.calls.filter((c) => c.method === "PATCH").map((c) => JSON.parse(c.body).body ?? "");
+    assert.ok(patched.some((body) => body.includes(marker(classify(FAILED)))), "the body carries the new marker");
+  });
+
+  it("leaves an open alert's failing tests alone on a night that established nothing", async () => {
+    const gh = github({ issues: [openIssue(42, `body\n${marker(classify(FAILED))}`)] });
+    const out = await runAlert(alertArgs(gh, ""));
+    assert.deepEqual(out.alert, { action: "unchanged", issueNumber: 42 });
+    assert.equal(gh.calls.filter((c) => c.method !== "GET").length, 0);
+    assert.equal(exitCodeFor(out), 1);
+  });
+
+  it("writes nothing when the alert can't be read, rather than file a duplicate", async () => {
+    const gh = github({ lookupStatus: 500 });
+    const out = await runAlert(alertArgs(gh, FAILED));
+    assert.equal(out.alert.action, "unread");
+    assert.equal(gh.calls.filter((c) => c.method !== "GET").length, 0);
+    assert.equal(exitCodeFor(out), 1);
+  });
+
+  it("writes test names as code, so an @Decorator in one mentions nobody", async () => {
+    assert.equal(code("guards @RequirePermissions on `x`"), "`guards @RequirePermissions on 'x'`");
+    const gh = github();
+    await runAlert(alertArgs(gh, result([failing([{ file: "a.spec.ts", test: "uses @sentry/cli" }]), passing("test:e2e"), passing("test:ai-evals")])));
+    const body = JSON.parse(posts(gh).at(-1).body).body;
+    assert.match(body, /`uses @sentry\/cli`/);
   });
 
   it("raises on no verdict rather than look like a quiet night", async () => {
@@ -289,8 +329,8 @@ describe("clock-ahead-tests.yml", () => {
     assert.match(block("alert"), /node scripts\/ci\/clock-ahead-tests\.mjs alert/);
   });
 
-  it("alerts even when the tests job failed, and only on main", () => {
-    assert.match(block("alert"), /if: always\(\) && github\.ref == 'refs\/heads\/main'/);
+  it("alerts even when the tests job failed, not when a person cancelled the run, and only on main", () => {
+    assert.match(block("alert"), /if: \$\{\{ !cancelled\(\) && github\.ref == 'refs\/heads\/main' \}\}/);
     assert.match(block("tests"), /if: github\.ref == 'refs\/heads\/main'/);
     assert.match(block("alert"), /RESULT: \$\{\{ needs\.tests\.outputs\.result \}\}/);
   });
