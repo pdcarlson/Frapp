@@ -24,9 +24,7 @@ function wrapperFor(
   }),
 ) {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={client as ReturnType<typeof createFrappClient>}
-    >
+    <FrappClientProvider client={client as ReturnType<typeof createFrappClient>}>
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </FrappClientProvider>
   );
@@ -107,8 +105,7 @@ describe("useCreateEvent", () => {
 
     expect(
       invalidate.mock.calls.some(
-        ([filters]) =>
-          (filters?.queryKey as unknown[] | undefined)?.[0] === "events",
+        ([filters]) => (filters?.queryKey as unknown[] | undefined)?.[0] === "events",
       ),
     ).toBe(true);
   });

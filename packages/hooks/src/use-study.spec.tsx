@@ -70,9 +70,9 @@ describe("useStudySessions", () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(queryClient.getQueryData(["study-sessions", CHAPTER_ID])).toEqual(
-      [],
-    );
+    expect(
+      queryClient.getQueryData(["study-sessions", CHAPTER_ID]),
+    ).toEqual([]);
     // The unscoped key must hold nothing, or a second chapter would read it.
     expect(queryClient.getQueryData(["study-sessions"])).toBeUndefined();
   });
@@ -122,9 +122,7 @@ describe("useStudySessions", () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockGet).toHaveBeenCalledWith("/v1/study-sessions", {
-      signal: expect.any(AbortSignal),
-    });
+    expect(mockGet).toHaveBeenCalledWith("/v1/study-sessions", { signal: expect.any(AbortSignal) });
   });
 });
 
@@ -134,10 +132,7 @@ describe("useStopStudySession", () => {
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const mockPost = vi
       .fn()
-      .mockResolvedValue({
-        data: { id: "ss-1", status: "COMPLETED" },
-        error: null,
-      });
+      .mockResolvedValue({ data: { id: "ss-1", status: "COMPLETED" }, error: null });
 
     const { result } = renderHook(() => useStopStudySession(), {
       wrapper: makeWrapper(
@@ -162,10 +157,7 @@ describe("useStudyHeartbeat", () => {
     const queryClient = makeQueryClient();
     const mockPost = vi
       .fn()
-      .mockResolvedValue({
-        data: { id: "ss-1", status: "ACTIVE" },
-        error: null,
-      });
+      .mockResolvedValue({ data: { id: "ss-1", status: "ACTIVE" }, error: null });
 
     const { result } = renderHook(() => useStudyHeartbeat(), {
       wrapper: makeWrapper(
@@ -191,10 +183,7 @@ describe("useStudyHeartbeat", () => {
     const queryClient = makeQueryClient();
     const mockPost = vi
       .fn()
-      .mockResolvedValue({
-        data: { id: "ss-1", status: "ACTIVE" },
-        error: null,
-      });
+      .mockResolvedValue({ data: { id: "ss-1", status: "ACTIVE" }, error: null });
 
     const { result } = renderHook(() => useStudyHeartbeat(), {
       wrapper: makeWrapper(
@@ -223,10 +212,12 @@ describe("a write that ends the session", () => {
   it("refreshes nothing after a routine heartbeat on an ACTIVE session", async () => {
     const queryClient = makeQueryClient();
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-    const mockPost = vi.fn().mockResolvedValue({
-      data: { id: "ss-1", status: "ACTIVE" },
-      error: null,
-    });
+    const mockPost = vi
+      .fn()
+      .mockResolvedValue({
+        data: { id: "ss-1", status: "ACTIVE" },
+        error: null,
+      });
     const { result } = renderHook(() => useStudyHeartbeat(), {
       wrapper: makeWrapper(
         queryClient,
@@ -272,10 +263,7 @@ describe("a write that ends the session", () => {
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
     const mockPost = vi
       .fn()
-      .mockResolvedValue({
-        data: { id: "ss-2", status: "ACTIVE" },
-        error: null,
-      });
+      .mockResolvedValue({ data: { id: "ss-2", status: "ACTIVE" }, error: null });
     const { result } = renderHook(() => useStartStudySession(), {
       wrapper: makeWrapper(
         queryClient,

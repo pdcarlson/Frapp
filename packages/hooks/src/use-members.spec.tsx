@@ -240,7 +240,10 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
     expect(mockGet).toHaveBeenCalledWith(ROSTER_ENDPOINT, {
       signal: expect.any(AbortSignal),
     });
-    expect(mockGet).not.toHaveBeenCalledWith(MEMBERS_ENDPOINT);
+    expect(mockGet).not.toHaveBeenCalledWith(
+      MEMBERS_ENDPOINT,
+      expect.anything(),
+    );
     expect(result.current.data).toEqual(roster);
   });
 

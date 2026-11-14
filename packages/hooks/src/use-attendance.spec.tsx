@@ -67,9 +67,7 @@ describe("useAttendance", () => {
       <FrappClientProvider
         client={mockClient as ReturnType<typeof createFrappClient>}
       >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </FrappClientProvider>
     );
 
@@ -100,8 +98,7 @@ describe("useAttendance", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(mockGet).toHaveBeenCalledWith("/v1/events/{eventId}/attendance", {
-      signal: expect.any(AbortSignal),
+    expect(mockGet).toHaveBeenCalledWith("/v1/events/{eventId}/attendance", { signal: expect.any(AbortSignal),
       params: { path: { eventId: "event-123" } },
     });
     expect(result.current.data).toEqual(mockAttendance);
@@ -173,7 +170,8 @@ describe("useAttendance", () => {
       queryClient
         .getQueryCache()
         .find({ queryKey: ["attendance", eventId], exact: true })?.options as
-        { refetchInterval?: unknown } | undefined;
+        | { refetchInterval?: unknown }
+        | undefined;
 
     it("polls at the interval a caller passes", async () => {
       const mockGet = vi.fn().mockResolvedValue(answered([]));
@@ -243,9 +241,7 @@ describe("useMintCheckInToken", () => {
       <FrappClientProvider
         client={mockClient as ReturnType<typeof createFrappClient>}
       >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </FrappClientProvider>
     );
 
@@ -657,9 +653,7 @@ describe("useCheckIn", () => {
       <FrappClientProvider
         client={mockClient as ReturnType<typeof createFrappClient>}
       >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </FrappClientProvider>
     );
 
@@ -686,13 +680,10 @@ describe("useCheckIn", () => {
       result.current.mutateAsync({ eventId: "event-123" }),
     ).resolves.toBeDefined();
 
-    expect(mockPost).toHaveBeenCalledWith(
-      "/v1/events/{eventId}/attendance/check-in",
-      {
-        params: { path: { eventId: "event-123" } },
-        body: {},
-      },
-    );
+    expect(mockPost).toHaveBeenCalledWith("/v1/events/{eventId}/attendance/check-in", {
+      params: { path: { eventId: "event-123" } },
+      body: {},
+    });
 
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["attendance", "event-123"],
@@ -703,14 +694,9 @@ describe("useCheckIn", () => {
   });
 
   it("re-reads the member's own row on a 409, which means they're already in", async () => {
-    const mockPost = vi
-      .fn()
-      .mockResolvedValue(
-        refusedWith({
-          statusCode: 409,
-          message: "Already checked in for this event",
-        }),
-      );
+    const mockPost = vi.fn().mockResolvedValue(
+      refusedWith({ statusCode: 409, message: "Already checked in for this event" }),
+    );
     const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useCheckIn(), {
       wrapper: createWrapper({ POST: mockPost }),
@@ -804,14 +790,12 @@ describe("useCheckIn", () => {
       lng: -73.678,
     });
 
-    expect(mockPost).toHaveBeenCalledWith(
-      "/v1/events/{eventId}/attendance/check-in",
-      {
-        params: { path: { eventId: "event-123" } },
-        body: { token: "signed-token", lat: 42.7298, lng: -73.678 },
-      },
-    );
+    expect(mockPost).toHaveBeenCalledWith("/v1/events/{eventId}/attendance/check-in", {
+      params: { path: { eventId: "event-123" } },
+      body: { token: "signed-token", lat: 42.7298, lng: -73.678 },
+    });
   });
+
 });
 
 /**
@@ -935,10 +919,9 @@ describe("selectOwnAttendance", () => {
         attendance: { status: "LATE", check_in_time: "2026-11-09T19:05:00Z" },
       }),
     ).toEqual({ status: "LATE", checkInTime: "2026-11-09T19:05:00Z" });
-    expect(selectOwnAttendance({ attendance: { status: "EXCUSED" } })).toEqual({
-      status: "EXCUSED",
-      checkInTime: null,
-    });
+    expect(
+      selectOwnAttendance({ attendance: { status: "EXCUSED" } }),
+    ).toEqual({ status: "EXCUSED", checkInTime: null });
   });
 
   it("is null for no row or an unreadable one", () => {
@@ -957,9 +940,7 @@ describe("useMyAttendance", () => {
       <FrappClientProvider
         client={mockClient as ReturnType<typeof createFrappClient>}
       >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </FrappClientProvider>
     );
     Wrapper.displayName = "MyAttendanceHookWrapper";
@@ -967,11 +948,7 @@ describe("useMyAttendance", () => {
   };
 
   it("reads the member's own row", async () => {
-    const row = {
-      id: "a-1",
-      status: "PRESENT",
-      check_in_time: "2026-11-07T00:52:00Z",
-    };
+    const row = { id: "a-1", status: "PRESENT", check_in_time: "2026-11-07T00:52:00Z" };
     const mockGet = vi.fn().mockResolvedValue(answered({ attendance: row }));
     const { result } = renderHook(() => useMyAttendance("event-1"), {
       wrapper: wrapperFor({ GET: mockGet }),
@@ -979,8 +956,7 @@ describe("useMyAttendance", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual({ attendance: row });
-    expect(mockGet).toHaveBeenCalledWith("/v1/events/{eventId}/attendance/me", {
-      signal: expect.any(AbortSignal),
+    expect(mockGet).toHaveBeenCalledWith("/v1/events/{eventId}/attendance/me", { signal: expect.any(AbortSignal),
       params: { path: { eventId: "event-1" } },
     });
   });

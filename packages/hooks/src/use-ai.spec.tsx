@@ -61,10 +61,7 @@ describe("the AI hooks", () => {
 
   beforeEach(() => {
     queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
   });
 
@@ -74,9 +71,7 @@ describe("the AI hooks", () => {
         client={client as ReturnType<typeof createFrappClient>}
         chapterId={chapterId}
       >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </FrappClientProvider>
     );
     Wrapper.displayName = "AiHookWrapper";
@@ -100,9 +95,7 @@ describe("the AI hooks", () => {
     });
     expect(aiAvailableFrom(result.current)).toBeUndefined();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(GET).toHaveBeenCalledWith("/v1/ai/consent", {
-      signal: expect.any(AbortSignal),
-    });
+    expect(GET).toHaveBeenCalledWith("/v1/ai/consent", { signal: expect.any(AbortSignal) });
     expect(aiAvailableFrom(result.current)).toBe(true);
   });
 
@@ -190,10 +183,7 @@ describe("Meet Frapp AI's answers (#4790)", () => {
   let queryClient: QueryClient;
   beforeEach(() => {
     queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
   });
   const wrapper = (client: unknown) => {
@@ -202,9 +192,7 @@ describe("Meet Frapp AI's answers (#4790)", () => {
         client={client as ReturnType<typeof createFrappClient>}
         chapterId="chapter-1"
       >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
+        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </FrappClientProvider>
     );
     Wrapper.displayName = "MeetAiWrapper";
@@ -240,12 +228,8 @@ describe("Meet Frapp AI's answers (#4790)", () => {
     const GET = vi.fn((path: string) =>
       Promise.resolve(answered(path === "/v1/ai/consent" ? STATE : NEVER_SET)),
     );
-    const PUT = vi
-      .fn()
-      .mockResolvedValue(answered({ ...STATE, answer: "yes" }));
-    const PATCH = vi
-      .fn()
-      .mockResolvedValue(answered({ ...NEVER_SET, ask: true }));
+    const PUT = vi.fn().mockResolvedValue(answered({ ...STATE, answer: "yes" }));
+    const PATCH = vi.fn().mockResolvedValue(answered({ ...NEVER_SET, ask: true }));
     const { result } = renderHook(() => useFrappAiChoice(), {
       wrapper: wrapper({ GET, PUT, PATCH }),
     });
@@ -265,9 +249,7 @@ describe("Meet Frapp AI's answers (#4790)", () => {
     const GET = vi.fn((path: string) =>
       Promise.resolve(answered(path === "/v1/ai/consent" ? STATE : SETTINGS)),
     );
-    const PUT = vi
-      .fn()
-      .mockResolvedValue(answered({ ...STATE, answer: "yes" }));
+    const PUT = vi.fn().mockResolvedValue(answered({ ...STATE, answer: "yes" }));
     const PATCH = vi.fn();
     const { result } = renderHook(() => useFrappAiChoice(), {
       wrapper: wrapper({ GET, PUT, PATCH }),
@@ -278,15 +260,14 @@ describe("Meet Frapp AI's answers (#4790)", () => {
     });
     expect(PUT).toHaveBeenCalledTimes(1);
     expect(PATCH).not.toHaveBeenCalled();
+
   });
 
   it("leaves a never-set chapter alone when told not to, and never reads it", async () => {
     const GET = vi.fn((path: string) =>
       Promise.resolve(answered(path === "/v1/ai/consent" ? STATE : NEVER_SET)),
     );
-    const PUT = vi
-      .fn()
-      .mockResolvedValue(answered({ ...STATE, answer: "yes" }));
+    const PUT = vi.fn().mockResolvedValue(answered({ ...STATE, answer: "yes" }));
     const PATCH = vi.fn();
     const { result } = renderHook(
       () => useFrappAiChoice({ includeChapter: false }),
@@ -299,16 +280,17 @@ describe("Meet Frapp AI's answers (#4790)", () => {
       await expect(result.current.turnOn()).resolves.toBe(true);
     });
     expect(PATCH).not.toHaveBeenCalled();
-    expect(GET).not.toHaveBeenCalledWith("/v1/ai/settings");
+    expect(GET).not.toHaveBeenCalledWith(
+      "/v1/ai/settings",
+      expect.anything(),
+    );
   });
 
   it("counts Continue as on once the yes is saved, even when the chapter's switches fail", async () => {
     const GET = vi.fn((path: string) =>
       Promise.resolve(answered(path === "/v1/ai/consent" ? STATE : NEVER_SET)),
     );
-    const PUT = vi
-      .fn()
-      .mockResolvedValue(answered({ ...STATE, answer: "yes" }));
+    const PUT = vi.fn().mockResolvedValue(answered({ ...STATE, answer: "yes" }));
     const PATCH = vi.fn().mockRejectedValue(new Error("offline"));
     const { result } = renderHook(() => useFrappAiChoice(), {
       wrapper: wrapper({ GET, PUT, PATCH }),
@@ -349,10 +331,12 @@ describe("isFirstAiReadInFlight (#4504)", () => {
   });
 
   it("never holds for a paused read or one that has answered", () => {
-    expect(isFirstAiReadInFlight({ ...read(0), fetchStatus: "paused" })).toBe(
+    expect(
+      isFirstAiReadInFlight({ ...read(0), fetchStatus: "paused" }),
+    ).toBe(false);
+    expect(isFirstAiReadInFlight({ ...read(0), isPending: false })).toBe(
       false,
     );
-    expect(isFirstAiReadInFlight({ ...read(0), isPending: false })).toBe(false);
   });
 });
 
@@ -384,11 +368,7 @@ describe("askAccessFrom: whether a member has Ask, or it is not known yet (#4713
     ).toBe("no");
     // The server has no AI: the switches are never read.
     expect(
-      askAccessFrom({
-        available: false,
-        ask: undefined,
-        permissions: undefined,
-      }),
+      askAccessFrom({ available: false, ask: undefined, permissions: undefined }),
     ).toBe("no");
   });
 

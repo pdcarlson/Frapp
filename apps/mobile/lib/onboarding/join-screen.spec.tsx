@@ -1022,6 +1022,7 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
 
     expect(previewPost).toHaveBeenCalledWith("/v1/invites/preview", {
       body: { token: "invite-token-20" },
+      signal: expect.any(AbortSignal),
     });
     const text = allText(tree.root);
     expect(text).toContain(confirmTitle("FIJI Tau Nu"));
@@ -1129,6 +1130,7 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
     expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
     expect(previewPost).toHaveBeenLastCalledWith("/v1/invites/preview", {
       body: { token: "new-invite-24" },
+      signal: expect.any(AbortSignal),
     });
   });
 
