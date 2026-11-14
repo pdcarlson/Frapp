@@ -1077,6 +1077,24 @@ export interface Database {
         Returns: ChatMessage[];
       };
       /**
+       * `20261114043300` (#4958) — adds (`p_join`) or removes a
+       * self-assignable role on a member, only while the role is flagged and
+       * safe, under the role-then-member locks `delete_role` takes. One row:
+       * `ok` with the written `role_ids`, `not_assignable` or `no_member`.
+       */
+      self_assign_role: {
+        Args: {
+          p_chapter_id: string;
+          p_member_id: string;
+          p_role_id: string;
+          p_join: boolean;
+        };
+        Returns: {
+          outcome: 'ok' | 'not_assignable' | 'no_member';
+          role_ids: string[] | null;
+        }[];
+      };
+      /**
        * `20261113040007` (#4076): a manual group's members set to exactly
        * `p_user_ids`, all or none. Returns the `users.id`s after.
        */

@@ -1536,6 +1536,100 @@
         ]
       }
     },
+    "/v1/roles/{id}/join": {
+      "post": {
+        "description": "Adds the role to the caller's own roles (#4958). 403 `role.not_self_assignable` unless an officer marked it and it is still safe to pick; 409 when it changed mid-save. Joining a role already held changes nothing.",
+        "operationId": "RbacController_join_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfAssignRoleResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Join a self-assignable role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/{id}/leave": {
+      "post": {
+        "description": "Takes the role off the caller's own roles (#4958), with the same refusals as join. Leaving a role not held changes nothing.",
+        "operationId": "RbacController_leave_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SelfAssignRoleResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Leave a self-assignable role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
     "/v1/roles/transfer-presidency": {
       "post": {
         "operationId": "RbacController_transferPresidency_v1",
@@ -19591,8 +19685,27 @@
               "service:approve": true,
               "polls:create": null
             }
+          },
+          "self_assignable": {
+            "type": "boolean",
+            "description": "Members may join and leave this role themselves (#4958). Only a role with no system key, outside the tiers, and holding no permission beyond `channels:read:<slug>` may be marked (400 `role.self_assignable_keyed`, `role.self_assignable_tiered` or `role.self_assignable_permissions`), and marking needs the caller to hold what it carries. A save that would leave a marked role unsafe is refused the same way unless it also sends false."
           }
         }
+      },
+      "SelfAssignRoleResultDto": {
+        "type": "object",
+        "properties": {
+          "role_ids": {
+            "description": "The caller's role ids after the change, the role added (join) or taken off (leave).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role_ids"
+        ]
       },
       "TransferPresidencyDto": {
         "type": "object",

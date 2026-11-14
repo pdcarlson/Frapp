@@ -167,6 +167,26 @@ export class UpdateRoleDto {
   @IsOptional()
   @IsObject()
   permission_overrides?: Record<string, boolean | null>;
+
+  @ApiPropertyOptional({
+    type: Boolean,
+    description:
+      'Members may join and leave this role themselves (#4958). Only a role with no system key, outside the tiers, and holding no permission beyond `channels:read:<slug>` may be marked (400 `role.self_assignable_keyed`, `role.self_assignable_tiered` or `role.self_assignable_permissions`), and marking needs the caller to hold what it carries. A save that would leave a marked role unsafe is refused the same way unless it also sends false.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  self_assignable?: boolean;
+}
+
+/** `POST /v1/roles/:id/join` and `/leave` (#4958). */
+export class SelfAssignRoleResultDto {
+  @ApiProperty({
+    type: String,
+    isArray: true,
+    description:
+      "The caller's role ids after the change, the role added (join) or taken off (leave).",
+  })
+  role_ids!: string[];
 }
 
 export class TransferPresidencyDto {
