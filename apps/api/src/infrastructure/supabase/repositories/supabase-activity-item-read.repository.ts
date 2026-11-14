@@ -21,7 +21,7 @@ import { chunkIds } from '#domain/utils/chunk-ids';
  */
 export const ACTIVITY_ITEM_READS_CONFLICT = 'user_id,chapter_id,kind,item_id';
 export const ACTIVITY_UNREAD_STARTS_CONFLICT = 'user_id,chapter_id';
-/** The primary key of `activity_item_snoozes` (`20261114040716_activity_item_snoozes.sql`). */
+/** The primary key of `activity_item_snoozes` (`20261114154540_activity_item_snoozes.sql`). */
 export const ACTIVITY_ITEM_SNOOZES_CONFLICT = 'user_id,chapter_id,kind,item_id';
 
 /**

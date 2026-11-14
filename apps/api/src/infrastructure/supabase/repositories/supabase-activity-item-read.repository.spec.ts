@@ -157,7 +157,7 @@ describe('SupabaseActivityItemReadRepository — tenant scope', () => {
       expect(ACTIVITY_ITEM_SNOOZES_CONFLICT).toBe(
         primaryKeyOf(
           'activity_item_snoozes',
-          '20261114040716_activity_item_snoozes.sql',
+          '20261114154540_activity_item_snoozes.sql',
         ),
       );
     });
