@@ -153,6 +153,11 @@ export interface ComposerStagingInput {
 export interface ComposerStaging {
   /** The strip above the input, or `null` for an ordinary send. */
   context: ComposerContext | null;
+  /**
+   * The message the staged reply answers, root-normalized as a send's
+   * `replyToId` is: what a schedule carries (#4971). `null` with no reply.
+   */
+  replyToId: string | null;
   /** What the input shows: the text being edited, or the draft. */
   value: string;
   onChangeText: (next: string) => void;
@@ -473,6 +478,7 @@ export function useComposerStaging({
 
   return {
     context,
+    replyToId: activeEdit ? null : (activeReply?.messageId ?? null),
     value: activeEdit ? activeEdit.value : draft,
     onChangeText,
     submit,

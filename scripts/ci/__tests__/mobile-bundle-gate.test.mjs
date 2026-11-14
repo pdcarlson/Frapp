@@ -80,8 +80,8 @@ describe(`${JOB}: the mobile bundle step (#2388)`, () => {
     // coverage app-filter-coverage.test.mjs pins); every push still runs it.
     assert.equal(
       job.if,
-      "${{ github.event_name == 'push' || needs.changes.outputs.mobile == 'true' }}",
-      `${JOB} runs on every push, and on every PR that touches what it reads`,
+      "${{ github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true' }}",
+      `${JOB} runs on every push and merge queue entry, and on every PR that touches what it reads`,
     );
     assert.doesNotMatch(String(job.keys.get("continue-on-error") ?? ""), /true/);
     assert.ok(CI_CHECKS.includes(JOB), `${JOB} is a required check`);

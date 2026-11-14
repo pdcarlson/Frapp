@@ -3,21 +3,30 @@ import { scheduledLine, scheduleRefusal } from "./schedule-send";
 
 const base = {
   text: "Chapter at 8",
-  photos: 0,
-  replying: false,
+  photos: [] as { status: "uploading" | "ready" | "failed" }[],
   asksFrapp: false,
   writeBlocked: null,
 };
+const ready = { status: "ready" as const };
+const uploading = { status: "uploading" as const };
+const failed = { status: "failed" as const };
 
 describe("scheduleRefusal", () => {
   it("takes plain text", () => {
     expect(scheduleRefusal(base)).toBeNull();
   });
 
-  it("refuses what it would drop on the way, keeping the draft", () => {
-    expect(scheduleRefusal({ ...base, photos: 1 })).toMatch(/^Photos can't/);
-    expect(scheduleRefusal({ ...base, replying: true })).toMatch(
-      /^Replies can't/,
+  it("takes uploaded photos, with or without text (#4971)", () => {
+    expect(scheduleRefusal({ ...base, photos: [ready, ready] })).toBeNull();
+    expect(scheduleRefusal({ ...base, text: "", photos: [ready] })).toBeNull();
+  });
+
+  it("refuses a photo not uploaded yet, or one that failed, keeping the draft", () => {
+    expect(scheduleRefusal({ ...base, photos: [ready, uploading] })).toMatch(
+      /^Wait for your photos/,
+    );
+    expect(scheduleRefusal({ ...base, photos: [failed, uploading] })).toMatch(
+      /^A photo didn't upload/,
     );
     expect(scheduleRefusal({ ...base, asksFrapp: true })).toBe(
       "A question for Frapp can't be scheduled.",
@@ -38,8 +47,12 @@ describe("scheduleRefusal", () => {
       "You're offline.",
     );
     expect(
-      scheduleRefusal({ ...base, photos: 2, writeBlocked: "You're offline." }),
-    ).toMatch(/^Photos/);
+      scheduleRefusal({
+        ...base,
+        photos: [uploading],
+        writeBlocked: "You're offline.",
+      }),
+    ).toMatch(/^Wait for your photos/);
   });
 });
 

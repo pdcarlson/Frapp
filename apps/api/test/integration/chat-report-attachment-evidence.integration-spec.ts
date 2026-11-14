@@ -104,6 +104,8 @@ describeIntegration('Reported attachments against live storage', () => {
       reports,
       unused,
       unused,
+      // No scheduled message names these files (#4971).
+      { findPathsInUse: async () => [] } as never,
     );
 
     assertOk(

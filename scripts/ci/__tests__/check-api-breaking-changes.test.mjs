@@ -409,8 +409,8 @@ test("ci.yml runs the shipped check as a blocking step of the required contract 
   assert.equal(steps.length, 1, "exactly one step runs check:api-breaking:shipped");
   const [step] = steps;
   assert.equal(step.jobId, "api-contract-check");
-  // On a PR it compares the registry with the base's (#3783); on a push, with nothing.
-  assert.match(step.body, /REGISTRY_BASE: \$\{\{ github\.event_name == 'pull_request' && github\.event\.pull_request\.base\.sha \|\| '' \}\}/);
+  // On a PR or merge queue entry it compares the registry with the base's (#3783); on a push, with nothing.
+  assert.match(step.body, /REGISTRY_BASE: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.event\.merge_group\.base_sha \|\| '' \}\}/);
   assert.match(step.body, /\$\{REGISTRY_BASE:\+--registry-base "\$REGISTRY_BASE"\}/);
   assert.equal(step.if, null, "the step runs on every event");
   assert.doesNotMatch(step.body, /continue-on-error/);

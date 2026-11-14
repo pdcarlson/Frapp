@@ -40,6 +40,11 @@ import {
   type ActivityLinkActions,
 } from "./activity-link-row";
 import { ActivityPanel } from "./activity-panel";
+import {
+  ActivityReminderRow,
+  useActivityReminderActions,
+  type ActivityReminderActions,
+} from "./activity-reminder-row";
 import { ActivityRowActionButton } from "./activity-row-action";
 import { activityRowActionGate } from "./activity-row-action-gate";
 import {
@@ -298,11 +303,15 @@ interface RowKit {
   canRemoveLinks: boolean;
   snooze: ActivitySnoozeActions;
   linkActions: ActivityLinkActions;
+  reminderActions: ActivityReminderActions;
   rowActions: RowActions;
   onOpen: (row: ActivityRow) => void;
 }
 
-/** A row as its kind draws it: a link, a card that opens in chat, or a panel. */
+/**
+ * A row as its kind draws it: a link, a card or a reminder that opens in
+ * chat, or a panel.
+ */
 function Row({
   row,
   kit,
@@ -329,6 +338,12 @@ function Row({
       onOpen={kit.onOpen}
       className={className}
       entries={kit.snooze.entriesFor(row)}
+    />
+  ) : row.kind === "reminder" ? (
+    <ActivityReminderRow
+      row={row}
+      rowClassName={className}
+      actions={kit.reminderActions}
     />
   ) : (
     <PanelRow
@@ -473,8 +488,9 @@ function DaySection({ day, kit }: { day: ActivityAgendaDay; kit: RowKit }) {
 }
 
 /**
- * A group under the To do list: Waiting on others (the polls the member
- * posted, the events they made, the tasks they assigned), or Links. The page
+ * A group under the To do list: Reminders (#4957), Waiting on others (the
+ * polls the member posted, the events they made, the tasks they assigned),
+ * or Links. The page
  * leaves a group with nothing in it out, so there is no empty line.
  */
 function GroupSection({ group, kit }: { group: ActivityGroup; kit: RowKit }) {
@@ -743,8 +759,9 @@ function ReviewParam({ open }: { open: (taskId: string) => Promise<void> }) {
  * 5. To do: the member's own events, tasks, polls and sign-ups by day
  *    (`activityAgenda`), three to a day before "Show more". A line of the
  *    week card narrows it to one kind.
- * 6. Waiting on others, then Links: what the member made and what was posted
- *    for them, each left out when it has nothing.
+ * 6. Reminders, Waiting on others, then Links: the messages the member asked
+ *    to be reminded about (#4957), what they made, and what was posted for
+ *    them, each left out when it has nothing.
  *
  * The page is usually a pane beside chat about a phone wide, and the whole
  * window when chat is closed, so it lays out by its own width (`@container`),
@@ -821,9 +838,13 @@ export function ActivityPage() {
   // doesn't, and neither does acting on the item elsewhere in Frapp.
   const { markRead } = useActivityUnread(activity.data);
   const openFromList = (row: ActivityRow) => {
-    if (row.unread) markRead([row.readRef]);
-    // A link opens in a new tab, and a sign-up or form in chat: no panel.
-    if (row.kind !== "link" && row.kind !== "card") setOpened(row);
+    // A reminder row has no read to record (`readRef` is null) and is never
+    // unread.
+    if (row.unread && row.readRef) markRead([row.readRef]);
+    // A link opens in a new tab, and a sign-up, form or reminder in chat: no
+    // panel.
+    if (row.kind !== "link" && row.kind !== "card" && row.kind !== "reminder")
+      setOpened(row);
   };
   // `/activity?review=<taskId>`: a "submitted a task" notification
   // (`deepLinkFor` in the bell). Opens that task's panel once the read has
@@ -850,6 +871,7 @@ export function ActivityPage() {
   const permissions = useMyPermissions();
   const canRemoveLinks = can("channels:manage", permissions.data?.permissions);
   const linkActions = useActivityLinkActions();
+  const reminderActions = useActivityReminderActions();
   const actionGate = activityRowActionGate(useSubscriptionGate());
   // Faces on the rows (#4402, item 4), from the roster chat already reads.
   const faceFor = useActivityFaces();
@@ -954,13 +976,14 @@ export function ActivityPage() {
   const refresh = () => void reread();
   // Acting on an item from Activity reads it, as opening it does (#4402).
   const actedOnRow = (row: ActivityRow) => {
-    if (row.unread) markRead([row.readRef]);
+    if (row.unread && row.readRef) markRead([row.readRef]);
     return reread();
   };
   const kit: RowKit = {
     canRemoveLinks,
     snooze: snoozeActions,
     linkActions,
+    reminderActions,
     rowActions: { gate: actionGate, onActed: actedOnRow },
     onOpen: openFromList,
   };

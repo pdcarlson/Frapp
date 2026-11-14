@@ -5,6 +5,14 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # The merge queue (#4795): every job that emits a required check must report
+  # on the queue's test commit, or a queued PR waits out the queue's timeout and
+  # drops out. A queue run is treated like a push: path-gated jobs run in full,
+  # because it is the last check before the commit lands on main, and the diff
+  # checks measure against `merge_group.base_sha` where a PR uses its base.
+  # Pinned by merge-queue-triggers.test.mjs.
+  merge_group:
+    types: [checks_requested]
 
 concurrency:
   # Keyed on the ref on main too, unlike migration-drift-gate.yml, and on
@@ -15,6 +23,9 @@ concurrency:
   # parallel would fix that but let CI finish out of order, and Deploy staging
   # fires on CI completion: an older commit's run would then apply migrations
   # from a tree that lacks ones a newer run already applied, and fail.
+  # A merge queue run has its own ref per entry
+  # (`refs/heads/gh-readonly-queue/main/pr-<n>-<sha>`), so queue runs never
+  # share a group with each other, with a PR's runs or with main's.
   group: ci-${{ github.ref }}
   # Never cancel on main: a cancelled push run leaves required checks
   # `cancelled`, which validate-deploy-sha.mjs refuses (§ CANCELLED_CONCLUSIONS).
@@ -23,7 +34,7 @@ concurrency:
 # ---------------------------------------------------------------------------
 # `packages-build` runs first. web-tests, web-responsive-floor, landing-fold,
 # pglite-migrations, api-tests, mobile-validate and mobile-tests-tokyo are
-# path-gated on PRs by `changes` and run in full on push.
+# path-gated on PRs by `changes` and run in full on push and in the merge queue.
 # They are still required checks, because a job skipped by a job-level `if:` reports
 # Success (ADR-15 amendment 2026-08-19). `clean-checkout-typecheck` and
 # `web-production-build` deliberately prebuild nothing.
@@ -38,7 +49,8 @@ concurrency:
 jobs:
   # Path filter for the gated jobs, and required because they need it
   # (required-checks.mjs). It filters only on pull_request, so a shallow checkout
-  # cannot fail the gate.
+  # cannot fail the gate; on push and merge_group its outputs are empty and the
+  # gated jobs run in full on their `github.event_name != 'pull_request'` arm.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -350,7 +362,7 @@ jobs:
   # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:
     needs: [packages-build, changes]
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.api == 'true' }}
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.api == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -382,7 +394,7 @@ jobs:
   # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
   web-tests:
     needs: [packages-build, changes]
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -504,9 +516,9 @@ jobs:
       - name: Build shared packages
         uses: ./.github/actions/turbo-packages-build
 
-      - name: Check API contract freshness (PR)
-        if: github.event_name == 'pull_request'
-        run: npm run check:api-contract -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+      - name: Check API contract freshness (PR or merge queue)
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: npm run check:api-contract -- --base "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}" --head "${{ github.sha }}"
 
       - name: Check API contract freshness (push)
         if: github.event_name == 'push'
@@ -530,14 +542,14 @@ jobs:
       # (#3783): a bad conflict resolution otherwise passes as "fewer builds".
       - name: Check API compatibility with shipped mobile builds (blocking)
         env:
-          REGISTRY_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+          REGISTRY_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
         run: npm run check:api-breaking:shipped -- ${REGISTRY_BASE:+--registry-base "$REGISTRY_BASE"}
 
       # `!cancelled()`: its findings are the only report of breaks to routes no shipped build had.
       - name: Detect breaking API changes against the PR base (advisory)
-        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        if: ${{ !cancelled() && github.event_name != 'push' }}
         continue-on-error: true
-        run: npm run check:api-breaking -- --base "${{ github.event.pull_request.base.sha }}"
+        run: npm run check:api-breaking -- --base "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}"
 
   # ── Architectural boundary linting (dependency-cruiser) ─────────────────
   # Required, against a shrink-only baseline (docs/ci-cd/quality-gates.md
@@ -619,9 +631,9 @@ jobs:
         with:
           install: ci
 
-      - name: Check migration safety (PR)
-        if: github.event_name == 'pull_request'
-        run: npm run check:migration-safety -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+      - name: Check migration safety (PR or merge queue)
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: npm run check:migration-safety -- --base "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}" --head "${{ github.sha }}"
 
       # No range on push: the applied-migration edit check (#2751) and the
       # promotion-docs check are PR-time gates. Filename checks (#980) and the
@@ -652,9 +664,9 @@ jobs:
         with:
           install: ci
 
-      - name: Lint changed migrations (PR)
-        if: github.event_name == 'pull_request'
-        run: npm run check:migration-lock-safety -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+      - name: Lint changed migrations (PR or merge queue)
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: npm run check:migration-lock-safety -- --base "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}" --head "${{ github.sha }}"
 
       - name: Lint changed migrations (push)
         if: github.event_name == 'push'
@@ -685,7 +697,7 @@ jobs:
   # ── Mobile app validation ───────────────────────────────────────────────
   mobile-validate:
     needs: [packages-build, changes]
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.mobile == 'true' }}
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -737,10 +749,12 @@ jobs:
       # builds. Fails a PR that makes one without a bump; warns on a push, and
       # on a PR that didn't cause it (scripts/check-mobile-native-version.mjs).
       # A PR's HEAD is its test merge, whose first parent is the base it was
-      # merged onto; the payload's base.sha can be older than that.
+      # merged onto; the payload's base.sha can be older than that. A merge
+      # queue commit's first parent is likewise the entry ahead of it (or main),
+      # so HEAD^1 isolates this PR there too, and the queue fails it as a PR would.
       - name: Native changes carry an expo.version bump
         env:
-          BASE_SHA: ${{ github.event_name == 'pull_request' && 'HEAD^1' || '' }}
+          BASE_SHA: ${{ github.event_name != 'push' && 'HEAD^1' || '' }}
         run: npm run check:mobile-native-version
 
       # What the binaries declare, read from the introspected config rather than
@@ -766,7 +780,7 @@ jobs:
   # no time to a run.
   mobile-tests-tokyo:
     needs: [packages-build, changes]
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.mobile == 'true' }}
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -855,9 +869,9 @@ jobs:
           key: gitleaks-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-gitleaks.sh') }}
 
       # scan-secrets.mjs runs the installer, a no-op on a cache hit (no npm ci needed).
-      - name: Scan PR commit range for secrets
-        if: github.event_name == 'pull_request'
-        run: node scripts/scan-secrets.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+      - name: Scan PR or merge queue commit range for secrets
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        run: node scripts/scan-secrets.mjs --base "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}" --head "${{ github.sha }}"
 
       - name: Scan pushed commit range for secrets
         if: github.event_name == 'push'
@@ -872,7 +886,7 @@ jobs:
   # § RLS enforcement.
   pglite-migrations:
     needs: changes
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.pglite == 'true' }}
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.pglite == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -926,7 +940,7 @@ jobs:
   # the guards against a zero-test run: docs/ci-cd/quality-gates.md.
   web-responsive-floor:
     needs: [packages-build, changes]
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -978,7 +992,7 @@ jobs:
   # No `continue-on-error`.
   landing-fold:
     needs: [packages-build, changes]
-    if: ${{ github.event_name == 'push' || needs.changes.outputs.landing == 'true' }}
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.landing == 'true' }}
     permissions:
       contents: read
     runs-on: ubuntu-latest

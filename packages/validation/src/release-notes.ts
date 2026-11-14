@@ -132,6 +132,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Birthdays members share now show on the events calendar, with a Birthdays switch to hide them.",
       "Opening the app is faster, and it no longer slows to a crawl when lots of people open it at once.",
       "A GIF now shows as \"GIF\" in your conversation list and saved messages, you can send GIFs in message threads, and GIFs stay still until you play them if your device is set to reduce motion.",
+      "You can ask Frapp to remind you about a chat message later, and the reminder shows up on your Activity page until you mark it done.",
+      "A scheduled message can now carry the photos or files you staged and a reply to another message, and each one in your scheduled list says what it carries.",
     ],
     web: [
       "Schedule a message to send later: open the arrow beside Send, pick a time, and see, edit or send your scheduled messages from the line above the composer.",
@@ -140,6 +142,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     phone: [
       "Schedule a message to send later: hold Send, pick a time, and see, edit or send your scheduled messages from the line above the composer.",
       "Typing @ in a forwarded message's note now lets you pick who to mention, as it does when you post.",
+      "The month calendar writes each day's events in its square, so you can see what's on without tapping each day.",
     ],
   },
   {

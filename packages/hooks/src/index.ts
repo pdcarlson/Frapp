@@ -101,6 +101,7 @@ export * from "./use-invoices";
 export * from "./use-meetings";
 export * from "./use-member-nudge";
 export * from "./use-members";
+export * from "./use-message-reminders";
 export * from "./use-notifications";
 export * from "./use-now";
 export * from "./use-org-config";
