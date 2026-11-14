@@ -14,6 +14,7 @@ import type {
   BackworkDepartment,
   BackworkProfessor,
   BackworkResource,
+  BirthdayPost,
   CalendarFeed,
   ChannelReadReceipt,
   Chapter,
@@ -165,6 +166,7 @@ export interface Database {
       backwork_departments: TableDefinition<BackworkDepartment>;
       backwork_professors: TableDefinition<BackworkProfessor>;
       backwork_resources: TableDefinition<BackworkResource>;
+      birthday_posts: TableDefinition<BirthdayPost>;
       calendar_feeds: TableDefinition<CalendarFeed>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;

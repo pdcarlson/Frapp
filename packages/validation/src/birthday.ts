@@ -153,8 +153,9 @@ export const BIRTHDAY_COPY = {
     nobody: "Only you",
   } satisfies Record<BirthdayVisibility, string>,
   visibilityHint: {
-    chapter: "Members of your chapter see the day on your profile.",
-    nobody: "Nobody else sees it.",
+    chapter:
+      "Members of your chapter see the day on your profile and the calendar.",
+    nobody: "Nobody else sees it, and it stays off the calendar.",
   } satisfies Record<BirthdayVisibility, string>,
   invalid: "Pick a month and a day that exists in it.",
   yearInvalid: `Enter a year from ${BIRTH_YEAR_MIN} to ${BIRTH_YEAR_MAX}, or leave it empty.`,
