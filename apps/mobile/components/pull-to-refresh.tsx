@@ -31,9 +31,9 @@ export type RefreshableQuery = {
  *
  * A pull replaces a fetch already in flight (`cancelRefetch: true`, what a
  * plain `refetch()` does) rather than joining it. The pull is the member
- * saying the screen looks stuck, and nothing else bounds a hung request:
- * neither the API client nor the SDK sets a timeout, so a joined fetch on a
- * dead socket would hold the spinner until the OS gives up on it.
+ * saying the screen looks stuck, and a joined fetch on a dead socket would
+ * hold the spinner until the API client's timeout (15s for a read, #3433)
+ * ends it, and through its retry.
  *
  * Returns a stable callback that reads the latest results, so a screen passes
  * `[query, …]` inline.
