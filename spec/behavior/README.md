@@ -38,6 +38,7 @@ the targets resolve — so add the row in the same change that adds the topic fi
 | Reports and export                                   | [`reports.md`](reports.md)                 |
 | Legal (ToS, Privacy, FERPA)                          | [`legal.md`](legal.md)                     |
 | Data retention                                       | [`data-retention.md`](data-retention.md)   |
+| Campus spaces, cross-chapter messages, campus moderation (proposed) | [`campus-spaces.md`](campus-spaces.md) |
 | Alumni features                                      | [`alumni.md`](alumni.md)                   |
 | Chapter branding                                     | [`branding.md`](branding.md)               |
 | Settings shell, customization, audit                 | [`settings/`](settings/README.md)          |
