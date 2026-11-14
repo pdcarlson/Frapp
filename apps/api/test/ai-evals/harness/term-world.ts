@@ -257,6 +257,7 @@ export function createTermWorld(
     display_order: index,
     color: null,
     mentionable: true,
+    self_assignable: false,
     tier_id: null,
     permission_overrides: {},
     created_at: stamp,
