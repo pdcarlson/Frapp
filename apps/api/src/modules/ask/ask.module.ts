@@ -14,6 +14,7 @@ import {
 import { ASK_TOOL_CLASSES } from '../../application/services/ask/ask-tools';
 import { AskConversationService } from '../../application/services/ask/ask-conversation.service';
 import { AskSuggestionsService } from '../../application/services/ask/ask-suggestions.service';
+import { AskFromService } from '../../application/services/ask/agent/ask-from.service';
 import { AskService } from '../../application/services/ask/ask.service';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
 import { AskDiagnosticsSweepService } from '../../application/workers/ask-diagnostics-sweep.service';
@@ -64,7 +65,8 @@ import { TaskModule } from '../task/task.module';
  *
  * `AskConversationService` is what the route calls: it runs a question
  * through `AskService` and, for a client that shows proposal cards, through
- * `ActService` (`ActModule`) beside it.
+ * `ActService` (`ActModule`) beside it. With the tool loop on, the cards
+ * are the loop's own: `ActModule` exports them as `AGENT_PROPOSE_TOOLS`.
  */
 @Module({
   imports: [
@@ -88,6 +90,7 @@ import { TaskModule } from '../task/task.module';
   controllers: [AskController, AskDiagnosticsStopController],
   providers: [
     AskService,
+    AskFromService,
     AskConversationService,
     AskSuggestionsService,
     AskDiagnosticsService,

@@ -26,6 +26,7 @@ export * from "./api-error-codes";
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
 // People and channels named in an Ask answer (#4904).
+export * from "./ask-effort";
 export * from "./ask-entities";
 // Thumbs on an Ask answer and the taps under it (#4902).
 export * from "./ask-feedback";
@@ -37,6 +38,8 @@ export * from "./backwork";
 // ── Backwork course names and nicknames (#3848) ──
 export * from "./backwork-courses";
 export * from "./beta-off-modules";
+// A member's birthday (#4959): its rules, its words, and where it falls.
+export * from "./birthday";
 export * from "./channel-access-lists";
 export * from "./chapter-branding";
 export * from "./chapter-config";

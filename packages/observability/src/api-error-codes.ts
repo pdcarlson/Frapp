@@ -75,6 +75,9 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "chapter.subscription.canceled",
   "chapter.subscription.write_locked",
   "chapter.subscription.invite_blocked",
+  // The officer picked a birthday post channel another officer archived or
+  // made private meanwhile (#4959).
+  "chapter.config.invalid_birthday_channel",
   // The officer picked a role another officer deleted meanwhile.
   "chapter.config.invalid_default_invite_role",
   // An officer named a role so it reads as @everyone (#4191) or @here.

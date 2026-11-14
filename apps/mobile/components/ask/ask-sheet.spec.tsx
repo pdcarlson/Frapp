@@ -36,6 +36,7 @@ const hooks = vi.hoisted(() => ({
   statusEnabled: [] as boolean[],
   savedUntil: null as string | null,
   download: vi.fn(),
+  signal: vi.fn(),
   actions: [] as string[],
   actEnabled: [] as boolean[],
   mayAct: false,
@@ -70,6 +71,14 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     };
   },
   useDocumentDownloadUrl: () => ({ mutateAsync: hooks.download }),
+  useAskSignal: () => hooks.signal,
+  // The thumbs have their own specs (`ask-turn.spec.tsx`).
+  useAskThumbs: () => ({
+    state: { rating: null, reason: null },
+    failed: false,
+    rate: vi.fn(),
+    giveReason: vi.fn(),
+  }),
   useAskSuggestions: (options: { enabled: boolean }) => {
     hooks.suggestionsEnabled.push(options.enabled);
     return { suggestions: options.enabled ? hooks.suggestions : [] };
@@ -432,6 +441,21 @@ describe("AskSheet", () => {
       "https://files.example/d1",
     );
     expect(modal.dismiss).not.toHaveBeenCalled();
+    // No kept trace on this answer, so the open is counted against nothing.
+    expect(hooks.signal).toHaveBeenLastCalledWith(undefined, "source_opened");
+  });
+
+  it("counts a source opened against the answer's kept trace (#4904)", async () => {
+    const turn = answered();
+    hooks.exchanges = [
+      { ...turn, answer: { ...turn.answer!, ask_id: "trace-1" } },
+    ];
+    hooks.download.mockResolvedValue({
+      downloadUrl: "https://files.example/d1",
+    });
+    const tree = render();
+    await act(async () => sourceRow(tree, 1).props.onPress());
+    expect(hooks.signal).toHaveBeenLastCalledWith("trace-1", "source_opened");
   });
 
   it("says a document didn't open rather than doing nothing", async () => {

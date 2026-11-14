@@ -54,6 +54,7 @@ import {
   useMyPermissions,
   useBookmarks,
   useBookmarkedMessageIds,
+  useScheduleMessage,
   useBookmarkMessage,
   useUnbookmarkMessage,
   resolveAuthorLabel,
@@ -179,6 +180,7 @@ import {
   notifyDispatchOutcome,
   type CommandFormOutcome,
 } from "./composer";
+import { ScheduledMessagesBar } from "./schedule-send";
 import {
   canBlockSender,
   channelAllowsReplies,
@@ -216,6 +218,7 @@ import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
+import { AllThreadsPopover } from "./all-threads-popover";
 import type { ChannelRowActions } from "./channel-row-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
@@ -939,11 +942,7 @@ export function ChatShell({
       const ownBack = backPending.current;
       if (isUnderThreadPaneEntry(event.state)) {
         unmarkUnderThreadPaneEntry();
-        if (
-          !ownBack &&
-          !openAfterBack.current &&
-          isDesktopShellRef.current
-        ) {
+        if (!ownBack && !openAfterBack.current && isDesktopShellRef.current) {
           // The browser's Back left a below-`lg` pick's entry from `lg` up,
           // where the list was already on screen: finish the press (#3836).
           onThreadEntry.current = false;
@@ -1860,6 +1859,7 @@ export function ChatShell({
     [bookmarksQuery.data],
   );
   const bookmarkedMessageIds = useBookmarkedMessageIds();
+  const scheduleMessage = useScheduleMessage();
   const bookmarkMessage = useBookmarkMessage();
   const unbookmarkMessage = useUnbookmarkMessage();
   const handleToggleBookmark = useCallback(
@@ -2563,10 +2563,14 @@ export function ChatShell({
   } | null>(null);
   // Leaving the channel closes its thread, so coming back shows the timeline
   // (state adjusted during render, React's pattern for a reset on a prop).
+  // Not while the thread's channel is the one being switched to and the
+  // cached list hasn't brought it in yet: All threads (#4960) opens a thread
+  // in a channel that may be new to this tab, and its refetch lands after.
   if (
     openThread &&
     activeChannel &&
-    openThread.channelId !== activeChannel.id
+    openThread.channelId !== activeChannel.id &&
+    openThread.channelId !== selectedChannelId
   ) {
     setOpenThread(null);
   }
@@ -2604,6 +2608,31 @@ export function ChatShell({
     setThreadJump(null);
     setOpenThread(null);
   }, []);
+  // A channel reads `#name` in the All threads list; a DM its people.
+  const threadChannelLabel = useCallback(
+    (channelId: string) => {
+      const title = channelTitles.get(channelId);
+      if (!title) return null;
+      const type = channels.find((ch) => ch.id === channelId)?.type;
+      return type === "DM" || type === "GROUP_DM" ? title : `#${title}`;
+    },
+    [channelTitles, channels],
+  );
+  // All threads (#4960): a row may name another channel, so switch to it
+  // first, as a bookmark's jump does, and open its thread there.
+  const openThreadInChannel = useCallback(
+    (channelId: string, rootId: string) => {
+      if (channelId !== activeChannelId) {
+        setSelectedChannelId(channelId);
+        setChannelTargetDismissed(false);
+        void refetchChannels();
+      }
+      setThreadJump(null);
+      setOpenThread({ channelId, rootId });
+      setNarrowPane("thread");
+    },
+    [activeChannelId, refetchChannels],
+  );
 
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it, and only on a channel a
@@ -3408,6 +3437,12 @@ export function ChatShell({
                 <MembersGlyph className="h-5 w-5" active={membersBeside} />
               </Button>
             ) : null}
+            <AllThreadsPopover
+              channelNameFor={threadChannelLabel}
+              nameFor={nameFor}
+              viewerId={userId}
+              onOpenThread={openThreadInChannel}
+            />
             <ChannelMenu
               activeChannelId={activeChannelId}
               messages={shownMessages}
@@ -3934,6 +3969,11 @@ export function ChatShell({
             <TypingLine label={typingLine} />
           </>
         ) : null}
+        {/* Wherever the member can read: a message that failed because they
+            lost posting here is exactly the one they need to see and delete. */}
+        {activeChannel ? (
+          <ScheduledMessagesBar channelId={activeChannel.id} />
+        ) : null}
         {activeChannel ? (
           <Composer
             // Remounts the editor whenever the channel *or its resolved
@@ -4000,6 +4040,19 @@ export function ChatShell({
                 mentionPicks,
               });
             }}
+            // Text scheduled to post later (#4956), where the member may post.
+            onSchedule={
+              activeChannel.can_post !== false
+                ? async (body, mentionPicks, at) => {
+                    await scheduleMessage.mutateAsync({
+                      channelId: activeChannel.id,
+                      content: body,
+                      sendAt: at,
+                      mentionPicks,
+                    });
+                  }
+                : undefined
+            }
             // A GIF goes out as its own message (#4631); the reply strip
             // attaches to it as it would to typed text.
             onSendGif={

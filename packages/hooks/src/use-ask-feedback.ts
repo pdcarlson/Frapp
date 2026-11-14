@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import type { AskFeedbackRating, AskFeedbackReason } from "@repo/validation";
+import type {
+  AskFeedbackRating,
+  AskFeedbackReason,
+  AskSignal,
+} from "@repo/validation";
 import { throwUnlessOk } from "@repo/api-sdk";
 import { useFrappClient } from "./use-frapp-client";
 
@@ -96,4 +100,32 @@ export function useAskThumbs(askId: string | null | undefined): {
   );
 
   return { state, failed, rate, giveReason };
+}
+
+/**
+ * Counts a tap under an Ask answer (`ASK_SIGNALS`; `spec/behavior/ai.md`
+ * § Feedback on an answer): one word against the answer's id, never a word
+ * of the answer. Sent and forgotten: a count that does not arrive changes
+ * nothing the member sees, so a failure is dropped. Nothing is sent for an
+ * answer with no kept trace (`askId` empty).
+ */
+export function useAskSignal(): (
+  askId: string | null | undefined,
+  signal: AskSignal,
+) => void {
+  const client = useFrappClient();
+  return useCallback(
+    (askId, signal) => {
+      if (!askId) return;
+      void Promise.resolve()
+        .then(() =>
+          client.POST("/v1/ai/ask/{ask_id}/signals", {
+            params: { path: { ask_id: askId } },
+            body: { signal },
+          }),
+        )
+        .catch(() => undefined);
+    },
+    [client],
+  );
 }

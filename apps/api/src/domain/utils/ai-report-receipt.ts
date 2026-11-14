@@ -44,6 +44,8 @@ export type AskGivenRef =
   | { type: 'document'; id: string }
   | { type: 'meeting'; id: string }
   | { type: 'chat' }
+  /** The channel the question was asked from: open to that channel alone. */
+  | { type: 'channel'; id: string }
   | {
       type: 'tool';
       name: string;

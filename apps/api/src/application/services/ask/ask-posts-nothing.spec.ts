@@ -81,13 +81,19 @@ const CALLS = new Set([
   'rbac.getEffectivePermissions',
   'retrieval.retrieve',
   'roles.findByChapterAndSystemKey',
+  'tasks.findById',
   'tasks.list',
   'users.findDisplayIdentitiesByIds',
   // Consent, permission and the lanes' own plumbing.
   'act.availableActions',
+  // A card from the tool loop: `ActService.proposePlanned`, which saves a
+  // proposal for the asker alone (`act-agent-tools.ts`).
+  'act.proposePlanned',
   'actService.act',
   'askService.ask',
   'askService.assertMayAsk',
+  // What the member had open, looked up as them (`AskFromService`).
+  'from.read',
   'consent.check',
   'consent.getConsentState',
   'consent.onConsentWithdrawn',
@@ -100,6 +106,7 @@ const CALLS = new Set([
   'suggestions.suggest',
   'people.resolve',
   'tools.filter',
+  'proposeTools.filter',
   // The tool loop (epic #4898): which reads to offer, and the loop itself,
   // which runs only what it was offered (`agent/agent-loop.service.ts`).
   'agentTools.filter',

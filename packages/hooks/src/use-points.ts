@@ -86,12 +86,7 @@ export function useLeaderboard(
 export function usePointsTransactions(options?: {
   userId?: string;
   category?:
-    | "ATTENDANCE"
-    | "ACADEMIC"
-    | "SERVICE"
-    | "FINE"
-    | "MANUAL"
-    | "STUDY";
+    "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
   flagged?: boolean;
   before?: string;
   limit?: number;
@@ -221,7 +216,11 @@ export function useAdjustPoints() {
       body.reason,
     ]);
     if (pending.current?.fingerprint !== fingerprint) {
-      pending.current = { fingerprint, key: randomClientId(), uncertain: false };
+      pending.current = {
+        fingerprint,
+        key: randomClientId(),
+        uncertain: false,
+      };
     }
     return pending.current.key;
   }

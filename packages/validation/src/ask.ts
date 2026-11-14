@@ -99,6 +99,15 @@ export const AskRequestSchema = z.object({
    */
   actions: z.boolean().optional(),
   /**
+   * The client draws the cards an answer comes with (`AskAnswer.proposals`),
+   * so one turn can be an answer with cards under it, or several cards.
+   * Read only with `actions`, and only by a server that answers through the
+   * tool loop (#4899). Without it a turn comes with at most one card, sent
+   * as a `proposal` event in place of the answer, which is all a build from
+   * before this can draw.
+   */
+  answer_cards: z.boolean().optional(),
+  /**
    * The client showed the "answers are being saved" line before this
    * question was sent. An exchange is kept by the beta diagnostics window
    * only when this is true, so a client that does not know about the window
@@ -113,9 +122,9 @@ export const AskRequestSchema = z.object({
   door: z.enum(ASK_DOORS).optional(),
   /**
    * What the member had open ({@link AskFromSchema}), so "this channel" and
-   * "this event" mean something. Unlike `door` it is meant to be read; the
-   * server takes it and does not read it yet (#4899). Left out by
-   * builds before the tool loop (epic #4898), and by Ask's own screen.
+   * "this event" mean something. Unlike `door` it is read, by a server that
+   * answers through the tool loop (#4899, `AskFromService`). No build sends
+   * it yet (#4904 adds it), and Ask's own screen never will.
    */
   from: AskFromSchema.nullish(),
   /** {@link ASK_EFFORTS}. Left out means `default`. */
@@ -325,6 +334,8 @@ export const AskAnswerSchema = z.object({
    * Cards that came with this answer: the ids of suggestions waiting for
    * the asker's Confirm (`GET /v1/ai/suggestions/{id}`), at most
    * {@link ASK_PROPOSALS_MAX}. Nothing has been changed by any of them.
+   * Sent only to a client that asked with `answer_cards`. An answer that is
+   * cards and nothing else is `answered` with empty `text`: draw the cards.
    */
   proposals: z.array(z.string()).max(ASK_PROPOSALS_MAX).nullish(),
   /**
@@ -657,7 +668,6 @@ export const ASK_COPY = {
   /** Under a finished answer: copies its words, without the markers. */
   copy_answer: "Copy answer",
   copied_answer: "Copied",
-  entry_label: "Ask a question about your chapter",
   /** Under Frapp's name in a composer's mention list (#4713). */
   mention_hint: "Only you see the answer",
   /**
