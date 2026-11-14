@@ -20402,6 +20402,10 @@
                 "$ref": "#/components/schemas/ForwardedMessageDto"
               }
             ]
+          },
+          "has_gif": {
+            "type": "boolean",
+            "description": "The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”."
           }
         },
         "required": [
@@ -20414,7 +20418,8 @@
           "payload",
           "attachment_count",
           "created_at",
-          "forwarded_from"
+          "forwarded_from",
+          "has_gif"
         ]
       },
       "ChannelAccessOptionDto": {
@@ -21909,6 +21914,10 @@
               }
             ]
           },
+          "has_gif": {
+            "type": "boolean",
+            "description": "The saved message is a GIF (#4657). A GIF has no text, so the row previews as “GIF”. False on a deleted row, a redacted one, and one whose sender the caller blocked."
+          },
           "sender_blocked": {
             "type": "boolean",
             "description": "Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows."
@@ -21923,6 +21932,7 @@
           "created_at",
           "thread_root_id",
           "forwarded_from",
+          "has_gif",
           "sender_blocked"
         ]
       },

@@ -128,6 +128,8 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       // An `integer` from the RPC, but the count decides between "Attachment"
       // and "3 attachments", so coerce rather than trust the wire type.
       attachment_count: Number(row.attachment_count) || 0,
+      // Absent until `20261114003444` is applied; a missing column is no GIF.
+      has_gif: row.has_gif === true,
     }));
   }
 

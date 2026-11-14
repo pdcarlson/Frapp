@@ -60,6 +60,8 @@ function redactBookmarkedMessage(
       thread_root_id: null,
       // The original's copy is channel content like any other (#4875).
       forwarded_from: null,
+      // So is whether it was a GIF (#4657).
+      has_gif: false,
       // Lost channel access is not a block, and saying otherwise would tell a
       // member they had blocked someone they had not. The two redactions are
       // deliberately separate signals; this one is `message_available: false`.

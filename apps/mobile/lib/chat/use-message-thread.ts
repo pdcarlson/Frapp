@@ -26,6 +26,7 @@ import {
   loadThreadReplies,
   chatFollowedThreadsKey,
   markThreadRead,
+  outgoingGifOf,
   sendThreadReply,
   setThreadFollow,
   type ThreadFollowChoice,
@@ -36,6 +37,7 @@ import {
   normalizeRow,
   type ChannelCache,
   type ChatMessage,
+  type OutgoingGif,
 } from "@repo/chat-core/types";
 import { cacheFromPage, emptyCache } from "@repo/chat-core/cache";
 import { getSupabaseClient } from "@/lib/supabase";
@@ -273,6 +275,7 @@ export function useMessageThread(
       content: string,
       clientMessageId?: string,
       mentionPicks?: readonly MentionPick[],
+      gif?: OutgoingGif | null,
     ) => {
       if (!viewerId) return { error: "You're signed out." };
       // The id is minted here, not in `sendThreadReply`, so a failed reply's
@@ -287,6 +290,7 @@ export function useMessageThread(
         content,
         clientMessageId: clientId,
         mentionPicks: picks,
+        gif,
       });
       if (!result.error) replyPicksRef.current.delete(clientId);
       // Replying follows the thread (the server's rule); show it now.
@@ -302,9 +306,20 @@ export function useMessageThread(
         (message) => message.client_message_id === clientMessageId,
       );
       if (!row) return Promise.resolve({ error: null as string | null });
-      return send(row.content, clientMessageId);
+      return send(
+        row.content,
+        clientMessageId,
+        undefined,
+        outgoingGifOf(row.gif),
+      );
     },
     [messages, send],
+  );
+
+  /** A GIF from the picker as its own reply (#4657); the draft stays. */
+  const sendGif = useCallback(
+    (gif: OutgoingGif) => send("", undefined, undefined, gif),
+    [send],
   );
 
   const discard = useCallback(
@@ -343,6 +358,7 @@ export function useMessageThread(
     typingUsers,
     setFollow,
     send,
+    sendGif,
     retry,
     discard,
     emitTyping,

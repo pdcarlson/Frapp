@@ -27,6 +27,8 @@ import {
   optimisticMessage,
   type ChannelCache,
   type ChatMessage,
+  type MessageGif,
+  type OutgoingGif,
   type ThreadLastReply,
   type RawChatMessage,
   type RawChatMessageAction,
@@ -315,6 +317,11 @@ export interface SendThreadReplyArgs {
   mentionPicks?: readonly MentionPick[] | null;
   /** Reuse the failed row's id for Retry, so the server dedupes. */
   clientMessageId?: string;
+  /**
+   * A GIF from the picker (#4657): the reply is the GIF alone, so `content`
+   * is empty, as a channel GIF send's is (#4631).
+   */
+  gif?: OutgoingGif | null;
 }
 
 /**
@@ -335,6 +342,7 @@ export async function sendThreadReply(
       channelId: args.channelId,
       senderId: args.senderId,
       content: args.content,
+      gif: args.gif ?? null,
     }),
     thread_root_id: args.rootId,
   };
@@ -351,6 +359,16 @@ export async function sendThreadReply(
         thread_root_id: args.rootId,
         mention_picks: args.mentionPicks?.length
           ? [...args.mentionPicks]
+          : undefined,
+        gif: args.gif
+          ? {
+              id: args.gif.id,
+              title: args.gif.title || undefined,
+              url: args.gif.url,
+              width: args.gif.width,
+              height: args.gif.height,
+              token: args.gif.token,
+            }
           : undefined,
       },
     });
@@ -370,6 +388,19 @@ export async function sendThreadReply(
     );
     return { error: reason };
   }
+}
+
+/**
+ * The picker's GIF a failed reply still holds, token and all, so its Retry
+ * sends the GIF again (#4657); `null` for a text reply. The optimistic row
+ * keeps what `sendThreadReply` was given, and only an unsent row has it.
+ */
+export function outgoingGifOf(
+  gif: MessageGif | null | undefined,
+): OutgoingGif | null {
+  if (!gif) return null;
+  const token = (gif as Partial<OutgoingGif>).token;
+  return typeof token === "string" && token ? { ...gif, token } : null;
 }
 
 /** Removes a failed reply the member chose not to retry. */

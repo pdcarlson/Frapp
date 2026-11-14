@@ -7,6 +7,7 @@ import {
   fetchThread,
   fetchThreadUnread,
   loadThreadReplies,
+  outgoingGifOf,
   sendThreadReply,
   threadCardLabel,
   threadChipLabel,
@@ -286,6 +287,72 @@ describe("sendThreadReply (#3785)", () => {
     const row = cacheOf(queryClient)?.byId["client-1"];
     expect(row?._status).toBe("failed");
     expect(row?.thread_root_id).toBe(ROOT);
+  });
+});
+
+describe("a GIF as a thread reply (#4657)", () => {
+  const GIF = {
+    provider: "klipy",
+    id: "g1",
+    title: "wave",
+    url: "https://static.klipy.com/g1.webp",
+    width: 200,
+    height: 150,
+    token: "signed",
+  };
+
+  test("posts the GIF with its token and no text, drawn at once", async () => {
+    const queryClient = new QueryClient();
+    let seen: ChannelCache | undefined;
+    const POST = vi.fn<
+      (
+        path: string,
+        init: unknown,
+      ) => Promise<{
+        data: undefined;
+        error: { message: string };
+        response: { status: number };
+      }>
+    >(async () => {
+      seen = cacheOf(queryClient);
+      return {
+        data: undefined,
+        error: { message: "offline" },
+        response: { status: 503 },
+      };
+    });
+    const api = { POST } as unknown as FrappApiClient;
+    await sendThreadReply(queryClient, api, {
+      channelId: CH,
+      rootId: ROOT,
+      senderId: "me",
+      content: "",
+      gif: GIF,
+      clientMessageId: "client-gif",
+    });
+    expect(POST.mock.calls[0]?.[1]).toMatchObject({
+      body: {
+        content: "",
+        thread_root_id: ROOT,
+        gif: {
+          id: "g1",
+          url: GIF.url,
+          width: 200,
+          height: 150,
+          token: "signed",
+        },
+      },
+    });
+    expect(seen?.byId["client-gif"]?.gif?.url).toBe(GIF.url);
+    // The failed row keeps the token, so Retry can send the GIF again.
+    const failed = cacheOf(queryClient)?.byId["client-gif"];
+    expect(outgoingGifOf(failed?.gif)).toEqual(GIF);
+  });
+
+  test("a confirmed GIF, which carries no token, is nothing to resend", () => {
+    const stored = { ...GIF, token: undefined };
+    expect(outgoingGifOf(stored)).toBeNull();
+    expect(outgoingGifOf(undefined)).toBeNull();
   });
 });
 

@@ -617,6 +617,11 @@ export interface ChannelLatestMessage {
    * author. Null when the latest message is not a forward.
    */
   forwarded_from: ChatForwardedMessage | null;
+  /**
+   * The latest message is a GIF (#4657), which has no text, so the preview
+   * reads "GIF" rather than "Message".
+   */
+  has_gif: boolean;
 }
 
 /**
@@ -739,6 +744,12 @@ export interface BookmarkedMessage {
    * author, and dropped from a row whose channel access was lost.
    */
   forwarded_from: ChatForwardedMessage | null;
+  /**
+   * The message is a GIF (#4657), which has no text, so the Bookmarks panel
+   * reads "GIF" rather than "Message". False once withheld (a block, lost
+   * channel access, a delete).
+   */
+  has_gif: boolean;
   /**
    * Whether the caller has blocked this message's sender (#2257).
    *

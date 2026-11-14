@@ -6256,6 +6256,8 @@ export interface components {
             created_at: string;
             /** @description When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise. */
             forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
+            /** @description The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”. */
+            has_gif: boolean;
         };
         ChannelAccessOptionDto: {
             /** @description The entry as a list stores it: `tier:<id>`, `role:<id>` or `group:<id>`. Send it back in `who_can_see` or `who_can_post`. */
@@ -6769,6 +6771,8 @@ export interface components {
             thread_root_id: string | null;
             /** @description Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author. */
             forwarded_from: components["schemas"]["ForwardedMessageDto"] | null;
+            /** @description The saved message is a GIF (#4657). A GIF has no text, so the row previews as “GIF”. False on a deleted row, a redacted one, and one whose sender the caller blocked. */
+            has_gif: boolean;
             /** @description Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows. */
             sender_blocked: boolean;
         };

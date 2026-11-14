@@ -203,6 +203,7 @@ export function maskBlockedBookmarkMessage(
     thread_root_id: message.thread_root_id,
     // What the blocked member put in front of the blocker, as above.
     forwarded_from: null,
+    has_gif: false,
     sender_blocked: true,
   };
 }

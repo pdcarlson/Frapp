@@ -1002,6 +1002,13 @@ export class ChannelLatestMessageDto {
       'When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise.',
   })
   forwarded_from: ForwardedMessageDto | null;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”.',
+  })
+  has_gif: boolean;
 }
 
 /**
@@ -1507,6 +1514,13 @@ export class BookmarkedMessageDto {
       'Set when the saved message is a forward (#4864, #4875): the server-built copy of the original, so a forward with no comment can preview it. Null on every other row, on a row whose channel access was lost, and on a row whose sender the caller blocked. Withheld inside (`sender_blocked: true`) when the caller blocked the original’s author.',
   })
   forwarded_from: ForwardedMessageDto | null;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'The saved message is a GIF (#4657). A GIF has no text, so the row previews as “GIF”. False on a deleted row, a redacted one, and one whose sender the caller blocked.',
+  })
+  has_gif: boolean;
 
   @ApiProperty({
     type: Boolean,

@@ -30,6 +30,8 @@ export interface BookmarkedMessage extends MessageAuthor {
   created_at: string;
   /** A forward's copy (#4875), read with `forwardedFromOf`. */
   forwarded_from?: unknown;
+  /** The saved message is a GIF (#4657), so it previews as "GIF". */
+  has_gif?: boolean;
 }
 
 export interface BookmarkEntry {
