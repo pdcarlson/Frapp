@@ -6464,6 +6464,8 @@ export interface components {
             kind: string | null;
             /** @description The reply’s `metadata.attachment_count`, or 0 when it has none. */
             attachment_count: number;
+            /** @description The reply is a GIF (#4657), so a preview reads “GIF”. False on a masked preview; absent on one written before GIF thread replies. */
+            has_gif?: boolean;
             created_at: string;
             /** @description Set by a read that masks: true when the viewer blocked this replier, with `content` withheld (empty) and `kind` null; false when cleared. Absent on the Realtime echo, which carries the preview raw: a client applies its own list. */
             sender_blocked?: boolean;

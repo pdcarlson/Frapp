@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { gifBoxSize, type MessageGif } from "@repo/chat-core/types";
 import { FOCUS_RING } from "@/components/ui/focus";
-import { usePrefersReducedMotion } from "@/lib/hooks/use-prefers-reduced-motion";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
 
 /** A GIF's box in the thread: at most 300px wide or 200px tall. */
 const GIF_MAX = { width: 300, height: 200 };
+
+/** The system setting a member turns on to ask for less motion. */
+export const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
 
 const IMAGE_CLASS = "block h-auto max-w-full rounded-md bg-surface-1";
 
@@ -23,7 +26,7 @@ const IMAGE_CLASS = "block h-auto max-w-full rounded-md bg-surface-1";
  * image, so no second rendition is stored or fetched.
  */
 export function MessageGifImage({ gif }: { gif: MessageGif }) {
-  const reduceMotion = usePrefersReducedMotion();
+  const reduceMotion = useMediaQuery(REDUCED_MOTION);
   const { width, height } = gifBoxSize(gif, GIF_MAX);
   const alt = gif.title ? `GIF: ${gif.title}` : "GIF";
   const style = { aspectRatio: `${gif.width} / ${gif.height}`, width };
@@ -72,6 +75,61 @@ function StillGif({
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const playing = hovered || focused;
+  return (
+    <div className="mt-1" data-testid="message-gif">
+      <button
+        type="button"
+        aria-label={alt}
+        aria-description="Plays while hovered or focused"
+        className={cn("relative block max-w-full rounded-md", FOCUS_RING)}
+        onPointerEnter={() => setHovered(true)}
+        onPointerLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+      >
+        <GifFrame
+          url={gif.url}
+          width={width}
+          height={height}
+          playing={playing}
+          className={IMAGE_CLASS}
+          style={style}
+        />
+        {playing ? null : (
+          <span
+            aria-hidden="true"
+            className="absolute bottom-1.5 left-1.5 rounded-[5px] border border-border bg-popover px-1 text-caption font-bold text-foreground"
+          >
+            GIF
+          </span>
+        )}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * A GIF held on its first frame, playing only while `playing` (#4657): for a
+ * member who asked for reduced motion, in the thread and in the GIF picker.
+ * The still is drawn on a canvas from the same image, so no second rendition
+ * is stored or fetched; the canvas stays mounted, so it survives a hover.
+ * Decorative: the caller labels it.
+ */
+export function GifFrame({
+  url,
+  width,
+  height,
+  playing,
+  className,
+  style,
+}: {
+  url: string;
+  width: number;
+  height: number;
+  playing: boolean;
+  className?: string;
+  style?: CSSProperties;
+}) {
   const canvas = useRef<HTMLCanvasElement | null>(null);
 
   // The first frame, painted once the image loads. A cross-origin image
@@ -85,55 +143,35 @@ function StillGif({
       if (!live || !target) return;
       target.getContext("2d")?.drawImage(image, 0, 0, width, height);
     };
-    image.src = gif.url;
+    image.src = url;
     return () => {
       live = false;
       image.onload = null;
     };
-  }, [gif.url, width, height]);
+  }, [url, width, height]);
 
   return (
-    <div className="mt-1" data-testid="message-gif">
-      <button
-        type="button"
-        aria-label={alt}
-        aria-description="Plays while hovered or focused"
-        className={cn("relative block max-w-full rounded-md", FOCUS_RING)}
-        onPointerEnter={() => setHovered(true)}
-        onPointerLeave={() => setHovered(false)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-      >
-        {/* Always mounted, so the still survives a hover. */}
-        <canvas
-          ref={canvas}
-          data-testid="message-gif-still"
+    <>
+      <canvas
+        ref={canvas}
+        data-testid="message-gif-still"
+        width={width}
+        height={height}
+        aria-hidden="true"
+        className={className}
+        style={style}
+      />
+      {playing ? (
+        /* eslint-disable-next-line @next/next/no-img-element -- an animated WebP from the GIF provider; next/image would re-encode it */
+        <img
+          src={url}
+          alt=""
           width={width}
           height={height}
-          aria-hidden="true"
-          className={IMAGE_CLASS}
-          style={style}
+          decoding="async"
+          className={cn(className, "absolute inset-0 h-full w-full")}
         />
-        {playing ? (
-          /* eslint-disable-next-line @next/next/no-img-element -- an animated WebP from the GIF provider; next/image would re-encode it */
-          <img
-            src={gif.url}
-            alt=""
-            width={width}
-            height={height}
-            decoding="async"
-            className={cn(IMAGE_CLASS, "absolute inset-0 h-full w-full")}
-          />
-        ) : null}
-        {playing ? null : (
-          <span
-            aria-hidden="true"
-            className="absolute bottom-1.5 left-1.5 rounded-[5px] border border-border bg-popover px-1 text-caption font-bold text-foreground"
-          >
-            GIF
-          </span>
-        )}
-      </button>
-    </div>
+      ) : null}
+    </>
   );
 }

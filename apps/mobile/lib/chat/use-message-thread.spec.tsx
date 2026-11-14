@@ -351,4 +351,67 @@ describe("useMessageThread's gap reads on the phone", () => {
       exact: true,
     });
   });
+  describe("GIFs (#4657)", () => {
+    const GIF = {
+      provider: "klipy",
+      id: "g1",
+      title: "wave",
+      url: "https://static.klipy.com/g1.webp",
+      width: 200,
+      height: 150,
+      token: "signed",
+    };
+
+    it("sends a GIF as its own reply, and retries it with its GIF and token", async () => {
+      mocks.fetchThread.mockResolvedValue({
+        root: ROOT,
+        follow_state: "following",
+        last_read_at: null,
+      });
+      const { queryClient, wrapper } = setup();
+      // A failed GIF reply, as the optimistic row holds it: the picker's GIF.
+      const cache = cacheFromPage(
+        [
+          {
+            ...ROOT,
+            id: "g9",
+            client_message_id: "c-g9",
+            content: "",
+            thread_root_id: "root",
+          } as RawChatMessage,
+        ],
+        [],
+      );
+      const key = cache.order[0]!;
+      cache.byId[key] = { ...cache.byId[key]!, gif: GIF };
+      queryClient.setQueryData(chatThreadRepliesKey("c1", "root"), cache);
+      const { result } = renderHook(
+        () => useMessageThread("c1", "root", "me"),
+        { wrapper },
+      );
+      await waitFor(() => expect(result.current.messages).toHaveLength(1));
+
+      await act(async () => {
+        await result.current.sendGif(GIF);
+      });
+      expect(mocks.sendThreadReply).toHaveBeenLastCalledWith(
+        queryClient,
+        {},
+        expect.objectContaining({ content: "", gif: GIF }),
+      );
+
+      await act(async () => {
+        await result.current.retry("c-g9");
+      });
+      expect(mocks.sendThreadReply).toHaveBeenLastCalledWith(
+        queryClient,
+        {},
+        expect.objectContaining({
+          content: "",
+          clientMessageId: "c-g9",
+          gif: GIF,
+        }),
+      );
+    });
+  });
 });

@@ -16,6 +16,7 @@ import {
 } from "./threads";
 import { emptyCache } from "./cache";
 import type { ChannelCache, ChatMessage, RawChatMessage } from "./types";
+import { normalizeRow } from "./types";
 import type { FrappApiClient } from "./chat-client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -539,6 +540,7 @@ describe("threadPreviewParts and threadCardLabel (#4297)", () => {
     content,
     kind: "text" as const,
     attachment_count: 0,
+    has_gif: false,
     created_at: "2026-11-11T20:00:00.000Z",
     sender_blocked: false,
   });
@@ -564,6 +566,22 @@ describe("threadPreviewParts and threadCardLabel (#4297)", () => {
         names,
       ).text,
     ).toBe("2 attachments");
+  });
+
+  test("reads a GIF reply as GIF (#4657)", () => {
+    // As the parent row carries it, through the defensive read.
+    const parent = normalizeRow({
+      ...reply("p0"),
+      id: "p0",
+      channel_id: CH,
+      thread_reply_count: 1,
+      thread_last_reply: { ...reply("u1", ""), has_gif: true },
+    } as unknown as RawChatMessage);
+    expect(parent.thread?.last_reply?.has_gif).toBe(true);
+    expect(
+      threadPreviewParts({ ...reply("u1", ""), has_gif: true }, null, names)
+        .text,
+    ).toBe("GIF");
   });
 
   test("says only what the card draws", () => {

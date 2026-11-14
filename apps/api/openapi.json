@@ -20970,6 +20970,10 @@
             "type": "number",
             "description": "The reply’s `metadata.attachment_count`, or 0 when it has none."
           },
+          "has_gif": {
+            "type": "boolean",
+            "description": "The reply is a GIF (#4657), so a preview reads “GIF”. False on a masked preview; absent on one written before GIF thread replies."
+          },
           "created_at": {
             "type": "string"
           },

@@ -402,6 +402,7 @@ function withThreadPreviewMasked(
       content: '',
       kind: null,
       attachment_count: 0,
+      has_gif: false,
       created_at: preview.created_at,
       sender_blocked: true,
     },

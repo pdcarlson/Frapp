@@ -12,7 +12,9 @@ import { db, miss } from "../harness.mjs";
 // - `content` is cut to 500 characters, and `payload` comes back only on an
 //   audit line;
 // - a sender-written `attachment_count` that isn't a small whole number reads
-//   as 0 instead of failing the read for the whole chapter.
+//   as 0 instead of failing the read for the whole chapter;
+// - `has_gif` says a GIF is the latest message, and the thread card's copy
+//   of a GIF reply says so too (#4657).
 //
 // A scenario name is cited by `chat-read-surface-ledger.spec.ts` as the proof
 // for `ChatController_getLatestMessages_v1`, which that spec checks is still a
@@ -95,6 +97,36 @@ try {
   const bystander = await latest(U.c, CH);
   const blockedElsewhere = await latest(U.a, CH_OTHER);
 
+  // A GIF as the latest message, and as a thread reply (#4657).
+  const GIF = `'{"gif":{"provider":"klipy","id":"g1","url":"https://static.klipy.com/g1.webp","width":200,"height":150}}'`;
+  const PARENT = "f3f3f3f3-0000-4000-8000-000000000001";
+  await db.exec(`
+    insert into chat_messages (id, channel_id, sender_id, content, metadata, created_at) values
+      ('${PARENT}', '${EMPTY}', '${U.c}', 'parent', '{}', ${at(4)});
+    insert into chat_messages (channel_id, sender_id, content, metadata, thread_root_id, created_at) values
+      ('${EMPTY}', '${U.c}', '', ${GIF}, '${PARENT}', ${at(5)});
+    insert into chat_messages (channel_id, sender_id, content, metadata, created_at) values
+      ('${EMPTY}', '${U.c}', '', ${GIF}, ${at(6)});
+  `);
+  const gifFlags = (
+    await db.query(
+      `select channel_id::text as id, has_gif
+         from public.get_channel_latest_messages($1, $2)`,
+      [CH, U.a],
+    )
+  ).rows
+    .filter((r) => r.id === EMPTY || r.id === PUB)
+    .map((r) => `${LABEL[r.id]}=${r.has_gif}`)
+    .sort()
+    .join(" ");
+  const threadCard = (
+    await db.query(
+      `select thread_last_reply ->> 'has_gif' as has_gif
+         from chat_messages where id = $1`,
+      [PARENT],
+    )
+  ).rows[0]?.has_gif;
+
   const SCENARIOS = [
     {
       name: "the latest live message is each channel's preview; deleted rows and empty channels give none",
@@ -120,6 +152,11 @@ try {
       name: "a block changes nobody else's previews, nor the blocker's in another chapter",
       got: `${bystander} | ${blockedElsewhere}`,
       want: "ODD=odd 2/0 PUB=from B/2 | PUB_OTHER=B elsewhere/0",
+    },
+    {
+      name: "a GIF as the latest message, or as a thread's latest reply, is flagged has_gif",
+      got: `${gifFlags} | ${threadCard}`,
+      want: "EMPTY=true PUB=false | true",
     },
   ];
   for (const s of SCENARIOS) {

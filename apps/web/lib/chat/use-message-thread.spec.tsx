@@ -365,4 +365,62 @@ describe("useMessageThread clears the thread card's new count (#4297)", () => {
       }),
     );
   });
+  describe("GIFs (#4657)", () => {
+    const GIF = {
+      provider: "klipy",
+      id: "g1",
+      title: "wave",
+      url: "https://static.klipy.com/g1.webp",
+      width: 200,
+      height: 150,
+      token: "signed",
+    };
+
+    it("sends a GIF as its own reply, with no text", async () => {
+      const { result } = open();
+      await waitFor(() => expect(result.current.root).not.toBeNull());
+      await act(async () => {
+        await result.current.sendGif(GIF);
+      });
+      expect(mocks.sendThreadReply).toHaveBeenCalledWith(
+        queryClient,
+        expect.anything(),
+        expect.objectContaining({ content: "", gif: GIF }),
+      );
+    });
+
+    it("retries a failed GIF reply with its GIF and token", async () => {
+      const { result } = open();
+      await waitFor(() => expect(result.current.root).not.toBeNull());
+      act(() => {
+        queryClient.setQueryData(["chat", "c1", "thread", "root", "replies"], {
+          byId: {
+            "client-g": {
+              ...ROOT,
+              id: "client-g",
+              client_message_id: "client-g",
+              content: "",
+              gif: GIF,
+              _status: "failed",
+            },
+          },
+          order: ["client-g"],
+          actionIndex: {},
+        });
+      });
+      await waitFor(() => expect(result.current.messages).toHaveLength(1));
+      await act(async () => {
+        await result.current.retry("client-g");
+      });
+      expect(mocks.sendThreadReply).toHaveBeenCalledWith(
+        queryClient,
+        expect.anything(),
+        expect.objectContaining({
+          content: "",
+          clientMessageId: "client-g",
+          gif: GIF,
+        }),
+      );
+    });
+  });
 });

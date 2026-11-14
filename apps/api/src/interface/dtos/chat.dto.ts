@@ -1161,6 +1161,14 @@ export class ChatThreadLastReplyDto {
   })
   attachment_count: number;
 
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'The reply is a GIF (#4657), so a preview reads “GIF”. False on a masked preview; absent on one written before GIF thread replies.',
+  })
+  has_gif?: boolean;
+
   @ApiProperty()
   created_at: string;
 

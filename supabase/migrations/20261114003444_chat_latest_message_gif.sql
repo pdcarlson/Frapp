@@ -6,10 +6,14 @@
 -- gains `has_gif`, true when the latest message's `metadata.gif` is set. The
 -- GIF itself is not served: the preview needs only the word.
 --
--- Redefined from `20261113185033_chat_message_forwarded_from.sql`; the only
--- change is the `has_gif` column. Its return type changes, so it is dropped
--- and created again, in this migration's transaction, so no reader sees it
--- missing.
+-- 1. `get_channel_latest_messages` is redefined from
+--    `20261113185033_chat_message_forwarded_from.sql`; the only change is the
+--    `has_gif` column. Its return type changes, so it is dropped and created
+--    again, in this migration's transaction, so no reader sees it missing.
+-- 2. A thread reply can be a GIF now (#4657), so the parent's thread card
+--    has to say so too: `chat_thread_reply_preview` (from
+--    `20261112121000_chat_thread_last_reply.sql`) gains a `has_gif` key, and
+--    the parents whose held reply is already a GIF are backfilled.
 
 drop function if exists public.get_channel_latest_messages(uuid, uuid);
 
@@ -121,3 +125,40 @@ begin
   end if;
 end
 $$;
+
+-- 2. The thread card's latest reply --------------------------------------------
+
+-- Redefined from `20261112121000_chat_thread_last_reply.sql` with one more
+-- key. Same signature, so `create or replace` keeps its grants and every
+-- trigger that calls it.
+create or replace function public.chat_thread_reply_preview(
+  m public.chat_messages
+)
+returns jsonb
+language sql
+immutable
+set search_path = public, pg_temp
+as $$
+  select jsonb_build_object(
+    'id', m.id,
+    'sender_id', m.sender_id,
+    'content', left(coalesce(m.content, ''), 500),
+    'kind', m.kind,
+    'attachment_count', case
+      when jsonb_typeof(m.metadata -> 'attachment_count') = 'number'
+        then m.metadata -> 'attachment_count'
+      else '0'::jsonb
+    end,
+    'has_gif', coalesce(jsonb_typeof(m.metadata -> 'gif') = 'object', false),
+    'created_at', m.created_at
+  )
+$$;
+
+-- The API took a GIF with a `thread_root_id` before any client sent one, so
+-- a parent may already hold a GIF reply. Only those rows are touched.
+update public.chat_messages p
+   set thread_last_reply = p.thread_last_reply || '{"has_gif": true}'::jsonb
+  from public.chat_messages r
+ where p.thread_last_reply is not null
+   and r.id::text = p.thread_last_reply ->> 'id'
+   and jsonb_typeof(r.metadata -> 'gif') = 'object';

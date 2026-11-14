@@ -24,6 +24,7 @@ import { replyPreviewText } from "./reply-preview";
 import {
   chatThreadKey,
   chatThreadRepliesKey,
+  gifRequestBody,
   optimisticMessage,
   type ChannelCache,
   type ChatMessage,
@@ -360,16 +361,7 @@ export async function sendThreadReply(
         mention_picks: args.mentionPicks?.length
           ? [...args.mentionPicks]
           : undefined,
-        gif: args.gif
-          ? {
-              id: args.gif.id,
-              title: args.gif.title || undefined,
-              url: args.gif.url,
-              width: args.gif.width,
-              height: args.gif.height,
-              token: args.gif.token,
-            }
-          : undefined,
+        gif: args.gif ? gifRequestBody(args.gif) : undefined,
       },
     });
     if (error || !data) throw apiError(error, "Couldn't send reply");

@@ -456,6 +456,11 @@ export interface ChatThreadLastReply {
   content: string;
   kind: string | null;
   attachment_count: number;
+  /**
+   * The reply is a GIF (#4657). Absent on a preview written before
+   * `20261114003444`, which reads as no GIF.
+   */
+  has_gif?: boolean;
   created_at: string;
   /**
    * Set by a read that masks: `true` when the viewer blocked this replier, so
