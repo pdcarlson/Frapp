@@ -7,7 +7,7 @@ import type {
   AskCardEnd,
   AskProposalResolution,
 } from "@repo/hooks";
-import { ACT_COPY } from "@repo/validation";
+import { ACT_COPY, ASK_CARDS_COPY } from "@repo/validation";
 
 /**
  * A proposal in the Ask conversation (#718): something the member asked to
@@ -27,6 +27,7 @@ const state = vi.hoisted(() => ({
   cards: {
     byId: new Map<string, unknown>(),
     settled: true,
+    failed: false,
     asked: [] as string[][],
   },
 }));
@@ -52,7 +53,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // The hook has its own spec (`use-ask-cards.spec.tsx`).
   useAskCards: (ids: readonly string[]) => {
     state.cards.asked.push([...ids]);
-    return { byId: state.cards.byId, settled: state.cards.settled };
+    return {
+      byId: state.cards.byId,
+      settled: state.cards.settled,
+      failed: state.cards.failed,
+    };
   },
   useCurrentUser: () => ({ data: { id: ME } }),
   useMembers: () => ({
@@ -531,6 +536,7 @@ describe("AskAnswerCards", () => {
     vi.clearAllMocks();
     state.cards.byId = new Map();
     state.cards.settled = true;
+    state.cards.failed = false;
     state.cards.asked = [];
   });
 
@@ -566,5 +572,13 @@ describe("AskAnswerCards", () => {
     view.rerender(<Cards ids={["s1"]} />);
     expect(view.container.querySelector('[aria-busy="true"]')).toBeNull();
     expect(screen.getByText(ACT_COPY.gone)).toBeDefined();
+  });
+
+  it("does not call a card gone when the list could not be read", () => {
+    state.cards.settled = false;
+    state.cards.failed = true;
+    render(<Cards ids={["s1"]} />);
+    expect(screen.getByText(ASK_CARDS_COPY.unread)).toBeDefined();
+    expect(screen.queryByText(ACT_COPY.gone)).toBeNull();
   });
 });

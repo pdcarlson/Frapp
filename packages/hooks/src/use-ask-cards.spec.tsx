@@ -66,4 +66,36 @@ describe("useAskCards", () => {
     expect(client.GET).not.toHaveBeenCalled();
     expect(result.current.settled).toBe(false);
   });
+
+  it("does not call a card gone when the list cannot be read", async () => {
+    client.GET.mockResolvedValue({
+      error: { code: "x" },
+      response: { ok: false, status: 500 },
+    });
+    const ids = ["s1"];
+    const { result } = renderHook(() => useAskCards(ids), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    expect(result.current.settled).toBe(false);
+  });
+
+  it("does not call a card gone when the second read fails, and keeps a gone card gone through later reads", async () => {
+    client.GET.mockResolvedValueOnce(listOf()).mockResolvedValueOnce({
+      error: { code: "x" },
+      response: { ok: false, status: 500 },
+    });
+    const ids = ["s1"];
+    const view = renderHook(() => useAskCards(ids), { wrapper: wrapper() });
+    await waitFor(() => expect(view.result.current.failed).toBe(true));
+    expect(view.result.current.settled).toBe(false);
+
+    client.GET.mockReset().mockResolvedValue(listOf());
+    const again = renderHook(() => useAskCards(ids), { wrapper: wrapper() });
+    await waitFor(() => expect(again.result.current.settled).toBe(true));
+    // A later read of the list is slow: the line stays.
+    let release!: (value: unknown) => void;
+    client.GET.mockReturnValue(new Promise((resolve) => (release = resolve)));
+    again.rerender();
+    expect(again.result.current.settled).toBe(true);
+    release(listOf());
+  });
 });

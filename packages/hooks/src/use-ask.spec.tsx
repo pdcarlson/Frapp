@@ -361,7 +361,6 @@ describe("the Ask hooks", () => {
       await act(() =>
         result.current.ask("When and where is Formal on Friday?", {
           actions: true,
-        answer_cards: true,
           suggested: true,
         }),
       );

@@ -31,6 +31,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   ACT_COPY,
+  ASK_CARDS_COPY,
   AI_REPORT_COPY,
   actActionLabel,
   actAttendanceLine,
@@ -325,7 +326,15 @@ export function AskAnswerCards({
           );
         }
         if (!cards.settled) {
-          return (
+          // The list could not be read: the card may well still be waiting,
+          // so it is not called gone. It comes back when the list is read.
+          return cards.failed ? (
+            <View key={id} style={styles.card}>
+              <Text accessibilityRole="alert" style={styles.muted}>
+                {ASK_CARDS_COPY.unread}
+              </Text>
+            </View>
+          ) : (
             <View
               key={id}
               accessibilityState={{ busy: true }}

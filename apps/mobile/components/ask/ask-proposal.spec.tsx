@@ -10,6 +10,7 @@ import type {
 import {
   ACT_COPY,
   AI_REPORT_COPY,
+  ASK_CARDS_COPY,
   actConfirmRefusalLine,
   actMissingLine,
   actNoteLine,
@@ -29,7 +30,7 @@ const hooks = vi.hoisted(() => ({
   accept: vi.fn(),
   dismiss: vi.fn(),
   seed: undefined as unknown,
-  cards: { byId: new Map<string, unknown>(), settled: true },
+  cards: { byId: new Map<string, unknown>(), settled: true, failed: false },
 }));
 // A purple chapter: Confirm takes its solid accent pair (#4702).
 vi.mock("@/lib/chapter-branding", () => ({
@@ -581,7 +582,7 @@ describe("AskAnswerCards", () => {
     );
 
   beforeEach(() => {
-    hooks.cards = { byId: new Map(), settled: true };
+    hooks.cards = { byId: new Map(), settled: true, failed: false };
   });
 
   it("draws each card, and one that ends becomes a line while the other waits", async () => {
@@ -591,6 +592,7 @@ describe("AskAnswerCards", () => {
         ["s2", task("s2", "Book the hall")],
       ]),
       settled: true,
+      failed: false,
     };
     hooks.dismiss.mockResolvedValue({});
     const tree = showCards(["s1", "s2"]);
@@ -607,7 +609,7 @@ describe("AskAnswerCards", () => {
   });
 
   it("holds a frame while the cards are read, and says so when one is no longer waiting", () => {
-    hooks.cards = { byId: new Map(), settled: false };
+    hooks.cards = { byId: new Map(), settled: false, failed: false };
     const waiting = showCards(["s1"]);
     expect(screenText(waiting)).not.toContain(ACT_COPY.gone);
     expect(
@@ -617,7 +619,14 @@ describe("AskAnswerCards", () => {
           node.props.accessibilityState?.busy === true,
       ),
     ).toHaveLength(1);
-    hooks.cards = { byId: new Map(), settled: true };
+    hooks.cards = { byId: new Map(), settled: true, failed: false };
     expect(screenText(showCards(["s1"]))).toContain(ACT_COPY.gone);
+  });
+
+  it("does not call a card gone when the list could not be read", () => {
+    hooks.cards = { byId: new Map(), settled: false, failed: true };
+    const text = screenText(showCards(["s1"]));
+    expect(text).toContain(ASK_CARDS_COPY.unread);
+    expect(text).not.toContain(ACT_COPY.gone);
   });
 });

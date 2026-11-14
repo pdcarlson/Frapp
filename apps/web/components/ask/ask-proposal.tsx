@@ -23,6 +23,7 @@ import { codeOf } from "@repo/api-sdk";
 import { dueEntryFields, dueEntryFromTask } from "@repo/formatting";
 import {
   ACT_COPY,
+  ASK_CARDS_COPY,
   actActionLabel,
   actMissingLine,
   actNoteLine,
@@ -273,7 +274,15 @@ export function AskAnswerCards({
           );
         }
         if (!cards.settled) {
-          return (
+          // The list could not be read: the card may well still be waiting,
+          // so it is not called gone. It comes back when the list is read.
+          return cards.failed ? (
+            <section key={id} className={CARD_FRAME}>
+              <p role="alert" className="text-sm text-muted-foreground">
+                {ASK_CARDS_COPY.unread}
+              </p>
+            </section>
+          ) : (
             <section
               key={id}
               aria-busy="true"
