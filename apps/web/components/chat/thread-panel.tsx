@@ -104,6 +104,7 @@ export interface ThreadPanelProps extends Pick<
   | "canManageChannel"
   | "onReport"
   | "onBlock"
+  | "onForward"
   | "onOpenProfile"
   | "isMember"
 > {
@@ -224,6 +225,7 @@ export function ThreadPanel({
   canManageChannel,
   onReport,
   onBlock,
+  onForward,
   onOpenProfile,
   isMember,
   canReply,
@@ -500,6 +502,7 @@ export function ThreadPanel({
                 canManageChannel={canManageChannel}
                 onReport={onReport}
                 onBlock={onBlock}
+                onForward={onForward}
                 onOpenProfile={onOpenProfile}
                 isMember={isMember}
                 isTapRevealed={rootReveal.isRevealed(root)}
@@ -643,6 +646,7 @@ export function ThreadPanel({
           canManageChannel={canManageChannel}
           onReport={onReport}
           onBlock={onBlock}
+          onForward={onForward}
           onOpenProfile={onOpenProfile}
           isMember={isMember}
         />
