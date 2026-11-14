@@ -5,6 +5,9 @@ Environment reference and the documentation conventions. Grouped by area.
 - **Conventions:** [`DOCUMENTATION_CONVENTIONS.md`](DOCUMENTATION_CONVENTIONS.md) — the placement map
   and the documentation standard (read before adding any doc). It is a convention the docs angle in
   `diff-review` reviews, not a rule CI enforces.
+- **Drafts pending a decision:** [`school-layer-compliance-draft.md`](school-layer-compliance-draft.md) — DRAFT,
+  not legal advice: FERPA release text, policy redlines, minors, DPA and HECVAT readiness for the
+  school layer (#4192), pending Paul and counsel. Deleted once its pieces move to their owners.
 
 Which subfolder of `docs/internal/` owns which kind of change is stated once, in
 [`DOCUMENTATION_CONVENTIONS.md` § Where things go](DOCUMENTATION_CONVENTIONS.md#where-things-go).
