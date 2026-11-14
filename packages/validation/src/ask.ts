@@ -41,6 +41,9 @@ export const ASK_HISTORY_ANSWER_MAX_LENGTH = 2000;
  * proposal, "couldn't find that") or one that must not be sent again (it
  * drew on channel messages; see `askHistory`).
  */
+/** The most cards one answer can come with. */
+export const ASK_PROPOSALS_MAX = 5;
+
 export const AskHistoryTurnSchema = z.object({
   question: z.string().trim().min(1).max(ASK_QUESTION_MAX_LENGTH),
   answer: z.string().max(ASK_HISTORY_ANSWER_MAX_LENGTH),
@@ -51,6 +54,13 @@ export const AskHistoryTurnSchema = z.object({
    * is shown only what the member typed, does not.
    */
   suggested: z.boolean().optional(),
+  /**
+   * How many cards this turn's answer came with (`AskAnswer.proposals`), so
+   * a follow-up such as "make it 10 instead" is read knowing cards are
+   * already in front of the member. A count and nothing a card says: the
+   * server writes the line the model reads.
+   */
+  cards: z.number().int().min(1).max(ASK_PROPOSALS_MAX).optional(),
 });
 export type AskHistoryTurn = z.infer<typeof AskHistoryTurnSchema>;
 
@@ -286,9 +296,6 @@ export const AskEntitySchema = z.object({
 });
 export type AskEntity = z.infer<typeof AskEntitySchema>;
 
-/** The most cards one answer can come with. */
-export const ASK_PROPOSALS_MAX = 5;
-
 export const AskAnswerSchema = z.object({
   status: z.enum(ASK_ANSWER_STATUSES),
   reason: z.string().nullable(),
@@ -332,8 +339,10 @@ export const AskAnswerSchema = z.object({
   entities: z.array(AskEntitySchema).nullish(),
   /**
    * Cards that came with this answer: the ids of suggestions waiting for
-   * the asker's Confirm (`GET /v1/ai/suggestions/{id}`), at most
-   * {@link ASK_PROPOSALS_MAX}. Nothing has been changed by any of them.
+   * the asker's Confirm, at most {@link ASK_PROPOSALS_MAX}. There is no
+   * read by id: a client lists the asker's waiting requests
+   * (`GET /v1/ai/suggestions?source_type=request&source_id=<asker>`) and
+   * keeps these ids. Nothing has been changed by any of them.
    * Sent only to a client that asked with `answer_cards`. An answer that is
    * cards and nothing else is `answered` with empty `text`: draw the cards.
    */
@@ -480,12 +489,14 @@ export function askHistory(
         answer.status === "answered" &&
         answer.read_chat !== true &&
         !answer.sources.some((source) => source.kind === "chat");
+      const cards = Math.min(answer?.proposals?.length ?? 0, ASK_PROPOSALS_MAX);
       return {
         question: cutWhole(question.trim(), ASK_QUESTION_MAX_LENGTH),
         answer: carried
           ? cutWhole(answer.text, ASK_HISTORY_ANSWER_MAX_LENGTH)
           : "",
         ...(suggested ? { suggested: true } : {}),
+        ...(cards > 0 ? { cards } : {}),
       };
     });
 }
