@@ -136,8 +136,8 @@ function presenceLineFrom(value: unknown): string | null {
   if (typeof value !== "string") return null;
   // Control characters and the Unicode line and paragraph separators become
   // spaces, so a crafted payload cannot break the row it renders in.
-  // eslint-disable-next-line no-control-regex
   const flat = value
+    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
     .trim();
   if (flat.length === 0) return null;
