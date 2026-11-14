@@ -56,6 +56,21 @@ export const ActivityFaces = createContext<
  * so the common case takes one tap and the rest of the row still opens the
  * sheet, as web's rows do.
  */
+/** What a row's long press opens: its label, and how to open it. */
+export interface ActivityRowMenu {
+  label: string;
+  open: () => void;
+}
+
+/**
+ * The screen's long press for a row (#4982): Snooze, or nothing. Provided by
+ * the Activity screen, so the week card, the To review card and every list
+ * get it without threading it through each.
+ */
+export const ActivityRowMenuContext = createContext<
+  (row: ActivityRow) => ActivityRowMenu | null
+>(() => null);
+
 export function ActivityListRow({
   row,
   isFirst,
@@ -63,6 +78,7 @@ export function ActivityListRow({
   onCard = false,
   solo = false,
   onPress,
+  menu = null,
 }: {
   row: ActivityRow;
   /** The first row of its run draws no hairline above it. */
@@ -84,6 +100,12 @@ export function ActivityListRow({
    */
   solo?: boolean;
   onPress: () => void;
+  /**
+   * What a long press does (#4982): Snooze on a row that waits, Unsnooze on
+   * a snoozed one. Also offered as a named action to VoiceOver and TalkBack,
+   * where a long press is out of reach.
+   */
+  menu?: ActivityRowMenu | null;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createActivityRowStyles(tokens);
@@ -137,6 +159,12 @@ export function ActivityListRow({
     </>
   );
 
+  const accessibilityActions = [
+    ...(action && !action.disabled
+      ? [{ name: "rowAction", label: action.label }]
+      : []),
+    ...(menu ? [{ name: "rowMenu", label: menu.label }] : []),
+  ];
   return (
     <PressableRow
       accessibilityRole="button"
@@ -151,16 +179,16 @@ export function ActivityListRow({
       // the row's own tap still opens the sheet. Left off while the button
       // is disabled, so it can't offer what it would refuse.
       accessibilityActions={
-        action && !action.disabled
-          ? [{ name: "rowAction", label: action.label }]
-          : undefined
+        accessibilityActions.length > 0 ? accessibilityActions : undefined
       }
       onAccessibilityAction={(event) => {
         if (event.nativeEvent.actionName === "rowAction" && action) {
           if (!action.disabled) action.run();
         }
+        if (event.nativeEvent.actionName === "rowMenu") menu?.open();
       }}
       onPress={onPress}
+      onLongPress={menu?.open}
       onCard={onCard}
       style={rowStyle}
     >

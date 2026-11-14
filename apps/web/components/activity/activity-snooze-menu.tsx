@@ -2,6 +2,7 @@
 
 import { AlarmClock, AlarmClockOff } from "lucide-react";
 import {
+  activityRowSnoozable,
   activitySnoozeOptions,
   useActivitySnooze,
   type ActivityRow,
@@ -23,7 +24,10 @@ function menuTime(hint: string): string {
 
 /** What a row's menu needs to snooze it, or wake it from Snoozed. */
 export interface ActivitySnoozeActions {
-  /** The menu entries that snooze `row`, one per time (`activitySnoozeOptions`). */
+  /**
+   * The menu entries that snooze `row`, one per time (`activitySnoozeOptions`);
+   * none for a row in Waiting on others.
+   */
   entriesFor: (row: ActivityRow) => RowMenuEntry[];
   /** The entry that brings a snoozed row back now. */
   wakeEntry: (row: ActivityRow) => RowMenuEntry;
@@ -49,6 +53,8 @@ export function useActivitySnoozeActions(): ActivitySnoozeActions {
 
   return {
     entriesFor: (row) => {
+      // Waiting on others waits on someone else: nothing to put off.
+      if (!activityRowSnoozable(row)) return [];
       // Built on each render, which the page's 30-second clock drives, so
       // "Later today" leaves the menu once the evening is under an hour off.
       const options = activitySnoozeOptions(new Date());

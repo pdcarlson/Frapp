@@ -47,6 +47,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityNarrowedNote: actual.activityNarrowedNote,
     activityAgenda: actual.activityAgenda,
     activityAwake: actual.activityAwake,
+    activityRowSnoozable: actual.activityRowSnoozable,
     activitySnoozedRows: actual.activitySnoozedRows,
     activitySnoozeOptions: actual.activitySnoozeOptions,
     useActivitySnooze: () => ({

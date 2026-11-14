@@ -179,8 +179,22 @@ function PanelRow({
   snooze: ActivitySnoozeActions;
 }) {
   const action = rowActions.gate ? activityRowAction(row) : null;
+  const entries = snooze.entriesFor(row);
+  if (entries.length === 0) {
+    return (
+      <li>
+        <PanelRowBody
+          row={row}
+          action={action}
+          rowActions={rowActions}
+          onOpen={onOpen}
+          className={className}
+        />
+      </li>
+    );
+  }
   return (
-    <RowMenu entries={snooze.entriesFor(row)} label={`More for ${row.title}`}>
+    <RowMenu entries={entries} label={`More for ${row.title}`}>
       {(menuButton) => (
         <li className="group flex items-center gap-1">
           <PanelRowBody

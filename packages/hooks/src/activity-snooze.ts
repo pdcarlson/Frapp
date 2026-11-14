@@ -17,6 +17,14 @@ import {
  * time without a re-read.
  */
 
+/**
+ * Whether a row can be snoozed: one that waits on the member (To do, To
+ * review, Links), never Waiting on others, which waits on someone else.
+ */
+export function activityRowSnoozable(row: Pick<ActivityRow, "key">): boolean {
+  return !row.key.startsWith("made:");
+}
+
 /** Whether a row's snooze still holds at `now`. */
 function asleep(row: { snoozed_until?: string | null }, now: Date): boolean {
   if (!row.snoozed_until) return false;

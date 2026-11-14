@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Activity } from "./activity-rows";
 import {
   activityAwake,
+  activityRowSnoozable,
   activitySnoozeOptions,
   activitySnoozedRows,
   setActivitySnooze,
@@ -178,5 +179,13 @@ describe("activitySnoozeOptions", () => {
 
   it("doesn't offer next week twice on a Sunday", () => {
     expect(ids(new Date(2026, 10, 22, 9))).toEqual(["later-today", "tomorrow"]);
+  });
+});
+
+describe("activityRowSnoozable", () => {
+  it("snoozes what waits on the member, never Waiting on others", () => {
+    expect(activityRowSnoozable({ key: "needs:task:t1" })).toBe(true);
+    expect(activityRowSnoozable({ key: "link:l1" })).toBe(true);
+    expect(activityRowSnoozable({ key: "made:poll:p1" })).toBe(false);
   });
 });
