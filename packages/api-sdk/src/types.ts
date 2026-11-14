@@ -4481,6 +4481,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/snoozes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Snooze an item on the caller’s Activity until a time
+         * @description The row leaves the caller’s list and `needs_you_count` until `until`, then comes back, unread unless they open it again after that (`snoozed_until` on its row). Per member; snoozing again replaces the time. Like a read, nothing checks that the caller can see the item: a snooze is theirs alone and changes nothing anyone else sees. `spec/behavior/activity.md` § Snooze.
+         */
+        put: operations["ActivityController_snooze_v1"];
+        post?: never;
+        /**
+         * Bring a snoozed item back on the caller’s Activity now
+         * @description Idempotent. `spec/behavior/activity.md` § Snooze.
+         */
+        delete: operations["ActivityController_unsnooze_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/links/{id}/state": {
         parameters: {
             query?: never;
@@ -9205,6 +9229,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityHoursEntryDto: {
             /** Format: uuid */
@@ -9224,6 +9253,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityPollDto: {
             /**
@@ -9257,6 +9291,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
             /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
             message: components["schemas"]["ChatMessageDto"];
         };
@@ -9291,6 +9330,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityNeedsYouDto: {
             /** @description Open tasks assigned to the caller, soonest due first. */
@@ -9337,6 +9381,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityLinkDto: {
             /** Format: uuid */
@@ -9380,6 +9429,11 @@ export interface components {
             posted_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityReminderDto: {
             /** Format: uuid */
@@ -9480,7 +9534,7 @@ export interface components {
             /** @description Reminders the caller set on chat messages (#4957): those due that they haven’t cleared, newest first, then those still waiting, soonest first; at most 50 of each. Private to the caller. Due ones are counted in `needs_you_count` (so at most 50). */
             reminders: components["schemas"]["ActivityReminderDto"][];
             made_by_you: components["schemas"]["ActivityMadeByYouDto"];
-            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`. */
+            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`, less what the caller snoozed (`snoozed_until`). */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
             unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links" | "reminders")[];
@@ -9574,6 +9628,20 @@ export interface components {
         MarkActivityReadDto: {
             /** @description The items the caller opened. At most 100. */
             items: components["schemas"]["ActivityItemRefDto"][];
+        };
+        SnoozeActivityItemDto: {
+            /**
+             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
+             * @enum {string}
+             */
+            kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
+            /** Format: uuid */
+            item_id: string;
+            /**
+             * Format: date-time
+             * @description When the row comes back. In the future and at most 90 days away.
+             */
+            until: string;
         };
         SetActivityLinkStateDto: {
             /**
@@ -20815,6 +20883,73 @@ export interface operations {
                 "application/json": components["schemas"]["MarkActivityReadDto"];
             };
         };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_snooze_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnoozeActivityItemDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `until` is not in the future, or is more than 90 days away. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_unsnooze_v1: {
+        parameters: {
+            query: {
+                /** @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`). */
+                kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
+                item_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             204: {
                 headers: {

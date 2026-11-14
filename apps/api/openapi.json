@@ -15269,6 +15269,107 @@
         ]
       }
     },
+    "/v1/activity/snoozes": {
+      "put": {
+        "description": "The row leaves the caller’s list and `needs_you_count` until `until`, then comes back, unread unless they open it again after that (`snoozed_until` on its row). Per member; snoozing again replaces the time. Like a read, nothing checks that the caller can see the item: a snooze is theirs alone and changes nothing anyone else sees. `spec/behavior/activity.md` § Snooze.",
+        "operationId": "ActivityController_snooze_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnoozeActivityItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "description": "`until` is not in the future, or is more than 90 days away."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Snooze an item on the caller’s Activity until a time",
+        "tags": [
+          "Activity"
+        ]
+      },
+      "delete": {
+        "description": "Idempotent. `spec/behavior/activity.md` § Snooze.",
+        "operationId": "ActivityController_unsnooze_v1",
+        "parameters": [
+          {
+            "name": "kind",
+            "required": true,
+            "in": "query",
+            "description": "Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "task",
+                "hours_entry",
+                "poll",
+                "event",
+                "link",
+                "signup",
+                "form"
+              ]
+            }
+          },
+          {
+            "name": "item_id",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Bring a snoozed item back on the caller’s Activity now",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/activity/links/{id}/state": {
       "put": {
         "description": "Per member, idempotent; either replaces the other. 404 for a link the caller can’t read (its channel isn’t in their chat list) as for one that doesn’t exist. `spec/behavior/activity.md` § Links.",
@@ -29000,6 +29101,12 @@
           "unread": {
             "type": "boolean",
             "description": "Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back."
+          },
+          "snoozed_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`."
           }
         },
         "required": [
@@ -29019,7 +29126,8 @@
           "sent_back_at",
           "proof_kind",
           "created_at",
-          "unread"
+          "unread",
+          "snoozed_until"
         ]
       },
       "ActivityHoursEntryDto": {
@@ -29055,6 +29163,12 @@
           "unread": {
             "type": "boolean",
             "description": "Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null."
+          },
+          "snoozed_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`."
           }
         },
         "required": [
@@ -29065,7 +29179,8 @@
           "duration_minutes",
           "description",
           "created_at",
-          "unread"
+          "unread",
+          "snoozed_until"
         ]
       },
       "ActivityPollDto": {
@@ -29131,6 +29246,12 @@
             "type": "boolean",
             "description": "Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`."
           },
+          "snoozed_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`."
+          },
           "message": {
             "description": "The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them.",
             "allOf": [
@@ -29154,6 +29275,7 @@
           "has_voted",
           "created_at",
           "unread",
+          "snoozed_until",
           "message"
         ]
       },
@@ -29217,6 +29339,12 @@
           "unread": {
             "type": "boolean",
             "description": "Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null."
+          },
+          "snoozed_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`."
           }
         },
         "required": [
@@ -29230,7 +29358,8 @@
           "item_count",
           "closes_at",
           "created_at",
-          "unread"
+          "unread",
+          "snoozed_until"
         ]
       },
       "ActivityNeedsYouDto": {
@@ -29346,6 +29475,12 @@
           "unread": {
             "type": "boolean",
             "description": "Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made."
+          },
+          "snoozed_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`."
           }
         },
         "required": [
@@ -29363,7 +29498,8 @@
           "checked_in",
           "created_by",
           "created_at",
-          "unread"
+          "unread",
+          "snoozed_until"
         ]
       },
       "ActivityLinkDto": {
@@ -29434,6 +29570,12 @@
           "unread": {
             "type": "boolean",
             "description": "Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null."
+          },
+          "snoozed_until": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`."
           }
         },
         "required": [
@@ -29449,7 +29591,8 @@
           "posted_by",
           "posted_by_name",
           "posted_at",
-          "unread"
+          "unread",
+          "snoozed_until"
         ]
       },
       "ActivityReminderDto": {
@@ -29733,7 +29876,7 @@
           },
           "needs_you_count": {
             "type": "number",
-            "description": "How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`."
+            "description": "How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`, less what the caller snoozed (`snoozed_until`)."
           },
           "unavailable": {
             "type": "array",
@@ -30046,6 +30189,38 @@
         },
         "required": [
           "items"
+        ]
+      },
+      "SnoozeActivityItemDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "task",
+              "hours_entry",
+              "poll",
+              "event",
+              "link",
+              "signup",
+              "form"
+            ],
+            "description": "Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`)."
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the row comes back. In the future and at most 90 days away."
+          }
+        },
+        "required": [
+          "kind",
+          "item_id",
+          "until"
         ]
       },
       "SetActivityLinkStateDto": {

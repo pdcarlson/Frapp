@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { ActivityService } from './activity.service';
 import type { ActivityLink } from './activity-link.service';
@@ -143,6 +144,10 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     startUnread: jest.fn().mockResolvedValue(undefined),
     findReads: jest.fn().mockResolvedValue([]),
     markRead: jest.fn().mockResolvedValue(undefined),
+    // Nothing snoozed.
+    findSnoozes: jest.fn().mockResolvedValue([]),
+    snooze: jest.fn().mockResolvedValue(undefined),
+    unsnooze: jest.fn().mockResolvedValue(undefined),
   };
   const service = new ActivityService(
     taskService as never,
@@ -1612,6 +1617,7 @@ describe('ActivityService', () => {
       posted_by_name: 'Other Member',
       posted_at: at(-HOUR),
       unread: false,
+      snoozed_until: null,
       ...overrides,
     });
     const upcoming = (overrides: Partial<Event>) =>
@@ -1738,6 +1744,174 @@ describe('ActivityService', () => {
       expect(view.needs_you.polls[0].unread).toBe(false);
       expect(view.coming_up[0].unread).toBe(false);
       expect(view.links[0].unread).toBe(true);
+    });
+
+    describe('snooze (#4982)', () => {
+      const snooze = (kind: string, itemId: string, until: string) => ({
+        user_id: ME,
+        chapter_id: CHAPTER,
+        kind,
+        item_id: itemId,
+        until,
+        created_at: at(-2 * HOUR),
+      });
+
+      it('serves a snoozed row with its time and leaves it out of the count', async () => {
+        const { service, readRepo } = buildEverySection();
+        const before = await service.getActivity(CHAPTER, ME, null);
+        readRepo.findSnoozes.mockResolvedValue([
+          snooze('task', 'mine', at(3 * HOUR)),
+          snooze('task', 'to-confirm', at(3 * HOUR)),
+          snooze('poll', 'poll-1', at(3 * HOUR)),
+          snooze('link', 'link-1', at(3 * HOUR)),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.tasks[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.needs_you.task_confirmations[0].snoozed_until).toBe(
+          at(3 * HOUR),
+        );
+        expect(view.needs_you.polls[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.links[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.needs_you.hours_approvals[0].snoozed_until).toBeNull();
+        // Three fewer waiting: the task, the confirmation and the poll. A
+        // link was never counted.
+        expect(view.needs_you_count).toBe(before.needs_you_count - 3);
+        expect(readRepo.findSnoozes).toHaveBeenCalledWith(
+          CHAPTER,
+          ME,
+          at(-30 * 24 * HOUR),
+        );
+      });
+
+      it('brings a row back unread when its snooze ended after the caller last opened it', async () => {
+        const { service, readRepo } = buildEverySection();
+        // Opened, then snoozed until ten minutes ago.
+        readRepo.findReads.mockResolvedValue([
+          { kind: 'poll', item_id: 'poll-1', read_at: at(-30 * 60 * 1000) },
+          { kind: 'link', item_id: 'link-1', read_at: at(-30 * 60 * 1000) },
+        ]);
+        readRepo.findSnoozes.mockResolvedValue([
+          snooze('poll', 'poll-1', at(-10 * 60 * 1000)),
+          // Ended before the last open: read.
+          snooze('link', 'link-1', at(-40 * 60 * 1000)),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.polls[0]).toMatchObject({
+          snoozed_until: null,
+          unread: true,
+        });
+        expect(view.links[0]).toMatchObject({
+          snoozed_until: null,
+          unread: false,
+        });
+      });
+
+      it('leaves a snoozed hours entry, card and open check-in out of the count', async () => {
+        const { service, readRepo, messageRepo, eventService } =
+          buildEverySection();
+        serveCards(messageRepo, [
+          signupCard(
+            { id: 'sheet', created_at: at(-HOUR) },
+            { closes_at: at(48 * HOUR) },
+          ),
+        ]);
+        eventService.findByChapter.mockResolvedValue([
+          upcoming({
+            id: 'event-1',
+            start_time: at(-HOUR / 2),
+            end_time: at(HOUR / 2),
+          }),
+        ]);
+        const before = await service.getActivity(CHAPTER, ME, null);
+        expect(before.needs_you.cards).toHaveLength(1);
+        expect(before.coming_up[0].check_in_open).toBe(true);
+        readRepo.findSnoozes.mockResolvedValue([
+          snooze('hours_entry', 'entry-1', at(3 * HOUR)),
+          snooze('signup', 'sheet', at(3 * HOUR)),
+          snooze('event', 'event-1', at(3 * HOUR)),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.hours_approvals[0].snoozed_until).toBe(
+          at(3 * HOUR),
+        );
+        expect(view.needs_you.cards[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.coming_up[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.needs_you_count).toBe(before.needs_you_count - 3);
+      });
+
+      it('serves a snoozed row after every row still waiting, so it never pushes one out', async () => {
+        const { service, readRepo, taskService } = buildStarted();
+        serveTasks(taskService, [
+          task({ id: 'first', due_date: '2026-11-14' }),
+          task({ id: 'second', due_date: '2026-11-15' }),
+          task({ id: 'third', due_date: '2026-11-16' }),
+        ]);
+        readRepo.findSnoozes.mockResolvedValue([
+          snooze('task', 'first', at(3 * HOUR)),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.tasks.map((row) => row.id)).toEqual([
+          'second',
+          'third',
+          'first',
+        ]);
+      });
+
+      it('serves nothing as snoozed when the snoozes cannot be read', async () => {
+        const { service, readRepo } = buildEverySection();
+        const before = await service.getActivity(CHAPTER, ME, null);
+        readRepo.findSnoozes.mockRejectedValue(new Error('db down'));
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.tasks[0].snoozed_until).toBeNull();
+        expect(view.needs_you_count).toBe(before.needs_you_count);
+        expect(view.unavailable).toEqual([]);
+      });
+
+      it('stores a snooze in the future and refuses one in the past or too far ahead', async () => {
+        const { service, readRepo } = build();
+        const item = { kind: 'task' as const, item_id: 'mine' };
+
+        await service.snooze(CHAPTER, ME, item, new Date(at(HOUR)), LATER);
+        expect(readRepo.snooze).toHaveBeenCalledWith(
+          CHAPTER,
+          ME,
+          item,
+          at(HOUR),
+        );
+
+        await expect(
+          service.snooze(CHAPTER, ME, item, new Date(at(-HOUR)), LATER),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          service.snooze(
+            CHAPTER,
+            ME,
+            item,
+            new Date(at(91 * 24 * HOUR)),
+            LATER,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(readRepo.snooze).toHaveBeenCalledTimes(1);
+      });
+
+      it('unsnoozes the caller’s own item', async () => {
+        const { service, readRepo } = build();
+        await service.unsnooze(CHAPTER, ME, { kind: 'link', item_id: 'l' });
+        expect(readRepo.unsnooze).toHaveBeenCalledWith(CHAPTER, ME, {
+          kind: 'link',
+          item_id: 'l',
+        });
+      });
     });
 
     it('dots a confirmation again when the task was completed after the caller last opened it', async () => {
