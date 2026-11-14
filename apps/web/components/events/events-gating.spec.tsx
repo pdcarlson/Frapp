@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
 const { mockCurrentChapter } = vi.hoisted(() => ({
@@ -285,7 +285,15 @@ describe("AttendancePanel subscription gating", () => {
 });
 
 describe("AttendancePanel auto-absent before check-in closes (FRAPP-WEB-7)", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Local noon, so check-in's close (15 minutes after an end five minutes
+    // ago) is "Today" whenever the suite runs; at 23:50 it read "Tomorrow".
+    // Only `Date` is faked, so the query and render timers still run.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 13, 12, 0, 0));
+  });
+  afterEach(() => vi.useRealTimers());
 
   it("waits for check-in to close, which is when the API accepts it", () => {
     chapter.active();
