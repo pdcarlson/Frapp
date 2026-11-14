@@ -77,6 +77,7 @@ import {
   useChatCatchUpAvailable,
   gifToSend,
   useGifAvailability,
+  useSetMessageReminder,
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
@@ -130,6 +131,7 @@ import {
 import { readLastChannel, writeLastChannel } from "@/lib/chat/last-channel";
 import type { ChatView } from "@/components/layout/shell-prefs";
 import { useToast } from "@/lib/hooks/use-toast";
+import { reminderSetDescription } from "@/lib/chat/reminder-copy";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { vocab } from "@repo/org-archetypes";
@@ -1878,6 +1880,29 @@ export function ChatShell({
     },
     [bookmarkMessage, unbookmarkMessage],
   );
+  // "Remind me about this" (#4957). Unlike Save, nothing on the row shows
+  // the reminder, so both outcomes toast, as Slack confirms its own.
+  const setMessageReminder = useSetMessageReminder();
+  const setMessageReminderAsync = setMessageReminder.mutateAsync;
+  const handleRemind = useCallback(
+    (messageId: string, remindAt: Date) => {
+      // Per call, because `mutate`'s per-call callbacks run only for the
+      // latest call.
+      void setMessageReminderAsync({ messageId, remindAt }).then(
+        () =>
+          toast({
+            title: "Reminder set",
+            description: reminderSetDescription(remindAt),
+          }),
+        () =>
+          toast({
+            variant: "destructive",
+            description: "Couldn't set the reminder. Try again.",
+          }),
+      );
+    },
+    [setMessageReminderAsync, toast],
+  );
   const bookmarkWriteFailed =
     bookmarkMessage.isError || unbookmarkMessage.isError;
   const resetBookmarkMessage = bookmarkMessage.reset;
@@ -3265,6 +3290,7 @@ export function ChatShell({
           maskedRefresh={maskedRefresh}
           bookmarkedMessageIds={bookmarkedMessageIds}
           onToggleBookmark={handleToggleBookmark}
+          onRemind={handleRemind}
           canManageChannel={canManageChannel}
           onReport={handleReport}
           onBlock={handleBlock}
@@ -3958,6 +3984,7 @@ export function ChatShell({
                   }
                   bookmarkedMessageIds={bookmarkedMessageIds}
                   onToggleBookmark={handleToggleBookmark}
+                  onRemind={handleRemind}
                   canManageChannel={canManageChannel}
                   onReport={handleReport}
                   onBlock={handleBlock}

@@ -202,6 +202,9 @@ const mockBookmarkIsError = vi.fn(() => false);
 // Hide conversation (#2303). Each hide awaits its own `mutateAsync` promise,
 // so a case settles that promise to drive the shell's success and failure.
 const mockLeaveMutateAsync = vi.fn();
+const mockSetReminderAsync = vi.fn<
+  (vars: { messageId: string; remindAt: Date }) => Promise<void>
+>(() => Promise.resolve());
 const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
 // The rail's right-click menu (owner, 2026-11-06): what the shell hands it.
@@ -765,6 +768,7 @@ vi.mock("@repo/hooks", async () => ({
     reset: mockUnbookmarkReset,
     isError: false,
   }),
+  useSetMessageReminder: () => ({ mutateAsync: mockSetReminderAsync }),
   useLeaveChannel: () => ({ mutateAsync: mockLeaveMutateAsync }),
   useGetOrCreateDm: () => ({ mutate: mockReopenMutate }),
   canHideConversation: (channel: { type: string }) => channel.type === "DM",
@@ -1453,10 +1457,12 @@ vi.mock("./message-timeline", async () => {
       onOpenThread?: (message: { id: string }) => void;
       onForward?: (message: { id: string }) => void;
       askTurns?: readonly { id: string }[];
+      onRemind?: (messageId: string, remindAt: Date) => void;
     }
   >(function MessageTimeline(
     {
       askTurns,
+      onRemind,
       onOpenThread,
       onForward,
       onOpenProfile,
@@ -1503,6 +1509,9 @@ vi.mock("./message-timeline", async () => {
         {/* Edit is withheld the same way where the member can't post (#2775). */}
         <span data-testid="edit-offered">{String(!!onEdit)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+        <button onClick={() => onRemind?.("msg-1", new Date(2099, 0, 1, 9, 0))}>
+          trigger-remind
+        </button>
         <button onClick={() => onClosePoll?.("poll-1")}>
           trigger-close-poll
         </button>
@@ -3557,6 +3566,42 @@ describe("ChatShell hide conversation (#2303)", () => {
 
     fireEvent.click(screen.getByTestId("pick-random"));
     expect(mockReopenMutate).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChatShell message reminders (#4957)", () => {
+  it("sets the reminder and says when it will come", async () => {
+    mockToast.mockClear();
+    mockSetReminderAsync.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "trigger-remind" }));
+
+    expect(mockSetReminderAsync).toHaveBeenCalledWith({
+      messageId: "msg-1",
+      remindAt: new Date(2099, 0, 1, 9, 0),
+    });
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Reminder set",
+        description: expect.stringMatching(/^I'll remind you .+ at 9:00/),
+      }),
+    );
+  });
+
+  it("toasts a failed write", async () => {
+    mockToast.mockClear();
+    mockSetReminderAsync.mockRejectedValueOnce(new Error("nope"));
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "trigger-remind" }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        variant: "destructive",
+        description: "Couldn't set the reminder. Try again.",
+      }),
+    );
   });
 });
 

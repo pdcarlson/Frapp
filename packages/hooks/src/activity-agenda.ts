@@ -442,7 +442,15 @@ export interface ActivityReview {
  */
 export function activityReview(
   activity: Activity,
-  options: { canConfirmTasks: boolean },
+  options: {
+    canConfirmTasks: boolean;
+    /**
+     * The read as served, when `activity` has had its snoozed rows taken
+     * out (`activityAwake`): whether a list reached the read's cap is a fact
+     * of what was served, so "25+" stays when one of the 25 is snoozed.
+     */
+    served?: Activity;
+  },
   now: Date = new Date(),
 ): ActivityReview | null {
   // The read serves these only to a member who may act on them, so rows are
@@ -463,16 +471,23 @@ export function activityReview(
   if (rows.length === 0 && unavailable.length === 0) return null;
   const tasks = activity.needs_you.task_confirmations.length;
   const hours = activity.needs_you.hours_approvals.length;
-  const capped = tasks >= ACTIVITY_LIST_LIMIT || hours >= ACTIVITY_LIST_LIMIT;
-  const some = (count: number) =>
-    count >= ACTIVITY_LIST_LIMIT ? `${ACTIVITY_LIST_LIMIT}+` : String(count);
+  const served = options.served ?? activity;
+  const tasksCapped =
+    served.needs_you.task_confirmations.length >= ACTIVITY_LIST_LIMIT;
+  const hoursCapped =
+    served.needs_you.hours_approvals.length >= ACTIVITY_LIST_LIMIT;
+  const capped = tasksCapped || hoursCapped;
+  const some = (count: number, full: boolean) =>
+    full ? `${count}+` : String(count);
   return {
     rows,
     count: capped ? `${rows.length}+` : String(rows.length),
     detail: [
-      tasks > 0 ? `${some(tasks)} ${tasks === 1 ? "task" : "tasks"}` : null,
+      tasks > 0
+        ? `${some(tasks, tasksCapped)} ${tasks === 1 ? "task" : "tasks"}`
+        : null,
       hours > 0
-        ? `${some(hours)} hours ${hours === 1 ? "entry" : "entries"}`
+        ? `${some(hours, hoursCapped)} hours ${hours === 1 ? "entry" : "entries"}`
         : null,
     ]
       .filter(Boolean)

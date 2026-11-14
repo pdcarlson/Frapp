@@ -431,7 +431,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
   },
   ActivityController_getActivity_v1: {
     // Its poll rows are chat (a card's question, from a channel the caller
-    // can read), and masked: a blocked author's poll is left out. Its other
+    // can read), and masked: a blocked author's poll is left out. Its
+    // reminder rows (#4957) quote a chat message and are masked to the
+    // timeline's tombstone (`chat-reminder.service.spec.ts`). Its other
     // rows are chapter records carrying text a member wrote (a task title, a
     // service entry's description, an event name), which a block does not
     // hide (#2498), as on the activity feed above.
@@ -593,6 +595,20 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
   'application/workers/chat-push-worker.service.ts': {
     calls: 1,
     entries: [PUSH_LEDGER['chat-push-worker (chat_messages INSERT)']],
+  },
+  // A reminder the member set on a chat message (#4957): its push quotes the
+  // message, unless the member has since blocked its author.
+  'application/workers/chat-reminder-sweep.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'masked',
+        proof: {
+          spec: 'application/workers/chat-reminder-sweep.service.spec.ts',
+          test: 'does not quote a blocked author, nor tie the row to the message an edit would rewrite it from',
+        },
+      },
+    ],
   },
   // One push per batch of AI suggestions (#4309): `notifyBatch` and its
   // `notifyMembers`. Titled with the meeting or event name an officer wrote.

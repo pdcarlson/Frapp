@@ -81,6 +81,7 @@ import {
   placeAskTurns,
 } from "@repo/hooks";
 import { useSaveMessage } from "@/lib/chat/save-message";
+import { useRemindMessage } from "@/lib/chat/message-reminder";
 import {
   ASK_COPY,
   CHAT_CATCH_UP_COPY,
@@ -1195,6 +1196,8 @@ function ChannelThreadScreen() {
   );
   // Save message / Remove from Saved (#3723): the viewer's own bookmark.
   const { savedIds, setSaved: handleSetSaved } = useSaveMessage();
+  // "Remind me about this" (#4957): the viewer's own reminder.
+  const handleRemind = useRemindMessage();
   // A Pinned or Saved row (#3723). A reply opens its thread, since it is never
   // on the timeline. Otherwise this channel's scrolls to it, paging older
   // history as the Important strip's jump does, and another channel's opens
@@ -2238,6 +2241,7 @@ function ChannelThreadScreen() {
         onFlag={handleFlag}
         onSetPinned={handleSetPinned}
         onSetSaved={handleSetSaved}
+        onRemind={handleRemind}
       />
       <MessageListSheet
         ref={listSheetRef}
