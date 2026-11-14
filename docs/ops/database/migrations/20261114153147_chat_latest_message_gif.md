@@ -1,4 +1,4 @@
-# 20261114003444_chat_latest_message_gif.sql
+# 20261114153147_chat_latest_message_gif.sql
 
 <!-- One page per migration: its promotion entry and its rollback recipe.
      check:migration-safety reads the two headings below. Shared procedure
