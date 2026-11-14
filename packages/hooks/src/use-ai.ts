@@ -67,9 +67,9 @@ export function useAiConsent(options?: { enabled?: boolean }) {
  * Whether this server has AI: `true`, `false`, or `undefined` while the read
  * is in flight or failed. A screen shows an AI entry point only on `true`.
  */
-export function aiAvailableFrom(
-  consent: { data: AiConsentState | null | undefined },
-): boolean | undefined {
+export function aiAvailableFrom(consent: {
+  data: AiConsentState | null | undefined;
+}): boolean | undefined {
   if (consent.data === undefined) return undefined;
   return consent.data !== null;
 }
@@ -200,7 +200,9 @@ export function useUpdateAiChapterSettings() {
     onError: () => {
       // A 403 means the presidency moved in another tab: read it again so
       // the switches turn read-only.
-      void queryClient.invalidateQueries({ queryKey: aiSettingsKey(chapterId) });
+      void queryClient.invalidateQueries({
+        queryKey: aiSettingsKey(chapterId),
+      });
     },
   });
 }

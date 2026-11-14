@@ -46,9 +46,9 @@ describe("createChapterQueryKeys", () => {
     // Proof the factory is the Wave 0 shell, not a silent rewrite of live
     // keys: `notificationKeys.list` still accepts `string | null`. The
     // factory does not. Wave 1 migrates that call site.
-    expectTypeOf(notificationKeys.list).parameter(0).toEqualTypeOf<
-      string | null
-    >();
+    expectTypeOf(notificationKeys.list)
+      .parameter(0)
+      .toEqualTypeOf<string | null>();
     expectTypeOf(taskFactory.lists).parameter(0).toEqualTypeOf<string>();
     expectTypeOf(taskKeys.lists).parameter(0).toEqualTypeOf<string | null>();
   });

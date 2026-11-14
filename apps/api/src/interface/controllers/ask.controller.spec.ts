@@ -196,7 +196,12 @@ describe('AskController', () => {
     const history = [{ question: 'Who is the treasurer?', answer: 'Dana.' }];
     await ask(undefined, { history, actions: true });
     expect(conversation.converse).toHaveBeenCalledWith(
-      expect.objectContaining({ history, actions: true }),
+      expect.objectContaining({ history, actions: true, answerCards: false }),
+    );
+    // And its say that it draws the cards an answer comes with.
+    await ask(undefined, { actions: true, answer_cards: true });
+    expect(conversation.converse).toHaveBeenLastCalledWith(
+      expect.objectContaining({ actions: true, answerCards: true }),
     );
   });
 

@@ -13,6 +13,10 @@ describe("selectViewerProfile", () => {
         current_company: null,
         bio: "",
         avatar_url: "https://storage.example/signed/photo",
+        birthday_month: 3,
+        birthday_day: 4,
+        birthday_year: null,
+        birthday_visibility: "chapter",
       }),
     ).toEqual({
       displayName: "Paul Carlson",
@@ -26,6 +30,10 @@ describe("selectViewerProfile", () => {
       // `''` is absent, not a value — `bio` is nullable and both mean "unset".
       bio: null,
       photoUrl: "https://storage.example/signed/photo",
+      birthdayMonth: 3,
+      birthdayDay: 4,
+      birthdayYear: null,
+      birthdayVisibility: "chapter",
     });
   });
 
@@ -46,9 +54,11 @@ describe("selectViewerProfile", () => {
   // Delegates to `lib/chat/display-name.ts` so one person's avatar cannot read
   // differently in the directory than it does in chat.
   it("uses the same initials rule as the chat avatar", () => {
-    expect(selectViewerProfile({ display_name: "Ada B. Lovelace" })?.initials).toBe(
-      "AB",
+    expect(
+      selectViewerProfile({ display_name: "Ada B. Lovelace" })?.initials,
+    ).toBe("AB");
+    expect(selectViewerProfile({ display_name: "Prince" })?.initials).toBe(
+      "PR",
     );
-    expect(selectViewerProfile({ display_name: "Prince" })?.initials).toBe("PR");
   });
 });

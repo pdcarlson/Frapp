@@ -302,8 +302,14 @@ describe('ChatThreadService', () => {
     setFollowState: jest.fn(),
     markRead: jest.fn(),
     findFollowedUnread: jest.fn(),
+    findMemberThreads: jest.fn(),
+    findFollowedChannelIds: jest.fn(),
+    findMessagesByIds: jest.fn(),
   };
-  const channelAccess = { assertChannelAccess: jest.fn() };
+  const channelAccess = {
+    assertChannelAccess: jest.fn(),
+    filterAccessibleChannelIds: jest.fn(),
+  };
   const chatBlocks = { listBlockedUserIds: jest.fn() };
   const notifications = { markChatChannelNotificationsRead: jest.fn() };
   let service: ChatThreadService;
@@ -438,5 +444,105 @@ describe('ChatThreadService', () => {
       service.setFollow('ch-chan-1', 'root-1', 'ch-1', 'user-1', 'following'),
     ).rejects.toThrow(BadRequestException);
     expect(threads.setFollowState).not.toHaveBeenCalled();
+  });
+
+  describe('getMemberThreads (#4960)', () => {
+    const row = {
+      thread_root_id: 'root-1',
+      channel_id: 'ch-chan-1',
+      state: 'following' as const,
+      last_read_at: null,
+      last_reply_at: reply.created_at,
+      reply_count: 1,
+      unread_count: 1,
+    };
+    const lastReply = {
+      id: 'reply-1',
+      sender_id: 'user-2',
+      content: 'In the thread',
+      kind: 'text',
+      attachment_count: 0,
+      created_at: reply.created_at,
+    };
+
+    beforeEach(() => {
+      threads.findFollowedChannelIds.mockResolvedValue([
+        'ch-chan-1',
+        'lost-chan',
+      ]);
+      channelAccess.filterAccessibleChannelIds.mockResolvedValue(
+        new Set(['ch-chan-1']),
+      );
+      threads.findMemberThreads.mockResolvedValue([row]);
+      threads.findMessagesByIds.mockResolvedValue([
+        { ...root, thread_last_reply: lastReply },
+      ]);
+    });
+
+    it('reads only the chapter channels the caller may still read, then joins the roots', async () => {
+      const result = await service.getMemberThreads('ch-1', 'user-1');
+
+      expect(threads.findFollowedChannelIds).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
+      expect(channelAccess.filterAccessibleChannelIds).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+        ['ch-chan-1', 'lost-chan'],
+      );
+      expect(threads.findMemberThreads).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+        ['ch-chan-1'],
+        50,
+      );
+      expect(threads.findMessagesByIds).toHaveBeenCalledWith(['root-1']);
+      expect(result).toEqual([
+        expect.objectContaining({
+          thread_root_id: 'root-1',
+          channel_id: 'ch-chan-1',
+          unread_count: 1,
+          root: expect.objectContaining({
+            id: 'root-1',
+            thread_last_reply: expect.objectContaining({ id: 'reply-1' }),
+          }),
+        }),
+      ]);
+    });
+
+    it('answers empty without reading threads when no followed channel is readable', async () => {
+      channelAccess.filterAccessibleChannelIds.mockResolvedValue(new Set());
+
+      await expect(service.getMemberThreads('ch-1', 'user-1')).resolves.toEqual(
+        [],
+      );
+      expect(threads.findMemberThreads).not.toHaveBeenCalled();
+    });
+
+    it('drops a thread whose root is gone or sits in another channel', async () => {
+      threads.findMemberThreads.mockResolvedValue([
+        row,
+        { ...row, thread_root_id: 'gone' },
+        { ...row, thread_root_id: 'moved' },
+      ]);
+      threads.findMessagesByIds.mockResolvedValue([
+        root,
+        { ...root, id: 'moved', channel_id: 'elsewhere' },
+      ]);
+
+      const result = await service.getMemberThreads('ch-1', 'user-1');
+
+      expect(result.map((view) => view.thread_root_id)).toEqual(['root-1']);
+    });
+
+    it('masks a blocked member’s root and their latest-reply preview', async () => {
+      chatBlocks.listBlockedUserIds.mockResolvedValue(['author-1', 'user-2']);
+
+      const [view] = await service.getMemberThreads('ch-1', 'user-1');
+
+      expect(view.root.content).not.toBe(root.content);
+      expect(view.root.thread_last_reply?.content).not.toBe(lastReply.content);
+    });
   });
 });

@@ -18,10 +18,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * `/v1/users/me`: without it the query fires once unfiltered and again filtered,
  * which is the over-fetch this parameter is meant to avoid.
  */
-export function useInvoices(
-  userId?: string,
-  options?: { enabled?: boolean },
-) {
+export function useInvoices(userId?: string, options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({

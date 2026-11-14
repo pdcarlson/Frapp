@@ -85,6 +85,41 @@ describe('UpdateUserDto', () => {
   });
 });
 
+describe('UpdateUserDto birthday (#4959)', () => {
+  it('accepts a month, day, year and who sees it, and nulls that clear them', async () => {
+    const body = {
+      birthday_month: 2,
+      birthday_day: 29,
+      birthday_year: 2004,
+      birthday_visibility: 'chapter',
+    };
+    await expect(transform(UpdateUserDto, body)).resolves.toEqual(body);
+    const cleared = {
+      birthday_month: null,
+      birthday_day: null,
+      birthday_year: null,
+    };
+    await expect(transform(UpdateUserDto, cleared)).resolves.toEqual(cleared);
+  });
+
+  it.each([
+    { birthday_month: 0 },
+    { birthday_month: 13 },
+    { birthday_month: 2.5 },
+    { birthday_day: 0 },
+    { birthday_day: 32 },
+    { birthday_year: 1899 },
+    { birthday_year: 2004.5 },
+    { birthday_visibility: 'everyone' },
+    // NOT NULL in the database: a null must be a 400, not a 500.
+    { birthday_visibility: null },
+  ])('refuses %o', async (body) => {
+    await expect(transform(UpdateUserDto, body)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});
+
 describe('ConfirmAvatarDto', () => {
   it('requires storage_path', async () => {
     await expect(transform(ConfirmAvatarDto, {})).rejects.toBeInstanceOf(

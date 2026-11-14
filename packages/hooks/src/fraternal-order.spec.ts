@@ -1,5 +1,8 @@
 import { describe, expect, test } from "vitest";
-import { fraternalOrderComparator, usesFraternalOrder } from "./fraternal-order";
+import {
+  fraternalOrderComparator,
+  usesFraternalOrder,
+} from "./fraternal-order";
 
 const CLASSES = [{ id: "alpha" }, { id: "beta" }];
 
@@ -63,7 +66,12 @@ describe("fraternalOrderComparator", () => {
 
   test("a member with no name sorts by the label their row shows, not as blank", () => {
     const comparator = fraternalOrderComparator(CLASSES);
-    const unnamed = { display_name: "  ", user_id: "zzz99999-0000", pledge_class_id: null, order_number: null };
+    const unnamed = {
+      display_name: "  ",
+      user_id: "zzz99999-0000",
+      pledge_class_id: null,
+      order_number: null,
+    };
     expect(
       [unnamed, member("Aaron", null, null)].sort(comparator)[0],
     ).toMatchObject({ display_name: "Aaron" });
@@ -76,7 +84,10 @@ describe("fraternalOrderComparator", () => {
   });
 
   test("the chapter's order decides, not the class id", () => {
-    const comparator = fraternalOrderComparator([{ id: "beta" }, { id: "alpha" }]);
+    const comparator = fraternalOrderComparator([
+      { id: "beta" },
+      { id: "alpha" },
+    ]);
     expect(
       [member("A", "alpha", 1), member("B", "beta", 1)]
         .sort(comparator)
