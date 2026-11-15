@@ -51,7 +51,7 @@ Errors omit a hardcoded `/rush` so a chapter whose term is Intake is not toasted
 Every slash command also has a button and a visual form; typing the command stays the shortcut (Shawn's rule, [#3865](https://github.com/pdcarlson/Frapp/issues/3865), layout A picked 2026-11-09).
 The web composer's toolbar is **+ · emoji · help**: one **+** replaced the paperclip and the slash-palette button, and typing `/` in the message box (or Cmd/Ctrl+/) still opens the palette.
 The **+** opens one card (`apps/web/components/chat/composer-plus-card.tsx`, [#3983](https://github.com/pdcarlson/Frapp/issues/3983)) whose first view is a menu: Attach a file, then one row per command that has a form, each showing its shortcut in mono.
-The rows are Poll (`/poll`), Sign-up sheet (no shortcut, [#3926](https://github.com/pdcarlson/Frapp/issues/3926); [§ Sign-up sheet cards](#sign-up-sheet-cards)), Form (no shortcut, on web; [§ Form cards](#form-cards)), Event (`/event`), Task (`/task`), Service hours (`/hours`) and Points (`/points`).
+The rows are Poll (`/poll`), Sign-up sheet (no shortcut, [#3926](https://github.com/pdcarlson/Frapp/issues/3926); [§ Sign-up sheet cards](#sign-up-sheet-cards)), Form (no shortcut, on web; [§ Form cards](#form-cards)), Event (`/event`), Task (`/task`), Service hours (`/hours`), Points (`/points`) and Role picker (no shortcut, [#4958](https://github.com/pdcarlson/Frapp/issues/4958); [§ Role picker cards](#role-picker-cards)).
 Picking a row turns the card into that form in place, above the +, with no dialog and no scrim, so the chat stays readable and live behind it (Paul, 2026-11-10; the card's size and step are [`components.md`](../../ui/design-system/components.md) § Surface size).
 Its header has a back arrow to the menu, the form's title and an X; Escape steps back to the menu once, then closes, and focus goes to the form's first field on open and back to the + on close.
 A typed command that opens a form (below) opens the same card on that form.
@@ -338,6 +338,16 @@ Comparable apps: Google Forms, Microsoft Forms, Typeform and Slack Workflow form
 - **Reports.**
   A reported form keeps its title, description, questions and options in the report's snapshot (`reportedContentSnapshot`).
   No member's answers are in it, since they were never on the card.
+
+## Role picker cards
+
+An officer who manages roles posts a role picker into a channel from the **+** menu's Role picker row ([#4958](https://github.com/pdcarlson/Frapp/issues/4958), Shawn's "reaction roles").
+It lists some of the chapter's Non-chapter business roles ([`../rbac.md` § Self-assignable roles](../rbac.md#self-assignable-roles)), and every member who reads it gets a **Join** or **Leave** button beside each, as Discord's button-role bots (Carl-bot) and Slack's interactive messages hand out roles: buttons rather than emoji reactions, so what a tap does is written on it.
+
+- **The card** is `kind: 'role_picker'` with `payload: { title, role_ids }` and the title as `content`, so previews and quotes read it. The form's title is optional and defaults to "Pick your roles" (`ROLE_PICKER_DEFAULT_TITLE`); it lists 1 to 25 roles (`ROLE_PICKER_ROLES_MAX`), checked and rebuilt by `normalizeRolePickerCard` (`apps/api/src/domain/utils/role-picker-card-rules.ts`) on send.
+- **Who may post one.** The send route (`ChatController.sendMessage`) refuses the kind with `403` to a member without `roles:manage`, the grant that marks a role, since the card hands roles out; the **+** row is offered by the same grant (`PLUS_MENU_PERMISSIONS.roles`). Every role it lists must be marked Non-chapter business in the chapter when it is posted (`400` otherwise; `RbacService.assertMayPostRolePicker`). Like any card, it can't be edited.
+- **A tap** is the member's own `POST /v1/roles/:id/join` or `/leave`, the same call as Add roles and Your roles (`useSetPickedRole`), with all its rules: joining needs the role still marked and is refused to alumni. The card stores nothing per member, so each viewer's buttons read their own roles (`rolePickerRows` in `@repo/chat-core/role-pickers`): Join for a role they may join, Leave for one they hold, and "No longer open to join" with no button for a role still in the chapter they can't join now. A role deleted since the post drops off the card.
+- **Where it's drawn:** `apps/web/components/chat/renderers/role-picker-card.tsx` on web and `apps/mobile/components/chat/role-picker-card.tsx` on the phone; the forms are web's **+** card and the phone's New role picker sheet.
 
 ## Rich-message renderer registry
 
