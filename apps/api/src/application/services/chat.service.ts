@@ -25,6 +25,7 @@ import { stampCardClosed } from './card-close';
 import { normalizeSignupCard } from '#domain/utils/signup-card-rules';
 import { isCardClosed } from '#domain/utils/card-closing';
 import { normalizeFormCard } from '#domain/utils/form-card-rules';
+import { normalizeRolePickerCard } from '#domain/utils/role-picker-card-rules';
 import {
   CHAT_THREAD_REPOSITORY,
   type IChatThreadRepository,
@@ -319,6 +320,14 @@ function cardPayloadForSend(
   // answer against its questions.
   if (kind === 'form') {
     const checked = normalizeFormCard(payload);
+    if ('error' in checked) throw new BadRequestException(checked.error);
+    return { ...checked.card };
+  }
+  // A role picker (#4958) keeps only its title and role ids. The caller has
+  // checked who may post one and that each role is marked
+  // (`ChatController.sendMessage`).
+  if (kind === 'role_picker') {
+    const checked = normalizeRolePickerCard(payload);
     if ('error' in checked) throw new BadRequestException(checked.error);
     return { ...checked.card };
   }

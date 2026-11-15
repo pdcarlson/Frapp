@@ -480,6 +480,38 @@ export class RbacService {
     return { role_ids: result.role_ids };
   }
 
+  /**
+   * Who may post a role picker in chat (`kind: 'role_picker'`, #4958), and
+   * what it may list: a `roles:manage` holder, since the card hands out
+   * roles as marking one does, and only roles marked Non-chapter business in
+   * this chapter. A role unmarked or deleted after the post stays on the card
+   * as a row nobody can join (`POST /v1/roles/:id/join` refuses it).
+   */
+  async assertMayPostRolePicker(
+    chapterId: string,
+    userId: string,
+    roleIds: readonly string[],
+  ): Promise<void> {
+    const allowed = await this.memberHasAnyPermission(chapterId, userId, [
+      SystemPermissions.ROLES_MANAGE,
+    ]);
+    if (!allowed) {
+      throw new ForbiddenException(
+        'Only officers who manage roles can post a role picker',
+      );
+    }
+    const marked = new Set(
+      (await this.roleRepo.findByChapter(chapterId))
+        .filter((role) => role.self_assignable === true)
+        .map((role) => role.id.toLowerCase()),
+    );
+    if (roleIds.some((id) => !marked.has(id.toLowerCase()))) {
+      throw new BadRequestException(
+        'A role picker lists only roles members pick themselves (Non-chapter business). Reload and pick again.',
+      );
+    }
+  }
+
   /** `DELETE /v1/roles/:id` for a member: only a role ranked below them. */
   async deleteAsMember(
     roleId: string,
