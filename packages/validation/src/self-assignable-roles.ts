@@ -96,3 +96,15 @@ export const SELF_ASSIGNABLE_REFUSAL_COPY: Record<
   [SELF_ASSIGNABLE_PERMISSIONS_CODE]:
     "Roles members pick themselves can't carry permissions, since anyone can join them. Turn its permissions off, or turn off Non-chapter business.",
 };
+
+/**
+ * A role picker in chat (`kind: "role_picker"`, #4958): a card an officer
+ * posts listing some of these roles, with a Join or Leave button beside each,
+ * as Discord's reaction-role bots and Slack's interactive messages do. The
+ * limits below are the API's (`role-picker-card-rules.ts`) and the forms'.
+ */
+export const ROLE_PICKER_TITLE_MAX_LENGTH = 100;
+/** The most roles one picker lists. */
+export const ROLE_PICKER_ROLES_MAX = 25;
+/** The title a picker gets when its officer leaves the field empty. */
+export const ROLE_PICKER_DEFAULT_TITLE = "Pick your roles";

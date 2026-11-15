@@ -33,6 +33,7 @@ import { NewPollSheet } from "@/components/chat/new-poll-sheet";
 import { GifPickerSheet } from "@/components/chat/gif-picker-sheet";
 import { NewSignupSheet } from "@/components/chat/new-signup-sheet";
 import { NewFormSheet } from "@/components/chat/new-form-sheet";
+import { NewRolePickerSheet } from "@/components/chat/new-role-picker-sheet";
 import {
   NewEventSheet,
   type EventCreatedOutcome,
@@ -54,15 +55,20 @@ const PHONE_PLUS_COMMANDS = [
   "event",
   "task",
   "hours",
+  "roles",
 ] as const;
 
-type ChannelForm = "event" | "task" | "hours";
+/**
+ * The forms mounted on first use, since each reads its own data: the role
+ * picker reads the chapter's roles, which no other + form needs.
+ */
+type ChannelForm = "event" | "task" | "hours" | "roles";
 
 const NO_FORMS: ReadonlySet<ChannelForm> = new Set();
 
 /** What each form's posted-but-not-quite outcome is called in its alert. */
 const OUTCOME_TITLES: Record<
-  "poll" | "signup" | "form" | "task" | "hours",
+  "poll" | "signup" | "form" | "task" | "hours" | "roles",
   { posted: string; unconfirmed: string }
 > = {
   poll: { posted: "Poll posted", unconfirmed: "Couldn't confirm the poll" },
@@ -73,6 +79,10 @@ const OUTCOME_TITLES: Record<
   form: { posted: "Form posted", unconfirmed: "Couldn't confirm the form" },
   task: { posted: "Task created", unconfirmed: "Couldn't confirm the task" },
   hours: { posted: "Hours logged", unconfirmed: "Couldn't confirm the hours" },
+  roles: {
+    posted: "Role picker posted",
+    unconfirmed: "Couldn't confirm the role picker",
+  },
 };
 
 /**
@@ -83,7 +93,7 @@ const OUTCOME_TITLES: Record<
  * read this before trying again.
  */
 export function presentPostOutcome(
-  form: "poll" | "signup" | "form" | "task" | "hours",
+  form: "poll" | "signup" | "form" | "task" | "hours" | "roles",
   result: { warning?: string; unconfirmed?: boolean },
   alert: typeof Alert.alert = Alert.alert,
 ): void {
@@ -140,6 +150,7 @@ export function useComposerPlus({
     UseChatChannelResult,
     | "sendPoll"
     | "sendSignup"
+    | "sendRolePicker"
     | "sendForm"
     | "postTask"
     | "postHours"
@@ -206,10 +217,19 @@ export function useComposerPlus({
   const eventRef = useRef<BottomSheetModal>(null);
   const taskRef = useRef<BottomSheetModal>(null);
   const hoursRef = useRef<BottomSheetModal>(null);
+  const rolePickerRef = useRef<BottomSheetModal>(null);
   const formRefs: Record<
     ChannelForm,
     RefObject<BottomSheetModal | null>
-  > = useMemo(() => ({ event: eventRef, task: taskRef, hours: hoursRef }), []);
+  > = useMemo(
+    () => ({
+      event: eventRef,
+      task: taskRef,
+      hours: hoursRef,
+      roles: rolePickerRef,
+    }),
+    [],
+  );
 
   const [mounted, setMounted] = useState<{
     channelId: string | null | undefined;
@@ -290,6 +310,7 @@ export function useComposerPlus({
           eventRef,
           taskRef,
           hoursRef,
+          rolePickerRef,
         ]) {
           ref.current?.dismiss();
         }
@@ -300,6 +321,7 @@ export function useComposerPlus({
   const {
     sendPoll,
     sendSignup,
+    sendRolePicker,
     sendForm,
     postTask,
     postHours,
@@ -325,6 +347,14 @@ export function useComposerPlus({
       return result;
     },
     [sendSignup],
+  );
+  const postRolePickerHere = useCallback(
+    async (picker: Parameters<typeof sendRolePicker>[0]) => {
+      const result = await sendRolePicker(picker);
+      if (result.ok) presentPostOutcome("roles", result);
+      return result;
+    },
+    [sendRolePicker],
   );
   const postFormHere = useCallback(
     async (form: Parameters<typeof sendForm>[0]) => {
@@ -428,6 +458,11 @@ export function useComposerPlus({
             postToChannel={postHours}
             onPosted={onHoursPosted}
           />
+        </SheetBoundary>
+      ) : null}
+      {mountedForms.has("roles") ? (
+        <SheetBoundary key={`roles-${key}`} onError={() => dropForm("roles")}>
+          <NewRolePickerSheet ref={rolePickerRef} onPost={postRolePickerHere} />
         </SheetBoundary>
       ) : null}
     </>

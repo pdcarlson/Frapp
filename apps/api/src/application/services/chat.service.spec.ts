@@ -3170,6 +3170,77 @@ describe('ChatService', () => {
       });
     });
 
+    describe('a role picker is an officer post of marked roles (#4958)', () => {
+      const ROLE = '8c03ecd4-267a-40d7-b887-10e3a6206d08';
+      const sendPicker = (
+        assertRolePicker?: (ids: readonly string[]) => Promise<void>,
+        payload: Record<string, unknown> = {
+          title: ' Teams ',
+          role_ids: [ROLE.toUpperCase(), ROLE],
+          closed_at: 'x',
+        },
+      ) =>
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Teams',
+          kind: 'role_picker',
+          payload,
+          client_message_id: '22222222-2222-2222-2222-222222222222',
+          assertRolePicker,
+        });
+
+      beforeEach(() => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+        mockMessageRepo.findByClientMessageId.mockResolvedValue(null);
+      });
+
+      it('checks the normalized roles, then stores only the title and ids', async () => {
+        const check = jest.fn().mockResolvedValue(undefined);
+        await sendPicker(check);
+
+        expect(check).toHaveBeenCalledWith([ROLE]);
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: 'role_picker',
+            payload: { title: 'Teams', role_ids: [ROLE] },
+          }),
+        );
+      });
+
+      it('refuses a picker the check refuses, or one sent with no check, writing nothing', async () => {
+        await expect(
+          sendPicker(jest.fn().mockRejectedValue(new ForbiddenException('no'))),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        await expect(sendPicker(undefined)).rejects.toBeInstanceOf(
+          ForbiddenException,
+        );
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('refuses a picker it cannot read before checking anyone', async () => {
+        const check = jest.fn();
+        await expect(
+          sendPicker(check, { title: 'T', role_ids: [] }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(check).not.toHaveBeenCalled();
+      });
+
+      it('answers a replay of a picker that committed before a role was unmarked as a duplicate', async () => {
+        const committed = { ...baseMessage, kind: 'role_picker' as const };
+        mockMessageRepo.findByClientMessageId.mockResolvedValue(committed);
+
+        const result = await sendPicker(
+          jest.fn().mockRejectedValue(new BadRequestException('unmarked')),
+        );
+
+        expect(result).toEqual({ message: committed, deduplicated: true });
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+    });
+
     describe('module gate on card kinds (#2993)', () => {
       const sendPoll = (enabled_modules?: Record<string, boolean> | null) =>
         service.sendMessage({
