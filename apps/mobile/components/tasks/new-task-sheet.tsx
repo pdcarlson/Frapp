@@ -267,10 +267,15 @@ function keptEditOver(kept: KeptTask, task: TaskEditTarget): KeptTask {
   const removed = new Set(
     base.keptPhotoIds.filter((id) => !kept.keptPhotoIds?.includes(id)),
   );
+  const keptPhotoIds = now.keptPhotoIds.filter((id) => !removed.has(id));
   return {
     ...kept,
     ...fields,
-    keptPhotoIds: now.keptPhotoIds.filter((id) => !removed.has(id)),
+    keptPhotoIds,
+    // Photos added on another device since can leave less room than the
+    // member's picks took: the task's own come first, and the picks fill
+    // what is left, so Save never sends more than the server takes.
+    pickedPhotos: kept.pickedPhotos.slice(0, photoRoom(keptPhotoIds.length)),
     base: now,
   };
 }
@@ -395,22 +400,23 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [opening] = useState(() =>
       keptOpening && editing ? keptEditOver(keptOpening, editing) : keptOpening,
     );
-    // The task as this sheet opened on it, which an edit's draft keeps.
+    // The task as this sheet opened on it: what an edit's fields start from,
+    // and what its kept draft is measured against.
     const [editBase] = useState(() =>
       editing ? taskEditFieldsOf(editing) : undefined,
     );
     const [title, setTitle] = useState(
-      opening?.title ?? original?.title ?? suggestion?.title ?? "",
+      opening?.title ?? editBase?.title ?? suggestion?.title ?? "",
     );
     const [pointsInput, setPointsInput] = useState(
-      opening?.pointsInput ?? original?.pointsInput ?? "",
+      opening?.pointsInput ?? editBase?.pointsInput ?? "",
     );
     // The chip as the draft holds it, resolved against today's below.
     const [due, setDue] = useState<DueChoice>(
       opening
         ? opening.due
-        : original
-        ? { kind: "date", date: original.dueDate }
+        : editBase
+        ? editBase.due
         : suggested
           ? { kind: "date", date: suggested.dueDate }
           : DEFAULT_DUE_CHOICE,
@@ -419,7 +425,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [dueTime, setDueTime] = useState<string | null>(
       opening
         ? opening.dueTime
-        : (original?.dueTime ?? suggested?.dueTime ?? null),
+        : editBase
+          ? editBase.dueTime
+          : (suggested?.dueTime ?? null),
     );
     // The steps (#4003), and the one being typed, which sends as the last.
     const [subtasks, setSubtasks] = useState<string[]>(() => [
@@ -432,13 +440,15 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [assigneeId, setAssigneeId] = useState<string | null>(
       opening
         ? opening.assigneeId
-        : (original?.assigneeId ?? suggestion?.assigneeId ?? null),
+        : editBase
+          ? editBase.assigneeId
+          : (suggestion?.assigneeId ?? null),
     );
     // Photos and proof (#4635): the task's own reference photos still kept
     // (an edit), the ones picked here, which go up on Save, and the proof
     // control. A suggestion carries none, so its form leaves them out.
     const [proofKind, setProofKind] = useState<TaskProofKind>(
-      opening?.proofKind ?? original?.proofKind ?? "none",
+      opening?.proofKind ?? editBase?.proofKind ?? "none",
     );
     const [keptPhotos, setKeptPhotos] = useState<LiveTaskPhoto[]>(() => {
       const photos = editing?.referencePhotos ?? [];

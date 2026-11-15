@@ -383,18 +383,83 @@ describe("Edit task kept past its screen (#4872)", () => {
   });
 
   it("gives the edit up on a Save with nothing changed", () => {
+    // Reopened on a kept edit, typed back to the task, saved: nothing to
+    // send. The sheet stays up here, and what is typed next is kept, which
+    // a hold left in place by that Save would stop.
     const first = open();
     act(() =>
       byLabel(first, "Task title").props.onChangeText("Porch and hall"),
     );
-    act(() =>
-      byLabel(first, "Task title").props.onChangeText("Sweep the porch"),
-    );
-    act(() => saveButton(first).props.onPress());
     leave(first);
-    expect(title(open({ ...TASK, title: "Renamed on web" }))).toBe(
-      "Renamed on web",
+    const second = open();
+    act(() =>
+      byLabel(second, "Task title").props.onChangeText("Sweep the porch"),
     );
+    act(() => saveButton(second).props.onPress());
+    expect(update).not.toHaveBeenCalled();
+    act(() => byLabel(second, "Task title").props.onChangeText("Porch, hall"));
+    leave(second);
+    expect(title(open())).toBe("Porch, hall");
+  });
+
+  it("never brings back more photos than a task takes", async () => {
+    const photo = (id: string) => ({
+      id,
+      kind: "reference" as const,
+      storage_path: `p/${id}.jpg`,
+    });
+    vi.mocked(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+    ).mockResolvedValueOnce({ granted: true, canAskAgain: true } as never);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: ["x", "y", "z"].map((name) => ({
+        uri: `file:///${name}.png`,
+        fileName: `${name}.png`,
+        mimeType: "image/png",
+        width: 10,
+        height: 10,
+        fileSize: 100,
+      })),
+    } as never);
+    const first = open({
+      ...TASK,
+      referencePhotos: ["a", "b", "c"].map(photo),
+    });
+    await act(async () => {
+      first.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Add photos" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress();
+    });
+    leave(first);
+
+    // A fourth added on another device since: three of the task's own and
+    // three picks would be seven, over the six a task takes.
+    const second = open({
+      ...TASK,
+      referencePhotos: ["a", "b", "c", "d"].map(photo),
+    });
+    const removable = second.root
+      .findAll(
+        (node) =>
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.startsWith("Remove ") &&
+          typeof node.props.onPress === "function",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    // The task's four first, then the picks that still fit.
+    expect(removable).toEqual([
+      "Remove photo 1",
+      "Remove photo 2",
+      "Remove photo 3",
+      "Remove photo 4",
+      "Remove x.png",
+      "Remove y.png",
+    ]);
   });
 
   it("holds the edit out while its save is in flight", () => {

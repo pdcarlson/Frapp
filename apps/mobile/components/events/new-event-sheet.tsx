@@ -219,7 +219,9 @@ function keptEventEditOver(
 ): NewEventDraft {
   const { base, ...fields } = kept;
   return {
-    ...keepEditsOver<NewEventDraft>(fields, base, now, EVENT_EDIT_KEYS),
+    ...keepEditsOver<NewEventDraft>(fields, base, now, EVENT_EDIT_KEYS, [
+      ["start", "end"],
+    ]),
     typeFilledName: fields.typeFilledName,
     showMore: fields.showMore,
   };
@@ -348,7 +350,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     } = useKeptSheetDraft<KeptEventEdit>(
       keptName,
       { ...draft, base },
-      JSON.stringify(draft),
+      // The store's own signature of the whole value: `base` never changes.
+      undefined,
       opening,
     );
     const [focused, setFocused] = useState<

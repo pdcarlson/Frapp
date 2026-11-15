@@ -769,6 +769,38 @@ describe("Edit event", () => {
       );
     });
 
+    it("brings a moved end back with the start it was moved against", async () => {
+      const first = open();
+      // The end alone, pushed an hour later.
+      const ends = first.root
+        .findAllByType(WhenRow)
+        .find((row) => row.props.label === "Ends")!;
+      act(() => ends.props.onChange(local(9, 21, 15)));
+      leave(first);
+
+      // Moved a day earlier on web meanwhile.
+      const second = open({
+        ...single,
+        event: {
+          ...EVENT,
+          start_time: local(8, 18, 45).toISOString(),
+          end_time: local(8, 20, 15).toISOString(),
+        },
+      });
+      await act(async () => saveButton(second).props.onPress());
+      // Not Sunday's start with Monday's end: the range the officer chose.
+      expect(updateMutate).toHaveBeenCalledWith(
+        {
+          id: "evt-1",
+          body: expect.objectContaining({
+            start_time: local(9, 18, 45).toISOString(),
+            end_time: local(9, 21, 15).toISOString(),
+          }),
+        },
+        expect.anything(),
+      );
+    });
+
     it("keeps nothing for an Edit opened and left untouched", () => {
       leave(open());
       expect(
