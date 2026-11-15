@@ -11,7 +11,8 @@ name: PR base sync
 # strand required checks at "Expected") or, for conflicts and per-PR update
 # failures, posts one wake comment so the watching agent session merges main
 # itself. A conflict only in the shipped-builds registry, from a PR that only
-# adds entries, it merges itself through the git data API instead (#3783), and
+# adds entries, it merges itself through the git data API instead (#3783), as it
+# does a conflict where both sides only added lines (keep-both, 2026-11-14), and
 # so it does for a clean PR whose migrations no longer sort after main's: one
 # commit that merges main and renumbers them (resolve-migration-order.mjs, #4558).
 # A missing/failed app token raises ONE alert issue instead of fanning a
@@ -130,8 +131,9 @@ jobs:
           client-id: ${{ secrets.PR_BASE_SYNC_APP_CLIENT_ID }}
           private-key: ${{ secrets.PR_BASE_SYNC_APP_PRIVATE_KEY }}
           # Narrow the installation token to exactly what its writes need:
-          # update-branch, and the registry merge's and migration renumber's git
-          # data API calls (#3783, #4558), all contents: write. No Workflows permission, deliberately.
+          # update-branch, and the registry merge's, migration renumber's and
+          # keep-both merge's git data API calls (#3783, #4558, 2026-11-14), all
+          # contents: write. No Workflows permission, deliberately.
           # An App granted less than this fails the mint outright rather than
           # 403-ing per PR halfway through a sweep — but note that continue-on-error
           # above makes that failure QUIET: the run stays green and the only
