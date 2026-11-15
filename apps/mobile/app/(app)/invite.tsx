@@ -169,7 +169,14 @@ function InviteBody({ focused }: { focused: boolean }) {
   }
 
   return (
-    <ScreenShell back={back} title="Invite members">
+    // "handled": with the keyboard up, the first tap on Send invite sends,
+    // not just closes the keyboard (Paul, 2026-11-15: "I have to hit the
+    // button twice").
+    <ScreenShell
+      back={back}
+      title="Invite members"
+      keyboardShouldPersistTaps="handled"
+    >
       <View style={styles.stack}>
         <InviteByEmail
           accent={branding.accentPrimary}
