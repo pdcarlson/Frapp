@@ -120,7 +120,8 @@ export function leaveWhenSignedOutElsewhere(): void {
  *
  * A 401 that lands after the local session is already gone (a slow read from
  * the burst) has nothing left to sign out, so it returns before asking Auth,
- * whose "no session" answer would otherwise read as another ended session.
+ * whose "no session" answer would otherwise read as another ended session:
+ * past that check, `sessionVerdict` reads "no session" as a revoke (#4440).
  */
 export async function handleRejectedSession(): Promise<void> {
   if (checking) return;
@@ -164,14 +165,15 @@ export async function handleRejectedSession(): Promise<void> {
  * The signed-in user, for a page that sends a signed-out visitor to sign in
  * itself (`/join`, `/check-in`), which names itself as `screen` for the
  * failure report. Null when there is no live session, and once Auth judges
- * the browser's session over (`isSessionOver`) the local one is cleared first.
+ * the browser's session over (`sessionVerdict`) the local one is cleared first.
  *
  * Clearing it is the point (#3776). `proxy.ts` decides with `getSession()`,
  * which trusts the cookie, while this asks Auth. With a cookie Auth no longer
- * accepts (an account deleted elsewhere, a session revoked by a sign-out on
- * another device), the page sent the visitor to `/sign-in`, the proxy saw the
- * cookie and sent them straight back to `/join`, and the page sat on its
- * skeleton in that loop for good.
+ * accepts (an account deleted elsewhere), the page sent the visitor to
+ * `/sign-in`, the proxy saw the cookie and sent them straight back to
+ * `/join`, and the page sat on its skeleton in that loop for good. A session
+ * revoked by a sign-out on another device never looped: auth-js drops the
+ * stored session itself on that answer, so this only reports it (#4440).
  *
  * Throws when Auth could not be asked (an outage is not a verdict, as in
  * `isSessionOver`), so the page shows its retryable error instead of signing
@@ -181,8 +183,9 @@ export async function getLiveSessionUser(
   screen: "/join" | "/check-in" = "/join",
 ): Promise<User | null> {
   const supabase = createSupabaseBrowserClient();
-  // Read before asking Auth: a revoked session comes back as "no session"
-  // (`sessionVerdict`), and only this tells it from a visitor who never had one.
+  // Read before asking Auth, never alongside it: a revoked session comes back
+  // as "no session" (`sessionVerdict`) and auth-js has dropped the stored one
+  // by then, so only this read tells it from a visitor who never had one.
   const { data: local } = await supabase.auth.getSession();
   const result = await supabase.auth.getUser();
   if (result.data.user) return result.data.user;

@@ -94,6 +94,21 @@ describe("getLiveSessionUser (#3776)", () => {
     });
   });
 
+  it("reads the local session before asking Auth, which drops a revoked one (#4440)", async () => {
+    // As auth-js does: `getUser` removes the stored session when GoTrue
+    // answers `session_not_found`, so a read after it would find none.
+    let session: unknown = { access_token: "t" };
+    getSession.mockImplementation(async () => ({ data: { session } }));
+    getUser.mockImplementation(async () => {
+      session = null;
+      return { data: { user: null }, error: new AuthSessionMissingError() };
+    });
+    await expect(getLiveSessionUser()).resolves.toBeNull();
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
+      code: "session_not_found",
+    });
+  });
+
   it("reports the page that asked, so a check-in link's failure isn't filed under /join", async () => {
     getUser.mockResolvedValue({
       data: { user: null },

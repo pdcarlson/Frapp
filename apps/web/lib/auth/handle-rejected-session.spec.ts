@@ -86,6 +86,20 @@ describe("handleRejectedSession reporting", () => {
     );
   });
 
+  it("asks Auth nothing for a 401 that lands after the local session is gone", async () => {
+    // Past that check, "no session" reads as a revoke (`sessionVerdict`).
+    getSession.mockResolvedValue({ data: { session: null } });
+    getUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthSessionMissingError(),
+    });
+    await handle();
+
+    expect(getUser).not.toHaveBeenCalled();
+    expect(reportAuthFailure).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
   it("reports nothing when Auth still accepts the session, or can't be asked", async () => {
     getUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     await handle();
