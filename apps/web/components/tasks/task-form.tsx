@@ -46,8 +46,9 @@ import {
 import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
 
 // The draft lives in its own module so the chat shell can build one without
-// loading this form, which it imports only when the + card opens it (#3716).
-export { taskDraftFrom, type TaskDraft, type TaskPrefill } from "./task-draft";
+// loading this form, which it loads only when the + card opens it (#3716).
+// Re-exported for the form's other callers, which import it from here.
+export { taskDraftFrom, type TaskDraft } from "./task-draft";
 import { taskDraftFrom, type TaskDraft } from "./task-draft";
 
 type Missing = {

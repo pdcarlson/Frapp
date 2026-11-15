@@ -3,6 +3,7 @@ import {
   applyAnalyticsIdentity,
   applyAnalyticsOptOut,
   bindPostHogAdapterForTests,
+  captureSentryErrorCorrelated,
   createRouteViewRecorder,
 } from "@repo/observability/identified-posthog";
 import { initWebPostHog, type PostHogLoadSchedule } from "./client";
@@ -15,6 +16,8 @@ const reloadFeatureFlags = vi.hoisted(() => vi.fn());
 const setConfig = vi.hoisted(() => vi.fn());
 const optInCapturing = vi.hoisted(() => vi.fn());
 const posthogCapture = vi.hoisted(() => vi.fn());
+const posthogIdentify = vi.hoisted(() => vi.fn());
+const optOutCapturing = vi.hoisted(() => vi.fn());
 // Replay is off in every environment today, so the real options can't tell a
 // restored setting from a latched one. Tests that need replay on set this.
 const replayOn = vi.hoisted(() => ({ value: false }));
@@ -33,11 +36,11 @@ vi.mock("./config", async (importOriginal) => {
 vi.mock("posthog-js", () => ({
   default: {
     init: posthogInit,
-    identify: vi.fn(),
+    identify: posthogIdentify,
     reset: vi.fn(),
     group: vi.fn(),
     resetGroups: vi.fn(),
-    opt_out_capturing: vi.fn(),
+    opt_out_capturing: optOutCapturing,
     opt_in_capturing: optInCapturing,
     set_config: setConfig,
     stopSessionRecording: vi.fn(),
@@ -57,7 +60,9 @@ afterEach(() => {
   reloadFeatureFlags.mockClear();
   setConfig.mockClear();
   optInCapturing.mockClear();
-  posthogCapture.mockClear();
+  posthogCapture.mockReset();
+  posthogIdentify.mockClear();
+  optOutCapturing.mockClear();
   replayOn.value = false;
 });
 
@@ -136,6 +141,7 @@ describe("initWebPostHog", () => {
       start = s;
     });
     const record = createRouteViewRecorder();
+    const before = Date.now();
     record("/chat");
     applyAnalyticsIdentity({
       enabled: true,
@@ -146,18 +152,62 @@ describe("initWebPostHog", () => {
     record("/events");
     expect(posthogInit).not.toHaveBeenCalled();
     expect(posthogCapture).not.toHaveBeenCalled();
+    expect(posthogIdentify).not.toHaveBeenCalled();
 
     start?.();
     await loaded;
     expect(posthogInit).toHaveBeenCalledTimes(1);
+    // The view made before the opt-out, and only that one.
     expect(posthogCapture).toHaveBeenCalledTimes(1);
-    expect(posthogCapture).toHaveBeenCalledWith("$pageview", {
-      $pathname: "/chat",
-      $current_url: "/chat",
+    const [event, properties, options] = posthogCapture.mock.calls[0] ?? [];
+    expect(event).toBe("$pageview");
+    expect(properties).toEqual({ $pathname: "/chat", $current_url: "/chat" });
+    // Stamped when it was made, not when the SDK arrived.
+    expect(
+      (options as { timestamp: Date }).timestamp.getTime(),
+    ).toBeGreaterThanOrEqual(before);
+    expect(posthogIdentify).toHaveBeenCalledWith("a".repeat(64));
+    expect(optOutCapturing).toHaveBeenCalledTimes(1);
+    const order = [
+      posthogInit,
+      posthogCapture,
+      posthogIdentify,
+      reloadFeatureFlags,
+      optOutCapturing,
+    ].map((fn) => fn.mock.invocationCallOrder[0] ?? 0);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("caps queued events but never a consent call made after them", async () => {
+    vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
+    let start: (() => void) | undefined;
+    const loaded = initWebPostHog((s) => {
+      start = s;
     });
-    expect(reloadFeatureFlags).toHaveBeenCalledTimes(1);
-    expect(posthogInit.mock.invocationCallOrder[0]).toBeLessThan(
-      posthogCapture.mock.invocationCallOrder[0] ?? 0,
-    );
+    for (let i = 0; i < 250; i += 1) {
+      captureSentryErrorCorrelated({ sentry_event_id: `e${i}` });
+    }
+    applyAnalyticsOptOut(true);
+    start?.();
+    await loaded;
+    expect(posthogCapture).toHaveBeenCalledTimes(200);
+    expect(optOutCapturing).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps replaying after one queued call throws", async () => {
+    vi.stubEnv("NEXT_PUBLIC_POSTHOG_KEY", "phc_test_write_only");
+    let start: (() => void) | undefined;
+    const loaded = initWebPostHog((s) => {
+      start = s;
+    });
+    posthogCapture.mockImplementationOnce(() => {
+      throw new Error("before_send threw");
+    });
+    createRouteViewRecorder()("/chat");
+    applyAnalyticsOptOut(true);
+    start?.();
+    await loaded;
+    expect(posthogCapture).toHaveBeenCalledTimes(1);
+    expect(optOutCapturing).toHaveBeenCalledTimes(1);
   });
 });

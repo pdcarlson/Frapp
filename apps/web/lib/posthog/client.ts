@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import type { PostHog } from "posthog-js";
 import {
   canStartLivePostHogInit,
@@ -10,8 +11,15 @@ import { buildWebPostHogInitOptions, webPostHogKey } from "./config";
 /** Runs `start` once the page has loaded and the main thread is idle. */
 export type PostHogLoadSchedule = (start: () => void) => void;
 
-/** Calls made before the SDK arrives that are kept for it, oldest first. */
-const MAX_QUEUED_CALLS = 200;
+/**
+ * Events (captures and route views) kept for the SDK while it loads, oldest
+ * first. Only events are capped: an identity or consent call is never dropped,
+ * because losing a late opt-out would start the SDK opted in (#2957).
+ */
+const MAX_QUEUED_EVENTS = 200;
+
+type Call = (posthog: PostHog) => void;
+type Properties = Parameters<PostHog["capture"]>[1];
 
 /**
  * Init exactly once. No-op without `NEXT_PUBLIC_POSTHOG_KEY`. Tests bind a
@@ -24,8 +32,9 @@ const MAX_QUEUED_CALLS = 200;
  * it before hydration made every cold open download it ahead of the chat it
  * was waiting to measure (#3716). It loads after the page's `load` event, on
  * an idle callback, and the calls made before it arrives replay in order once
- * it has initialized. Opt-out is still honoured at call time, as before: a
- * capture made while opted out is dropped, not queued.
+ * it has initialized, each event stamped with the time it was made. Opt-out
+ * is still honoured at call time, as before: a capture made while opted out
+ * is dropped, not queued.
  *
  * Until the SDK arrives, the getters answer `undefined` (no session id, no
  * replay id, no flag), which is what they answered before `init` too. Sentry
@@ -44,13 +53,26 @@ export function initWebPostHog(
   const options = buildWebPostHogInitOptions();
 
   let client: PostHog | null = null;
-  let queue: Array<(posthog: PostHog) => void> | null = [];
-  const run = (call: (posthog: PostHog) => void) => {
+  let queue: Call[] | null = [];
+  let queuedEvents = 0;
+  /** An identity, consent or flag call: always kept, in order. */
+  const run = (call: Call) => {
+    if (client) call(client);
+    else queue?.push(call);
+  };
+  /**
+   * A capture. One sent from the queue carries the time it was made, so it
+   * still lands at its place on the session's timeline.
+   */
+  const runEvent = (event: string, properties?: Properties) => {
     if (client) {
-      call(client);
+      client.capture(event, properties);
       return;
     }
-    if (queue && queue.length < MAX_QUEUED_CALLS) queue.push(call);
+    if (!queue || queuedEvents >= MAX_QUEUED_EVENTS) return;
+    queuedEvents += 1;
+    const timestamp = new Date();
+    queue.push((posthog) => posthog.capture(event, properties, { timestamp }));
   };
 
   setLivePostHogAdapter({
@@ -89,16 +111,14 @@ export function initWebPostHog(
     },
     capture(event, properties) {
       if (isAnalyticsCaptureOptedOut()) return;
-      run((posthog) => posthog.capture(event, properties));
+      runEvent(event, properties);
     },
     routeView(path) {
       if (isAnalyticsCaptureOptedOut()) return;
       // `path` is already a route template (#3382). Setting both URL
       // properties keeps posthog-js from filling them from
       // `window.location`, the same shape landing sends.
-      run((posthog) =>
-        posthog.capture("$pageview", { $pathname: path, $current_url: path }),
-      );
+      runEvent("$pageview", { $pathname: path, $current_url: path });
     },
     getSessionId: () => client?.get_session_id() || undefined,
     getReplayId: () =>
@@ -120,10 +140,23 @@ export function initWebPostHog(
           client = posthog;
           const pending = queue ?? [];
           queue = null;
-          for (const call of pending) call(posthog);
+          // Each call on its own, as it would have run in its caller: one that
+          // throws is reported and doesn't cancel the opt-out queued after it.
+          for (const call of pending) {
+            try {
+              call(posthog);
+            } catch (error) {
+              Sentry.captureException(error, {
+                tags: { surface: "posthog-replay" },
+              });
+            }
+          }
         })
-        .catch(() => {
+        .catch((error: unknown) => {
+          // The SDK's chunk didn't load (or `init` threw): analytics stays
+          // off for this page, and the queue goes with it.
           queue = null;
+          Sentry.captureException(error, { tags: { surface: "posthog-load" } });
         })
         .finally(resolve);
     });

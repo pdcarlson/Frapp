@@ -1607,11 +1607,10 @@ vi.mock("./message-timeline", async () => {
   return { MessageTimeline, MessageTimelineSkeleton };
 });
 
-// The panel's own rows and reads are `thread-panel.spec.tsx`'s and
-// `use-message-thread.spec.tsx`'s; here it echoes what the shell hands it,
-// with Back and one of each row write a reply or the parent can make.
-// The shell loads these through `next/dynamic` (#3716). Hand it the mocked
-// modules above synchronously, so a test finds a panel the render it opened.
+// The shell loads its panels on first open (`deferred-panels.tsx`, #3716).
+// Hand it the modules this file mocks, synchronously, so a test finds the
+// panel the render it opened. `vi.mock` is hoisted, so the order in this file
+// doesn't matter.
 vi.mock("./deferred-panels", async () => ({
   PollForm: (await import("./poll-form")).PollForm,
   SignupForm: (await import("./signup-form")).SignupForm,
@@ -1631,6 +1630,9 @@ vi.mock("./deferred-panels", async () => ({
   preloadChatPanels: () => undefined,
 }));
 
+// The panel's own rows and reads are `thread-panel.spec.tsx`'s and
+// `use-message-thread.spec.tsx`'s; here it echoes what the shell hands it,
+// with Back and one of each row write a reply or the parent can make.
 vi.mock("./thread-panel", () => ({
   ThreadPanel: ({
     rootId,

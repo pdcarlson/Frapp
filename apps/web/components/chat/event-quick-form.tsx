@@ -24,8 +24,7 @@ import {
 } from "@/components/shared/short-form";
 
 // The draft lives in its own module so the chat shell can build one without
-// loading this form, which it imports only when the + card opens it (#3716).
-export { eventQuickDraftFrom, type EventQuickDraft } from "./event-quick-draft";
+// loading this form, which it loads only when the + card opens it (#3716).
 import { eventQuickDraftFrom, type EventQuickDraft } from "./event-quick-draft";
 
 /** `CreateEventDto`'s cap, the one-liner's too. */
