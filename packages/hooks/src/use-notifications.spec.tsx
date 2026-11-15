@@ -158,6 +158,7 @@ describe("a pending read receipt shows its row read (#3788)", () => {
     // The page `GET /v1/bootstrap` reads, and so the one the SDK's
     // first-screen batch lets it answer (`first-screen-batch.spec.ts`).
     expect(get).toHaveBeenCalledWith("/v1/notifications", {
+      signal: expect.any(AbortSignal),
       params: { query: { limit: INBOX_FIRST_PAGE_SIZE } },
     });
   });
@@ -966,7 +967,7 @@ describe("useUserSettings", () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(get).toHaveBeenCalledWith("/v1/settings");
+    expect(get).toHaveBeenCalledWith("/v1/settings", { signal: expect.any(AbortSignal) });
     expect(result.current.data).toEqual(defaults);
   });
 
