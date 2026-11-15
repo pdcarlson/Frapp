@@ -323,19 +323,63 @@ describe("useChapterBranding accent source", () => {
     },
   );
 
-  it("normalizes a short or lowercase palette colour to #RRGGBB", async () => {
+  it.each([
+    ["#ff907f", "#FF907F"],
+    ["#f97", "#FF9977"],
+  ])("normalizes the palette colour %j to %s", async (stored, painted) => {
     const { result } = renderBranding(
       {
         "chapter-1": {
           id: "chapter-1",
           name: "Tau Nu",
-          theme_palette: { "--signet-accent-text": "#ff907f" },
+          theme_palette: { "--signet-accent-text": stored },
         },
       },
       "chapter-1",
     );
 
-    await waitFor(() => expect(result.current.accent).toBe("#FF907F"));
+    await waitFor(() => expect(result.current.accent).toBe(painted));
+  });
+
+  // Each role is guarded on its own: one bad key beside valid ones still
+  // falls back, through the both-or-neither gates the hook already has.
+  const VALID = {
+    "--signet-accent-text": "#FF907F",
+    "--signet-accent-primary": "#8B0000",
+    "--signet-accent-on-primary": "#FFFFFF",
+    "--signet-accent-subtle-bg": "#3A1414",
+    "--signet-accent-border": "#6E2323",
+  };
+
+  it.each([
+    "--signet-accent-on-primary",
+    "--signet-accent-subtle-bg",
+    "--signet-accent-border",
+  ])("falls back when only %s is not a colour", async (key) => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          name: "Tau Nu",
+          theme_palette: { ...VALID, [key]: "not-a-color" },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => expect(result.current.chapterName).toBe("Tau Nu"));
+    expect(result.current.accent).toBe("#FF907F");
+    if (key === "--signet-accent-on-primary") {
+      expect(result.current.accentPrimary).toBe(BRAND);
+      expect(result.current.accentOnPrimary).toBe(BRAND_ON);
+    } else {
+      expect(result.current.accentSubtle).toBe(
+        signetDarkTokens.color.gold.askFill,
+      );
+      expect(result.current.accentBorder).toBe(
+        signetDarkTokens.color.gold.askBorder,
+      );
+    }
   });
 });
 
