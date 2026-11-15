@@ -24,6 +24,7 @@ import {
   askSourceChip,
   askStepLine,
   askUnavailableLine,
+  askUnavailableOffersRetry,
   type AskAnswer,
   type AskPostedAnswer,
   type AskSource,
@@ -107,7 +108,11 @@ export function AskTurn({
    * so this turn's Try again and consent buttons wait.
    */
   busy?: boolean;
-  /** Asks the same thing again, after a failure that may not repeat. */
+  /**
+   * Asks the same thing again in this turn's place: after a failure that may
+   * not repeat, and on an answer Frapp couldn't give for a reason on its side
+   * (`askUnavailableOffersRetry`).
+   */
   onRetry: () => void;
   /**
    * Asks the same thing again in this turn's place with more effort (#4904).
@@ -220,6 +225,7 @@ export function AskReply({
             readLine={askReadLine(exchange.read)}
             busy={busy}
             onAnswerConsent={onAnswerConsent}
+            onRetry={onRetry}
             onFollowMessage={onFollowMessage}
           />
           {exchange.answer.proposals?.length ? (
@@ -385,6 +391,7 @@ function AskAnswerBody({
   readLine,
   busy,
   onAnswerConsent,
+  onRetry,
   onFollowMessage,
 }: {
   answer: AskAnswer;
@@ -392,6 +399,8 @@ function AskAnswerBody({
   readLine: string | null;
   busy: boolean;
   onAnswerConsent: () => void;
+  /** Asks the same question again in this turn's place. */
+  onRetry: () => void;
   onFollowMessage?: () => void;
 }) {
   if (answer.status === "unavailable") {
@@ -409,6 +418,20 @@ function AskAnswerBody({
             onClick={onAnswerConsent}
           >
             {ASK_COPY.consent_action}
+          </Button>
+        ) : null}
+        {/* A problem on Frapp's side, or a reason this build does not
+            know: asking again is all a member can do (#5082). The other
+            reasons say what to do or when. */}
+        {askUnavailableOffersRetry(answer.reason) ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={onRetry}
+          >
+            {ASK_COPY.try_again}
           </Button>
         ) : null}
       </div>

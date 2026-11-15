@@ -29,12 +29,16 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * the same from its Find dialog (`apps/web/components/layout/find-dialog.tsx`),
  * off the same list (`@repo/hooks` `find-results.ts`).
  *
- * **It lies over the thread, and moves nothing.** The list hangs from the
- * composer's top edge, over the bottom of the thread, so the thread is not
- * laid out again each time a result arrives. Nothing is drawn while a search
- * is out: the rows of the last settled search stay until the next one
- * settles, so the list changes once per pause in typing and never flickers
- * to empty in between. Three characters start it, the search's own floor
+ * **It sits between the thread and the field, in the sheet's column**
+ * (#5082). Until then it hung from the composer's top edge over the thread,
+ * positioned against the composer's height; on an iPhone with the keyboard
+ * up its rows ran on under the field, a row cut in half by the pill (Paul,
+ * 2026-11-15). In the column it ends where the composer begins on every
+ * phone, and the thread above gives it the room: the thread's top does not
+ * move, only how much of it shows. Nothing is drawn while a search is out:
+ * the rows of the last settled search stay until the next one settles, so
+ * the list changes once per pause in typing and never flickers to empty in
+ * between. Three characters start it, the search's own floor
  * (`isSearchRunnable`); with nothing found there is no list at all, since
  * the field's other job, asking, is still right there.
  *
@@ -158,14 +162,16 @@ export function AskFind({
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     panel: {
-      // Hangs from the composer's top edge, over the thread.
-      position: "absolute",
-      left: 0,
-      right: 0,
-      bottom: "100%",
-      maxHeight: 264,
+      // A heading and four rows. With the keyboard up a phone has little
+      // height to share, and the thread keeps the rest.
+      maxHeight: 220,
+      flexShrink: 1,
       borderTopWidth: StyleSheet.hairlineWidth,
       borderTopColor: tokens.color.border.hairline,
+      // A list longer than the room scrolls, and a row cut by its bottom
+      // edge reads as more below, not as a row under the field.
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.background,
     },
     list: {
