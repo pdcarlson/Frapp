@@ -559,7 +559,7 @@ export interface MessageTimelineProps {
   /** A row's Forward (#4907); see `MessageItemProps`. */
   onForward?: (message: ChatMessage) => void;
   /** Opens a member's profile by `users.id` (#3726); see `MessageItemProps`. */
-  onOpenProfile?: (userId: string) => void;
+  onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
   isMember?: MemberLookup;
   /**
    * Older history (#1571). The timeline asks for the next page when the member

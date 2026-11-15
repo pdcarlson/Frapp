@@ -6,6 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   describe,
   it,
@@ -507,12 +508,53 @@ vi.mock("./channel-member-list", () => ({
     onOpenProfile,
   }: {
     channelId: string | null;
-    onOpenProfile?: (userId: string) => void;
+    onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
   }) => (
     <div data-testid="channel-member-list" data-channel-id={channelId ?? ""}>
-      <button onClick={() => onOpenProfile?.("u-row")}>open-row-profile</button>
+      <button
+        onClick={(event) => onOpenProfile?.("u-row", event.currentTarget)}
+      >
+        open-row-profile
+      </button>
     </div>
   ),
+}));
+// The popout owns its reads and has its own spec; here it says whom the shell
+// opened it on, and hands View profile back (#4593).
+vi.mock("./member-popout", () => ({
+  anchorFor: (element: HTMLElement) => ({
+    contextElement: element,
+    getBoundingClientRect: () => element.getBoundingClientRect(),
+  }),
+  MemberPopout: ({
+    open,
+    userId,
+    side,
+    onViewProfile,
+    onOpenChange,
+  }: {
+    open: boolean;
+    userId: string | null;
+    side?: string;
+    onViewProfile: (userId: string) => void;
+    onOpenChange: (open: boolean) => void;
+  }) =>
+    open && userId ? (
+      <div
+        data-testid="member-popout"
+        data-user-id={userId}
+        data-side={side ?? "right"}
+      >
+        <button
+          onClick={() => {
+            onOpenChange(false);
+            onViewProfile(userId);
+          }}
+        >
+          View profile
+        </button>
+      </div>
+    ) : null,
 }));
 // The profile sheet owns its reads and has its own spec; here it only says
 // whether the shell opened it, and for whom (#3726).
@@ -528,7 +570,10 @@ vi.mock("@/components/members/member-detail-sheet", () => ({
   }) =>
     open ? (
       <div data-testid="member-profile" data-user-id={userId ?? ""}>
-        <button onClick={() => onOpenChange(false)}>close-profile</button>
+        {/* Takes focus as it opens, as the real modal sheet does. */}
+        <button autoFocus onClick={() => onOpenChange(false)}>
+          close-profile
+        </button>
       </div>
     ) : null,
 }));
@@ -1490,7 +1535,7 @@ vi.mock("./message-timeline", async () => {
       canManageChannel?: boolean;
       holdFollow?: boolean;
       channelStart?: React.ReactNode;
-      onOpenProfile?: (userId: string) => void;
+      onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
       onOpenThread?: (message: { id: string }) => void;
       onForward?: (message: { id: string }) => void;
       askTurns?: readonly { id: string }[];
@@ -1558,7 +1603,9 @@ vi.mock("./message-timeline", async () => {
         <button onClick={() => onCloseCard?.("form-1", "form")}>
           trigger-close-form
         </button>
-        <button onClick={() => onOpenProfile?.("u-author")}>
+        <button
+          onClick={(event) => onOpenProfile?.("u-author", event.currentTarget)}
+        >
           open-author-profile
         </button>
         {/* One Reply control per message, so a test can stage a reply against
@@ -5677,9 +5724,9 @@ describe("ChatShell member list", () => {
     document.cookie = "frapp_chat_members_hidden=; Max-Age=0; Path=/";
   });
 
-  // #3726: a name or chip in the timeline, or a member-list row, opens the
-  // directory's profile sheet for that member.
-  it("opens one profile sheet from the timeline and from the member column", () => {
+  // #3726, #4593: a name or chip in the timeline, or a member-list row, opens
+  // the popout beside it, whose View profile is the directory's profile sheet.
+  it("opens the popout from the timeline and from the member column", () => {
     stubWide(true);
     render(<ChatShell />);
     expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
@@ -5687,6 +5734,17 @@ describe("ChatShell member list", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "open-author-profile" }),
     );
+    expect(screen.getByTestId("member-popout")).toHaveAttribute(
+      "data-user-id",
+      "u-author",
+    );
+    expect(screen.getByTestId("member-popout")).toHaveAttribute(
+      "data-side",
+      "right",
+    );
+    expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View profile" }));
+    expect(screen.queryByTestId("member-popout")).not.toBeInTheDocument();
     expect(screen.getByTestId("member-profile")).toHaveAttribute(
       "data-user-id",
       "u-author",
@@ -5698,10 +5756,11 @@ describe("ChatShell member list", () => {
     fireEvent.click(
       within(column).getByRole("button", { name: "open-row-profile" }),
     );
-    expect(screen.getByTestId("member-profile")).toHaveAttribute(
-      "data-user-id",
-      "u-row",
-    );
+    // A row's popout opens to its left, as Discord's member list does.
+    const popout = screen.getByTestId("member-popout");
+    expect(popout).toHaveAttribute("data-user-id", "u-row");
+    expect(popout).toHaveAttribute("data-side", "left");
+    expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
   });
 
   it("shows the column for the open channel by default, and hides it from the header", () => {
@@ -5741,7 +5800,7 @@ describe("ChatShell member list", () => {
     expect(document.cookie).toContain("frapp_chat_members_hidden=0");
   });
 
-  it("opens a sheet below 1280px instead, without touching the remembered choice", () => {
+  it("opens a list under the button below 1280px instead, without touching the remembered choice", async () => {
     stubWide(false);
     render(<ChatShell />);
 
@@ -5749,12 +5808,61 @@ describe("ChatShell member list", () => {
     expect(toggle).not.toHaveAttribute("aria-pressed");
     fireEvent.click(toggle);
 
-    const sheet = screen.getByRole("dialog", { name: "Members" });
-    expect(within(sheet).getByTestId("channel-member-list")).toHaveAttribute(
+    // A popover under the button (#4593), not a sheet over the page.
+    const list = screen.getByRole("dialog", { name: "Members" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(within(list).getByTestId("channel-member-list")).toHaveAttribute(
       "data-channel-id",
       "chan-general",
     );
     expect(document.cookie).not.toContain("frapp_chat_members_hidden");
+
+    // A row opens its popout over the list; clicking in the popout, and the
+    // full profile behind its View profile taking focus, leave the list open.
+    fireEvent.click(
+      within(list).getByRole("button", { name: "open-row-profile" }),
+    );
+    const popout = screen.getByTestId("member-popout");
+    expect(popout).toHaveAttribute("data-user-id", "u-row");
+    // Radix arms a layer's outside listeners a tick after it opens.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    fireEvent.pointerDown(popout);
+    expect(screen.getByRole("dialog", { name: "Members" })).toBeInTheDocument();
+    fireEvent.click(
+      within(popout).getByRole("button", { name: "View profile" }),
+    );
+    expect(screen.getByTestId("member-profile")).toHaveAttribute(
+      "data-user-id",
+      "u-row",
+    );
+    expect(screen.getByRole("button", { name: "close-profile" })).toHaveFocus();
+    expect(screen.getByRole("dialog", { name: "Members" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "close-profile" }));
+    expect(screen.getByRole("dialog", { name: "Members" })).toBeInTheDocument();
+
+    // The button closes it again: its own pointerdown is not an outside
+    // press that would close the list for its click to reopen.
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+  });
+
+  it("closes the list under the button on Escape and hands focus back to the button", async () => {
+    stubWide(false);
+    render(<ChatShell />);
+    const toggle = screen.getByRole("button", { name: "Show members" });
+    fireEvent.click(toggle);
+    const list = screen.getByRole("dialog", { name: "Members" });
+    within(list).getByRole("button", { name: "open-row-profile" }).focus();
+
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull(),
+    );
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => expect(toggle).toHaveFocus());
   });
 
   it("shows no toggle and no column on a 1:1 DM", () => {

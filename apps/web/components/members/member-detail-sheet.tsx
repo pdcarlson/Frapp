@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useId, useMemo, useState } from "react";
 import {
   ChevronDown,
   Loader2,
@@ -13,8 +12,6 @@ import {
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import { SkeletonText } from "@/components/shared/async-states";
 import {
-  useGetOrCreateDm,
-  dmChannelIdOf,
   useMemberByUserId,
   useMemberDisplayNames,
   useMyPermissions,
@@ -32,16 +29,10 @@ import {
   removesMemberAccess,
   resolveRoleChips,
   rolesAfterSave,
-  type MemberRoleChip,
 } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
-import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/lib/hooks/use-toast";
-import {
-  START_DM_FAILED_FALLBACK,
-  START_DM_FAILED_TITLE,
-} from "@/lib/chat/start-dm";
-import { chatDeepLink } from "@/lib/chat/chat-links";
+import { useMessageMember } from "@/lib/chat/use-message-member";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,12 +66,15 @@ import { parseChapterRoles } from "@repo/hooks/chapter-roles";
 import {
   DETAIL_LIST,
   DetailRow,
+  metaLine,
+  RoleChip,
+  stringField,
+  stringIds,
+  type MemberRecord,
 } from "@/components/members/member-detail-rows";
 import { MemberGroupsSection } from "@/components/members/member-groups-section";
 import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
 import { MemberCorrectionDialog } from "@/components/members/member-correction-dialog";
-
-type MemberRecord = Record<string, unknown>;
 
 type CustomFieldValue = {
   field_id: string;
@@ -127,34 +121,6 @@ function parseCustomFields(member: MemberRecord | null): CustomFieldValue[] {
       ];
     },
   );
-}
-
-function stringField(member: MemberRecord | null, key: string): string | null {
-  const value = member?.[key];
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
-}
-
-function stringIds(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((id): id is string => typeof id === "string")
-    : [];
-}
-
-/**
- * The line under the name, as mobile's sheet draws it (`selectMemberDetail`):
- * major, company, city and the class year, e.g. `Economics · Chicago · '27`.
- */
-function metaLine(member: MemberRecord | null): string | null {
-  const year = member?.graduation_year;
-  const parts = [
-    stringField(member, "major"),
-    stringField(member, "current_company"),
-    stringField(member, "current_city"),
-    typeof year === "number" && Number.isFinite(year)
-      ? `'${String(year).slice(-2)}`
-      : null,
-  ].filter((part): part is string => part !== null);
-  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 type MemberDetailSheetProps = {
@@ -253,29 +219,13 @@ function toggleSelection(
   );
 }
 
-/** A role as a chip: its palette color as a dot, or a plain muted one. */
-function RoleChip({ chip }: { chip: MemberRoleChip }) {
-  return (
-    <li className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-1 text-caption text-foreground">
-      <span
-        aria-hidden="true"
-        className={cn(
-          "h-2.5 w-2.5 shrink-0 rounded-full",
-          !chip.color && "bg-muted-foreground",
-        )}
-        style={chip.color ? { backgroundColor: chip.color } : undefined}
-      />
-      {chip.name}
-    </li>
-  );
-}
-
 /**
- * A member's profile: one sheet for every door on web (#3726). The
- * directory's Actives and Alumni rows, and in chat a sender's name or photo,
- * an `@` chip that names one member, and a row of the channel's member list
- * all open it, keyed by `users.id`, so a member sees the same card wherever
- * they click a name. Mobile's sheet
+ * A member's profile: one sheet for every door on web (#3726), keyed by
+ * `users.id`, so a member sees the same card wherever they click a name. The
+ * directory's Actives and Alumni rows open it directly. In chat a sender's
+ * name or photo, an `@` chip and a member-list row open the small
+ * `MemberPopout` beside them first, and this sheet is its View profile
+ * (#4593). Mobile's sheet
  * (`apps/mobile/components/directory/member-detail-sheet.tsx`) is the
  * reference, and this draws its order: photo, name and the class-year line,
  * Message, then how to reach them (phone, email) with member since, roles as
@@ -338,10 +288,6 @@ export function MemberDetailSheet({
   const myPermissions = myPermissionsQuery.data?.permissions;
   const updateRolesMutation = useUpdateMemberRoles();
   const removeMemberMutation = useRemoveMember();
-  const dmMutation = useGetOrCreateDm();
-  const router = useRouter();
-  const { userId: currentUserId, isLoading: isCurrentUserLoading } =
-    useFrappUser();
   const { toast } = useToast();
   const { confirm, confirmDialog } = useConfirmDialog();
   const rolesHeadingId = useId();
@@ -433,24 +379,16 @@ export function MemberDetailSheet({
   const customFields = useMemo(() => parseCustomFields(member), [member]);
 
   // Null rather than a placeholder, so the Message button and its handler can
-  // never fire a DM request at a fallback string.
+  // never fire a DM request at a fallback string. The sheet stays mounted and
+  // swaps members, and `useMessageMember` drops a DM that resolves for the
+  // member it has moved on from.
   const dmTargetUserId = stringField(member, "user_id");
-  // The sheet stays mounted and swaps members as rows and names are clicked,
-  // so a slow DM request started for one member can still resolve after the
-  // sheet has moved to another. This ref lets that continuation notice it is
-  // stale instead of navigating the viewer to the wrong conversation.
-  const dmTargetUserIdRef = useRef(dmTargetUserId);
-  useEffect(() => {
-    dmTargetUserIdRef.current = dmTargetUserId;
-  }, [dmTargetUserId]);
-  // `POST /v1/channels/dm` doesn't reject a self-DM, so the button is absent
-  // on the viewer's own profile. `currentUserId` is null until /v1/users/me
-  // resolves; treating that as "not the viewer" would let a self-DM through,
-  // so the button waits for the load.
-  const canMessage =
-    !!dmTargetUserId &&
-    !isCurrentUserLoading &&
-    dmTargetUserId !== currentUserId;
+  const {
+    canMessage,
+    currentUserId,
+    startMessage: handleMessage,
+    isPending: dmPending,
+  } = useMessageMember(dmTargetUserId, () => onOpenChange(false));
 
   // The writes' own gates, mirrored so a viewer who holds only
   // `members:view` isn't offered controls that can only 403. Disabled while
@@ -558,31 +496,6 @@ export function MemberDetailSheet({
           error,
           "Something went wrong. Please retry.",
         ),
-        variant: "destructive",
-      });
-    }
-  }
-
-  async function handleMessage() {
-    if (!canMessage || !dmTargetUserId) return;
-    const requestedUserId = dmTargetUserId;
-
-    try {
-      const dm = await dmMutation.mutateAsync({ member_id: requestedUserId });
-      // The sheet may have moved on to a different member while this request
-      // was in flight — ignore a result that's no longer for the open member.
-      if (dmTargetUserIdRef.current !== requestedUserId) return;
-      const channelId = dmChannelIdOf(dm);
-      if (!channelId) {
-        throw new Error("No channel id returned");
-      }
-      onOpenChange(false);
-      router.push(chatDeepLink({ channelId }));
-    } catch (error) {
-      if (dmTargetUserIdRef.current !== requestedUserId) return;
-      toast({
-        title: START_DM_FAILED_TITLE,
-        description: getErrorMessage(error, START_DM_FAILED_FALLBACK),
         variant: "destructive",
       });
     }
@@ -710,9 +623,9 @@ export function MemberDetailSheet({
                   // long role editor would otherwise squeeze the button.
                   className="mt-5 w-full shrink-0"
                   onClick={handleMessage}
-                  disabled={dmMutation.isPending}
+                  disabled={dmPending}
                 >
-                  {dmMutation.isPending ? (
+                  {dmPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <MessageSquare className="h-4 w-4" />
