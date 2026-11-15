@@ -27,6 +27,8 @@ baseline story actually supports.
 
 **Every required gate also runs in the merge queue** (#4795), on the commit the queue builds from `main` plus the PRs ahead of it, and there it runs in full: the path filters that skip `api-tests`, `mobile-validate` and the other gated jobs on a PR apply to pull requests only, and the diff-based gates measure against the queue's base commit. A gate added to the roster in a workflow without a `merge_group` trigger fails [`merge-queue-triggers.test.mjs`](../../scripts/ci/__tests__/merge-queue-triggers.test.mjs). Where the queue lives and how it is turned on: [`github-branch-protection-runbook.md` § Merge queue](../ops/github-branch-protection-runbook.md#merge-queue).
 
+**A push to `main` the queue already passed skips the gates** (#5084). The queue fast-forwards `main` to the commit it tested, so the push run that follows would repeat the queue run job for job. `ci.yml`'s `changes` job asks the Actions API for a successful `merge_group` run of CI on that exact commit ([`queue-tested.mjs`](../../scripts/ci/queue-tested.mjs)); when there is one, every other job except `packages-build` (which keeps seeding `main`'s caches) skips. The run still concludes green, so Deploy staging fires on it, and Deploy production's [`validate-deploy-sha.mjs`](../../scripts/ci/validate-deploy-sha.mjs) judges the commit on the queue run's check runs, which sit on the same commit, rather than on the skips. A commit that reaches `main` any other way, or a lookup that fails, gets the full suite.
+
 **The dashboard visual snapshot gate used to sit in this table and is gone.** `web-visual-regression`
 shot each dashboard route at 1440×960 and compared it to one of sixteen committed PNGs. It was
 **advisory**, because baselines

@@ -56,8 +56,8 @@ import { execFileSync } from "node:child_process";
 import { ALL_REQUIRED_CHECKS } from "./lib/required-checks.mjs";
 import {
   ACCEPTED_CONCLUSIONS,
+  deployEvidenceByName,
   fetchCheckRuns,
-  latestRunsByName,
 } from "./lib/check-runs.mjs";
 import { requireEnv } from "./lib/env.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
@@ -141,6 +141,10 @@ export function isFullSha(value) {
  * A name can appear more than once (a re-run creates a second check run with
  * the same name), so the most recently started run wins. Taking "any run
  * succeeded" instead would let a green first attempt mask a red re-run.
+ * The one exception: a `skipped` run never supersedes an older run of the same
+ * name that ran. Since #5084 the push run on `main` skips every CI job for a
+ * commit the merge queue already passed, and the queue run's check runs sit on
+ * the same commit underneath those skips.
  *
  * `defined` is the set of job ids the deployed commit's own workflows declare,
  * and `currentlyDefined` the set the TRUSTED ref declares. A required check is
@@ -158,7 +162,10 @@ export function isFullSha(value) {
  * @param {{checkRuns: Array<object>, required: string[], defined?: Set<string>|null}} input
  */
 export function classifyRequiredChecks({ checkRuns, required, defined = null, currentlyDefined = null }) {
-  const latestByName = latestRunsByName(checkRuns);
+  // The newest run, unless it skipped and an older one ran: a queue-tested
+  // commit's push run skips its jobs, and the merge queue's real results on the
+  // same commit are the evidence (#5084, `deployEvidenceByName`).
+  const latestByName = deployEvidenceByName(checkRuns);
 
   const missing = [];
   const pending = [];
