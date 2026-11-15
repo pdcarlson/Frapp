@@ -1,8 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { chapters, currentChapter, updateOnboarding, route } = vi.hoisted(() => ({
+const {
+  chapters,
+  currentChapter,
+  updateOnboarding,
+  route,
+  pickable,
+  setPicked,
+} = vi.hoisted(() => ({
   // Mutable so a test can put the member on a specific route. The tour is
   // mounted in `dashboard-shell.tsx` and is otherwise route-agnostic.
   route: { pathname: "/" },
@@ -17,12 +24,25 @@ const { chapters, currentChapter, updateOnboarding, route } = vi.hoisted(() => (
   },
   currentChapter: { data: { name: "Tau Nu" } as unknown },
   updateOnboarding: { mutateAsync: vi.fn(), isPending: false },
+  // The chapter's pickable roles; none unless a test gives some (#4958).
+  pickable: {
+    roles: [] as Array<{
+      id: string;
+      name: string;
+      held: boolean;
+      joinable: boolean;
+      color: null;
+    }>,
+  },
+  setPicked: { mutateAsync: vi.fn() },
 }));
 
 vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => chapters,
   useCurrentChapter: () => currentChapter,
   useUpdateOnboarding: () => updateOnboarding,
+  usePickableRoles: () => ({ roles: pickable.roles, isLoading: false }),
+  useSetPickedRole: () => setPicked,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -35,6 +55,18 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 }));
 
 import { OnboardingTutorial } from "./onboarding-tutorial";
+
+const INTRAMURALS = {
+  id: "im",
+  name: "Intramurals",
+  held: false,
+  joinable: true,
+  color: null,
+};
+
+afterEach(() => {
+  pickable.roles = [];
+});
 
 /**
  * What is pinned here is what the #920 Profile & pre-auth slice changed or
@@ -51,7 +83,9 @@ describe("the step strip", () => {
     render(<OnboardingTutorial />);
     const strip = screen.getByRole("group", { name: /step 1 of 9/i });
     expect(strip.className).not.toMatch(/\bbg-secondary\b/);
-    expect(strip.className).not.toMatch(/bg-(?:secondary|card|accent-subtle)\//);
+    expect(strip.className).not.toMatch(
+      /bg-(?:secondary|card|accent-subtle)\//,
+    );
     expect(strip.className).toMatch(/\bborder-border\b/);
   });
 
@@ -113,6 +147,75 @@ describe("the slides", () => {
     );
   });
 
+  it("asks for roles after the display pick when the chapter has some (#4958)", async () => {
+    pickable.roles = [
+      {
+        id: "im",
+        name: "Intramurals",
+        held: false,
+        joinable: true,
+        color: null,
+      },
+    ];
+    setPicked.mutateAsync.mockResolvedValue({ role_ids: ["im"] });
+    const user = userEvent.setup();
+    render(<OnboardingTutorial />);
+    expect(screen.getByText("Step 1 of 10")).toBeInTheDocument();
+    for (let i = 0; i < 3; i++) {
+      await user.click(screen.getByRole("button", { name: "Next" }));
+    }
+
+    expect(
+      screen.getByRole("heading", { name: "Pick your roles" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: "Join Intramurals" }));
+    expect(setPicked.mutateAsync).toHaveBeenCalledWith({
+      id: "im",
+      join: true,
+    });
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("heading", { name: "Events" })).toBeInTheDocument();
+  });
+
+  it("still adds the roles slide when the read lands before the display slide is left", async () => {
+    // The slide goes after the display pick, so a read that lands while the
+    // member is on Chat moves nothing they've seen.
+    const user = userEvent.setup();
+    const { rerender } = render(<OnboardingTutorial />);
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    pickable.roles = [INTRAMURALS];
+    rerender(<OnboardingTutorial />);
+    expect(screen.getByText("Step 2 of 10")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      screen.getByRole("heading", { name: "Pick your roles" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the slides it has once the display slide is behind the member", async () => {
+    // Settled on leaving the display slide: a read that lands after must not
+    // slip a slide in ahead of them, which would move them back one.
+    const user = userEvent.setup();
+    const { rerender } = render(<OnboardingTutorial />);
+    for (let i = 0; i < 3; i++) {
+      await user.click(screen.getByRole("button", { name: "Next" }));
+    }
+    expect(screen.getByRole("heading", { name: "Events" })).toBeInTheDocument();
+    pickable.roles = [INTRAMURALS];
+    rerender(<OnboardingTutorial />);
+    expect(screen.getByRole("heading", { name: "Events" })).toBeInTheDocument();
+    expect(screen.getByText("Step 4 of 9")).toBeInTheDocument();
+  });
+
+  it("offers no roles slide when there are only roles to leave", () => {
+    // An alum, or a member whose picked role was unmarked: Profile's Your
+    // roles carries those, not the tour.
+    pickable.roles = [{ ...INTRAMURALS, held: true, joinable: false }];
+    render(<OnboardingTutorial />);
+    expect(screen.getByText("Step 1 of 9")).toBeInTheDocument();
+  });
+
   it("no longer promises a theme control that does not exist", () => {
     // The profile slide advertised "quiet hours, and theme". The theme select
     // was deleted with this slice — nothing had read `user_settings.theme`
@@ -126,7 +229,9 @@ describe("the slides", () => {
     // name and never reaches a member.
     render(<OnboardingTutorial />);
     expect(screen.queryByText(/signet/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/Welcome to Tau Nu on Frapp\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Welcome to Tau Nu on Frapp\./),
+    ).toBeInTheDocument();
   });
 });
 
