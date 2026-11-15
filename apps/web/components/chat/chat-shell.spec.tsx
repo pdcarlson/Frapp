@@ -1610,6 +1610,27 @@ vi.mock("./message-timeline", async () => {
 // The panel's own rows and reads are `thread-panel.spec.tsx`'s and
 // `use-message-thread.spec.tsx`'s; here it echoes what the shell hands it,
 // with Back and one of each row write a reply or the parent can make.
+// The shell loads these through `next/dynamic` (#3716). Hand it the mocked
+// modules above synchronously, so a test finds a panel the render it opened.
+vi.mock("./deferred-panels", async () => ({
+  PollForm: (await import("./poll-form")).PollForm,
+  SignupForm: (await import("./signup-form")).SignupForm,
+  FormBuilder: (await import("./form-builder")).FormBuilder,
+  EventQuickForm: (await import("./event-quick-form")).EventQuickForm,
+  TaskForm: (await import("@/components/tasks/task-form")).TaskForm,
+  LogHoursForm: (await import("@/components/service/log-hours-form"))
+    .LogHoursForm,
+  PointsAdjustmentForm: (
+    await import("@/components/points/points-adjustment-form")
+  ).PointsAdjustmentForm,
+  EventEditorDialog: (await import("@/components/events/event-editor-dialog"))
+    .EventEditorDialog,
+  MemberDetailSheet: (await import("@/components/members/member-detail-sheet"))
+    .MemberDetailSheet,
+  ThreadPanel: (await import("./thread-panel")).ThreadPanel,
+  preloadChatPanels: () => undefined,
+}));
+
 vi.mock("./thread-panel", () => ({
   ThreadPanel: ({
     rootId,
