@@ -222,14 +222,15 @@ Copy: [`writing.md` § Already in a chapter](../design-system/writing.md#already
 
 Route: `(auth)/welcome.tsx`.
 
-Live — up to four beats on one route, then chat with the first-run tour over it ([`onboarding.md` § Behavior](../../behavior/onboarding.md#behavior)).
-Nothing is drawn while the profile and push reads come back (given up on after 4 seconds); a member with a photo, a real name, push on and Frapp AI answered sees only the display beat.
+Live — up to five beats on one route, then chat with the first-run tour over it ([`onboarding.md` § Behavior](../../behavior/onboarding.md#behavior)).
+Nothing is drawn while the profile and push reads come back (given up on after 4 seconds); a member with a photo, a real name, push on, Frapp AI answered and no role to join sees only the display beat.
 The `You're in.` card that opened s03 (the chapter, its school and the auto-joined channels) was removed on 2026-11-07; the tour's first stop says it over the real channels.
 First, only when the member has no photo or no real name yet: `How the chapter sees you`, the profile photo control and a `Your name` field ([`writing.md` § Profile step (mobile s03)](../design-system/writing.md#profile-step-mobile-s03)); the photo is optional, the name is required when there isn't one, and a changed name is saved (`PATCH /v1/users/me`) before the beat moves on.
 Second, for every member: `Pick your chat display`, Settings' three Chat density cards with the phone's current display preselected, Cozy on a fresh phone (#3787, [`writing.md` § Display step (onboarding)](../design-system/writing.md#display-step-onboarding)).
-Third, only when the server has AI on and the member never answered it: `Meet Frapp AI` ([`../../behavior/ai.md` § Consent](../../behavior/ai.md#consent), #4790), its three lines and the companies line over a gold `Continue` and a quiet underlined `Not now`; either answer moves on, and a Continue that fails to save keeps the member here with the reason.
-Fourth, only when the build can push and push is off ([#2299](https://github.com/pdcarlson/Frapp/issues/2299); [`patterns.md`](patterns.md#push-notifications) § Push notifications): `Turn on notifications`, with its three rows and the gold `Turn on notifications` (or `Open Settings` when no OS prompt can appear) over a quiet `Not now`, both pinned above the inset;
-Android's back returns to Meet Frapp AI when it was shown, else to the display beat, and from there to the profile beat when it was shown.
+Third, only when the chapter has a role the member can join and the read is back as they leave the display beat: `Pick your roles` ([`../../behavior/rbac.md` § Self-assignable roles](../../behavior/rbac.md#self-assignable-roles), #4958, [`writing.md` § Pick your roles](../design-system/writing.md#pick-your-roles)), the Add roles sheet's switches, each saved on the tap, over a gold `Continue` (`Go to chat` when no beat follows) that waits while a pick is saving.
+Fourth, only when the server has AI on and the member never answered it: `Meet Frapp AI` ([`../../behavior/ai.md` § Consent](../../behavior/ai.md#consent), #4790), its three lines and the companies line over a gold `Continue` and a quiet underlined `Not now`; either answer moves on, and a Continue that fails to save keeps the member here with the reason.
+Fifth, only when the build can push and push is off ([#2299](https://github.com/pdcarlson/Frapp/issues/2299); [`patterns.md`](patterns.md#push-notifications) § Push notifications): `Turn on notifications`, with its three rows and the gold `Turn on notifications` (or `Open Settings` when no OS prompt can appear) over a quiet `Not now`, both pinned above the inset;
+Android's back returns to the beat shown before it (Meet Frapp AI, then roles, then display, then profile, skipping any not shown).
 Either answer leaves for chat, PATCHing `has_completed_onboarding` (#3352).
 The notifications beat was a card under the channels until 2026-11-07, which the board drew with `Go to chat` outlined beside it; it is its own step now so every member decides.
 The auth gate sends a member here when that flag is false.

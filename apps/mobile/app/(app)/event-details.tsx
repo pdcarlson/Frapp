@@ -1,4 +1,5 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { statusOf } from "@repo/api-sdk";
 import {
   can,
   checkInZoneLine,
@@ -36,6 +37,7 @@ import {
 import { type EventEditTarget } from "@/lib/events/edit-event";
 import { BACK_TO_EVENTS } from "@/components/back-row";
 import { goBackTo } from "@/lib/href";
+import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
   ErrorState,
@@ -180,6 +182,16 @@ export default function EventDetailsScreen() {
     ? JSON.stringify([eventQuery.data, parentQuery.data ?? null])
     : "";
 
+  // An edit kept past this screen (#4872) goes with its event: one deleted
+  // since has no sheet to open it in.
+  const editDraftName = eventId ? `event-edit:${eventId}` : null;
+  useDropKeptSheetDraft(
+    editDraftName,
+    !eventQuery.isPending &&
+      eventQuery.isError &&
+      statusOf(eventQuery.error) === 404,
+  );
+
   /*
     A ticking clock, not one frozen at mount: this screen is often opened
     *before* check-in opens — a member arriving early taps through from UP
@@ -318,6 +330,9 @@ export default function EventDetailsScreen() {
           ref={editSheetRef}
           now={now}
           editing={editTarget}
+          // Kept past this screen (#4872): going back and opening this
+          // event's Edit again brings back what was typed.
+          keptDraft={editDraftName ?? undefined}
           onSaved={({ leave }) => {
             // A series save can replace the occurrence on screen with a new
             // one; the Events list shows where it went.

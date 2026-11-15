@@ -899,7 +899,18 @@ Copy in `apps/mobile/lib/onboarding/display-step.ts` and `apps/web/components/on
 | Surface | Title | Copy |
 |---|---|---|
 | Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in your profile.` Then Profile's three Chat density cards. In the setup wizard, `Continue` (the tutorial's `Next`). |
-| Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards; gold `Continue` when the notifications beat follows, else `Go to chat`. In chapter setup, always gold `Continue`. |
+| Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards; gold `Continue` when a roles, Meet Frapp AI or notifications beat follows, else `Go to chat`. In chapter setup, always gold `Continue`. |
+
+### Pick your roles
+
+Self-assignable roles (#4958): web's tutorial slide and mobile s03's beat after the display pick, shown when there's a role to join, and the pickers (web Profile's **Your roles**, the phone's **Add roles** sheet).
+Copy in `PICK_ROLES_COPY` (`packages/validation/src/self-assignable-roles.ts`), shared by both platforms.
+
+| Where | Copy |
+|---|---|
+| Onboarding title | `Pick your roles` |
+| Onboarding line, and the pickers' hint | `Pick what you're into. Each role adds its channels to Chat, and you can leave any time.` |
+| Under a held role that can't be joined again | `No longer open to join. You can leave it.` |
 
 ### Always formal
 

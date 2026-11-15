@@ -224,6 +224,37 @@ export const RESUME_PROBE_LOOKS = 3;
  */
 export const INBOX_TOPIC = "chat:inbox:global";
 
+/**
+ * Holds a channel's `SUBSCRIBED` until the server says its `postgres_changes`
+ * are streaming (#5022). Without it Realtime reports `SUBSCRIBED` once the
+ * channel itself has joined, which can come before the replication behind it
+ * is live, and a row written in between reaches no one: the thread's
+ * gap-recovery read has already run on that `SUBSCRIBED`, and the inbox has
+ * already reported `joined`. Both treat `SUBSCRIBED` as "every row from here
+ * on arrives", so this is what makes that true. Against local Realtime
+ * (v2.130.0), the first join after a restart missed a row written straight
+ * after its `SUBSCRIBED` in three tries out of three without this and in
+ * none of two with it, which held that `SUBSCRIBED` back 200–350 ms.
+ *
+ * If the stream can't be set up, the join fails with `CHANNEL_ERROR` instead
+ * (`PostgresChangesSubscribeTimeout`). That lands about 20 s in: the server's
+ * wait (15 s by default) plus the few seconds it pauses before refusing, and
+ * realtime-js stretches the join's own timeout to 25 s to outlast it. A
+ * thread then goes to the reconnect backoff and, past
+ * `POLL_DEGRADE_AFTER_MS`, the polling fallback, as with any failed join. The
+ * inbox is never polled: it has its backoff, and the `resync` its next join
+ * reports, so badges are stale until a join succeeds, as they were (silently)
+ * when a stream died behind an early `SUBSCRIBED`. A thread's typing and presence ride the same
+ * join, so they go down with it; a member not receiving the channel live then
+ * gets its pushes, which is right. A server too old to know the option
+ * ignores it and reports `SUBSCRIBED` early, as before.
+ *
+ * The actions channel goes without: it has no status handling of its own and
+ * nothing reads back what it missed (#3039), so a failed join there would
+ * cost more than the window does.
+ */
+const STREAMING_JOIN = { wait: true } as const;
+
 /** The broadcast event for typing inside a message thread (#3785). */
 const THREAD_TYPING_EVENT = "thread_typing";
 
@@ -962,11 +993,16 @@ class ChatRealtimeManager {
     // `presence-contract.spec.ts`. `postgres_changes` bound below still
     // deliver on a private channel; verified against local Realtime before the
     // flip.
+    //
+    // `postgres_changes_options` is not part of that contract (it names no
+    // room) and the worker binds no `postgres_changes`, so it goes without:
+    // see `STREAMING_JOIN`.
     const channel = supabase.channel(topic, {
       config: {
         private: true,
         broadcast: { self: false },
         presence: { key: "" },
+        postgres_changes_options: STREAMING_JOIN,
       },
     });
 
@@ -1272,7 +1308,9 @@ class ChatRealtimeManager {
 
   private installInboxChannel(): void {
     if (!this.ctx) return;
-    const channel = this.ctx.supabase.channel(INBOX_TOPIC);
+    const channel = this.ctx.supabase.channel(INBOX_TOPIC, {
+      config: { postgres_changes_options: STREAMING_JOIN },
+    });
     channel.on(
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "chat_messages" },

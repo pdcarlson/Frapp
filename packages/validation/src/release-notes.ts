@@ -129,9 +129,13 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can set aside roles for things outside chapter business, like intramurals or a study group, and you can add yourself to them and get their channels in Chat.",
       "Signing in for the first time no longer stops you with a warning about a new account; if you're already in a chapter and signed in with the wrong account, a small link on the join screen lets you switch.",
       "Task reminders now arrive around 9 in the morning where you are, and \"due today\" follows your own calendar.",
+      "Every Sunday morning a notification sums up your last week, and you can turn it off with Weekly recap in notification settings.",
     ],
     phone: [
       "Send invite now works on the first tap while the keyboard is open.",
+      "Officers can approve or decline an excuse straight from its notification.",
+      "Edits to an event or a task are still there when you come back to them, unless you cancel or save.",
+      "Chapter accent, Chat background and Schedule message no longer stop opening after you swipe one away while it's still saving.",
     ],
   },
   {

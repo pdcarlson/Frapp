@@ -7,7 +7,9 @@ import { CheckCircle2 } from "lucide-react";
 import {
   useAccessibleChapters,
   useCurrentChapter,
+  usePickableRoles,
   useUpdateOnboarding,
+  type PickableRole,
 } from "@repo/hooks";
 import { SignetMark } from "@/components/auth/signet-mark";
 import {
@@ -34,6 +36,8 @@ import {
   DISPLAY_STEP_DESCRIPTION,
   DISPLAY_STEP_TITLE,
 } from "@/components/onboarding/display-step";
+import { PICK_ROLES_COPY } from "@repo/validation";
+import { PickRolesList } from "@/components/roles/pick-roles-section";
 
 type ChapterMembership = {
   chapter_id: string;
@@ -128,6 +132,33 @@ const STEPS: Step[] = [
     glyph: <CheckCircle2 className={GLYPH} />,
   },
 ];
+
+/** The slide `Pick your roles` follows, so it sits beside the other setup pick. */
+const ROLES_STEP_AFTER = "chat-display";
+/** Where the slide goes: right after {@link ROLES_STEP_AFTER}. */
+const ROLES_STEP_INDEX =
+  STEPS.findIndex((step) => step.id === ROLES_STEP_AFTER) + 1;
+
+/**
+ * The slides with `Pick your roles` after the display pick, for a member whose
+ * chapter has roles they can add themselves (#4958), as
+ * Discord's onboarding asks its questions while a member joins. Each flip
+ * saves at once, so Next and Skip keep what was picked.
+ */
+function withRolesStep(roles: readonly PickableRole[]): Step[] {
+  const rolesStep: Step = {
+    id: "pick-roles",
+    title: PICK_ROLES_COPY.title,
+    description: PICK_ROLES_COPY.lede,
+    glyph: <ProfileGlyph className={GLYPH} />,
+    body: <PickRolesList roles={roles} />,
+  };
+  return [
+    ...STEPS.slice(0, ROLES_STEP_INDEX),
+    rolesStep,
+    ...STEPS.slice(ROLES_STEP_INDEX),
+  ];
+}
 
 /**
  * The routes this tour must not open over.
@@ -227,8 +258,16 @@ function OnboardingTutorialDialog({
   onComplete: () => void;
 }) {
   const [stepIndex, setStepIndex] = useState(0);
-  const step = STEPS[stepIndex] ?? STEPS[0]!;
-  const isLast = stepIndex === STEPS.length - 1;
+  const { roles } = usePickableRoles();
+  // Whether the roles slide is in, decided as the member leaves the display
+  // slide: until then the slide would land ahead of them, so a slow roles
+  // read still gets it in; after, adding it would move them back a slide.
+  // The switches still show what the read says now.
+  const [offerRoles, setOfferRoles] = useState<boolean | null>(null);
+  const withRoles = offerRoles ?? roles.some((role) => role.joinable);
+  const steps = withRoles ? withRolesStep(roles) : STEPS;
+  const step = steps[stepIndex] ?? steps[0]!;
+  const isLast = stepIndex === steps.length - 1;
 
   return (
     <Dialog
@@ -267,7 +306,7 @@ function OnboardingTutorialDialog({
 
         <StepDots
           current={stepIndex}
-          total={STEPS.length}
+          total={steps.length}
           className="rounded-md border border-border px-3 py-2"
         />
 
@@ -286,7 +325,16 @@ function OnboardingTutorialDialog({
             {isLast ? (
               <Button onClick={onComplete}>Finish</Button>
             ) : (
-              <Button onClick={() => setStepIndex((i) => i + 1)}>Next</Button>
+              <Button
+                onClick={() => {
+                  if (stepIndex + 1 >= ROLES_STEP_INDEX) {
+                    setOfferRoles((latched) => latched ?? withRoles);
+                  }
+                  setStepIndex((i) => i + 1);
+                }}
+              >
+                Next
+              </Button>
             )}
           </div>
         </DialogFooter>

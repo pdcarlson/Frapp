@@ -37,6 +37,13 @@ export interface ChapterBirthdayChannel {
   past_due_since: string | null;
 }
 
+/** A chapter as the weekly recap push reads it (#4985). */
+export interface ChapterRecapPushTarget {
+  id: string;
+  name: string;
+  enabled_modules: Record<string, boolean> | null;
+}
+
 export interface IChapterRepository {
   findById(id: string): Promise<Chapter | null>;
   /**
@@ -52,6 +59,12 @@ export interface IChapterRepository {
    * cap.
    */
   findWithBirthdayChannel(): Promise<ChapterBirthdayChannel[]>;
+  /**
+   * Every chapter that isn't canceled, with its name and module switches: the
+   * weekly recap push's work list (#4985), across chapters by design, read in
+   * pages so none is cut off at PostgREST's row cap.
+   */
+  findForRecapPush(): Promise<ChapterRecapPushTarget[]>;
   /**
    * Whether the chapter has opted out of product analytics
    * (`chapters.analytics_opt_out`). Reads that one column, because analytics

@@ -346,6 +346,7 @@ describe('ChannelAccessService', () => {
       expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
         'chap-1',
         false,
+        undefined,
       );
     });
 
@@ -374,6 +375,7 @@ describe('ChannelAccessService', () => {
       expect(mockRbac.getChapterMemberAccess).toHaveBeenCalledWith(
         'chap-1',
         true,
+        undefined,
       );
     });
 

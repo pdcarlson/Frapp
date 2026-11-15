@@ -610,6 +610,17 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
       },
     ],
   },
+  // The weekly recap push (#4985): the member's own figures from last week,
+  // under the chapter's name.
+  'application/workers/activity-recap-push.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: "The member's own counts from last week, titled with the chapter name. No member-written text.",
+      },
+    ],
+  },
   // One push per batch of AI suggestions (#4309): `notifyBatch` and its
   // `notifyMembers`. Titled with the meeting or event name an officer wrote.
   'application/services/ai-suggestion.service.ts': {

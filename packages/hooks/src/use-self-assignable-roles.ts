@@ -5,7 +5,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useListChapters, type ChapterMembershipSummary } from "./use-chapters";
 import { useRoles } from "./use-roles";
-import { alumniRoleIdOf } from "@repo/validation";
+import { alumniRoleIdOf, can } from "@repo/validation";
+import { usePermissionList } from "./use-user";
 import { parseChapterRoles, type ChapterRole } from "./chapter-roles";
 
 /*
@@ -30,8 +31,8 @@ export type PickableRole = ChapterRole & { held: boolean; joinable: boolean };
  * tiers, so a role an officer unmarked, or one held when they became an alum,
  * never traps them (`spec/behavior/rbac.md` § Self-assignable roles). The
  * viewer's roles come from their membership summary (`GET /v1/chapters`),
- * which every member can read; the roles list needs `members:view`, which
- * every member who can open the picker holds.
+ * which every member can read; the roles list needs `members:view`, so
+ * `usePickableRoles` reads it only for a viewer who holds that.
  */
 export function selectPickableRoles(
   rolesData: unknown,
@@ -67,7 +68,10 @@ function tieredRoleIds(rolesData: unknown): Set<string> {
 
 export function usePickableRoles() {
   const chapterId = useActiveChapterId();
-  const rolesQuery = useRoles();
+  // `GET /v1/roles` needs `members:view`: a viewer without it is offered
+  // nothing rather than sending a read the API always refuses.
+  const canListRoles = can("members:view", usePermissionList());
+  const rolesQuery = useRoles({ enabled: canListRoles });
   const chaptersQuery = useListChapters();
   const heldRoleIds = chaptersQuery.data?.find(
     (membership) => membership.chapter_id === chapterId,
@@ -93,12 +97,15 @@ export function usePickableRoles() {
  * permissions, the roster and the channel list are read again, so the
  * role's channels appear or go at once.
  */
+/** {@link useSetPickedRole}'s key, so a screen can wait on a pick in flight. */
+export const PICK_ROLE_MUTATION_KEY = ["roles", "pick-role"] as const;
+
 export function useSetPickedRole() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationKey: ["roles", "pick-role"],
+    mutationKey: PICK_ROLE_MUTATION_KEY,
     mutationFn: async ({ id, join }: { id: string; join: boolean }) => {
       const params = { params: { path: { id } } };
       const { data, error } = join
