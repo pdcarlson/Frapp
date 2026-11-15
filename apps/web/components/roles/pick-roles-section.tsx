@@ -39,7 +39,7 @@ export function PickRolesSection() {
 
 /**
  * One switch per pickable role, each saved on the flip. Profile's "Your roles"
- * and the tutorial's `Pick your roles` slide both draw it.
+ * and the first-run tour's `Pick your roles` stop both draw it.
  */
 export function PickRolesList({ roles }: { roles: readonly PickableRole[] }) {
   const { toast } = useToast();

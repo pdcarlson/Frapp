@@ -149,6 +149,8 @@ export function AccountMenu({
           <button
             type="button"
             aria-label={accountLabel}
+            // The first-run tour's last stop (`onboarding/tour.ts`).
+            data-account-menu=""
             className={cn(
               "ml-1 shrink-0 rounded-full transition",
               FOCUS_RING_SHELL,

@@ -205,7 +205,7 @@ Added 2026-11-06, owner request ([#2252](https://github.com/pdcarlson/Frapp/issu
 - **A channel can have its own display**, per device like the default: the channel's menu (web: the header's ⋯ → Display; mobile: long-press the channel → Display) offers "Your default (…)", then Cozy, Compact or Bubbles "here".
   Unset, the channel follows the default.
   Kept as one map of channel id to density under its own key in `@repo/chat-core/density`, so the default's key is unchanged.
-- **A new member picks their display while setting up** (added 2026-11-10, Winston's decision on [#3787](https://github.com/pdcarlson/Frapp/issues/3787#issuecomment-6760395975)): the web tutorial and mobile s03 each carry a `Pick your chat display` step with the same three cards as Profile and Settings, and a founder, who sees neither, gets the same step in chapter setup on both surfaces (#4056) ([`onboarding.md`](../onboarding.md)).
+- **A new member picks their display while setting up** (added 2026-11-10, Winston's decision on [#3787](https://github.com/pdcarlson/Frapp/issues/3787#issuecomment-6760395975)): the web first-run tour (as one segmented control over the real messages, #5080) and mobile s03 (the same three cards as Profile and Settings) each carry a `Pick your chat display` step, and a founder, who sees neither, gets the same step in chapter setup on both surfaces (#4056) ([`onboarding.md`](../onboarding.md)).
   The device's current display is preselected (Cozy on a device that never picked one), so moving on without a tap keeps it.
   The pick is device state like any other.
 

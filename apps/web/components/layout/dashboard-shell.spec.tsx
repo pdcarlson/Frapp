@@ -177,8 +177,8 @@ vi.mock("@/components/onboarding/chapter-wizard-gate", () => ({
 vi.mock("@/components/auth/terms-prompt", () => ({
   TermsPromptGate: () => null,
 }));
-vi.mock("@/components/onboarding/onboarding-tutorial", () => ({
-  OnboardingTutorial: () => null,
+vi.mock("@/components/onboarding/onboarding-tour", () => ({
+  OnboardingTour: () => null,
 }));
 // Meet Frapp AI's host has its own spec (`meet-frapp-ai-host.spec.tsx`).
 vi.mock("@/components/ai/meet-frapp-ai-host", () => ({

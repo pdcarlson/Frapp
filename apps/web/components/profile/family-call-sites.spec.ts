@@ -75,7 +75,7 @@ const FAMILY = [
   // a governed file moving to a new path is exactly the case that would
   // otherwise drop out of coverage without a single test going red.
   "components/onboarding/chapter-wizard-gate.tsx",
-  "components/onboarding/onboarding-tutorial.tsx",
+  "components/onboarding/onboarding-tour.tsx",
   "components/onboarding/step-dots.tsx",
 ] as const;
 
