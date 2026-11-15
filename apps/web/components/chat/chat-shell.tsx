@@ -268,6 +268,11 @@ import {
 } from "@repo/chat-core/poll-draft";
 import { PollForm } from "./poll-form";
 import { SignupForm } from "./signup-form";
+import {
+  emptyRolePickerDraft,
+  RolePickerForm,
+  type RolePickerDraft,
+} from "./role-picker-form";
 import { FormBuilder } from "./form-builder";
 import { emptySignupDraft, type SignupDraft } from "@repo/chat-core/signups";
 import {
@@ -1717,6 +1722,28 @@ export function ChatShell({
                 if (result.ok && result.warning) {
                   toast({
                     title: "Sign-up sheet posted",
+                    description: result.warning,
+                  });
+                }
+                return result;
+              }}
+            />
+          );
+        case "roles":
+          return (
+            <RolePickerForm
+              key={key}
+              {...kept}
+              initialDraft={
+                plusDrafts.get<RolePickerDraft>(channelId, "roles") ??
+                emptyRolePickerDraft()
+              }
+              onDiscard={discard}
+              onPost={async (picker) => {
+                const result = await channel.sendRolePicker(channelId, picker);
+                if (result.ok && result.warning) {
+                  toast({
+                    title: "Role picker posted",
                     description: result.warning,
                   });
                 }
