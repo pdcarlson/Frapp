@@ -998,6 +998,12 @@ export class NotificationService {
     const existing = await this.pushTokenRepo.findByToken(token);
     if (existing) {
       if (existing.user_id === userId) {
+        // The phone sends its platform label on every register (#4563), so a
+        // row stored before it did gets one, and an OS update refreshes it.
+        // An absent label never clears a stored one.
+        if (deviceName && existing.device_name !== deviceName) {
+          return this.pushTokenRepo.updateDeviceName(existing.id, deviceName);
+        }
         return existing;
       }
       await this.pushTokenRepo.deleteByToken(token);

@@ -109,6 +109,7 @@ export interface IPushTokenRepository {
   findByUserIds(userIds: string[]): Promise<PushToken[]>;
   findById(id: string): Promise<PushToken | null>;
   findByToken(token: string): Promise<PushToken | null>;
+  updateDeviceName(id: string, deviceName: string): Promise<PushToken>;
   delete(id: string, userId: string): Promise<void>;
   deleteByToken(token: string): Promise<void>;
 }

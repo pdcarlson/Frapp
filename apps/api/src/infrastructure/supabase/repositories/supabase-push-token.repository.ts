@@ -90,6 +90,18 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
     return data;
   }
 
+  async updateDeviceName(id: string, deviceName: string): Promise<PushToken> {
+    const { data, error } = await this.supabase
+      .from('push_tokens')
+      .update({ device_name: deviceName })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
   async delete(id: string, userId: string): Promise<void> {
     const { error } = await this.supabase
       .from('push_tokens')
