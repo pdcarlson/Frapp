@@ -1519,10 +1519,45 @@ describe('NotificationService', () => {
 
       expect(mockPushTokenRepo.updateDeviceName).toHaveBeenCalledWith(
         basePushToken.id,
+        'u-1',
         'ios 26.1 · iPhone',
       );
       expect(mockPushTokenRepo.create).not.toHaveBeenCalled();
       expect(result).toEqual(labelled);
+    });
+
+    it('refreshes a stored device name that has changed, such as after an OS update', async () => {
+      const before = { ...basePushToken, device_name: 'ios 26.1 · iPhone' };
+      const after = { ...basePushToken, device_name: 'ios 26.2 · iPhone' };
+      mockPushTokenRepo.findByToken.mockResolvedValue(before);
+      mockPushTokenRepo.updateDeviceName.mockResolvedValue(after);
+
+      const result = await service.registerPushToken(
+        'u-1',
+        'ExponentPushToken[xxx]',
+        'ios 26.2 · iPhone',
+      );
+
+      expect(mockPushTokenRepo.updateDeviceName).toHaveBeenCalledWith(
+        basePushToken.id,
+        'u-1',
+        'ios 26.2 · iPhone',
+      );
+      expect(result).toEqual(after);
+    });
+
+    it('returns the row as read when it was deleted before the label update', async () => {
+      const unlabelled = { ...basePushToken, device_name: null };
+      mockPushTokenRepo.findByToken.mockResolvedValue(unlabelled);
+      mockPushTokenRepo.updateDeviceName.mockResolvedValue(null);
+
+      const result = await service.registerPushToken(
+        'u-1',
+        'ExponentPushToken[xxx]',
+        'ios 26.1 · iPhone',
+      );
+
+      expect(result).toEqual(unlabelled);
     });
 
     it('leaves an existing row alone when its device name already matches', async () => {

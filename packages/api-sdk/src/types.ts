@@ -6314,7 +6314,7 @@ export interface components {
         RegisterPushTokenDto: {
             /** @description Expo push token */
             token: string;
-            /** @description Device name for display */
+            /** @description The device's platform, OS version and model, such as `ios 26.1 · iPhone 16`. Never the name the member gave the device. A re-register with a different value replaces the stored one. */
             device_name?: string;
         };
         MarkNotificationsReadDto: {
