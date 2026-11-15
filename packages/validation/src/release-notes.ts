@@ -141,6 +141,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Joining with an invite emailed to you no longer shows a second Join under it, with the Terms box above the invite, and the welcome tour no longer leaves chapter setup open behind it or closes on a stray click.",
       "Signing in with an email you were invited at now takes you to your invite, instead of chapter setup.",
       "The first-run tour now walks you through the real Chat screen, lighting up each part as it explains it, and picks up where you left off if you step away.",
+      "When member names or your account can't load on Tasks, Service hours or Points, the page now says what's missing with a Try again button, and the error page offers Reload when a new version shipped while your tab was open.",
     ],
     phone: [
       "Send invite now works on the first tap while the keyboard is open.",
@@ -150,6 +151,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Meeting notes you haven't drafted yet, and what you typed to mark a task done or send one back, are still there when you come back, unless you cancel or send.",
       "Search results in Ask Frapp now sit above the message box instead of running under it.",
       "Officers can turn on Non-chapter business from a role's page in Chapter settings, so members can add that role themselves.",
+      "Sheets show their loading placeholders while a member or thread list loads, instead of a blank area.",
     ],
   },
   {
