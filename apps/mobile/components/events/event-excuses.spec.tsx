@@ -10,11 +10,14 @@ import { FrappThemeProvider } from "@/lib/theme";
  */
 
 let mine: unknown = { excuse: null, receiver: null };
+let list: unknown[] = [];
 const editExcuse = vi.fn(async () => ({}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMyEventExcuse: () => ({ data: mine }),
+  useEventExcuses: () => ({ data: list }),
+  useDecideEventExcuse: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useEditEventExcuse: () => ({ mutateAsync: editExcuse, isPending: false }),
   useMyAttendance: () => ({ data: { attendance: null } }),
   useSendEventExcuse: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -37,7 +40,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import { MyExcuse } from "./event-excuses";
+import { ExcuseReviewSection, MyExcuse } from "./event-excuses";
 
 function render(startWriting?: boolean): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -155,10 +158,85 @@ describe("MyExcuse", () => {
     expect(button(tree, "Send excuse again")).toBeDefined();
   });
 
+  it("tells a declined member they're still expected, on the row itself", () => {
+    mine = sent("DECLINED");
+    const tree = render();
+    expect(
+      tree.root
+        .findAllByType(Text)
+        .some(
+          (t) => t.props.children === "You're still expected at this event.",
+        ),
+    ).toBe(true);
+  });
+
+  it("opens the row to the whole reason on a tap", () => {
+    mine = sent("APPROVED");
+    const tree = render();
+    const reason = () =>
+      tree.root
+        .findAllByType(Text)
+        .find((t) => t.props.children === "Exam review")!;
+    expect(reason().props.numberOfLines).toBe(1);
+    act(() => button(tree, "Excused: Exam review")!.props.onPress());
+    expect(reason().props.numberOfLines).toBeUndefined();
+  });
+
   it("offers no Edit on an approved excuse, only Withdraw", () => {
     mine = sent("APPROVED");
     const tree = render();
     expect(button(tree, "Edit")).toBeUndefined();
     expect(button(tree, "Withdraw")).toBeDefined();
+  });
+});
+
+describe("ExcuseReviewSection", () => {
+  it("opens a row on a tap, with Approve and Decline beside it, not inside it", () => {
+    list = [
+      {
+        id: "x-2",
+        chapter_id: "c",
+        event_id: "evt-1",
+        user_id: "sam",
+        display_name: "Sam",
+        reason: "Away game",
+        status: "PENDING",
+        decided_by: null,
+        decided_at: null,
+        created_at: "2026-11-12T00:00:00Z",
+        updated_at: "2026-11-12T00:00:00Z",
+      },
+    ];
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ExcuseReviewSection
+            eventId="evt-1"
+            viewerId="officer"
+            canUpdateEvents
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    const row = tree.root
+      .findAllByType(Pressable)
+      .find((node) => /^Sam: Away game/.test(node.props.accessibilityLabel))!;
+    // VoiceOver hides an accessible element's children: the decisions must
+    // not sit inside the row's own pressable.
+    expect(
+      row
+        .findAllByType(Text)
+        .some(
+          (t) =>
+            t.props.children === "Approve" || t.props.children === "Decline",
+        ),
+    ).toBe(false);
+    expect(row.props.accessibilityState).toEqual({ expanded: false });
+    act(() => row.props.onPress());
+    const opened = tree.root
+      .findAllByType(Pressable)
+      .find((node) => /^Sam: Away game/.test(node.props.accessibilityLabel))!;
+    expect(opened.props.accessibilityState).toEqual({ expanded: true });
   });
 });

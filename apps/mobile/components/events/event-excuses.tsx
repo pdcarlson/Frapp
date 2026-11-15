@@ -19,7 +19,6 @@ import { EVENT_EXCUSE_REASON_MAX, statusLabel } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { StatusChip } from "@/components/status-chip";
-import { PressableRow } from "@/components/list-section";
 import { createEventRowStyles } from "@/components/events/event-rows";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
@@ -80,6 +79,7 @@ export function MyExcuse({
   const withdraw = useWithdrawEventExcuse();
   const [writing, setWriting] = useState(startWriting);
   const [error, setError] = useState<string | null>(null);
+  const [reasonOpen, setReasonOpen] = useState(false);
   const inFlight = useRef(false);
 
   const view = myExcuseView({
@@ -205,14 +205,30 @@ export function MyExcuse({
           ? `Your excuse · ${view.title.replace(/^Excuse sent/, "Sent")}`
           : "Your excuse"}
       </Text>
-      <View style={rows.flatRow}>
-        <Text
-          style={[styles.reason, styles.grow]}
-          numberOfLines={1}
+      <View style={[rows.flatRow, reasonOpen ? styles.rowTop : null]}>
+        {/* Cut to one line; a tap shows the whole reason, as on the
+            receiver's list. A sibling of the action, so each stays its own
+            control for VoiceOver. */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.grow,
+            pressed ? styles.pressed : null,
+          ]}
+          accessibilityRole="button"
           accessibilityLabel={`${view.title}: ${view.reason}`}
+          accessibilityHint={
+            reasonOpen ? "Shows one line." : "Shows the whole reason."
+          }
+          accessibilityState={{ expanded: reasonOpen }}
+          onPress={() => setReasonOpen((value) => !value)}
         >
-          {view.reason}
-        </Text>
+          <Text
+            style={styles.reason}
+            numberOfLines={reasonOpen ? undefined : 1}
+          >
+            {view.reason}
+          </Text>
+        </Pressable>
         <StatusChip
           label={statusLabel("eventExcuse", view.status)}
           hue={excuseHue(tokens, view.status)}
@@ -241,9 +257,7 @@ export function MyExcuse({
           />
         ) : null}
       </View>
-      {declined && !view.canEdit ? (
-        <Text style={styles.caption}>{view.detail}</Text>
-      ) : null}
+      {view.detail ? <Text style={styles.caption}>{view.detail}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </View>
   );
@@ -422,33 +436,39 @@ export function ExcuseReviewSection({
           const disabled = deciding !== null || writeBlockedReason !== null;
           const expanded = open === row.id;
           return (
-            <PressableRow
+            // The text and the decisions are siblings, not one pressable
+            // row: an accessible parent would hide Approve and Decline from
+            // VoiceOver.
+            <View
               key={row.id}
-              accessibilityRole="button"
-              accessibilityLabel={`${name}: ${row.reason}. ${statusLabel("eventExcuse", row.status)}`}
-              accessibilityHint={
-                expanded ? "Shows one line." : "Shows the whole reason."
-              }
-              accessibilityState={{ expanded }}
-              onPress={() => setOpen(expanded ? null : row.id)}
               style={[
                 rowStyles.flatRow,
                 expanded ? styles.rowTop : null,
                 index === 0 ? null : rowStyles.flatDivider,
               ]}
             >
-              <Text
-                style={[
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${name}: ${row.reason}. ${statusLabel("eventExcuse", row.status)}`}
+                accessibilityHint={
+                  expanded ? "Shows one line." : "Shows the whole reason."
+                }
+                accessibilityState={{ expanded }}
+                onPress={() => setOpen(expanded ? null : row.id)}
+                style={({ pressed }) => [
                   styles.grow,
-                  styles.line,
-                  expanded ? null : styles.lineCut,
+                  pressed ? styles.pressed : null,
                 ]}
-                numberOfLines={expanded ? undefined : 1}
               >
-                <Text style={styles.name}>{name}</Text>
-                {"  "}
-                <Text style={styles.reasonMuted}>{row.reason}</Text>
-              </Text>
+                <Text
+                  style={[styles.line, expanded ? null : styles.lineCut]}
+                  numberOfLines={expanded ? undefined : 1}
+                >
+                  <Text style={styles.name}>{name}</Text>
+                  {"  "}
+                  <Text style={styles.reasonMuted}>{row.reason}</Text>
+                </Text>
+              </Pressable>
               {decidable ? (
                 <View style={styles.decisions}>
                   <TextAction
@@ -494,7 +514,7 @@ export function ExcuseReviewSection({
                   hue={excuseHue(tokens, row.status)}
                 />
               )}
-            </PressableRow>
+            </View>
           );
         })}
       </View>

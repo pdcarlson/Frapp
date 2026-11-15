@@ -104,6 +104,7 @@ export function MyExcuse({
     if (writeAsk > 0) setWriting(true);
   }
   const [error, setError] = useState<string | null>(null);
+  const [reasonOpen, setReasonOpen] = useState(false);
 
   const view = myExcuseView({
     required,
@@ -231,14 +232,26 @@ export function MyExcuse({
           ? `Your excuse · ${view.title.replace(/^Excuse sent/, "Sent")}`
           : "Your excuse"}
       </p>
-      <div className="flex min-h-11 min-w-0 items-center gap-3">
-        <p
-          className="min-w-0 flex-1 truncate text-sm"
-          title={view.reason}
+      <div
+        className={cn(
+          "flex min-h-11 min-w-0 gap-3",
+          reasonOpen ? "items-start" : "items-center",
+        )}
+      >
+        {/* One line until tapped, as on the receiver's list. */}
+        <button
+          type="button"
+          aria-expanded={reasonOpen}
           aria-label={`${view.title}: ${view.reason}`}
+          onClick={() => setReasonOpen((value) => !value)}
+          className={cn(
+            "min-w-0 flex-1 rounded-sm text-left text-sm",
+            reasonOpen ? "whitespace-normal break-words" : "truncate",
+            FOCUS_RING_OFFSET,
+          )}
         >
           {view.reason}
-        </p>
+        </button>
         <Badge variant={badge.variant}>{badge.label}</Badge>
         {view.canEdit ? (
           <button
@@ -259,7 +272,7 @@ export function MyExcuse({
           </button>
         ) : null}
       </div>
-      {declined && !view.canEdit && view.detail ? (
+      {view.detail ? (
         <p className="text-sm text-muted-foreground">{view.detail}</p>
       ) : null}
     </section>
@@ -276,8 +289,9 @@ const ROW_ACTION = cn(
 
 /**
  * The excuse line, new or being edited: one field with its button beside it,
- * and a caption, Withdraw and Cancel under it. No border box, so opening it
- * moves nothing but the row it replaces.
+ * and a caption, Withdraw and Cancel under it. It takes the place of the
+ * row's own block, in the sheet's section box, so opening it moves nothing
+ * else on the sheet.
  */
 function ExcuseComposer({
   label,

@@ -177,14 +177,24 @@ export class EventExcuseService {
     return new Map(users.map((u) => [u.id, u.display_name]));
   }
 
-  async submit(
-    eventId: string,
+  private assertExcuseWindowOpen(event: Event, now = new Date()): void {
+    if (now > eventExcuseClosesAt(new Date(event.end_time))) {
+      throw new BadRequestException(
+        `Excuses for this event closed ${EVENT_EXCUSE_LATE_HOURS} hours after it ended`,
+      );
+    }
+  }
+
+  /**
+   * Whether the member may ask to be excused at all: the event requires
+   * them, and their attendance doesn't already settle it. Sending an excuse
+   * and sending a declined one again both ask, so both check (#5115).
+   */
+  private async assertMayAskToBeExcused(
+    event: Event,
     userId: string,
     chapterId: string,
-    reason: string,
-  ): Promise<EventExcuse> {
-    const event = await this.visibleEvent(eventId, chapterId, userId);
-
+  ): Promise<void> {
     const member = await this.memberRepo.findByUserAndChapter(
       userId,
       chapterId,
@@ -198,14 +208,8 @@ export class EventExcuseService {
       );
     }
 
-    if (new Date() > eventExcuseClosesAt(new Date(event.end_time))) {
-      throw new BadRequestException(
-        `Excuses for this event closed ${EVENT_EXCUSE_LATE_HOURS} hours after it ended`,
-      );
-    }
-
     const existing = await this.attendanceRepo.findByEventAndUser(
-      eventId,
+      event.id,
       userId,
     );
     if (existing?.status === 'PRESENT' || existing?.status === 'LATE') {
@@ -221,6 +225,17 @@ export class EventExcuseService {
         'An officer marked you absent from this event; ask them to change it',
       );
     }
+  }
+
+  async submit(
+    eventId: string,
+    userId: string,
+    chapterId: string,
+    reason: string,
+  ): Promise<EventExcuse> {
+    const event = await this.visibleEvent(eventId, chapterId, userId);
+    this.assertExcuseWindowOpen(event);
+    await this.assertMayAskToBeExcused(event, userId, chapterId);
 
     const excuse = await this.excuseRepo.create({
       chapter_id: event.chapter_id,
@@ -292,11 +307,7 @@ export class EventExcuseService {
 
     const now = new Date();
     if (excuse.status === 'PENDING') {
-      if (now > eventExcuseClosesAt(new Date(event.end_time))) {
-        throw new BadRequestException(
-          `Excuses for this event closed ${EVENT_EXCUSE_LATE_HOURS} hours after it ended`,
-        );
-      }
+      this.assertExcuseWindowOpen(event, now);
     } else {
       const { closesAt } = checkInWindowBounds(
         new Date(event.start_time),
@@ -308,6 +319,10 @@ export class EventExcuseService {
           'This event is over, so a declined excuse can no longer be sent again',
         );
       }
+      // Sending it again asks the receiver anew, so it must pass what a
+      // new excuse would: a member who checked in since the decline, or
+      // whom an officer marked, has nothing left to ask.
+      await this.assertMayAskToBeExcused(event, userId, chapterId);
     }
 
     const edited = await this.excuseRepo.editReason(

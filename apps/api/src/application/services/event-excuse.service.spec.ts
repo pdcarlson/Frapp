@@ -445,6 +445,33 @@ describe('EventExcuseService', () => {
       );
     });
 
+    it.each([
+      [{ status: 'PRESENT' }, 'You already checked in to this event'],
+      [{ status: 'LATE' }, 'You already checked in to this event'],
+      [
+        { status: 'ABSENT', marked_by: 'officer-1' },
+        'An officer marked you absent',
+      ],
+    ])(
+      'refuses to send a declined excuse again once attendance settles it (%o)',
+      async (row, message) => {
+        excuseRepo.findByEventAndUser.mockResolvedValue(
+          excuse({
+            status: 'DECLINED',
+            decided_at: 'x',
+            decided_by: 'creator',
+          }),
+        );
+        attendanceRepo.findByEventAndUser.mockResolvedValue(row);
+
+        await expect(
+          service.edit('evt-1', 'member', 'ch-1', 'Sick'),
+        ).rejects.toThrow(message);
+        expect(excuseRepo.editReason).not.toHaveBeenCalled();
+        expect(notifications.notifyMembers).not.toHaveBeenCalled();
+      },
+    );
+
     it('keeps a decline once check-in has closed', async () => {
       eventRepo.findById.mockResolvedValue(eventAt(-3));
       excuseRepo.findByEventAndUser.mockResolvedValue(

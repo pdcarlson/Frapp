@@ -157,6 +157,17 @@ describe("MyExcuse", () => {
     expect(state.withdraw).toHaveBeenCalledWith({ eventId: "e1" });
   });
 
+  it("opens the viewer's own row to the whole reason", async () => {
+    const user = userEvent.setup();
+    state.mine = { excuse: excuse("APPROVED"), receiver: null };
+    renderMine();
+    const row = screen.getByRole("button", { name: /^Excused: / });
+    expect(row).toHaveClass("truncate");
+    await user.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(row).not.toHaveClass("truncate");
+  });
+
   it("names no one when the excuse goes to the officers", () => {
     state.mine = { excuse: excuse("PENDING"), receiver: null };
     renderMine();
@@ -224,6 +235,20 @@ describe("ExcuseReview", () => {
     expect(screen.getByText("Pending")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
     expect(screen.getByText("Excuses")).toBeInTheDocument();
+  });
+
+  it("opens a row to the whole reason and closes it again", async () => {
+    const user = userEvent.setup();
+    state.list = [excuse("PENDING", { user_id: "u-sam", display_name: "Sam" })];
+    render(<ExcuseReview eventId="e1" viewerId="u-officer" canUpdateEvents />);
+    const row = screen.getByRole("button", { name: /^Sam: / });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    expect(row).toHaveClass("truncate");
+    await user.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(row).not.toHaveClass("truncate");
+    await user.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "false");
   });
 
   it("lists pending excuses first and decides one", async () => {
