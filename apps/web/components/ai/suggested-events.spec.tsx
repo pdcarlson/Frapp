@@ -37,7 +37,7 @@ vi.mock("@/components/ai/report-ai", () => ({
   ReportAiButton: () => null,
 }));
 
-vi.mock("@/components/events/event-editor-dialog", () => ({
+vi.mock("@/components/events/local-input", () => ({
   isoToLocalInput: (value: string) => `local:${value}`,
 }));
 
