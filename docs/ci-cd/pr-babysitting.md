@@ -251,16 +251,23 @@ merged source. The script:
    (the next run also deletes any an interrupted one left), and while any is in place the merge
    never fast-forwards, so the commit has its real parents and the push stays a fast-forward;
 2. takes `main`'s side of a conflict in those two files;
-3. stops if any other file conflicts and lists it. Resolve each, `git add` it, then run
+3. settles, file by file, every other conflicted file whose conflicts are all ones where both
+   sides only added lines: it keeps both, `main`'s first, by the same rules and code as the
+   [sweep's keep-both](#base-branch-sync-scriptscipr-base-syncmjs) (`mergeFile`), stages the file
+   and names it, for the session to read before pushing. A file with any other kind of conflict,
+   and lockfiles and migrations, are left as git left them. Replayed on the 43 merges of `main` into
+   PR branches from 2026-11-13 to 11-15, it settled 16 of the 59 conflicted files outside the
+   contract, and 5 of the 27 merges needed nothing more;
+4. stops if any file still conflicts and lists it. Resolve each, `git add` it, then run
    `npm run merge:main -- --continue`, not `git commit`, or the contract stays `main`'s;
-4. regenerates the contract when both sides changed the API or the contract since they split
+5. regenerates the contract when both sides changed the API or the contract since they split
    (`isApiRelated` in `check-api-contract-drift.mjs` decides), conflict or not: two exports merged
    line by line are not an export, and a value `main` moved can change what the branch's DTO
    emits. It uses the same commands as `check:api-contract`, after `npm ci` when the merge changed
    `package-lock.json` (a generator bump changes the output), then commits the merge. A compile
    error, or a commit the pre-commit secret scan refuses, leaves the merge in progress for
    `--continue`;
-5. runs `npm run migration:renumber` against the commit it merged, which does nothing unless that
+6. runs `npm run migration:renumber` against the commit it merged, which does nothing unless that
    commit has a migration that sorts after one of the branch's. Its renames are left uncommitted
    for the session to read (it lists any bare old version it could not safely rewrite) and commit.
 

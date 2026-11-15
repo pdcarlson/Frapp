@@ -473,3 +473,64 @@ test("a stacked branch is still found after both it and the PR merged main", (t)
   assert.match(output, /#7 is already in this branch/);
   assert.equal(readFileSync(join(work, NOTES), "utf8"), "one\ntwo, from part 3\nthree\nfour\nfive, from main\n");
 });
+
+test("conflicts where both sides only added lines are kept both, main's first, and committed", (t) => {
+  const { seed, work } = setup(t);
+  landOnMain(
+    seed,
+    (cwd) => {
+      addEndpoint("item")(cwd);
+      write(cwd, "README.md", "one\ntwo\nthree\nfrom main\n");
+    },
+    "main",
+  );
+  addEndpoint("jobs")(work);
+  write(work, "README.md", "one\ntwo\nthree\nfrom branch\n");
+  commitAll(work, "branch");
+
+  const result = run(work);
+
+  assert.equal(result.outcome, "merged");
+  assert.equal(inMerge(work), false);
+  assert.equal(readFileSync(join(work, "README.md"), "utf8"), "one\ntwo\nthree\nfrom main\nfrom branch\n");
+  assert.match(result.output, /Kept both sides' added lines \(origin\/main's first\) in README\.md/);
+  assert.deepEqual(result.calls, { regenerate: 1, renumber: 1 });
+});
+
+test("a kept-both file is staged while a real conflict elsewhere still stops the merge", (t) => {
+  const { seed, work } = setup(t);
+  landOnMain(
+    seed,
+    (cwd) => {
+      write(cwd, "README.md", "one\ntwo\nthree\nfrom main\n");
+      write(cwd, `${SRC}/health.txt`, "health on main\n");
+    },
+    "main",
+  );
+  write(work, "README.md", "one\ntwo\nthree\nfrom branch\n");
+  write(work, `${SRC}/health.txt`, "health on the branch\n");
+  commitAll(work, "branch");
+
+  const result = run(work);
+
+  assert.equal(result.outcome, "conflicts");
+  assert.deepEqual(
+    git(work, "diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean),
+    [`${SRC}/health.txt`],
+  );
+  assert.equal(git(work, "show", ":README.md"), "one\ntwo\nthree\nfrom main\nfrom branch");
+  assert.doesNotMatch(result.output.split("These files conflict")[1], /README\.md/);
+});
+
+test("both sides adding the same line is left for the session", (t) => {
+  const { seed, work } = setup(t);
+  landOnMain(seed, (cwd) => write(cwd, "README.md", "one\ntwo\nthree\nmain first\nsame line\nmain last\n"), "main");
+  write(work, "README.md", "one\ntwo\nthree\nbranch first\nsame line\nbranch last\n");
+  commitAll(work, "branch");
+
+  const result = run(work);
+
+  assert.equal(result.outcome, "conflicts");
+  assert.deepEqual(git(work, "diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean), ["README.md"]);
+  assert.doesNotMatch(result.output, /Kept both/);
+});

@@ -14,13 +14,17 @@
 //
 //   1. fetches the base and merges it, without committing;
 //   2. resolves a conflict in those generated files by taking main's side;
-//   3. stops there if any other file conflicts, for the session to resolve, then
+//   3. settles each other conflicted file whose every conflict is one where both
+//      sides only added lines, keeping both, main's first: the rule PR base sync
+//      applies on the server (scripts/ci/resolve-added-lines-conflict.mjs), but
+//      file by file, since a session is here to read the rest;
+//   4. stops there if any file still conflicts, for the session to resolve, then
 //      picks up again at `--continue`;
-//   4. regenerates the contract when both sides changed something it is built
+//   5. regenerates the contract when both sides changed something it is built
 //      from (a clean textual merge of two exports is not an export either),
 //      running `npm ci` first if the merge changed the lockfile, and commits the
 //      merge;
-//   5. runs `migration:renumber` against the commit it merged, which does
+//   6. runs `migration:renumber` against the commit it merged, which does
 //      nothing unless the branch adds a migration that main's now sort after.
 //      Its renames are left uncommitted, for the session to read and commit.
 //
@@ -39,11 +43,12 @@
 // mistake here fails a check instead of merging.
 
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONTRACT_ARTIFACTS, isApiRelated, regenerateContract } from "./check-api-contract-drift.mjs";
 import { isInvokedDirectly } from "./ci/lib/invoked-directly.mjs";
+import { isRefusedPath, mergeFile } from "./ci/resolve-added-lines-conflict.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -168,6 +173,48 @@ function dropGrafts(git) {
     if (graft) git(["replace", "-d", graft[1]], { allowFail: true });
     git(["update-ref", "-d", ref], { allowFail: true });
   }
+}
+
+const PLAIN_FILE = /^100(644|755)$/;
+
+/**
+ * Settle the conflicted files where both sides only added lines, as PR base sync
+ * would (mergeFile's rules: no duplicate line or name, balanced blocks, one
+ * unambiguous place), write and stage each, and return their paths. A file with
+ * any other kind of conflict, a generated file, a lockfile, a migration, a file
+ * missing from a side, or one that isn't UTF-8 text is left for the session.
+ */
+export function settleAddedLines(cwd, paths) {
+  const settled = [];
+  for (const path of paths) {
+    if (isRefusedPath(path)) continue;
+    const stages = new Map();
+    const listed = execFileSync("git", ["ls-files", "-u", "-z", "--", path], { cwd, encoding: "utf8" });
+    for (const entry of listed.split("\0").filter(Boolean)) {
+      const [meta] = entry.split("\t");
+      const [mode, sha, stage] = meta.split(" ");
+      stages.set(stage, { mode, sha });
+    }
+    const [base, ours, theirs] = ["1", "2", "3"].map((n) => stages.get(n));
+    if (!base || !ours || !theirs) continue;
+    if (![base, ours, theirs].every((s) => PLAIN_FILE.test(s.mode)) || ours.mode !== theirs.mode) continue;
+    let texts;
+    try {
+      const decoder = new TextDecoder("utf-8", { fatal: true });
+      texts = [base, ours, theirs].map((s) =>
+        decoder.decode(execFileSync("git", ["cat-file", "blob", s.sha], { cwd, maxBuffer: 64 * 1024 * 1024 })),
+      );
+    } catch {
+      continue; // not UTF-8, or unreadable: the session's
+    }
+    const merged = mergeFile({ path, base: texts[0], ours: texts[1], theirs: texts[2] });
+    // No conflict found where git found one: the two disagree, so a person looks.
+    if (!merged.ok || merged.hunks === 0) continue;
+    writeFileSync(join(cwd, path), merged.text);
+    execFileSync("git", ["add", "--", path], { cwd });
+    settled.push(path);
+  }
+  return settled;
 }
 
 function mergeInProgress(git) {
@@ -336,9 +383,17 @@ export function mergeMain({
     if (contract.length > 0) {
       log(`Took ${base}'s side of ${contract.join(", ")}; it is regenerated before the commit.`);
     }
-    if (other.length > 0) {
+    const settled = settleAddedLines(cwd, other);
+    if (settled.length > 0) {
+      log(
+        `Kept both sides' added lines (${base}'s first) in ${settled.join(", ")}. ` +
+          "Read them before pushing: the order is main's, then yours.",
+      );
+    }
+    const left = other.filter((f) => !settled.includes(f));
+    if (left.length > 0) {
       log("\nThese files conflict. Resolve each and `git add` it:");
-      for (const f of other) log(`  ${f}`);
+      for (const f of left) log(`  ${f}`);
       log(
         `\nThen run \`${CONTINUE_HINT}\`, not \`git commit\`: it regenerates the API ` +
           "contract from the resolved source before committing.",
