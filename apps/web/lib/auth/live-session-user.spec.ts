@@ -25,6 +25,7 @@ vi.mock("@/lib/supabase/client", () => ({
 }));
 vi.mock("@/lib/auth/session", () => ({
   signOutCurrentSession: signOut,
+  signingOutHere: () => false,
 }));
 
 import { getLiveSessionUser } from "./rejected-session";

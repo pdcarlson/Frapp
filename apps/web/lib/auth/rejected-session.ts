@@ -6,7 +6,7 @@ import {
   type User,
 } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { signOutCurrentSession } from "@/lib/auth/session";
+import { signOutCurrentSession, signingOutHere } from "@/lib/auth/session";
 import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 
 /**
@@ -131,7 +131,8 @@ export async function handleRejectedSession(): Promise<void> {
     const { data: local } = await supabase.auth.getSession();
     if (!local.session) return;
     const verdict = await supabase.auth.getUser();
-    const { over, code } = sessionVerdict(verdict, true);
+    // This tab's own sign-out drops the session too; that isn't a revoke.
+    const { over, code } = sessionVerdict(verdict, !signingOutHere());
     if (!over) return;
     // Auth's reason (`user_not_found` for an account deleted elsewhere,
     // `session_not_found` for a revoked one) is the count; a code nobody
@@ -189,7 +190,10 @@ export async function getLiveSessionUser(
   const { data: local } = await supabase.auth.getSession();
   const result = await supabase.auth.getUser();
   if (result.data.user) return result.data.user;
-  const { over, code } = sessionVerdict(result, Boolean(local.session));
+  const { over, code } = sessionVerdict(
+    result,
+    Boolean(local.session) && !signingOutHere(),
+  );
   // No session in this browser at all: nothing to clear, nothing to report.
   if (!over && isAuthSessionMissingError(result.error)) return null;
   reportAuthFailure({ flow: "session_check", screen, error: result.error, code });

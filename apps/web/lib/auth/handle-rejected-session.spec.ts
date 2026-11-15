@@ -12,7 +12,8 @@ import {
  * nothing when it doesn't.
  */
 
-const { getSession, getUser, signOut, reportAuthFailure, assign } = vi.hoisted(() => ({
+const { getSession, getUser, signOut, signingOutHere, reportAuthFailure, assign } = vi.hoisted(() => ({
+  signingOutHere: vi.fn(() => false),
   getSession: vi.fn(),
   getUser: vi.fn(),
   signOut: vi.fn(),
@@ -23,7 +24,10 @@ const { getSession, getUser, signOut, reportAuthFailure, assign } = vi.hoisted((
 vi.mock("@/lib/supabase/client", () => ({
   createSupabaseBrowserClient: () => ({ auth: { getSession, getUser } }),
 }));
-vi.mock("@/lib/auth/session", () => ({ signOutCurrentSession: signOut }));
+vi.mock("@/lib/auth/session", () => ({
+  signOutCurrentSession: signOut,
+  signingOutHere,
+}));
 vi.mock("@/lib/sentry/auth-failures", () => ({ reportAuthFailure }));
 
 const realLocation = window.location;
@@ -32,6 +36,7 @@ beforeEach(() => {
   vi.resetModules();
   getSession.mockReset().mockResolvedValue({ data: { session: { access_token: "t" } } });
   getUser.mockReset();
+  signingOutHere.mockReset().mockReturnValue(false);
   signOut.mockReset().mockResolvedValue(undefined);
   reportAuthFailure.mockReset();
   assign.mockReset();
@@ -84,6 +89,20 @@ describe("handleRejectedSession reporting", () => {
     expect(assign).toHaveBeenCalledWith(
       "https://app.frapp.live/sign-in?signedOut=session_ended",
     );
+  });
+
+  it("doesn't read the tab's own sign-out as a revoke", async () => {
+    // A global sign-out revokes on the server before it drops the local
+    // session, so a 401 in between gets the revoked answer too.
+    signingOutHere.mockReturnValue(true);
+    getUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthSessionMissingError(),
+    });
+    await handle();
+
+    expect(reportAuthFailure).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it("asks Auth nothing for a 401 that lands after the local session is gone", async () => {
