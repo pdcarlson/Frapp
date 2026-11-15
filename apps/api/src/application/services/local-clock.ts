@@ -1,7 +1,8 @@
 /**
  * What a wall clock in one time zone reads at an instant: the shared helper
  * for the sweeps that act at a local hour of each member's day (the birthday
- * post, #4959; the daily task and invoice reminders, #4788).
+ * post, #4959; the daily task and invoice reminders, #4788; the weekly recap
+ * push, #4985, which takes each Sunday's midnight from `zonedTimeToUtc`).
  */
 
 /** The date and hour `now` reads as in `timeZone`, or null for a bad zone. */

@@ -7,6 +7,7 @@ import type {
 } from '../database.types';
 import {
   type ChapterBirthdayChannel,
+  type ChapterRecapPushTarget,
   IChapterRepository,
   type AppliedSubscriptionWebhook,
   type SubscriptionWebhookPatch,
@@ -15,7 +16,10 @@ import { Chapter } from '#domain/entities/chapter.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { fetchAllPages } from '../supabase.utils';
 
-/** Rows per page of the birthday sweep's chapter list (#4959). */
+/**
+ * Rows per page of the birthday sweep's chapter list (#4959), and of the
+ * weekly recap push's (#4985).
+ */
 const BIRTHDAY_CHANNEL_PAGE = 500;
 
 @Injectable()
@@ -53,6 +57,24 @@ export class SupabaseChapterRepository implements IChapterRepository {
       .in('id', ids);
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
+  }
+
+  async findForRecapPush(): Promise<ChapterRecapPushTarget[]> {
+    const rows = await fetchAllPages(
+      (from, to) =>
+        this.supabase
+          .from('chapters')
+          .select('id, name, enabled_modules')
+          .neq('subscription_status', 'canceled')
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: BIRTHDAY_CHANNEL_PAGE },
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      enabled_modules: row.enabled_modules ?? null,
+    }));
   }
 
   async findWithBirthdayChannel(): Promise<ChapterBirthdayChannel[]> {

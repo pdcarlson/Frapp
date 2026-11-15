@@ -215,6 +215,15 @@ Supabase Realtime (preferred)
                                   Fetch any messages missed during the gap
 ```
 
+**A join means streaming** (#5022). Both the gap-recovery read below and the inbox's `joined` take a
+channel's join as the point from which every new row arrives live. Realtime can report a channel
+joined before the replication behind it is streaming, and a row written in between would reach no
+one, so the thread and inbox channels ask it to hold the join until the stream is live
+(`postgres_changes_options.wait`). A stream that can't start fails the join instead, about 20 s in.
+A thread takes that like any other failed join, through the reconnect backoff and the polling
+fallback. The inbox isn't polled: it retries on its backoff, and the join that succeeds reports a
+`resync`.
+
 **Gap recovery:** When Realtime reconnects after a disconnect:
 1. Fetch the messages created after the last known message, by its id (`since=`; the API
    contract is [chat § Reconnect replay](../../behavior/chat/README.md#reconnect-replay))

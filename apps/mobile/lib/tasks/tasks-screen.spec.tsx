@@ -148,6 +148,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 // Suggested tasks' entry has its own spec
 // (`components/tasks/suggested-tasks-entry.spec.tsx`).
+// The detail sheet's checklist writes through its own client hooks, which
+// have their own spec (`task-detail-sheet.spec.tsx`).
+vi.mock("@/components/tasks/subtask-checklist", () => ({
+  SubtaskChecklist: () => null,
+}));
+
 vi.mock("@/components/tasks/suggested-tasks-entry", () => ({
   SuggestedTasksEntry: () => null,
 }));
@@ -579,6 +585,25 @@ describe("Tasks as a pushed screen (#4610)", () => {
     expect(sheet).toBeDefined();
     act(() => sheet!.props.onCreated("Sam Lee", false));
     expect(screenText(tree)).toContain("Assigned to Sam Lee.");
+    act(() => tree.unmount());
+  });
+
+  it("keeps an edit's draft past this screen, by task (#4872)", () => {
+    permissions = ["tasks:manage", "members:view"];
+    const tree = render();
+    const row = rows(tree).find(
+      (node) =>
+        node.props.row.assigneeId &&
+        node.props.row.dueDay &&
+        !node.props.row.pointsAwarded,
+    )!;
+    act(() => row.props.onOpen());
+    act(() => tree.root.findByType(TaskDetailSheet).props.onEdit());
+    const edit = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "NewTaskSheet" && !!node.props.editing,
+    );
+    expect(edit.props.keptDraft).toBe(`task-edit:${row.props.row.id}`);
     act(() => tree.unmount());
   });
 

@@ -364,6 +364,9 @@ export function TaskCard({
           ref={editRef}
           now={now}
           editing={editing}
+          // Kept past a close and this screen (#4872): Edit on the same task
+          // again opens on what was typed, over the task as it is now.
+          keptDraft={`task-edit:${editing.id}`}
           onClosed={() => setEditing(null)}
         />
       ) : null}

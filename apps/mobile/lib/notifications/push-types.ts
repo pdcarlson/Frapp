@@ -23,6 +23,13 @@
  * the raw APNs/FCM one.
  */
 
+/** `setNotificationCategoryAsync`'s action input, narrowed to what we set. */
+export interface PushCategoryAction {
+  identifier: string;
+  buttonTitle: string;
+  options: { opensAppToForeground: boolean; isDestructive?: boolean };
+}
+
 /** `PermissionResponse` from `expo-modules-core`, narrowed to what we read. */
 export interface PushPermissionStatus {
   granted: boolean;
@@ -135,6 +142,14 @@ export interface NotificationsModule {
   /** What is still in the tray, local and remote alike. */
   getPresentedNotificationsAsync(): Promise<PresentedNotification[]>;
   setNotificationHandler(handler: unknown): void;
+  /**
+   * Registers a category's action buttons (#4686). Local, needs no
+   * `projectId`; the push names the category in its `categoryId`.
+   */
+  setNotificationCategoryAsync(
+    identifier: string,
+    actions: PushCategoryAction[],
+  ): Promise<unknown>;
   /** Local, like the badge itself — never requires the EAS `projectId`. */
   setBadgeCountAsync(count: number): Promise<boolean>;
 }

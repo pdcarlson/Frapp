@@ -252,6 +252,54 @@ export function useKeptFormDraft<T>(
   );
 }
 
+/**
+ * An edit's kept draft laid over the record as it is now (#4872): only the
+ * fields the member changed from `base` (the record as the form opened on it)
+ * come from `kept`, the rest from `now`, so a draft kept past its form never
+ * sends back a field someone else has changed since. Web's event editor and
+ * the phone's Edit event and Edit task sheets share it.
+ *
+ * Fields in one `together` group move as one: an end time the member moved
+ * comes back with the start it was moved against, never over a start someone
+ * else moved since, which would make a range nobody chose. Changed means
+ * changed in value, so an object whose keys were set and set back in another
+ * order isn't an edit.
+ */
+export function keepEditsOver<T extends object>(
+  kept: T,
+  base: T,
+  now: T,
+  keys: readonly (keyof T)[],
+  together: readonly (readonly (keyof T)[])[] = [],
+): T {
+  const edited = (key: keyof T) =>
+    stableSignature(kept[key]) !== stableSignature(base[key]);
+  const merged = { ...now };
+  for (const key of keys) {
+    const group = together.find((fields) => fields.includes(key)) ?? [key];
+    if (group.some(edited)) merged[key] = kept[key];
+  }
+  return merged;
+}
+
+/** A value's JSON with object keys sorted, so key order isn't a difference. */
+function stableSignature(value: unknown): string {
+  return safeSignature(sortKeys(value));
+}
+
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value === null || typeof value !== "object" || value instanceof Date) {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.keys(record)
+      .sort()
+      .map((key) => [key, sortKeys(record[key])]),
+  );
+}
+
 function safeSignature(value: unknown): string {
   try {
     return JSON.stringify(value) ?? "";
