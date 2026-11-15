@@ -63,6 +63,15 @@ Every surface names a task's state with the same words, from `TASK_STATUS_LABELS
 
 On mobile's task board only the row's checkbox changes a task; a tap elsewhere on the row opens the task's detail sheet (description, due date, points, who assigned it). Completing offers Undo for a few seconds, and the checkbox unchecks while the completion is unconfirmed, or was signed off as it was marked done (§ Assignee Actions). Web's board offers Undo on the "Marked done" toast and Mark not done on the assignee's own waiting tile; confirmed tasks leave the Waiting on an officer column for a Confirmed list under the board, newest first, the latest few shown with the rest behind Show all. Mobile's board, being personal, keeps a waiting row until it is confirmed and a confirmed row for a week after confirmation.
 
+## Views
+
+(#4295 step 5, Paul, 2026-11-11: "My tasks grouped as Today, This week and Later; an officer board grouped by person or group, with filters". This step asked by Shawn, 2026-11-15.)
+
+- **My tasks** groups the viewer's own open tasks by due day: **Today** (overdue first, then what is due today), **This week** (the six days after today, a rolling seven days rather than the calendar week, the window Activity's To do gives a heading each), and **Later**. A finished task waiting on an officer follows them under **Waiting on an officer**; confirmed tasks keep their own list. The rule is `taskDueBucket` and `myTasksGroup` in `packages/hooks/src/task-views.ts`, shared by both apps. A tile under My tasks says "In progress" or "Waiting on an officer", since no status column says it.
+- **Web**: a member's page is My tasks. An officer (`tasks:manage`) switches between **My tasks** and **All tasks**, opening on All tasks, the chapter's board as it was. All tasks groups **By status** (the four columns) or **By person** (one group per member with an unconfirmed task, by name), and filters by **Assignee**, **Status** (To do, In progress, Waiting on an officer, Overdue, Confirmed) and **Due** (Overdue, Due today, Due this week, Due later), each listing only values some task has; **Clear filters** clears all three, and a board nothing matches says so. A Status filter on the status board keeps that column alone. The switch, grouping and filters last the page's life and aren't remembered.
+- **Mobile** is My tasks only; its grouping follows in its own change.
+- Grouping **by group** waits on step 3 of #4295 (who can be a group).
+
 ## Admin Confirmation
 
 - When a task is marked COMPLETED, its creator is notified (same "notify the creator, not every `tasks:manage` holder" rule the OVERDUE notification below uses) — unless the creator is the one who marked it complete, in which case there is nothing to tell them.
