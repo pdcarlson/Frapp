@@ -177,6 +177,9 @@ export function deepLinkFor(notification: Notification): string {
         : "/tasks";
     case "service":
       return "/service";
+    // The weekly recap push (#4985): Activity, where the "Last week" card is.
+    case "activity":
+      return "/activity";
     case "profile":
       return "/profile";
     // "Alex Smith joined" (`invite.service.ts`). It used to fall through to

@@ -11,6 +11,11 @@ import { ActivityController } from '../../interface/controllers/activity.control
 import { ChatReminderController } from '../../interface/controllers/chat-reminder.controller';
 import { ChatReminderService } from '../../application/services/chat-reminder.service';
 import { ChatReminderSweepService } from '../../application/workers/chat-reminder-sweep.service';
+import { ActivityRecapPushService } from '../../application/workers/activity-recap-push.service';
+import { SupabaseActivityRecapPushRepository } from '../../infrastructure/supabase/repositories/supabase-activity-recap-push.repository';
+import { ACTIVITY_RECAP_PUSH_REPOSITORY } from '#domain/repositories/activity-recap-push.repository.interface';
+import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import { SupabaseChatMessageReminderRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-reminder.repository';
 import { CHAT_MESSAGE_REMINDER_REPOSITORY } from '#domain/repositories/chat-message-reminder.repository.interface';
 import { NotificationModule } from '../notification/notification.module';
@@ -72,6 +77,14 @@ import { TaskModule } from '../task/task.module';
     ActivityStandingService,
     // Last week's recap (`GET /v1/activity/recap`, #4983).
     ActivityRecapService,
+    // And its weekly push (#4985): the hourly sweep, its once-a-week claims,
+    // and the chapter list it walks.
+    ActivityRecapPushService,
+    {
+      provide: ACTIVITY_RECAP_PUSH_REPOSITORY,
+      useClass: SupabaseActivityRecapPushRepository,
+    },
+    { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
     // Links on Activity (#3897): this module is the table's only reader. The
     // database's triggers on `chat_messages` write its rows; the title sweep
     // below writes only their page titles.

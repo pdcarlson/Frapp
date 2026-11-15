@@ -35,6 +35,10 @@ describe("resolveNotificationTarget", () => {
     expect(resolveNotificationTarget(payload({ screen: "members" }))).toEqual({
       pathname: "/directory",
     });
+    // The weekly recap push (#4985).
+    expect(resolveNotificationTarget(payload({ screen: "activity" }))).toEqual({
+      pathname: "/activity",
+    });
   });
 
   it("opens the suggested tasks list for a new batch (#4313)", () => {
