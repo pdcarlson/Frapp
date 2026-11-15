@@ -46,6 +46,7 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote } from "@/components/shared/inline-note";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { SectionLabel } from "@/components/shared/section-label";
 import { anyReadUncached } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
@@ -435,9 +436,9 @@ export function TasksBoard() {
   /*
    * `currentUser` is in this gate because the board deliberately has no early
    * return for it: the Confirm gate below fails closed on an unresolved
-   * viewer, so an uncached `/v1/users/me` hides Confirm on *every* row with no
-   * notice saying why (the cost that comment names, tracked as #1346).
-   * Offline that read may be paused rather than errored (`anyReadUncached`
+   * viewer, so an uncached `/v1/users/me` hides Confirm on *every* row. Online,
+   * a failed read says so above the board (#1346); offline that read may be
+   * paused rather than errored (`anyReadUncached`
    * has the two cases), and nothing else would catch a paused one.
    * `membersQuery` is here for the same reason its assignee labels need it.
    */
@@ -494,6 +495,16 @@ export function TasksBoard() {
   }
 
   const myUserId = (currentUser.data as { id?: string } | undefined)?.id ?? "";
+  // Two reads the board renders without, so neither blanks it (#1346, #1209).
+  // Each says so instead, above a board that keeps working. Your account
+  // matters only to an officer, since it is what Confirm waits on; the roster
+  // only to a viewer who may read it (`GET /v1/members` needs `members:view`),
+  // since a refusal there is not a failure a retry can clear.
+  const viewerUnreadable = canManage && currentUser.isError && myUserId === "";
+  const rosterUnreadable =
+    can("members:view", permissionsPayload?.permissions) &&
+    membersQuery.isError &&
+    membersQuery.data === undefined;
 
   return (
     // A container (#4022): beside chat (#3779) the page is narrow while the
@@ -508,6 +519,23 @@ export function TasksBoard() {
         read-only.
       */}
       <SubscriptionNotice gate={gate} feature="managing tasks" />
+      <StaleReadNotice
+        stale={viewerUnreadable || rosterUnreadable}
+        message={[
+          viewerUnreadable
+            ? "We couldn't confirm your account, so Confirm is hidden on every task until it loads."
+            : null,
+          rosterUnreadable
+            ? "We couldn't load member names, so tasks show a short id in place of who they're assigned to."
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onRetry={() => {
+          if (viewerUnreadable) void currentUser.refetch();
+          if (rosterUnreadable) void membersQuery.refetch();
+        }}
+      />
 
       {canManage ? <SuggestedTasks headingId="tasks-suggested" /> : null}
 
@@ -727,12 +755,11 @@ function TaskCard({
   // Confirm back on your own task — the flip-and-revert this gate exists to
   // stop. Treat an unknown viewer as "might be me".
   //
-  // Note the cost, which is deliberate but not free: the board has no early
-  // return for `currentUser`, so if `GET /v1/users/me` fails terminally,
-  // Confirm stays hidden on *every* row with no notice saying why, and an
-  // officer may read it as a revoked grant. Hiding a control the server would
-  // accept is the safer failure than offering one it will refuse, but the
-  // missing explanation is tracked in #1346.
+  // The cost: the board has no early return for `currentUser`, so if
+  // `GET /v1/users/me` fails terminally, Confirm stays hidden on *every* row.
+  // Hiding a control the server would accept is the safer failure than
+  // offering one it will refuse, and the board says why above the columns
+  // (#1346), so an officer doesn't read it as a revoked grant.
   const { toast } = useToast();
   const viewerUnknown = myUserId === "";
   const isMine = !viewerUnknown && task.assignee_id === myUserId;

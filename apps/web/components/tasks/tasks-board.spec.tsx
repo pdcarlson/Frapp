@@ -31,7 +31,17 @@ const {
   updateTaskMutate,
   updateStatusMutate,
   rejectTaskMutate,
+  currentUserFailed,
+  membersFailed,
+  currentUserRefetch,
+  membersRefetch,
 } = vi.hoisted(() => ({
+  // `GET /v1/users/me` and `GET /v1/members` failed with nothing cached
+  // (#1346, #1209).
+  currentUserFailed: { current: false },
+  membersFailed: { current: false },
+  currentUserRefetch: vi.fn(),
+  membersRefetch: vi.fn(),
   // The lifecycle writes Mark done and Send back make (#4635).
   updateStatusMutate: vi.fn(),
   rejectTaskMutate: vi.fn(),
@@ -135,7 +145,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isError: false,
     refetch: vi.fn(),
   }),
-  useMembers: () => ({ data: MEMBERS }),
+  useMembers: () => ({
+    data: membersFailed.current ? undefined : MEMBERS,
+    isError: membersFailed.current,
+    refetch: membersRefetch,
+  }),
   useAiSuggestions: (options?: { enabled?: boolean }) => ({
     data: suggestionsPending.current ? undefined : { items: [] },
     isPending: suggestionsPending.current && (options?.enabled ?? true),
@@ -161,7 +175,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     eventsEnabled.push(options?.enabled ?? true);
     return { data: options?.enabled ? eventsRef.current : undefined };
   },
-  useCurrentUser: () => ({ data: currentUserRef.current }),
+  useCurrentUser: () => ({
+    data: currentUserFailed.current ? undefined : currentUserRef.current,
+    isError: currentUserFailed.current,
+    refetch: currentUserRefetch,
+  }),
   // The List / Grid pick is kept under the viewer's id (`lib/list-layout.ts`).
   useViewerUserId: () => "viewer-1",
   useCreateTask: () => ({ mutateAsync: createTaskMutate, isPending: false }),
@@ -249,7 +267,24 @@ beforeEach(() => {
   eventsRef.current = [];
   eventsEnabled.length = 0;
   eventsModuleOn.current = true;
+  currentUserFailed.current = false;
+  membersFailed.current = false;
+  currentUserRefetch.mockClear();
+  membersRefetch.mockClear();
 });
+
+/**
+ * The one status line with something in it. The board also mounts an empty
+ * `StaleReadNotice` live region (#1346, #1209), which stays in the tree
+ * while every read is current so its line is announced when it appears.
+ */
+function liveStatus(): HTMLElement | null {
+  return (
+    screen
+      .queryAllByRole("status")
+      .find((el) => (el.textContent ?? "").trim() !== "") ?? null
+  );
+}
 
 describe("TasksBoard suggested tasks (#4313)", () => {
   it("puts the Suggested list above the columns for an officer, and nowhere for a member", () => {
@@ -346,7 +381,7 @@ describe("TasksBoard subscription gating", () => {
     expect(confirmButton()).toBeEnabled();
     expect(sendBackButton()).toBeEnabled();
     for (const button of deleteButtons()) expect(button).toBeEnabled();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(liveStatus()).not.toBeInTheDocument();
   });
 
   it("hides Confirm on your own completed task but keeps Send back (#1056)", () => {
@@ -420,6 +455,61 @@ describe("TasksBoard subscription gating", () => {
     expect(screen.queryByText(/can't confirm your own task/i)).toBeNull();
   });
 
+  it("says why Confirm is gone when your account can't be read, and retries it (#1346)", async () => {
+    // Fails closed still: no Confirm on any row, even someone else's. What
+    // changed is that the board now says so, so an officer doesn't read the
+    // missing control as a revoked grant.
+    chapter.active();
+    currentUserFailed.current = true;
+    tasksRef.current = [TASKS[2]];
+    render(<TasksBoard />);
+
+    expect(
+      screen.queryByRole("button", { name: /^confirm$/i }),
+    ).not.toBeInTheDocument();
+    expect(liveStatus()).toHaveTextContent(
+      /couldn't confirm your account, so Confirm is hidden/i,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(currentUserRefetch).toHaveBeenCalledOnce();
+    expect(membersRefetch).not.toHaveBeenCalled();
+  });
+
+  it("says nothing about Confirm to a member who never has it", () => {
+    chapter.active();
+    permissionsRef.current = [];
+    currentUserFailed.current = true;
+    tasksRef.current = [{ ...TASKS[0] }];
+    render(<TasksBoard />);
+
+    expect(screen.queryByText(/couldn't confirm your account/i)).toBeNull();
+  });
+
+  it("keeps the board and says so when member names can't load (#1209)", async () => {
+    chapter.active();
+    permissionsRef.current = ["tasks:manage", "members:view"];
+    membersFailed.current = true;
+    tasksRef.current = [TASKS[2]];
+    render(<TasksBoard />);
+
+    // The rows still render, named by the fallback.
+    expect(screen.getByText("Book the philanthropy venue")).toBeInTheDocument();
+    expect(liveStatus()).toHaveTextContent(/couldn't load member names/i);
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(membersRefetch).toHaveBeenCalledOnce();
+  });
+
+  it("does not offer a retry for a roster the viewer may not read", () => {
+    // `GET /v1/members` needs `members:view`; a refusal is not a failure a
+    // retry clears.
+    chapter.active();
+    membersFailed.current = true;
+    tasksRef.current = [TASKS[2]];
+    render(<TasksBoard />);
+
+    expect(screen.queryByText(/couldn't load member names/i)).toBeNull();
+  });
+
   it("still offers Confirm on someone else's completed task", () => {
     // The gate keys on the assignee, not on "is an admin looking" — the
     // ordinary two-party path must stay open.
@@ -436,16 +526,12 @@ describe("TasksBoard subscription gating", () => {
 
     // §5 rule 1: gate the trigger, never the submit.
     expect(trigger()).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      /subscription is not active/i,
-    );
+    expect(liveStatus()).toHaveTextContent(/subscription is not active/i);
     // §5 rule 2: name the next action, not just the blocker.
     expect(
       screen.getByRole("link", { name: /complete checkout/i }),
     ).toHaveAttribute("href", "/settings?tab=billing");
-    expect(screen.getByRole("status")).toHaveTextContent(
-      /to restore managing tasks/i,
-    );
+    expect(liveStatus()).toHaveTextContent(/to restore managing tasks/i);
 
     // §5 rule 4: disabled, not hidden — the board is still readable.
     expect(screen.getByText(/sweep the chapter room/i)).toBeInTheDocument();
@@ -492,7 +578,7 @@ describe("TasksBoard subscription gating", () => {
     expect(startButton()).toBeDisabled();
     // Scoped to the notice: an overdue tile's due line ("Overdue by …") sits
     // on the same board, and matching board text would pass with no gate.
-    expect(screen.getByRole("status")).toHaveTextContent(/past due/i);
+    expect(liveStatus()).toHaveTextContent(/past due/i);
   });
 
   it("points a canceled chapter at the portal rather than checkout", () => {
@@ -500,7 +586,7 @@ describe("TasksBoard subscription gating", () => {
     render(<TasksBoard />);
 
     expect(trigger()).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent(/read-only/i);
+    expect(liveStatus()).toHaveTextContent(/read-only/i);
     expect(
       screen.getByRole("link", { name: /billing portal/i }),
     ).toBeInTheDocument();
@@ -559,7 +645,7 @@ describe("TasksBoard subscription gating", () => {
     expect(startButton()).toBeEnabled();
     expect(confirmButton()).toBeEnabled();
     for (const button of deleteButtons()) expect(button).toBeEnabled();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(liveStatus()).not.toBeInTheDocument();
   });
 
   it("keeps a task's own busy condition folded into the gate", () => {

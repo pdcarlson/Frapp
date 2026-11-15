@@ -18,6 +18,7 @@ import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useServiceReview } from "@/components/service/use-service-review";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { InlineNote } from "@/components/shared/inline-note";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { SectionLabel } from "@/components/shared/section-label";
 import { denseListClassName } from "@/components/shared/table-controls";
 import {
@@ -159,6 +160,14 @@ export function ServiceHoursPage() {
   // read to them; an approver's (or an unread role's) is everyone's, so it
   // stays withheld. Withdraw is off either way: it deletes by id.
   const permissionsKnown = permissionsPayload !== undefined;
+  // The roster only names rows; the rows come from the entries read. So a
+  // failed roster is said above a page that keeps working rather than
+  // replacing it (#1209). Only for a viewer who may read it (`GET /v1/members`
+  // needs `members:view`): a refusal is not a failure a retry clears.
+  const rosterUnreadable =
+    can("members:view", permissionsPayload?.permissions ?? []) &&
+    membersQuery.isError &&
+    membersQuery.data === undefined;
   const pinnedFallback = viewerUnknown && permissionsKnown && !canApprove;
   // Every state, newest first by service date, then by when it was logged.
   // Still filtered to the viewer: that filter is what keeps Withdraw, which
@@ -309,6 +318,11 @@ export function ServiceHoursPage() {
         stop, and this says why.
       */}
       <SubscriptionNotice gate={gate} feature="logging service hours" />
+      <StaleReadNotice
+        stale={rosterUnreadable}
+        message="We couldn't load member names, so entries show a short id in place of who logged them."
+        onRetry={() => void membersQuery.refetch()}
+      />
 
       {/*
         Yours first (#4669): your hours and your log, then the chapter's

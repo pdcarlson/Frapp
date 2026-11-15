@@ -1388,7 +1388,11 @@ Both render through `apps/web/components/shared/crest-page.tsx`.
 | State | Code | Title | Description | Actions |
 |---|---|---|---|---|
 | Route not found (`app/not-found.tsx`) | `404` | `Nothing lives here.` | `The link is old, or points at a chapter you're not in.` | `Back to chat` (primary, `/chat`) · `Go back` |
-| Route error (`app/error.tsx`) | `500` | `Something broke on our side.` | `The error has been reported. Retrying usually clears it.` | `Retry` (primary) · `Back to chat` |
+| Route error (`app/error.tsx`) | `500` | `Something broke on our side.` | `The error has been reported. Retrying usually clears it.` | `Retry` |
+| Route error, stale chunk (`ChunkLoadError`) | `500` | `Something broke on our side.` | `This usually means a new version shipped while the tab was open. Reload to pick it up.` | `Reload` |
+| Route error, stale chunk, **offline** | `500` | `Something broke on our side.` | `You're offline, so this page couldn't load. Retry once you're back.` | `Retry` |
+
+The error page has one action, never a `Back to chat` beside it (corrected 2026-11-15; the row named one, the page never drew it): `app/error.tsx`'s docstring says why. Its stale-chunk rows follow the degraded segment's below ([#2200](https://github.com/frapplive/Frapp/issues/2200)): this boundary still catches the pre-auth routes and anything thrown by the dashboard layout, and offline keeps `Retry` because a reload with no link would replace a working session with the browser's offline page.
 
 Three things about these rows, none of them free choices:
 

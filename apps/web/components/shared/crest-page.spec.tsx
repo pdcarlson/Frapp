@@ -13,6 +13,21 @@ const { back, push, captureException } = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ back, push }) }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
+// The error page reads the browser link to choose its remedy (#2200).
+const { network } = vi.hoisted(() => ({ network: { linkOnline: true } }));
+vi.mock("@/lib/providers/network-provider", () => ({
+  useNetwork: () => network,
+}));
+
+// A stale chunk's remedy replaces the document; jsdom's real
+// `location.reload` throws "not implemented", so stand in for it, as
+// `segment-error.spec.tsx` does.
+const reload = vi.fn();
+Object.defineProperty(window, "location", {
+  value: { ...window.location, reload },
+  writable: true,
+});
+
 import sharedConfig from "@repo/theme/tailwind";
 import tailwindConfig from "@/tailwind.config";
 import NotFound from "@/app/not-found";
@@ -231,6 +246,49 @@ describe("the error page", () => {
     render(<RouteError error={new Error("x")} retry={retry} />);
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retry).toHaveBeenCalledOnce();
+  });
+
+  function chunkLoadError() {
+    const error = new Error("Failed to load chunk static/chunks/x.js");
+    error.name = "ChunkLoadError";
+    return error;
+  }
+
+  it("offers Reload for a stale chunk, and reloads the document (#2200)", async () => {
+    // `React.lazy` memoises the rejection for the life of the document, so
+    // Retry would re-render into the same failure.
+    network.linkOnline = true;
+    reload.mockClear();
+    const retry = vi.fn();
+    render(<RouteError error={chunkLoadError()} retry={retry} />);
+    expect(
+      screen.getByText(
+        "This usually means a new version shipped while the tab was open. Reload to pick it up.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Reload" }));
+    expect(reload).toHaveBeenCalledOnce();
+    expect(retry).not.toHaveBeenCalled();
+  });
+
+  it("keeps Retry for a stale chunk while offline, since a reload would lose the tab", async () => {
+    network.linkOnline = false;
+    reload.mockClear();
+    const retry = vi.fn();
+    try {
+      render(<RouteError error={chunkLoadError()} retry={retry} />);
+      expect(
+        screen.getByText(
+          "You're offline, so this page couldn't load. Retry once you're back.",
+        ),
+      ).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+      expect(retry).toHaveBeenCalledOnce();
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      network.linkOnline = true;
+    }
   });
 
   it("completes writing.md §3's three parts", () => {

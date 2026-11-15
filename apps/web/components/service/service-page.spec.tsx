@@ -92,6 +92,8 @@ const OFFICER = [
   "billing:manage",
 ];
 const permissionsList = vi.hoisted(() => ({ current: [] as string[] }));
+// `GET /v1/members` failed with nothing cached (#1209).
+const roster = vi.hoisted(() => ({ failed: false, refetch: vi.fn() }));
 // `GET /v1/service-entries/points-rate`, or undefined while unread/failed.
 const pointsRate = vi.hoisted(() => ({
   current: undefined as { minutes_per_point: number } | undefined,
@@ -148,7 +150,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
           refetch: vi.fn(),
         };
   },
-  useMembers: () => ({ data: [] }),
+  useMembers: () => ({
+    data: roster.failed ? undefined : [],
+    isError: roster.failed,
+    refetch: roster.refetch,
+  }),
   useCreateServiceEntry: () => ({ mutateAsync: mockCreateEntry }),
   useReviewServiceEntry: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteServiceEntry: () => ({ mutateAsync: vi.fn() }),
@@ -178,6 +184,8 @@ vi.mock("@/components/shared/can", () => ({
 }));
 
 beforeEach(() => {
+  roster.failed = false;
+  roster.refetch.mockClear();
   permissionsList.current = [...OFFICER];
   leaderboardState.current = { isPending: false, isError: false };
   semestersError.current = false;
@@ -210,6 +218,19 @@ const expectNoWithdraw = () =>
 const viewProofButton = () =>
   screen.getByRole("button", { name: /view proof/i });
 
+/**
+ * The one status line with something in it. The board also mounts an empty
+ * `StaleReadNotice` live region (#1346, #1209), which stays in the tree
+ * while every read is current so its line is announced when it appears.
+ */
+function liveStatus(): HTMLElement | null {
+  return (
+    screen
+      .queryAllByRole("status")
+      .find((el) => (el.textContent ?? "").trim() !== "") ?? null
+  );
+}
+
 describe("ServiceHoursPage first load", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -224,9 +245,7 @@ describe("ServiceHoursPage first load", () => {
   it("draws the page's own flush skeleton, not a card", () => {
     const { container } = render(<ServiceHoursPage />);
 
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Loading service hours",
-    );
+    expect(liveStatus()).toHaveTextContent("Loading service hours");
     expect(container.querySelector(".bg-card")).toBeNull();
   });
 });
@@ -265,6 +284,33 @@ describe("ServiceHoursPage with nothing logged", () => {
   });
 });
 
+describe("ServiceHoursPage when member names can't load (#1209)", () => {
+  beforeEach(() => {
+    mockFrappUser.mockReturnValue({ userId: "admin-9", isLoading: false });
+  });
+
+  it("keeps the queue and says the names are missing, with a retry", async () => {
+    chapter.active();
+    roster.failed = true;
+    render(<ServiceHoursPage />);
+
+    // The queue still renders from its own read.
+    expect(screen.getByText("Soup kitchen shift")).toBeInTheDocument();
+    expect(liveStatus()).toHaveTextContent(/couldn't load member names/i);
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(roster.refetch).toHaveBeenCalledOnce();
+  });
+
+  it("says nothing to a viewer who may not read the roster", () => {
+    chapter.active();
+    roster.failed = true;
+    permissionsList.current = ["service:log"];
+    render(<ServiceHoursPage />);
+
+    expect(screen.queryByText(/couldn't load member names/i)).toBeNull();
+  });
+});
+
 describe("ServiceHoursPage subscription gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -284,7 +330,7 @@ describe("ServiceHoursPage subscription gating", () => {
     // submitter, and `admin-9` did not submit `PENDING_ENTRY`. Its gating is
     // asserted in the submitter context below.
     expectNoWithdraw();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(liveStatus()).not.toBeInTheDocument();
   });
 
   it("disables the log trigger and names blocker plus recovery when incomplete", async () => {
@@ -387,7 +433,7 @@ describe("ServiceHoursPage subscription gating", () => {
     expect(logTrigger()).toBeEnabled();
     expect(approveButton()).toBeEnabled();
     expectNoWithdraw();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(liveStatus()).not.toBeInTheDocument();
   });
 
   it("gates the dialog submit as well as the trigger", async () => {
