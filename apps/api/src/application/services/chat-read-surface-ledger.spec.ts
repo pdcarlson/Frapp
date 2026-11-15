@@ -688,8 +688,9 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
   },
   // Absence excuses (#3735): the receiver's push quotes the reason the
   // member wrote for them, and the decision and reminder name the event.
+  // A declined excuse sent again (#5115) pushes the same reason again.
   'application/services/event-excuse.service.ts': {
-    calls: 5,
+    calls: 6,
     entries: [MEMBER_TEXT],
   },
   // Two hand a written row to the announcement emitters; the third (#4620)
