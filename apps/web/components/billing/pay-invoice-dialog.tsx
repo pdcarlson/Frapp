@@ -36,7 +36,14 @@ export type PayableInvoice = {
  * `payment_intent.payment_failed` webhook recorded it on the invoice, #3460),
  * or still unconfirmed when the poll gave up.
  */
-type Outcome = AwaitInvoicePaidResult | null;
+type Outcome = (AwaitInvoicePaidResult & { since: number }) | null;
+
+/**
+ * How often an open dialog re-reads an unconfirmed payment once the poll has
+ * given up, so a processing payment that fails later still ends "Payment
+ * received" in front of the member (#3460).
+ */
+const PENDING_REREAD_MS = 10_000;
 
 /**
  * The confirm step. Lives inside <Elements> because `useStripe`/`useElements`
@@ -61,6 +68,9 @@ function PayInvoiceForm({
 
     setSubmitting(true);
     setError(null);
+    // This try's own moment: a decline from an earlier try in this form is
+    // still recorded on the invoice and must not read as this one's outcome.
+    const since = Date.now();
 
     // `redirect: "if_required"` keeps 3-D Secure in a Stripe-owned modal
     // instead of navigating away, so the member stays on the billing page and
@@ -85,9 +95,12 @@ function PayInvoiceForm({
       // and a processing payment can still fail, which its webhook records on
       // the invoice (#3460) — so ask the server rather than assuming.
       try {
-        onOutcome(await awaitPaid.mutateAsync(invoice.id));
+        onOutcome({
+          ...(await awaitPaid.mutateAsync({ invoiceId: invoice.id, since })),
+          since,
+        });
       } catch {
-        onOutcome({ outcome: "pending" });
+        onOutcome({ outcome: "pending", since });
       }
       return;
     }
@@ -133,6 +146,8 @@ export function PayInvoiceDialog({
   const payInvoice = usePayInvoice();
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<Outcome>(null);
+  const reread = useAwaitInvoicePaid({ attempts: 1 });
+  const { mutateAsync: rereadOnce } = reread;
 
   const invoiceId = invoice?.id ?? null;
   const { mutate: createIntent, reset: resetIntent } = payInvoice;
@@ -163,6 +178,29 @@ export function PayInvoiceDialog({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- new PaymentIntent per open/invoice; a leftover secret would charge the previous invoice
     startAttempt(invoiceId);
   }, [open, invoiceId, stripePromise, startAttempt]);
+
+  // While the dialog says "Payment received", keep asking: PAID settles it,
+  // and a recorded failure newer than the submit ends it with "didn't go
+  // through".
+  const pendingSince = outcome?.outcome === "pending" ? outcome.since : null;
+  useEffect(() => {
+    if (!open || !invoiceId || pendingSince === null) return;
+    let stopped = false;
+    const timer = setInterval(() => {
+      void rereadOnce({ invoiceId, since: pendingSince })
+        .then((next) => {
+          if (stopped || next.outcome === "pending") return;
+          setOutcome({ ...next, since: pendingSince });
+        })
+        .catch(() => {
+          // A failed read says nothing about the payment; the next tick asks again.
+        });
+    }, PENDING_REREAD_MS);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [open, invoiceId, pendingSince, rereadOnce]);
 
   if (!invoice || !stripePromise) return null;
 

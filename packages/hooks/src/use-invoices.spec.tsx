@@ -271,6 +271,43 @@ describe("useAwaitInvoicePaid", () => {
       queryKey: INVOICES_QUERY_KEY,
     });
   });
+  it("doesn't read an earlier decline in the same attempt as this payment's outcome (#3460)", async () => {
+    // First card declined at 17:00:05, second card submitted at 17:00:30 and
+    // succeeded: the succeeded webhook hasn't landed, the decline is still on
+    // the row.
+    const mockGet = vi.fn().mockResolvedValue({
+      data: {
+        id: "inv-1",
+        status: "OPEN",
+        last_payment_failed_at: "2026-11-15T17:00:05.000Z",
+        last_payment_failure_reason: "Your card was declined.",
+      },
+      error: null,
+    });
+
+    const { result } = renderHook(
+      () => useAwaitInvoicePaid({ attempts: 2, intervalMs: 0 }),
+      {
+        wrapper: makeWrapper(
+          queryClient,
+          { GET: mockGet },
+          "UseAwaitPaidEarlierDeclineTestWrapper",
+        ),
+      },
+    );
+
+    result.current.mutate({
+      invoiceId: "inv-1",
+      since: Date.parse("2026-11-15T17:00:30.000Z"),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data).toEqual({ outcome: "pending" });
+  });
+
   it("ends with failed once the server records the attempt failed (#3460)", async () => {
     const mockGet = vi
       .fn()

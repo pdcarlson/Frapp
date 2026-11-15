@@ -11,6 +11,11 @@ export interface CapturedPayment {
    * cached from before the attempt may still carry the previous attempt's.
    */
   capturedAt: number;
+  /**
+   * Set once a list read showed the payment failed after the capture (#3460):
+   * the hold has ended, and the failure line stands until the visit ends.
+   */
+  failure?: { reason: string | null };
 }
 
 /**

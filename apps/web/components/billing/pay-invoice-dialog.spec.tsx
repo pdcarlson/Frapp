@@ -137,7 +137,10 @@ describe("PayInvoiceDialog", () => {
       expect(await screen.findByRole("alert")).toHaveTextContent(
         "Your payment didn't go through: Your bank declined the debit. You can try again.",
       );
-      expect(awaitPaidMock.mutateAsync).toHaveBeenCalledWith("inv-1");
+      expect(awaitPaidMock.mutateAsync).toHaveBeenCalledWith({
+        invoiceId: "inv-1",
+        since: expect.any(Number),
+      });
     });
 
     it("starts a new attempt on Try again, so the old failure can't answer the next poll", async () => {
@@ -149,6 +152,27 @@ describe("PayInvoiceDialog", () => {
 
       await waitFor(() => expect(payInvoiceMock.mutate).toHaveBeenCalledTimes(2));
       expect(await screen.findByTestId("payment-element")).toBeInTheDocument();
+    });
+
+    it("keeps re-reading while it says pending, and ends on a later failure", async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        confirmPayment.mockResolvedValue({ paymentIntent: { status: "processing" } });
+        awaitPaidMock.mutateAsync
+          .mockResolvedValueOnce({ outcome: "pending" })
+          .mockResolvedValueOnce({ outcome: "failed", reason: null });
+
+        await submit();
+        expect(await screen.findByRole("status")).toHaveTextContent("Payment received.");
+
+        await vi.advanceTimersByTimeAsync(10_000);
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(
+          "Your payment didn't go through. You can try again.",
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("says confirmation is pending when the poll runs out", async () => {

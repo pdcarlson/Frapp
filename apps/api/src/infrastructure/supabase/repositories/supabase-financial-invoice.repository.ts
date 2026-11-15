@@ -158,12 +158,21 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .eq('status', 'OPEN')
       .eq('stripe_payment_intent_id', paymentIntentId)
       // A row from before #3460 has no attempt stamp; its failure still counts.
+      // Stripe's `created` is whole seconds, so `failedAt` is rounded down:
+      // compare against the end of that second, or a failure in the same
+      // second as the stamp would be dropped.
       .or(
-        `last_payment_attempt_at.is.null,last_payment_attempt_at.lte."${failedAt}"`,
+        `last_payment_attempt_at.is.null,last_payment_attempt_at.lte."${endOfSecond(failedAt)}"`,
       )
       .select()
       .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
     return data;
   }
+}
+
+/** The last millisecond of the second `iso` falls in. */
+function endOfSecond(iso: string): string {
+  const ms = Date.parse(iso);
+  return new Date(Math.floor(ms / 1000) * 1000 + 999).toISOString();
 }

@@ -882,6 +882,7 @@ The personal page has a rail of links, one address per section (`?section=`, the
 The decision listed blocked members under the account; they sit in the chapter group because `GET /v1/chat/blocks` is the active chapter's list.
 Only the open section mounts, and each carries its own offline, loading and error states, so the page has no page-scale ladder.
 My invoices sits in the chapter group since billing moved into Chapter settings ([#3827](https://github.com/pdcarlson/Frapp/issues/3827)): the member's own invoices with Pay on each open one, hidden while dues is beta-off.
+Pay opens the pay dialog. After a card or bank payment is submitted it re-reads the invoice ([`billing.md`](../../behavior/billing.md) § Member payment flow): `Payment complete. This invoice is now marked paid.` once the server says PAID; `Payment received. Your chapter's records update as soon as the confirmation lands, usually within a minute.` while it hasn't, re-reading every 10s while the dialog stays open; and `Your payment didn't go through: <Stripe's reason>. You can try again.` (or without the reason) once the server records a failure newer than that submit (#3460), with `Try again`, which starts a new attempt rather than reusing the last one.
 
 ### Billing
 
