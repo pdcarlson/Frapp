@@ -388,8 +388,11 @@ export function SheetPrimaryButton({
  * Which visit of a sheet is on screen. Any sheet whose save can settle after
  * the member closed it uses it, and so does one that something outside it can
  * dismiss whether or not it is up (the message menu, when its message is
- * deleted: #3795); search for the hook to find them. Sheets that still dismiss
- * unguarded after a write are tracked in #3405.
+ * deleted: #3795); search for the hook to find them, rather than a list here
+ * that would drift. A sheet that closes only on the member's own press
+ * (Settings → Blocked members, whose unblock leaves it open) needs only
+ * `useSheetClose`. #3405 moved the last unguarded ones (Chapter accent, the
+ * member sheet's Remove and Message) onto it.
  *
  * Wire `onAnimate` and call `markClosed` first thing in the modal's
  * `onDismiss`. Then:
