@@ -52,9 +52,15 @@ const waitedSyncs = new InFlightLookups<{ id: string }>();
  * trip that took about 750 ms when an app open's burst filled PostgREST's
  * pool (2026-11-12).
  *
+ * On a route with no such guard, a session the process has synced before
+ * and that has not changed takes its id from the row lookup
+ * `SupabaseAuthGuard` ran alongside the session check
+ * (`request.appUserLookup`, #3583), and is then treated the same way.
+ *
  * Two cases still wait:
- * - A route with no such guard, because the sync is what finds (or, on first
- *   sign-in, creates) the row.
+ * - A route with no such guard, for a session this process has not synced
+ *   yet or whose row lookup found nothing or failed, because the sync is what
+ *   finds (or, on first sign-in, creates) the row.
  * - A session whose email or metadata changed since the process last synced
  *   it, such as the Apple name that reaches the Auth metadata after the row
  *   was created as "Member", so the handler reads the row as it now is.
@@ -82,13 +88,24 @@ export class AuthSyncInterceptor implements NestInterceptor {
       const email = supabaseUser.email ?? '';
       const metadata = supabaseUser.user_metadata;
       const signature = signatureOf(email, metadata);
-      const resolved = request.appUser?.id;
       const known = synced.get(authId);
       const changed = known !== undefined && known.signature !== signature;
+      // Without a guard's row, a session this process has already synced and
+      // that has not changed since takes its id from the lookup
+      // `SupabaseAuthGuard` started alongside the session check (#3583),
+      // rather than waiting on a sync that would read the same row after it.
+      // A session never synced here still waits: its row may be missing, or
+      // hold an email or name the handler should not read stale.
+      const resolved =
+        request.appUser?.id ??
+        (known !== undefined && !changed && request.appUserLookup
+          ? ((await request.appUserLookup()) ?? undefined)
+          : undefined);
 
       let id: string;
       if (resolved && !changed) {
         id = resolved;
+        request.appUser ??= { id };
         this.syncInBackground(authId, email, metadata, signature);
       } else {
         ({ id } = await waitedSyncs.run(`${authId}:${signature}`, () =>

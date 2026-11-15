@@ -350,6 +350,39 @@ export function prefetchChapterContext(
 function ignorePrefetchFailure(): void {}
 
 /**
+ * For a route that has `AuthSyncInterceptor` and no `ChapterGuard` (#3583),
+ * such as `GET /v1/users/me`: starts the caller's `users` row lookup while
+ * `SupabaseAuthGuard` waits on `auth.getUser`, as `prefetchChapterContext`
+ * does for a chapter route. Before it, such a route read that row only after
+ * the session check, in the interceptor's waited sync, one more round trip in
+ * a row. Decides nothing: `readAppUserId` picks it up under the id `getUser`
+ * returned.
+ */
+export function prefetchAppUser(
+  supabase: FrappSupabaseClient,
+  supabaseAuthId: string,
+): void {
+  if (!requestReadsActive()) return;
+  lookupAppUser(supabase, supabaseAuthId).catch(ignorePrefetchFailure);
+}
+
+/**
+ * The `users` row id for `supabaseAuthId`, sharing `prefetchAppUser`'s read
+ * within the request, or `null` when there is no row or the read failed. Never
+ * rejects: its one caller (`AuthSyncInterceptor`) falls back to its waited
+ * sync on `null`, which reads or creates the row itself.
+ */
+export function readAppUserId(
+  supabase: FrappSupabaseClient,
+  supabaseAuthId: string,
+): Promise<string | null> {
+  return lookupAppUser(supabase, supabaseAuthId).then(
+    ({ data, error }) => (error ? null : (data?.id ?? null)),
+    () => null,
+  );
+}
+
+/**
  * Reads the active chapter the caller named, per
  * spec/behavior/multi-tenancy.md:
  *

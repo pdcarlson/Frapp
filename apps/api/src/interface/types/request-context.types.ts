@@ -42,6 +42,15 @@ export interface RequestContext extends Request {
    */
   throttlerVerifiedClaims?: JwtPayload;
   appUser?: AppUserContext;
+  /**
+   * Set by `SupabaseAuthGuard`, once the session check has passed, on a route
+   * with `AuthSyncInterceptor` and no `ChapterGuard` (#3583): reads the
+   * caller's `users` row id for the `getUser` user, sharing the lookup the
+   * guard started while that check was in flight. `null` for no row or a
+   * failed read. Lazy, so a request that ends up waiting on its sync anyway
+   * makes no extra read.
+   */
+  appUserLookup?: () => Promise<string | null>;
   member?: MemberContext;
   chapterId?: string;
   subscriptionStatus?: SubscriptionStatus;

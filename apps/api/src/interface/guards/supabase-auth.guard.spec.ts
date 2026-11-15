@@ -9,10 +9,14 @@ import {
   AuthSessionMissingError,
   AuthUnknownError,
 } from '@supabase/supabase-js';
-import { GUARDS_METADATA } from '@nestjs/common/constants';
+import {
+  GUARDS_METADATA,
+  INTERCEPTORS_METADATA,
+} from '@nestjs/common/constants';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseAuthGuard } from './supabase-auth.guard';
 import { ChapterGuard } from './chapter.guard';
+import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { runWithRequestReads } from '../../infrastructure/supabase/request-reads';
 import { AuthRejectedException } from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -418,6 +422,205 @@ describe('SupabaseAuthGuard', () => {
       });
       expect(ctx.switchToHttp().getRequest().supabaseUser).toBeUndefined();
       expect(ctx.switchToHttp().getRequest().jwtClaims).toBeUndefined();
+    });
+  });
+
+  describe('the users row lookup overlaps the session check on a sync route (#3583)', () => {
+    /** A route whose interceptor resolves the row, as `GET /v1/users/me`'s does. */
+    class SyncedController {}
+    Reflect.defineMetadata(
+      GUARDS_METADATA,
+      [SupabaseAuthGuard],
+      SyncedController,
+    );
+    Reflect.defineMetadata(
+      INTERCEPTORS_METADATA,
+      [AuthSyncInterceptor],
+      SyncedController,
+    );
+
+    /** A chapter route that also syncs, as `GET /v1/users/me/permissions` is. */
+    class SyncedChapterController {}
+    Reflect.defineMetadata(
+      GUARDS_METADATA,
+      [SupabaseAuthGuard, ChapterGuard],
+      SyncedChapterController,
+    );
+    Reflect.defineMetadata(
+      INTERCEPTORS_METADATA,
+      [AuthSyncInterceptor],
+      SyncedChapterController,
+    );
+
+    // A fresh sub per case: the users lookup is shared across requests for
+    // `IN_FLIGHT_JOIN_WINDOW_MS`.
+    let sub: string;
+    let caseNo = 0;
+    /** `supabase_auth_id` of every users read, in order. */
+    let usersReads: string[];
+    let usersAnswer: () => Promise<unknown>;
+    beforeEach(() => {
+      caseNo += 1;
+      sub = `auth-sync-${caseNo}`;
+      usersReads = [];
+      usersAnswer = () =>
+        Promise.resolve({ data: { id: 'row-1' }, error: null });
+      mockFrom.mockImplementation((table: string) => {
+        const chain: Record<string, unknown> = {};
+        chain.select = () => chain;
+        chain.eq = (column: string, value: string) => {
+          if (table === 'users' && column === 'supabase_auth_id') {
+            usersReads.push(value);
+          }
+          return chain;
+        };
+        chain.maybeSingle = () => usersAnswer();
+        return chain;
+      });
+    });
+
+    const pendingSession = () => {
+      let release!: (value: unknown) => void;
+      mockGetUser.mockReturnValue(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+      return (user: { id: string } | null) =>
+        release(
+          user
+            ? { data: { user }, error: null }
+            : { data: { user: null }, error: new Error('session revoked') },
+        );
+    };
+
+    const contextWith = (
+      verified: object | undefined,
+      controller: new () => unknown,
+    ) => {
+      const ctx = mockExecutionContext(
+        { authorization: 'Bearer valid-token' },
+        controller,
+      );
+      const request = ctx.switchToHttp().getRequest<Record<string, unknown>>();
+      request.throttlerVerifiedClaims = verified;
+      return ctx;
+    };
+    const lookupOf = (ctx: ExecutionContext) =>
+      ctx.switchToHttp().getRequest<{
+        appUserLookup?: () => Promise<string | null>;
+      }>().appUserLookup;
+
+    const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+    it('starts it before getUser answers, and the lookup reuses it', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith({ sub }, SyncedController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(usersReads).toEqual([sub]);
+        expect(lookupOf(ctx)).toBeUndefined();
+
+        answer({ id: sub });
+        await expect(verdict).resolves.toBe(true);
+        await expect(lookupOf(ctx)!()).resolves.toBe('row-1');
+      });
+      expect(usersReads).toEqual([sub]);
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('reads under the user getUser returned, never the prefetched sub', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith({ sub }, SyncedController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        answer({ id: `${sub}-other` });
+        await verdict;
+        await lookupOf(ctx)!();
+      });
+      expect(usersReads).toEqual([sub, `${sub}-other`]);
+    });
+
+    it('still refuses a revoked session whose lookup already started, and leaves no lookup', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith({ sub }, SyncedController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(usersReads).toEqual([sub]);
+        answer(null);
+        await expect(verdict).rejects.toThrow(UnauthorizedException);
+      });
+      expect(lookupOf(ctx)).toBeUndefined();
+      expect(ctx.switchToHttp().getRequest().supabaseUser).toBeUndefined();
+    });
+
+    it('answers null for a failed or empty read, so the interceptor syncs', async () => {
+      for (const answerWith of [
+        { data: null, error: { code: '57014', message: 'timeout' } },
+        { data: null, error: null },
+      ]) {
+        usersAnswer = () => Promise.resolve(answerWith);
+        mockGetUser.mockResolvedValue({
+          data: { user: { id: sub } },
+          error: null,
+        });
+        const ctx = contextWith({ sub }, SyncedController);
+        await runWithRequestReads('GET', async () => {
+          await guard.canActivate(ctx);
+          await expect(lookupOf(ctx)!()).resolves.toBeNull();
+        });
+        caseNo += 1;
+        sub = `auth-sync-${caseNo}`;
+      }
+    });
+
+    it('leaves a chapter route to ChapterGuard', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith(
+        { sub, active_chapter_id: '33333333-3333-4333-8333-333333333333' },
+        SyncedChapterController,
+      );
+      mockRpc.mockReturnValue(new Promise(() => undefined));
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        answer({ id: sub });
+        await verdict;
+      });
+      expect(mockRpc).toHaveBeenCalled();
+      expect(lookupOf(ctx)).toBeUndefined();
+    });
+
+    it('starts nothing on a route without the interceptor', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith({ sub }, AuthOnlyController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        answer({ id: sub });
+        await verdict;
+      });
+      expect(usersReads).toEqual([]);
+      expect(lookupOf(ctx)).toBeUndefined();
+    });
+
+    it('sets no lookup outside a request store', async () => {
+      mockGetUser.mockResolvedValue({
+        data: { user: { id: sub } },
+        error: null,
+      });
+      const ctx = contextWith({ sub }, SyncedController);
+      await guard.canActivate(ctx);
+      expect(usersReads).toEqual([]);
+      expect(lookupOf(ctx)).toBeUndefined();
     });
   });
 
