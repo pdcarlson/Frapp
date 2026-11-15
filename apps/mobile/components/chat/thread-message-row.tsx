@@ -1,4 +1,5 @@
 import { messageFlagView } from "@repo/chat-core/flags";
+import { readRolePickerPayload } from "@repo/chat-core/role-pickers";
 import { useMemo, type ReactNode } from "react";
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ClosableCardKind } from "@repo/chat-core/chat-client";
@@ -41,6 +42,7 @@ import { PollCard } from "./poll-card";
 import { ReplyQuote } from "./reply-quote";
 import { RushCard } from "./rush-card";
 import { SignupCard } from "./signup-card";
+import { RolePickerCard } from "./role-picker-card";
 import { FormCard } from "./form-card";
 import { SystemAuditLine } from "./system-audit-card";
 import { TaskCard } from "./task-card";
@@ -436,6 +438,11 @@ function cardFor(
     case "hours": {
       const payload = readHoursPayload(message);
       return payload ? <HoursCard {...frame} payload={payload} /> : null;
+    }
+    case "role_picker": {
+      // An officer's Join / Leave list (#4958); unreadable, it is its title.
+      const payload = readRolePickerPayload(message);
+      return payload ? <RolePickerCard {...frame} payload={payload} /> : null;
     }
     case "rush": {
       const payload = readRushPayload(message);

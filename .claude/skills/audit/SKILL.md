@@ -213,10 +213,11 @@ npm run configure:branch-protection:verify
 Bare `npm run configure:branch-protection` is a live `PUT` of the whole protection payload (it
 prints `Mode: LIVE`). `npm run configure:branch-protection --dry-run` without the `--` separator
 also applies, because npm swallows the flag and the script sees no arguments. Applying branch
-protection is a human step with an admin PAT; an audit never applies.
+protection is a human step with a person's own admin token; an audit never applies.
 
-The script reads `GITHUB_PAT` (aliases `GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`); see
-[`github-branch-protection-runbook.md`](../../../docs/ops/github-branch-protection-runbook.md).
+In a session, `:verify` reads through the agent proxy (the npm script passes `--use-env-proxy`),
+since sessions carry no GitHub token of their own; on a laptop it reads `GITHUB_PAT` or an alias
+([`github-branch-protection-runbook.md`](../../../docs/ops/github-branch-protection-runbook.md)).
 `:verify` exits non-zero and names each divergence from `CI_CHECKS` / `DOCS_CHECKS` /
 `DRIFT_CHECKS` in `scripts/ci/lib/required-checks.mjs`, which is the comparand. The human-readable
 roster is the runbook's § Required Status Checks.

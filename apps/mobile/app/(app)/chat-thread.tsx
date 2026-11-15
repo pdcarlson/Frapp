@@ -366,6 +366,7 @@ function ChannelThreadScreen() {
     sendInFlight,
     sendPoll,
     sendSignup,
+    sendRolePicker,
     sendForm,
     sendGif,
     postTask,
@@ -1593,6 +1594,7 @@ function ChannelThreadScreen() {
     channel: {
       sendPoll,
       sendSignup,
+      sendRolePicker,
       sendForm,
       postTask,
       postHours,

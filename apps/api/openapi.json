@@ -21404,7 +21404,8 @@
               "system_audit",
               "announcement",
               "signup",
-              "form"
+              "form",
+              "role_picker"
             ],
             "description": "A `chat_messages.kind`. `imported` and `loading` are absent by design — the first is refused by the push worker before any preference is read, and the second is an internal optimistic placeholder rather than a category of message a member receives."
           },
@@ -21461,7 +21462,8 @@
               "announcement",
               "signup",
               "form",
-              "ask_answer"
+              "ask_answer",
+              "role_picker"
             ],
             "description": "The kind whose override was cleared. Wider than the settable set on purpose — see the DELETE route."
           },
@@ -21892,7 +21894,8 @@
               "announcement",
               "signup",
               "form",
-              "ask_answer"
+              "ask_answer",
+              "role_picker"
             ],
             "nullable": true,
             "description": "Null on rows written before the column existed; read as 'text'."
@@ -22161,7 +22164,8 @@
               "announcement",
               "signup",
               "form",
-              "ask_answer"
+              "ask_answer",
+              "role_picker"
             ]
           },
           "gif": {
@@ -22314,7 +22318,8 @@
               "announcement",
               "signup",
               "form",
-              "ask_answer"
+              "ask_answer",
+              "role_picker"
             ],
             "nullable": true,
             "description": "Null on rows written before the column existed; read as 'text'."

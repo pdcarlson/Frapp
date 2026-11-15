@@ -263,6 +263,10 @@ import {
   pollDraftFromArgs,
   type PollDraft,
 } from "@repo/chat-core/poll-draft";
+import {
+  emptyRolePickerDraft,
+  type RolePickerDraft,
+} from "./role-picker-draft";
 import { emptySignupDraft, type SignupDraft } from "@repo/chat-core/signups";
 import { eventQuickDraftFrom, type EventQuickDraft } from "./event-quick-draft";
 import {
@@ -274,6 +278,7 @@ import {
   PointsAdjustmentForm,
   PollForm,
   preloadChatPanels,
+  RolePickerForm,
   SignupForm,
   TaskForm,
   ThreadPanel,
@@ -1759,6 +1764,28 @@ export function ChatShell({
                 if (result.ok && result.warning) {
                   toast({
                     title: "Sign-up sheet posted",
+                    description: result.warning,
+                  });
+                }
+                return result;
+              }}
+            />
+          );
+        case "roles":
+          return (
+            <RolePickerForm
+              key={key}
+              {...kept}
+              initialDraft={
+                plusDrafts.get<RolePickerDraft>(channelId, "roles") ??
+                emptyRolePickerDraft()
+              }
+              onDiscard={discard}
+              onPost={async (picker) => {
+                const result = await channel.sendRolePicker(channelId, picker);
+                if (result.ok && result.warning) {
+                  toast({
+                    title: "Role picker posted",
                     description: result.warning,
                   });
                 }

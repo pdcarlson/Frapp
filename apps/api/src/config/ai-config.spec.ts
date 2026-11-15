@@ -1,5 +1,6 @@
 import { PRODUCTION_SUPABASE_PROJECT_REF } from '@repo/validation';
 import {
+  askAgentEnabled,
   aiProviderMode,
   googleVertexSettings,
   isAiEnabled,
@@ -137,5 +138,40 @@ describe('validateAiEnv, Google', () => {
         GOOGLE_VERTEX_CREDENTIALS_JSON: SERVICE_ACCOUNT,
       }),
     ).toEqual([]);
+  });
+});
+
+describe('askAgentEnabled', () => {
+  const staging = 'https://hnoyzpidbmizhbqaiity.supabase.co';
+  const production = `https://${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`;
+
+  it('is on outside production with nothing set', () => {
+    expect(askAgentEnabled({ SUPABASE_URL: staging })).toBe(true);
+    expect(askAgentEnabled({ SUPABASE_URL: 'http://127.0.0.1:54321' })).toBe(
+      true,
+    );
+  });
+
+  it('is off on production with nothing set', () => {
+    expect(askAgentEnabled({ SUPABASE_URL: production })).toBe(false);
+  });
+
+  it('is off with no database named, as in a unit test', () => {
+    expect(askAgentEnabled({})).toBe(false);
+  });
+
+  it('follows an explicit on or off anywhere', () => {
+    expect(askAgentEnabled({ SUPABASE_URL: production, ASK_AGENT: 'on' })).toBe(
+      true,
+    );
+    expect(askAgentEnabled({ SUPABASE_URL: staging, ASK_AGENT: 'off' })).toBe(
+      false,
+    );
+  });
+
+  it('reads any other value as unset', () => {
+    expect(
+      askAgentEnabled({ SUPABASE_URL: production, ASK_AGENT: 'true' }),
+    ).toBe(false);
   });
 });

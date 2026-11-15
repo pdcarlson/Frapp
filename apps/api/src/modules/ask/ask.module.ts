@@ -102,7 +102,7 @@ import { TaskModule } from '../task/task.module';
       useFactory: (...tools: AskTool[]) => tools,
       inject: [...ASK_TOOL_CLASSES],
     },
-    // The tool loop (epic #4898), off unless `ASK_AGENT=on`. What it may
+    // The tool loop (epic #4898), on outside production (`askAgentEnabled`). What it may
     // read is these two lists and nothing else, in the order a model is
     // shown them: conversations and records, then people, tasks, events and
     // standing. `AskService` offers a member only the ones they may use.

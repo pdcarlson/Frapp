@@ -245,6 +245,8 @@ describe("plusMenuForms", () => {
       { command: "task", roleAllows: false },
       { command: "hours", roleAllows: true },
       { command: "points", roleAllows: false },
+      // A role picker needs `roles:manage`, which the send route checks (#4958).
+      { command: "roles", roleAllows: false },
     ]);
   });
 

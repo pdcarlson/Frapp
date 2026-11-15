@@ -15,63 +15,60 @@ When relevant credentials exist in the environment, prefer gathering **runtime t
 
 ## Optional environment credentials
 
-Provider/research credentials and cloud-sandbox runtime vars that may appear in cloud agent / automation sessions are listed canonically in [`../internal/environment/AGENT_CREDENTIALS.md`](../internal/environment/AGENT_CREDENTIALS.md) (including the canonical-name/alias discussion). Local development omits most of them; use Infisical login for app secrets instead. The GitHub PAT usage policy below stays here.
+Provider/research credentials and cloud-sandbox runtime vars that may appear in cloud agent / automation sessions are listed canonically in [`../internal/environment/AGENT_CREDENTIALS.md`](../internal/environment/AGENT_CREDENTIALS.md) (including the canonical-name/alias discussion). Local development omits most of them; use Infisical login for app secrets instead. The GitHub access policy below stays here.
 
-## GitHub PAT usage policy
+## GitHub access policy
 
-The agent **may** use `GITHUB_PAT` for: creating/closing agent-owned PRs, labels, issues, the branch protection script in read-only mode — from an agent session that means `npm run configure:branch-protection:verify`, that exact command and nothing else (**Branch protection script** below names the two spellings that silently *apply* instead) — reading GitHub environments/protection rules, reading PR/CI/branch state. *Applying* branch protection or environment protection rules is a human step with an admin PAT — by policy, not for lack of capability; the canonical statement is in [`../ops/github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md).
+**Sessions carry no GitHub token of their own (2026-11-15).** The hosted-session `GITHUB_PAT` was
+deleted from the Claude Code environment when the repository moved to `frapplive/Frapp`, and
+nothing a session does needs it back. A session reaches GitHub three ways, all through the agent
+proxy's own credential:
 
-The agent **must not** use it to: merge without explicit approval, delete branches without approval, broaden repo settings — branch protection and environment protection rules included, since applying those is a human step (see above) — create/modify GitHub Secrets, force-push, or create releases/tags outside the automated release workflow.
+- **The GitHub MCP** (`mcp__github__*`) for issues, PRs, comments, labels, CI runs and job logs. It
+  is the only sanctioned write path.
+- **`gh api` reads** for settings the MCP has no tool for. Measured 2026-11-15:
+  `branches/main/protection`, `rulesets` and `rules/branches/main` return 200;
+  `environments`, `environments/production` and `vulnerability-alerts` return the proxy's 403.
+- **`npm run configure:branch-protection:verify`**, which runs node with `--use-env-proxy` so it
+  takes the same proxy route and exits 0 or names the drift (below).
 
-Which variable holds the PAT, and exporting it as `GH_TOKEN` for `gh`/git: [`AGENTS.md` § Credentials and secrets](../../AGENTS.md#credentials-and-secrets). How the branch-protection script reads it: [`github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md). Work tracking itself, including why the GitHub MCP and not the PAT is the tracker path in a cloud sandbox: [`github-pm.md`](github-pm.md).
+Where a read is refused, judge the setting by its behaviour instead of reading it: a production
+deploy that waits for approval shows the environment's required reviewers; a PR whose checks run on
+a `gh-readonly-queue/main/...` ref shows the merge queue is on; `pull_request_read` shows which
+checks a PR is waiting on. When only the setting itself will do, ask Paul to read it.
+
+A session **must not**: merge without explicit approval, delete branches without approval, broaden
+repo settings (branch protection, rulesets and environment protection rules included), create or
+modify GitHub Secrets, force-push, or create releases or tags outside the automated release
+workflow. *Applying* branch protection is a human step with the person's own admin token, by
+policy; the canonical statement is in
+[`../ops/github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md).
+Work tracking itself: [`github-pm.md`](github-pm.md).
+
+`RELEASE_GITHUB_TOKEN` is unrelated: it is a user token held as a secret of the `automation`
+environment for the release workflow's tag ([§ No repository secrets](#no-repository-secrets-2518)),
+never a session credential.
 
 ### The `api.github.com` route rule
 
-**Measured 2026-09-02.** Reachability of `api.github.com` from a
-cloud sandbox is **route-dependent**: the direct route works, and what the proxy route passes
-varies by session and path (corrected 2026-09-22, below). This file used to say
-"session-dependent (observed both proxy-blocked and working, 2026-08-08)"; that framing missed the
-route. Measured on one host, with one `GITHUB_PAT`, inside one minute:
+**Rewritten 2026-11-15, when sessions stopped carrying a PAT.** From a cloud sandbox there are two
+routes to `api.github.com`:
 
-- A request that honours `HTTPS_PROXY` (measured with `curl`; `gh` reads the same proxy env and is
-  expected to behave identically, not separately measured) reaches the agent proxy's
-  GitHub-credential layer, which answers **403** `{"message":"GitHub access is not enabled for this
-  session"}` on **every repo-scoped path**, whatever `Authorization` header is attached. `GET /user`
-  through that same proxy returns **200** — the proxy allows non-repo paths.
-- The same call sent direct — `curl --noproxy '*'`, or node's built-in `fetch`, which does **not**
-  read `HTTPS_PROXY` (documented in `/root/.ccr/README.md`) — returns **200 from GitHub itself**,
-  carrying `server: github.com` and `x-github-request-id`.
+- **The proxy route.** Anything that honours `HTTPS_PROXY` (`gh`, plain `curl`, node with
+  `--use-env-proxy` or `NODE_USE_ENV_PROXY=1`). The agent proxy substitutes its own credential
+  for whatever `Authorization` header is sent, and what it lets through varies by path and has
+  varied by session (2026-09-02 it refused every repo path; 2026-09-22 it passed `/rulesets` but
+  not `/environments`; 2026-11-15, the list above). A 403 with no `server: github.com` header is
+  the proxy's path policy; a 403 with GitHub's headers is GitHub refusing the proxy's credential.
+  **Neither says anything about the repository's settings or about any token you hold.**
+- **The direct route.** node's built-in `fetch` without the proxy switch, or `curl --noproxy '*'`.
+  It reaches GitHub, but the `GITHUB_TOKEN` and `GH_TOKEN` a session sees are the proxy's
+  placeholders, so GitHub answers **401 "Bad credentials"**. That 401 is about the route, not the
+  repo: rerun on the proxy route.
 
-**Corrected 2026-09-22:** "every repo-scoped path" held for that session, not in general, and not
-every proxy-route 403 is the proxy's. Through the proxy in a later session:
-
-- `/repos/{r}`, `/rulesets` and `/issues/1` returned **200** from GitHub.
-- `/environments` returned the proxy's own **403**, with no GitHub headers:
-  `{"message":"Access to this GitHub API path is not permitted through this proxy."}`.
-- `/branches/main/protection` returned **GitHub's** 403 (`server: github.com`,
-  `x-accepted-github-permissions: administration=read`, `"Resource not accessible by
-  integration"`). The proxy substitutes its own integration credential, which lacks
-  `administration:read`, whatever `Authorization` header you send.
-
-Sent direct with `GITHUB_PAT`, `/environments` and `/branches/main/protection` both returned 200.
-
-So which paths pass the proxy route varies by session and path, and a 403 there comes either from
-the proxy's path policy or from GitHub rejecting the proxy's credential. **Neither says anything
-about the PAT**: don't treat a proxy-route result, 200 or 403, as evidence about permissions.
-Direct egress is bounded only by the environment network allowlist, which carries `api.github.com`.
-Two rules follow: never regenerate the PAT with broader scopes to chase a proxy-route 403 — the
-token was never what failed — and never set `NODE_USE_ENV_PROXY=1` for these scripts, which would
-push node onto the proxy route.
-
-What this does **not** change: the GitHub MCP stays the sanctioned **write** path for issues, PRs
-and comments, and tracker workflows still go through it. Direct REST is a **read** channel for
-ground truth the MCP exposes no tool for — branch protection, environments, rulesets, repo security
-toggles — not a write fallback and not an MCP replacement. `npm run
-configure:branch-protection:verify` — that exact script name, and nothing else, from an agent
-session — exits 0 from this sandbox over that route. *Applying* branch protection remains a human
-step with an admin PAT **by policy**, not because it is unreachable; the bare `npm run
-configure:branch-protection` **applies**, so read **Branch protection script** under the CI/CD
-summary before running anything from this family.
+Until 2026-11-15 the direct route carried `GITHUB_PAT` and was the one to use for settings reads;
+the measurements behind that rule are in ADR-20's amendment of 2026-09-02, (b), and its 2026-09-22
+correction.
 
 
 ## CI/CD summary
@@ -108,7 +105,7 @@ summary before running anything from this family.
 | Dev log             | `.github/workflows/dev-log.yml` — `issues: labeled` (`in-progress`), `push` to `main`, a daily schedule, and `workflow_run` on Deploy production: posts to the team's Dev log channel in Frapp through `POST /v1/integrations/dev-log` ([`chat/integrations.md` § The team's Dev log channel](../../spec/behavior/chat/integrations.md#the-teams-dev-log-channel)). It follows Deploy production from outside, so a post can't fail or gate a ship. `scripts/ci/dev-log.mjs` owns what is posted and skipped |
 | What's new fold     | `.github/workflows/release-notes-fold.yml` — `push` to `main` touching `packages/validation/release-notes/**` or the notes file, plus `workflow_dispatch`: keeps one bot PR (`bot/whats-new`) that folds the waiting What's new lines into `RELEASE_NOTES`, turns on its squash auto-merge, and closes it when none are left. `automation` environment, base-sync App token. The flow: [`packages/validation/release-notes/README.md`](../../packages/validation/release-notes/README.md). **Not** a required check |
 | PR CI branch filter | `ci.yml` / `docs.yml` / `links.yml` set `on.pull_request.branches: [main]`. GitHub matches that list against the PR **base**. A PR whose base is anything else skips every required check. See [`pr-babysitting.md` → CI branch filters](pr-babysitting.md#ci-branch-filters-never-target-a-feature-branch). |
-| Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`) — **that bare form is a LIVE apply and a human step**; from an agent session run only `npm run configure:branch-protection:verify`. See **Branch protection script** below and `CONTRIBUTING.md`. |
+| Branch protection   | `npm run configure:branch-protection` (a human's own admin token, `GITHUB_PAT` or an alias) — **that bare form is a LIVE apply and a human step**; from an agent session run only `npm run configure:branch-protection:verify`. See **Branch protection script** below and `CONTRIBUTING.md`. |
 | AI code review      | **Repository-managed Git pre-push gate**, not CI — [`.githooks/pre-push`](../../.githooks/pre-push) is installed through the root `prepare` script for agents and humans. A push of unreviewed work is blocked until `.cache/diff-review/<SHA>` exists (a clean merge of `main` needs none) — `/diff-review` writes the marker; `/code-review` adds coverage but replaces nothing: it is only conditionally model-invocable and does not write the marker (the `claude-review.yml` CI workflow was removed 2026-06-04; the advisory `codex-review.yml` was removed 2026-09-21). See `ai-code-review-runbook.md` |
 | Dependency updates  | `.github/dependabot.yml` opens the PRs. **Not** a required check (it opens PRs, it doesn't gate them). Schedule, grouping and the ignore list: [`dependency-updates.md`](dependency-updates.md). |
 | Vercel              | Both projects are unlinked from Git (**`frapp-landing` 2026-09-01, `frapp-web` 2026-09-02**), so no push deploys anything. Every deployment is built on a runner and uploaded: staging by `deploy-staging.yml` after green CI on `main`, production by `deploy-production.yml` from a dispatched SHA. From the unlink until #1578 (2026-09-04) staging web and landing stayed frozen at their last Git builds: landing `2bf143b` (2026-09-01T20:19Z), web `0372c6d` (2026-09-02T02:41:42Z). See the note directly below. Its team and project ids live in `.github/environments.json`, and no workflow or action names one ([§ Environment identity](../../spec/environments/README.md#environment-identity), #2806). |
@@ -153,7 +150,7 @@ summary before running anything from this family.
 # Agent session: this one, and nothing else. Read-only; exits non-zero on drift.
 npm run configure:branch-protection:verify
 
-# Human step, admin PAT, on a laptop. The `--` separator is load-bearing.
+# Human step, own admin token, on a laptop. The `--` separator is load-bearing.
 npm run configure:branch-protection -- --dry-run
 npm run configure:branch-protection            # LIVE — PUTs the whole protection payload
 ```
@@ -164,7 +161,7 @@ the bare `npm run configure:branch-protection`: with no flags the script prints 
 configure:branch-protection --dry-run` has the flag swallowed by npm itself (reproduced on npm
 10.9.7), so the script sees zero arguments, `hasFlag` is false for both `--dry-run` and `--verify`,
 `assertKnownArgs` has nothing to reject, and it **applies**. Applying branch protection is a human
-step with an admin PAT — by policy (canonical statement:
+step with an admin token — by policy (canonical statement:
 [`../ops/github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md)) — and
 the two footguns above are why that policy is not merely etiquette.
 
@@ -507,7 +504,7 @@ Two consequences for callers:
 
 ## PR babysitting: wake signals and CI-failure triage
 
-Wake coverage, CI-failure triage, CI branch filters, the CI-wake watchdog, and base-branch sync live in [`pr-babysitting.md`](pr-babysitting.md). Cite that file and a heading, never `§N`. This file keeps PAT policy, environments, TypeScript 7, scheduled conformance, the CI summary table, and the agent dev stack.
+Wake coverage, CI-failure triage, CI branch filters, the CI-wake watchdog, and base-branch sync live in [`pr-babysitting.md`](pr-babysitting.md). Cite that file and a heading, never `§N`. This file keeps GitHub access policy, environments, TypeScript 7, scheduled conformance, the CI summary table, and the agent dev stack.
 
 ## Deploy visibility (`scripts/ci/deploy-alert.mjs`)
 
@@ -942,7 +939,7 @@ carries and why:
   reason to restore dead allow-lines.
 - Deliberately **excluded from the project allows**: `merge_pull_request`, `enable_pr_auto_merge`,
   `push_files`, `create_or_update_file`, `delete_file` — merging and direct repo-content writes
-  are not repo-sanctioned, per the PAT policy above. **Know the limit of that exclusion:** on
+  are not repo-sanctioned, per the GitHub access policy above. **Know the limit of that exclusion:** on
   cloud sandboxes the harness's own `--allowed-tools` carries the `mcp__github__*` wildcard
   (agent-observed, 2026-08-08), which by its shape covers these five tools too — so on that
   surface the human merge gate is **policy, not an enforced prompt**. No one has verified whether

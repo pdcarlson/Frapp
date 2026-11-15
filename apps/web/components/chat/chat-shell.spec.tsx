@@ -1647,6 +1647,7 @@ vi.mock("./message-timeline", async () => {
 vi.mock("./deferred-panels", async () => ({
   PollForm: (await import("./poll-form")).PollForm,
   SignupForm: (await import("./signup-form")).SignupForm,
+  RolePickerForm: (await import("./role-picker-form")).RolePickerForm,
   FormBuilder: (await import("./form-builder")).FormBuilder,
   EventQuickForm: (await import("./event-quick-form")).EventQuickForm,
   TaskForm: (await import("@/components/tasks/task-form")).TaskForm,
@@ -6464,16 +6465,16 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
 
   it("maps polls:create and the event grants", () => {
     expect(formsFor({ data: { permissions: ["polls:create"] } })).toBe(
-      "poll:true,signup:true,form:true,event:false,task:false,hours:false,points:false",
+      "poll:true,signup:true,form:true,event:false,task:false,hours:false,points:false,roles:false",
     );
     expect(
       formsFor({ data: { permissions: ["events:create", "members:view"] } }),
     ).toBe(
-      "poll:false,signup:true,form:true,event:true,task:false,hours:false,points:false",
+      "poll:false,signup:true,form:true,event:true,task:false,hours:false,points:false,roles:false",
     );
     // Both event grants, not `events:create` alone: the form needs the roster.
     expect(formsFor({ data: { permissions: ["events:create"] } })).toBe(
-      "poll:false,signup:true,form:true,event:false,task:false,hours:false,points:false",
+      "poll:false,signup:true,form:true,event:false,task:false,hours:false,points:false,roles:false",
     );
   });
 
@@ -6490,7 +6491,7 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
         },
       }),
     ).toBe(
-      "poll:false,signup:true,form:true,event:false,task:true,hours:true,points:true",
+      "poll:false,signup:true,form:true,event:false,task:true,hours:true,points:true,roles:false",
     );
     // Without `members:view` the task and points forms can't list anyone;
     // logging your own hours needs no roster.
@@ -6499,20 +6500,26 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
         data: { permissions: ["tasks:manage", "service:log", "points:adjust"] },
       }),
     ).toBe(
-      "poll:false,signup:true,form:true,event:false,task:false,hours:true,points:false",
+      "poll:false,signup:true,form:true,event:false,task:false,hours:true,points:false,roles:false",
+    );
+  });
+
+  it("maps roles:manage to the Role picker (#4958)", () => {
+    expect(formsFor({ data: { permissions: ["roles:manage"] } })).toBe(
+      "poll:false,signup:true,form:true,event:false,task:false,hours:false,points:false,roles:true",
     );
   });
 
   it("blames nothing on the role while permissions load, and says when they couldn't be read", () => {
     expect(formsFor({ data: undefined })).toBe(
-      "poll:loading,signup:true,form:true,event:loading,task:loading,hours:loading,points:loading",
+      "poll:loading,signup:true,form:true,event:loading,task:loading,hours:loading,points:loading,roles:loading",
     );
     expect(formsFor({ data: undefined, isError: true })).toBe(
-      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown",
+      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown,roles:unknown",
     );
     // Paused offline before it ever landed: it can't answer either.
     expect(formsFor({ data: undefined, fetchStatus: "paused" })).toBe(
-      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown",
+      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown,roles:unknown",
     );
   });
 });

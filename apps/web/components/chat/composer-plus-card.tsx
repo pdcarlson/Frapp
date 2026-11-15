@@ -31,6 +31,7 @@ import {
   PlusGlyph,
   PointsGlyph,
   PollsGlyph,
+  RolesGlyph,
   ServiceGlyph,
   SignupGlyph,
   FormGlyph,
@@ -65,6 +66,7 @@ const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<ChatGlyphProps>> = {
   task: TasksGlyph,
   hours: ServiceGlyph,
   points: PointsGlyph,
+  roles: RolesGlyph,
 };
 
 /** The form's title in the card's header. */
@@ -76,6 +78,7 @@ const PLUS_FORM_TITLE: Record<PlusMenuCommand, string> = {
   task: "New task",
   hours: "Log service hours",
   points: "Adjust points",
+  roles: "New role picker",
 };
 
 export interface ComposerPlusCardProps {
@@ -125,9 +128,7 @@ export function ComposerPlusCard({
       const card = cardRef.current;
       if (!card) return;
       if (view) {
-        card
-          .querySelector<HTMLElement>("[data-plus-autofocus]")
-          ?.focus();
+        card.querySelector<HTMLElement>("[data-plus-autofocus]")?.focus();
         return;
       }
       const back = lastPicked.current
@@ -261,7 +262,8 @@ function PlusMenu({
         ) : null}
         {model.rows.map((row) => {
           const Glyph = ROW_GLYPH[row.command];
-          const hasDraft = row.disabledReason === null && drafts?.has(row.command);
+          const hasDraft =
+            row.disabledReason === null && drafts?.has(row.command);
           return (
             <MenuRow
               key={row.command}
