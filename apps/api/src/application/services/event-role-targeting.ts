@@ -30,6 +30,22 @@ export function isInvited(
 }
 
 /**
+ * Whether check-in admits a member (`AttendanceService.checkIn`, which says
+ * which step refused): the event invites them, and an alumnus only through a
+ * role the event names (`spec/behavior/alumni.md`). Activity reads it for the
+ * caller's own rows and for the count of who can check in (#4792); `checkIn`
+ * keeps its steps apart because each refusal is logged with its own reason.
+ */
+export function checkInAdmits(
+  event: EventAttendanceFields,
+  memberRoleIds: readonly string[],
+  isAlumni: boolean,
+): boolean {
+  const { status, byRole } = attendanceFor(event, memberRoleIds);
+  return status !== 'not_invited' && (!isAlumni || byRole);
+}
+
+/**
  * What an event asks of one member, as the attendance sweep holds them to it:
  * `attendanceFor`, except that an alumnus required only by the event's default
  * (not by a role that names them) is optional, because the sweep never marks

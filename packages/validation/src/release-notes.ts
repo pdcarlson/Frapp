@@ -120,6 +120,13 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-15",
+    title: "New in this update",
+    changes: [
+      "Activity now shows how many have voted on a poll you posted, and how many have checked in to an event you made once check-in opens.",
+    ],
+  },
+  {
     date: "2026-11-14",
     title: "New in this update",
     changes: [
@@ -133,6 +140,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Opening the app is faster, and it no longer slows to a crawl when lots of people open it at once.",
       "A GIF now shows as \"GIF\" in your conversation list and saved messages, you can send GIFs in message threads, and GIFs stay still until you play them if your device is set to reduce motion.",
       "You can ask Frapp to remind you about a chat message later, and the reminder shows up on your Activity page until you mark it done.",
+      "A scheduled message can now carry the photos or files you staged and a reply to another message, and each one in your scheduled list says what it carries.",
     ],
     web: [
       "Schedule a message to send later: open the arrow beside Send, pick a time, and see, edit or send your scheduled messages from the line above the composer.",

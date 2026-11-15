@@ -90,3 +90,14 @@ export const meterTrackClassName = `h-1.5 ${TRACK}`;
 export const meterTrackDenseClassName = `h-1 ${TRACK}`;
 
 export const meterFillClassName = "h-full rounded-full bg-primary";
+
+/**
+ * The one exception to the recess: a meter drawn straight on the page, with
+ * no card under it (Activity's Waiting on others rows, #4792). `--background`
+ * *is* the page there, so a recess would be no groove at all; the groove is
+ * one step up instead, `--card`, which the accent still clears 3:1 against
+ * (the engine holds `accent-9` to it on every ladder step). Dense, at the
+ * row's own scale. Never inside a card, where it would vanish the same way.
+ */
+export const meterTrackOnPageClassName =
+  "h-1 overflow-hidden rounded-full bg-card";
