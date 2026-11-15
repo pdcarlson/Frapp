@@ -17,8 +17,6 @@ import {
   getArchetype,
   orgDefaultAccent,
   orgHidesGreekLetters,
-  orgHidingGreekLettersIn,
-  orgMarkFieldsFor,
   type ArchetypeKey,
 } from "@repo/org-archetypes";
 import {
@@ -26,8 +24,11 @@ import {
   FOUNDED_YEAR_MIN,
   chapterIdentityBranding,
   chapterIdentityIsValid,
+  directoryMatchMarkFields,
   latestFoundedYear,
+  lettersHiddenBy,
   normalizeAccentInput,
+  withOrgName,
   type ChapterIdentityForm,
 } from "@repo/hooks/chapter-identity";
 import {
@@ -60,6 +61,9 @@ import {
 import { StepDots } from "@/components/onboarding/step-dots";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { SignedInAs } from "@/components/auth/signed-in-as";
+import { OtherAccountLine } from "@/components/auth/other-account-line";
+import { useSignOutToSignIn } from "@/components/auth/use-sign-out";
+import { JOIN_FROM_SIGN_IN_PATH } from "@/lib/auth/join-visit";
 import { SearchGlyph } from "@/components/profile/profile-glyphs";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
@@ -128,6 +132,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const { toast } = useToast();
   const selectChapter = useSelectChapter();
   const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
+  // "Already in a chapter?" on the first step: a chapterless account signed
+  // in from `/sign-in` lands here, not on `/join`, so the way back for someone
+  // in the wrong account has to be here too.
+  const otherAccount = useSignOutToSignIn(JOIN_FROM_SIGN_IN_PATH);
 
   const onboardChapter = useOnboardChapter();
   const currentUser = useCurrentUser();
@@ -168,15 +176,14 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     setDirectoryId(row.id);
     setMatchedOrgName(row.org_name ?? null);
     setArchetype(resolvedArchetype);
-    const mark = orgMarkFieldsFor(row.org_name, identity.name, identity);
     setIdentity({
       name: row.org_name ?? "",
       university: row.university ?? "",
       greekLetters: row.org_letters ?? "",
       // The directory knows letters, not whether an organization shows them:
-      // FIJI's profile switches them off (`orgMarkFieldsFor`), and fills the
-      // short name only if the founder left it empty.
-      ...mark,
+      // the row's profile decides, and a row picked before this one undoes
+      // what it set however the name was edited since (#3466).
+      ...directoryMatchMarkFields(row.org_name, matchedOrgName, identity),
       designation: row.chapter_designation ?? "",
       schoolShort: row.university_short ?? "",
       foundedYear: row.founded_year ? String(row.founded_year) : "",
@@ -197,12 +204,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
     setArchetype("ifc");
     // Seed the chapter name from whatever the officer was searching for, and
     // let a name that names FIJI fill its short name as typing it would.
-    const seeded = rawQuery.trim();
-    setIdentity({
-      ...EMPTY_CHAPTER_IDENTITY,
-      name: seeded,
-      ...orgMarkFieldsFor(seeded, "", EMPTY_CHAPTER_IDENTITY),
-    });
+    setIdentity(withOrgName(EMPTY_CHAPTER_IDENTITY, rawQuery.trim(), false));
     setAcceptedLegal(false);
     setStep("archetype");
   }
@@ -213,12 +215,8 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   }
 
   // The organization whose rule hides the letters, by the picked row first,
-  // then by the name typed ("Phi Gamma Delta Tau Nu" still names FIJI). Null
-  // when neither hides them.
-  const lettersHiddenBy =
-    orgHidingGreekLettersIn(matchedOrgName) ??
-    orgHidingGreekLettersIn(identity.name) ??
-    null;
+  // then by the name typed ("Phi Gamma Delta Tau Nu" still names FIJI).
+  const hiddenBy = lettersHiddenBy(matchedOrgName, identity);
 
   const identityValid = chapterIdentityIsValid(identity);
   // Gate "Create chapter" on the required Terms/Privacy acceptance as well as a
@@ -239,7 +237,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
         accept_terms_privacy: true,
         branding: {
           ...chapterIdentityBranding(identity),
-          ...(lettersHiddenBy ? { show_greek_letters: false } : {}),
+          ...(hiddenBy ? { show_greek_letters: false } : {}),
         },
       });
       const id =
@@ -359,6 +357,15 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                   onManual={startManualEntry}
                 />
               ) : null}
+              {step === "find" ? (
+                <div className="mt-6">
+                  <OtherAccountLine
+                    signOut={otherAccount.signOut}
+                    signingOut={otherAccount.signingOut}
+                    failed={otherAccount.failed}
+                  />
+                </div>
+              ) : null}
 
               {step === "archetype" ? (
                 <ArchetypeStep selected={archetype} onSelect={setArchetype} />
@@ -371,7 +378,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                   logo={logo}
                   onLogoChange={setLogo}
                   isManual={directoryId === null}
-                  lettersHiddenBy={lettersHiddenBy}
+                  lettersHiddenBy={hiddenBy}
                   accepted={acceptedLegal}
                   onAcceptedChange={setAcceptedLegal}
                 />
@@ -435,6 +442,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
             </footer>
           </div>
           {confirmDropDialog}
+          {otherAccount.confirmDropDialog}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
@@ -451,27 +459,6 @@ function directoryRowTitle(row: ChapterDirectoryResult): string {
   return row.org_letters && !orgHidesGreekLetters(row.org_name)
     ? `${row.org_letters} · ${name}`
     : name;
-}
-
-/**
- * The identity after the organization's name is typed. On manual entry the
- * short name and the letters switch follow `orgMarkFieldsFor`: a profile
- * applies when the name comes to name its organization and is undone when the
- * name leaves it, and a short name the founder typed is never replaced. After
- * a directory pick the row decides the organization, so renaming the chapter
- * ("Tau Nu Chapter") changes the name alone.
- */
-function withOrgName(
-  identity: ChapterIdentityForm,
-  name: string,
-  fromDirectory: boolean,
-): ChapterIdentityForm {
-  if (fromDirectory) return { ...identity, name };
-  return {
-    ...identity,
-    name,
-    ...orgMarkFieldsFor(name, identity.name, identity),
-  };
 }
 
 function FindStep({

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { createFrappClient } from "@repo/api-sdk";
+import { INBOX_FIRST_PAGE_SIZE } from "@repo/validation";
 import { FrappClientProvider } from "./use-frapp-client";
 import {
   markNotificationReadMutationKey,
@@ -147,6 +148,19 @@ describe("a pending read receipt shows its row read (#3788)", () => {
   }
   const readAtOf = (rows: unknown, id: string) =>
     (rows as Row[] | undefined)?.find((row) => row.id === id)?.read_at;
+
+  it("asks for the inbox's first page by default (#4962)", async () => {
+    const queryClient = makeQueryClient();
+    const get = vi.fn().mockResolvedValue({ data: serverRows(), error: undefined });
+    const { result } = renderInbox({ GET: get, PATCH: vi.fn() }, queryClient);
+    await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
+
+    // The page `GET /v1/bootstrap` reads, and so the one the SDK's
+    // first-screen batch lets it answer (`first-screen-batch.spec.ts`).
+    expect(get).toHaveBeenCalledWith("/v1/notifications", {
+      params: { query: { limit: INBOX_FIRST_PAGE_SIZE } },
+    });
+  });
 
   it("serves the row read while the PATCH is pending, and leaves the others unread", async () => {
     const queryClient = makeQueryClient();

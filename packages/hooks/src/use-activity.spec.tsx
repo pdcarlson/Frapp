@@ -33,6 +33,7 @@ describe("useActivity", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/v1/activity", {
+      signal: expect.any(AbortSignal),
       params: { query: { week_start: localWeekStart().toISOString() } },
     });
   });

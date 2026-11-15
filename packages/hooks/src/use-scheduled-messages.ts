@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
@@ -18,19 +19,36 @@ export const scheduledMessageKeys =
  */
 const REFETCH_MS = 60_000;
 
-/** The member's pending and failed scheduled messages in one channel. */
-export function useScheduledMessages(channelId: string | null | undefined) {
+/**
+ * The member's pending and failed scheduled messages in one channel, or with
+ * `threadRootId`, only the replies scheduled into that thread (#5005). The
+ * thread's list is a view of the channel's read, so the two share one cache
+ * and one re-read, and a row scheduled in either shows in both.
+ */
+export function useScheduledMessages(
+  channelId: string | null | undefined,
+  threadRootId?: string | null,
+) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
+  const select = useCallback(
+    (rows: ScheduledMessage[]) =>
+      threadRootId
+        ? rows.filter((row) => row.thread_root_id === threadRootId)
+        : rows,
+    [threadRootId],
+  );
   return useQuery({
     queryKey: [...scheduledMessageKeys.list(chapterId!), channelId ?? ""],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/scheduled-messages", {
+        signal,
         params: { query: { channel_id: channelId! } },
       });
       if (error) throw error;
       return data;
     },
+    select,
     enabled: !!chapterId && !!channelId,
     // Only while there is something to watch: most members have nothing
     // scheduled, and a row scheduled here invalidates the read itself.

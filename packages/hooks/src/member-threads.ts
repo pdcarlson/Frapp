@@ -29,8 +29,8 @@ export function useMemberThreads(options: { refetchOnMount?: boolean } = {}) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: memberThreadKeys.list(chapterId!),
-    queryFn: async (): Promise<MemberThread[]> => {
-      const { data, error } = await client.GET("/v1/threads");
+    queryFn: async ({ signal }): Promise<MemberThread[]> => {
+      const { data, error } = await client.GET("/v1/threads", { signal });
       if (error) throw error;
       return data ?? [];
     },

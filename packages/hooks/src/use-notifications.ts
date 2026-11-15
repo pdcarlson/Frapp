@@ -11,6 +11,7 @@ import {
 import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { notificationSourceKey } from "./notification-rows";
+import { INBOX_FIRST_PAGE_SIZE } from "@repo/validation";
 
 /**
  * Query keys for this module.
@@ -245,7 +246,7 @@ export function useNotifications(limit?: number) {
     queryKey: notificationKeys.list(chapterId, limit),
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/notifications", {
-        params: { query: { limit: limit ?? 50 } },
+        params: { query: { limit: limit ?? INBOX_FIRST_PAGE_SIZE } },
       });
       if (error) throw error;
       return data;

@@ -20,13 +20,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * nothing.
  */
 export function useOnboardingSignOut(): {
-  /**
-   * `keepInvite` keeps a remembered invite for the next sign-in. Only s02's
-   * "New account created" Sign out passes it (#4769): that person signs out
-   * to come back in with the account they meant, and the invite is theirs,
-   * as web's `/new-account` keeps `next`.
-   */
-  signOut: (options?: { keepInvite?: boolean }) => Promise<void>;
+  signOut: () => Promise<void>;
   signingOut: boolean;
 } {
   const router = useRouter();
@@ -35,12 +29,12 @@ export function useOnboardingSignOut(): {
   // A ref as well as the state: two taps in one frame both read the state
   // before it re-renders.
   const running = useRef(false);
-  const signOut = useCallback(async (options?: { keepInvite?: boolean }) => {
+  const signOut = useCallback(async () => {
     if (running.current) return;
     running.current = true;
     setSigningOut(true);
     try {
-      if (!options?.keepInvite) consumeRememberedInviteToken();
+      consumeRememberedInviteToken();
       await endSession();
       // `signOut` drops the query cache itself (`lib/auth-session.tsx`), so
       // every sign-out path gets it without each screen remembering to.

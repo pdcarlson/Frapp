@@ -28,6 +28,8 @@ import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { CrestTile } from "@/components/layout/crest-tile";
 import { SignedInAs } from "@/components/auth/signed-in-as";
+import { OtherAccountLine } from "@/components/auth/other-account-line";
+import { useSignOutToSignIn } from "@/components/auth/use-sign-out";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +49,7 @@ import { isLockedOutOfChapter } from "@/lib/auth/no-access";
 import {
   JOIN_IN_BROWSER_KEY,
   JOIN_IN_BROWSER_VALUE,
+  JOIN_FROM_SIGN_IN_PATH,
   isJoinSkipCandidate,
   shouldSkipJoinForMember,
 } from "@/lib/auth/join-visit";
@@ -208,6 +211,9 @@ function JoinPageContent() {
   // window would redeem another invite and race the first over which chapter
   // ends up active.
   const [busy, setBusy] = useState(false);
+  // "Already in a chapter?"'s sign-out. It lands the right account on
+  // `/join?from=sign-in`, which sends a member on to their chapter (#3850).
+  const otherAccount = useSignOutToSignIn(JOIN_FROM_SIGN_IN_PATH);
 
   useEffect(() => {
     let isMounted = true;
@@ -303,7 +309,7 @@ function JoinPageContent() {
   }
 
   async function redeem(extracted: string, onError: (copy: string) => void) {
-    if (busy) return;
+    if (busy || otherAccount.signingOut) return;
     if (terms.blocker) {
       onError(terms.blocker);
       return;
@@ -410,7 +416,7 @@ function JoinPageContent() {
       toggle={
         <SignedInAs
           email={account?.email ?? null}
-          disabled={busy}
+          disabled={busy || otherAccount.signingOut}
           // Signing in as someone else keeps the invite this page was opened with.
           returnTo={`/join${searchParams.toString() ? `?${searchParams.toString()}` : ""}`}
         />
@@ -466,7 +472,7 @@ function JoinPageContent() {
               <Button
                 type="button"
                 onClick={() => void handleJoinOffer(offer.token)}
-                disabled={busy}
+                disabled={busy || otherAccount.signingOut}
                 aria-label={`Join ${offer.chapter_name}`}
               >
                 {joiningToken === offer.token ? (
@@ -516,7 +522,7 @@ function JoinPageContent() {
               setRedeemError(null);
               setOfferError(null);
             }}
-            disabled={busy}
+            disabled={busy || otherAccount.signingOut}
           />
         ) : null}
         <Button
@@ -527,7 +533,7 @@ function JoinPageContent() {
           variant={
             offers.length > 0 || openChatMembership ? "secondary" : "default"
           }
-          disabled={busy}
+          disabled={busy || otherAccount.signingOut}
         >
           {busy && joiningToken === null ? (
             <Loader2 className="animate-spin" />
@@ -542,7 +548,30 @@ function JoinPageContent() {
           itself in.
         </AuthNote>
       </div>
+      {
+        // For someone already in a chapter who signed in with another account
+        // than the one they joined with. Not for a member, an invite link, or
+        // an emailed invite, and held until both reads have settled, so it
+        // never shows and then vanishes. A read that failed counts as settled:
+        // this is the way out, so it shows rather than hides.
+        !initialToken &&
+        !pendingInvites.isLoading &&
+        offers.length === 0 &&
+        !chaptersQuery.isLoading &&
+        !chaptersQuery.isPending &&
+        memberships.length === 0 ? (
+          <div className="mt-4">
+            <OtherAccountLine
+              signOut={otherAccount.signOut}
+              signingOut={otherAccount.signingOut}
+              failed={otherAccount.failed}
+              disabled={busy}
+            />
+          </div>
+        ) : null
+      }
       {confirmDropDialog}
+      {otherAccount.confirmDropDialog}
     </AuthScreen>
   );
 }

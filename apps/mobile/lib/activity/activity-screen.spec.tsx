@@ -1139,7 +1139,9 @@ describe("Activity screen (#3897)", () => {
     const face = lead("Book the venue", "activity-face-task");
     expect(face.length).toBeGreaterThan(0);
     expect(drawnText(face[0]!)).toContain("OO");
-    expect(face[0]!.props.accessibilityElementsHidden).toBe(true);
+    // The drawn View, not the shared `FaceWithBadge` that carries its id.
+    const drawn = face.find((node) => (node.type as unknown) === "View")!;
+    expect(drawn.props.accessibilityElementsHidden).toBe(true);
     // Her photo and tint reach the avatar, and the kind's glyph its corner.
     const avatar = face[0]!.findByType(MemberAvatar);
     expect(avatar.props.uri).toBe("https://photos.example/olive.png");
@@ -2389,6 +2391,50 @@ describe("Activity screen (#3897)", () => {
       });
     });
   });
+
+  describe("Waiting on others: how far along each thing is (#4792)", () => {
+    it("draws a bar and the count under a poll the member posted, said with its title", () => {
+      activity.value = {
+        ...activity.value,
+        data: read({
+          made_by_you: {
+            polls: [
+              {
+                ...myPoll("p-open", "Dues vote"),
+                progress: { done: 17, total: 25 },
+              },
+              // Nobody else can answer it: no bar, never "0 of 0".
+              { ...myPoll("p-alone", "Exec only"), progress: null },
+            ],
+            tasks: [],
+            events: [],
+          },
+        }),
+      };
+      const tree = render();
+
+      const dues = row(tree, "Dues vote");
+      const bar = dues.findAll(
+        (node) => node.props.testID === "activity-row-progress",
+      );
+      expect(bar.length).toBeGreaterThan(0);
+      expect(drawnText(bar[0])).toContain("17 of 25");
+      // The bar is decoration; the row says the count.
+      expect(bar[0].props.accessibilityElementsHidden).toBe(true);
+      expect(
+        dues.findAll(
+          (node) =>
+            node.props.accessibilityLabel === "Dues vote, 17 of 25 voted",
+        ).length,
+      ).toBeGreaterThan(0);
+
+      const alone = row(tree, "Exec only");
+      expect(
+        alone.findAll((node) => node.props.testID === "activity-row-progress"),
+      ).toHaveLength(0);
+    });
+  });
+
   describe("message reminders (#4957)", () => {
     const reminder = (overrides: Record<string, unknown> = {}) => ({
       id: "r1",

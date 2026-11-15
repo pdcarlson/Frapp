@@ -7,7 +7,7 @@ import { resolveRedirectPath } from "@/lib/auth/redirect";
 
 /**
  * Sign out and land on `/sign-in`, for the screens an account with no chapter
- * can reach (`/join`, `/no-access`, `/new-account`, the setup wizard). A full
+ * can reach (`/join`, `/no-access`, the setup wizard). A full
  * navigation, as the account menu does, so every in-memory cache leaves with
  * the page. Bulk upload's confirm runs first, since signing out ends it.
  *

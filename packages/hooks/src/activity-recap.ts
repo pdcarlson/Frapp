@@ -42,8 +42,9 @@ export function useActivityRecap(options: { enabled?: boolean } = {}) {
   return useQuery({
     // By week, so a recap kept from one week is never drawn for the next.
     queryKey: [...activityRecapKeys.chapter(chapterId!), week.week_start],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/activity/recap", {
+        signal,
         params: { query: week },
       });
       if (error) throw error;

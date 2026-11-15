@@ -10,8 +10,7 @@
  * produces one stored value on either surface. The same goes for how the
  * Organization field drives the short name and the letters switch
  * (`lettersHiddenBy`, `withOrgName`, `directoryMatchMarkFields`, on
- * `@repo/org-archetypes`' profiles). Mobile's setup reads them; web's wizard
- * still holds its own copies of the three until it moves onto these.
+ * `@repo/org-archetypes`' profiles): both wizards read them (#3466).
  *
  * Deliberately pure: no React, no react-query. It is a subpath export, like
  * `./display-names`, so importing it does not pull a query client into a

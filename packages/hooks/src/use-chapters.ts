@@ -69,8 +69,8 @@ export function useListChapters(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: chapterQueryKey("accessible"),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/chapters");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/chapters", { signal });
       if (error) throw error;
       return (data ?? []) as ChapterMembershipSummary[];
     },
@@ -93,8 +93,10 @@ export function useCurrentChapter(options?: {
 
   return useQuery({
     queryKey: chapterQueryKey("current", chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/chapters/current");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/chapters/current", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

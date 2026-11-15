@@ -11,7 +11,7 @@
      - `/`, which sends you to the right place;
      - `/me/…`, for profile and preferences across tenants (today's `/profile` and `/preferences`);
      - `/whats-new`;
-     - `/join`, `/start` (a new chapter or council), `/no-access`, `/new-account`, sign-in and sign-up.
+     - `/join`, `/start` (a new chapter or council), `/no-access`, sign-in and sign-up. (`/new-account` was removed 2026-11-15.)
    - Public pages need no account: `/f/<form-slug>` is a chapter's interest form and the target of its QR code.
      - The route has no session and no `ChapterGuard`. The page reads only the form's public fields: the chapter's name and crest, and the questions.
      - Submitting needs a one-time code sent to an address on the school's domain. The API writes the submission into the chapter's pipeline on the server side, and the submitter becomes a school member with status `pnm`.
@@ -46,7 +46,7 @@
 6. **Old links redirect, and the redirect never picks a tenant for you silently.**
    - A flat dashboard path (`/chat`, `/events`, …) gets a `307` from `proxy.ts` to `/?next=<path>`. The root page has the member's tenant list. With one tenant it forwards straight to `/c/<slug>/<path>`. With several it shows the picker, headed "Open this in which chapter?", with the last-chosen tenant first.
    - There is no "last tenant" cookie. One cookie would be shared by every tab, so it would send a bookmark opened from a tab in chapter A into chapter B with no prompt.
-   - Paths that leave the tenant tree get their own redirects: `/profile` and `/preferences` go to `/me/…`, and `/dashboard` goes to `/`. `/join`, `/no-access`, `/new-account` and `/whats-new` keep their paths.
+   - Paths that leave the tenant tree get their own redirects: `/profile` and `/preferences` go to `/me/…`, and `/dashboard` goes to `/`. `/join`, `/no-access` and `/whats-new` keep their paths.
    - Invite links keep their format, `/join?token=<uuid>` (`mintJoinUrl` in `@repo/validation`). The token names the chapter, and redeeming it lands on `/c/<slug>/chat`.
    - These redirects stay for at least a year after the web move.
 7. **Switching tenants is a navigation.**

@@ -43,8 +43,10 @@ export function useAccountWhatsNewSeen(options?: {
   const enabled = options?.enabled ?? true;
   const query = useQuery({
     queryKey: whatsNewSeenQueryKey(),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/users/me/whats-new");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/users/me/whats-new", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

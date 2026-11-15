@@ -9,8 +9,10 @@ export function useBillingStatus() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["billing", "status", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/billing/status");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/billing/status", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

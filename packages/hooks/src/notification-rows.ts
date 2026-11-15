@@ -86,6 +86,35 @@ export const NOTIFICATION_TILE_GLYPH: Record<
   other: "activity",
 };
 
+/** A kind drawn as a person with a badge on their face's corner. */
+export type NotificationPersonKind = Exclude<
+  NotificationKind,
+  NotificationTileKind
+>;
+
+/**
+ * What a person row's corner badge holds (#4476), read by both clients so a
+ * kind wears one badge everywhere: a typed mark, a glyph from the shared nav
+ * set, or the announcement megaphone, which each platform draws itself (the
+ * nav set has none). A DM wears Direct messages' own glyph, the place it
+ * lives, as a tile wears its screen's.
+ */
+export type NotificationBadge =
+  { mark: string } | { glyph: NavGlyphName } | { announcement: true };
+
+export const NOTIFICATION_BADGE: Record<
+  NotificationPersonKind,
+  NotificationBadge
+> = {
+  mention: { mark: "@" },
+  channel: { mark: "#" },
+  join: { mark: "+" },
+  announcement: { announcement: true },
+  dm: { glyph: "direct" },
+  group: { glyph: "chat" },
+  chat: { glyph: "chat" },
+};
+
 /**
  * What the badge or tile says to a screen reader, which can't see it: read
  * before the title, so "Mentioned you: Ryan Castellano in #general".

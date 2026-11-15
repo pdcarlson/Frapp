@@ -7,7 +7,7 @@ import { UpdateChatSidebarDto } from './chat-sidebar.dto';
  * Through the production pipe, whose `enableImplicitConversion` would turn
  * `"false"` into `true` without `@IsStrictBoolean()`.
  */
-describe('PATCH /v1/chat-sidebar takes only real booleans (#2877)', () => {
+describe('PATCH /v1/chat-sidebar takes only real booleans and a known sort (#2877)', () => {
   const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
   const transform = (value: object) =>
     pipe.transform(value, { type: 'body', metatype: UpdateChatSidebarDto });
@@ -21,6 +21,18 @@ describe('PATCH /v1/chat-sidebar takes only real booleans (#2877)', () => {
       await expect(transform({ [field]: value })).resolves.toEqual({
         [field]: value,
       });
+    });
+  });
+
+  describe('sort', () => {
+    it.each(['chapter', 'recent', 'alpha'])('accepts %p', async (value) => {
+      await expect(transform({ sort: value })).resolves.toEqual({
+        sort: value,
+      });
+    });
+
+    it.each([null, 'newest', '', 1, true])('refuses %p', async (value) => {
+      await expect(transform({ sort: value })).rejects.toThrow();
     });
   });
 

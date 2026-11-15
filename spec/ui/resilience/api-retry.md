@@ -67,7 +67,10 @@ async function fetchWithRetry(fn, config = RETRY_CONFIG) {
 | Write (POST/PATCH) | 20s | Web 2x, transient failures only; mobile 0x, 1x for the read stamps it sends on open (§ Writes) | Optimistic UI + rollback |
 | File upload (signed URL) | 60s | 1x | Large payloads |
 | Webhook (POST /webhooks) | 30s | 0x | Server-initiated, not user-facing |
-| Search (GET /search) | 10s | 1x | Debounced input, non-critical |
+| Search (GET /search, GET /members/search) | 10s | 1x | Debounced input, non-critical |
 | Chat send (POST messages) | 10s | 3x | High priority, see [Sending messages](message-delivery.md#sending-messages) |
+| Slow work answered in the request (POST /ai/act, /ai/act/event-audience, /ai/catch-up, /discord-imports/{id}/discover) | 90s | As a write | The model or a Discord scan finishes before the response does; Ask streams, so its headers come first and it takes the write limit |
+
+`createFrappClient` applies the API rows to every request (`REQUEST_TIMEOUT_MS` in `packages/api-sdk/src/client.ts`, #3433); the upload and webhook rows are not its requests. A limit bounds the whole response, body included, except a streamed one (Ask), which it bounds only up to its headers. A request that runs out fails as a `TypeError` "Network request timed out" (React Native's own timeout shape), which carries no status, so it is retried as a dropped connection is (§ Reads, § Writes) and the screen shows its connection copy. A caller's own abort signal still cancels the request first.
 
 ---

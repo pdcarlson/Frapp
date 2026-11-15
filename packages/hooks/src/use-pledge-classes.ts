@@ -24,8 +24,10 @@ export function usePledgeClasses(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: pledgeClassesKey(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/pledge-classes");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/pledge-classes", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

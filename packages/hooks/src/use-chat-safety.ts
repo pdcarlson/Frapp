@@ -207,11 +207,11 @@ export function useBlockedUserIds(): BlockedUserIds {
     // `chapterId!` is safe under `enabled`: the factory refuses a null chapter
     // by design, and the query never runs without one.
     queryKey: chatBlockKeys.list(chapterId!),
-    queryFn: async (): Promise<BlockListRead> => {
+    queryFn: async ({ signal }): Promise<BlockListRead> => {
       // Taken before the request leaves: a change confirmed after this point
       // may or may not be in the answer, so the overlay keeps applying it.
       const readSeq = blockChangeSeq;
-      const result = await client.GET("/v1/chat/blocks");
+      const result = await client.GET("/v1/chat/blocks", { signal });
       throwUnlessOk(result);
       return { ids: readBlockedUserIds(result.data), readSeq };
     },

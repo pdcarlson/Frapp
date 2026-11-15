@@ -20,6 +20,9 @@
 //
 // Env:
 //   BUILD                — the dispatch's choice: auto, ios, android, all or none
+//   AUTO_PLATFORMS       — the platforms `auto` may build, comma-separated; unset means both. A
+//                          run after a staging deploy passes `ios`: Play takes a new app's first
+//                          bundle by hand, so an unattended Android build couldn't upload (#4917)
 //   RUNTIME              — `node scripts/staging-runtime.mjs`'s line for this tree
 //   GITHUB_TOKEN         — reads the artifact list (`actions: read`)
 //   GITHUB_REPOSITORY    — owner/name
@@ -66,7 +69,7 @@ export async function hasMarker({ name, repository, repositoryId, token, fetchIm
  * `{ ios, android, reasons }`: which platforms to build and why. `exists(platform)` answers
  * whether a binary of this runtime was uploaded; it is asked only under `auto`.
  */
-export async function plan({ choice, exists }) {
+export async function plan({ choice, exists, autoPlatforms = PLATFORMS }) {
   const out = { reasons: {} };
   for (const platform of PLATFORMS) {
     if (choice === "none") {
@@ -75,6 +78,9 @@ export async function plan({ choice, exists }) {
     } else if (choice === "all" || choice === platform) {
       out[platform] = true;
       out.reasons[platform] = "built: the run asked for it";
+    } else if (choice === "auto" && !autoPlatforms.includes(platform)) {
+      out[platform] = false;
+      out.reasons[platform] = "not built: a run after a staging deploy doesn't build this platform yet; dispatch the workflow to build it";
     } else if (choice === "auto") {
       const found = await exists(platform);
       out[platform] = !found;
@@ -100,10 +106,16 @@ export async function main({ env, fetchImpl = fetch, sleep, write = appendFileSy
     log(`::error::'${runtime}' is not a staging runtime (version, a dash, twelve hex digits).`);
     return 1;
   }
+  const autoPlatforms = env.AUTO_PLATFORMS ? env.AUTO_PLATFORMS.split(",").map((p) => p.trim()) : PLATFORMS;
+  if (!autoPlatforms.every((p) => PLATFORMS.includes(p))) {
+    log(`::error::AUTO_PLATFORMS must list only ${PLATFORMS.join(", ")}; got '${env.AUTO_PLATFORMS}'.`);
+    return 1;
+  }
   let result;
   try {
     result = await plan({
       choice,
+      autoPlatforms,
       exists: (platform) =>
         hasMarker({
           name: markerName(platform, runtime),

@@ -32,8 +32,9 @@ export function useRushCandidate(id: string | undefined) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: rushKeys.detail(chapterId, id ?? ""),
-    queryFn: async (): Promise<RushCandidateView | null> => {
+    queryFn: async ({ signal }): Promise<RushCandidateView | null> => {
       const { data, error } = await client.GET("/v1/rush/candidates/{id}", {
+        signal,
         params: { path: { id: id as string } },
       });
       if (error) {

@@ -29,7 +29,13 @@ import {
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
 import { CHECK_IN_GRACE_MINUTES, isBetaOffModule } from '@repo/validation';
-import { formatDueDate, joinFacts } from '../services/push-copy';
+import {
+  DEFAULT_PUSH_TIME_ZONE,
+  formatDueDate,
+  joinFacts,
+} from '../services/push-copy';
+import { localClock, localDateKey } from '../services/local-clock';
+import { shiftDate } from '#domain/utils/last-year-comparison';
 import {
   buildChapterPalette,
   chapterPaletteColumns,
@@ -115,7 +121,40 @@ const OVERDUE_LOOKBACK_DAYS = 7;
  */
 const MAX_DUES_GRACE_DAYS = 365;
 
+/**
+ * The hours of a member's own morning in which their day-granular task and
+ * invoice reminders go out (#4788): from 9 AM up to noon, in the zone their
+ * pushes use (`user_settings.time_zone`, then `quiet_hours_tz`, then
+ * {@link DEFAULT_PUSH_TIME_ZONE}). The sweeps run hourly and the dispatch
+ * claim keeps each reminder to one push, so the first tick inside the window
+ * sends; the three-hour width is what lets a missed tick or a deploy still land
+ * the reminder that morning, and a zone on a half-hour offset still gets a
+ * tick inside it. Gmail's and Todoist's daily digests work the same way: a
+ * fixed morning hour in the reader's own zone, not the server's.
+ */
+const DAILY_REMINDER_FROM_HOUR = 9;
+const DAILY_REMINDER_UNTIL_HOUR = 12;
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Today's date key in `timeZone` (null: the member's fallback zone) when its
+ * clock reads inside the daily reminder window, else null: the reminder waits
+ * for a later tick. A zone this runtime cannot resolve reads as the fallback.
+ */
+function reminderDayKey(now: Date, timeZone: string | null): string | null {
+  const clock =
+    localClock(now, timeZone ?? DEFAULT_PUSH_TIME_ZONE) ??
+    localClock(now, DEFAULT_PUSH_TIME_ZONE);
+  if (
+    !clock ||
+    clock.hour < DAILY_REMINDER_FROM_HOUR ||
+    clock.hour >= DAILY_REMINDER_UNTIL_HOUR
+  ) {
+    return null;
+  }
+  return localDateKey(clock);
+}
 
 /** `YYYY-MM-DD` in UTC, matching the `date` columns being compared. */
 function toDateKey(date: Date): string {
@@ -204,12 +243,17 @@ export class ScheduledJobsService {
     await this.sweepEventReminders(new Date());
   }
 
-  @ReportedCron(CronExpression.EVERY_DAY_AT_9AM)
+  /**
+   * Hourly, not at a fixed hour of the server's clock (#4788): each reminder
+   * goes out in its recipient's own morning ({@link DAILY_REMINDER_FROM_HOUR}),
+   * and members span zones, so every hour is someone's 9 AM.
+   */
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleInvoiceReminderSweep(): Promise<void> {
     await this.sweepInvoiceReminders(new Date());
   }
 
-  @ReportedCron(CronExpression.EVERY_DAY_AT_9AM)
+  @ReportedCron(CronExpression.EVERY_HOUR)
   async handleTaskReminderSweep(): Promise<void> {
     await this.sweepTaskReminders(new Date());
   }
@@ -758,18 +802,23 @@ export class ScheduledJobsService {
    * invoices stay as they are. Reminders are skipped, not queued: once dues
    * returns, only an invoice whose due date or overdue day still falls in the
    * windows below gets one.
+   *
+   * "Today" is the member's own date, read only while their clock is inside
+   * the morning window ({@link reminderDayKey}); a member outside it is left
+   * for a later hourly tick. The query is widened by a day on each side so it
+   * holds every member's today whatever their zone, and narrowed per member.
    */
   async sweepInvoiceReminders(now: Date): Promise<{ sent: number }> {
     if (isBetaOffModule('dues')) return { sent: 0 };
-    const todayKey = toDateKey(now);
-    const dueSoonKey = toDateKey(addDays(now, DUE_SOON_LEAD_DAYS));
-    const windowStart = toDateKey(
-      addDays(now, -(OVERDUE_LOOKBACK_DAYS + MAX_DUES_GRACE_DAYS)),
-    );
-
     const invoices = await this.repository.findOpenInvoicesDueBetween(
-      windowStart,
-      dueSoonKey,
+      toDateKey(
+        addDays(now, -(OVERDUE_LOOKBACK_DAYS + MAX_DUES_GRACE_DAYS + 1)),
+      ),
+      toDateKey(addDays(now, DUE_SOON_LEAD_DAYS + 1)),
+    );
+    if (invoices.length === 0) return { sent: 0 };
+    const zones = await this.notificationService.timeZonesFor(
+      invoices.map((invoice) => invoice.user_id),
     );
 
     const graceByChapter = new Map<string, number>();
@@ -777,6 +826,14 @@ export class ScheduledJobsService {
 
     for (const invoice of invoices) {
       try {
+        const todayKey = reminderDayKey(
+          now,
+          zones.get(invoice.user_id) ?? null,
+        );
+        if (todayKey === null) continue;
+        if (invoice.due_date > shiftDate(todayKey, DUE_SOON_LEAD_DAYS)) {
+          continue;
+        }
         if (invoice.due_date >= todayKey) {
           if (await this.notifyInvoiceDueSoon(invoice, todayKey)) sent += 1;
           continue;
@@ -788,7 +845,7 @@ export class ScheduledJobsService {
           graceByChapter.set(invoice.chapter_id, graceDays);
         }
 
-        if (this.isNewlyOverdue(invoice.due_date, graceDays, now)) {
+        if (this.isNewlyOverdue(invoice.due_date, graceDays, todayKey)) {
           if (await this.notifyInvoiceOverdue(invoice)) sent += 1;
         }
       } catch (error) {
@@ -808,20 +865,36 @@ export class ScheduledJobsService {
   /**
    * Notify assignees about tasks coming due, and assignee plus assigner about
    * tasks that have just gone overdue (`spec/behavior/tasks.md`).
+   *
+   * Timed by the assignee's zone, as the invoice sweep is by the member's
+   * (#4788): "today" is their date, and the push goes out in their morning.
+   * The assigner of an overdue task hears at the same moment; one task is one
+   * claim, so it cannot wait for a second zone's morning.
    */
   async sweepTaskReminders(now: Date): Promise<{ sent: number }> {
-    const todayKey = toDateKey(now);
-    const dueSoonKey = toDateKey(addDays(now, DUE_SOON_LEAD_DAYS));
-    const windowStart = toDateKey(addDays(now, -OVERDUE_LOOKBACK_DAYS));
-
     const tasks = await this.repository.findIncompleteTasksDueBetween(
-      windowStart,
-      dueSoonKey,
+      toDateKey(addDays(now, -(OVERDUE_LOOKBACK_DAYS + 1))),
+      toDateKey(addDays(now, DUE_SOON_LEAD_DAYS + 1)),
+    );
+    if (tasks.length === 0) return { sent: 0 };
+    const zones = await this.notificationService.timeZonesFor(
+      tasks.map((task) => task.assignee_id),
     );
 
     let sent = 0;
     for (const task of tasks) {
       try {
+        const todayKey = reminderDayKey(
+          now,
+          zones.get(task.assignee_id) ?? null,
+        );
+        if (todayKey === null) continue;
+        if (
+          task.due_date > shiftDate(todayKey, DUE_SOON_LEAD_DAYS) ||
+          task.due_date < shiftDate(todayKey, -OVERDUE_LOOKBACK_DAYS)
+        ) {
+          continue;
+        }
         if (task.due_date >= todayKey) {
           if (await this.notifyTaskDueSoon(task, todayKey)) sent += 1;
         } else if (await this.notifyTaskOverdue(task)) {
@@ -919,14 +992,12 @@ export class ScheduledJobsService {
   private isNewlyOverdue(
     dueDate: string,
     graceDays: number,
-    now: Date,
+    todayKey: string,
   ): boolean {
-    const overdueKey = toDateKey(
-      addDays(new Date(`${dueDate}T00:00:00Z`), graceDays),
-    );
+    const overdueKey = shiftDate(dueDate, graceDays);
     return (
-      overdueKey < toDateKey(now) &&
-      overdueKey >= toDateKey(addDays(now, -OVERDUE_LOOKBACK_DAYS))
+      overdueKey < todayKey &&
+      overdueKey >= shiftDate(todayKey, -OVERDUE_LOOKBACK_DAYS)
     );
   }
 

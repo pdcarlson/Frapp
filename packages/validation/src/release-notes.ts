@@ -120,6 +120,21 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-15",
+    title: "New in this update",
+    changes: [
+      "Activity now shows how many have voted on a poll you posted, and how many have checked in to an event you made once check-in opens.",
+      "You can sort your channel list by most recent activity or A to Z from the filter button, and your choice follows you between your phone and the web.",
+      "You can now schedule a reply inside a thread, the same way you schedule a message in the channel, and see that thread's scheduled replies from the line above its reply box.",
+      "Officers can set aside roles for things outside chapter business, like intramurals or a study group, and you can add yourself to them and get their channels in Chat.",
+      "Signing in for the first time no longer stops you with a warning about a new account; if you're already in a chapter and signed in with the wrong account, a small link on the join screen lets you switch.",
+      "Task reminders now arrive around 9 in the morning where you are, and \"due today\" follows your own calendar.",
+    ],
+    phone: [
+      "Send invite now works on the first tap while the keyboard is open.",
+    ],
+  },
+  {
     date: "2026-11-14",
     title: "New in this update",
     changes: [

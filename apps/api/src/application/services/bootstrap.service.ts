@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { INBOX_FIRST_PAGE_SIZE } from '@repo/validation';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { ChapterDocumentService } from './chapter-document.service';
 import { ChapterService } from './chapter.service';
@@ -18,9 +19,6 @@ import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
 import { StudyService } from './study.service';
 import { UserService } from './user.service';
-
-/** The page the inbox hooks ask for when they name no `limit`. */
-export const BOOTSTRAP_NOTIFICATION_LIMIT = 50;
 
 /** Who the sections are read for: the guarded caller and chapter. */
 interface Caller {
@@ -124,10 +122,10 @@ function sectionReaders(s: {
     /** `GET /v1/members/roster` */
     member_roster: ({ chapterId }: Caller) =>
       s.members.findRosterByChapter(chapterId),
-    /** `GET /v1/notifications` at the clients' default page (`limit` 50) */
+    /** `GET /v1/notifications` at the clients' default page (`INBOX_FIRST_PAGE_SIZE`) */
     notifications: ({ userId, chapterId }: Caller) =>
       s.notifications.listNotifications(userId, chapterId, {
-        limit: BOOTSTRAP_NOTIFICATION_LIMIT,
+        limit: INBOX_FIRST_PAGE_SIZE,
       }),
   };
 }

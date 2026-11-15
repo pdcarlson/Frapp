@@ -81,8 +81,10 @@ export function useMemberBirthdays() {
     // Under `["members", …]`, so a profile save (`PROFILE_QUERY_FILTERS`)
     // refreshes it with the directory.
     queryKey: ["members", chapterId, "birthdays"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/members/birthdays");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/members/birthdays", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

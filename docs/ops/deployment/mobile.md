@@ -787,8 +787,11 @@ Its header owns how; this section is how to use it.
 One run at a time: while a run is in flight, GitHub keeps only the newest waiting run and cancels
 an older waiting one, so dispatch again if a run you asked a named platform from shows as cancelled.
 
-Run it from `main` in GitHub Actions. It is started by hand until a first run has proved both
-store uploads; after that it will follow every staging deploy (#4917).
+It runs by itself after every successful staging deploy, for the commit that deploy shipped: it
+publishes the update, and builds iOS when the runtime has no uploaded binary. An automatic run
+never builds Android until Play has taken the app's first bundle by hand (#4917); until then,
+build Android by running the workflow from `main` in GitHub Actions. A run by hand takes these
+choices:
 
 - **`build: auto`** (the default) publishes the commit as an update to the `staging` channel, and
   builds a binary for a platform only when no uploaded binary carries this commit's runtime, which

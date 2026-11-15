@@ -309,6 +309,23 @@ vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
 }));
 
 let writeBlockedReason: string | null = null;
+// Scheduling has its own spec (`use-schedule-send.spec.tsx`); this one checks
+// the thread hands it the thread and the composer gets its long press (#5005).
+const scheduleSend = vi.hoisted(() => ({
+  input: null as Record<string, unknown> | null,
+  open: () => {},
+}));
+vi.mock("@/components/chat/use-schedule-send", () => ({
+  useScheduleSend: (input: Record<string, unknown>) => {
+    scheduleSend.input = input;
+    return {
+      openSchedule: input.canSchedule ? scheduleSend.open : undefined,
+      scheduled: null,
+      sheets: null,
+    };
+  },
+}));
+
 vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({
     isOffline: writeBlockedReason !== null,
@@ -520,12 +537,51 @@ describe("MessageThreadScreen (#3785)", () => {
     act(() => tree.unmount());
   });
 
+  describe("scheduling a reply (#5005)", () => {
+    it("schedules into this thread from a long press on Send", () => {
+      const tree = render();
+      expect(scheduleSend.input).toMatchObject({
+        channelId: CHANNEL,
+        threadRootId: ROOT,
+        canSchedule: true,
+        showList: true,
+      });
+      expect(tree.root.findByType(ChatComposer).props.onSchedule).toBe(
+        scheduleSend.open,
+      );
+      act(() => tree.unmount());
+    });
+
+    it("refuses a question for Frapp, and offers nothing offline", () => {
+      catchUp.ask = true;
+      let tree = render();
+      act(() =>
+        tree.root.findByType(ChatComposer).props.onChangeText("@Frapp when?"),
+      );
+      catchUp.ask = false;
+      expect(scheduleSend.input?.refusal).toBe(
+        "A question for Frapp can't be scheduled.",
+      );
+      act(() => tree.unmount());
+      writeBlockedReason = "Reconnect to make changes.";
+      tree = render();
+      expect(
+        tree.root.findByType(ChatComposer).props.onSchedule,
+      ).toBeUndefined();
+      act(() => tree.unmount());
+    });
+  });
+
   describe("GIFs (#4657)", () => {
     const PICKED = {
       id: "g1",
       title: "wave",
       token: "signed",
-      full: { url: "https://static.klipy.com/g1.webp", width: 200, height: 150 },
+      full: {
+        url: "https://static.klipy.com/g1.webp",
+        width: 200,
+        height: 150,
+      },
       preview: {
         url: "https://static.klipy.com/g1-s.webp",
         width: 100,
@@ -572,7 +628,9 @@ describe("MessageThreadScreen (#3785)", () => {
 
     it("offers no + where GIFs aren't set up, and holds it dark offline", () => {
       let tree = render();
-      expect(tree.root.findByType(ChatComposer).props.onOpenPlus).toBeUndefined();
+      expect(
+        tree.root.findByType(ChatComposer).props.onOpenPlus,
+      ).toBeUndefined();
       expect(tree.root.findAllByType(GifPickerSheet)).toHaveLength(0);
       act(() => tree.unmount());
       gifs = { available: true, provider: "KLIPY" };

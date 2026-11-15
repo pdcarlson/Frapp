@@ -45,6 +45,7 @@ describe("useServiceEntry", () => {
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(GET).toHaveBeenCalledWith("/v1/service-entries/{id}", {
+      signal: expect.any(AbortSignal),
       params: { path: { id: "entry-1" } },
     });
     expect(result.current.data).toEqual({ id: "entry-1", status: "APPROVED" });

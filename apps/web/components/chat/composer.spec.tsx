@@ -3153,6 +3153,30 @@ describe("Composer schedule (#4956)", () => {
     );
   });
 
+  it("refuses a second schedule while the first is still out (#5005)", async () => {
+    const editor = fakeEditor("First");
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    const onSchedule = vi.fn(() => new Promise<void>(() => {}));
+    render(<Composer {...baseProps({ draft: "First", onSchedule })} />);
+    const pick = async () => {
+      await userEvent.click(
+        screen.getByRole("button", { name: "Schedule message" }),
+      );
+      await userEvent.click(
+        await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+      );
+    };
+    await pick();
+    editor.type("Second");
+    await pick();
+    expect(onSchedule).toHaveBeenCalledTimes(1);
+    expect(editor.getText()).toBe("Second");
+    expect(mockToast).toHaveBeenCalledWith({
+      title: "Wait for the last message to finish scheduling.",
+    });
+  });
+
   it("schedules with a reply staged, leaving the reply to the parent (#4971)", async () => {
     const onCancelReply = vi.fn();
     const { onSchedule } = await scheduleText("sounds good", {

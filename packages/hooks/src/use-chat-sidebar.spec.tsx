@@ -20,6 +20,7 @@ const KEY = chatSidebarKeys.chapter(CHAPTER);
 const stored: ChatSidebar = {
   unread_only: false,
   hide_muted: true,
+  sort: "recent",
   collapsed_sections: ["direct"],
   pinned_channel_ids: ["general"],
 };
@@ -148,6 +149,24 @@ describe("useSidebarPreferences", () => {
       unreadOnly: false,
       hideMuted: true,
     });
+    expect(result.current.sort).toBe("recent");
+  });
+
+  it("reads a missing or unknown sort as the chapter's order", async () => {
+    // What an API from before the sort answers.
+    const older: Partial<ChatSidebar> = { ...stored };
+    delete older.sort;
+    const GET = vi.fn().mockResolvedValue({ data: older, error: null });
+    const { Wrapper } = setup({ GET });
+
+    const { result } = renderHook(() => useSidebarPreferences(), {
+      wrapper: Wrapper,
+    });
+
+    await waitFor(() =>
+      expect(result.current.pinnedIds.has("general")).toBe(true),
+    );
+    expect(result.current.sort).toBe("chapter");
   });
 });
 

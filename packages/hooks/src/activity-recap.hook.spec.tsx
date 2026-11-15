@@ -41,6 +41,7 @@ describe("useActivityRecap", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.GET).toHaveBeenCalledWith("/v1/activity/recap", {
+      signal: expect.any(AbortSignal),
       params: { query: recapWeek(new Date(2026, 10, 16, 9)) },
     });
   });

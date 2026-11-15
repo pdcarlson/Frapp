@@ -3,10 +3,13 @@ import {
   CLIENT_VERSION_HEADER,
   TIME_ZONE_HEADER,
   REQUEST_ID_HEADER,
+  REQUEST_TIMEOUT_MS,
   createFrappClient,
+  isRequestTimeout,
   mintRequestId,
   withRequestIdInit,
 } from "./client";
+import { statusOf } from "./api-error";
 
 function sentRequest(): Request {
   const [input, init] = vi.mocked(fetch).mock.calls[0] as [
@@ -151,7 +154,9 @@ describe("createFrappClient client version", () => {
 
     await client.GET("/v1/client-policy");
 
-    expect(sentRequest().headers.get(CLIENT_VERSION_HEADER)).toBe("ios/0.9.0+12");
+    expect(sentRequest().headers.get(CLIENT_VERSION_HEADER)).toBe(
+      "ios/0.9.0+12",
+    );
   });
 
   it("sends no header when none is configured, as on web", async () => {
@@ -240,5 +245,277 @@ describe("createFrappClient onUnauthorized", () => {
     await client.GET("/v1/client-policy");
 
     expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+});
+
+describe("createFrappClient failed calls (#3394)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const answer = (response: Response) =>
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
+
+  it("gives an empty-bodied 502 (Content-Length: 0) an error carrying its status", async () => {
+    answer(
+      new Response(null, { status: 502, headers: { "Content-Length": "0" } }),
+    );
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    const { error } = await client.POST("/v1/events", { body: {} as never });
+
+    expect(error).toEqual({ statusCode: 502, message: undefined });
+    expect(statusOf(error)).toBe(502);
+  });
+
+  it("gives an empty text body the same, so `if (error) throw error` throws", async () => {
+    answer(new Response("", { status: 503 }));
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    const { error } = await client.GET("/v1/events");
+
+    expect(error).toBeTruthy();
+    expect(statusOf(error)).toBe(503);
+  });
+
+  it("keeps the API's own refusal as it was sent", async () => {
+    const refusal = { statusCode: 403, message: "Forbidden", code: "x.y" };
+    answer(
+      new Response(JSON.stringify(refusal), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    const { error } = await client.GET("/v1/events");
+
+    expect(error).toEqual(refusal);
+  });
+
+  it("drops a gateway's HTML page but keeps its status", async () => {
+    answer(new Response("<html>Bad Gateway</html>", { status: 502 }));
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    const { error } = await client.GET("/v1/events");
+
+    expect(error).toEqual({ statusCode: 502, message: undefined });
+  });
+
+  it.each(["GET", "PUT", "POST", "DELETE", "PATCH"] as const)(
+    "settles an empty-bodied 502 the same way through %s",
+    async (method) => {
+      answer(new Response(null, { status: 502 }));
+      const client = createFrappClient({ baseUrl: "http://api.test" });
+      const call = client[method] as unknown as (
+        path: string,
+        init?: unknown,
+      ) => Promise<{ error?: unknown }>;
+
+      const { error } = await call("/v1/events");
+
+      expect(statusOf(error)).toBe(502);
+    },
+  );
+
+  it("settles it through the generic request() too", async () => {
+    answer(new Response(null, { status: 502 }));
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    const { error } = await client.request("get", "/v1/events");
+
+    expect(statusOf(error)).toBe(502);
+  });
+
+  it("still resolves a 204 with no body and no error", async () => {
+    answer(new Response(null, { status: 204 }));
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    const result = await client.DELETE("/v1/events/{id}", {
+      params: { path: { id: "e1" } },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(result.response.status).toBe(204);
+  });
+});
+
+describe("createFrappClient request timeout (#3433)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** A `fetch` that never answers, and records the signal it was given. */
+  const hang = () => {
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.signal) signals.push(init.signal);
+        return new Promise<Response>(() => undefined);
+      }),
+    );
+    return signals;
+  };
+
+  it.each([
+    [
+      "a read",
+      () => createFrappClient({ baseUrl: "http://api.test" }).GET("/v1/events"),
+      REQUEST_TIMEOUT_MS.read,
+    ],
+    [
+      "a write",
+      () =>
+        createFrappClient({ baseUrl: "http://api.test" }).POST("/v1/events", {
+          body: {} as never,
+        }),
+      REQUEST_TIMEOUT_MS.write,
+    ],
+    [
+      "a chat send",
+      () =>
+        createFrappClient({ baseUrl: "http://api.test" }).POST(
+          "/v1/channels/{id}/messages",
+          { params: { path: { id: "c1" } }, body: {} as never },
+        ),
+      REQUEST_TIMEOUT_MS.watched,
+    ],
+    [
+      "a model call",
+      () =>
+        createFrappClient({ baseUrl: "http://api.test" }).POST(
+          "/v1/ai/catch-up",
+          {
+            body: {} as never,
+          },
+        ),
+      REQUEST_TIMEOUT_MS.model,
+    ],
+  ] as const)(
+    "fails %s that never answers after its limit, and aborts it",
+    async (_name, send, limit) => {
+      vi.useFakeTimers();
+      const signals = hang();
+
+      const settled = expect(send()).rejects.toSatisfy(isRequestTimeout);
+      await vi.advanceTimersByTimeAsync(limit - 1);
+      expect(signals[0]?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+
+      await settled;
+      expect(signals[0]?.aborted).toBe(true);
+    },
+  );
+
+  it("fails as React Native's own timeout, the shape every dead-request reader knows", async () => {
+    vi.useFakeTimers();
+    hang();
+    const client = createFrappClient({
+      baseUrl: "http://api.test",
+      requestTimeoutMs: 10,
+    });
+
+    const call = client.GET("/v1/events").catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10);
+    const error = (await call) as Error;
+
+    // `@repo/observability`'s reporter reads the message only on a TypeError
+    // ("Network request timed out" is in its dead-fetch list), and mobile
+    // check-in reads `instanceof TypeError` as an attempt that got no answer.
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error.name).toBe("TypeError");
+    expect(error.message).toBe("Network request timed out");
+  });
+
+  it("fails a response whose body stalls after its headers", async () => {
+    vi.useFakeTimers();
+    let bodySignal: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        bodySignal = init?.signal ?? undefined;
+        const stalled = new Response(
+          new ReadableStream({ start: () => undefined }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+        return Promise.resolve(stalled);
+      }),
+    );
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    const settled = expect(client.GET("/v1/events")).rejects.toSatisfy(
+      isRequestTimeout,
+    );
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS.read);
+
+    await settled;
+    expect(bodySignal?.aborted).toBe(true);
+  });
+
+  it("lets a stream run past the limit, and still stops it on the caller's abort", async () => {
+    vi.useFakeTimers();
+    let sent: AbortSignal | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        sent = init?.signal ?? undefined;
+        return Promise.resolve(
+          new Response(new ReadableStream({ start: () => undefined }), {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream; charset=utf-8" },
+          }),
+        );
+      }),
+    );
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+    const stop = new AbortController();
+
+    const { data } = await client.POST("/v1/ai/ask", {
+      body: {} as never,
+      parseAs: "stream",
+      signal: stop.signal,
+    });
+    expect(data).toBeInstanceOf(ReadableStream);
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS.write * 2);
+    expect(sent?.aborted).toBe(false);
+
+    stop.abort();
+    expect(sent?.aborted).toBe(true);
+  });
+
+  it("aborts the request when the caller's signal does (a cancelled query)", async () => {
+    const signals = hang();
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+    const caller = new AbortController();
+
+    void client.GET("/v1/events", { signal: caller.signal }).catch(() => {});
+    await vi.waitFor(() => expect(signals).toHaveLength(1));
+    expect(signals[0]?.aborted).toBe(false);
+    caller.abort();
+
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  it("clears its timer once the response arrives", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response("[]", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const client = createFrappClient({ baseUrl: "http://api.test" });
+
+    const { data } = await client.GET("/v1/events");
+
+    expect(data).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

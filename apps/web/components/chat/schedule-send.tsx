@@ -50,6 +50,23 @@ import { useToast } from "@/lib/hooks/use-toast";
  * the channel, where each can be edited, sent now or deleted.
  */
 
+/**
+ * What the channel composer and a thread's reply box say when scheduling
+ * (#5005), so the two say the same thing.
+ */
+export const SCHEDULE_COPY = {
+  offline: "Reconnect to schedule a message.",
+  empty: "Type a message to schedule.",
+  askFrapp: "Questions for Frapp can't be scheduled. Send them now.",
+  /** A second schedule while the first is still out: refused, not dropped. */
+  busy: "Wait for the last message to finish scheduling.",
+  failed: "Couldn't schedule it",
+  notPutBack: (detail: string, where: string) =>
+    `${detail} It couldn't be put back in the ${where}.`,
+  scheduled: (at: Date) =>
+    `Scheduled for ${formatScheduledFor(at, new Date())}`,
+} as const;
+
 /** `YYYY-MM-DD` and `HH:MM` for a local date, as the native inputs take them. */
 function localParts(at: Date): { date: string; time: string } {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -227,10 +244,19 @@ export function ScheduleSendButton({
 
 /**
  * "2 scheduled messages" above the composer, while the member has any in this
- * channel; it opens the list. Nothing at all when they have none.
+ * channel; it opens the list. Nothing at all when they have none. With
+ * `threadRootId`, above a thread's reply box, only that thread's (#5005); the
+ * channel's line still counts them, since its list is everything the member
+ * has scheduled in the channel.
  */
-export function ScheduledMessagesBar({ channelId }: { channelId: string }) {
-  const { data } = useScheduledMessages(channelId);
+export function ScheduledMessagesBar({
+  channelId,
+  threadRootId,
+}: {
+  channelId: string;
+  threadRootId?: string;
+}) {
+  const { data } = useScheduledMessages(channelId, threadRootId);
   const [open, setOpen] = useState(false);
   const rows = data ?? [];
   if (rows.length === 0) return null;

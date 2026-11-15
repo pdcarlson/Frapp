@@ -95,8 +95,9 @@ export function useOrgConfig() {
 
   return useQuery({
     queryKey: ["chapter-config", chapterId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/chapters/{id}/config", {
+        signal,
         params: { path: { id: chapterId as string } },
       });
       if (error) throw error;

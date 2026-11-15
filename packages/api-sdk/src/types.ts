@@ -1898,7 +1898,7 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Switch the sidebar filters. A filter left out keeps its stored value. */
+        /** Switch the sidebar filters or sort. A setting left out keeps its stored value. */
         patch: operations["ChatSidebarController_updateSidebar_v1"];
         trace?: never;
     };
@@ -7175,11 +7175,18 @@ export interface components {
             blocked_user_id: string;
             created_at: string;
         };
+        /**
+         * @description How channels sort inside each section: chapter (the chapter's own order, then A to Z; the default), recent (newest latest message first) or alpha (A to Z by the name the row shows).
+         * @enum {string}
+         */
+        ChatSidebarSort: "chapter" | "recent" | "alpha";
         ChatSidebarDto: {
             /** @description Show only channels with something unread, a mention included. Pinned channels and the open channel still show. */
             unread_only: boolean;
             /** @description Leave out channels whose notification level is off. A muted channel with an unread @-mention still shows. */
             hide_muted: boolean;
+            /** @description How channels sort inside each section: chapter (the chapter's own order, then A to Z; the default), recent (newest latest message first) or alpha (A to Z by the name the row shows). */
+            sort: components["schemas"]["ChatSidebarSort"];
             /** @description Section keys the member folded: pinned, channels, direct, system, or category:<uuid>. */
             collapsed_sections: string[];
             /** @description Channels the member pinned to the top, limited to channels they can still read. Carries no order: the sidebar sorts the Pinned section like any other. */
@@ -7188,6 +7195,7 @@ export interface components {
         UpdateChatSidebarDto: {
             unread_only?: boolean;
             hide_muted?: boolean;
+            sort?: components["schemas"]["ChatSidebarSort"];
         };
         FollowedThreadDto: {
             /** Format: uuid */
@@ -9289,10 +9297,16 @@ export interface components {
              */
             snoozed_until: string | null;
         };
+        ActivityProgressDto: {
+            /** @description How many have answered: voted, or checked in. */
+            done: number;
+            /** @description Of how many can answer. Never 0 (a row with nobody to answer has no progress) and never less than `done`. */
+            total: number;
+        };
         ActivityPollDto: {
             /**
              * Format: uuid
-             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.
+             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies by option. Its one count is `progress`, on an open poll the caller posted.
              */
             message_id: string;
             /** Format: uuid */
@@ -9317,6 +9331,8 @@ export interface components {
             closed_at: string | null;
             is_closed: boolean;
             has_voted: boolean;
+            /** @description In `made_by_you`, on an open poll: how many of the other members who can read its channel have voted (#4792). Null everywhere else, when nobody else can read it, and when the count could not be read. */
+            progress: components["schemas"]["ActivityProgressDto"] | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`. */
@@ -9407,6 +9423,8 @@ export interface components {
              * @description Who made it. Null for an event made before makers were recorded (2026-11-11).
              */
             created_by: string | null;
+            /** @description In `made_by_you`, once check-in has opened: how many of the other members the event invites, and who can check in, have checked in (#4792). Excused members are left out. Null before check-in opens, everywhere else, when it invites nobody else who can check in, and when the count could not be read. */
+            progress: components["schemas"]["ActivityProgressDto"] | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made. */

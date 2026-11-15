@@ -70,7 +70,7 @@ describe("useRoles", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(mockGet).toHaveBeenCalledWith("/v1/roles");
+    expect(mockGet).toHaveBeenCalledWith("/v1/roles", { signal: expect.any(AbortSignal) });
     expect(mockGet).toHaveBeenCalledTimes(1);
     expect(result.current.data).toEqual(mockRoles);
   });
@@ -90,7 +90,7 @@ describe("useRoles", () => {
       expect(result.current.isError).toBe(true);
     });
 
-    expect(mockGet).toHaveBeenCalledWith("/v1/roles");
+    expect(mockGet).toHaveBeenCalledWith("/v1/roles", { signal: expect.any(AbortSignal) });
     expect(result.current.error).toEqual(mockError);
   });
 
@@ -131,7 +131,7 @@ describe("useMentionRoles", () => {
       wrapper: createWrapper(queryClient, { GET: mockGet }),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockGet).toHaveBeenCalledWith("/v1/channels/mention-roles");
+    expect(mockGet).toHaveBeenCalledWith("/v1/channels/mention-roles", { signal: expect.any(AbortSignal) });
     expect(
       result.current.data?.map(({ name, mentionable }) => [name, mentionable]),
     ).toEqual([

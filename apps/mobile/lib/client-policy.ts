@@ -102,7 +102,9 @@ export function useClientPolicy(
         // non-2xx is never an answer, whatever its body. openapi-fetch 0.17
         // already leaves `data` undefined there, so the shape check below
         // would throw too; checking the status means this doesn't rest on that.
-        // (`error` can't be the test: it is undefined for an empty-bodied 5xx.)
+        // (The status, not `error`, is the test: `createFrappClient` fills
+        // `error` in for an empty-bodied 5xx since #3394, but openapi-fetch
+        // alone leaves it undefined.)
         // `throwUnlessOk` throws the body with its status, request id and code,
         // so a report groups it by status class and joins the API's own event
         // (`lib/sentry/query-errors.ts`).
