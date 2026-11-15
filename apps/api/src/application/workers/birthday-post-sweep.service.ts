@@ -35,6 +35,7 @@ import type { ChapterBirthdayChannel } from '#domain/repositories/chapter.reposi
 import type { ChatChannel } from '#domain/entities/chat.entity';
 import { recipientTimeZone } from '../services/notification.service';
 import { DEFAULT_PUSH_TIME_ZONE } from '../services/push-copy';
+import { localClock, localDateKey } from '../services/local-clock';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
@@ -55,33 +56,6 @@ export interface DueBirthday {
   name: string;
   /** `YYYY-MM-DD` in the member's own zone, the post's once-a-day key. */
   localDate: string;
-}
-
-/** The date and hour `now` reads as in `timeZone`, or null for a bad zone. */
-function localClock(
-  now: Date,
-  timeZone: string,
-): { year: number; month: number; day: number; hour: number } | null {
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      year: 'numeric',
-      month: 'numeric',
-      day: 'numeric',
-      hour: 'numeric',
-      hourCycle: 'h23',
-    }).formatToParts(now);
-    const part = (type: string) =>
-      Number(parts.find((entry) => entry.type === type)?.value);
-    return {
-      year: part('year'),
-      month: part('month'),
-      day: part('day'),
-      hour: part('hour'),
-    };
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -111,7 +85,7 @@ export function dueBirthdays(
     due.push({
       userId: birthday.id,
       name,
-      localDate: `${clock.year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+      localDate: localDateKey({ year: clock.year, month, day }),
     });
   }
   return due;

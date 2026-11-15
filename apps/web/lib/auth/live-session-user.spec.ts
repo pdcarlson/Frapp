@@ -11,7 +11,8 @@ import {
  * trusts the cookie) sends the visitor straight back and the page loops.
  */
 
-const { getUser, signOut, reportAuthFailure } = vi.hoisted(() => ({
+const { getSession, getUser, signOut, reportAuthFailure } = vi.hoisted(() => ({
+  getSession: vi.fn(),
   getUser: vi.fn(),
   signOut: vi.fn(),
   reportAuthFailure: vi.fn(),
@@ -20,10 +21,11 @@ const { getUser, signOut, reportAuthFailure } = vi.hoisted(() => ({
 vi.mock("@/lib/sentry/auth-failures", () => ({ reportAuthFailure }));
 
 vi.mock("@/lib/supabase/client", () => ({
-  createSupabaseBrowserClient: () => ({ auth: { getUser } }),
+  createSupabaseBrowserClient: () => ({ auth: { getSession, getUser } }),
 }));
 vi.mock("@/lib/auth/session", () => ({
   signOutCurrentSession: signOut,
+  signingOutHere: () => false,
 }));
 
 import { getLiveSessionUser } from "./rejected-session";
@@ -31,6 +33,10 @@ import { getLiveSessionUser } from "./rejected-session";
 describe("getLiveSessionUser (#3776)", () => {
   beforeEach(() => {
     getUser.mockReset();
+    // A browser holding a session, unless a test says otherwise.
+    getSession.mockReset().mockResolvedValue({
+      data: { session: { access_token: "t" } },
+    });
     signOut.mockReset();
     reportAuthFailure.mockReset();
     signOut.mockResolvedValue(undefined);
@@ -44,6 +50,7 @@ describe("getLiveSessionUser (#3776)", () => {
   });
 
   it("is null for a visitor with no session, with nothing to clear", async () => {
+    getSession.mockResolvedValue({ data: { session: null } });
     getUser.mockResolvedValue({
       data: { user: null },
       error: new AuthSessionMissingError(),
@@ -70,6 +77,36 @@ describe("getLiveSessionUser (#3776)", () => {
       flow: "session_check",
       screen: "/join",
       error: { code: "user_not_found" },
+    });
+  });
+
+  it("clears and reports a session revoked elsewhere, which Auth answers as no session (#4440)", async () => {
+    getUser.mockResolvedValue({
+      data: { user: null },
+      error: new AuthSessionMissingError(),
+    });
+    await expect(getLiveSessionUser()).resolves.toBeNull();
+    expect(signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(reportAuthFailure).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
+      flow: "session_check",
+      screen: "/join",
+      code: "session_not_found",
+    });
+  });
+
+  it("reads the local session before asking Auth, which drops a revoked one (#4440)", async () => {
+    // As auth-js does: `getUser` removes the stored session when GoTrue
+    // answers `session_not_found`, so a read after it would find none.
+    let session: unknown = { access_token: "t" };
+    getSession.mockImplementation(async () => ({ data: { session } }));
+    getUser.mockImplementation(async () => {
+      session = null;
+      return { data: { user: null }, error: new AuthSessionMissingError() };
+    });
+    await expect(getLiveSessionUser()).resolves.toBeNull();
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
+      code: "session_not_found",
     });
   });
 

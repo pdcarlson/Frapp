@@ -261,7 +261,8 @@ a fixed 28px dot slot below `xl`, so it never resizes the find field), notificat
   CSS shows one copy or the other, so the first paint is right before the width is known ([§ Chat](#chat)).
   Mobile keeps its in-screen titles ([`../mobile/patterns.md`](../mobile/patterns.md) § Screen headers).
 
-- **Find** ([`find-bar.tsx`](../../../apps/web/components/layout/find-bar.tsx), [`find-dialog.tsx`](../../../apps/web/components/layout/find-dialog.tsx)) is a field-shaped button in the bar that opens a centered dialog, as does Cmd/Ctrl+F. The dialog searches channels, members, messages, events and backwork, in that order, with filter chips to narrow to one group, and every dated row carries its date: a message its sent day, an event its start, a backwork file its course, term and the day it was added ([`find-results.ts`](../../../apps/web/components/layout/find-results.ts)).
+- **Find** ([`find-bar.tsx`](../../../apps/web/components/layout/find-bar.tsx), [`find-dialog.tsx`](../../../apps/web/components/layout/find-dialog.tsx)) is a field-shaped button in the bar that opens a centered dialog, as does Cmd/Ctrl+F.
+  The dialog searches channels, members, messages, events and backwork, in that order, with filter chips to narrow to one group, and every dated row carries its date: a message its sent day, an event its start, a backwork file its course, term and the day it was added ([`find-results.ts`](../../../apps/web/components/layout/find-results.ts)).
   Events and Backwork drop out when the chapter switches their module off (and stay out while that setting is still loading), and Backwork also drops out for a member without `backwork:upload` or `backwork:admin`, whom `/v1/search` sends no backwork rows either ([`search.md`](../../behavior/search.md)).
   Typing on the focused field opens the dialog with that text, as it would in the field it looks like.
   It replaced the ⌘K `cmdk` palette, which is deleted, and the chat channel list's own search field, which went with it.
@@ -575,7 +576,9 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   The side stops at its 375px floor and fades once the pointer is past half of it, so the member sees what letting go will do; dragging back cancels, and a close keeps the split from before the drag.
   Closing the page goes to `/chat` as a nav row's close does.
   **Chat closes from its own header too** ([#4223](https://github.com/pdcarlson/Frapp/issues/4223), asked by Shawn 2026-11-11): from 1056px up, with chat beside a page, an X at the right end of chat's channel header, after the people and ⋯ buttons, closes chat and leaves the page filling the row.
-  It is the tool page header's close button (`PanelCloseButton`), 16px from its panel's edge as the page's is, so the two panels close the same way, as Slack's channel and right-hand panel and Discord's thread and member panels each carry their own X. An open thread covers the channel header, so the thread's header carries the same X. Focus moves to the page, since the X goes with the panel.
+  It is the tool page header's close button (`PanelCloseButton`), 16px from its panel's edge as the page's is, so the two panels close the same way, as Slack's channel and right-hand panel and Discord's thread and member panels each carry their own X.
+  An open thread covers the channel header, so the thread's header carries the same X.
+  Focus moves to the page, since the X goes with the panel.
   With chat alone, or below 1056px, there is nothing to close chat into and the X is not drawn; the Chat row still opens and closes chat, and reopening it returns to the same channel.
   Escape inside chat does not close it, because Escape there already closes a thread or cancels a reply.
   This changes the rule on [#4023](https://github.com/pdcarlson/Frapp/issues/4023) that the nav rows stay the only open and close controls (Winston, 2026-11-10), which the page's own close (above) had already relaxed for tool pages.
