@@ -41,3 +41,23 @@ export function payIntentErrorCopy(error: unknown): string {
       return serverMessage ?? "Could not start payment. Please try again.";
   }
 }
+
+/**
+ * The line that ends a "confirmation pending" hold when the server says the
+ * attempt failed (#3460): the invoice read's `last_payment_failed_at` is set,
+ * per `spec/behavior/billing.md` § Member payment flow. Shared by web's pay
+ * dialog and mobile s11, like {@link payIntentErrorCopy}. `reason` is Stripe's
+ * member-facing decline message (`last_payment_failure_reason`), which usually
+ * ends with a period already; `title` names the invoice where the screen needs
+ * it to.
+ */
+export function paymentFailedCopy(
+  reason: string | null | undefined,
+  title?: string,
+): string {
+  const subject = title ? `Your payment for ${title}` : "Your payment";
+  const why = reason?.trim().replace(/\.+$/, "");
+  return why
+    ? `${subject} didn't go through: ${why}. You can try again.`
+    : `${subject} didn't go through. You can try again.`;
+}

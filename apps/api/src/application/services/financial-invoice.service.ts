@@ -92,6 +92,9 @@ export interface ApplyStripePaymentInput {
 export interface NotifyStripePaymentFailureInput {
   invoiceId: string;
   chapterId: string;
+  paymentIntentId: string;
+  /** The webhook event's `created` time, as an ISO timestamp. */
+  failedAt: string;
   declineReason: string | null;
 }
 
@@ -487,6 +490,15 @@ export class FinancialInvoiceService {
   /**
    * Member dues payment declined (#717). Does not change invoice status — OPEN
    * is already correct, and the pay endpoint reuses a confirmable intent.
+   *
+   * It records the failure on the invoice (#3460) so the invoice reads tell a
+   * dues screen holding "confirmation pending" that the attempt didn't go
+   * through. The write is conditional (`recordPaymentFailure`): an OPEN invoice
+   * whose stored intent is this one, and whose current attempt began at or
+   * before the failure. A failure the guard skips (an older intent, or an
+   * attempt the member has since retried) is still notified when the invoice
+   * is OPEN, since it was a real decline; it just doesn't end the newer hold.
+   *
    * Missing / non-OPEN invoices are acked silently: notifying about a VOID or
    * already-PAID row would contradict what the member sees.
    */
@@ -510,6 +522,19 @@ export class FinancialInvoiceService {
       return;
     }
 
+    const recorded = await this.invoiceRepo.recordPaymentFailure(
+      invoice.id,
+      input.chapterId,
+      input.paymentIntentId,
+      input.failedAt,
+      input.declineReason,
+    );
+    if (!recorded) {
+      this.logger.debug(
+        `payment_intent.payment_failed for invoice ${input.invoiceId} (intent ${input.paymentIntentId}) predates its current attempt or intent — not recorded`,
+      );
+    }
+
     const body = declineNotificationBody(invoice.title, input.declineReason);
 
     await this.notificationService.notifyUser(
@@ -520,7 +545,7 @@ export class FinancialInvoiceService {
         body,
         priority: 'NORMAL',
         category: 'billing',
-        data: { target: { screen: 'billing' } },
+        data: { target: { screen: 'billing', invoiceId: invoice.id } },
       },
     );
   }
