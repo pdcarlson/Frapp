@@ -1,27 +1,21 @@
 /**
- * Signet duotone glyphs for the Profile & pre-auth family — `/profile`, the
- * onboarding wizard and tutorial, and the four pre-auth routes.
+ * Signet duotone glyphs for the Profile & pre-auth family — the onboarding
+ * wizard and the pre-auth routes.
  *
- * `ProfileGlyph` and the nav re-exports draw the shared two-tone set
- * (`@repo/theme/nav-glyphs`, `spec/ui/design-system/iconography.md` §1.1);
  * `LinkGlyph` keeps the stroke recipe in `components/ui/duotone.tsx` (§1),
  * because a filled silhouette breaks a chain link, and so do the re-exported
- * `SearchGlyph` and `LockGlyph` until #3491. The
- * intent → glyph map lives in `iconography.md` §6.2.7 and MUST be updated in
- * the same PR as any change here (§6.3).
+ * `SearchGlyph` and `LockGlyph` until #3491. The intent → glyph map lives in
+ * `iconography.md` §6.2.7 and MUST be updated in the same PR as any change
+ * here (§6.3).
  *
  * One file for three directories, as Chapter Ops does for five: `profile/`,
- * `onboarding/` and `auth/` share their intents rather than partitioning them.
- * It is homed here because `ProfileGlyph` is a profile intent (its one consumer
- * today is the onboarding tutorial), and §6.2.3 already records that
- * a cross-directory import is fine: "§1 rule 1 is about not redrawing, not
- * about where an import points."
+ * `onboarding/` and `auth/` share their intents rather than partitioning them,
+ * and §6.2.3 records that a cross-directory import is fine: "§1 rule 1 is
+ * about not redrawing, not about where an import points."
  *
- * **Two defined here, the rest re-exported**, which is the bar §6.2.6 sets for
- * shipping a family file at all. Six of the tutorial's nine slides name
- * intents the sidebar already draws (chat twice, with the display pick), so
- * migrating those and leaving one on Lucide would be one intent in two glyph sets — the drift §1 rule 1
- * bans. The `LockGlyph` re-export crosses from chat for the same reason.
+ * `ProfileGlyph` and the Chat, Events, Backwork, Study hours and Points
+ * re-exports went with the first-run slideshow that was their one consumer
+ * (#5080): the spotlight tour lights the real controls and draws no glyph.
  *
  * **Control furniture stays Lucide** (§6.2.2): `Loader2`, `ArrowLeft`,
  * `ArrowRight`, `Check`, `CheckCircle2`, `Copy` and `PencilLine` — every one a
@@ -34,48 +28,21 @@
  * duotone recipe — the same carve-out §6.2.2 makes for the ✦ text glyph and
  * s04's `#` channel sigil. It lives in `components/auth/signet-mark.tsx`.
  *
- * **The ✦ leaves this family without a replacement.** `chapter-wizard.tsx` and
- * `onboarding-tutorial.tsx` each marked a non-Ask surface with Lucide's
- * `Sparkles`, which `components.md` §11 reserves for the Ask entry point. The
- * wizard's eyebrow now carries no glyph at all — its label already names the
- * intent, which is how `points-adjustment-dialog` resolved the same question
- * (§6.2.3) — and the tutorial's welcome slide takes the mark, because the slide
- * is literally a welcome to Frapp.
+ * **The ✦ leaves this family without a replacement.** `chapter-wizard.tsx`
+ * and the first-run slideshow (replaced by the spotlight tour, #5080) each
+ * marked a non-Ask surface with Lucide's `Sparkles`, which `components.md` §11
+ * reserves for the Ask entry point. The wizard's eyebrow now carries no glyph
+ * at all — its label already names the intent, which is how
+ * `points-adjustment-dialog` resolved the same question (§6.2.3).
  */
 
 import { Svg, detail } from "@/components/ui/duotone";
-import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
-import { NavGlyph } from "@/components/layout/nav-glyphs";
 
-export {
-  BackworkGlyph,
-  ChatGlyph,
-  EventsGlyph,
-  PointsGlyph,
-  SearchGlyph,
-  StudyGlyph,
-} from "@/components/layout/nav-glyphs";
+export { SearchGlyph } from "@/components/layout/nav-glyphs";
 export { LockGlyph } from "@/components/chat/chat-glyphs";
 
 export type ProfileGlyphProps = DuotoneGlyphProps;
-
-/**
- * You — the viewer's own account.
- *
- * Genuinely undrawn before this family, which is why the tutorial's profile
- * slide reached for Lucide (the account menu still draws Lucide's `User` as
- * furniture). The shell has no profile
- * nav intent to re-export because Profile left the sidebar for the account menu
- * in the Wave 0 restructure (`spec/ui/web-dashboard/README.md`), and neither
- * neighbour is this intent: `DirectoryGlyph` is a group (the chapter's roster)
- * and `InviteGlyph` is a person **plus a mark** (the act of inviting). One
- * person, no mark, is the third thing: Phosphor `user`, from the same shared
- * two-tone set (`@repo/theme/nav-glyphs`) as both neighbours.
- */
-export function ProfileGlyph(props: ProfileGlyphProps) {
-  return <NavGlyph paths={NAV_GLYPHS.profile} {...props} />;
-}
 
 /**
  * An invite link.

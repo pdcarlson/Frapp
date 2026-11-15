@@ -170,6 +170,9 @@ export function AppNav({
     return (
       <div
         key={section.id}
+        // The first-run tour points at a group and a row by these
+        // (`onboarding/tour.ts`), so a stop follows them wherever they move.
+        data-nav-section={section.id}
         className={cn(
           "flex flex-col gap-0.5",
           isCollapsed && "items-center",

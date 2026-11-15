@@ -32,7 +32,7 @@ Color per state (roles defined in [foundations](foundations.md)):
 
 The navigation glyphs (the web sidebar, the mobile tab bar and the You tab's
 rows), the web in-screen families' re-exports of them, and the few in-screen
-glyphs drawn beside those (folder, schedule, invite, profile, and Activity's
+glyphs drawn beside those (folder, schedule, invite, and Activity's
 `link`, `confirm`, `signup` and `form`, §6.2.5a) draw one shared
 set instead of the stroke recipe above: [`packages/theme/src/nav-glyphs.ts`](../../../packages/theme/src/nav-glyphs.ts)
 (`@repo/theme/nav-glyphs`), path data from Phosphor's duotone weight (MIT),
@@ -162,8 +162,8 @@ duotone. Interim rules:
 - Do not mix icon packs within a single surface. The §1 stroke recipe and the
   §1.1 nav set count as one Signet family for this rule, and the target is a
   single family: a glyph drawn in the same list as a nav glyph takes the nav
-  set (the folder rail, the event schedule rows, invite and profile,
-  §6.2.3–§6.2.7). The rest of the stroke-recipe glyphs, `SearchGlyph` in the
+  set (the folder rail, the event schedule rows and invite,
+  §6.2.3–§6.2.6). The rest of the stroke-recipe glyphs, `SearchGlyph` in the
   toolbars among them, move over under
   [#3491](https://github.com/pdcarlson/Frapp/issues/3491).
 - Surfaces built or rebuilt under the Signet reskin use the duotone recipe
@@ -455,8 +455,7 @@ and [`apps/web/components/points/points-glyphs.tsx`](../../../apps/web/component
 both re-exporting the shell's silhouettes rather than redrawing them. Rendered at 20px in card titles,
 16px in table cells, and 14–16px as a badge companion (§2). Never before the title of a dialog, panel
 or sheet as decoration that repeats the button just pressed ([`components.md`](components.md#chrome-weight)
-§ Chrome weight and § Surface size, 2026-11-05). A mark that names the surface is not that: the
-onboarding tutorial's per-slide glyphs (§6.2.7) and the mark on s17's "Ask Frapp" (components.md §11; the ✦ until #4702, the crest since) stay.
+§ Chrome weight and § Surface size, 2026-11-05). A mark that names the surface is not that: the mark on s17's "Ask Frapp" (components.md §11; the ✦ until #4702, the crest since) stays. (The onboarding slideshow's per-slide glyphs were the other example until the spotlight tour replaced it, #5080.)
 Inside a `Button` they render at 16 whatever the call site asks for, because
 `buttonVariants` pins `[&_svg]:size-4` — which is also what keeps the required
 375px floor gate unaffected by a glyph swap.
@@ -716,8 +715,8 @@ the cutover skill calls out by name ("do not add a parallel token set next to
 the one in use"; "a definition or `index.ts` re-export is not evidence anything
 still calls it"). The four preceding family files each earn their place by
 drawing at least one glyph no nav intent covers; this family has none to draw.
-(Since 2026-11-05 the geometry of those glyphs, folder, schedule, invite and
-profile, lives in the shared set in `packages/theme` with the nav glyphs; the
+(Since 2026-11-05 the geometry of those glyphs, folder, schedule and invite
+(and profile, until the slideshow that drew it went in #5080), lives in the shared set in `packages/theme` with the nav glyphs; the
 family files still own the intent and the component.)
 
 **The tab rail stays text-only.** Its triggers (`SETTINGS_TABS`) carry no icons, and adding them would
@@ -732,27 +731,21 @@ draws for the same tone, not a domain intent.
 
 ### 6.2.7 Profile & pre-auth (Signet duotone)
 
-The #920 Profile & pre-auth slice — `/profile`, the onboarding wizard and
-tutorial, and the routes outside `(dashboard)`. Family file:
-[`apps/web/components/profile/profile-glyphs.tsx`](../../../apps/web/components/profile/profile-glyphs.tsx),
-homed in `profile/` because `ProfileGlyph` is a profile intent, though its one
-consumer today is the onboarding tutorial; §6.2.3's rule applies, so importing
-across a directory is fine and redrawing is not.
+The #920 Profile & pre-auth slice — the onboarding wizard and the routes
+outside `(dashboard)`. Family file:
+[`apps/web/components/profile/profile-glyphs.tsx`](../../../apps/web/components/profile/profile-glyphs.tsx);
+§6.2.3's rule applies, so importing across a directory is fine and redrawing
+is not. The first-run tour (#5080) draws no glyph: it lights the real controls,
+so `ProfileGlyph` and the tutorial slides' nav re-exports went with the
+slideshow that was their one consumer.
 
 | Semantic intent | Glyph |
 |---|---|
-| You — the viewer's own account (tutorial slide 7) | `ProfileGlyph`, defined here; its shape is the nav set's `profile` entry (Phosphor `user`, §1.1) |
 | An invite link (s02's hint card on `/join`) | `LinkGlyph`, **drawn here** |
-| Chat, Events, Backwork, Study hours, Points (tutorial slides 2–6) | `ChatGlyph`, `EventsGlyph`, `BackworkGlyph`, `StudyGlyph`, `PointsGlyph`, re-exported from [`nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx) |
-| Directory search (the wizard's no-results state) | `SearchGlyph`, same source |
+| Directory search (the wizard's no-results state) | `SearchGlyph`, re-exported from [`nav-glyphs.tsx`](../../../apps/web/components/layout/nav-glyphs.tsx) |
 | Locked out of the chapter (`/no-access`) | `LockGlyph`, re-exported from [`chat-glyphs.tsx`](../../../apps/web/components/chat/chat-glyphs.tsx) |
 
-**Two defined here, and both were genuinely undrawn.** `ProfileGlyph` has no nav
-intent to re-export because Profile left the sidebar for the account menu in
-the Wave 0 restructure, and neither neighbour is it: `DirectoryGlyph` is a
-group and `InviteGlyph` is a person *plus a mark*, the officer issuing a
-token. All three draw the nav set (§1.1), so the tutorial's slides 2–7 are one
-family. `LinkGlyph` is transcribed from the s02 hint card, which draws a chain
+**One defined here, and it was genuinely undrawn.** `LinkGlyph` is transcribed from the s02 hint card, which draws a chain
 link — reusing `InviteGlyph` there would contradict the drawing, and
 [`../README.md`](../README.md)'s precedence rule puts the board first. It is
 legitimately stroke-only, the `AttachGlyph` exception: an open curve fills into
@@ -761,14 +754,13 @@ a lens-shaped wedge across the break that makes the two halves read as links.
 **Deliberately not in this table:**
 
 - **The ✦.** `chapter-wizard.tsx` marked its header eyebrow with Lucide's
-  `Sparkles` and the tutorial marked its welcome slide with it. §11 reserves ✦
+  `Sparkles` and the slideshow (deleted in #5080) marked its welcome slide with it. §11 reserves ✦
   for the Ask entry point — it "MUST NOT mark anything that is not an Ask/AI
   entry point" — so this is the third time that correction has been made,
   after the slash-command trigger (§6.2.2) and `WandSparkles`. Neither site
   gained a replacement: the wizard's eyebrow now carries **no glyph**, because
   its label already names the intent, which is how the points adjustment
-  dialog resolved the same question (§6.2.3); and the tutorial's welcome slide
-  takes the **mark**, because the slide is literally a welcome to Frapp.
+  dialog resolved the same question (§6.2.3).
 - **`SignetMark`.** Locked emblem B (gold crest on charcoal)
   ([`components/auth/signet-mark.tsx`](../../../apps/web/components/auth/signet-mark.tsx))
   is a brand composition governed by [`../brand-identity.md`](../brand-identity.md)
@@ -779,10 +771,7 @@ a lens-shaped wedge across the break that makes the two halves read as links.
   §6.2.3 already records belong to `components/shared/**` rather than to any
   screen family.
 - **Control furniture**, per §6.2.2: `Loader2`, `ArrowLeft`, `ArrowRight`,
-  `Check`, `CheckCircle2`, `Copy` and `PencilLine`. `CheckCircle2` on the
-  tutorial's final slide is the borderline one and stays furniture: "confirm"
-  is a state the shared family already draws, and inventing a "done" intent no
-  other surface has would be new design rather than a repaint.
+  `Check`, `CheckCircle2`, `Copy` and `PencilLine`.
 
 **The wizard's steps stay text-only**, as Settings' tabs do (§6.2.6):
 adding per-step icons is new design, and the reference draws neither.

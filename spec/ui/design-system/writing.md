@@ -894,17 +894,17 @@ The name is checked when the member presses the button, not while typing.
 
 ### Display step (onboarding)
 
-The chat display pick while setting up (#3787): web's tutorial slide and mobile s03's beat after the profile one, and for a founder, who skips both, the step after create in each setup (#4056).
+The chat display pick while setting up (#3787): the web tour's second stop and mobile s03's beat after the profile one, and for a founder, who skips both, the step after create in each setup (#4056).
 Copy in `apps/mobile/lib/onboarding/display-step.ts` and `apps/web/components/onboarding/display-step.ts`.
 
 | Surface | Title | Copy |
 |---|---|---|
-| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in your profile.` Then Profile's three Chat density cards. In the setup wizard, `Continue` (the tutorial's `Next`). |
+| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in Settings.` In the tour, then `Cozy`, `Compact` and `Bubbles` as one segmented control over the real messages. In the setup wizard, the three Chat density cards from Settings → Appearance and chat, then `Continue`. (It said "in your profile" until #5080; the control has lived in Settings since #3856.) |
 | Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards; gold `Continue` when a roles, Meet Frapp AI or notifications beat follows, else `Go to chat`. In chapter setup, always gold `Continue`. |
 
 ### Pick your roles
 
-Self-assignable roles (#4958): web's tutorial slide and mobile s03's beat after the display pick, shown when there's a role to join, and the pickers (web Profile's **Your roles**, the phone's **Add roles** sheet).
+Self-assignable roles (#4958): the web tour's stop and mobile s03's beat after the display pick, shown when there's a role to join, and the pickers (web Profile's **Your roles**, the phone's **Add roles** sheet).
 Copy in `PICK_ROLES_COPY` (`packages/validation/src/self-assignable-roles.ts`), shared by both platforms.
 
 | Where | Copy |
@@ -924,6 +924,24 @@ Strings in `@repo/chat-core/density`.
 | Display view, when locked | `Always formal: everyone sees this channel in the formal display.` over the disabled choices; the Display row's state reads `Formal` |
 | Chat settings create form (web) | `Always formal (everyone sees it in the formal display)` |
 | Save failed | Web toast `Couldn't change Always formal` / `Try again in a moment.`; mobile alert `Couldn't change Always formal` / `Nothing changed. Check your connection and try again.` |
+
+### First-run tour (web)
+
+The six stops over the real Chat screen (#5080; `apps/web/components/onboarding/tour.ts`).
+One line each in a coach mark beside the lit control; only the two stops that carry a pick have a title.
+
+| Stop | Line |
+|---|---|
+| The channel list | `You're in <chapter>. These are the chapter's channels. Click one to start talking.` (`your chapter` when the name isn't loaded). On the back-to-channels button below the side-by-side width: `You're in <chapter>. The chapter's channels are one tap back, here.` |
+| The messages | Title `Pick your chat display`, then [§ Display step](#display-step-onboarding)'s web line and the segmented control |
+| The Committees group, the channel list, or the back-to-channels button below the side-by-side width | Title and line from [§ Pick your roles](#pick-your-roles), then the switches |
+| The sidebar's Chapter group | `Events, points, study hours and the rest of the chapter are here, under Chapter.` On the menu button below `lg`: `Events, points, study hours and the rest of the chapter are in this menu, under Chapter.` |
+| The Direct messages row | `Direct messages are here.` On the menu button below `lg`: `Direct messages are in this menu too.` |
+| The avatar | `Your profile and settings are here. Replay this tour anytime from Settings → Account.` |
+
+Above each line: the count, `1 of 6`, muted. Under it: `Skip tour` on the left; `Back` (from the second stop shown) and `Next` on the right, `Done` on the last stop.
+Skip shows the toast `Tour skipped` / `Replay it anytime from Settings → Account.`
+Settings → Account's row: `Tour`, `The first-run tour starts again the next time you open Chat.`, button `Replay tour`; it confirms with the toast `Tour queued` / `The tour will start the next time you open Chat.`
 
 ### First-run tour (mobile)
 

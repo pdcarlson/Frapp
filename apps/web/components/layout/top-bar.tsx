@@ -212,6 +212,8 @@ function MobileNavTrigger({ onOpen }: { onOpen: () => void }) {
       onClick={onOpen}
       aria-label={label}
       title={label}
+      // The first-run tour's sidebar stops point here below `lg`.
+      data-nav-trigger=""
       /*
        * `lg:hidden` means this control exists ONLY on the touch tier, where
        * the 44px floor binds - and below `lg` it is the only route to
