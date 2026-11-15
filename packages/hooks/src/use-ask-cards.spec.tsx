@@ -38,7 +38,7 @@ describe("useAskCards", () => {
     const { result } = renderHook(() => useAskCards(ids), { wrapper: wrapper() });
     expect(result.current.settled).toBe(false);
     await waitFor(() => expect(result.current.settled).toBe(true));
-    expect(client.GET).toHaveBeenCalledWith("/v1/ai/suggestions", {
+    expect(client.GET).toHaveBeenCalledWith("/v1/ai/suggestions", { signal: expect.any(AbortSignal),
       params: { query: { source_type: "request", source_id: "user-1" } },
     });
     expect([...result.current.byId.keys()]).toEqual(["s1", "s2"]);

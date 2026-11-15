@@ -44,8 +44,9 @@ export function useMyPoints(
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["points", chapterId, "me", window, semesterArchiveId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/points/me", {
+        signal,
         params: {
           query: { window, semester_archive_id: semesterArchiveId },
         },
@@ -69,8 +70,9 @@ export function useLeaderboard(
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["points", chapterId, "leaderboard", window, semesterArchiveId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/points/leaderboard", {
+        signal,
         params: {
           query: { window, semester_archive_id: semesterArchiveId },
         },
@@ -95,8 +97,9 @@ export function usePointsTransactions(options?: {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["points", chapterId, "transactions", options],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/points/transactions", {
+        signal,
         params: {
           query: {
             user_id: options?.userId,

@@ -65,6 +65,7 @@ describe("useDocuments", () => {
     });
 
     expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      signal: expect.any(AbortSignal),
       params: { query: { folder: "finance", search: undefined } },
     });
   });
@@ -85,6 +86,7 @@ describe("useDocuments", () => {
     });
 
     expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      signal: expect.any(AbortSignal),
       params: { query: { folder: undefined, search: "bylaws" } },
     });
   });
@@ -105,6 +107,7 @@ describe("useDocuments", () => {
     });
 
     expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      signal: expect.any(AbortSignal),
       params: { query: { folder: undefined, search: undefined } },
     });
   });
@@ -403,7 +406,9 @@ describe("document stars and pins (#3934)", () => {
       wrapper: createWrapper(queryClient, { GET: mockGet }),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockGet).toHaveBeenCalledWith("/v1/documents/stars");
+    expect(mockGet).toHaveBeenCalledWith("/v1/documents/stars", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.data).toEqual({
       folder_ids: ["f1"],
       document_ids: [],

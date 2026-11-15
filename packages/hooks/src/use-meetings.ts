@@ -35,8 +35,9 @@ export function useMeetings(options?: { enabled?: boolean; eventId?: string }) {
     queryKey: eventId
       ? ([...meetingsKey(chapterId), "event", eventId] as const)
       : meetingsKey(chapterId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/meetings", {
+        signal,
         params: { query: eventId ? { event_id: eventId } : {} },
       });
       if (error) throw error;
@@ -52,8 +53,9 @@ export function useMeeting(id: string | null | undefined) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: meetingKey(chapterId, id ?? ""),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/meetings/{id}", {
+        signal,
         params: { path: { id: id! } },
       });
       if (error) throw error;
@@ -69,8 +71,10 @@ export function useMeetingTemplate(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: templateKey(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/meetings/template");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/meetings/template", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -264,10 +268,10 @@ export function useMeetingDraft(
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: meetingDraftKey(chapterId, id ?? ""),
-    queryFn: async (): Promise<MeetingDraftState | null> => {
+    queryFn: async ({ signal }): Promise<MeetingDraftState | null> => {
       const { data, error, response } = await client.GET(
         "/v1/meetings/{id}/draft",
-        { params: { path: { id: id! } } },
+        { signal, params: { path: { id: id! } } },
       );
       // Not here for this viewer, whatever the reason: no AI on this server,
       // minutes they can't edit, a module that is off.
@@ -407,10 +411,10 @@ export function useMeetingRecording(
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: meetingRecordingKey(chapterId, id ?? ""),
-    queryFn: async (): Promise<MeetingRecordingState | null> => {
+    queryFn: async ({ signal }): Promise<MeetingRecordingState | null> => {
       const { data, error, response } = await client.GET(
         "/v1/meetings/{id}/recording",
-        { params: { path: { id: id! } } },
+        { signal, params: { path: { id: id! } } },
       );
       if (response.status === 404 || response.status === 403) return null;
       if (error) throw error;

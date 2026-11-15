@@ -76,7 +76,9 @@ describe("useChannelUnreadCounts", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mockGet).toHaveBeenCalledWith("/v1/channels/unread");
+    expect(mockGet).toHaveBeenCalledWith("/v1/channels/unread", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.data).toEqual(rows);
   });
 
@@ -496,6 +498,7 @@ describe("useAuthorAvatars", () => {
     expect(mockPost).toHaveBeenCalledWith(
       "/v1/channels/{id}/messages/avatars",
       {
+        signal: expect.any(AbortSignal),
         params: { path: { id: "chan-1" } },
         body: { message_ids: ["msg-1"] },
       },
@@ -525,6 +528,7 @@ describe("useAuthorAvatars", () => {
     expect(mockPost).toHaveBeenCalledWith(
       "/v1/channels/{id}/messages/avatars",
       {
+        signal: expect.any(AbortSignal),
         params: { path: { id: "chan-1" } },
         body: { message_ids: ["msg-3"] },
       },
@@ -689,6 +693,7 @@ describe("useChannelNotificationPreferences", () => {
 
     expect(mockGet).toHaveBeenCalledWith(
       "/v1/channels/notification-preferences",
+      { signal: expect.any(AbortSignal) },
     );
     expect(result.current.data).toEqual(rows);
   });

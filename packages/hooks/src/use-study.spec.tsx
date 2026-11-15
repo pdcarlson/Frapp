@@ -122,7 +122,7 @@ describe("useStudySessions", () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockGet).toHaveBeenCalledWith("/v1/study-sessions");
+    expect(mockGet).toHaveBeenCalledWith("/v1/study-sessions", { signal: expect.any(AbortSignal) });
   });
 });
 

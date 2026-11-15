@@ -49,8 +49,8 @@ export function useAiConsent(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: aiConsentKey,
-    queryFn: async (): Promise<AiConsentState | null> => {
-      const result = await client.GET("/v1/ai/consent");
+    queryFn: async ({ signal }): Promise<AiConsentState | null> => {
+      const result = await client.GET("/v1/ai/consent", { signal });
       if (isAiNotAvailable(result.error)) return null;
       throwUnlessOk(result);
       return bodyOf(result.data);
@@ -165,8 +165,8 @@ export function useAiChapterSettings(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: aiSettingsKey(chapterId),
-    queryFn: async (): Promise<AiChapterSettings | null> => {
-      const result = await client.GET("/v1/ai/settings");
+    queryFn: async ({ signal }): Promise<AiChapterSettings | null> => {
+      const result = await client.GET("/v1/ai/settings", { signal });
       if (isAiNotAvailable(result.error)) return null;
       throwUnlessOk(result);
       return bodyOf(result.data);

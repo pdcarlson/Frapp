@@ -876,7 +876,7 @@ describe("the Ask hooks", () => {
       // Nothing to show while it loads: the screen opens plain.
       expect(result.current.suggestions).toEqual([]);
       await waitFor(() => expect(result.current.suggestions).toEqual(suggestions));
-      expect(GET).toHaveBeenCalledWith("/v1/ai/ask/suggestions");
+      expect(GET).toHaveBeenCalledWith("/v1/ai/ask/suggestions", { signal: expect.any(AbortSignal) });
     });
 
     it("shows nothing while a reopened screen reads again, so rows never swap in place", async () => {

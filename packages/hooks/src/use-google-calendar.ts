@@ -57,8 +57,8 @@ export function useGoogleCalendarStatus(options: { enabled?: boolean } = {}) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: googleCalendarKeys.chapter(chapterId!),
-    queryFn: async (): Promise<GoogleCalendarStatus> => {
-      const result = await client.GET("/v1/google-calendar");
+    queryFn: async ({ signal }): Promise<GoogleCalendarStatus> => {
+      const result = await client.GET("/v1/google-calendar", { signal });
       throwUnlessOk(result);
       return result.data!;
     },

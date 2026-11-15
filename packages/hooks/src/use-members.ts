@@ -59,8 +59,8 @@ export function useMembers(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["members", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/members");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/members", { signal });
       if (error) throw error;
       return data;
     },
@@ -86,8 +86,10 @@ export function useChapterRoster() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["members", chapterId, "roster"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/members/roster");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/members/roster", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -333,8 +335,9 @@ export function useMemberByUserId(userId: string) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["members", chapterId, "by-user", userId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/members/by-user/{userId}", {
+        signal,
         params: { path: { userId } },
       });
       if (error) throw error;
@@ -350,8 +353,9 @@ export function useMemberSearch(query: string) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["members", chapterId, "search", query],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/members/search", {
+        signal,
         params: { query: { q: query } },
       });
       if (error) throw error;
@@ -371,8 +375,9 @@ export function useAlumni(filters?: {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["alumni", chapterId, filters],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/alumni", {
+        signal,
         params: { query: filters },
       });
       if (error) throw error;

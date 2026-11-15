@@ -109,7 +109,9 @@ describe("useBlockedUserIds", () => {
     expect(result.current.readAt).toBe(0);
     await waitFor(() => expect(result.current.status).toBe("ready"));
 
-    expect(GET).toHaveBeenCalledWith("/v1/chat/blocks");
+    expect(GET).toHaveBeenCalledWith("/v1/chat/blocks", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.readAt).toBeGreaterThan(0);
     expect([...result.current.ids]).toEqual([ALICE]);
     expect(result.current.unblocked.size).toBe(0);

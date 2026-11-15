@@ -24,8 +24,9 @@ export function useScheduledMessages(channelId: string | null | undefined) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: [...scheduledMessageKeys.list(chapterId!), channelId ?? ""],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/scheduled-messages", {
+        signal,
         params: { query: { channel_id: channelId! } },
       });
       if (error) throw error;

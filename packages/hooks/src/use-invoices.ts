@@ -23,8 +23,9 @@ export function useInvoices(userId?: string, options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["invoices", chapterId, userId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/invoices", {
+        signal,
         params: { query: { user_id: userId } },
       });
       if (error) throw error;
@@ -40,8 +41,10 @@ export function useOverdueInvoices() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["invoices", chapterId, "overdue"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/invoices/overdue");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/invoices/overdue", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

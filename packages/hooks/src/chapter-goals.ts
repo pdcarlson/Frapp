@@ -24,8 +24,8 @@ export function useChapterGoals(options: { enabled?: boolean } = {}) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: chapterGoalKeys.chapter(chapterId!),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/goals");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/goals", { signal });
       if (error) throw error;
       return data;
     },
@@ -47,8 +47,8 @@ export function useMyGoals(options: { enabled?: boolean } = {}) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: myGoalKeys.chapter(chapterId!),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/goals/mine");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/goals/mine", { signal });
       if (error) throw error;
       return data;
     },

@@ -27,8 +27,8 @@ export function useCalendarFeedLink(options: { enabled: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: calendarFeedKeys.chapter(chapterId!),
-    queryFn: async (): Promise<CalendarFeedLink> => {
-      const result = await client.POST("/v1/calendar-feed");
+    queryFn: async ({ signal }): Promise<CalendarFeedLink> => {
+      const result = await client.POST("/v1/calendar-feed", { signal });
       throwUnlessOk(result);
       return result.data!;
     },

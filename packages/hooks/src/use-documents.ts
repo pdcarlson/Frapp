@@ -23,8 +23,9 @@ export function useDocuments(options?: {
   const search = options?.search;
   return useQuery({
     queryKey: ["documents", chapterId, "list", folder, search],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/documents", {
+        signal,
         params: { query: { folder, search } },
       });
       if (error) throw error;
@@ -48,8 +49,10 @@ export function useDocumentFolders() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["documents", chapterId, "folders"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/documents/folders");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/documents/folders", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -147,8 +150,10 @@ export function useDocumentTypes(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["documents", chapterId, "types"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/documents/types");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/documents/types", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -246,11 +251,12 @@ export function useDocumentPreviews(
   const sorted = [...new Set(ids)].sort();
   return useQuery({
     queryKey: ["document-previews", chapterId, sorted.join(",")],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const urls = new Map<string, string>();
       for (let i = 0; i < sorted.length; i += DOCUMENT_PREVIEW_BATCH) {
         const batch = sorted.slice(i, i + DOCUMENT_PREVIEW_BATCH);
         const { data, error } = await client.GET("/v1/documents/previews", {
+          signal,
           params: { query: { ids: batch } },
         });
         if (error) throw error;
@@ -271,8 +277,9 @@ export function useDocument(id: string, options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["documents", id],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/documents/{id}", {
+        signal,
         params: { path: { id } },
       });
       if (error) throw error;
@@ -439,8 +446,10 @@ export function useDocumentStars() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: starsKey(chapterId),
-    queryFn: async (): Promise<DocumentStarIds> => {
-      const { data, error } = await client.GET("/v1/documents/stars");
+    queryFn: async ({ signal }): Promise<DocumentStarIds> => {
+      const { data, error } = await client.GET("/v1/documents/stars", {
+        signal,
+      });
       if (error) throw error;
       return data ?? NO_STARS;
     },

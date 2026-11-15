@@ -28,8 +28,10 @@ export function useDiscordAuthorLink(options?: { enabled?: boolean }) {
 
   return useQuery({
     queryKey: discordAuthorLinkKeys.mine(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/discord/author-link");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/discord/author-link", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

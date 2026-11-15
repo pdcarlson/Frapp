@@ -20,8 +20,8 @@ export function useCurrentUser(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["user", "me"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/users/me");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/users/me", { signal });
       if (error) throw error;
       return data;
     },
@@ -242,8 +242,10 @@ export function useMyPermissions(options?: { enabled?: boolean }) {
   );
   return useQuery({
     queryKey: ["user", "me", "permissions", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/users/me/permissions");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/users/me/permissions", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

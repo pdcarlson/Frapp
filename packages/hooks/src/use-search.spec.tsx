@@ -63,6 +63,7 @@ describe("useSearch", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(mockClient.GET).toHaveBeenCalledWith(SEARCH_ENDPOINT, {
+      signal: expect.any(AbortSignal),
       params: { query: { q: "alice" } },
     });
     expect(result.current.data).toEqual({
@@ -132,6 +133,7 @@ describe("useSearch", () => {
     // the response would return nothing whenever a channel's matches rank
     // below that cut — and could not tell that apart from no matches at all.
     expect(mockClient.GET).toHaveBeenCalledWith("/v1/search", {
+      signal: expect.any(AbortSignal),
       params: { query: { q: "dues", channelId: "chan-1" } },
     });
   });
@@ -154,6 +156,7 @@ describe("useSearch", () => {
     // Not `channelId: undefined` — the param must be absent, so the server
     // takes the chapter-wide branch rather than narrowing to nothing.
     expect(mockClient.GET).toHaveBeenCalledWith("/v1/search", {
+      signal: expect.any(AbortSignal),
       params: { query: { q: "dues" } },
     });
   });
@@ -348,6 +351,7 @@ describe("useSearch", () => {
       // week".
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
       expect(mockClient.GET).toHaveBeenCalledWith("/v1/search", {
+        signal: expect.any(AbortSignal),
         params: {
           query: {
             q: "",

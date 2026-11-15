@@ -131,6 +131,7 @@ describe("useImportantMessages", () => {
     await waitFor(() => expect(result.current.total).toBe(2));
     expect(result.current.next?.id).toBe("a");
     expect(GET).toHaveBeenCalledWith("/v1/channels/{id}/important", {
+      signal: expect.any(AbortSignal),
       params: { path: { id: "chan-1" } },
     });
   });

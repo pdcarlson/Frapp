@@ -7,6 +7,7 @@ import { FrappClientProvider } from "./use-frapp-client";
 import {
   useAwaitInvoicePaid,
   useCreateInvoice,
+  useInvoices,
   usePayInvoice,
 } from "./use-invoices";
 
@@ -140,7 +141,11 @@ describe("usePayInvoice", () => {
     });
 
     const { result } = renderHook(() => usePayInvoice(), {
-      wrapper: makeWrapper(queryClient, { POST: mockPost }, "UsePayInvoiceTestWrapper"),
+      wrapper: makeWrapper(
+        queryClient,
+        { POST: mockPost },
+        "UsePayInvoiceTestWrapper",
+      ),
     });
 
     result.current.mutate("inv-1");
@@ -169,7 +174,11 @@ describe("usePayInvoice", () => {
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(() => usePayInvoice(), {
-      wrapper: makeWrapper(queryClient, { POST: mockPost }, "UsePayInvoiceErrorTestWrapper"),
+      wrapper: makeWrapper(
+        queryClient,
+        { POST: mockPost },
+        "UsePayInvoiceErrorTestWrapper",
+      ),
     });
 
     result.current.mutate("inv-1");
@@ -194,14 +203,24 @@ describe("useAwaitInvoicePaid", () => {
     // First read still OPEN (the webhook has not landed yet), second is PAID.
     const mockGet = vi
       .fn()
-      .mockResolvedValueOnce({ data: { id: "inv-1", status: "OPEN" }, error: null })
-      .mockResolvedValueOnce({ data: { id: "inv-1", status: "PAID" }, error: null });
+      .mockResolvedValueOnce({
+        data: { id: "inv-1", status: "OPEN" },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { id: "inv-1", status: "PAID" },
+        error: null,
+      });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(
       () => useAwaitInvoicePaid({ attempts: 5, intervalMs: 0 }),
       {
-        wrapper: makeWrapper(queryClient, { GET: mockGet }, "UseAwaitPaidTestWrapper"),
+        wrapper: makeWrapper(
+          queryClient,
+          { GET: mockGet },
+          "UseAwaitPaidTestWrapper",
+        ),
       },
     );
 
@@ -222,15 +241,20 @@ describe("useAwaitInvoicePaid", () => {
   });
 
   it("gives up after the configured attempts rather than reporting a false PAID", async () => {
-    const mockGet = vi
-      .fn()
-      .mockResolvedValue({ data: { id: "inv-1", status: "OPEN" }, error: null });
+    const mockGet = vi.fn().mockResolvedValue({
+      data: { id: "inv-1", status: "OPEN" },
+      error: null,
+    });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(
       () => useAwaitInvoicePaid({ attempts: 3, intervalMs: 0 }),
       {
-        wrapper: makeWrapper(queryClient, { GET: mockGet }, "UseAwaitPaidTimeoutTestWrapper"),
+        wrapper: makeWrapper(
+          queryClient,
+          { GET: mockGet },
+          "UseAwaitPaidTimeoutTestWrapper",
+        ),
       },
     );
 
@@ -246,5 +270,27 @@ describe("useAwaitInvoicePaid", () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: INVOICES_QUERY_KEY,
     });
+  });
+});
+
+describe("useInvoices cancellation (#3433)", () => {
+  it("aborts its request when the query is cancelled", async () => {
+    const signals: AbortSignal[] = [];
+    const GET = vi.fn((_path: string, init?: { signal?: AbortSignal }) => {
+      if (init?.signal) signals.push(init.signal);
+      return new Promise(() => undefined);
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    renderHook(() => useInvoices(), {
+      wrapper: makeWrapper(queryClient, { GET }, "CancelWrapper"),
+    });
+
+    await waitFor(() => expect(signals).toHaveLength(1));
+    expect(signals[0]?.aborted).toBe(false);
+    await queryClient.cancelQueries({ queryKey: INVOICES_QUERY_KEY });
+
+    expect(signals[0]?.aborted).toBe(true);
   });
 });

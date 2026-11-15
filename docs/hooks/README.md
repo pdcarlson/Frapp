@@ -56,6 +56,17 @@ Keys match by prefix in `useMutationState`, `isMutating` and
 `["channels", "read"]` and `["notifications", "read"]` (mobile's retry defaults
 and the pending-read state) and `["chapter-config", chapterId, "patch"]`.
 
+## Query cancellation
+
+Every `queryFn` takes TanStack's `signal` and passes it in its client call's
+init (`client.GET(path, { signal, params })`), so a cancelled query (a
+`refetch()` over one in flight, an `invalidateQueries`, the last observer
+unmounting) aborts its request instead of leaving it open beside the next one
+([#3433](https://github.com/pdcarlson/Frapp/issues/3433)). A helper handed
+`client` is handed `signal` too. `src/query-signal.spec.ts` parses the package
+and fails on a `queryFn` call that drops it; its `PENDING` list names the files
+not yet converted ([#5029](https://github.com/pdcarlson/Frapp/issues/5029)).
+
 ## Optimistic mutations
 
 `useUpdateNotificationPreference` (`use-notifications.ts`) and the three task

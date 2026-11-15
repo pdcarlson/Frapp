@@ -54,6 +54,7 @@ describe("useInvitePreview (#3352)", () => {
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(POST).toHaveBeenCalledWith("/v1/invites/preview", {
+      signal: expect.any(AbortSignal),
       body: { token: "token-1" },
     });
     expect(result.current.data).toEqual(PREVIEW);

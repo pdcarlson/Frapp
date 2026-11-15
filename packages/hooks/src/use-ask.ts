@@ -62,8 +62,8 @@ export function useAskStatus(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: askStatusKey(chapterId),
-    queryFn: async (): Promise<AskStatus | null> => {
-      const result = await client.GET("/v1/ai/ask");
+    queryFn: async ({ signal }): Promise<AskStatus | null> => {
+      const result = await client.GET("/v1/ai/ask", { signal });
       if (isAiNotAvailable(result.error)) return null;
       throwUnlessOk(result);
       if (result.data === undefined) {
@@ -98,8 +98,8 @@ export function useAskSuggestions(options?: { enabled?: boolean }): {
   const chapterId = useActiveChapterId();
   const query = useQuery({
     queryKey: askSuggestionsKey(chapterId),
-    queryFn: async (): Promise<AskSuggestion[]> => {
-      const result = await client.GET("/v1/ai/ask/suggestions");
+    queryFn: async ({ signal }): Promise<AskSuggestion[]> => {
+      const result = await client.GET("/v1/ai/ask/suggestions", { signal });
       if (isAiNotAvailable(result.error)) return [];
       throwUnlessOk(result);
       return result.data?.suggestions ?? [];

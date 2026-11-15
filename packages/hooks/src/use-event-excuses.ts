@@ -48,8 +48,9 @@ export function useMyEventExcuse(
   const client = useFrappClient();
   return useQuery({
     queryKey: excuseKeys.mine(eventId),
-    queryFn: async (): Promise<MyEventExcuse> => {
+    queryFn: async ({ signal }): Promise<MyEventExcuse> => {
       const result = await client.GET("/v1/events/{eventId}/excuses/me", {
+        signal,
         params: { path: { eventId } },
       });
       throwUnlessOk(result);
@@ -72,8 +73,9 @@ export function useEventExcuses(
   const client = useFrappClient();
   return useQuery({
     queryKey: excuseKeys.list(eventId),
-    queryFn: async (): Promise<EventExcuseWithMember[]> => {
+    queryFn: async ({ signal }): Promise<EventExcuseWithMember[]> => {
       const result = await client.GET("/v1/events/{eventId}/excuses", {
+        signal,
         params: { path: { eventId } },
       });
       throwUnlessOk(result);
