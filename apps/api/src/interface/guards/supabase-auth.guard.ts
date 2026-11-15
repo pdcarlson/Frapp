@@ -31,7 +31,10 @@ import {
   prefetchChapterContext,
   readAppUserId,
 } from './chapter.guard';
-import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import {
+  AuthSyncInterceptor,
+  hasSyncedSession,
+} from '../interceptors/auth-sync.interceptor';
 
 /**
  * Process-wide: requests that arrive together with one token share one
@@ -87,8 +90,11 @@ export class SupabaseAuthGuard implements CanActivate {
       : checkSession();
     // A route without `ChapterGuard` whose `AuthSyncInterceptor` resolves the
     // caller's `users` row gets that row's lookup started the same way
-    // (`prefetchAppUser`, #3583).
+    // (`prefetchAppUser`, #3583), but only for a session the interceptor has
+    // synced before: any other session waits on its sync, which reads the
+    // row itself, so a prefetch would be a wasted read.
     const verified = request.throttlerVerifiedClaims;
+    let prefetchedAppUser: Promise<string | null> | undefined;
     const chapterGuardFollows = this.chapterGuardFollows(context);
     const authSyncFollows =
       !chapterGuardFollows && this.authSyncFollows(context);
@@ -100,8 +106,8 @@ export class SupabaseAuthGuard implements CanActivate {
           verified,
           request.headers,
         );
-      } else if (authSyncFollows) {
-        prefetchAppUser(this.supabase, verified.sub);
+      } else if (authSyncFollows && hasSyncedSession(verified.sub)) {
+        prefetchedAppUser = prefetchAppUser(this.supabase, verified.sub);
       }
     }
 
@@ -122,10 +128,14 @@ export class SupabaseAuthGuard implements CanActivate {
     request.supabaseUser = structuredClone(data.user);
     request.jwtClaims = await this.readClaims(token);
     if (authSyncFollows && requestReadsActive()) {
-      // Under the id `getUser` returned, so a prefetch made for any other
-      // `sub` is not reused.
+      // Under the id `getUser` returned: a prefetch made for any other `sub`
+      // is not reused, and the lookup reads afresh instead.
       const authId = request.supabaseUser.id;
-      request.appUserLookup = () => readAppUserId(this.supabase, authId);
+      const prefetched =
+        verified?.sub === authId ? prefetchedAppUser : undefined;
+      request.appUserLookup = prefetched
+        ? () => prefetched
+        : () => readAppUserId(this.supabase, authId);
     }
     return true;
   }

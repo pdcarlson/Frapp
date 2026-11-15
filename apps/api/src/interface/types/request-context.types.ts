@@ -44,11 +44,12 @@ export interface RequestContext extends Request {
   appUser?: AppUserContext;
   /**
    * Set by `SupabaseAuthGuard`, once the session check has passed, on a route
-   * with `AuthSyncInterceptor` and no `ChapterGuard` (#3583): reads the
-   * caller's `users` row id for the `getUser` user, sharing the lookup the
-   * guard started while that check was in flight. `null` for no row or a
-   * failed read. Lazy, so a request that ends up waiting on its sync anyway
-   * makes no extra read.
+   * with `AuthSyncInterceptor` and no `ChapterGuard` (#3583): the caller's
+   * `users` row id for the `getUser` user. It answers with the lookup the
+   * guard started while that check was in flight, when it started one for
+   * this user; otherwise it reads when called, so a request that ends up
+   * waiting on its sync makes no extra read. `null` for no row or a failed
+   * read.
    */
   appUserLookup?: () => Promise<string | null>;
   member?: MemberContext;

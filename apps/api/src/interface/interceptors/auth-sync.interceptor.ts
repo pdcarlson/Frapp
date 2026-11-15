@@ -158,6 +158,15 @@ export class AuthSyncInterceptor implements NestInterceptor {
   }
 }
 
+/**
+ * Whether this process has synced a session for `authId` and still remembers
+ * it. `SupabaseAuthGuard` starts its `users` row prefetch (#3583) only for
+ * such a session, the only kind that can skip its waited sync here.
+ */
+export function hasSyncedSession(authId: string): boolean {
+  return synced.has(authId);
+}
+
 function remember(authId: string, signature: string): void {
   // A Map iterates in insertion order, so re-inserting keeps the most recent
   // sessions at the end and the first key is the one heard from longest ago.

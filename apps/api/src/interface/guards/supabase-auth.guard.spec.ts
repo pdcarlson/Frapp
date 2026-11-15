@@ -17,7 +17,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseAuthGuard } from './supabase-auth.guard';
 import { ChapterGuard } from './chapter.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
-import { runWithRequestReads } from '../../infrastructure/supabase/request-reads';
+import type { AuthService } from '../../application/services/auth.service';
+import type { TimeZoneSyncService } from '../../application/services/time-zone-sync.service';
+import { of } from 'rxjs';
+import {
+  runWithRequestReads,
+  sealRequestReadsForWrites,
+} from '../../infrastructure/supabase/request-reads';
 import { AuthRejectedException } from './auth-rejected.exception';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
@@ -459,9 +465,33 @@ describe('SupabaseAuthGuard', () => {
     /** `supabase_auth_id` of every users read, in order. */
     let usersReads: string[];
     let usersAnswer: () => Promise<unknown>;
-    beforeEach(() => {
+    /**
+     * Has the real interceptor sync a session for `authId`, so its memo holds
+     * it: the guard prefetches only for such a session (`hasSyncedSession`).
+     */
+    const markSynced = async (authId: string) => {
+      const interceptor = new AuthSyncInterceptor(
+        {
+          syncUser: jest.fn().mockResolvedValue({ id: 'row-1' }),
+        } as unknown as AuthService,
+        { record: jest.fn() } as unknown as TimeZoneSyncService,
+      );
+      const request = {
+        supabaseUser: { id: authId, email: 'a@example.com' },
+        headers: {},
+      };
+      await interceptor.intercept(
+        {
+          switchToHttp: () => ({ getRequest: () => request }),
+        } as unknown as ExecutionContext,
+        { handle: () => of(null) },
+      );
+    };
+
+    beforeEach(async () => {
       caseNo += 1;
       sub = `auth-sync-${caseNo}`;
+      await markSynced(sub);
       usersReads = [];
       usersAnswer = () =>
         Promise.resolve({ data: { id: 'row-1' }, error: null });
@@ -560,12 +590,22 @@ describe('SupabaseAuthGuard', () => {
       expect(ctx.switchToHttp().getRequest().supabaseUser).toBeUndefined();
     });
 
-    it('answers null for a failed or empty read, so the interceptor syncs', async () => {
-      for (const answerWith of [
-        { data: null, error: { code: '57014', message: 'timeout' } },
-        { data: null, error: null },
-      ]) {
-        usersAnswer = () => Promise.resolve(answerWith);
+    it('answers null for a failed, empty or rejected read, so the interceptor syncs', async () => {
+      const answers: Array<() => Promise<unknown>> = [
+        // A row alongside the error: the error still wins.
+        () =>
+          Promise.resolve({
+            data: { id: 'row-1' },
+            error: { code: '57014', message: 'timeout' },
+          }),
+        () => Promise.resolve({ data: null, error: null }),
+        () => Promise.reject(new Error('client threw')),
+      ];
+      for (const answerWith of answers) {
+        caseNo += 1;
+        sub = `auth-sync-${caseNo}`;
+        await markSynced(sub);
+        usersAnswer = answerWith;
         mockGetUser.mockResolvedValue({
           data: { user: { id: sub } },
           error: null,
@@ -575,9 +615,76 @@ describe('SupabaseAuthGuard', () => {
           await guard.canActivate(ctx);
           await expect(lookupOf(ctx)!()).resolves.toBeNull();
         });
-        caseNo += 1;
-        sub = `auth-sync-${caseNo}`;
       }
+    });
+
+    it('starts nothing for a session the interceptor never synced, and reads only when asked', async () => {
+      const fresh = `${sub}-never-synced`;
+      const answer = pendingSession();
+      const ctx = contextWith({ sub: fresh }, SyncedController);
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(usersReads).toEqual([]);
+        answer({ id: fresh });
+        await verdict;
+        expect(usersReads).toEqual([]);
+        await expect(lookupOf(ctx)!()).resolves.toBe('row-1');
+      });
+      expect(usersReads).toEqual([fresh]);
+    });
+
+    it('hands a write its prefetch although its store is sealed before the interceptor', async () => {
+      const answer = pendingSession();
+      const ctx = contextWith({ sub }, SyncedController);
+
+      await runWithRequestReads('PATCH', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        answer({ id: sub });
+        await verdict;
+        // `RequestReadsInterceptor`, a global interceptor, runs before the
+        // controller's `AuthSyncInterceptor`.
+        sealRequestReadsForWrites();
+        await settle();
+        await expect(lookupOf(ctx)!()).resolves.toBe('row-1');
+      });
+      expect(usersReads).toEqual([sub]);
+    });
+
+    it('sees the interceptor when the route method declares it', async () => {
+      class MethodLevelController {}
+      Reflect.defineMetadata(
+        GUARDS_METADATA,
+        [SupabaseAuthGuard],
+        MethodLevelController,
+      );
+      const handler = () => undefined;
+      Reflect.defineMetadata(
+        INTERCEPTORS_METADATA,
+        [AuthSyncInterceptor],
+        handler,
+      );
+      const answer = pendingSession();
+      const request = {
+        headers: { authorization: 'Bearer valid-token' },
+        throttlerVerifiedClaims: { sub },
+      } as Record<string, unknown>;
+      const ctx = {
+        switchToHttp: () => ({ getRequest: () => request }),
+        getHandler: () => handler,
+        getClass: () => MethodLevelController,
+      } as unknown as ExecutionContext;
+
+      await runWithRequestReads('GET', async () => {
+        const verdict = guard.canActivate(ctx);
+        await settle();
+        expect(usersReads).toEqual([sub]);
+        answer({ id: sub });
+        await verdict;
+      });
+      expect(lookupOf(ctx)).toBeDefined();
     });
 
     it('leaves a chapter route to ChapterGuard', async () => {

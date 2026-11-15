@@ -355,22 +355,27 @@ function ignorePrefetchFailure(): void {}
  * `SupabaseAuthGuard` waits on `auth.getUser`, as `prefetchChapterContext`
  * does for a chapter route. Before it, such a route read that row only after
  * the session check, in the interceptor's waited sync, one more round trip in
- * a row. Decides nothing: `readAppUserId` picks it up under the id `getUser`
- * returned.
+ * a row. Decides nothing: the guard hands the answer on only when `getUser`
+ * accepts the same user.
+ *
+ * Returns the answer itself rather than leaving it in the request's store,
+ * because a write's store is sealed (`RequestReadsInterceptor`, a global
+ * interceptor) before the controller's `AuthSyncInterceptor` reads it.
+ * `undefined` outside a request.
  */
 export function prefetchAppUser(
   supabase: FrappSupabaseClient,
   supabaseAuthId: string,
-): void {
-  if (!requestReadsActive()) return;
-  lookupAppUser(supabase, supabaseAuthId).catch(ignorePrefetchFailure);
+): Promise<string | null> | undefined {
+  if (!requestReadsActive()) return undefined;
+  return readAppUserId(supabase, supabaseAuthId);
 }
 
 /**
- * The `users` row id for `supabaseAuthId`, sharing `prefetchAppUser`'s read
- * within the request, or `null` when there is no row or the read failed. Never
- * rejects: its one caller (`AuthSyncInterceptor`) falls back to its waited
- * sync on `null`, which reads or creates the row itself.
+ * The `users` row id for `supabaseAuthId`, or `null` when there is no row or
+ * the read failed. Never rejects: its caller (`AuthSyncInterceptor`, through
+ * `request.appUserLookup`) falls back to its waited sync on `null`, which
+ * reads or creates the row itself.
  */
 export function readAppUserId(
   supabase: FrappSupabaseClient,
