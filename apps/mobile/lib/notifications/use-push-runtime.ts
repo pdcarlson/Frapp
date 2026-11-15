@@ -59,6 +59,7 @@ import {
 import { AccessibilityInfo, Alert } from "react-native";
 import { useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import {
+  useActiveChapterId,
   useDecideEventExcuse,
   useMarkNotificationRead,
   useRegisterPushToken,
@@ -70,7 +71,7 @@ import {
   addNotificationResponseListener,
   addPushTokenListener,
   configureForegroundPresentation,
-  dismissPresentedNotification,
+  clearLocalNotification,
   ensureAndroidChannel,
   getExpoPushToken,
   isPushAvailable,
@@ -79,6 +80,7 @@ import {
 } from "./push";
 import {
   claimActionPress,
+  EXCUSE_OTHER_CHAPTER_NOTICE,
   excuseDecisionFrom,
   excuseDecisionNotice,
   type ExcuseDecisionAction,
@@ -162,18 +164,22 @@ export function usePushRuntime(): void {
   const markReadRef = useRef(markRead);
   const decideExcuse = useDecideEventExcuse();
   const decideRef = useRef(decideExcuse);
+  const activeChapterId = useActiveChapterId();
+  const activeChapterRef = useRef(activeChapterId);
   const authRef = useRef({ isAuthenticated, status });
   useLayoutEffect(() => {
     registerRef.current = registerToken;
     removeRef.current = removeToken;
     markReadRef.current = markRead;
     decideRef.current = decideExcuse;
+    activeChapterRef.current = activeChapterId;
     authRef.current = { isAuthenticated, status };
   }, [
     registerToken,
     removeToken,
     markRead,
     decideExcuse,
+    activeChapterId,
     isAuthenticated,
     status,
   ]);
@@ -184,13 +190,15 @@ export function usePushRuntime(): void {
     settleChatLaunch();
     const data = response.notification.request.content.data;
     const identifier = response.notification.request.identifier;
-    let decision = excuseDecisionFrom(response);
+    const decision = excuseDecisionFrom(response);
     if (decision) {
+      // The launch read and the listener can both hand over the same press.
+      // The repeat changes nothing: the first already holds the decision
+      // and the event to open, and overwriting it with a copy would erase
+      // the decision while the session is still restoring.
+      if (!claimActionPress(identifier)) return;
       // Android leaves the push in the tray after an action press.
-      void dismissPresentedNotification(identifier).catch(() => undefined);
-      // The launch read and the listener can both hand over the same press;
-      // the second must open the event, not decide again into a 409.
-      if (!claimActionPress(identifier)) decision = null;
+      void clearLocalNotification(identifier);
     }
     setPendingTap({
       target: resolveNotificationTarget(data),
@@ -268,9 +276,23 @@ export function usePushRuntime(): void {
     // The press decides, and the event opens below either way, so the
     // officer sees the decision land (the write refreshes the event's
     // excuses) or can make it there when it didn't take.
-    if (decision) {
+    const activeChapter = activeChapterRef.current;
+    if (
+      decision?.chapterId &&
+      activeChapter &&
+      decision.chapterId !== activeChapter
+    ) {
+      Alert.alert(
+        EXCUSE_OTHER_CHAPTER_NOTICE.title,
+        EXCUSE_OTHER_CHAPTER_NOTICE.body,
+      );
+    } else if (decision) {
       decideRef.current
-        .mutateAsync(decision)
+        .mutateAsync({
+          eventId: decision.eventId,
+          userId: decision.userId,
+          decision: decision.decision,
+        })
         .then(() => {
           AccessibilityInfo.announceForAccessibility(
             decision.decision === "APPROVED"

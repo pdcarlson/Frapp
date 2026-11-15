@@ -476,6 +476,9 @@ export class EventExcuseService {
         data: {
           target: { screen: 'events', eventId: event.id },
           excuseUserId: excuse.user_id,
+          // The phone decides under its active chapter, so it needs to know
+          // when the press is from another of the officer's chapters.
+          chapterId,
         },
       });
     } catch (error) {

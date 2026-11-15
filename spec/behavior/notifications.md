@@ -114,7 +114,10 @@ named, holding a role it named, or the author of the message it replies to (#384
 the same test chat's own mention highlight uses. Rows written before #4346 have none of
 the three. The member-joined row (`invite.service.ts`) carries `memberUserId`, the
 `users.id` of who joined; it is deliberately not `senderId`, which means a chat sender
-and drives the block filter.
+and drives the block filter. The excuse push and its row (`event-excuse.service.ts`,
+#4686) carry `excuseUserId`, the member who sent the excuse, which the push's Approve
+and Decline send back, and `chapterId`, so a press from a chapter that isn't the
+phone's active one isn't sent there ([`events.md` § Excuses](events.md#excuses)).
 
 Tapping the notification opens the app directly to the relevant content. If the user is not authenticated, the app shows the login screen first, then navigates to the target after authentication.
 

@@ -183,6 +183,7 @@ describe('EventExcuseService', () => {
           data: {
             target: { screen: 'events', eventId: 'evt-1' },
             excuseUserId: 'member',
+            chapterId: 'ch-1',
           },
         }),
       );

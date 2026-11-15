@@ -15,6 +15,7 @@ function response(
   data: unknown = {
     target: { screen: "events", eventId: "evt-1" },
     excuseUserId: "user-sam",
+    chapterId: "chap-1",
     notificationId: "n-1",
   },
 ): PushNotificationResponse {
@@ -36,12 +37,25 @@ describe("excuseDecisionFrom (#4686)", () => {
       eventId: "evt-1",
       userId: "user-sam",
       decision: "APPROVED",
+      chapterId: "chap-1",
     });
     expect(excuseDecisionFrom(response(EXCUSE_DECLINE_ACTION))).toEqual({
       eventId: "evt-1",
       userId: "user-sam",
       decision: "DECLINED",
+      chapterId: "chap-1",
     });
+  });
+
+  it("reads no chapter from a push sent before the field", () => {
+    expect(
+      excuseDecisionFrom(
+        response(EXCUSE_APPROVE_ACTION, {
+          target: { screen: "events", eventId: "evt-1" },
+          excuseUserId: "user-sam",
+        }),
+      )?.chapterId,
+    ).toBeNull();
   });
 
   it("is null for a plain tap, which only opens the event", () => {
@@ -69,10 +83,25 @@ describe("excuseDecisionFrom (#4686)", () => {
 });
 
 describe("excuseDecisionNotice (#4686)", () => {
-  it("tells the officer a 409 was already handled, not that it failed", () => {
-    const notice = excuseDecisionNotice({ status: 409 });
+  it("tells the officer a 409 was already handled, in the server's words", () => {
+    const notice = excuseDecisionNotice({
+      status: 409,
+      message: "This excuse has already been decided",
+    });
+    expect(notice).toEqual({
+      title: "Already handled",
+      body: "This excuse has already been decided",
+    });
+    expect(excuseDecisionNotice({ status: 409 }).body).not.toMatch(
+      /couldn't|error|failed/i,
+    );
+  });
+
+  // Withdrawing deletes the row, so `decide` answers 404, not 409.
+  it("tells the officer a withdrawn excuse (404) was already handled", () => {
+    const notice = excuseDecisionNotice({ status: 404 });
     expect(notice.title).toBe("Already handled");
-    expect(notice.body).not.toMatch(/couldn't|error|failed/i);
+    expect(notice.body).toMatch(/withdrawn/);
   });
 
   it("points anything else at the event the press opened", () => {

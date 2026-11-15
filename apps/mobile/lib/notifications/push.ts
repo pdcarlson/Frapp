@@ -423,8 +423,9 @@ export function configureForegroundPresentation(): void {
 /**
  * Registers the action-button categories (`push-actions.ts`), once at boot,
  * before any push that names one can arrive while the app runs. The OS keeps
- * them across launches, so a push that lands while the app is killed shows
- * its buttons from the second launch of a build onward. A failure is logged,
+ * them across launches, so once the app has opened once after an install or
+ * update, a push shows its buttons even while the app is killed; only a push
+ * that arrives before that first open shows none. A failure is logged,
  * not thrown: the push still arrives, only without its buttons.
  */
 export async function registerPushActionCategories(): Promise<void> {
@@ -442,18 +443,6 @@ export async function registerPushActionCategories(): Promise<void> {
         }),
     ),
   );
-}
-
-/**
- * Dismisses a presented notification. An action press leaves it in the tray
- * on Android (iOS removes it), where a second press would decide again.
- */
-export async function dismissPresentedNotification(
-  identifier: string,
-): Promise<void> {
-  const mod = localOnlyModule();
-  if (!mod) return;
-  await mod.dismissNotificationAsync(identifier);
 }
 
 /**

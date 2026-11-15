@@ -3,6 +3,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PushTokenRow } from "./push-registration";
 
+const mockRegisterCategories = vi.hoisted(() => vi.fn());
+
 const mockState = vi.hoisted(() => ({
   isAuthenticated: false,
   status: "unauthenticated" as
@@ -22,6 +24,7 @@ const mockState = vi.hoisted(() => ({
   markRead: vi.fn(),
   decide: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
   dismissed: [] as string[],
+  activeChapterId: "chap-1" as string | null,
   pathname: "/",
   searchParams: {} as Record<string, string>,
   router: {
@@ -54,6 +57,7 @@ vi.mock("@repo/hooks", () => ({
   useRemovePushToken: () => ({ mutateAsync: mockState.remove }),
   useMarkNotificationRead: () => ({ mutate: mockState.markRead }),
   useDecideEventExcuse: () => ({ mutateAsync: mockState.decide }),
+  useActiveChapterId: () => mockState.activeChapterId,
 }));
 
 vi.mock("./push", () => ({
@@ -88,8 +92,8 @@ vi.mock("./push", () => ({
   hasLaunchNotificationTap: () => mockState.launchResponse !== null,
   configureForegroundPresentation: vi.fn(),
   ensureAndroidChannel: vi.fn(),
-  registerPushActionCategories: vi.fn(),
-  dismissPresentedNotification: async (identifier: string) => {
+  registerPushActionCategories: mockRegisterCategories,
+  clearLocalNotification: async (identifier: string) => {
     mockState.dismissed.push(identifier);
   },
 }));
@@ -128,6 +132,7 @@ beforeEach(() => {
   mockState.decide.mockReset();
   mockState.decide.mockResolvedValue({});
   mockState.dismissed = [];
+  mockState.activeChapterId = "chap-1";
   mockState.pathname = "/";
   mockState.searchParams = {};
   mockState.register.mockClear();
@@ -378,6 +383,7 @@ describe("usePushRuntime acts on Approve / Decline on an excuse push (#4686)", (
             notificationId: "notif-excuse",
             target: { screen: "events", eventId: "evt-1" },
             excuseUserId: "user-sam",
+            chapterId: "chap-1",
           },
         },
       },
@@ -425,6 +431,56 @@ describe("usePushRuntime acts on Approve / Decline on an excuse push (#4686)", (
 
     expect(mockState.decide).toHaveBeenCalledWith(
       expect.objectContaining({ decision: "DECLINED" }),
+    );
+  });
+
+  it("registers the action buttons once, at startup", async () => {
+    // A fresh copy of the module: its once-per-process boot flag has
+    // already been spent by the suites above.
+    vi.resetModules();
+    const fresh = await import("./use-push-runtime");
+    mockRegisterCategories.mockClear();
+
+    const first = renderHook(() => fresh.usePushRuntime());
+    first.rerender();
+    renderHook(() => fresh.usePushRuntime());
+
+    expect(mockRegisterCategories).toHaveBeenCalledTimes(1);
+  });
+
+  // iOS can hand the launch press to the listener too, while the session is
+  // still restoring: the repeat must not erase the held decision.
+  it("keeps the decision when the press is handed over again before the session is back", () => {
+    mockState.status = "hydrating";
+    const same = press("excuse-decline");
+    mockState.launchResponse = same;
+    const { rerender } = renderHook(() => usePushRuntime());
+    act(() => {
+      for (const listener of mockState.responseListeners) listener(same);
+    });
+    expect(mockState.decide).not.toHaveBeenCalled();
+
+    signIn();
+    rerender();
+
+    expect(mockState.decide).toHaveBeenCalledTimes(1);
+    expect(mockState.decide).toHaveBeenCalledWith(
+      expect.objectContaining({ decision: "DECLINED" }),
+    );
+  });
+
+  it("sends nothing for a press from another chapter, and says to switch", () => {
+    signIn();
+    mockState.activeChapterId = "chap-2";
+    const alert = vi.mocked(Alert.alert);
+    alert.mockClear();
+    mockState.launchResponse = press("excuse-approve");
+    renderHook(() => usePushRuntime());
+
+    expect(mockState.decide).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledWith(
+      "In another chapter",
+      expect.any(String),
     );
   });
 

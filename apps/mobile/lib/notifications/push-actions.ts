@@ -27,7 +27,8 @@
  * (`isWebOrExpoGo`), so neither the category nor its buttons exist there.
  * They need a development build or TestFlight / Play internal testing.
  */
-import { statusOf } from "@repo/api-sdk";
+import { serverMessageOf, statusOf } from "@repo/api-sdk";
+import { isRecord, str } from "../more/narrow";
 import { EXCUSE_PUSH_CATEGORY_ID } from "@repo/validation";
 import type {
   PushCategoryAction,
@@ -64,14 +65,13 @@ export interface ExcuseDecisionAction {
   eventId: string;
   userId: string;
   decision: "APPROVED" | "DECLINED";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function nonEmpty(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
+  /**
+   * The chapter the excuse is in, from the push. The write goes out under
+   * the phone's active chapter (`x-chapter-id`), so a press from another of
+   * the officer's chapters can't be decided as it is. Null on a push from a
+   * server before the field.
+   */
+  chapterId: string | null;
 }
 
 /**
@@ -91,29 +91,40 @@ export function excuseDecisionFrom(
   if (!decision) return null;
   const data = response.notification.request.content.data;
   if (!isRecord(data)) return null;
-  const target = isRecord(data.target) ? data.target : null;
-  const eventId = nonEmpty(target?.eventId);
-  const userId = nonEmpty(data.excuseUserId);
+  const eventId = isRecord(data.target) ? str(data.target, "eventId") : null;
+  const userId = str(data, "excuseUserId");
   if (!eventId || !userId) return null;
-  return { eventId, userId, decision };
+  return { eventId, userId, decision, chapterId: str(data, "chapterId") };
 }
 
 /**
- * What an officer is told when a press didn't take. A 409 means someone else
- * decided it first, the member withdrew it, or the event moved on (checked
- * in, or the auto-absent sweep); none is an error to fix, so it says the excuse
- * was already handled rather than that something failed. Anything else
- * (offline, a 403 for an officer who lost the permission) points at the event
- * page, which the press has already opened.
+ * What an officer is told when a press didn't take.
+ *
+ * - **404**: the member withdrew the excuse, or checked in, which withdraws a
+ *   pending one. Both delete the row, so `decide` finds nothing.
+ * - **409**: someone decided it first, or the excuse can no longer be
+ *   decided (the member checked in, an officer marked them absent, they left
+ *   the chapter). The server's message says which.
+ *
+ * Neither is an error to fix, so both say the excuse was already handled.
+ * Anything else (offline, a 403 for an officer who lost the permission)
+ * points at the event page, which the press has already opened.
  */
 export function excuseDecisionNotice(error: unknown): {
   title: string;
   body: string;
 } {
-  if (statusOf(error) === 409) {
+  const status = statusOf(error);
+  if (status === 404) {
     return {
       title: "Already handled",
-      body: "This excuse was already decided or withdrawn. The event shows where it stands.",
+      body: "This excuse was withdrawn, so there's nothing left to decide.",
+    };
+  }
+  if (status === 409) {
+    return {
+      title: "Already handled",
+      body: serverMessageOf(error) ?? "This excuse was already decided.",
     };
   }
   return {
@@ -121,6 +132,15 @@ export function excuseDecisionNotice(error: unknown): {
     body: "Approve or decline it here on the event instead.",
   };
 }
+
+/**
+ * A press from another of the officer's chapters. Nothing is sent: the write
+ * would go out under the active chapter and be refused there.
+ */
+export const EXCUSE_OTHER_CHAPTER_NOTICE = {
+  title: "In another chapter",
+  body: "Switch to that chapter, then approve or decline the excuse on its event.",
+};
 
 /**
  * Presses already acted on in this process, by notification id. iOS can hand
