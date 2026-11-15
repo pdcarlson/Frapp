@@ -1,8 +1,18 @@
 name: Staging app
 
 # Build, upload and update Frapp Staging, the side-by-side app that follows
-# `main` (#4917 step 3, epic #2511). Started by hand for now; it runs after
-# every staging deploy once a first run has proved the store uploads.
+# `main` (#4917 step 3, epic #2511). It runs after every successful staging
+# deploy, for the commit that deploy shipped, and by hand.
+#
+# ── After a staging deploy ──────────────────────────────────────────────────
+# Deploy staging is itself a `workflow_run` run, so its `head_sha` is `main`'s
+# tip when it started, not the commit it deployed; its run title is the one
+# place that names that commit (`staging <sha>`, #3114), and `plan` reads it
+# from there. An automatic run publishes the update and builds iOS when the
+# runtime has no uploaded binary. It never builds Android (`AUTO_PLATFORMS`):
+# Google Play takes a new app's first bundle by hand, so until that upload is
+# done an automatic Android build could only fail its upload (#4917). Build
+# Android by dispatch until then.
 #
 # ── What a run does ─────────────────────────────────────────────────────────
 #   1. `plan` computes the tree's staging runtime (version plus a hash of its
@@ -67,6 +77,10 @@ name: Staging app
 # while it asked for a named platform has to be dispatched again.
 
 on:
+  workflow_run:
+    workflows: ["Deploy staging"]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       build:
@@ -94,6 +108,12 @@ permissions:
 jobs:
   plan:
     name: Decide which binaries this tree needs
+    # A staging deploy that failed, or was skipped because CI was red, shipped
+    # nothing for the app to follow.
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -101,28 +121,60 @@ jobs:
       # Reads the marker artifacts earlier runs uploaded.
       actions: read
     outputs:
-      # The dispatched commit today; the commit staging deployed once this
-      # runs after Deploy staging. Every later job checks out exactly this.
-      sha: ${{ github.sha }}
+      # The dispatched commit, or the commit staging deployed. Every later
+      # job checks out exactly this.
+      sha: ${{ steps.commit.outputs.sha }}
       runtime: ${{ steps.plan.outputs.runtime }}
       ios: ${{ steps.plan.outputs.ios }}
       android: ${{ steps.plan.outputs.android }}
     steps:
+      # The title reaches the shell through `env`, never interpolated into the
+      # script, and only a full commit id passes.
+      - name: Name the commit
+        id: commit
+        env:
+          EVENT: ${{ github.event_name }}
+          DISPATCHED: ${{ github.sha }}
+          DEPLOY_TITLE: ${{ github.event.workflow_run.display_title }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            SHA="$DISPATCHED"
+          else
+            SHA="${DEPLOY_TITLE#staging }"
+          fi
+          if ! printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Couldn't read the deployed commit from the staging deploy's title."
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: ${{ steps.commit.outputs.sha }}
           persist-credentials: false
 
-      # Which packages are native is read from the installed tree.
-      - name: Setup Node and install dependencies
-        uses: ./.github/actions/node-setup
+      # Hand-written, not ./.github/actions/node-setup: the workspace is the
+      # deployed commit, and a local action would load from that tree. Matches
+      # node-setup's step (`node-setup-action.test.mjs`).
+      - name: Setup Node
+        uses: actions/setup-node@v7
         with:
-          install: ci
+          node-version: 24
+          package-manager-cache: false
+
+      # Which packages are native is read from the installed tree. No install
+      # script runs: the plan needs none.
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Plan
         id: plan
         env:
-          BUILD: ${{ inputs.build }}
+          # A run after a staging deploy has no inputs.
+          BUILD: ${{ inputs.build || 'auto' }}
+          AUTO_PLATFORMS: ${{ github.event_name == 'workflow_run' && 'ios' || 'ios,android' }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
