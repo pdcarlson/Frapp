@@ -83,12 +83,9 @@ type CustomFieldValue = {
   value: string | null;
 };
 
-function formatCustomValue(field: CustomFieldValue): string {
-  // Not an em dash. Board `1t` lists "em dashes in UI copy" under gone, and a
-  // placeholder glyph is a character a screen reader has to announce standing
-  // in for nothing at all. A row is a label over a value, so the value says it
-  // is unset rather than drawing a mark that means it.
-  if (field.value === null || field.value === "") return "Not set";
+function formatCustomValue(
+  field: CustomFieldValue & { value: string },
+): string {
   if (field.type === "boolean") {
     return field.value === "true" ? "Yes" : "No";
   }
@@ -98,16 +95,21 @@ function formatCustomValue(field: CustomFieldValue): string {
 /**
  * `MemberProfileDto.custom_fields`, already filtered server-side to the tiers
  * the viewer may see (`spec/behavior/members.md` § Custom Fields), so the
- * sheet draws every entry it gets and gates none.
+ * sheet gates none. A field with no value is left out, and with none set
+ * More details itself goes (`spec/behavior/members.md` § Custom Fields).
  */
-function parseCustomFields(member: MemberRecord | null): CustomFieldValue[] {
+function parseCustomFields(
+  member: MemberRecord | null,
+): (CustomFieldValue & { value: string })[] {
   return asArray<Record<string, unknown>>(member?.custom_fields).flatMap(
     (entry) => {
       if (
         !entry ||
         typeof entry.field_id !== "string" ||
         typeof entry.label !== "string" ||
-        typeof entry.type !== "string"
+        typeof entry.type !== "string" ||
+        typeof entry.value !== "string" ||
+        entry.value.trim() === ""
       ) {
         return [];
       }
@@ -116,7 +118,7 @@ function parseCustomFields(member: MemberRecord | null): CustomFieldValue[] {
           field_id: entry.field_id,
           label: entry.label,
           type: entry.type,
-          value: typeof entry.value === "string" ? entry.value : null,
+          value: entry.value,
         },
       ];
     },
