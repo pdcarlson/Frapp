@@ -4,8 +4,7 @@
  *
  *   - the channel topic is exactly `chat:channel:<id>`, with the exact
  *     channel config
- *     `{ private: true, broadcast: { self: false }, presence: { key: "" } }`,
- *     plus `postgres_changes_options`, which names no room (#5022)
+ *     `{ private: true, broadcast: { self: false }, presence: { key: "" } }`
  *     (the worker joins the same topic with the same config plus
  *     `presence.enabled: true`, which only a reader needs (#2974): this
  *     manager only `track()`s, and asking for the roster would ship every
@@ -19,6 +18,10 @@
  * renaming, adding, or dropping a field here silently breaks push
  * suppression in production, so the test must fail loudly instead. See
  * `spec/architecture/adr/adr-10.md`.
+ *
+ * The manager's config also carries `postgres_changes_options` (#5022). That
+ * names no room and is not part of this contract: the worker binds no
+ * `postgres_changes` and goes without it.
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";

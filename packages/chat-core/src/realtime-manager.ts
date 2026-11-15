@@ -237,9 +237,14 @@ export const INBOX_TOPIC = "chat:inbox:global";
  * none of two with it, which held that `SUBSCRIBED` back 200–350 ms.
  *
  * If the stream can't be set up, the join fails with `CHANNEL_ERROR` instead
- * (`PostgresChangesSubscribeTimeout`, after the server's wait, 15 s by
- * default), and the reconnect backoff and the polling fallback take it as
- * they take any failed join. A thread's typing and presence ride the same
+ * (`PostgresChangesSubscribeTimeout`). That lands about 20 s in: the server's
+ * wait (15 s by default) plus the few seconds it pauses before refusing, and
+ * realtime-js stretches the join's own timeout to 25 s to outlast it. A
+ * thread then goes to the reconnect backoff and, past
+ * `POLL_DEGRADE_AFTER_MS`, the polling fallback, as with any failed join. The
+ * inbox is never polled: it has its backoff, and the `resync` its next join
+ * reports, so badges are stale until a join succeeds, as they were (silently)
+ * when a stream died behind an early `SUBSCRIBED`. A thread's typing and presence ride the same
  * join, so they go down with it; a member not receiving the channel live then
  * gets its pushes, which is right. A server too old to know the option
  * ignores it and reports `SUBSCRIBED` early, as before.
