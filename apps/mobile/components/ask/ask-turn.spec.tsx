@@ -259,6 +259,31 @@ describe("AskTurn", () => {
     );
     expect(screenText(capped)).toContain(askUnavailableLine("over_cap"));
     expect(byLabel(capped, ASK_COPY.consent_action)).toHaveLength(0);
+    expect(byLabel(capped, ASK_COPY.try_again)).toHaveLength(0);
+  });
+
+  // #5082: "not available" promised a later with nothing to try. It is the
+  // one reason with nothing the member did and no day it ends, so the turn
+  // asks again in place; the reasons that say when do not offer it.
+  it("offers Try again for an answer Frapp couldn't give, and only for that reason", () => {
+    const props = handlers();
+    const failed = render(
+      exchange({
+        answer: answer({ status: "unavailable", reason: "not_available" }),
+      }),
+      props,
+    );
+    expect(screenText(failed)).toContain(ASK_COPY.unavailable.not_available);
+    expect(screenText(failed)).not.toContain("later");
+    act(() => byLabel(failed, ASK_COPY.try_again)[0].props.onPress());
+    expect(props.onRetry).toHaveBeenCalledTimes(1);
+
+    for (const reason of ["consent_required", "chapter_limit", "member_limit"]) {
+      const other = render(
+        exchange({ answer: answer({ status: "unavailable", reason }) }),
+      );
+      expect(byLabel(other, ASK_COPY.try_again)).toHaveLength(0);
+    }
   });
 
   it("states a refusal and a miss in plain words, with no sources", () => {

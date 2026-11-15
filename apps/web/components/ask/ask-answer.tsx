@@ -220,6 +220,7 @@ export function AskReply({
             readLine={askReadLine(exchange.read)}
             busy={busy}
             onAnswerConsent={onAnswerConsent}
+            onRetry={onRetry}
             onFollowMessage={onFollowMessage}
           />
           {exchange.answer.proposals?.length ? (
@@ -385,6 +386,7 @@ function AskAnswerBody({
   readLine,
   busy,
   onAnswerConsent,
+  onRetry,
   onFollowMessage,
 }: {
   answer: AskAnswer;
@@ -392,6 +394,8 @@ function AskAnswerBody({
   readLine: string | null;
   busy: boolean;
   onAnswerConsent: () => void;
+  /** Asks the same question again in this turn's place. */
+  onRetry: () => void;
   onFollowMessage?: () => void;
 }) {
   if (answer.status === "unavailable") {
@@ -409,6 +413,19 @@ function AskAnswerBody({
             onClick={onAnswerConsent}
           >
             {ASK_COPY.consent_action}
+          </Button>
+        ) : null}
+        {/* The one reason with nothing the member did and no day it ends:
+            asking again is the thing to do (#5082). The others say when. */}
+        {answer.reason === "not_available" ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={onRetry}
+          >
+            {ASK_COPY.try_again}
           </Button>
         ) : null}
       </div>

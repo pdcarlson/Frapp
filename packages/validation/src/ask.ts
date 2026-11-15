@@ -656,7 +656,10 @@ export const ASK_COPY = {
       "Your chapter has used its AI allowance for this month. Ask comes back on the 1st.",
     member_limit:
       "You've reached today's limit for questions. Ask comes back tomorrow.",
-    not_available: "Ask isn't available right now. Try again later.",
+    // Nothing the member did, and no date it comes back: the turn offers
+    // Try again in its place, as ChatGPT's and Claude's apps do, rather
+    // than "later" (#5082).
+    not_available: "Frapp couldn't answer that.",
   } satisfies Record<AskUnavailableReason, string>,
   /** Live data is read at the moment of the answer, so it has no date. */
   live: "Read just now",

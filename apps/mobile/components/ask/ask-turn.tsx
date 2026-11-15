@@ -253,6 +253,7 @@ export function AskReply({
             onOpenSource={onOpenSource}
             busy={busy}
             onAnswerConsent={onAnswerConsent}
+            onRetry={onRetry}
             onOpenChannel={onOpenChannel}
           />
         ) : null}
@@ -588,6 +589,7 @@ function AnswerBody({
   onOpenSource,
   busy,
   onAnswerConsent,
+  onRetry,
   onOpenChannel,
 }: {
   answer: AskAnswer;
@@ -598,6 +600,8 @@ function AnswerBody({
   onOpenSource: (source: AskSource) => void;
   busy: boolean;
   onAnswerConsent: () => void;
+  /** Asks the same question again in this turn's place. */
+  onRetry: () => void;
   onOpenChannel?: (channelId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -611,6 +615,15 @@ function AnswerBody({
           <CardAction
             label={ASK_COPY.consent_action}
             onPress={onAnswerConsent}
+            disabled={busy}
+          />
+        ) : null}
+        {/* The one reason with nothing the member did and no day it ends:
+            asking again is the thing to do (#5082). The others say when. */}
+        {answer.reason === "not_available" ? (
+          <CardAction
+            label={ASK_COPY.try_again}
+            onPress={onRetry}
             disabled={busy}
           />
         ) : null}
