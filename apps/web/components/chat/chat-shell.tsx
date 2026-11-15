@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -103,8 +104,11 @@ import {
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ChevronLeft, SquarePen, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet } from "@/components/ui/sheet";
-import { PanelContent, PanelHeader } from "@/components/shared/panel";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
 import {
   persistMembersHidden,
   WIDE_CHAT_QUERY,
@@ -221,6 +225,11 @@ import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
 import { AllThreadsPopover } from "./all-threads-popover";
+import {
+  anchorFor,
+  MemberPopout,
+  type MemberPopoutAnchor,
+} from "./member-popout";
 import type { ChannelRowActions } from "./channel-row-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
@@ -816,10 +825,13 @@ export function ChatShell({
   /*
     The member list (#3536). From 1280px it is a column beside the timeline,
     shown unless the member hid it, which a cookie remembers. Below that there
-    is no room for a third column, so the same toggle opens it as a sheet.
+    is no room for a third column, so the same toggle opens it as a list
+    under the button (#4593), as Slack's and Discord's members button does
+    once their column won't fit.
   */
   const [membersHidden, setMembersHidden] = useState(defaultMembersHidden);
   const [membersSheetOpen, setMembersSheetOpen] = useState(false);
+  const membersButtonRef = useRef<HTMLButtonElement>(null);
   const wideWindow = useMediaQuery(WIDE_CHAT_QUERY);
   // Room for the column: a wide window, and no tool page beside chat.
   const isWideChat = wideWindow && !toolBeside;
@@ -1439,21 +1451,51 @@ export function ChatShell({
     },
     [blockState, userId],
   );
-  // Whose profile is open (#3726): a sender's name or photo, an `@` chip, or a
-  // row of the member list opens the directory's own sheet by `users.id`, as
-  // mobile's thread does. The id outlives the close so the sheet keeps its
-  // member through its exit animation instead of blanking.
+  // Whose profile is open (#3726): a row of the member list, or a popout's
+  // View profile, opens the directory's own sheet by `users.id`, as mobile's
+  // thread does. The id outlives the close so the sheet keeps its member
+  // through its exit animation instead of blanking.
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  // Read by the Members popover's outside-click guard, which runs between
+  // renders: a profile stacked over the list must not close the list.
+  const profileOpenRef = useRef(false);
+  // A layout effect: the sheet moves focus in its own (passive) mount
+  // effect, which must already see the profile as open.
+  useLayoutEffect(() => {
+    profileOpenRef.current = profileOpen;
+  }, [profileOpen]);
+  // A sender's name or photo, or an `@` chip, opens a small profile popout
+  // beside it instead (#4593), as Discord's user popout does; the sheet is
+  // its View profile. Kept after the close for the exit animation, like the
+  // sheet's id.
+  const [popout, setPopout] = useState<{
+    userId: string;
+    anchor: MemberPopoutAnchor;
+  } | null>(null);
+  const [popoutOpen, setPopoutOpen] = useState(false);
   // The dialogs and forms above load on first open; fetch them once the
   // page is idle so that first open rarely waits (#3716).
   useEffect(() => {
     afterFirstPaint(preloadChatPanels);
   }, []);
-  const openProfile = useCallback((memberUserId: string) => {
+  const openProfileSheet = useCallback((memberUserId: string) => {
     setProfileUserId(memberUserId);
     setProfileOpen(true);
   }, []);
+  // With the clicked element, the popout beside it; without one (a member
+  // list row), the sheet, stacked over the list as before (#3798).
+  const openProfile = useCallback(
+    (memberUserId: string, anchor?: HTMLElement) => {
+      if (!anchor) {
+        openProfileSheet(memberUserId);
+        return;
+      }
+      setPopout({ userId: memberUserId, anchor: anchorFor(anchor) });
+      setPopoutOpen(true);
+    },
+    [openProfileSheet],
+  );
   const handleReport = useCallback(
     (message: ChatMessage) => {
       const canBlock = !!userId && canBlockSender(message, userId, isMember);
@@ -3485,17 +3527,78 @@ export function ChatShell({
           />
           <div className="flex shrink-0 items-center gap-2">
             {showMemberList ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={compactControlClassName}
-                onClick={threadBeside ? showMembersOverThread : toggleMembers}
-                aria-label={membersBeside ? "Hide members" : "Show members"}
-                aria-pressed={isWideChat ? membersBeside : undefined}
-                aria-haspopup={isWideChat ? undefined : "dialog"}
+              <Popover
+                open={membersSheetOpen}
+                onOpenChange={setMembersSheetOpen}
               >
-                <MembersGlyph className="h-5 w-5" active={membersBeside} />
-              </Button>
+                <PopoverAnchor asChild>
+                  <Button
+                    ref={membersButtonRef}
+                    variant="ghost"
+                    size="icon"
+                    className={compactControlClassName}
+                    onClick={
+                      threadBeside
+                        ? showMembersOverThread
+                        : membersSheetOpen
+                          ? () => setMembersSheetOpen(false)
+                          : toggleMembers
+                    }
+                    aria-label={membersBeside ? "Hide members" : "Show members"}
+                    aria-pressed={isWideChat ? membersBeside : undefined}
+                    aria-haspopup={isWideChat ? undefined : "dialog"}
+                    aria-expanded={isWideChat ? undefined : membersSheetOpen}
+                  >
+                    <MembersGlyph className="h-5 w-5" active={membersBeside} />
+                  </Button>
+                </PopoverAnchor>
+                {/*
+                  The list under its button (#4593, rule 3 of
+                  components.md § Surface size): the column's own list, search
+                  and all, capped to the room below the button. A profile
+                  opened from a row stacks over it and closes back to it
+                  (#3798), so the list ignores the clicks and focus that
+                  profile takes.
+                */}
+                <PopoverContent
+                  align="end"
+                  aria-label="Members"
+                  className="flex max-h-[min(32rem,var(--radix-popover-content-available-height))] w-72 flex-col p-0"
+                  collisionPadding={16}
+                  onInteractOutside={(event) => {
+                    // The button closes the list itself; dismissing here on
+                    // its pointerdown would let its click open it again.
+                    const onButton = membersButtonRef.current?.contains(
+                      event.target as Node,
+                    );
+                    if (profileOpenRef.current || onButton) {
+                      event.preventDefault();
+                    }
+                  }}
+                  onFocusOutside={(event) => {
+                    if (profileOpenRef.current) event.preventDefault();
+                  }}
+                  onCloseAutoFocus={(event) => {
+                    event.preventDefault();
+                    const active = document.activeElement;
+                    const content = event.currentTarget as HTMLElement | null;
+                    if (
+                      !active ||
+                      active === document.body ||
+                      !!content?.contains(active)
+                    ) {
+                      membersButtonRef.current?.focus();
+                    }
+                  }}
+                >
+                  {activeChannel ? (
+                    <ChannelMemberList
+                      channelId={activeChannel.id}
+                      onOpenProfile={openProfileSheet}
+                    />
+                  ) : null}
+                </PopoverContent>
+              </Popover>
             ) : null}
             <AllThreadsPopover
               channelNameFor={threadChannelLabel}
@@ -4212,30 +4315,25 @@ export function ChatShell({
           <ChannelMemberList
             channelId={activeChannel?.id ?? null}
             enabled={isWideChat}
-            onOpenProfile={openProfile}
+            onOpenProfile={openProfileSheet}
           />
         </aside>
       ) : null}
-      <Sheet open={membersSheetOpen} onOpenChange={setMembersSheetOpen}>
-        {/*
-          A Panel, §9's surface for a list that grows: the member list is the
-          panel's whole body and owns its one scroll.
-        */}
-        <PanelContent>
-          <PanelHeader>Members</PanelHeader>
-          {activeChannel ? (
-            <ChannelMemberList
-              channelId={activeChannel.id}
-              onOpenProfile={openProfile}
-            />
-          ) : null}
-        </PanelContent>
-      </Sheet>
 
-      {/*
-        After the Members sheet, so a profile opened from one of its rows
-        stacks over the list and closes back to it, as mobile's does (#3798).
-      */}
+      {popout ? (
+        <MemberPopout
+          userId={popout.userId}
+          anchor={popout.anchor}
+          open={popoutOpen}
+          onOpenChange={setPopoutOpen}
+          identity={{
+            name: nameFor(popout.userId),
+            avatarUrl: avatarFor(popout.userId),
+          }}
+          onViewProfile={openProfileSheet}
+        />
+      ) : null}
+
       {/*
         Mounted from the first open on, so its chunk loads with that open
         rather than with the shell (#3716), and so it can animate closed.

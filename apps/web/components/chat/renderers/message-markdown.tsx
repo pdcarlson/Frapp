@@ -1,6 +1,12 @@
 "use client";
 
-import { createContext, memo, useContext, type ReactNode } from "react";
+import {
+  createContext,
+  memo,
+  useContext,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import ReactMarkdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { isSafeHref } from "@repo/chat-core/links";
@@ -28,8 +34,11 @@ import { cn } from "@/lib/utils";
  * `content`: the renderers between the row and this body need not thread it.
  */
 export const MentionOpenerContext = createContext<
-  ((token: string) => (() => void) | null) | null
+  ((token: string) => MentionOpener | null) | null
 >(null);
+
+/** Opens the chip's member; the chip comes along so a popout can sit by it. */
+export type MentionOpener = (event: MouseEvent<HTMLElement>) => void;
 
 /**
  * One chip: the `<mark>` the plugin built, which paints it. A chip that opens

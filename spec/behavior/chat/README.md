@@ -1903,6 +1903,7 @@ Which member, if any, is the shared answer in `packages/chat-core/src/profile-ta
 - **A chip** opens only a member the message's own server-resolved `mentions` holds, matched with the resolver's tiers (`mentionedUserId`), so a click never opens someone the send did not notify.
   A role mention (`@Brothers`) expands to its holders, none of whom is named after the role, so it opens nothing and stays plain.
 - On web the name and the chip are buttons, reached by Tab and pressed by Enter or Space; the photo is a pointer target beside the name and not a second Tab stop.
+- On web a name, photo or chip opens a small profile popout beside what was clicked, not the sheet (2026-11-15, [#4593](https://github.com/pdcarlson/Frapp/issues/4593), Paul's item 8 there; Discord's user popout and Slack's profile card are the comparables). It shows the photo, the name in its role color, the class-year line and up to four role chips (then "+N"), with Message and View profile; View profile opens the full sheet. Escape or a click away closes it and puts focus back on the name. A member-list row still opens the sheet itself, stacked over the list. Mobile keeps the sheet for every door. Implementation: `apps/web/components/chat/member-popout.tsx`.
   What the sheet holds is [`members.md` § Profiles](../members.md#profiles) and, for web's sheet, [`web-dashboard/README.md` § Directory](../../ui/web-dashboard/README.md#directory).
 
 **A message that mentions you is highlighted** (2026-11-06).
