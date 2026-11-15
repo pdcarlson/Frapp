@@ -421,9 +421,14 @@ describe('AnthropicLanguageModel', () => {
                   ],
                   citations: { enabled: true },
                 },
-                { type: 'text', text: 'Showing 2 of 2.' },
               ],
               cache_control: { type: 'ephemeral' },
+            },
+            // A result is all sources or none (the API refuses a mix), so
+            // the note of a result with sources follows the results.
+            {
+              type: 'text',
+              text: "About search_messages's result: Showing 2 of 2.",
             },
           ],
         },

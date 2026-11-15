@@ -50,6 +50,19 @@ const ASKED_BACK = {
   unclear: 'I need one more detail to set that up.',
 } as const;
 
+/**
+ * A chat line goes to the model under who said it, where and when ("Eli
+ * Sorensen in #general on Monday, November 9, 2026 at 10:30 AM: ..."), and
+ * the smallest thing a model can quote is a whole line. The gateway has
+ * already held the quote to that text. What is checked against the corpus
+ * here is the member's words, which is all the synthetic message holds.
+ */
+const SAID = /^[^\n]*? in #[\w-]+ on [^\n]*?\b(?:AM|PM): /;
+function saidIn(quote: string): string {
+  const first = quote.split('\n').find((line) => line.trim() !== '') ?? quote;
+  return SAID.test(first) ? first.replace(SAID, '') : quote;
+}
+
 let asking = 0;
 let before: string | undefined;
 
@@ -177,7 +190,7 @@ export function createLoopAgent(
               citation.quote,
             );
             return documentId
-              ? [{ documentId, quotedText: citation.quote }]
+              ? [{ documentId, quotedText: saidIn(citation.quote) }]
               : [];
           }),
           toolCalls: world.calls,
