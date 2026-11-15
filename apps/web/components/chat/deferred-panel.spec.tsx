@@ -7,10 +7,10 @@ const toast = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }));
 
+const { deferredPanel } = await import("./deferred-panel");
 const {
   Composer: RealComposer,
   deferredComposer,
-  deferredPanel,
   preloadComposer,
 } = await import("./deferred-panels");
 const { takeDroppedFiles } = await import("./composer-shell");

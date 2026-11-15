@@ -72,7 +72,7 @@ import {
 } from "@repo/chat-core/message-actions";
 import { MessageRenderer } from "./renderers";
 import type { InlineMessageEditorHandle } from "./inline-message-editor";
-import { InlineMessageEditor } from "./deferred-panels";
+import { InlineMessageEditor } from "./deferred-inline-editor";
 import {
   MentionOpenerContext,
   type MentionOpener,

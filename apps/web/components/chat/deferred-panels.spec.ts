@@ -42,6 +42,8 @@ const STATIC_IMPORTERS = [
   "chat-route-skeleton.tsx",
   "composer-shell.tsx",
   "deferred-panels.tsx",
+  "deferred-panel.tsx",
+  "deferred-inline-editor.tsx",
 ];
 
 function resolve(specifier: string): string {
@@ -92,7 +94,10 @@ describe("chat shell panels", () => {
   });
 
   it("lists in the preload every panel it splits", () => {
-    const source = readFileSync(join(__dirname, "deferred-panels.tsx"), "utf8");
+    // The edit box's lazy and preload live in their own module (#5050).
+    const source = ["deferred-panels.tsx", "deferred-inline-editor.tsx"]
+      .map((file) => readFileSync(join(__dirname, file), "utf8"))
+      .join("\n");
     for (const path of DEFERRED) {
       expect(source.split(`import("${path}")`).length - 1).toBe(2);
     }
