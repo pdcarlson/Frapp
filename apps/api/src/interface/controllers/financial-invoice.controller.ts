@@ -27,6 +27,10 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
+  type FinancialInvoice,
+  invoiceForViewer,
+} from '#domain/entities/financial-invoice.entity';
+import {
   CreateFinancialInvoiceDto,
   ListInvoicesQueryDto,
   UpdateFinancialInvoiceDto,
@@ -56,6 +60,8 @@ export class FinancialInvoiceController {
       if (filterUserId === userId) {
         return this.invoiceService.findByUser(filterUserId, chapterId);
       }
+      // An officer's read of another member: their payment-attempt fields
+      // stay theirs (#3460).
       const canViewOthers = await this.rbacService.memberHasAnyPermission(
         chapterId,
         userId,
@@ -64,7 +70,10 @@ export class FinancialInvoiceController {
       if (!canViewOthers) {
         throw new ForbiddenException('Access denied to these invoices');
       }
-      return this.invoiceService.findByUser(filterUserId, chapterId);
+      return forViewer(
+        await this.invoiceService.findByUser(filterUserId, chapterId),
+        userId,
+      );
     }
     const canViewChapter = await this.rbacService.memberHasAnyPermission(
       chapterId,
@@ -72,7 +81,10 @@ export class FinancialInvoiceController {
       [SystemPermissions.BILLING_VIEW],
     );
     if (canViewChapter) {
-      return this.invoiceService.findByChapter(chapterId);
+      return forViewer(
+        await this.invoiceService.findByChapter(chapterId),
+        userId,
+      );
     }
     return this.invoiceService.findByUser(userId, chapterId);
   }
@@ -87,8 +99,11 @@ export class FinancialInvoiceController {
     summary:
       'List overdue invoices (OPEN past due_date plus the dues grace period when wf_dues_grace is enabled)',
   })
-  async listOverdue(@CurrentChapterId() chapterId: string) {
-    return this.invoiceService.findOverdue(chapterId);
+  async listOverdue(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return forViewer(await this.invoiceService.findOverdue(chapterId), userId);
   }
 
   @Get(':id')
@@ -110,7 +125,7 @@ export class FinancialInvoiceController {
     if (!canViewAll) {
       throw new ForbiddenException('Access denied to this invoice');
     }
-    return invoice;
+    return invoiceForViewer(invoice, userId);
   }
 
   @Post()
@@ -133,10 +148,14 @@ export class FinancialInvoiceController {
   @ApiOperation({ summary: 'Update a draft invoice' })
   async update(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') id: string,
     @Body() dto: UpdateFinancialInvoiceDto,
   ) {
-    return this.invoiceService.update(id, chapterId, dto);
+    return invoiceForViewer(
+      await this.invoiceService.update(id, chapterId, dto),
+      userId,
+    );
   }
 
   @Post(':id/status')
@@ -150,10 +169,14 @@ export class FinancialInvoiceController {
   )
   async transitionStatus(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') id: string,
     @Body() dto: TransitionInvoiceStatusDto,
   ) {
-    return this.invoiceService.transitionStatus(id, chapterId, dto.status);
+    return invoiceForViewer(
+      await this.invoiceService.transitionStatus(id, chapterId, dto.status),
+      userId,
+    );
   }
 
   @Post(':id/payment-intent')
@@ -184,4 +207,12 @@ export class FinancialInvoiceController {
   ) {
     return this.invoiceService.getInvoiceTransactions(id, chapterId);
   }
+}
+
+/** {@link invoiceForViewer} over a list. */
+function forViewer(
+  invoices: FinancialInvoice[],
+  viewerId: string,
+): FinancialInvoice[] {
+  return invoices.map((invoice) => invoiceForViewer(invoice, viewerId));
 }

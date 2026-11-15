@@ -3389,7 +3389,8 @@ describe('BillingService', () => {
       ): WebhookEvent => ({
         id,
         type: 'payment_intent.payment_failed',
-        created: Date.now(),
+        // Stripe's `created` is in seconds: 2026-11-15T17:00:00Z.
+        created: 1_794_762_000,
         data: { object },
       });
 
@@ -3407,6 +3408,8 @@ describe('BillingService', () => {
         ).toHaveBeenCalledWith({
           invoiceId: INVOICE_ID,
           chapterId: CHAPTER_ID,
+          paymentIntentId: 'pi_1',
+          failedAt: '2026-11-15T17:00:00.000Z',
           declineReason: 'Your card was declined.',
         });
         expect(
@@ -3428,6 +3431,8 @@ describe('BillingService', () => {
         ).toHaveBeenCalledWith({
           invoiceId: INVOICE_ID,
           chapterId: CHAPTER_ID,
+          paymentIntentId: 'pi_1',
+          failedAt: '2026-11-15T17:00:00.000Z',
           declineReason: null,
         });
       });

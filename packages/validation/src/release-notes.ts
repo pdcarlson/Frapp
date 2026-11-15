@@ -132,6 +132,13 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Every Sunday morning a notification sums up your last week, and you can turn it off with Weekly recap in notification settings.",
       "Officers can post a role picker in any channel, so members tap to join or leave interest roles like intramurals.",
       "A chapter you start can plan events, hand out tasks and give points right away.",
+      "When Ask Frapp runs into a problem on its end, you can now try your question again right there instead of being told to come back later.",
+      "When a dues payment fails after you've paid, the app now tells you your payment didn't go through, instead of waiting on a confirmation that won't come, so you can pay again.",
+    ],
+    web: [
+      "Clicking a name in chat opens a small profile card beside it, and the members list opens right under its button when the window is narrow.",
+      "Joining with an invite emailed to you no longer shows a second Join under it, with the Terms box above the invite, and the welcome tour no longer leaves chapter setup open behind it or closes on a stray click.",
+      "Signing in with an email you were invited at now takes you to your invite, instead of chapter setup.",
     ],
     phone: [
       "Send invite now works on the first tap while the keyboard is open.",
@@ -139,6 +146,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Edits to an event or a task are still there when you come back to them, unless you cancel or save.",
       "Chapter accent, Chat background and Schedule message no longer stop opening after you swipe one away while it's still saving.",
       "Meeting notes you haven't drafted yet, and what you typed to mark a task done or send one back, are still there when you come back, unless you cancel or send.",
+      "Search results in Ask Frapp now sit above the message box instead of running under it.",
+      "Officers can turn on Non-chapter business from a role's page in Chapter settings, so members can add that role themselves.",
     ],
   },
   {

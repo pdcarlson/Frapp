@@ -82,7 +82,7 @@ describe('FinancialInvoiceController', () => {
       });
 
       expect(service.findByUser).toHaveBeenCalledWith(filterUserId, chapterId);
-      expect(result).toBe(mockResult);
+      expect(result).toEqual(mockResult);
     });
 
     it('should call findByUser for self when caller lacks billing view', async () => {
@@ -108,7 +108,7 @@ describe('FinancialInvoiceController', () => {
       const result = await controller.list(chapterId, userId, {});
 
       expect(service.findByChapter).toHaveBeenCalledWith(chapterId);
-      expect(result).toBe(mockResult);
+      expect(result).toEqual(mockResult);
     });
 
     it('should list own invoices when user_id filter matches caller without RBAC lookup', async () => {
@@ -134,10 +134,10 @@ describe('FinancialInvoiceController', () => {
       const mockResult = [{ id: 'invoice-1' }];
       service.findOverdue.mockResolvedValue(mockResult as any);
 
-      const result = await controller.listOverdue(chapterId);
+      const result = await controller.listOverdue(chapterId, 'user-1');
 
       expect(service.findOverdue).toHaveBeenCalledWith(chapterId);
-      expect(result).toBe(mockResult);
+      expect(result).toEqual(mockResult);
     });
 
     it('should have correct permissions metadata', () => {
@@ -205,6 +205,69 @@ describe('FinancialInvoiceController', () => {
     });
   });
 
+  describe('payment-attempt fields (#3460)', () => {
+    const attempt = {
+      last_payment_attempt_at: '2026-11-15T17:00:00.000Z',
+      last_payment_failed_at: '2026-11-15T17:00:05.000Z',
+      last_payment_failure_reason: 'Your card has insufficient funds.',
+    };
+    const cleared = {
+      last_payment_attempt_at: null,
+      last_payment_failed_at: null,
+      last_payment_failure_reason: null,
+    };
+
+    it("hides another member's decline from an officer's chapter list", async () => {
+      rbacService.memberHasAnyPermission.mockResolvedValue(true);
+      service.findByChapter.mockResolvedValue([
+        { id: 'inv-mine', user_id: 'user-1', ...attempt },
+        { id: 'inv-theirs', user_id: 'user-2', ...attempt },
+      ] as any);
+
+      const result = await controller.list('chapter-1', 'user-1', {});
+
+      expect(result).toEqual([
+        { id: 'inv-mine', user_id: 'user-1', ...attempt },
+        { id: 'inv-theirs', user_id: 'user-2', ...cleared },
+      ]);
+    });
+
+    it("hides it on an officer's read of one invoice", async () => {
+      rbacService.memberHasAnyPermission.mockResolvedValue(true);
+      service.findById.mockResolvedValue({
+        id: 'inv-theirs',
+        user_id: 'user-2',
+        ...attempt,
+      } as any);
+
+      await expect(
+        controller.getOne('chapter-1', 'user-1', 'inv-theirs'),
+      ).resolves.toEqual({ id: 'inv-theirs', user_id: 'user-2', ...cleared });
+    });
+
+    it('hides it from the overdue list', async () => {
+      service.findOverdue.mockResolvedValue([
+        { id: 'inv-theirs', user_id: 'user-2', ...attempt },
+      ] as any);
+
+      await expect(
+        controller.listOverdue('chapter-1', 'user-1'),
+      ).resolves.toEqual([{ id: 'inv-theirs', user_id: 'user-2', ...cleared }]);
+    });
+
+    it("keeps it on the payer's own read", async () => {
+      service.findById.mockResolvedValue({
+        id: 'inv-mine',
+        user_id: 'user-1',
+        ...attempt,
+      } as any);
+
+      await expect(
+        controller.getOne('chapter-1', 'user-1', 'inv-mine'),
+      ).resolves.toEqual({ id: 'inv-mine', user_id: 'user-1', ...attempt });
+    });
+  });
+
   describe('update', () => {
     it('should call update on service', async () => {
       const chapterId = 'chapter-1';
@@ -215,7 +278,7 @@ describe('FinancialInvoiceController', () => {
       const mockResult = { id, title: dto.title };
       service.update.mockResolvedValue(mockResult as any);
 
-      const result = await controller.update(chapterId, id, dto);
+      const result = await controller.update(chapterId, 'user-1', id, dto);
 
       expect(service.update).toHaveBeenCalledWith(id, chapterId, dto);
       expect(result).toBe(mockResult);
@@ -238,7 +301,12 @@ describe('FinancialInvoiceController', () => {
       const mockResult = { id, status: dto.status };
       service.transitionStatus.mockResolvedValue(mockResult as any);
 
-      const result = await controller.transitionStatus(chapterId, id, dto);
+      const result = await controller.transitionStatus(
+        chapterId,
+        'user-1',
+        id,
+        dto,
+      );
 
       expect(service.transitionStatus).toHaveBeenCalledWith(
         id,
