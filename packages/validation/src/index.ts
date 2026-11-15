@@ -167,6 +167,7 @@ export * from "./permissions";
 export * from "./phone";
 export * from "./profile-copy";
 export * from "./profile-correction";
+export * from "./push-action-categories";
 // Event recurrence: the repeat-rule format the DTOs validate against, the
 // stepper the series generator materializes from, and the words both apps
 // describe a series with. One source so the generated series and what the

@@ -12,8 +12,8 @@
  *
  * The keys below are the values `apps/api` actually emits, found by grepping
  * `target: {` across its services: `chat`, `events`, `tasks`, `billing`,
- * `points`, `service`, `members`, `ai_suggestions`, `chat_reports`,
- * `discord_import`.
+ * `points`, `service`, `members`, `ai_suggestions`, `activity`,
+ * `chat_reports`, `discord_import`.
  * `lib/more/notifications.ts` maps a
  * deliberately *wider* set to display labels, because a label that is merely
  * absent costs a member nothing. A route does: navigating somewhere on a guess
@@ -75,6 +75,8 @@ const ROUTES: Record<
   members: { pathname: "/directory" },
   // Tasks suggested from posted minutes (#4313): the officer's list.
   ai_suggestions: { pathname: "/suggested-tasks" },
+  // The weekly recap push (#4985): Activity, where the "Last week" card is.
+  activity: { pathname: "/activity" },
 };
 
 /**

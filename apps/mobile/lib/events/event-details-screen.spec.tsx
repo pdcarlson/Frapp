@@ -16,6 +16,11 @@ import { NewEventSheet } from "@/components/events/new-event-sheet";
 import { expectBackRow } from "@/test/back-row";
 import { screenText } from "@/test/screen-text";
 import { formatEventClock } from "@/lib/events/format";
+import {
+  hasKeptDraft,
+  useKeptDraftKeys,
+  writeKeptDraft,
+} from "@repo/hooks/kept-drafts";
 
 /**
  * #2101. s07 is often opened before check-in opens: a member arriving early
@@ -50,6 +55,8 @@ const EVENT: Record<string, unknown> = {
 let event = EVENT;
 // Swapped by the back-row specs for s07's loading and no-event states.
 let eventPending = false;
+/** The event read's failure, or `null` (#4872: a 404 drops a kept edit). */
+let eventError: unknown = null;
 let routeId: string | undefined = EVENT.id as string;
 let chapterId: string | null = "chapter-1";
 // The viewer's grants: a plain member by default.
@@ -110,9 +117,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useDecideEventExcuse: () => ({ mutateAsync: decideExcuse, isPending: false }),
   useEvent: () => ({
     isPending: eventPending,
-    isError: false,
+    isError: eventError !== null,
+    error: eventError,
     isFetching: false,
-    data: event,
+    data: eventError === null ? event : undefined,
     refetch: vi.fn(),
   }),
 }));
@@ -560,6 +568,40 @@ describe("Event details editing", () => {
     });
     permissions = ["members:view"];
     event = EVENT;
+    eventError = null;
+  });
+
+  /** The store key the screen's sheet keeps this event's edit under. */
+  function keptEditKey(): string {
+    let key = "";
+    function Probe() {
+      key = useKeptDraftKeys().draft(`event-edit:${EVENT.id as string}`);
+      return null;
+    }
+    let probe!: ReactTestRenderer;
+    act(() => {
+      probe = create(<Probe />);
+    });
+    act(() => probe.unmount());
+    return key;
+  }
+
+  it("keeps the edit sheet's draft past this screen, by event (#4872)", () => {
+    permissions = ["*"];
+    const sheet = render().root.findByType(NewEventSheet);
+    expect(sheet.props.keptDraft).toBe(`event-edit:${EVENT.id as string}`);
+  });
+
+  it("drops a kept edit once the event is gone (#4872)", () => {
+    const key = keptEditKey();
+    writeKeptDraft(key, { name: "Chapter" });
+    // Still there for a failure that may pass.
+    eventError = { statusCode: 500, message: "down" };
+    render();
+    expect(hasKeptDraft(key)).toBe(true);
+    eventError = { statusCode: 404, message: "Event not found" };
+    render();
+    expect(hasKeptDraft(key)).toBe(false);
   });
 
   function editButton(tree: ReactTestRenderer) {

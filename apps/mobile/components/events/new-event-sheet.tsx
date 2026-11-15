@@ -90,6 +90,11 @@ import {
 import { formatEventClock } from "@/lib/events/format";
 import { gateRefusalOf } from "@/lib/chat/gated-upload";
 import { successHaptic } from "@/lib/haptics";
+import {
+  keepEditsOver,
+  useKeptSheetDraft,
+  useKeptSheetOpening,
+} from "@/lib/kept-sheet-draft";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 
@@ -181,6 +186,45 @@ export interface NewEventSheetProps {
   onSaved?: (result: { leave: boolean }) => void;
   /** Fired after the event is deleted from the sheet. */
   onDeleted?: () => void;
+  /**
+   * Keeps an edit's draft past its host, under this name (`event-edit:<id>`,
+   * #4872): event details goes when the member goes back, and Edit on the
+   * same event opens on what was typed. Only what the officer changed is
+   * kept: the rest comes from the event as it is when the sheet opens again.
+   */
+  keptDraft?: string;
+}
+
+/** What a kept edit holds: the form, and the event as it opened. */
+type KeptEventEdit = NewEventDraft & { base: NewEventDraft };
+
+/** The fields a kept edit is laid over the event by. */
+const EVENT_EDIT_KEYS = [
+  "eventTypeId",
+  "name",
+  "start",
+  "end",
+  "location",
+  "pointsInput",
+  "checkInOpensInput",
+  "attendance",
+  "repeat",
+  "description",
+] as const satisfies readonly (keyof NewEventDraft)[];
+
+/** A kept edit over the event as it is now: only what the officer changed. */
+function keptEventEditOver(
+  kept: KeptEventEdit,
+  now: NewEventDraft,
+): NewEventDraft {
+  const { base, ...fields } = kept;
+  return {
+    ...keepEditsOver<NewEventDraft>(fields, base, now, EVENT_EDIT_KEYS, [
+      ["start", "end"],
+    ]),
+    typeFilledName: fields.typeFilledName,
+    showMore: fields.showMore,
+  };
 }
 
 /** Whether the viewer may create events. */
@@ -246,7 +290,7 @@ const GATE_COPY = {
 
 export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
   function NewEventSheet(
-    { now, onCreated, chat, editing, template, onSaved, onDeleted },
+    { now, onCreated, chat, editing, template, onSaved, onDeleted, keptDraft },
     ref,
   ) {
     const { tokens } = useFrappTheme();
@@ -290,7 +334,26 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
         editing ? draftFromEvent(editing) : (template ?? emptyEventDraft()),
       [editing, template],
     );
-    const [draft, setDraft] = useState<NewEventDraft>(freshDraft);
+    // An edit kept from the screen's last visit (`keptDraft`), laid over
+    // the event as it is now; the event as it opened is what the next
+    // visit's draft is measured from.
+    const keptName = editing && keptDraft ? keptDraft : null;
+    const opening = useKeptSheetOpening<KeptEventEdit>(keptName);
+    const [base] = useState(freshDraft);
+    const [draft, setDraft] = useState<NewEventDraft>(() =>
+      opening ? keptEventEditOver(opening, base) : base,
+    );
+    const {
+      clear: clearKept,
+      hold: holdKept,
+      release: releaseKept,
+    } = useKeptSheetDraft<KeptEventEdit>(
+      keptName,
+      { ...draft, base },
+      // The store's own signature of the whole value: `base` never changes.
+      undefined,
+      opening,
+    );
     const [focused, setFocused] = useState<
       "name" | "location" | "points" | "checkInOpens" | "description" | null
     >(null);
@@ -347,7 +410,9 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       update({ start, end: next }, ["end"]);
     }
 
+    /** Gives the draft up: Cancel, or a save with nothing to send. */
     const reset = useCallback(() => {
+      clearKept();
       setDraft(freshDraft());
       setFocused(null);
       setErrors({});
@@ -355,7 +420,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       setUnconfirmed(false);
       setRefusal(null);
       setRejected(null);
-    }, [freshDraft]);
+    }, [freshDraft, clearKept]);
 
     /** A swipe or scrim close: the draft stays, the visit's state goes. */
     const closed = useCallback(() => {
@@ -415,6 +480,9 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       }
       const request = saveRequestFor(target, result.patch, scope);
       sending.current = true;
+      // Out of the kept store until it lands or fails, so event details
+      // reopened mid-save doesn't offer the same edit again.
+      holdKept();
       setRejected(null);
       setSubmitFailed(false);
       setUnconfirmed(false);
@@ -426,6 +494,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           onSuccess: (saved) => {
             sending.current = false;
             successHaptic();
+            clearKept();
             const savedId =
               saved && typeof saved === "object" && "id" in saved
                 ? String((saved as { id: unknown }).id)
@@ -435,6 +504,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           },
           onError: (error) => {
             sending.current = false;
+            releaseKept();
             if (!isSameVisit(sentFrom)) return;
             const gated = gateRefusalOf(error, GATE_COPY);
             if (gated) setRefusal(gated);
@@ -492,6 +562,8 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
           onSuccess: () => {
             sending.current = false;
             successHaptic();
+            // The event is gone, and its kept edit with it.
+            clearKept();
             if (isSameVisit(sentFrom)) dismiss();
             onDeleted?.();
           },

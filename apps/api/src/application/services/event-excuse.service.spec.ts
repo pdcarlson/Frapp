@@ -177,6 +177,14 @@ describe('EventExcuseService', () => {
           title: "Sam can't make Chapter meeting",
           body: 'Exam review',
           category: 'events',
+          // Approve and Decline on the push (#4686): the phone's action
+          // needs the category for its buttons and the sender for the PATCH.
+          categoryId: 'event-excuse',
+          data: {
+            target: { screen: 'events', eventId: 'evt-1' },
+            excuseUserId: 'member',
+            chapterId: 'ch-1',
+          },
         }),
       );
     });

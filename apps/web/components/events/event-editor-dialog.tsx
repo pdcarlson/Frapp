@@ -62,7 +62,10 @@ import {
   type RepeatEditSeries,
 } from "@repo/validation";
 import { MemberFacingError } from "@repo/hooks/error-copy";
-import { useKeptFormDraft } from "@repo/hooks/kept-drafts";
+import {
+  keepEditsOver as keepFieldEditsOver,
+  useKeptFormDraft,
+} from "@repo/hooks/kept-drafts";
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { editTargetOf } from "@/components/events/edit-target";
@@ -224,17 +227,22 @@ const EVENT_FIELD_KEYS = [
 ] as const satisfies readonly (keyof EventFields)[];
 
 /** A kept edit over the record as it is now: only what the officer changed. */
-function keepEditsOver(kept: EventFormDraft, now: EventFormDraft): EventFormDraft {
+function keepEditsOver(
+  kept: EventFormDraft,
+  now: EventFormDraft,
+): EventFormDraft {
   const base = kept.base;
   if (!base) return kept;
-  const merged = { ...now } as Record<string, unknown>;
-  for (const key of EVENT_FIELD_KEYS) {
-    if (JSON.stringify(kept[key]) !== JSON.stringify(base[key])) {
-      merged[key] = kept[key];
-    }
-  }
+  const merged = keepFieldEditsOver<EventFields>(
+    kept,
+    base,
+    now,
+    EVENT_FIELD_KEYS,
+    [["startAt", "endAt"]],
+  );
   return {
-    ...(merged as EventFormDraft),
+    ...now,
+    ...merged,
     typeFilledName: kept.typeFilledName,
     showMore: kept.showMore,
     showZone: kept.showZone,

@@ -247,8 +247,11 @@ made). The clients draw it as a thin bar with "41 of 60" under the row
   a channel is opened by a group), every vote on the caller's open polls, and who among the
   readers has blocked the caller. For events: the roster, the Alumni role and every attendance
   row on the open ones. The vote and attendance reads are paged, so a busy chapter's rows past
-  the server's row cap are still counted. None of it runs for a member with no open poll and no
-  event open for check-in, which is most members on most opens.
+  the server's row cap are still counted. None of these reads runs for a member with no open poll
+  and no event open for check-in, which is most members on most opens. The roster and the Alumni
+  role are read at most once per Activity read, shared by both counts (#4908); the caller's own
+  alumni check, which runs whenever an event section has a row, reuses that same Alumni role
+  read.
 - **A hint, not a section.** When a count can't be read the rows are served with
   `progress: null` and the failure is reported; nothing lands in `unavailable`.
 
@@ -276,7 +279,8 @@ made). The clients draw it as a thin bar with "41 of 60" under the row
 - **Study:** minutes from the caller's sessions that started in the week and have ended, as Study counts (one rule with the standing's, `endedStudyMinutes`).
 - **Not counted yet:** polls voted on and sign-ups answered, which #4983 also named. The week card already counts this week's; last week's would need the poll and card reads to take a window, which they don't. Left for a later change.
 - **A module that is off is `null`**, and so is a part whose read fails, which is also named in `unavailable`.
-- **The card** and how it draws are the UI specs' ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity), [`../ui/mobile/screens.md`](../ui/mobile/screens.md)). The clients read the recap only on Sunday, Monday and Tuesday of the member's week. A weekly push of the same line is not built yet (#4985).
+- **The weekly push** ([#4985](https://github.com/pdcarlson/Frapp/issues/4985); Shawn, 2026-11-15). On Sunday, the first hourly tick from 9 AM to noon in the member's own zone (the zone their pushes use, falling back to New York, as the daily reminders do, [`notifications.md` § Daily Task and Invoice Reminders](notifications.md#daily-task-and-invoice-reminders)), each member who can read the recap gets last week's: title "Last week in Alpha Beta", body the card's figures in its words ("3 events attended · 1 task done · 15 points earned · 4h of service · 1h 30m studied", from `recapFigures` in `@repo/formatting`, which the card draws from too), leaving out what is off or zero. The week is the one the card shows: Sunday to Sunday at the member's local midnights, so one that crossed a clock change is an hour longer or shorter, and a Sunday whose midnight is skipped (Santiago in September) begins at its first instant. Nothing is sent for a week with nothing to recap. Tapping it opens Activity. It is sent under its own category, `recap`, the **Weekly recap** switch in notification settings, on by default ([`notifications.md` § Preference sync](notifications.md#preference-sync)). A member in two chapters gets one for each. `ActivityRecapPushService` runs hourly on every replica and claims each member's week before reading it (`activity_recap_pushes`, keyed by chapter, member and the week's first day), so it is sent once; a recap that couldn't be read whole, or a send that failed before its in-app row was written, gives the claim back for the next tick. A push the provider drops after the row is written is reported and not sent again, since a retry would write the row twice. An installed app from before this change gets the push too: a tap opens the notification list rather than Activity, and its settings have no Weekly recap switch until the member updates, so meanwhile it is switched off on the web. A canceled chapter sends none.
+- **The card** and how it draws are the UI specs' ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity), [`../ui/mobile/screens.md`](../ui/mobile/screens.md)). The clients read the recap only on Sunday, Monday and Tuesday of the member's week.
 
 ## Goals
 

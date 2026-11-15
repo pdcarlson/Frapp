@@ -47,8 +47,13 @@ function render(props: {
       },
     );
   });
+  // What gorhom reports as `present()` starts bringing the sheet up.
+  act(() => modalOf(tree).props.onAnimate(-1, 0));
   return { tree, onSchedule };
 }
+
+const modalOf = (tree: ReactTestRenderer) =>
+  tree.root.find((node) => node.type === ("BottomSheetModal" as never));
 
 const row = (tree: ReactTestRenderer, text: RegExp | string) =>
   tree.root.find(
@@ -157,5 +162,56 @@ describe("ScheduleWhenField", () => {
       ),
     );
     expect(onChange).toHaveBeenCalledWith(new Date(2026, 10, 25, 9, 30));
+  });
+});
+
+/**
+ * A create can land after the member swiped the sheet away. gorhom 5.2's
+ * `dismiss()` on a dismissed modal leaves it stuck, so the next long press on
+ * Send opens nothing; a sheet reopened since is a new visit the outcome must
+ * not close or mark (#3405, `useSheetVisit`).
+ */
+describe("ScheduleSendSheet closing after a create (#3405)", () => {
+  function openWithPendingCreate() {
+    dismiss.mockClear();
+    let settle: { land: () => void; fail: (error: unknown) => void } = {
+      land: () => {},
+      fail: () => {},
+    };
+    const onSchedule = vi.fn(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          settle = { land: resolve, fail: reject };
+        }),
+    );
+    const { tree } = render({ onSchedule });
+    act(() => row(tree, /^Tomorrow at /).props.onPress());
+    return {
+      tree,
+      land: () => act(async () => settle.land()),
+      fail: (error: unknown) => act(async () => settle.fail(error)),
+    };
+  }
+
+  it("doesn't dismiss a sheet already swiped away when the create lands", async () => {
+    const { tree, land } = openWithPendingCreate();
+    act(() => modalOf(tree).props.onDismiss());
+    await land();
+    expect(dismiss).not.toHaveBeenCalled();
+  });
+
+  it("leaves a sheet reopened mid-create open, with no reason, whatever the create does", async () => {
+    const landed = openWithPendingCreate();
+    act(() => modalOf(landed.tree).props.onDismiss());
+    act(() => modalOf(landed.tree).props.onAnimate(-1, 0)); // reopened
+    await landed.land();
+    expect(dismiss).not.toHaveBeenCalled();
+
+    const failed = openWithPendingCreate();
+    act(() => modalOf(failed.tree).props.onDismiss());
+    act(() => modalOf(failed.tree).props.onAnimate(-1, 0)); // reopened
+    const refusal = new Error("refused");
+    await failed.fail(refusal);
+    expect(screenText(failed.tree)).not.toContain(errorCopy(refusal));
   });
 });
