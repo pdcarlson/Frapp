@@ -132,8 +132,6 @@ export * from "./module-refusal";
 // shared so web's invite hand-off (`AppHandoff`), the API's update-screen
 // default and the app-link files name one app. See ./native-app.
 export * from "./native-app";
-// s02's "Already in a chapter?" line, shared by web `/join` and the phone.
-export * from "./other-account";
 // ── Notification categories (issue #564; mobile half shipped in C4 of #937) ──
 // Shared because each `key` is written verbatim into
 // `notification_preferences.category` and nothing validates it — the column is
@@ -157,6 +155,8 @@ export * from "./notification-inbox";
 // than presentation, so it is shared too rather than re-derived per surface.
 export * from "./ops-nudges";
 export * from "./order-number";
+// s02's "Already in a chapter?" line, shared by web `/join` and the phone.
+export * from "./other-account";
 // What each system permission is called and which module it belongs to. The
 // API serves it at `GET /v1/roles/permissions-catalog`; web and mobile read
 // the same list from here (#4069).
