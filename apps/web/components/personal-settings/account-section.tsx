@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useUpdateOnboarding } from "@repo/hooks";
+import {
+  useActiveChapterId,
+  useUpdateOnboarding,
+  useViewerUserId,
+} from "@repo/hooks";
+import { replayTour } from "@/components/onboarding/tour";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
@@ -15,12 +20,14 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
 import { getErrorMessage } from "@/lib/utils";
 
 /**
- * Settings → Account: replay the tutorial, sign out, delete the account.
+ * Settings → Account: replay the tour, sign out, delete the account.
  * Moved here from `/profile` (#3856), which keeps the profile itself.
  */
 export function AccountSection() {
   const { toast } = useToast();
   const updateOnboarding = useUpdateOnboarding();
+  const userId = useViewerUserId();
+  const activeChapterId = useActiveChapterId();
   const deleteFlow = useDeleteAccountFlow({
     onFailed: () => toast({ ...DELETE_ACCOUNT_FAILED, variant: "destructive" }),
   });
@@ -53,7 +60,7 @@ export function AccountSection() {
   return (
     <>
       {/*
-        Tutorial, session and deletion were three cards with a paragraph each.
+        Tour, session and deletion were three cards with a paragraph each.
         They are one list of rows now: what the row does on the left, its one
         control on the right, the way the notification switches above read.
       */}
@@ -61,9 +68,9 @@ export function AccountSection() {
         <ul className={denseListClassName}>
           <li className="flex items-center justify-between gap-4 py-3">
             <div className="grid min-w-0 gap-1">
-              <p className="text-sm font-semibold">Tutorial</p>
+              <p className="text-sm font-semibold">Tour</p>
               <p className="text-sm text-muted-foreground">
-                The onboarding tour reopens on your next dashboard visit.
+                The first-run tour starts again the next time you open Chat.
               </p>
             </div>
             <Button
@@ -76,10 +83,12 @@ export function AccountSection() {
                   await updateOnboarding.mutateAsync({
                     has_completed_onboarding: false,
                   });
+                  // From its first stop, and in this visit too.
+                  replayTour(userId, activeChapterId);
                   toast({
-                    title: "Tutorial queued",
+                    title: "Tour queued",
                     description:
-                      "The onboarding tour will reappear the next time you open the dashboard.",
+                      "The tour will start the next time you open Chat.",
                   });
                 } catch (error) {
                   toast({
@@ -93,7 +102,7 @@ export function AccountSection() {
                 }
               }}
             >
-              Replay tutorial
+              Replay tour
             </Button>
           </li>
           <li className="flex items-center justify-between gap-4 py-3">

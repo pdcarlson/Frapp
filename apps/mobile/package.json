@@ -22,6 +22,7 @@
     "@react-navigation/native": "^7.5.1",
     "@repo/api-sdk": "*",
     "@repo/chat-core": "*",
+    "@repo/color": "*",
     "@repo/formatting": "*",
     "@repo/hooks": "*",
     "@repo/observability": "*",

@@ -114,7 +114,7 @@ const INVITE_ROLE = EVERYONE_ROLE_NAME;
 
 /**
  * `display` is the founder's own chat display pick (#4056): founders never see
- * the tutorial that asks a joining member, so the wizard asks it once the
+ * the first-run tour that asks a joining member, so the wizard asks it once the
  * chapter exists, before the invite.
  */
 type WizardStep = "find" | "archetype" | "identity" | "display" | "invite";
@@ -859,7 +859,7 @@ function IdentityStep({
 }
 
 /**
- * The same cards as Profile's Chat density and the tutorial's display slide.
+ * The same cards as Profile's Chat density (the first-run tour's display stop draws them as one segmented control).
  * The browser's current display is preselected (Cozy on a browser that never
  * picked one) and a click saves at once, so Continue keeps what is checked.
  */

@@ -134,11 +134,13 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A chapter you start can plan events, hand out tasks and give points right away.",
       "When Ask Frapp runs into a problem on its end, you can now try your question again right there instead of being told to come back later.",
       "When a dues payment fails after you've paid, the app now tells you your payment didn't go through, instead of waiting on a confirmation that won't come, so you can pay again.",
+      "A member's profile no longer lists a stack of empty chapter details under More details; only the ones that are filled in show.",
     ],
     web: [
       "Clicking a name in chat opens a small profile card beside it, and the members list opens right under its button when the window is narrow.",
       "Joining with an invite emailed to you no longer shows a second Join under it, with the Terms box above the invite, and the welcome tour no longer leaves chapter setup open behind it or closes on a stray click.",
       "Signing in with an email you were invited at now takes you to your invite, instead of chapter setup.",
+      "The first-run tour now walks you through the real Chat screen, lighting up each part as it explains it, and picks up where you left off if you step away.",
     ],
     phone: [
       "Send invite now works on the first tap while the keyboard is open.",

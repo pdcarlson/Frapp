@@ -708,7 +708,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   There is no trailing "View details" button: a 44px button inside a 36px row sets the row's height on its own.
 - **One member profile, every door** ([#3726](https://github.com/pdcarlson/Frapp/issues/3726)).
   `MemberDetailSheet` (`components/members/member-detail-sheet.tsx`) reads a member by `users.id` (`GET /v1/members/by-user/{userId}`), so chat can open it with only a sender or mention id: since 2026-11-15 (#4593) a sender's name or photo, an `@` chip or a member-list row opens chat's profile popout first, and the sheet is its View profile ([`chat/README.md` § Mentions](../../behavior/chat/README.md#mentions), "The web profile popout").
-  It follows mobile s13's order ([`../mobile/screens.md`](../mobile/screens.md)): photo, name and the class-year line, Message as the sheet's one accent button, then a flat list of Phone (when set: the number is a `tel:` link and Text beside it an `sms:` link), Email (a `mailto:` link) and Member since, then roles as chips in the chapter's rank with each role's color dot, then the bio, with the custom fields the viewer's tier can see behind a More details toggle that starts closed on every opening (#3711, 2026-11-12: contact first, logistics a tap away).
+  It follows mobile s13's order ([`../mobile/screens.md`](../mobile/screens.md)): photo, name and the class-year line, Message as the sheet's one accent button, then a flat list of Phone (when set: the number is a `tel:` link and Text beside it an `sms:` link), Email (a `mailto:` link) and Member since, then roles as chips in the chapter's rank with each role's color dot, then the bio, with the custom fields the viewer's tier can see, those with a value (#1749), behind a More details toggle that starts closed on every opening (#3711, 2026-11-12: contact first, logistics a tap away).
   In the Directory (actives and alumni) it opens docked in place of the list, led by a Back to directory arrow, and chat still opens it as a sheet beside the conversation ([`components.md` § Surface size](../design-system/components.md#surface-size), 2026-11-12).
   Its title row draws no title, only the close or the back arrow (with the `⋯` below at its end), and the name heads the body, as § Surface size has a member sheet do.
   Under the roles sits the member's pledge class and order number ([#3939](https://github.com/pdcarlson/Frapp/issues/3939)), drawn when set, and always for a `roles:manage` holder, who gets Edit there;
@@ -876,7 +876,7 @@ The personal page has a rail of links, one address per section (`?section=`, the
 | ----- | ------- | ----------- | ----- |
 | My account | Notifications | _(none)_ | Quiet hours (`user_settings`) |
 | My account | Appearance and chat | `appearance` | Chat density, kept on the browser. No theme choice: the product is dark-only ([#3330](https://github.com/pdcarlson/Frapp/issues/3330)) |
-| My account | Account | `account` | Replay the tutorial, sign out, delete account |
+| My account | Account | `account` | Replay the tour, sign out, delete account |
 | My account | AI | `ai` | One Frapp AI switch: on opens Meet Frapp AI, off turns it off ([`ai.md` § Consent](../../behavior/ai.md#consent); #4790). Listed only while the server has AI; the rail waits for that answer |
 | In _chapter name_ | Chapter alerts | `alerts` | Chat messages (All messages / Mentions and DMs only, [#4124](https://github.com/pdcarlson/Frapp/issues/4124)), then the active chapter's notification categories |
 | In _chapter name_ | Blocked members | `blocked` | The active chapter's block list |
@@ -998,7 +998,6 @@ These are the places it departs from the board, recorded here so they read as de
   Add to calendar was a third until the `.ics` export was withdrawn (#3708).
 - **No decorative glyph before a dialog or sheet title.**
   The create task, new event, adjust points, log service hours, invite and member sheets each drew one before the title, repeating the button just pressed.
-  The onboarding tutorial's per-slide mark names the slide rather than the button, so it stays ([`iconography.md`](../design-system/iconography.md)).
 
 ## Gating & routing semantics
 

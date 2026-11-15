@@ -28,7 +28,7 @@ import {
 export interface MemberCustomField {
   fieldId: string;
   label: string;
-  /** Already display-formatted — booleans as Yes/No, empty as "—". */
+  /** Already display-formatted, booleans as Yes/No. Never empty: unset fields are left out. */
   value: string;
 }
 
@@ -139,22 +139,20 @@ function formatJoinedDate(value: string | null): string | null {
 
 /**
  * `MemberProfileDto.custom_fields`, already tier-filtered server-side. A
- * field missing an id or label is dropped rather than rendered blank.
+ * field missing an id or label is dropped rather than rendered blank, and so
+ * is one with no value (`spec/behavior/members.md` § Custom Fields).
  */
 function parseCustomFields(data: unknown): MemberCustomField[] {
   if (!Array.isArray(data)) return [];
   return records(data).flatMap((row) => {
     const fieldId = str(row, "field_id");
     const label = str(row, "label");
-    if (!fieldId || !label) return [];
-    return [{ fieldId, label, value: formatCustomFieldValue(row) }];
+    const raw = str(row, "value");
+    if (!fieldId || !label || !raw) return [];
+    const value =
+      str(row, "type") === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
+    return [{ fieldId, label, value }];
   });
-}
-
-function formatCustomFieldValue(row: Record<string, unknown>): string {
-  const raw = str(row, "value");
-  if (raw === null) return "—";
-  return str(row, "type") === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
 }
 
 /** The shared birthday as "March 4", or `null` (#4959). */
