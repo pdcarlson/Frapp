@@ -36,10 +36,8 @@ import {
   DISPLAY_STEP_DESCRIPTION,
   DISPLAY_STEP_TITLE,
 } from "@/components/onboarding/display-step";
-import {
-  PICK_ROLES_HINT,
-  PickRolesList,
-} from "@/components/roles/pick-roles-section";
+import { PICK_ROLES_COPY } from "@repo/validation";
+import { PickRolesList } from "@/components/roles/pick-roles-section";
 
 type ChapterMembership = {
   chapter_id: string;
@@ -135,10 +133,11 @@ const STEPS: Step[] = [
   },
 ];
 
-export const PICK_ROLES_TITLE = "Pick your roles";
-
 /** The slide `Pick your roles` follows, so it sits beside the other setup pick. */
 const ROLES_STEP_AFTER = "chat-display";
+/** Where the slide goes: right after {@link ROLES_STEP_AFTER}. */
+const ROLES_STEP_INDEX =
+  STEPS.findIndex((step) => step.id === ROLES_STEP_AFTER) + 1;
 
 /**
  * The slides with `Pick your roles` after the display pick, for a member whose
@@ -146,16 +145,19 @@ const ROLES_STEP_AFTER = "chat-display";
  * Discord's onboarding asks its questions while a member joins. Each flip
  * saves at once, so Next and Skip keep what was picked.
  */
-export function withRolesStep(roles: readonly PickableRole[]): Step[] {
+function withRolesStep(roles: readonly PickableRole[]): Step[] {
   const rolesStep: Step = {
     id: "pick-roles",
-    title: PICK_ROLES_TITLE,
-    description: PICK_ROLES_HINT,
+    title: PICK_ROLES_COPY.title,
+    description: PICK_ROLES_COPY.lede,
     glyph: <ProfileGlyph className={GLYPH} />,
     body: <PickRolesList roles={roles} />,
   };
-  const at = STEPS.findIndex((step) => step.id === ROLES_STEP_AFTER) + 1;
-  return [...STEPS.slice(0, at), rolesStep, ...STEPS.slice(at)];
+  return [
+    ...STEPS.slice(0, ROLES_STEP_INDEX),
+    rolesStep,
+    ...STEPS.slice(ROLES_STEP_INDEX),
+  ];
 }
 
 /**
@@ -257,9 +259,10 @@ function OnboardingTutorialDialog({
 }) {
   const [stepIndex, setStepIndex] = useState(0);
   const { roles } = usePickableRoles();
-  // Whether the roles slide is in, decided on the first Next: a roles read
-  // that lands later must not add a slide ahead of the member, which would
-  // move them back a slide. The switches still show what the read says now.
+  // Whether the roles slide is in, decided as the member leaves the display
+  // slide: until then the slide would land ahead of them, so a slow roles
+  // read still gets it in; after, adding it would move them back a slide.
+  // The switches still show what the read says now.
   const [offerRoles, setOfferRoles] = useState<boolean | null>(null);
   const withRoles = offerRoles ?? roles.some((role) => role.joinable);
   const steps = withRoles ? withRolesStep(roles) : STEPS;
@@ -324,7 +327,9 @@ function OnboardingTutorialDialog({
             ) : (
               <Button
                 onClick={() => {
-                  setOfferRoles((latched) => latched ?? withRoles);
+                  if (stepIndex + 1 >= ROLES_STEP_INDEX) {
+                    setOfferRoles((latched) => latched ?? withRoles);
+                  }
                   setStepIndex((i) => i + 1);
                 }}
               >

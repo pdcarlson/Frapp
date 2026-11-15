@@ -56,6 +56,14 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 
 import { OnboardingTutorial } from "./onboarding-tutorial";
 
+const INTRAMURALS = {
+  id: "im",
+  name: "Intramurals",
+  held: false,
+  joinable: true,
+  color: null,
+};
+
 afterEach(() => {
   pickable.roles = [];
 });
@@ -169,26 +177,43 @@ describe("the slides", () => {
     expect(screen.getByRole("heading", { name: "Events" })).toBeInTheDocument();
   });
 
-  it("keeps the slides it started with when roles arrive mid-tour", async () => {
-    // Decided on the first Next: a read that lands later must not slip a
-    // slide in ahead of the member.
+  it("still adds the roles slide when the read lands before the display slide is left", async () => {
+    // The slide goes after the display pick, so a read that lands while the
+    // member is on Chat moves nothing they've seen.
     const user = userEvent.setup();
     const { rerender } = render(<OnboardingTutorial />);
     await user.click(screen.getByRole("button", { name: "Next" }));
-    pickable.roles = [
-      {
-        id: "im",
-        name: "Intramurals",
-        held: false,
-        joinable: true,
-        color: null,
-      },
-    ];
+    pickable.roles = [INTRAMURALS];
     rerender(<OnboardingTutorial />);
-    expect(screen.getByText("Step 2 of 9")).toBeInTheDocument();
+    expect(screen.getByText("Step 2 of 10")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Next" }));
     await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      screen.getByRole("heading", { name: "Pick your roles" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the slides it has once the display slide is behind the member", async () => {
+    // Settled on leaving the display slide: a read that lands after must not
+    // slip a slide in ahead of them, which would move them back one.
+    const user = userEvent.setup();
+    const { rerender } = render(<OnboardingTutorial />);
+    for (let i = 0; i < 3; i++) {
+      await user.click(screen.getByRole("button", { name: "Next" }));
+    }
     expect(screen.getByRole("heading", { name: "Events" })).toBeInTheDocument();
+    pickable.roles = [INTRAMURALS];
+    rerender(<OnboardingTutorial />);
+    expect(screen.getByRole("heading", { name: "Events" })).toBeInTheDocument();
+    expect(screen.getByText("Step 4 of 9")).toBeInTheDocument();
+  });
+
+  it("offers no roles slide when there are only roles to leave", () => {
+    // An alum, or a member whose picked role was unmarked: Profile's Your
+    // roles carries those, not the tour.
+    pickable.roles = [{ ...INTRAMURALS, held: true, joinable: false }];
+    render(<OnboardingTutorial />);
+    expect(screen.getByText("Step 1 of 9")).toBeInTheDocument();
   });
 
   it("no longer promises a theme control that does not exist", () => {

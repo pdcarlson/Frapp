@@ -3,10 +3,8 @@ import { StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import type { PickableRole } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import {
-  PICK_ROLES_LEDE,
-  PickRolesList,
-} from "@/components/roles/pick-roles-list";
+import { PICK_ROLES_COPY } from "@repo/validation";
+import { PickRolesList } from "@/components/roles/pick-roles-list";
 import {
   SheetBackToClose,
   SheetGrabber,
@@ -53,7 +51,7 @@ export const PickRolesSheet = forwardRef<
         contentContainerStyle={styles.content}
       >
         <TallSheetHeader title="Add roles" onClose={closeSheet} />
-        <Text style={styles.lede}>{PICK_ROLES_LEDE}</Text>
+        <Text style={styles.lede}>{PICK_ROLES_COPY.lede}</Text>
         <PickRolesList roles={roles} />
         <View style={styles.footer} />
       </BottomSheetScrollView>

@@ -105,6 +105,35 @@ const pickable = vi.hoisted(() => ({
   setPicked: vi.fn(() => Promise.resolve({ role_ids: [] })),
 }));
 
+// How many role picks are saving, as `useIsMutating` would count them; a
+// change re-renders its readers, as the mutation cache does.
+const mutating = vi.hoisted(() => {
+  const listeners = new Set<() => void>();
+  return {
+    count: 0,
+    set(count: number) {
+      this.count = count;
+      listeners.forEach((listener) => listener());
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+});
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  const { useSyncExternalStore } = await import("react");
+  return {
+    ...actual,
+    useIsMutating: () =>
+      useSyncExternalStore(
+        (listener) => mutating.subscribe(listener),
+        () => mutating.count,
+      ),
+  };
+});
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useFrappAiChoice: () => aiChoice,
@@ -527,6 +556,39 @@ describe("s03 welcome, roles beat (#4958)", () => {
 
   afterEach(() => {
     pickable.roles = [];
+    mutating.set(0);
+  });
+
+  it("holds Continue while a pick is still saving", async () => {
+    const { root } = await render();
+    expect(onRolesBeat(root)).toBe(true);
+    // A pick in flight, as `useIsMutating` reports it.
+    act(() => mutating.set(1));
+    // Busy swaps the label for a spinner and keeps it as the a11y label.
+    const goToChat = pressables(root).find(
+      (pressable) => pressable.props.accessibilityLabel === "Go to chat",
+    );
+    expect(goToChat?.props.disabled).toBe(true);
+    await press(goToChat);
+    expect(onRolesBeat(root)).toBe(true);
+    expect(completeOnboarding).not.toHaveBeenCalled();
+  });
+
+  it("isn't shown when the only roles are ones to leave", async () => {
+    // An alum, or a member whose picked role was unmarked: the Directory's
+    // Add roles carries those, not s03.
+    pickable.roles = [
+      {
+        id: "im",
+        name: "Intramurals",
+        held: true,
+        joinable: false,
+        color: null,
+      },
+    ];
+    const { root } = await render();
+    expect(onRolesBeat(root)).toBe(false);
+    expect(vi.mocked(useRouter)().replace).toHaveBeenCalledWith("/");
   });
 
   it("follows the display beat, saves a pick on the tap, then goes to chat", async () => {

@@ -6,6 +6,7 @@ import {
   useSetPickedRole,
   type PickableRole,
 } from "@repo/hooks";
+import { PICK_ROLES_COPY } from "@repo/validation";
 import { Switch } from "@/components/ui/switch";
 import { ProfileSection } from "@/components/profile/profile-section";
 import { useToast } from "@/lib/hooks/use-toast";
@@ -26,21 +27,15 @@ export function PickRolesSection() {
   const { roles, isLoading } = usePickableRoles();
   if (isLoading || roles.length === 0) return null;
   return (
-    <ProfileSection id="your-roles" title="Your roles" hint={PICK_ROLES_HINT}>
+    <ProfileSection
+      id="your-roles"
+      title="Your roles"
+      hint={PICK_ROLES_COPY.lede}
+    >
       <PickRolesList roles={roles} />
     </ProfileSection>
   );
 }
-
-/**
- * Under a role the member holds but can't join again: one an officer stopped
- * offering, or any picked role once they're an alum. Leaving still works.
- */
-export const LEAVE_ONLY_CAPTION = "No longer open to join. You can leave it.";
-
-/** The picker's one line of copy, shared with onboarding's step. */
-export const PICK_ROLES_HINT =
-  "Pick what you're into. Each role adds its channels to Chat, and you can leave any time.";
 
 /**
  * One switch per pickable role, each saved on the flip. Profile's "Your roles"
@@ -85,7 +80,7 @@ export function PickRolesList({ roles }: { roles: readonly PickableRole[] }) {
               </span>
               {role.joinable ? null : (
                 <span className="block text-xs text-muted-foreground">
-                  {LEAVE_ONLY_CAPTION}
+                  {PICK_ROLES_COPY.leaveOnly}
                 </span>
               )}
             </span>
