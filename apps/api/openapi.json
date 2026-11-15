@@ -6084,7 +6084,7 @@
             "bearer": []
           }
         ],
-        "summary": "Switch the sidebar filters. A filter left out keeps its stored value.",
+        "summary": "Switch the sidebar filters or sort. A setting left out keeps its stored value.",
         "tags": [
           "Chat"
         ]
@@ -23195,6 +23195,15 @@
           "created_at"
         ]
       },
+      "ChatSidebarSort": {
+        "type": "string",
+        "enum": [
+          "chapter",
+          "recent",
+          "alpha"
+        ],
+        "description": "How channels sort inside each section: chapter (the chapter's own order, then A to Z; the default), recent (newest latest message first) or alpha (A to Z by the name the row shows)."
+      },
       "ChatSidebarDto": {
         "type": "object",
         "properties": {
@@ -23205,6 +23214,14 @@
           "hide_muted": {
             "type": "boolean",
             "description": "Leave out channels whose notification level is off. A muted channel with an unread @-mention still shows."
+          },
+          "sort": {
+            "description": "How channels sort inside each section: chapter (the chapter's own order, then A to Z; the default), recent (newest latest message first) or alpha (A to Z by the name the row shows).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatSidebarSort"
+              }
+            ]
           },
           "collapsed_sections": {
             "description": "Section keys the member folded: pinned, channels, direct, system, or category:<uuid>.",
@@ -23225,6 +23242,7 @@
         "required": [
           "unread_only",
           "hide_muted",
+          "sort",
           "collapsed_sections",
           "pinned_channel_ids"
         ]
@@ -23237,6 +23255,13 @@
           },
           "hide_muted": {
             "type": "boolean"
+          },
+          "sort": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ChatSidebarSort"
+              }
+            ]
           }
         }
       },
