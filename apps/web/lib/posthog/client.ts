@@ -1,6 +1,7 @@
 import * as Sentry from "@sentry/nextjs";
 import type { PostHog } from "posthog-js";
 import {
+  applyAnalyticsOptOut,
   canStartLivePostHogInit,
   isAnalyticsCaptureOptedOut,
   setLivePostHogAdapter,
@@ -131,6 +132,17 @@ export function initWebPostHog(
       run((posthog) => posthog.reloadFeatureFlags());
     },
   });
+  // Opted out from the start, until `AnalyticsProvider` has the chapter's
+  // answer (#3477), as mobile is (#3101). The provider's own opt-out runs in
+  // its passive effect, after its children's effects, and posthog-js starts
+  // from whatever consent the last visit persisted. Without this, a capture
+  // made before that effect (a child's first effect, the
+  // `sentry-error-correlated` marker for a hydration error) was queued and
+  // sent for a chapter whose answer was not in yet. Now it is dropped at call
+  // time, and the SDK's first call once it loads is this opt-out. Flags still
+  // load while opted out: posthog-js gates `/flags` on
+  // `advanced_disable_feature_flags`, not on consent.
+  applyAnalyticsOptOut(true);
 
   return new Promise<void>((resolve) => {
     schedule(() => {
