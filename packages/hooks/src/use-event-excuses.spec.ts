@@ -119,6 +119,33 @@ describe("myExcuseView", () => {
       canWithdraw: false,
     });
   });
+
+  it("lets a pending excuse be edited until the excuse window closes (#5115)", () => {
+    const mine = { excuse: excuse("PENDING"), receiver: null };
+    expect(myExcuseView({ ...base, mine })).toMatchObject({ canEdit: true });
+    expect(
+      myExcuseView({ ...base, mine, now: hoursAfterEnd(47) }),
+    ).toMatchObject({ canEdit: true, canWithdraw: false });
+    expect(
+      myExcuseView({ ...base, mine, now: hoursAfterEnd(49) }),
+    ).toMatchObject({ canEdit: false });
+  });
+
+  it("lets a declined excuse be sent again only while check-in is open", () => {
+    const mine = { excuse: excuse("DECLINED"), receiver: null };
+    expect(myExcuseView({ ...base, mine })).toMatchObject({ canEdit: true });
+    expect(
+      myExcuseView({ ...base, mine, now: hoursAfterEnd(1) }),
+    ).toMatchObject({ canEdit: false });
+  });
+
+  it("never edits an approved excuse", () => {
+    const view = myExcuseView({
+      ...base,
+      mine: { excuse: excuse("APPROVED"), receiver: null },
+    });
+    expect(view).toMatchObject({ canEdit: false });
+  });
 });
 
 describe("excuse helpers", () => {

@@ -2614,7 +2614,11 @@ export interface paths {
         delete: operations["EventExcuseController_withdraw_v1"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Edit the reason on your own excuse
+         * @description A pending excuse, until 48 hours after the event ends; it stays pending. A declined one, until check-in closes: it goes back to pending and the receiver is pushed again. 409 for an approved excuse (withdraw it and send a new one) or a declined one after check-in closes; 404 when there is none.
+         */
+        patch: operations["EventExcuseController_edit_v1"];
         trace?: never;
     };
     "/v1/events/{eventId}/excuses/{userId}": {
@@ -16679,6 +16683,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    EventExcuseController_edit_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitEventExcuseDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventExcuseDto"];
+                };
             };
             /** @description Error */
             default: {

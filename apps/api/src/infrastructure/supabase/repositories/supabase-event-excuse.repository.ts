@@ -98,6 +98,30 @@ export class SupabaseEventExcuseRepository implements IEventExcuseRepository {
     return data?.[0] ?? null;
   }
 
+  async editReason(
+    excuseId: string,
+    chapterId: string,
+    from: 'PENDING' | 'DECLINED',
+    reason: string,
+  ): Promise<EventExcuse | null> {
+    // One conditional update: the status filter is the guard against a
+    // decision or a withdraw landing in between.
+    const { data, error } = await this.supabase
+      .from('event_excuses')
+      .update(
+        from === 'DECLINED'
+          ? { reason, status: 'PENDING', decided_by: null, decided_at: null }
+          : { reason },
+      )
+      .eq('id', excuseId)
+      .eq('chapter_id', chapterId)
+      .eq('status', from)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
   async withdrawAtomic(
     chapterId: string,
     eventId: string,

@@ -259,6 +259,76 @@ export class EventExcuseService {
   }
 
   /**
+   * Rewrite the caller's own excuse (#5115). A pending one can be edited
+   * until the excuse window closes and stays pending, with no second push:
+   * the receiver hasn't decided yet and reads the new words on the event. A
+   * declined one can be edited until check-in closes, which asks again: it
+   * goes back to pending and the receiver is pushed as for a new excuse.
+   * After check-in closes a decline has already counted the member absent,
+   * so it stands. An approved one isn't edited, since that would change what
+   * the receiver approved; it can be withdrawn and sent again.
+   */
+  async edit(
+    eventId: string,
+    userId: string,
+    chapterId: string,
+    reason: string,
+  ): Promise<EventExcuse> {
+    const event = await this.visibleEvent(eventId, chapterId, userId);
+
+    const excuse = await this.excuseRepo.findByEventAndUser(
+      chapterId,
+      eventId,
+      userId,
+    );
+    if (!excuse) {
+      throw new NotFoundException('You have no excuse for this event');
+    }
+    if (excuse.status === 'APPROVED') {
+      throw new ConflictException(
+        'An approved excuse cannot be edited; withdraw it and send a new one',
+      );
+    }
+
+    const now = new Date();
+    if (excuse.status === 'PENDING') {
+      if (now > eventExcuseClosesAt(new Date(event.end_time))) {
+        throw new BadRequestException(
+          `Excuses for this event closed ${EVENT_EXCUSE_LATE_HOURS} hours after it ended`,
+        );
+      }
+    } else {
+      const { closesAt } = checkInWindowBounds(
+        new Date(event.start_time),
+        new Date(event.end_time),
+        event.check_in_opens_minutes,
+      );
+      if (now > closesAt) {
+        throw new ConflictException(
+          'This event is over, so a declined excuse can no longer be sent again',
+        );
+      }
+    }
+
+    const edited = await this.excuseRepo.editReason(
+      excuse.id,
+      chapterId,
+      excuse.status,
+      reason.trim(),
+    );
+    if (!edited) {
+      throw new ConflictException(
+        'This excuse was decided or withdrawn in the meantime',
+      );
+    }
+
+    if (excuse.status === 'DECLINED') {
+      await this.notifyReceivers(event, chapterId, edited);
+    }
+    return edited;
+  }
+
+  /**
    * Take back a pending or approved excuse, while check-in is still open:
    * after that the event is over, the sweep has counted the member by their
    * excuse, and the receiver's decision stands.

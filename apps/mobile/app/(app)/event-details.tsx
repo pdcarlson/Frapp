@@ -24,7 +24,7 @@ import {
 } from "@repo/hooks";
 import {
   ExcuseReviewSection,
-  MyExcuseCard,
+  MyExcuse,
 } from "@/components/events/event-excuses";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
@@ -96,7 +96,7 @@ import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
  * the endpoint (#1035). A line that used to stand in for it ("Check in at the
  * event to be counted.") is gone too: the check-in card above already says it.
  * On an event that requires the viewer, "Can't make it" is an excuse, not an
- * RSVP, and has a server (#3735): `MyExcuseCard` under the check-in card, and
+ * RSVP, and has a server (#3735): `MyExcuse` under the check-in card, and
  * the receiver's `ExcuseReviewSection` below it.
  *
  * ## Editing
@@ -283,7 +283,7 @@ export default function EventDetailsScreen() {
 
         <CheckInCard event={event} window={window} now={now} />
 
-        <MyExcuseCard
+        <MyExcuse
           eventId={event.id}
           required={requiredOfViewer}
           start={event.start_time}

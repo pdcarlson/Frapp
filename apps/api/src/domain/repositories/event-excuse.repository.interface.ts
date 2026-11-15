@@ -39,6 +39,18 @@ export interface IEventExcuseRepository {
     markAbsent: boolean,
   ): Promise<EventExcuse | null>;
   /**
+   * Rewrite the reason of an excuse that is still `from` (PENDING or
+   * DECLINED). A DECLINED one goes back to PENDING with its decision cleared:
+   * the member is asking again. Null when it was no longer `from` (decided,
+   * withdrawn or edited concurrently), which the caller maps to a 409.
+   */
+  editReason(
+    excuseId: string,
+    chapterId: string,
+    from: 'PENDING' | 'DECLINED',
+    reason: string,
+  ): Promise<EventExcuse | null>;
+  /**
    * Delete a PENDING or APPROVED excuse, and an approved one's EXCUSED
    * attendance row, atomically (RPC `withdraw_event_excuse`). Null when there
    * was none to withdraw.

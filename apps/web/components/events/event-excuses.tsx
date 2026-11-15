@@ -1,7 +1,6 @@
 "use client";
 
 import { useId, useState, type FormEvent } from "react";
-import { Loader2 } from "lucide-react";
 import {
   errorCopy,
   canDecideExcuse,
@@ -9,6 +8,7 @@ import {
   myExcuseView,
   sortExcusesForReview,
   useDecideEventExcuse,
+  useEditEventExcuse,
   useEventExcuses,
   useMyAttendance,
   useMyEventExcuse,
@@ -22,6 +22,7 @@ import { EVENT_EXCUSE_REASON_MAX, statusLabel } from "@repo/validation";
 import { Badge, type BadgeKind } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { QUIET_LINK } from "@/components/ui/quiet-link";
 import {
   SubscriptionNotice,
@@ -89,6 +90,7 @@ export function MyExcuse({
   const mine = useMyEventExcuse(eventId, { enabled: required });
   const own = useMyAttendance(eventId);
   const send = useSendEventExcuse();
+  const edit = useEditEventExcuse();
   const withdraw = useWithdrawEventExcuse();
   const gate = useSubscriptionGate();
   const { toast } = useToast();
@@ -101,10 +103,7 @@ export function MyExcuse({
     setSeenAsk(writeAsk);
     if (writeAsk > 0) setWriting(true);
   }
-  const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const inputId = useId();
-  const errorId = useId();
 
   const view = myExcuseView({
     required,
@@ -119,30 +118,20 @@ export function MyExcuse({
   });
   if (view.kind === "none") return null;
 
-  const trimmed = reason.trim();
-
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!trimmed || send.isPending) return;
+  async function save(write: () => Promise<unknown>, fallback: string) {
     setError(null);
     try {
-      await send.mutateAsync({ eventId, reason: trimmed });
+      await write();
       setWriting(false);
-      setReason("");
     } catch (failure) {
-      setError(
-        errorCopy(
-          failure,
-          "Couldn't send your excuse. Try again.",
-          COPY_OPTIONS,
-        ),
-      );
+      setError(errorCopy(failure, fallback, COPY_OPTIONS));
     }
   }
 
   async function takeBack() {
     try {
       await withdraw.mutateAsync({ eventId });
+      setWriting(false);
       toast({ title: "Excuse withdrawn" });
     } catch (failure) {
       toastFailure({
@@ -154,6 +143,11 @@ export function MyExcuse({
       });
     }
   }
+
+  const cancel = () => {
+    setWriting(false);
+    setError(null);
+  };
 
   if (view.kind === "offer") {
     // Closed, the offer is one quiet underlined line, not a bordered row with
@@ -173,17 +167,167 @@ export function MyExcuse({
       );
     }
     return (
-      <section
-        aria-label="Can't make it"
-        className="rounded-lg border border-border p-3"
-      >
-        <form onSubmit={(event) => void submit(event)} className="grid gap-2">
-          <label htmlFor={inputId} className="text-sm font-semibold">
-            Can&apos;t make it
-          </label>
-          <p className="text-sm text-muted-foreground">
-            Say why in one line. It goes to whoever runs this event.
-          </p>
+      <ExcuseComposer
+        label="Can't make it"
+        caption="Say why in one line. It goes to whoever runs this event."
+        submitLabel="Send"
+        submitA11y="Send excuse"
+        busy={send.isPending}
+        error={error}
+        gate={gate}
+        onSubmit={(reason) =>
+          void save(
+            () => send.mutateAsync({ eventId, reason }),
+            "Couldn't send your excuse. Try again.",
+          )
+        }
+        onCancel={cancel}
+      />
+    );
+  }
+
+  const declined = view.status === "DECLINED";
+  if (writing && view.canEdit) {
+    return (
+      <ExcuseComposer
+        label="Your excuse"
+        caption={
+          declined
+            ? "Change it and send it again. You're still expected until it's accepted."
+            : view.title
+        }
+        initial={view.reason}
+        submitLabel={declined ? "Send again" : "Save"}
+        submitA11y={declined ? "Send excuse again" : "Save excuse"}
+        busy={edit.isPending}
+        error={error}
+        gate={gate}
+        onSubmit={(reason) =>
+          void save(
+            () => edit.mutateAsync({ eventId, reason }),
+            "Couldn't save your excuse. Try again.",
+          )
+        }
+        onCancel={cancel}
+        withdraw={
+          view.canWithdraw
+            ? { pending: withdraw.isPending, onClick: () => void takeBack() }
+            : null
+        }
+      />
+    );
+  }
+
+  // One row: the reason, where it stands, and the one thing it allows. The
+  // receiver ("Sent to Jake") rides the section label, not a second line.
+  const badge = excuseBadge(view.status);
+  return (
+    <section
+      aria-label="Your excuse"
+      className="grid min-w-0 gap-1 rounded-lg border border-border p-3"
+    >
+      <p className="text-caption text-muted-foreground">
+        {view.status === "PENDING"
+          ? `Your excuse · ${view.title.replace(/^Excuse sent/, "Sent")}`
+          : "Your excuse"}
+      </p>
+      <div className="flex min-h-11 min-w-0 items-center gap-3">
+        <p
+          className="min-w-0 flex-1 truncate text-sm"
+          title={view.reason}
+          aria-label={`${view.title}: ${view.reason}`}
+        >
+          {view.reason}
+        </p>
+        <Badge variant={badge.variant}>{badge.label}</Badge>
+        {view.canEdit ? (
+          <button
+            type="button"
+            className={ROW_ACTION}
+            onClick={() => setWriting(true)}
+          >
+            Edit
+          </button>
+        ) : view.canWithdraw ? (
+          <button
+            type="button"
+            className={ROW_ACTION}
+            {...gate.controlProps(withdraw.isPending)}
+            onClick={() => void takeBack()}
+          >
+            {withdraw.isPending ? "Withdrawing…" : "Withdraw excuse"}
+          </button>
+        ) : null}
+      </div>
+      {declined && !view.canEdit && view.detail ? (
+        <p className="text-sm text-muted-foreground">{view.detail}</p>
+      ) : null}
+    </section>
+  );
+}
+
+/** A row's trailing text action: the accent label, 44px to a finger. */
+const ROW_ACTION = cn(
+  "shrink-0 rounded-sm text-sm font-semibold text-primary hover:underline",
+  "pointer-coarse:inline-flex pointer-coarse:min-h-11 pointer-coarse:min-w-11 pointer-coarse:items-center pointer-coarse:justify-center",
+  "disabled:pointer-events-none disabled:opacity-50",
+  FOCUS_RING_OFFSET,
+);
+
+/**
+ * The excuse line, new or being edited: one field with its button beside it,
+ * and a caption, Withdraw and Cancel under it. No border box, so opening it
+ * moves nothing but the row it replaces.
+ */
+function ExcuseComposer({
+  label,
+  caption,
+  initial = "",
+  submitLabel,
+  submitA11y,
+  busy,
+  error,
+  gate,
+  onSubmit,
+  onCancel,
+  withdraw = null,
+}: {
+  label: string;
+  caption: string;
+  initial?: string;
+  submitLabel: string;
+  submitA11y: string;
+  busy: boolean;
+  error: string | null;
+  gate: ReturnType<typeof useSubscriptionGate>;
+  onSubmit: (reason: string) => void;
+  onCancel: () => void;
+  withdraw?: { pending: boolean; onClick: () => void } | null;
+}) {
+  const [reason, setReason] = useState(initial);
+  const inputId = useId();
+  const errorId = useId();
+  const captionId = useId();
+  const trimmed = reason.trim();
+  // Saving the words already there would ask the server for nothing.
+  const unchanged = initial !== "" && trimmed === initial.trim();
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!trimmed || unchanged || busy) return;
+    onSubmit(trimmed);
+  }
+
+  return (
+    <section
+      aria-label={label}
+      className="min-w-0 rounded-lg border border-border p-3"
+    >
+      <form onSubmit={submit} className="grid min-w-0 gap-1">
+        <label htmlFor={inputId} className="text-caption text-muted-foreground">
+          {label}
+        </label>
+        <div className="flex items-center gap-2">
           <Input
             id={inputId}
             value={reason}
@@ -191,72 +335,55 @@ export function MyExcuse({
             placeholder="Exam review, away game, sick…"
             maxLength={EVENT_EXCUSE_REASON_MAX}
             autoFocus
+            className="min-w-0 flex-1"
             aria-invalid={error ? true : undefined}
-            aria-describedby={error ? errorId : undefined}
+            aria-describedby={error ? `${errorId} ${captionId}` : captionId}
           />
-          {error ? (
-            <p id={errorId} className="text-sm text-destructive-text">
-              {error}
-            </p>
-          ) : null}
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="submit"
-              size="sm"
-              {...gate.controlProps(send.isPending || !trimmed)}
-            >
-              {send.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : null}
-              Send excuse
-            </Button>
-            <Button
+          <Button
+            type="submit"
+            size="sm"
+            aria-label={submitA11y}
+            aria-busy={busy || undefined}
+            {...gate.controlProps(busy || !trimmed || unchanged)}
+          >
+            {/* The label keeps its place while saving, so nothing shifts. */}
+            <span className={busy ? "opacity-60" : undefined}>
+              {submitLabel}
+            </span>
+          </Button>
+        </div>
+        {error ? (
+          <p id={errorId} className="text-sm text-destructive-text">
+            {error}
+          </p>
+        ) : null}
+        <div className="flex items-center gap-3">
+          <p
+            id={captionId}
+            className="min-w-0 flex-1 text-sm text-muted-foreground"
+          >
+            {caption}
+          </p>
+          {withdraw ? (
+            <button
               type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                setWriting(false);
-                setError(null);
-              }}
+              className={QUIET_LINK}
+              {...gate.controlProps(withdraw.pending)}
+              onClick={withdraw.onClick}
             >
-              Cancel
-            </Button>
-          </div>
-          <SubscriptionNotice
-            gate={gate}
-            feature="excuses"
-            className="mb-0 w-full"
-          />
-        </form>
-      </section>
-    );
-  }
-
-  const badge = excuseBadge(view.status);
-  return (
-    <section
-      aria-label="Your excuse"
-      className="rounded-lg border border-border p-3"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold">{view.title}</p>
-        <Badge variant={badge.variant}>{badge.label}</Badge>
-      </div>
-      <p className="mt-1 break-words text-sm">“{view.reason}”</p>
-      {view.detail ? (
-        <p className="mt-1 text-sm text-muted-foreground">{view.detail}</p>
-      ) : null}
-      {view.canWithdraw ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="mt-2"
-          {...gate.controlProps(withdraw.isPending)}
-          onClick={() => void takeBack()}
-        >
-          {withdraw.isPending ? "Withdrawing…" : "Withdraw excuse"}
-        </Button>
-      ) : null}
+              {withdraw.pending ? "Withdrawing…" : "Withdraw excuse"}
+            </button>
+          ) : null}
+          <button type="button" className={QUIET_LINK} onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+        <SubscriptionNotice
+          gate={gate}
+          feature="excuses"
+          className="mb-0 w-full"
+        />
+      </form>
     </section>
   );
 }
@@ -281,6 +408,7 @@ export function ExcuseReview({
   const decide = useDecideEventExcuse();
   const gate = useSubscriptionGate();
   const [deciding, setDeciding] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
 
   const rows = excuses.data ?? [];
   if (rows.length === 0) return null;
@@ -311,57 +439,76 @@ export function ExcuseReview({
   return (
     <section
       aria-labelledby="event-excuses-label"
-      className="rounded-lg border border-border p-3"
+      className="grid min-w-0 gap-1 rounded-lg border border-border p-3"
     >
       <p
         id="event-excuses-label"
-        className="mb-2 text-caption text-muted-foreground"
+        className="text-caption text-muted-foreground"
       >
         Excuses{summary ? ` · ${summary}` : ""}
       </p>
-      <ul className="grid gap-2">
+      <ul className="min-w-0 divide-y divide-border">
         {sortExcusesForReview(rows).map((row) => {
           const name = row.display_name.trim() || "A member";
           const decidable = canDecideExcuse(row, decider);
           const badge = excuseBadge(row.status);
+          const expanded = open === row.id;
           return (
-            <li key={row.id} className="rounded-md border border-border p-2">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold">{name}</p>
-                {decidable ? null : (
-                  <Badge variant={badge.variant}>{badge.label}</Badge>
+            <li
+              key={row.id}
+              className={cn(
+                "flex min-h-11 gap-3 py-2",
+                expanded ? "items-start" : "items-center",
+              )}
+            >
+              {/* The row's text opens to the whole reason; one line until then. */}
+              <button
+                type="button"
+                aria-expanded={expanded}
+                aria-label={`${name}: ${row.reason}`}
+                onClick={() => setOpen(expanded ? null : row.id)}
+                className={cn(
+                  "min-w-0 flex-1 rounded-sm text-left text-sm",
+                  expanded ? "whitespace-normal break-words" : "truncate",
+                  FOCUS_RING_OFFSET,
                 )}
-              </div>
-              <p className="mt-1 break-words text-sm text-muted-foreground">
-                “{row.reason}”
-              </p>
+              >
+                <span className="font-semibold text-foreground">{name}</span>
+                <span className="ml-2 text-muted-foreground">{row.reason}</span>
+              </button>
               {decidable ? (
-                <div className="mt-2 flex flex-wrap gap-2">
+                <div className="flex shrink-0 items-center gap-1">
                   <Button
                     size="sm"
-                    aria-label={`Approve ${name}'s excuse`}
-                    {...gate.controlProps(deciding !== null)}
-                    onClick={() => void run(row, "APPROVED")}
-                  >
-                    {deciding === row.user_id ? (
-                      <Loader2
-                        className="h-4 w-4 animate-spin"
-                        aria-hidden="true"
-                      />
-                    ) : null}
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
+                    variant="ghost"
                     aria-label={`Decline ${name}'s excuse`}
                     {...gate.controlProps(deciding !== null)}
                     onClick={() => void run(row, "DECLINED")}
                   >
                     Decline
                   </Button>
+                  <Button
+                    size="sm"
+                    variant="tinted"
+                    aria-label={`Approve ${name}'s excuse`}
+                    aria-busy={deciding === row.user_id || undefined}
+                    {...gate.controlProps(deciding !== null)}
+                    onClick={() => void run(row, "APPROVED")}
+                  >
+                    <span
+                      className={
+                        deciding === row.user_id ? "opacity-60" : undefined
+                      }
+                    >
+                      Approve
+                    </span>
+                  </Button>
                 </div>
-              ) : null}
+              ) : (
+                <Badge variant={badge.variant} className="shrink-0">
+                  {badge.label}
+                </Badge>
+              )}
             </li>
           );
         })}
