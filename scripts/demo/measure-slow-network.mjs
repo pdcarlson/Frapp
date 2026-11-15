@@ -50,7 +50,7 @@ const EMAIL = process.env.DEMO_EMAIL ?? LOCAL_DEMO_EMAIL;
 const PASSWORD = process.env.DEMO_PASSWORD ?? LOCAL_DEMO_PASSWORD;
 const { prefix } = demoIds(TEMPLATE_NAMESPACE);
 /** #intramurals, a channel other than the one chat home opens on. */
-const OTHER_CHANNEL_ID = `${prefix}-0000-4000-8000-4000000000b4`;
+const OTHER_CHANNEL_ID = `${prefix}4000000000b4`;
 
 /**
  * Chrome DevTools' presets. "Slow 4G" is the preset DevTools called "Fast 3G"
