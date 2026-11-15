@@ -110,6 +110,7 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import type { PollPayload } from "@repo/chat-core/polls";
 import type { SignupPayload } from "@repo/chat-core/signups";
 import type { FormPayload } from "@repo/chat-core/forms";
+import type { RolePickerPayload } from "@repo/chat-core/role-pickers";
 import {
   postHours,
   postPoll,
@@ -302,6 +303,17 @@ export interface UseChatChannelResult {
   sendSignup: (signup: {
     content: string;
     payload: SignupPayload;
+  }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
+  /**
+   * The + sheet's New role picker (#4958): a `kind: "role_picker"` card into
+   * this channel through the outbox like a sign-up sheet, with `sendPoll`'s
+   * outcomes. The send route refuses it without `roles:manage`, or for a
+   * role no longer marked Non-chapter business; that refusal lands on the
+   * failed row. Never rejects.
+   */
+  sendRolePicker: (picker: {
+    content: string;
+    payload: RolePickerPayload;
   }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
   /**
    * The + sheet's New form (#3926 step 3): a `kind: "form"` card into this
@@ -1095,6 +1107,39 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
+  // chat-core's `postFormCard` takes poll, signup and form only, so the role
+  // picker queues through `sendMessage` the same way it does.
+  const sendRolePicker = useCallback(
+    async (picker: {
+      content: string;
+      payload: RolePickerPayload;
+    }): Promise<
+      { ok: true; warning?: string } | { ok: false; error: string }
+    > => {
+      if (!channelId || !ctx?.userId) {
+        return { ok: false, error: SIGNED_OUT_POST_COPY };
+      }
+      try {
+        const sent = await sendMessage(ctx, {
+          channelId,
+          content: picker.content,
+          kind: "role_picker",
+          payload: picker.payload as unknown as Record<string, unknown>,
+          keepDraft: true,
+        });
+        return sent.warning
+          ? { ok: true, warning: sent.warning }
+          : { ok: true };
+      } catch {
+        return {
+          ok: false,
+          error: "Couldn't post that role picker. Try again.",
+        };
+      }
+    },
+    [channelId, ctx],
+  );
+
   const sendForm = useCallback(
     async (form: {
       content: string;
@@ -1498,6 +1543,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     sendPoll,
     sendGif,
     sendSignup,
+    sendRolePicker,
     sendForm,
     postTask: postTaskHere,
     postHours: postHoursHere,
