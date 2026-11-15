@@ -120,6 +120,13 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-15",
+    title: "New in this update",
+    changes: [
+      "Activity now shows how many have voted on a poll you posted, and how many have checked in to an event you made once check-in opens.",
+    ],
+  },
+  {
     date: "2026-11-14",
     title: "New in this update",
     changes: [
