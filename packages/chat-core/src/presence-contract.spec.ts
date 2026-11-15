@@ -4,7 +4,8 @@
  *
  *   - the channel topic is exactly `chat:channel:<id>`, with the exact
  *     channel config
- *     `{ private: true, broadcast: { self: false }, presence: { key: "" } }`
+ *     `{ private: true, broadcast: { self: false }, presence: { key: "" } }`,
+ *     plus `postgres_changes_options`, which names no room (#5022)
  *     (the worker joins the same topic with the same config plus
  *     `presence.enabled: true`, which only a reader needs (#2974): this
  *     manager only `track()`s, and asking for the roster would ship every
@@ -119,11 +120,15 @@ describe("ADR-10 presence contract (read by the push worker)", () => {
     // manager doesn't. `private: true` is part of the contract since #1552: private and public
     // are separate rooms, so a worker and a client that disagree on it never
     // see each other's presence — and push suppression silently stops.
+    // `postgres_changes_options` names no room, so it is not part of the
+    // worker's contract; the worker binds no `postgres_changes` and goes
+    // without (#5022).
     expect(call!.opts).toEqual({
       config: {
         private: true,
         broadcast: { self: false },
         presence: { key: "" },
+        postgres_changes_options: { wait: true },
       },
     });
   });
