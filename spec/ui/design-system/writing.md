@@ -1280,24 +1280,24 @@ Implemented in `apps/mobile/components/client-policy-gate.tsx` (`UPDATE_REQUIRED
 |---|---|---|
 | Signed in, no chapter role | `You don't have access yet` | `Your account is signed in, but no chapter role has been assigned. A chapter admin needs to invite you or grant a role before you can use the dashboard.` plus the three recovery paths (ask an officer, reopen the invite link, sign out and back in). |
 
-### New account (pre-auth)
+### Already in a chapter (pre-auth)
 
-`/new-account`, shown once after a Google or Apple **sign-in** that created a new account ([#3786](https://github.com/pdcarlson/Frapp/issues/3786)).
-Wording decided by Paul, 2026-11-09.
+One quiet line under the join screen's answers, on web `/join` and the phone's s02, for someone who is already in a chapter but signed in with another account than the one they joined with (Google instead of their school email, say).
+Tapping it signs out and lands on sign-in.
 
-Also shown, with the same wording, after a sign-in **magic link** that created a new, chapterless email account for an address the member never joined with ([#3801](https://github.com/pdcarlson/Frapp/issues/3801), shawnatomklein-eng, 2026-11-13).
-"The method you joined with" then covers the address they joined with.
+| State | Text |
+|---|---|
+| Line | `Already in a chapter?` then the link `Use a different account` |
+| Screen reader hint | `Signs out so you can sign in with the account you joined with.` |
+| Sign-out failed (web) | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` |
 
-| State | Title | Description |
-|---|---|---|
-| New account | `New account created` | `This is a new Frapp account for <email>. Already a member? Sign out and use the method you joined with.` (no email on the account: `This is a new Frapp account.` then the same second sentence) |
-| Actions | — | `Sign out` and `Continue with the new account`; Continue is the primary when the destination is an invite |
-| Sign-out failed | — | `Couldn't sign out. Retry in a moment, or close this tab to end the session.` |
+Shown only to an account with no chapter, opened without an invite link and with no invite emailed to it, once those reads have answered.
+Both surfaces take the words from `@repo/validation` (`other-account`).
 
-The phone shows the same title, line and actions, for the same two cases (a first Google or Apple sign-in, and the sign-in magic link for an address that had no account), as a card at the top of s02, the screen a new account with no chapter lands on (#4769, 2026-11-13;
-[`screens.md`](../mobile/screens.md) s02).
-Both surfaces take the title and line from `@repo/validation` (`NEW_ACCOUNT_TITLE`, `newAccountDescription`).
-The phone has no sign-out-failed line: its sign-out always ends the local session.
+It replaced the `New account created` notice (web `/new-account`, #3786 and #3801; the phone's s02 card, #4769), whose wording Paul decided on 2026-11-09.
+Changed by Paul's request, 2026-11-15: the notice fired on every first sign-in, so every genuine newcomer read a warning about a duplicate they didn't have ("If it's confusing, then we have a problem").
+A real duplicate can't be told from a newcomer, because GoTrue links a sign-in to an account with the same verified email, so a duplicate always carries an address the app has never seen.
+The line asks the one question only that person answers yes to, as Slack's "Don't see your workspace? Try a different email" does.
 
 ### Onboarding wizard (dashboard overlay)
 

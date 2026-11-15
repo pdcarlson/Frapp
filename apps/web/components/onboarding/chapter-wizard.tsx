@@ -60,6 +60,9 @@ import {
 import { StepDots } from "@/components/onboarding/step-dots";
 import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { SignedInAs } from "@/components/auth/signed-in-as";
+import { OtherAccountLine } from "@/components/auth/other-account-line";
+import { useSignOutToSignIn } from "@/components/auth/use-sign-out";
+import { JOIN_FROM_SIGN_IN_PATH } from "@/lib/auth/join-visit";
 import { SearchGlyph } from "@/components/profile/profile-glyphs";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
@@ -128,6 +131,10 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const { toast } = useToast();
   const selectChapter = useSelectChapter();
   const { confirmDrop, confirmDropDialog } = useConfirmDropBulkUploads();
+  // "Already in a chapter?" on the first step: a chapterless account signed
+  // in from `/sign-in` lands here, not on `/join`, so the way back for someone
+  // in the wrong account has to be here too.
+  const otherAccount = useSignOutToSignIn(JOIN_FROM_SIGN_IN_PATH);
 
   const onboardChapter = useOnboardChapter();
   const currentUser = useCurrentUser();
@@ -359,6 +366,15 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                   onManual={startManualEntry}
                 />
               ) : null}
+              {step === "find" ? (
+                <div className="mt-6">
+                  <OtherAccountLine
+                    signOut={otherAccount.signOut}
+                    signingOut={otherAccount.signingOut}
+                    failed={otherAccount.failed}
+                  />
+                </div>
+              ) : null}
 
               {step === "archetype" ? (
                 <ArchetypeStep selected={archetype} onSelect={setArchetype} />
@@ -435,6 +451,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
             </footer>
           </div>
           {confirmDropDialog}
+          {otherAccount.confirmDropDialog}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>

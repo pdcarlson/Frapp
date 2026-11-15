@@ -122,7 +122,7 @@ describe("startWebOAuth", () => {
 });
 
 describe("startWebOAuth from the sign-in screen", () => {
-  it("tags the callback as a sign-in so a new account can be flagged", async () => {
+  it("tags the callback as a sign-in", async () => {
     const signInWithOAuth = vi.fn(async () => ({ error: null }));
     await startWebOAuth(
       { auth: { signInWithOAuth } },
