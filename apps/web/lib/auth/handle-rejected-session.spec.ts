@@ -1,6 +1,10 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthApiError, AuthRetryableFetchError } from "@supabase/supabase-js";
+import {
+  AuthApiError,
+  AuthRetryableFetchError,
+  AuthSessionMissingError,
+} from "@supabase/supabase-js";
 
 /**
  * What `handleRejectedSession` reports when the API refused a session and Auth
@@ -61,6 +65,25 @@ describe("handleRejectedSession reporting", () => {
     });
     expect(signOut).toHaveBeenCalledWith({ scope: "local" });
     expect(assign).toHaveBeenCalledTimes(1);
+  });
+
+  it("ends a session revoked elsewhere, which Auth answers as no session (#4440)", async () => {
+    // GoTrue's `session_not_found` reaches us as `AuthSessionMissingError`
+    // (reproduced on the local stack with a global sign-out from another client).
+    const missing = new AuthSessionMissingError();
+    getUser.mockResolvedValue({ data: { user: null }, error: missing });
+    await handle();
+
+    expect(reportAuthFailure).toHaveBeenCalledWith({
+      flow: "session_check",
+      screen: "/chat",
+      error: missing,
+      code: "session_not_found",
+    });
+    expect(signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(assign).toHaveBeenCalledWith(
+      "https://app.frapp.live/sign-in?signedOut=session_ended",
+    );
   });
 
   it("reports nothing when Auth still accepts the session, or can't be asked", async () => {

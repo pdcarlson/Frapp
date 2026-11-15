@@ -50,6 +50,29 @@ export function isSessionOver(result: {
   );
 }
 
+/**
+ * Auth's verdict on a session this browser held when it asked. A session
+ * revoked elsewhere (sign out everywhere, a password change) comes back from
+ * GoTrue as `session_not_found`, which auth-js turns into
+ * `AuthSessionMissingError`, not an `AuthApiError`, and auth-js has already
+ * dropped the stored session by the time `getUser()` returns (#4440). Read
+ * alone, that error means "never signed in", so it counts as over only when
+ * a local session existed before the call. Its report names the code, which
+ * the error itself doesn't carry.
+ */
+export function sessionVerdict(
+  result: { data: { user: unknown }; error: unknown },
+  hadLocalSession: boolean,
+): { over: boolean; code?: string } {
+  if (hadLocalSession && isAuthSessionMissingError(result.error)) {
+    return { over: true, code: REVOKED_SESSION_CODE };
+  }
+  return { over: isSessionOver(result) };
+}
+
+/** GoTrue's code for a revoked session, which `AuthSessionMissingError` drops. */
+const REVOKED_SESSION_CODE = "session_not_found";
+
 let checking = false;
 /** Set once this tab is on its way to `/sign-in` with the notice. */
 let leaving = false;
@@ -107,7 +130,8 @@ export async function handleRejectedSession(): Promise<void> {
     const { data: local } = await supabase.auth.getSession();
     if (!local.session) return;
     const verdict = await supabase.auth.getUser();
-    if (!isSessionOver(verdict)) return;
+    const { over, code } = sessionVerdict(verdict, true);
+    if (!over) return;
     // Auth's reason (`user_not_found` for an account deleted elsewhere,
     // `session_not_found` for a revoked one) is the count; a code nobody
     // expects here (`bad_jwt`) is a fault (#3832).
@@ -115,6 +139,7 @@ export async function handleRejectedSession(): Promise<void> {
       flow: "session_check",
       screen: window.location.pathname,
       error: verdict.error,
+      code,
     });
     // Before the sign-out: its `SIGNED_OUT` reaches the identity effect in
     // `frapp-client-provider.tsx`, which must not send this tab to a bare
@@ -156,15 +181,16 @@ export async function getLiveSessionUser(
   screen: "/join" | "/check-in" = "/join",
 ): Promise<User | null> {
   const supabase = createSupabaseBrowserClient();
+  // Read before asking Auth: a revoked session comes back as "no session"
+  // (`sessionVerdict`), and only this tells it from a visitor who never had one.
+  const { data: local } = await supabase.auth.getSession();
   const result = await supabase.auth.getUser();
   if (result.data.user) return result.data.user;
-  // No session in this browser at all: nothing to clear.
-  if (isAuthSessionMissingError(result.error)) return null;
-  if (!isSessionOver(result)) {
-    reportAuthFailure({ flow: "session_check", screen, error: result.error });
-    throw result.error;
-  }
-  reportAuthFailure({ flow: "session_check", screen, error: result.error });
+  const { over, code } = sessionVerdict(result, Boolean(local.session));
+  // No session in this browser at all: nothing to clear, nothing to report.
+  if (!over && isAuthSessionMissingError(result.error)) return null;
+  reportAuthFailure({ flow: "session_check", screen, error: result.error, code });
+  if (!over) throw result.error;
   await signOutCurrentSession({ scope: "local" });
   return null;
 }
