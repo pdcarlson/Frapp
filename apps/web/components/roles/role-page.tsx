@@ -10,6 +10,7 @@ import {
   type RoleColorHex,
   SELF_ASSIGNABLE_REFUSAL_COPY,
   selfAssignableRefusal,
+  SELF_ASSIGNABLE_SWITCH_DESCRIPTION,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -476,7 +477,7 @@ function RoleBody({
                 >
                   {pickRefusal
                     ? SELF_ASSIGNABLE_REFUSAL_COPY[pickRefusal]
-                    : "Members add and remove this role themselves, like an intramurals team or a study group. It opens its channels, and any event that lists it counts them in."}
+                    : SELF_ASSIGNABLE_SWITCH_DESCRIPTION}
                 </p>
               </div>
               <Switch
