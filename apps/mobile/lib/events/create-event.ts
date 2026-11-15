@@ -1,3 +1,4 @@
+import { startOfDay } from "@repo/hooks/calendar-time-grid";
 import {
   DEFAULT_CHECK_IN_OPENS_MINUTES,
   MAX_CHECK_IN_OPENS_MINUTES,
@@ -175,19 +176,30 @@ export function defaultEventStart(now: Date): Date {
 
 /**
  * Where an event made from the Calendar header's + starts (#5113): on the
- * day the member picked, at the usual hour, when that day is still ahead;
- * `null` (the sheet's own default) for today or a day already gone.
+ * day the member picked, at the usual hour. Today, once that hour has
+ * passed, starts at the next quarter hour rather than rolling to tomorrow as
+ * the sheet's own default does, since the form refuses a start that has
+ * passed. `null` (the sheet's own default) for a day already gone.
  */
 export function pickedDayStart(day: Date, now: Date): Date | null {
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const picked = new Date(day.getFullYear(), day.getMonth(), day.getDate());
-  if (picked <= today) return null;
-  return new Date(
+  // The grid's own rule for which day is today, so the two never disagree.
+  const picked = startOfDay(day).getTime();
+  const today = startOfDay(now).getTime();
+  if (picked < today) return null;
+  const start = new Date(
     day.getFullYear(),
     day.getMonth(),
     day.getDate(),
     DEFAULT_START_HOUR,
   );
+  if (picked > today || start > now) return start;
+  return nextQuarterHour(now);
+}
+
+/** The first quarter hour after `now`. */
+function nextQuarterHour(now: Date): Date {
+  const quarter = 15 * 60_000;
+  return new Date(Math.ceil((now.getTime() + 1) / quarter) * quarter);
 }
 
 /**
@@ -215,8 +227,7 @@ export function calendarHourStart(
   );
   if (end <= now) return null;
   if (start >= now) return start;
-  const quarter = 15 * 60_000;
-  return new Date(Math.ceil((now.getTime() + 1) / quarter) * quarter);
+  return nextQuarterHour(now);
 }
 
 /** The draft's start and end, defaults filled in against `now`. */

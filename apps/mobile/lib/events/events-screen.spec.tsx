@@ -305,9 +305,11 @@ describe("Events header New event", () => {
         )
         .props.onPress(),
     );
-    // Today picked: the sheet's own default.
+    // Today picked: today, never the sheet's roll to tomorrow
+    // (`pickedDayStart` has its own spec for the hours).
     act(() => createButton(tree)!.props.onPress());
-    expect(newEventSheet.props?.template?.start).toBeNull();
+    const start = newEventSheet.props?.template?.start;
+    expect(start?.toDateString()).toBe(new Date().toDateString());
     // The next month follows to its 1st, a day still ahead.
     act(() => nextMonth(tree).props.onPress());
     act(() => createButton(tree)!.props.onPress());
@@ -316,6 +318,20 @@ describe("Events header New event", () => {
       new Date(now.getFullYear(), now.getMonth() + 1, 1, 19),
     );
     expect(newEventSheet.presented).toBe(2);
+
+    // A day picked in Calendar doesn't follow the member to the List.
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityRole === "radio" &&
+            node.props.accessibilityLabel === "List" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress(),
+    );
+    act(() => createButton(tree)!.props.onPress());
+    expect(newEventSheet.props?.template?.start).toBeNull();
     permissions = [];
   });
 });
@@ -1298,6 +1314,18 @@ describe("Calendar 3 days and Day", () => {
       new Date(day.getFullYear(), day.getMonth(), day.getDate(), 20),
     );
     expect(newEventSheet.presented).toBe(1);
+    permissions = [];
+  });
+
+  it("starts the header's New event on the day on screen in Day (#5113)", () => {
+    permissions = ["*"];
+    const tree = openRange("Day");
+    act(() => pressable(tree, "Next day").props.onPress());
+    act(() => createButton(tree)!.props.onPress());
+    const day = plusDays(today(), 1);
+    expect(newEventSheet.props?.template?.start).toEqual(
+      new Date(day.getFullYear(), day.getMonth(), day.getDate(), 19),
+    );
     permissions = [];
   });
 

@@ -480,8 +480,8 @@ export default function EventsScreen() {
           ref={createSheet}
           now={now}
           template={createAt.template}
-          // The block landing in the grid where the hour was pressed is
-          // the visible confirmation; a screen reader hears it said.
+          // The new event landing in the list or the grid is the visible
+          // confirmation; a screen reader hears it said.
           onCreated={() =>
             AccessibilityInfo.announceForAccessibility("Event added.")
           }
@@ -586,7 +586,7 @@ function createStyles(tokens: SignetTokens) {
     headerActions: {
       flexDirection: "row",
       alignItems: "center",
-      gap: tokens.spacing.md,
+      gap: tokens.spacing.sm,
     },
   });
 }
