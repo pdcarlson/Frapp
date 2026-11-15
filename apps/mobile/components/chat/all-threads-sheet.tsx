@@ -226,7 +226,7 @@ function RowsSkeleton() {
   const styles = createStyles(tokens);
   const { label, body } = tokens.typography.role;
   return (
-    <SkeletonRegion label="Loading threads">
+    <SkeletonRegion label="Loading threads" flush>
       {[0, 1, 2].map((index) => (
         <View key={index} style={styles.row}>
           <SkeletonText role={label} width="40%" />

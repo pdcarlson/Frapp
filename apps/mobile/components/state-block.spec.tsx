@@ -9,6 +9,7 @@ import {
   withRepeat,
 } from "react-native-reanimated";
 import { NavigationContext } from "expo-router/react-navigation";
+import { useBottomSheetInternal } from "@gorhom/bottom-sheet";
 import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, tint } from "@/lib/theme";
@@ -34,6 +35,7 @@ import {
   NoChapterState,
   SkeletonBlock,
   SkeletonLines,
+  SkeletonRegion,
 } from "./state-block";
 
 /**
@@ -79,6 +81,93 @@ function texts(tree: ReactTestRenderer): string[] {
       node.children.filter((child): child is string => typeof child === "string"),
     );
 }
+
+/**
+ * #4690. A sheet's fill is `popover`, the top of the ladder, and a sheet's
+ * "step above a card" is `popover` too. So a bar drawn straight on the sheet
+ * took the sheet's own colour and the member list loaded as a blank area, and
+ * a state card painting `card` read as a hole (components.md §10 "Nested
+ * inside a card").
+ */
+describe("in a sheet", () => {
+  const { surface } = signetDarkTokens.color;
+
+  function inSheet<T>(run: () => T): T {
+    vi.mocked(useBottomSheetInternal).mockReturnValue({} as never);
+    try {
+      return run();
+    } finally {
+      vi.mocked(useBottomSheetInternal).mockReturnValue(null);
+    }
+  }
+
+  function blockFills(tree: ReactTestRenderer): unknown[] {
+    return tree.root
+      .findAllByType("Animated.View" as unknown as React.ComponentType)
+      .map((view) => flatten(view.props.style).backgroundColor);
+  }
+
+  it("draws flush rows' bars a step under the sheet, never in its own fill", () => {
+    const fills = inSheet(() =>
+      blockFills(
+        render(
+          <SkeletonRegion label="Loading members" flush>
+            <SkeletonBlock width={24} height={24} />
+            <SkeletonBlock width="60%" height={12} />
+          </SkeletonRegion>,
+        ),
+      ),
+    );
+    expect(fills).toEqual([surface.card, surface.card]);
+    expect(fills).not.toContain(surface.popover);
+  });
+
+  it("keeps bars on a card in a sheet one step above the card", () => {
+    const fills = inSheet(() =>
+      blockFills(
+        render(
+          <SkeletonRegion label="Loading">
+            <SkeletonBlock width="60%" height={12} />
+          </SkeletonRegion>,
+        ),
+      ),
+    );
+    expect(fills).toEqual([surface.popover]);
+  });
+
+  it("drops the state cards' fill and keeps their edge", () => {
+    const lines = inSheet(() => render(<SkeletonLines lines={2} showTile />));
+    expect(cardStyle(lines).backgroundColor).toBe("transparent");
+    expect(cardStyle(lines).borderColor).toBe(
+      signetDarkTokens.color.border.hairline,
+    );
+    // With no card under them, the bars take the step under the sheet.
+    expect(blockFills(lines)).toEqual([
+      surface.card,
+      surface.card,
+      surface.card,
+    ]);
+
+    const error = cardStyle(
+      inSheet(() => render(<ErrorState title="Failed" body="Retry." />)),
+    );
+    expect(error.backgroundColor).toBe("transparent");
+    expect(error.borderColor).toBe(
+      tint(signetDarkTokens.color.semantic.destructive, 0.28),
+    );
+  });
+
+  it("draws flush rows on a screen a step above the page", () => {
+    const fills = blockFills(
+      render(
+        <SkeletonRegion label="Loading" flush>
+          <SkeletonBlock width="60%" height={12} />
+        </SkeletonRegion>,
+      ),
+    );
+    expect(fills).toEqual([surface.surface1]);
+  });
+});
 
 describe("ErrorState", () => {
   it("carries the semantic destructive border, and no accent", () => {

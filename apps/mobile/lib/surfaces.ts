@@ -58,7 +58,7 @@ export function sheetSurfaces(tokens: SignetTokens): RaisedSurfaces {
  * own context is the one thing every sheet's content has in common. `true`
  * asks for `null` outside a sheet instead of a throw.
  */
-function useInSheet(): boolean {
+export function useInSheet(): boolean {
   return useBottomSheetInternal(true) != null;
 }
 
