@@ -28,6 +28,7 @@ import { TermsAcceptance } from "@/components/auth/terms-acceptance";
 import { LinkGlyph } from "@/components/profile/profile-glyphs";
 import { CrestTile } from "@/components/layout/crest-tile";
 import { SignedInAs } from "@/components/auth/signed-in-as";
+import { OtherAccountLine } from "@/components/auth/other-account-line";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -542,6 +543,21 @@ function JoinPageContent() {
           itself in.
         </AuthNote>
       </div>
+      {
+        // For someone already in a chapter who signed in with another account
+        // than the one they joined with. Not for a member, an invite link, or
+        // an emailed invite, and held until both reads answer, so it never
+        // shows and then vanishes.
+        !initialToken &&
+        pendingInvites.data !== undefined &&
+        offers.length === 0 &&
+        chaptersQuery.data !== undefined &&
+        memberships.length === 0 ? (
+          <div className="mt-4">
+            <OtherAccountLine disabled={busy} />
+          </div>
+        ) : null
+      }
       {confirmDropDialog}
     </AuthScreen>
   );

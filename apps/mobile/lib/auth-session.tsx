@@ -16,7 +16,6 @@ import { AppState } from "react-native";
 import { signInWithNativeApple } from "./apple-auth";
 import { signInWithNativeGoogle } from "./google-auth";
 import { MemberFacingError } from "@repo/hooks/error-copy";
-import { isFirstOAuthSignIn, isNewEmailSignIn } from "@repo/validation";
 import {
   describeAuthReturnError,
   describeOAuthKickoffError,
@@ -81,17 +80,6 @@ type AuthSessionContextValue = {
   isConfigured: boolean;
   /** Why the last magic-link callback failed, if it did. Cleared on retry. */
   callbackError: string | null;
-  /**
-   * True when this sign-in created a brand-new account (#4769), so s02 can
-   * say so before onboarding treats the person as new: a first Google or
-   * Apple sign-in, or the sign-in screen's magic link landing in an email
-   * account it just confirmed (`@repo/validation` `new-account`). The third
-   * rule, no chapter, is s02's own: the gate opens it only for an account
-   * whose chapters read answered `[]`. False once dismissed.
-   */
-  isNewAccount: boolean;
-  /** "Continue with the new account": hides the notice for this account. */
-  dismissNewAccount: () => void;
   signInWithPassword: (input: {
     email: string;
     password: string;
@@ -155,8 +143,6 @@ function readAuthParams(url: string): {
   errorCode: string | null;
   /** The bare `error` identifier (`access_denied`), kept apart from the sentence. */
   error: string | null;
-  /** `sign-in-link` on the sign-in screen's magic link ({@link SIGN_IN_LINK_INTENT}). */
-  intent: string | null;
 } {
   const hashIndex = url.indexOf("#");
   const queryIndex = url.indexOf("?");
@@ -184,7 +170,6 @@ function readAuthParams(url: string): {
     errorDescription: read("error_description") ?? read("error"),
     errorCode: read("error_code"),
     error: read("error"),
-    intent: queryParams.get("intent"),
   };
 }
 
@@ -201,28 +186,6 @@ function appRedirectTo(): string {
 }
 
 /**
- * Tags the sign-in screen's magic link, as web's `intent=sign-in-link` does
- * (#3801), so its return knows to ask whether it created a new account. The
- * Confirm-signup resend (`resendConfirmation`) shares the redirect but not
- * the tag: someone confirming a sign-up they made knows the account is new.
- */
-export const SIGN_IN_LINK_INTENT = "sign-in-link";
-
-/**
- * A sign-in made in this app run (#4769): who, and whether it came back
- * through the sign-in screen's tagged magic link.
- */
-type FreshSignIn = { userId: string; signInLink: boolean };
-type SignedInHandler = (signIn: FreshSignIn) => void;
-
-/** `frapp:///?intent=sign-in-link`; GoTrue's template appends `&token_hash=…`. */
-export function signInLinkRedirectTo(): string {
-  const base = appRedirectTo();
-  const joiner = base.endsWith("?") || base.endsWith("&") ? "" : "&";
-  return `${base}${joiner}intent=${SIGN_IN_LINK_INTENT}`;
-}
-
-/**
  * Exchanges a magic-link callback for a session.
  *
  * Returns a message when the link itself was rejected. Magic links are
@@ -233,7 +196,6 @@ export function signInLinkRedirectTo(): string {
 async function createSessionFromUrl(
   supabase: SupabaseClient,
   url: string,
-  onSignedIn?: SignedInHandler,
 ): Promise<string | null> {
   const {
     accessToken,
@@ -244,16 +206,7 @@ async function createSessionFromUrl(
     errorDescription,
     errorCode,
     error: errorIdentifier,
-    intent,
   } = readAuthParams(url);
-  // Who this return signed in, and whether it was the sign-in screen's
-  // tagged magic link, for `isNewAccount` (#4769).
-  const noteSignIn = (userId: string | undefined) => {
-    if (userId) {
-      onSignedIn?.({ userId, signInLink: intent === SIGN_IN_LINK_INTENT });
-    }
-  };
-
   // A link or provider return that didn't become a session (#3832). Only the
   // code is read, never the URL, which holds the code or token itself.
   const reportCallback = (error: unknown, linkCode?: string) =>
@@ -280,12 +233,11 @@ async function createSessionFromUrl(
       // The implicit flow's return, and the one a new address's link takes
       // today: the hosted Confirm signup template still links
       // `ConfirmationURL` (#1925), which lands tokens in the fragment.
-      const { data, error } = await supabase.auth.setSession({
+      const { error } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
       });
       if (error) reportCallback(error);
-      else noteSignIn(data.user?.id);
       return error ? describeAuthReturnError(error) : null;
     }
     if (tokenHash) {
@@ -293,18 +245,16 @@ async function createSessionFromUrl(
         reportCallback(undefined, "verify_failed");
         return FINISH_FAILED_COPY;
       }
-      const { data, error } = await supabase.auth.verifyOtp({
+      const { error } = await supabase.auth.verifyOtp({
         token_hash: tokenHash,
         type: otpType,
       });
       if (error) reportCallback(error);
-      else noteSignIn(data.user?.id);
       return error ? describeAuthReturnError(error) : null;
     }
     if (code) {
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (error) reportCallback(error);
-      else noteSignIn(data.user?.id);
       return error ? describeAuthReturnError(error) : null;
     }
     return null;
@@ -357,20 +307,6 @@ export function AuthSessionProvider({
     null,
   );
   const [callbackError, setCallbackError] = useState<string | null>(null);
-  /**
-   * The last sign-in made in this app run (#4769): a link or provider return,
-   * or a native Google or Apple sign-in. `isNewAccount` asks only about that
-   * sign-in, as web asks only at its callback: a session restored from
-   * storage keeps `last_sign_in_at` from whenever it signed in, so a
-   * long-time Google member would otherwise read as new on every cold start.
-   * Only the tagged magic link asks the email rule, since a Confirm-signup
-   * link passes it too and its sign-up isn't news.
-   */
-  const [freshSignIn, setFreshSignIn] = useState<FreshSignIn | null>(null);
-  /** The account whose new-account notice was dismissed this run. */
-  const [dismissedNewAccountId, setDismissedNewAccountId] = useState<
-    string | null
-  >(null);
   /**
    * Last auth uid observed in `applySession`.
    *
@@ -620,7 +556,7 @@ export function AuthSessionProvider({
 
     let cancelled = false;
     lastHandledCallbackUrl.current = url;
-    void createSessionFromUrl(supabase, url, setFreshSignIn).then((message) => {
+    void createSessionFromUrl(supabase, url).then((message) => {
       if (!cancelled && message) setCallbackError(message);
     });
 
@@ -655,7 +591,7 @@ export function AuthSessionProvider({
       setCallbackError(null);
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: signInLinkRedirectTo() },
+        options: { emailRedirectTo: appRedirectTo() },
       });
       if (error) {
         reportAuthFailure({
@@ -716,17 +652,6 @@ export function AuthSessionProvider({
       }
       if (native === "cancelled") return;
       if (native === "completed") {
-        // A native sign-in set the session itself; note who, for the
-        // new-account notice (#4769). A failed read only skips the notice.
-        try {
-          const { data } = await supabase.auth.getSession();
-          const signedInId = data.session?.user?.id;
-          if (signedInId) {
-            setFreshSignIn({ userId: signedInId, signInLink: false });
-          }
-        } catch {
-          // The sign-in itself succeeded.
-        }
         return;
       }
 
@@ -770,11 +695,7 @@ export function AuthSessionProvider({
         return;
       }
       lastHandledCallbackUrl.current = result.url;
-      const message = await createSessionFromUrl(
-        supabase,
-        result.url,
-        setFreshSignIn,
-      );
+      const message = await createSessionFromUrl(supabase, result.url);
       if (message) {
         throw new MemberFacingError(message);
       }
@@ -825,19 +746,6 @@ export function AuthSessionProvider({
   // comment for why an in-flight re-read must not.
   const isChapterResolving = status === "authenticated" && !hasReadChapterClaim;
 
-  const sessionUser = session?.user ?? null;
-  const isNewAccount =
-    status === "authenticated" &&
-    sessionUser !== null &&
-    freshSignIn !== null &&
-    freshSignIn.userId === sessionUser.id &&
-    dismissedNewAccountId !== sessionUser.id &&
-    (isFirstOAuthSignIn(sessionUser) ||
-      (freshSignIn.signInLink && isNewEmailSignIn(sessionUser)));
-  const dismissNewAccount = useCallback(() => {
-    setDismissedNewAccountId(userId);
-  }, [userId]);
-
   const value = useMemo<AuthSessionContextValue>(
     () => ({
       status,
@@ -847,8 +755,6 @@ export function AuthSessionProvider({
       isChapterResolving,
       isConfigured: configured,
       callbackError,
-      isNewAccount,
-      dismissNewAccount,
       signInWithPassword,
       sendMagicLink,
       resendConfirmation,
@@ -859,9 +765,7 @@ export function AuthSessionProvider({
       callbackError,
       chapterId,
       configured,
-      dismissNewAccount,
       isChapterResolving,
-      isNewAccount,
       resendConfirmation,
       sendMagicLink,
       session?.user?.email,

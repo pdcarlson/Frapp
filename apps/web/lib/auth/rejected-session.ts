@@ -60,9 +60,6 @@ const SIGNED_OUT_ROUTES = [
   "/sign-up",
   "/join",
   "/no-access",
-  // Its own Sign out sends the member to `/sign-in` with the destination kept;
-  // leaving first would drop it (#3786).
-  "/new-account",
   // The camera check-in link's page: signed out, it offers the app and sign
   // in with the link kept, and its Sign out keeps the link the same way.
   "/check-in",

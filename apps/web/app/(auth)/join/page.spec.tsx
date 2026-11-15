@@ -739,6 +739,55 @@ describe("web join — who is signed in (#3776)", () => {
   });
 });
 
+describe("web join — Already in a chapter? (replaced /new-account)", () => {
+  const LINE = "Use a different account";
+
+  it("offers a quiet way to switch accounts to someone with no chapter and no invite", async () => {
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.getByText("Already in a chapter?", { exact: false })).toBeTruthy();
+    expect(screen.getByRole("button", { name: LINE })).toBeTruthy();
+  });
+
+  it("signs out and comes back to /join", async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...original, origin: "http://localhost", assign },
+    });
+    try {
+      renderPage();
+      await screen.findByLabelText("Invite");
+      fireEvent.click(screen.getByRole("button", { name: LINE }));
+      await waitFor(() =>
+        expect(assign).toHaveBeenCalledWith("/sign-in?redirectTo=%2Fjoin"),
+      );
+      expect(signOut).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: original,
+      });
+    }
+  });
+
+  it("isn't shown when an invite link opened the page", async () => {
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("isn't shown while the emailed invites are still being read", async () => {
+    pending.isLoading = true;
+    pending.data = undefined as never;
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+});
+
 describe("web join — one join at a time (#3776)", () => {
   beforeEach(() => {
     legal.data = { required: false };
