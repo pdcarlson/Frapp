@@ -9,7 +9,7 @@ import {
 } from "react";
 import { MAX_UPLOAD_LABEL } from "@repo/validation";
 import { AttachGlyph } from "./chat-glyphs";
-import { CHAT_FILE_LIMIT } from "./composer";
+import { CHAT_FILE_LIMIT } from "./composer-shell";
 
 /** Whether a drag carries files from outside the page (not text or a row). */
 function carriesOutsideFiles(event: DragEvent): boolean {

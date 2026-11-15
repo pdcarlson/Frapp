@@ -22,6 +22,28 @@ const DEFERRED = [
   "@/components/events/event-editor-dialog",
   "@/components/members/member-detail-sheet",
   "./thread-panel",
+  // Tiptap and ProseMirror (#5050): the composer, and the edit box a message
+  // row opens.
+  "./composer",
+  "./inline-message-editor",
+];
+
+/**
+ * Modules only the editor needs (#5050): never imported by a module on every
+ * route, and not lazily either, since they come with the composer's chunk.
+ */
+const EDITOR_ONLY = ["./chat-editor", "./mention-suggestion", "./mention-list"];
+
+/** The modules on every dashboard route that used to load those statically. */
+const STATIC_IMPORTERS = [
+  "chat-shell.tsx",
+  "message-item.tsx",
+  "chat-drop-target.tsx",
+  "chat-route-skeleton.tsx",
+  "composer-shell.tsx",
+  "deferred-panels.tsx",
+  "deferred-panel.tsx",
+  "deferred-inline-editor.tsx",
 ];
 
 function resolve(specifier: string): string {
@@ -31,12 +53,11 @@ function resolve(specifier: string): string {
   return path.replace(/\.(tsx?|jsx?)$/, "").replace(/\/index$/, "");
 }
 
-const shell = readFileSync(join(__dirname, "chat-shell.tsx"), "utf8");
-const statements = [
-  ...shell.matchAll(
+const statements = STATIC_IMPORTERS.flatMap((file) => [
+  ...readFileSync(join(__dirname, file), "utf8").matchAll(
     /^(import|export)\s+(type\s+)?[^;]*?from\s+["']([^"']+)["'];/gms,
   ),
-].map((m) => ({
+]).map((m) => ({
   keyword: m[1],
   typeOnly: Boolean(m[2]),
   target: resolve(m[3] ?? ""),
@@ -55,8 +76,28 @@ describe("chat shell panels", () => {
     expect(loading).toEqual([]);
   });
 
+  it.each(EDITOR_ONLY)("never loads %s statically", (path) => {
+    const target = resolve(path);
+    const loading = statements.filter(
+      (s) => s.target === target && (s.keyword === "export" || !s.typeOnly),
+    );
+    expect(loading).toEqual([]);
+  });
+
+  it("never loads Tiptap or ProseMirror statically", () => {
+    const loading = statements.filter(
+      (s) =>
+        /^(@tiptap\/|prosemirror-)/.test(s.target) &&
+        (s.keyword === "export" || !s.typeOnly),
+    );
+    expect(loading).toEqual([]);
+  });
+
   it("lists in the preload every panel it splits", () => {
-    const source = readFileSync(join(__dirname, "deferred-panels.tsx"), "utf8");
+    // The edit box's lazy and preload live in their own module (#5050).
+    const source = ["deferred-panels.tsx", "deferred-inline-editor.tsx"]
+      .map((file) => readFileSync(join(__dirname, file), "utf8"))
+      .join("\n");
     for (const path of DEFERRED) {
       expect(source.split(`import("${path}")`).length - 1).toBe(2);
     }

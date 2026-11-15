@@ -1158,6 +1158,10 @@ const mockChapterRoster = vi.hoisted(() => vi.fn());
 const mockRosterCatchUp = vi.hoisted(() => vi.fn());
 
 const mockDropAttach = vi.fn();
+// The shell imports these from `./composer-shell`, and the lazy `Composer`
+// from `./deferred-panels` (#5050, mocked below); both answer with the mocks
+// here, so the composer renders synchronously.
+vi.mock("./composer-shell", async () => import("./composer"));
 vi.mock("./composer", () => ({
   notifyDispatchOutcome: mockNotifyOutcome,
   Composer: ({
@@ -1659,6 +1663,7 @@ vi.mock("./message-timeline", async () => {
 // panel the render it opened. `vi.mock` is hoisted, so the order in this file
 // doesn't matter.
 vi.mock("./deferred-panels", async () => ({
+  Composer: (await import("./composer")).Composer,
   PollForm: (await import("./poll-form")).PollForm,
   SignupForm: (await import("./signup-form")).SignupForm,
   RolePickerForm: (await import("./role-picker-form")).RolePickerForm,
@@ -1676,6 +1681,7 @@ vi.mock("./deferred-panels", async () => ({
     .MemberDetailSheet,
   ThreadPanel: (await import("./thread-panel")).ThreadPanel,
   preloadChatPanels: () => undefined,
+  preloadComposer: () => undefined,
 }));
 
 // The panel's own rows and reads are `thread-panel.spec.tsx`'s and
