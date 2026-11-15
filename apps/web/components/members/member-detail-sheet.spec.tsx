@@ -440,13 +440,35 @@ describe("MemberDetailSheet custom fields", () => {
     expect(screen.getByText("Computer Science")).toBeInTheDocument();
     expect(screen.getByText("Dues Paid")).toBeInTheDocument();
     expect(screen.getByText("Yes")).toBeInTheDocument();
-    // An unset value says so in a word, never a lone em dash: board `1t` lists
-    // "em dashes in UI copy" under gone.
-    // Scoped to the row: an officer's unset pledge class reads "Not set" too.
+    // An unset field is left out (#1749): nothing writes a value yet (#581).
+    expect(screen.queryByText("Hometown")).not.toBeInTheDocument();
+  });
+
+  it("omits More details when every field the viewer may see is unset (#1749)", () => {
+    renderProfile({
+      ...baseMember,
+      custom_fields: [
+        {
+          field_id: "f1",
+          key: "major",
+          label: "Major",
+          type: "text",
+          visibility: "chapter",
+          value: null,
+        },
+        {
+          field_id: "f2",
+          key: "shirt",
+          label: "T-shirt size",
+          type: "text",
+          visibility: "chapter",
+          value: "  ",
+        },
+      ],
+    });
     expect(
-      within(screen.getByText("Hometown").parentElement!).getByText("Not set"),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("—")).toBeNull();
+      screen.queryByRole("button", { name: "More details" }),
+    ).not.toBeInTheDocument();
   });
 
   it("omits the custom-fields section when the server returns none", () => {
