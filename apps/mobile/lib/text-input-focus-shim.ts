@@ -18,12 +18,14 @@ import { Platform, TextInput } from "react-native";
  *
  * ## What it does
  *
- * Both readers want the focused field (or `null`): the sheet passes it to its
- * own web `findNodeHandle`, which accepts a DOM node, and expo-router calls
- * `.blur()` / `.focus()` on it, which a DOM input has. react-native-web's
- * `currentlyFocusedField()` returns exactly that node, so the shim delegates
- * to it. One shim at app start covers every sheet, instead of a wrapper
- * imported in each.
+ * Both readers want the focused field (or `null`), and react-native-web's
+ * `currentlyFocusedField()` returns that DOM node, so the shim delegates to
+ * it. expo-router calls `.blur()` / `.focus()` on it, which a DOM input has.
+ * The sheet reads it inside `onBlur`, by which point react-native-web has
+ * already cleared the focused node, so on web it always gets `null` there: it
+ * clears its keyboard target, and the next field's `onFocus` sets it again.
+ * That is harmless on web, where no keyboard lifts the sheet. One shim at app
+ * start covers every sheet, instead of a wrapper imported in each.
  *
  * It only fills a gap: when `currentlyFocusedInput` already exists it is left
  * alone, and it is installed only when `Platform.OS === "web"`, so iOS and
