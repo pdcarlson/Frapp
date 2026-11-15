@@ -1023,7 +1023,7 @@ These are the places it departs from the board, recorded here so they read as de
   OAuth uses that same `?code=…` exchange.
   Either way the callback re-applies the open-redirect guard to `next` and redirects there signed in.
   A brand-new account goes straight on too: the `/new-account` stop that once named it (#3786, #3801) was replaced on 2026-11-15 by `/join`'s quiet `Already in a chapter?` line ([`writing.md` § Already in a chapter](../design-system/writing.md#already-in-a-chapter-pre-auth)).
-  The `intent` the sign-in screen adds (`sign-in` for Google and Apple, `sign-in-link` for the magic link) now only tells an email link from a provider return.
+  The sign-in screen's magic link still adds `intent=sign-in-link`, which keeps a Confirm-signup code that won't exchange reading as a confirmed address; its Google and Apple starts still add `intent=sign-in`, which nothing reads any more.
   Nothing is linked or merged; attaching a second provider from settings is [#2223](https://github.com/pdcarlson/Frapp/issues/2223).
   A failed link (expired, reused, bad hash) or a colliding OAuth identity lands on `/sign-in` with `redirectTo` intact and `authError` naming the reason, which the page shows once as a toast.
   A PKCE `code` that can't be exchanged (opened in another browser, or after a later email request in this one replaced the verifier) fails with `exchange_failed`, with one exception since 2026-11-09 ([#3831](https://github.com/pdcarlson/Frapp/issues/3831)): every email link web asks for carries an email-link intent — the sign-up confirmation and its Resend `intent=confirm`, the sign-in magic link `intent=sign-in-link` ([`isEmailLinkIntent`](../../../apps/web/lib/auth/redirect.ts)) — while OAuth carries `intent=sign-in`.

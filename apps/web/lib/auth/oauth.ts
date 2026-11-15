@@ -61,8 +61,8 @@ export function describeOAuthKickoffError(error: unknown): string {
  * `redirectTo` is the post-auth path (already open-redirect guarded). The
  * OAuth return lands on `/auth/callback?next=…`, the same PKCE `code` exchange
  * magic-link confirmations already use — so this must not invent a second
- * callback route. The sign-in screen passes `intent: "sign-in"`, which marks
- * the return as a provider's rather than an email link's.
+ * callback route. The sign-in screen still passes `intent: "sign-in"`, which
+ * nothing reads since the "New account created" notice was retired.
  */
 export async function startWebOAuth(
   supabase: {

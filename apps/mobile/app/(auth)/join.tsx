@@ -676,12 +676,13 @@ export default function JoinChapter() {
                   For someone already in a chapter who signed in with another
                   account than the one they joined with. Not when an invite
                   link or an emailed invite brought them: those are the
-                  account an officer meant. Held until the emailed invites
-                  have been read, so it never shows and then vanishes.
+                  account an officer meant. Held until the emailed-invites
+                  read settles, so it never shows and then vanishes; a read
+                  that failed still shows it, since it is the way out.
                 */}
                 {gateDestination === "join" &&
                 !arrivedWithInvite &&
-                Array.isArray(pendingInvites.data) &&
+                !pendingInvites.isPending &&
                 offers.length === 0 ? (
                   <OtherAccountLine
                     onPress={() => void signOutToSignIn()}

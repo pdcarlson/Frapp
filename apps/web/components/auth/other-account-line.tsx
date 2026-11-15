@@ -5,21 +5,30 @@ import {
   OTHER_ACCOUNT_HINT,
   OTHER_ACCOUNT_PROMPT,
 } from "@repo/validation";
-import { useSignOutToSignIn } from "./use-sign-out";
-
-/** Shown when the sign-out itself threw. */
-export const OTHER_ACCOUNT_SIGN_OUT_FAILED =
-  "Couldn't sign out. Retry in a moment, or close this tab to end the session.";
+import { TERMS_PROMPT_SIGN_OUT_FAILED } from "./terms-prompt";
 
 /**
- * "Already in a chapter? Use a different account", `/join`'s quiet line for
- * someone who signed in with another account than the one they joined with
- * (`@repo/validation` `other-account` says why it replaced `/new-account`).
- * Signs out and lands on `/sign-in`, returning to `/join` after.
+ * "Already in a chapter? Use a different account", the quiet line on `/join`
+ * and the setup wizard's first step for someone who signed in with another
+ * account than the one they joined with (`@repo/validation` `other-account`
+ * says why it replaced `/new-account`).
+ *
+ * The screen owns the sign-out (`useSignOutToSignIn`, returning to
+ * `JOIN_FROM_SIGN_IN_PATH` so a member lands in their chapter) and passes it
+ * in, so it can lock its own controls while the session goes away and render
+ * the one bulk-upload confirm.
  */
-export function OtherAccountLine({ disabled = false }: { disabled?: boolean }) {
-  const { signOut, signingOut, failed, confirmDropDialog } =
-    useSignOutToSignIn("/join");
+export function OtherAccountLine({
+  signOut,
+  signingOut,
+  failed,
+  disabled = false,
+}: {
+  signOut: () => Promise<void>;
+  signingOut: boolean;
+  failed: boolean;
+  disabled?: boolean;
+}) {
   return (
     <div className="text-center text-sm text-muted-foreground">
       <p>
@@ -36,10 +45,9 @@ export function OtherAccountLine({ disabled = false }: { disabled?: boolean }) {
       </p>
       {failed ? (
         <p role="alert" className="mt-1 text-destructive">
-          {OTHER_ACCOUNT_SIGN_OUT_FAILED}
+          {TERMS_PROMPT_SIGN_OUT_FAILED}
         </p>
       ) : null}
-      {confirmDropDialog}
     </div>
   );
 }

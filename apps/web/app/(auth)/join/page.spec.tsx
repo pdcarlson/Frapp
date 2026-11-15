@@ -761,7 +761,11 @@ describe("web join — Already in a chapter? (replaced /new-account)", () => {
       await screen.findByLabelText("Invite");
       fireEvent.click(screen.getByRole("button", { name: LINE }));
       await waitFor(() =>
-        expect(assign).toHaveBeenCalledWith("/sign-in?redirectTo=%2Fjoin"),
+        // Back through `/join?from=sign-in`, which sends a member on to
+        // their chapter (#3850).
+        expect(assign).toHaveBeenCalledWith(
+          "/sign-in?redirectTo=%2Fjoin%3Ffrom%3Dsign-in",
+        ),
       );
       expect(signOut).toHaveBeenCalled();
     } finally {
@@ -774,6 +778,46 @@ describe("web join — Already in a chapter? (replaced /new-account)", () => {
 
   it("isn't shown when an invite link opened the page", async () => {
     searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("still shows when the emailed-invites read failed: it is the way out", async () => {
+    pending.data = undefined as never;
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.getByRole("button", { name: LINE })).toBeTruthy();
+  });
+
+  it("isn't shown to a member", async () => {
+    chapters.data = [{ chapter_id: "c1", chapter: { name: "Northfield" } }];
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("isn't shown when an invite was emailed to this account", async () => {
+    pending.data = [
+      {
+        token: "offer-1",
+        chapter_name: "Southfield",
+        university: "State",
+        mark_text: null,
+        accent_color: null,
+        invited_by: null,
+        role: "member",
+      },
+    ];
+    renderPage();
+    await screen.findByRole("button", { name: "Join Southfield" });
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("isn't shown while the chapters are still being read", async () => {
+    chapters.data = undefined;
+    chapters.isLoading = true;
+    chapters.isPending = true;
     renderPage();
     await screen.findByLabelText("Invite");
     expect(screen.queryByRole("button", { name: LINE })).toBeNull();

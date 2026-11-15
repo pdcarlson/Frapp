@@ -155,13 +155,14 @@ export function magicLinkRedirectUrl(origin: string, redirectTo: string): string
 }
 
 /**
- * Which screen started the round trip. The value only decides which notice is
- * shown, so a tampered one can't do more than show or skip it.
+ * Which screen started the round trip. The value only decides whether a
+ * failed code reads as a confirmed address, so a tampered one can't do more
+ * than change that message.
  *
- * - `sign-in`, on an OAuth start from the sign-in screen. It marks the return
- *   as a provider's, not an email link's, so a failed code is a real failure.
- *   (It also drove the retired "New account created" notice, #3786; s02's
- *   "Already in a chapter?" line replaced that, 2026-11-15.)
+ * - `sign-in`, on an OAuth start from the sign-in screen. Nothing reads it
+ *   since the "New account created" notice it drove (#3786) was replaced by
+ *   s02's "Already in a chapter?" line (2026-11-15): a provider return with no
+ *   intent is handled the same way, a failed code being a real failure.
  * - `confirm`, on the sign-up confirmation and its Resend. If such a link's
  *   PKCE code can't be exchanged, GoTrue has already verified it, because it
  *   only hands out a code after verifying (a dead link comes back as

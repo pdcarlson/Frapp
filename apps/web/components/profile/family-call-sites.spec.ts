@@ -55,6 +55,8 @@ const FAMILY = [
   "components/auth/chapter-showcase.tsx",
   // `/no-access`'s sign-out action, split out as a client component (#3236).
   "components/auth/no-access-sign-out.tsx",
+  // `/join`'s "Already in a chapter?" line, which replaced `/new-account`.
+  "components/auth/other-account-line.tsx",
   "components/auth/signet-mark.tsx",
   "components/profile/profile-panel.tsx",
   // `/profile`'s settings blocks, moved to the personal Settings page (#3856).
@@ -232,6 +234,7 @@ describe("the accent slot never paints a pre-auth screen", () => {
     "components/auth/floating-field.tsx",
     "components/auth/oauth-buttons.tsx",
     "components/auth/no-access-sign-out.tsx",
+    "components/auth/other-account-line.tsx",
   ] as const;
 
   it.each(PRE_AUTH)("%s paints no bare accent-slot class", (file) => {
