@@ -317,6 +317,8 @@ export function TaskCard({
       {marking ? (
         <MarkDoneSheet
           key={payload.task_id}
+          // Shared with the Tasks screen's Mark done on this task (#5041).
+          keptDraft={`mark-done:${payload.task_id}`}
           task={{
             id: payload.task_id,
             title: payload.title,
@@ -324,6 +326,7 @@ export function TaskCard({
             sentBack,
             sentBackReason: live?.sent_back_reason ?? null,
             done: live?.stored_status === "COMPLETED",
+            sentBackAt: live?.sent_back_at ?? null,
           }}
           initialProblem={marking.problem}
           onComplete={async (proof) => {
@@ -345,6 +348,8 @@ export function TaskCard({
       {sendingBack ? (
         <SendBackSheet
           key={payload.task_id}
+          keptDraft={`send-back:${payload.task_id}`}
+          submittedAt={live?.completed_at ?? null}
           title={payload.title}
           proofKind={proofKind}
           onSubmit={async (body) => {

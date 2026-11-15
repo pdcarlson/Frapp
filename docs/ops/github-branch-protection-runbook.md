@@ -27,14 +27,15 @@ branch. This ensures:
 
 ## Prerequisites
 
-1. A GitHub Personal Access Token (PAT) with repository administration permissions:
-   - **Fine-grained PAT:** Repository administration: Read & write
-   - **Classic PAT:** `repo` scope
-2. Provide the token using the canonical hosted-agent name, either by exporting it or by putting it in an env file at the repo root. The token must have the permissions above; do not rely on the GitHub Actions runtime token unless it has equivalent administration scope.
+1. Your own GitHub token with repository administration permissions (a person's token on a laptop;
+   cloud sessions carry none since 2026-11-15):
+   - **Fine-grained token:** Repository administration: Read & write
+   - **Classic token:** `repo` scope
+2. Provide it by exporting it or by putting it in an env file at the repo root. Do not rely on the
+   GitHub Actions runtime token unless it has equivalent administration scope.
 
 ```bash
 export GITHUB_PAT=<token>
-export GH_TOKEN="$GITHUB_PAT"   # gh/git read GH_TOKEN, not GITHUB_PAT
 ```
 
 Or, to avoid re-exporting every shell — both files are gitignored:
@@ -45,44 +46,27 @@ echo 'GITHUB_PAT=<token>' >> .env
 
 > **Which env var the script reads.** `scripts/configure-branch-protection.mjs` resolves the token from,
 > in order: `GITHUB_PAT` → `GITHUB_TOKEN` → `GH_PAT` → `GH_TOKEN` (or `--token-env <NAME>` to name a
-> custom var). `GITHUB_PAT` is the canonical name. The repo slug comes from `--repo owner/repo`,
-> `GITHUB_REPOSITORY`, or the `origin` remote.
+> custom var). The repo slug comes from `--repo owner/repo`, `GITHUB_REPOSITORY`, or the `origin`
+> remote.
 >
 > **The value may come from `.env.local` or `.env` at the repo root**, not just from an exported
 > variable — the script loads them through `scripts/lib/env-file.mjs`. Precedence is the one
 > `apps/api/src/app.module.ts` already uses for the API: an **exported variable beats both files**,
 > and `.env.local` beats `.env`. So a stale `.env` left in a checkout can never shadow a token you
-> exported deliberately. Before this loading existed, a token sitting in `.env` failed with
-> "Missing GitHub token" and only worked once exported by hand.
+> exported deliberately.
 >
 > The same files also supply `GITHUB_REPOSITORY`, since they are loaded before the slug is
 > resolved — `--repo` still overrides both.
 
-> **Reads work from a hosted session; the apply is a human step by policy.** The hosted environment
-> injects `GITHUB_PAT`, and from a Claude Code cloud sandbox node's built-in `fetch` and
-> `curl --noproxy '*'` go direct and return **200** from GitHub itself. Requests that honour
-> `HTTPS_PROXY` take the agent proxy route instead, whose results say nothing about the PAT. The
-> rule and its measurements live in
-> [`agent-infra.md` — the `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule); this
-> runbook only consumes the rule. The 2026-08-27 403 once recorded here — against
-> `GET /repos/pdcarlson/Frapp/branches/main/protection` — was a `curl` probe, so it measured the
-> proxy route, not the PAT. [#680](https://github.com/pdcarlson/Frapp/issues/680)'s evidence table
-> records 403 and 200 for this endpoint class on the same day — but be honest about what that table
-> says: it is a **single row, and it attributes both the 403 and the 200 to `curl`**. So it does not
-> corroborate the route rule on its own; either the 200 was taken on a different route than the
-> row implies, the proxy route answered differently in two sessions, or the row is imprecise. The
-> direct measurement settles the read either way.
->
-> **Do not regenerate the PAT with broader scopes** — a proxy-route 403 is not an answer about the
-> PAT. It looked like one because `GET /user` *through* the proxy returns 200, so the token
-> appeared to work everywhere except the paths that mattered. Judge a 403 by its route, not its
-> headers: only a 403 on the direct route is a permission answer about the PAT (why:
-> [`agent-infra.md` → The `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule)). And **do not set
-> `NODE_USE_ENV_PROXY=1`** for these scripts: that puts node back on the proxy route. Check with
-> `npm run configure:branch-protection:verify`, which **fails loudly** rather than passing when a
-> read is refused — see `--verify` below for the dated result.
->
-> **Applying branch protection is still a human step with an admin PAT — by policy, not because it
+> **From a cloud session, `:verify` reads through the agent proxy (2026-11-15).** Sessions no longer
+> carry `GITHUB_PAT`. The `:verify` npm script runs node with `--use-env-proxy`, so in a session it
+> takes the proxy route with the proxy's own credential, which can read `branches/main/protection`
+> and `rules/branches/main`; on a laptop with no `HTTPS_PROXY` the flag does nothing. Run with plain
+> `node` and no switch, a session's request goes direct with the proxy's placeholder token and
+> GitHub answers 401 "Bad credentials", which is about the route, not the settings
+> ([`agent-infra.md` → The `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule)).
+
+> **Applying branch protection is still a human step with an admin token — by policy, not because it
 > is unreachable.** The GitHub MCP server is the sanctioned write path for issues, PRs and comments
 > and exposes no branch-protection tool; REST is a read channel for ground truth, not a write
 > fallback. That is why promoting a check to required is filed as a `[human]` issue rather than
@@ -112,8 +96,8 @@ This prints the exact configuration that will be applied without making any chan
 > differ by two characters and one is a governance write.
 >
 > **From an agent session, run `npm run configure:branch-protection:verify` and nothing else** —
-> never the bare command, never `--dry-run` without the `--`. Applying stays a human step with an
-> admin PAT (see **Prerequisites**).
+> never the bare command, never `--dry-run` without the `--`. Applying stays a human step with your
+> own admin token (see **Prerequisites**).
 
 A dry run also **reads live protection back and prints the difference**, so the output answers
 "what would this actually change?" rather than only "what would this write?". That read-back is a

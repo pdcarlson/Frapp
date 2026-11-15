@@ -311,7 +311,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
 
 > **Changed in #4899 by pdcarlson, 2026-11-13 (Paul: "feels like working with GPT 2"; "we're building essentially an agentic harness").**
 > Ask is being rebuilt so that Frapp decides what to read and reads in several steps, in place of one search and one writing call (epic #4898).
-> The loop is built and off: a server answers through it only with `ASK_AGENT=on`, and "How an answer is made" above describes what members get until the one-shot path is deleted.
+> The loop is built, and on everywhere but production since 2026-11-15 (staging is where it is tested). Production answers through it only with `ASK_AGENT=on`, and "How an answer is made" above describes what members get until the one-shot path is deleted.
 > Through the loop, the model is offered the reads this member may use (since 2026-11-13: seven that find and read channels, documents and minutes, #4900, and fifteen that read people, tasks, events, attendance, points, hours and dues, #4901), calls them with arguments, and may read again on what it found: at most six model calls and ten reads a turn, or ten and sixteen, with longer to read and the model working harder, when the member asks Frapp to think harder (`effort: more`, read since 2026-11-13;
 > the button is #4904's).
 > The line under a working turn names each read as it starts.

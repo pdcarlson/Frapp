@@ -27,8 +27,25 @@ import {
 } from "@/components/sheet-scaffold";
 import { Toggle } from "@/components/toggle";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import {
+  useDropKeptSheetDraft,
+  useKeptSheetDraft,
+  useKeptSheetOpening,
+} from "@/lib/kept-sheet-draft";
 import { taskStatusGateRefusal } from "@/lib/tasks/status-refusal";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+
+/** What Send back keeps past the sheet (#5041). */
+interface SendBackDraft {
+  reason: string;
+  askPhoto: boolean;
+  /**
+   * The submission it was typed against (`completed_at`). A reason for one
+   * submission doesn't come back for the next, after it was confirmed or sent
+   * back somewhere else and the member submitted again.
+   */
+  round: string | null;
+}
 
 /** What Send back sends (#4635). */
 export interface SendBackInput {
@@ -53,16 +70,25 @@ export function sendBackProblem(reason: string): string | null {
  *
  * The host mounts one per Send back (`key` on the task); it opens itself and
  * calls `onClosed` once it has gone. A refusal stays on the sheet with the
- * reason kept.
+ * reason kept. With `keptDraft` (`send-back:<taskId>`, #5041) the reason
+ * outlives the sheet too: a swipe or leaving the chat keeps it for the task's
+ * next Send back. Cancel and a Send back that lands give it up; one in flight
+ * holds it out, and one that fails puts it back.
  */
 export function SendBackSheet({
   title,
   proofKind,
+  submittedAt = null,
+  keptDraft,
   onSubmit,
   onClosed,
 }: {
   title: string;
   proofKind: TaskProofKind;
+  /** When the submission under review was made (`completed_at`). */
+  submittedAt?: string | null;
+  /** The kept draft's name, `send-back:<taskId>`; omitted keeps nothing. */
+  keptDraft?: string;
   /** Makes the write. Rejects with the server's error. */
   onSubmit: (input: SendBackInput) => Promise<void>;
   onClosed: () => void;
@@ -75,8 +101,20 @@ export function SendBackSheet({
   const closeSheet = useSheetClose(ref);
   const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
     useSheetVisit(ref);
-  const [reason, setReason] = useState("");
-  const [askPhoto, setAskPhoto] = useState(false);
+  const keptName = keptDraft ?? null;
+  const stored = useKeptSheetOpening<SendBackDraft>(keptName);
+  const fits = stored !== undefined && stored.round === submittedAt;
+  const opening = fits ? stored : undefined;
+  // Kept for an earlier submission: it goes.
+  useDropKeptSheetDraft(keptName, stored !== undefined && !fits);
+  const [reason, setReason] = useState(opening?.reason ?? "");
+  const [askPhoto, setAskPhoto] = useState(opening?.askPhoto ?? false);
+  const kept = useKeptSheetDraft<SendBackDraft>(
+    keptName,
+    { reason, askPhoto, round: submittedAt },
+    undefined,
+    opening,
+  );
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -97,13 +135,18 @@ export function SendBackSheet({
     setBusy(true);
     setProblem(null);
     const sentFrom = visit();
+    // Out of the kept store until it lands or fails, so a Send back reopened
+    // mid-send doesn't offer the same reason again.
+    kept.hold();
     try {
       await onSubmit({
         comment: reason.trim(),
         ...(askPhoto && proofKind !== "photo" ? { require_photo: true } : {}),
       });
+      kept.clear();
       if (isSameVisit(sentFrom)) dismiss();
     } catch (error) {
+      kept.release();
       if (isSameVisit(sentFrom)) {
         setProblem(
           taskStatusGateRefusal(error) ??
@@ -137,7 +180,13 @@ export function SendBackSheet({
       <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>
         <SheetHeader
           title={TASK_ACTION_LABELS.reject}
-          onCancel={() => dismiss()}
+          onCancel={() => {
+            // Held while a send runs: Cancel can't call the write back, and
+            // giving the draft up here would lose it if the write fails.
+            if (sending.current) return;
+            kept.clear();
+            dismiss();
+          }}
           cancelDisabled={busy}
         />
         <Text style={styles.subtitle}>

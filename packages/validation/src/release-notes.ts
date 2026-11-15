@@ -130,6 +130,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Signing in for the first time no longer stops you with a warning about a new account; if you're already in a chapter and signed in with the wrong account, a small link on the join screen lets you switch.",
       "Task reminders now arrive around 9 in the morning where you are, and \"due today\" follows your own calendar.",
       "Every Sunday morning a notification sums up your last week, and you can turn it off with Weekly recap in notification settings.",
+      "Officers can post a role picker in any channel, so members tap to join or leave interest roles like intramurals.",
     ],
     phone: [
       "Send invite now works on the first tap while the keyboard is open.",

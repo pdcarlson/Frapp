@@ -572,7 +572,7 @@ Changed in #3977 by shawnatomklein-eng, 2026-11-10: the Truncated description sa
 
 ### Subscription refused (mobile, cross-surface)
 
-Every mobile paid-ops write can be refused by `ChapterGuard` when the chapter's subscription is not active — the founder case is a brand-new chapter, which is `incomplete` until checkout ([#2297](https://github.com/pdcarlson/Frapp/issues/2297)).
+Every mobile paid-ops write can be refused by `ChapterGuard` when the chapter's subscription is not active — the founder case is a brand-new chapter, which is `incomplete` until checkout ([#2297](https://github.com/pdcarlson/Frapp/issues/2297)) whenever chapter billing is on. While it is off for the beta, a new chapter starts `active` and the founder never meets this.
 The strings live in `apps/mobile/lib/subscription-refusal.ts`, apart from a chat card's that web shows too, which lives beside the card's rules in `@repo/hooks` (the rush candidate row below).
 All of them are asserted against these rules in `apps/mobile/lib/subscription-refusal.spec.ts`.
 Two constraints bind every one of them, and both are the point rather than style:

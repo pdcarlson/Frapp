@@ -45,6 +45,8 @@ export const CARD_KINDS: ReadonlySet<string> = new Set([
   // An Ask Frapp answer posted to the channel (#4713): the Frapp sender's
   // row, with who asked and its sources in `payload`.
   "ask_answer",
+  // A role picker (#4958): the roles it lists live in `payload`.
+  "role_picker",
 ]);
 
 /**

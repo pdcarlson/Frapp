@@ -9,6 +9,20 @@ import {
 import { deriveSignetPalette } from '@repo/chapter-theme';
 import * as chapterTheme from '@repo/chapter-theme';
 import { ChapterService } from './chapter.service';
+
+// Drives `CHAPTER_BILLING_BETA_OFF` per test, so the billing-on branch of
+// `create` runs too and turning billing back on stays a one-line change.
+let mockChapterBillingOff = true;
+jest.mock('@repo/validation', () => {
+  const actual: Record<string, unknown> =
+    jest.requireActual('@repo/validation');
+  return {
+    ...actual,
+    get CHAPTER_BILLING_BETA_OFF() {
+      return mockChapterBillingOff;
+    },
+  };
+});
 import { toChapterMemberView } from './chapter-member-view';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import {
@@ -473,6 +487,7 @@ describe('ChapterService', () => {
     expect(mockChapterRepo.create).toHaveBeenCalledWith({
       name: 'Alpha',
       university: 'State U',
+      subscription_status: 'active',
     });
     expect(mockRoleRepo.createMany).toHaveBeenCalledTimes(1);
     const expectedRolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
@@ -679,7 +694,55 @@ describe('ChapterService', () => {
       org_archetype: 'nphc',
       enabled_modules: { chat: true },
       directory_id: 'dir-1',
+      subscription_status: 'active',
     });
+  });
+
+  // Chapter billing is off for the beta (CHAPTER_BILLING_BETA_OFF, Paul
+  // 2026-11-15): a new chapter starts active, whatever the config carries,
+  // instead of the schema's `incomplete` that refuses every paid-ops write.
+  it('starts a new chapter active while chapter billing is off for the beta', async () => {
+    const chapter = chapterFixture();
+    mockChapterRepo.create.mockResolvedValue(chapter);
+    mockRoleRepo.createMany.mockResolvedValueOnce(
+      mockSystemRolesForChapter(chapter.id),
+    );
+
+    await service.create('user-1', {
+      name: 'Alpha',
+      university: 'State U',
+      config: { subscription_status: 'incomplete' },
+    });
+
+    expect(mockChapterRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ subscription_status: 'active' }),
+    );
+  });
+
+  it('leaves a new chapter to the schema default once chapter billing is back', async () => {
+    mockChapterBillingOff = false;
+    try {
+      const chapter = chapterFixture();
+      mockChapterRepo.create.mockResolvedValue(chapter);
+      mockRoleRepo.createMany.mockResolvedValueOnce(
+        mockSystemRolesForChapter(chapter.id),
+      );
+
+      await service.create('user-1', {
+        name: 'Alpha',
+        university: 'State U',
+        config: {},
+      });
+
+      // No status at all: the column's `incomplete` default applies, and the
+      // web wizard then lands the founder on checkout (#2297).
+      expect(mockChapterRepo.create).toHaveBeenCalledWith({
+        name: 'Alpha',
+        university: 'State U',
+      });
+    } finally {
+      mockChapterBillingOff = true;
+    }
   });
 
   it('should assign creator as President on chapter creation', async () => {
