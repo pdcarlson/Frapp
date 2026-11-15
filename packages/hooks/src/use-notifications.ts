@@ -244,8 +244,9 @@ export function useNotifications(limit?: number) {
   }, [pendingKey, clearingKey]);
   return useQuery({
     queryKey: notificationKeys.list(chapterId, limit),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/notifications", {
+        signal,
         params: { query: { limit: limit ?? INBOX_FIRST_PAGE_SIZE } },
       });
       if (error) throw error;
@@ -261,10 +262,10 @@ export function useNotificationPreferences(chapterId: string) {
   const client = useFrappClient();
   return useQuery({
     queryKey: notificationKeys.preferences(chapterId),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/notifications/preferences",
-        { params: { query: { chapterId } } },
+        { signal, params: { query: { chapterId } } },
       );
       if (error) throw error;
       return data;
@@ -290,8 +291,8 @@ export function useUserSettings(options?: { enabled?: boolean }) {
     // The phone's presence runtime sits above the auth gate (#3917) and holds
     // the read until someone is signed in.
     enabled: options?.enabled ?? true,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/settings");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/settings", { signal });
       if (error) throw error;
       if (data === undefined) {
         throw new Error("GET /v1/settings answered with an empty body");

@@ -30,10 +30,7 @@ const CLIENT_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
  * doesn't conflict with it. Each entry goes once that PR merges (#5029); the
  * last test fails once an entry has nothing left to excuse.
  */
-const PENDING: Record<string, string> = {
-  "use-chat-sidebar.ts": "#5026 (channel sort) is open on this hook",
-  "use-notifications.ts": "#5024 (cold open) is open on this hook",
-};
+const PENDING: Record<string, string> = {};
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name: string) => {
