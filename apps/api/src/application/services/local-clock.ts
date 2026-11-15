@@ -39,10 +39,3 @@ export function localDateKey(clock: {
 }): string {
   return `${clock.year}-${String(clock.month).padStart(2, '0')}-${String(clock.day).padStart(2, '0')}`;
 }
-
-/** A `YYYY-MM-DD` key moved by whole calendar days. */
-export function shiftDateKey(key: string, days: number): string {
-  const date = new Date(`${key}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}

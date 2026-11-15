@@ -34,11 +34,8 @@ import {
   formatDueDate,
   joinFacts,
 } from '../services/push-copy';
-import {
-  localClock,
-  localDateKey,
-  shiftDateKey,
-} from '../services/local-clock';
+import { localClock, localDateKey } from '../services/local-clock';
+import { shiftDate } from '#domain/utils/last-year-comparison';
 import {
   buildChapterPalette,
   chapterPaletteColumns,
@@ -834,7 +831,7 @@ export class ScheduledJobsService {
           zones.get(invoice.user_id) ?? null,
         );
         if (todayKey === null) continue;
-        if (invoice.due_date > shiftDateKey(todayKey, DUE_SOON_LEAD_DAYS)) {
+        if (invoice.due_date > shiftDate(todayKey, DUE_SOON_LEAD_DAYS)) {
           continue;
         }
         if (invoice.due_date >= todayKey) {
@@ -893,8 +890,8 @@ export class ScheduledJobsService {
         );
         if (todayKey === null) continue;
         if (
-          task.due_date > shiftDateKey(todayKey, DUE_SOON_LEAD_DAYS) ||
-          task.due_date < shiftDateKey(todayKey, -OVERDUE_LOOKBACK_DAYS)
+          task.due_date > shiftDate(todayKey, DUE_SOON_LEAD_DAYS) ||
+          task.due_date < shiftDate(todayKey, -OVERDUE_LOOKBACK_DAYS)
         ) {
           continue;
         }
@@ -997,10 +994,10 @@ export class ScheduledJobsService {
     graceDays: number,
     todayKey: string,
   ): boolean {
-    const overdueKey = shiftDateKey(dueDate, graceDays);
+    const overdueKey = shiftDate(dueDate, graceDays);
     return (
       overdueKey < todayKey &&
-      overdueKey >= shiftDateKey(todayKey, -OVERDUE_LOOKBACK_DAYS)
+      overdueKey >= shiftDate(todayKey, -OVERDUE_LOOKBACK_DAYS)
     );
   }
 

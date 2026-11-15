@@ -807,6 +807,17 @@ describe('ScheduledJobsService', () => {
       );
     });
 
+    it('leaves an invoice due after tomorrow for a later morning', async () => {
+      findOpenInvoicesDueBetween.mockResolvedValue([
+        { ...INVOICE, due_date: '2026-08-07' },
+      ]);
+
+      const result = await service.sweepInvoiceReminders(MORNING);
+
+      expect(result).toEqual({ sent: 0 });
+      expect(claimDispatch).not.toHaveBeenCalled();
+    });
+
     it("waits for the member's morning", async () => {
       findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
 
@@ -1089,25 +1100,53 @@ describe('ScheduledJobsService', () => {
         );
       });
 
+      // Only a zone east of UTC+9 has a 9 AM-to-noon that falls on the
+      // previous UTC date, so Sydney (UTC+10 in August) is what tells "the
+      // member's date" apart from "the UTC date".
       it('reminds a member east of UTC by their date, a day ahead of UTC', async () => {
-        inZone('Asia/Tokyo');
+        inZone('Australia/Sydney');
         findIncompleteTasksDueBetween.mockResolvedValue([
           { ...TASK, due_date: TODAY },
         ]);
 
-        // 23:00 UTC on Aug 4 is 8 AM on Aug 5 in Tokyo: not yet.
+        // 22:00 UTC on Aug 4 is 8 AM on Aug 5 in Sydney: not yet.
         await expect(
-          service.sweepTaskReminders(new Date('2026-08-04T23:00:00Z')),
+          service.sweepTaskReminders(new Date('2026-08-04T22:00:00Z')),
         ).resolves.toEqual({ sent: 0 });
-        // 00:30 UTC is 9:30 AM there. UTC still reads Aug 4, but the task
-        // is due today for this member, not tomorrow.
+        // 23:30 UTC on Aug 4 is 9:30 AM on Aug 5 there. UTC still reads
+        // Aug 4, but the task is due today for this member, not tomorrow.
         await expect(
-          service.sweepTaskReminders(new Date('2026-08-05T00:30:00Z')),
+          service.sweepTaskReminders(new Date('2026-08-04T23:30:00Z')),
         ).resolves.toEqual({ sent: 1 });
         expect(notifyUser).toHaveBeenCalledWith(
           'user-1',
           'chap-1',
           expect.objectContaining({ title: 'Task due today' }),
+        );
+        expect(claimDispatch).toHaveBeenCalledWith(
+          'chap-1',
+          'TASK',
+          'task-1',
+          'DUE_SOON',
+          TODAY,
+        );
+      });
+
+      it("calls a task overdue by the member's date while UTC is still on the due date", async () => {
+        inZone('Australia/Sydney');
+        findIncompleteTasksDueBetween.mockResolvedValue([
+          { ...TASK, due_date: '2026-08-04' },
+        ]);
+
+        // 23:30 UTC on Aug 4 is 9:30 AM on Aug 5 in Sydney: Aug 4 has passed.
+        await service.sweepTaskReminders(new Date('2026-08-04T23:30:00Z'));
+
+        expect(claimDispatch).toHaveBeenCalledWith(
+          'chap-1',
+          'TASK',
+          'task-1',
+          'OVERDUE',
+          '2026-08-04',
         );
       });
 

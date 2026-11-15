@@ -498,6 +498,8 @@ A push is read on a lock screen, in a glance, next to iOS Calendar and Google Ca
 
 The due-soon and overdue reminders for a task due on a day (not at a time) and for an invoice ([`tasks.md`](tasks.md), [`billing.md`](billing.md)) go out in the recipient's own morning, from **9 AM up to noon** in the zone their pushes use: `user_settings.time_zone`, then `quiet_hours_tz`, then New York, as the birthday post does ([`members.md` § Profiles](members.md#profiles)). "Due today", "due tomorrow" and "overdue" are judged by the date in that zone. A task is timed by its assignee's zone; the assigner of an overdue task hears at the same moment. `ScheduledJobsService` runs both sweeps every hour, and the first tick inside a member's window sends; the dispatch claim keeps each reminder to one push, and the three-hour window lets a missed tick or a deploy still land it that morning (#4788, 2026-11-15; until then both ran at 09:00 UTC, before dawn for a chapter in the Americas, and "today" rolled over in the evening there). Quiet hours still apply on top.
 
+## Pre-Event Reminders
+
 `ScheduledJobsService.sweepEventReminders` runs every five minutes and pushes a NORMAL reminder for events starting inside `(now, now + 30min]`.
 
 **Who gets one.** The event's _required_ members, resolved by `AttendanceService.resolveRequiredMembers` — the same call the auto-absent sweep makes, deliberately shared rather than reimplemented:
