@@ -474,7 +474,7 @@ test("a stacked branch is still found after both it and the PR merged main", (t)
   assert.equal(readFileSync(join(work, NOTES), "utf8"), "one\ntwo, from part 3\nthree\nfour\nfive, from main\n");
 });
 
-test("conflicts where both sides only added lines are kept both, main's first, and committed", (t) => {
+test("conflicts where both sides only added lines are kept both, main's first, staged for reading", (t) => {
   const { seed, work } = setup(t);
   landOnMain(
     seed,
@@ -488,13 +488,20 @@ test("conflicts where both sides only added lines are kept both, main's first, a
   write(work, "README.md", "one\ntwo\nthree\nfrom branch\n");
   commitAll(work, "branch");
 
-  const result = run(work);
-
-  assert.equal(result.outcome, "merged");
-  assert.equal(inMerge(work), false);
+  // It stops so the session reads the kept-both file, as base sync leaves an
+  // auto-merge PR's keep-both to a person.
+  const first = run(work);
+  assert.equal(first.outcome, "conflicts");
+  assert.equal(inMerge(work), true);
+  assert.equal(git(work, "diff", "--name-only", "--diff-filter=U"), "");
   assert.equal(readFileSync(join(work, "README.md"), "utf8"), "one\ntwo\nthree\nfrom main\nfrom branch\n");
-  assert.match(result.output, /Kept both sides' added lines \(origin\/main's first\) in README\.md/);
-  assert.deepEqual(result.calls, { regenerate: 1, renumber: 1 });
+  assert.match(first.output, /Kept both sides' added lines \(origin\/main's first, then yours\)[^\n]*\n  README\.md/);
+  assert.doesNotMatch(first.output, /These files conflict/);
+
+  const done = run(work, { resume: true });
+  assert.equal(done.outcome, "merged");
+  assert.equal(inMerge(work), false);
+  assert.deepEqual(done.calls, { regenerate: 1, renumber: 1 });
 });
 
 test("a kept-both file is staged while a real conflict elsewhere still stops the merge", (t) => {
@@ -520,6 +527,7 @@ test("a kept-both file is staged while a real conflict elsewhere still stops the
   );
   assert.equal(git(work, "show", ":README.md"), "one\ntwo\nthree\nfrom main\nfrom branch");
   assert.doesNotMatch(result.output.split("These files conflict")[1], /README\.md/);
+  assert.match(result.output.split("These files conflict")[0], /\n  README\.md/);
 });
 
 test("both sides adding the same line is left for the session", (t) => {
@@ -532,5 +540,44 @@ test("both sides adding the same line is left for the session", (t) => {
 
   assert.equal(result.outcome, "conflicts");
   assert.deepEqual(git(work, "diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean), ["README.md"]);
+  assert.doesNotMatch(result.output, /Kept both/);
+});
+
+/** main and the branch each append a line to `file`, with `prepare` run first on both. */
+function bothAppend(t, file, { prepare = () => {}, encode = (text) => text } = {}) {
+  const { seed, work } = setup(t);
+  landOnMain(seed, (cwd) => { write(cwd, file, encode("one\ntwo\n")); prepare(cwd, "base"); }, "base for file");
+  git(work, "pull", "-q", "origin", "main");
+  landOnMain(seed, (cwd) => { write(cwd, file, encode("one\ntwo\nmain é\n")); prepare(cwd, "main"); }, "main");
+  write(work, file, encode("one\ntwo\nbranch é\n"));
+  prepare(work, "branch");
+  commitAll(work, "branch");
+  return { result: run(work), work };
+}
+
+const unmerged = (work) => git(work, "diff", "--name-only", "--diff-filter=U").split("\n").filter(Boolean);
+
+test("lockfiles and migrations are never kept-both, even when both sides only added lines", (t) => {
+  for (const file of ["package-lock.json", "supabase/migrations/20260101000000_x.sql"]) {
+    const { result, work } = bothAppend(t, file);
+    assert.equal(result.outcome, "conflicts", file);
+    assert.deepEqual(unmerged(work), [file]);
+    assert.doesNotMatch(result.output, /Kept both/, file);
+  }
+});
+
+test("a file that is not UTF-8 is left for the session", (t) => {
+  const { result, work } = bothAppend(t, "notes.txt", { encode: (text) => Buffer.from(text, "latin1") });
+  assert.equal(result.outcome, "conflicts");
+  assert.deepEqual(unmerged(work), ["notes.txt"]);
+  assert.doesNotMatch(result.output, /Kept both/);
+});
+
+test("a file whose mode changed on one side is left for the session", (t) => {
+  const { result, work } = bothAppend(t, "run.txt", {
+    prepare: (cwd, who) => chmodSync(join(cwd, "run.txt"), who === "branch" ? 0o755 : 0o644),
+  });
+  assert.equal(result.outcome, "conflicts");
+  assert.deepEqual(unmerged(work), ["run.txt"]);
   assert.doesNotMatch(result.output, /Kept both/);
 });

@@ -252,13 +252,16 @@ merged source. The script:
    never fast-forwards, so the commit has its real parents and the push stays a fast-forward;
 2. takes `main`'s side of a conflict in those two files;
 3. settles, file by file, every other conflicted file whose conflicts are all ones where both
-   sides only added lines: it keeps both, `main`'s first, by the same rules and code as the
-   [sweep's keep-both](#base-branch-sync-scriptscipr-base-syncmjs) (`mergeFile`), stages the file
-   and names it, for the session to read before pushing. A file with any other kind of conflict,
-   and lockfiles and migrations, are left as git left them. Replayed on the 43 merges of `main` into
-   PR branches from 2026-11-13 to 11-15, it settled 16 of the 59 conflicted files outside the
-   contract, and 5 of the 27 merges needed nothing more;
-4. stops if any file still conflicts and lists it. Resolve each, `git add` it, then run
+   sides only added lines: it keeps both, `main`'s first, with the
+   [sweep's keep-both](#base-branch-sync-scriptscipr-base-syncmjs) merge (`mergeFile`), and stages
+   the file. A file with any other kind of conflict, a lockfile, a migration, a file that isn't
+   UTF-8, or one whose mode differs between the three versions is left as git left them. The sweep
+   decides per PR and pushes; this decides per file and commits nothing. Replayed on the 43 merges
+   of `main` into PR branches from 2026-11-13 to 11-15 (all made by sessions, none by the sweep;
+   27 had a conflict outside the contract), it settled 16 of those 59 conflicted files, and 5 of
+   the 27 merges had nothing else left;
+4. stops if any file still conflicts or was kept-both, and lists each. The sweep leaves an
+   auto-merge PR's keep-both to a person, so the session reads every kept-both file too. Resolve each, `git add` it, then run
    `npm run merge:main -- --continue`, not `git commit`, or the contract stays `main`'s;
 5. regenerates the contract when both sides changed the API or the contract since they split
    (`isApiRelated` in `check-api-contract-drift.mjs` decides), conflict or not: two exports merged

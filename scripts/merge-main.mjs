@@ -17,9 +17,11 @@
 //   3. settles each other conflicted file whose every conflict is one where both
 //      sides only added lines, keeping both, main's first: the rule PR base sync
 //      applies on the server (scripts/ci/resolve-added-lines-conflict.mjs), but
-//      file by file, since a session is here to read the rest;
-//   4. stops there if any file still conflicts, for the session to resolve, then
-//      picks up again at `--continue`;
+//      file by file, and stages it without committing;
+//   4. stops there if any file still conflicts or was kept-both, for the session
+//      to resolve or read, then picks up again at `--continue`. Base sync
+//      refuses keep-both on an auto-merge PR so that a person reads it; stopping
+//      keeps that true here;
 //   5. regenerates the contract when both sides changed something it is built
 //      from (a clean textual merge of two exports is not an export either),
 //      running `npm ci` first if the merge changed the lockfile, and commits the
@@ -197,10 +199,11 @@ export function settleAddedLines(cwd, paths) {
     }
     const [base, ours, theirs] = ["1", "2", "3"].map((n) => stages.get(n));
     if (!base || !ours || !theirs) continue;
-    if (![base, ours, theirs].every((s) => PLAIN_FILE.test(s.mode)) || ours.mode !== theirs.mode) continue;
+    // One plain-file mode on all three: a mode change, a symlink or a submodule is the session's.
+    if (!PLAIN_FILE.test(base.mode) || base.mode !== ours.mode || ours.mode !== theirs.mode) continue;
     let texts;
     try {
-      const decoder = new TextDecoder("utf-8", { fatal: true });
+      const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }); // keep a BOM, as base sync does
       texts = [base, ours, theirs].map((s) =>
         decoder.decode(execFileSync("git", ["cat-file", "blob", s.sha], { cwd, maxBuffer: 64 * 1024 * 1024 })),
       );
@@ -385,15 +388,15 @@ export function mergeMain({
     }
     const settled = settleAddedLines(cwd, other);
     if (settled.length > 0) {
-      log(
-        `Kept both sides' added lines (${base}'s first) in ${settled.join(", ")}. ` +
-          "Read them before pushing: the order is main's, then yours.",
-      );
+      log(`\nKept both sides' added lines (${base}'s first, then yours) and staged them. Read each:`);
+      for (const f of settled) log(`  ${f}`);
     }
     const left = other.filter((f) => !settled.includes(f));
     if (left.length > 0) {
       log("\nThese files conflict. Resolve each and `git add` it:");
       for (const f of left) log(`  ${f}`);
+    }
+    if (other.length > 0) {
       log(
         `\nThen run \`${CONTINUE_HINT}\`, not \`git commit\`: it regenerates the API ` +
           "contract from the resolved source before committing.",
