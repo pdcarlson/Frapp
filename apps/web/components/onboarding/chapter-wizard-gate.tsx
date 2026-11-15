@@ -202,19 +202,6 @@ const ChapterWizardBoundary = catchError<{ onDismiss: () => void }>(
  * every paid-ops write 403s until checkout; the welcome message is still
  * seeded into #general and waiting). All writes go through the cold-path
  * onboarding endpoint — never the chat Edge Functions.
- *
- * **An account with an invite waiting goes to `/join`, not here (#5077).**
- * Zero memberships used to mean "starting a chapter", so a member invited by
- * email who signed in got "Set up your chapter" and had to find **I have an
- * invite** for themselves. Before opening, the gate reads
- * `GET /v1/invites/mine` (the invites emailed to the address Auth verified for
- * the account, `spec/behavior/onboarding.md`) and, when one is waiting, sends
- * the member to `/join`, which offers it as a one-tap Join. The wizard opens
- * only once that read says there is none, or fails (the wizard's own
- * **I have an invite** is still the way out then). `/join`'s **Create a
- * chapter** comes back marked (`isCreateChapterVisit`), and that visit skips
- * the read: the member chose to start a chapter, and sending them back to
- * `/join` would loop.
  */
 export function ChapterWizardGate() {
   const chaptersQuery = useAccessibleChapters();
@@ -237,6 +224,18 @@ export function ChapterWizardGate() {
   // owns its own lifecycle (the membership count flips to 1 mid-flow after the
   // chapter is created), so we never auto-close it from here.
   const hasNoChapters = chaptersQuery.isSuccess && memberships.length === 0;
+  // An account with an invite waiting goes to `/join`, not here (#5077).
+  // Zero memberships used to mean "starting a chapter", so a member invited
+  // by email who signed in got "Set up your chapter" and had to find **I have
+  // an invite** for themselves. Before opening, the gate reads
+  // `GET /v1/invites/mine` (the invites emailed to the address Auth verified
+  // for the account, `spec/behavior/onboarding.md`) and, when one is waiting,
+  // sends the member to `/join`, which offers it as a one-tap Join. The wizard
+  // opens only once that read says there is none, or fails (the wizard's own
+  // **I have an invite** is still the way out then). `/join`'s **Create a
+  // chapter** comes back marked (`isCreateChapterVisit`), and that visit skips
+  // the read: the member chose to start a chapter, and sending them back to
+  // `/join` would loop.
   const checkInvites = hasNoChapters && !choseCreate;
   const pendingInvites = usePendingInvites(checkInvites ? authUserId : null);
   const inviteWaiting =
