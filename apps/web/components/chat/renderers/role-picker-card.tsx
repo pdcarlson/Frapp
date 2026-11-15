@@ -167,13 +167,10 @@ export function RolePickerCard({ message, isConfirmed }: RolePickerCardProps) {
 
   return (
     <Card className={MESSAGE_CARD}>
-      <p className={cn(EYEBROW, "text-muted-foreground")}>Roles</p>
+      <p className={cn(EYEBROW, "text-muted-foreground")}>Role picker</p>
       <div className="mt-2 break-words text-base font-bold">
         {payload.title}
       </div>
-      <p className="mt-1 text-caption text-muted-foreground">
-        Each role adds its channels to Chat, and you can leave any time.
-      </p>
       {body}
     </Card>
   );

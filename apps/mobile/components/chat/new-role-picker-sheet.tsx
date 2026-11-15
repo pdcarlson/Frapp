@@ -7,6 +7,7 @@ import {
 } from "@gorhom/bottom-sheet";
 import {
   buildRolePickerMessage,
+  ROLE_PICKER_DEFAULT_TITLE,
   ROLE_PICKER_ROLES_MAX,
   ROLE_PICKER_TITLE_MAX_LENGTH,
   type RolePickerPayload,
@@ -227,7 +228,7 @@ export const NewRolePickerSheet = forwardRef<
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
             editable={!posting}
-            placeholder="Pick your roles"
+            placeholder={ROLE_PICKER_DEFAULT_TITLE}
             placeholderTextColor={tokens.color.text.muted}
             accessibilityLabel="Title, optional"
             maxLength={ROLE_PICKER_TITLE_MAX_LENGTH}
