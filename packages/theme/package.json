@@ -19,8 +19,10 @@
     "test": "vitest run",
     "test:cov": "vitest run --coverage"
   },
+  "dependencies": {
+    "@repo/color": "*"
+  },
   "devDependencies": {
-    "@repo/color": "*",
     "@repo/chapter-theme": "*",
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { normalizeHex } from "@repo/color";
 import { useCurrentChapter } from "@repo/hooks";
 import { orgHidingGreekLettersIn } from "@repo/org-archetypes";
 import { chapterTextMark } from "@repo/validation";
@@ -12,7 +13,8 @@ export type ChapterBranding = {
    * This is `--signet-accent-text` — step 11 of the generated scale — read
    * from the chapter's served palette, or Signet's house gold when the palette
    * lacks it (no chapter resolved yet, or a row inserted without a palette
-   * since the API's hourly sweep last ran).
+   * since the API's hourly sweep last ran) or holds something that is not a
+   * hex colour (#1640). Always `#RRGGBB`.
    */
   accent: string;
   /**
@@ -59,6 +61,23 @@ function readString(
 ): string | null {
   const value = source?.[key];
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * A palette colour as `#RRGGBB`, or null when the key holds anything else.
+ *
+ * `theme_palette` is a loosely-typed `jsonb` blob, so a key can hold a value
+ * that is not a colour, and its consumers would paint it as one: `tint()`
+ * would draw `rgba(NaN,NaN,NaN,…)` and a text colour would resolve to
+ * nothing, both with no error (#1640). Null sends the role to house gold, as
+ * a missing key does.
+ */
+function readHex(
+  source: Record<string, unknown> | undefined,
+  key: string,
+): string | null {
+  const value = readString(source, key);
+  return value ? normalizeHex(value) || null : null;
 }
 
 /**
@@ -154,14 +173,14 @@ export function useChapterBranding(): ChapterBranding {
         : storedBranding,
     )?.text ?? null;
   const palette = data?.theme_palette;
-  const generatedAccent = readString(palette, "--signet-accent-text");
-  const generatedAccentPrimary = readString(palette, "--signet-accent-primary");
-  const generatedAccentOnPrimary = readString(
+  const generatedAccent = readHex(palette, "--signet-accent-text");
+  const generatedAccentPrimary = readHex(palette, "--signet-accent-primary");
+  const generatedAccentOnPrimary = readHex(
     palette,
     "--signet-accent-on-primary",
   );
-  const generatedSubtle = readString(palette, "--signet-accent-subtle-bg");
-  const generatedBorder = readString(palette, "--signet-accent-border");
+  const generatedSubtle = readHex(palette, "--signet-accent-subtle-bg");
+  const generatedBorder = readHex(palette, "--signet-accent-border");
   // The pair is drawn under `accent` text, so it is the chapter's only when
   // that text is too: house gold text never lands on a chapter tint. The one
   // mix left, chapter text on the Ask fill, needs a palette holding step 11
