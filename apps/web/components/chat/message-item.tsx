@@ -71,10 +71,8 @@ import {
   type MemberLookup,
 } from "@repo/chat-core/message-actions";
 import { MessageRenderer } from "./renderers";
-import {
-  InlineMessageEditor,
-  type InlineMessageEditorHandle,
-} from "./inline-message-editor";
+import type { InlineMessageEditorHandle } from "./inline-message-editor";
+import { InlineMessageEditor } from "./deferred-panels";
 import { MentionOpenerContext } from "./renderers/message-markdown";
 import {
   authorProfileUserId,

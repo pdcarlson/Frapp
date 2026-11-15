@@ -21,6 +21,18 @@ const DEFERRED = [
   "@/components/events/event-editor-dialog",
   "@/components/members/member-detail-sheet",
   "./thread-panel",
+  // Tiptap and ProseMirror (#5050): the composer, and the edit box a message
+  // row opens.
+  "./composer",
+  "./inline-message-editor",
+];
+
+/** The modules on every dashboard route that used to load those statically. */
+const STATIC_IMPORTERS = [
+  "chat-shell.tsx",
+  "message-item.tsx",
+  "chat-drop-target.tsx",
+  "chat-route-skeleton.tsx",
 ];
 
 function resolve(specifier: string): string {
@@ -30,12 +42,11 @@ function resolve(specifier: string): string {
   return path.replace(/\.(tsx?|jsx?)$/, "").replace(/\/index$/, "");
 }
 
-const shell = readFileSync(join(__dirname, "chat-shell.tsx"), "utf8");
-const statements = [
-  ...shell.matchAll(
+const statements = STATIC_IMPORTERS.flatMap((file) => [
+  ...readFileSync(join(__dirname, file), "utf8").matchAll(
     /^(import|export)\s+(type\s+)?[^;]*?from\s+["']([^"']+)["'];/gms,
   ),
-].map((m) => ({
+]).map((m) => ({
   keyword: m[1],
   typeOnly: Boolean(m[2]),
   target: resolve(m[3] ?? ""),

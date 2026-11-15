@@ -111,20 +111,22 @@ const { captureException } = vi.hoisted(() => ({
 }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 import {
+  Composer,
+  composerPlaceholder,
+  runDispatch,
+  slashModuleRefusal,
+  uploadFailureDescription,
+} from "./composer";
+import {
   COMPOSER_BOX_CLASS,
   COMPOSER_INPUT_CLASS,
   COMPOSER_TOOLBAR_CLASS,
   COMPOSER_WELL_CLASS,
   CHAT_FILE_LIMIT,
-  Composer,
   ComposerShell,
-  composerPlaceholder,
   notifyDispatchOutcome,
-  runDispatch,
-  slashModuleRefusal,
-  uploadFailureDescription,
   type CommandFormOutcome,
-} from "./composer";
+} from "./composer-shell";
 import { composerMentionPicks } from "./chat-editor";
 import { UNAVAILABLE_QUOTE } from "./reply-quote";
 import { ChatDropTarget } from "./chat-drop-target";

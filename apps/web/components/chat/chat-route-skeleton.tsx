@@ -6,7 +6,7 @@ import {
   COMPOSER_BOX_CLASS,
   COMPOSER_TOOLBAR_CLASS,
   COMPOSER_WELL_CLASS,
-} from "@/components/chat/composer";
+} from "@/components/chat/composer-shell";
 
 /**
  * The chat panel before its `Suspense` boundary resolves (`chat-page.tsx`).

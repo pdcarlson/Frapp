@@ -177,11 +177,10 @@ import {
   type MessageTimelineHandle,
 } from "./message-timeline";
 import {
-  Composer,
   ComposerShell,
   notifyDispatchOutcome,
   type CommandFormOutcome,
-} from "./composer";
+} from "./composer-shell";
 import { ScheduledMessagesBar } from "./schedule-send";
 import {
   canBlockSender,
@@ -257,6 +256,7 @@ import {
 import { emptySignupDraft, type SignupDraft } from "@repo/chat-core/signups";
 import { eventQuickDraftFrom, type EventQuickDraft } from "./event-quick-draft";
 import {
+  Composer,
   EventEditorDialog,
   EventQuickForm,
   FormBuilder,
@@ -265,6 +265,7 @@ import {
   PointsAdjustmentForm,
   PollForm,
   preloadChatPanels,
+  preloadComposer,
   SignupForm,
   TaskForm,
   ThreadPanel,
@@ -1447,7 +1448,10 @@ export function ChatShell({
   const [profileOpen, setProfileOpen] = useState(false);
   // The dialogs and forms above load on first open; fetch them once the
   // page is idle so that first open rarely waits (#3716).
+  // The composer's editor is wanted sooner, as soon as there is a channel,
+  // so its fetch starts now (#5050).
   useEffect(() => {
+    preloadComposer();
     afterFirstPaint(preloadChatPanels);
   }, []);
   const openProfile = useCallback((memberUserId: string) => {
@@ -4058,6 +4062,11 @@ export function ChatShell({
             // never during render, and it answers `true` at most once — see
             // `claimShellFocus` above and `Composer`'s own prop doc.
             claimShellFocus={claimShellFocus}
+            // The same ref, for the shell that stands in while the editor's
+            // code loads (#5050).
+            onShellFocusChange={(focused) => {
+              shellFocus.current = focused;
+            }}
             dropAttachRef={dropAttachRef}
             channelId={activeChannel.id}
             channelName={activeChannelName}

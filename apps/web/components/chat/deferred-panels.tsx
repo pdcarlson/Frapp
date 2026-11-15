@@ -1,12 +1,22 @@
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
-import { lazy, Suspense, useEffect, useState, type ComponentType } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useState,
+  type ComponentPropsWithRef,
+  type ComponentType,
+} from "react";
 import { createReportOnce } from "@repo/observability";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
 import { isChunkLoadError } from "@/lib/chunk-load-error";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
+import type { ComposerProps } from "./composer";
+import { ComposerShell } from "./composer-shell";
+import type { InlineMessageEditor as InlineMessageEditorComponent } from "./inline-message-editor";
 
 /*
  * The chat shell's dialogs, sheets and + card forms, kept out of the
@@ -115,12 +125,23 @@ type DialogProps = {
 /**
  * A panel whose code loads on first render, with a fresh attempt after a
  * failure. A `dialog` loads only while open, so a closed dialog whose load
- * failed doesn't keep retrying behind the scenes.
+ * failed doesn't keep retrying behind the scenes. `Fallback`, given the same
+ * props, draws while the code loads (nothing draws otherwise).
  */
+/**
+ * A deferred panel, plus `adopt`, which hands it code a preload already
+ * fetched: an instance mounted after that draws it straight away, with no
+ * Suspense pass (React holds a revealed fallback for 300 ms).
+ */
+export type DeferredPanel<P extends object> = ComponentType<P> & {
+  adopt: (Component: ComponentType<P>) => void;
+};
+
 export function deferredPanel<P extends object>(
   load: () => Promise<ComponentType<P>>,
   kind: "slot" | "dialog",
-): ComponentType<P> {
+  Fallback?: ComponentType<P>,
+): DeferredPanel<P> {
   let loaded: ComponentType<P> | null = null;
 
   function Attempt({ props, retry }: { props: P; retry: () => void }) {
@@ -147,7 +168,7 @@ export function deferredPanel<P extends object>(
       }),
     );
     return (
-      <Suspense fallback={null}>
+      <Suspense fallback={Fallback ? <Fallback {...props} /> : null}>
         <Lazy {...props} />
       </Suspense>
     );
@@ -180,7 +201,11 @@ export function deferredPanel<P extends object>(
       />
     );
   }
-  return DeferredPanel;
+  return Object.assign(DeferredPanel, {
+    adopt: (Component: ComponentType<P>) => {
+      loaded ??= Component;
+    },
+  });
 }
 
 export const PollForm = deferredPanel(
@@ -234,6 +259,65 @@ export const MemberDetailSheet = deferredPanel(
   "dialog",
 );
 
+/** The chat composer's props, plus the one its loading stand-in reads. */
+export type DeferredComposerProps = ComposerProps & {
+  /** Focus entering or leaving the stand-in, for `claimShellFocus`. */
+  onShellFocusChange?: (focused: boolean) => void;
+};
+
+/**
+ * What the composer draws while its code loads (#5050): `ComposerShell`, the
+ * same textarea a cold open shows before the channel list answers. It takes
+ * focus and text from the first frame; every keystroke goes to the channel's
+ * draft, which the editor is built from when it mounts, and `claimShellFocus`
+ * carries the caret across, at the end of the text. A member who can't post
+ * here gets nothing until the composer's own explanation loads, rather than a
+ * box that takes text it can never send.
+ */
+function ComposerLoading(props: DeferredComposerProps) {
+  const canPost = props.isAuditLog
+    ? false
+    : (props.canPost ?? !props.isReadOnly);
+  if (!canPost) return null;
+  return (
+    <ComposerShell
+      defaultValue={props.draft}
+      onTextChange={props.onChangeDraft}
+      onFocusChange={props.onShellFocusChange}
+      hint="Still opening the composer. You can keep typing."
+    />
+  );
+}
+
+/**
+ * The composer, with Tiptap and ProseMirror (about 95 KB gzipped) out of every
+ * dashboard route's first download (#5050). Chat is a panel of the shell on
+ * every route, so its editor used to be in what a cold open fetched before
+ * anything worked.
+ */
+export const Composer = deferredComposer(() =>
+  import("./composer").then((m) => m.Composer),
+);
+
+/** `Composer`'s construction, apart so a spec can hold the load. */
+export function deferredComposer(
+  load: () => Promise<ComponentType<DeferredComposerProps>>,
+): DeferredPanel<DeferredComposerProps> {
+  return deferredPanel(load, "slot", ComposerLoading);
+}
+
+/**
+ * A message's in-place edit box (#5050), the composer's rich editor too. It
+ * draws only once a member clicks Edit, which is after the preload below on
+ * all but the slowest opens; until then the row shows nothing in its place.
+ */
+export const InlineMessageEditor = deferredPanel<
+  ComponentPropsWithRef<typeof InlineMessageEditorComponent>
+>(
+  () => import("./inline-message-editor").then((m) => m.InlineMessageEditor),
+  "slot",
+);
+
 /**
  * Fetches every panel above, so the first click on one doesn't wait. A failed
  * preload costs nothing: it never touches a panel's own lazy, so the panel's
@@ -251,6 +335,22 @@ export function preloadChatPanels(): void {
     import("./thread-panel"),
     import("@/components/events/event-editor-dialog"),
     import("@/components/members/member-detail-sheet"),
+    import("./inline-message-editor"),
   ];
   for (const load of loads) load.catch(() => undefined);
+  preloadComposer();
+}
+
+/**
+ * Starts the composer's chunk (#5050). The chat shell calls it as it mounts,
+ * not after first paint like the panels: it mounts only where chat is on
+ * screen, and there the editor is wanted as soon as the channel is. Waiting
+ * for `<Composer>` to mount would fetch it only after the channel list
+ * answers, a round trip later (Slow 4G measured it 1.2 s later than when it
+ * was in the first download). The shell takes typing meanwhile either way.
+ */
+export function preloadComposer(): void {
+  import("./composer")
+    .then((m) => Composer.adopt(m.Composer))
+    .catch(() => undefined);
 }

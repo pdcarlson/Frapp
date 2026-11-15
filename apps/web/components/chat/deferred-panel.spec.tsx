@@ -1,13 +1,36 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 const toast = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }));
 
-const { deferredPanel } = await import("./deferred-panels");
+const { deferredComposer, deferredPanel } = await import("./deferred-panels");
+type ComposerProps = import("./deferred-panels").DeferredComposerProps;
+
+/** Stands in for `./composer`'s editor: what it was handed. */
+function FakeEditor({ draft, claimShellFocus }: ComposerProps) {
+  const [focus] = useState(() => claimShellFocus?.());
+  return (
+    <p data-testid="editor" data-focus={String(focus)}>
+      {draft}
+    </p>
+  );
+}
+
+/** Every prop the composer requires, none of which the stand-in reads. */
+const composerProps = {
+  channelId: "c1",
+  channelName: "general",
+  isReadOnly: false,
+  isModuleEnabled: () => true,
+  draft: "",
+  onChangeDraft: () => undefined,
+  onSend: async () => ({ ok: true }),
+  onTyping: () => undefined,
+} as unknown as ComposerProps;
 
 function chunkError(): Error {
   const error = new Error("Failed to load chunk /_next/static/chunks/x.js");
@@ -108,5 +131,58 @@ describe("deferredPanel (#3716)", () => {
     });
     expect(await screen.findByText("dialog open")).toBeInTheDocument();
     expect(load).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("deferred Composer (#5050)", () => {
+  it("draws code a preload adopted on the first render, with no fallback", () => {
+    const Composer = deferredComposer(() => new Promise(() => undefined));
+    Composer.adopt(FakeEditor);
+    render(<Composer {...composerProps} draft="kept" />);
+    expect(screen.getByTestId("editor")).toHaveTextContent("kept");
+  });
+
+  it("takes focus and text in the shell, and hands both to the editor when it arrives", async () => {
+    let arrive: (editor: typeof FakeEditor) => void = () => undefined;
+    const Composer = deferredComposer(
+      () => new Promise((resolve) => (arrive = resolve)),
+    );
+    function Host() {
+      const [draft, setDraft] = useState("");
+      const focused = useRef(false);
+      return (
+        <Composer
+          {...composerProps}
+          draft={draft}
+          onChangeDraft={setDraft}
+          onShellFocusChange={(on) => {
+            focused.current = on;
+          }}
+          claimShellFocus={() => focused.current}
+        />
+      );
+    }
+    render(<Host />);
+    const shell = screen.getByRole("textbox", { name: "Message composer" });
+    await userEvent.type(shell, "hello there");
+    await userEvent.keyboard("{Enter}");
+    expect(
+      screen.getByText("Still opening the composer. You can keep typing."),
+    ).toBeVisible();
+
+    await act(async () => arrive(FakeEditor));
+    const editor = await screen.findByTestId("editor");
+    expect(editor).toHaveTextContent("hello there");
+    expect(editor).toHaveAttribute("data-focus", "true");
+  });
+
+  it("draws nothing while loading where the member can't post", () => {
+    const Composer = deferredComposer(() => new Promise(() => undefined));
+    const { container, rerender } = render(
+      <Composer {...composerProps} isReadOnly />,
+    );
+    expect(container).toBeEmptyDOMElement();
+    rerender(<Composer {...composerProps} isAuditLog />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

@@ -120,6 +120,34 @@ regardless, statically bundled. `scripts/demo/measure-slow-network.mjs` reports 
 screen became usable under throttling; its `js` column is everything fetched by then plus 1.5 s,
 idle-time chunks included, so it is not this before-hydration figure.
 
+As of the editor split ([#5050](https://github.com/pdcarlson/Frapp/issues/5050), 2026-11-15),
+measured the same way on one tree either side of the change (the "before" is the #3716 tree above):
+
+| | Entry JS — before | after | Gzipped — before | after |
+|---|---|---|---|---|
+| Shell floor (every dashboard route) | 2,486.6 KB | 2,037.9 KB | 776.1 KB | 632.5 KB |
+| `/settings` | 2,842.1 KB | 2,393.5 KB | 878.0 KB | 734.4 KB |
+
+The composer (`composer.tsx`, its Tiptap and ProseMirror, and the pickers, + card and schedule
+controls only it imports) and a message's in-place edit box now load from
+[`deferred-panels.tsx`](../../../apps/web/components/chat/deferred-panels.tsx). That is more than
+the ~320 KB of `@tiptap` and `prosemirror-*` alone, because everything only the composer imported
+went with it. No dashboard route's `entryJSFiles` holds either library now. The chat shell starts
+the composer's chunk as it mounts (it mounts only where chat is on screen), and `ComposerShell`
+stands in, taking focus and text, until it arrives. Cold and warm opens of chat on Slow 4G
+(`measure-slow-network.mjs`, one run each, local stack):
+
+| Slow 4G, ms from navigation | before | after |
+|---|---|---|
+| Chat home, cold: ready / editor ready | 10,353 / 8,894 | 9,818 / 9,074 |
+| Chat home, warm: ready / editor ready | 1,083 / 964 | 1,075 / 941 |
+| A channel, cold: ready / editor ready | 10,780 / 8,884 | 9,583 / 8,930 |
+| A channel, warm: ready / editor ready | 1,072 / 872 | 1,165 / 990 |
+
+Editor ready holds within run-to-run noise; the screen is ready about half a second sooner cold,
+because less JavaScript stands before hydration. A first try that fetched the editor only when
+`<Composer>` mounted put it a round trip behind the channel list: editor ready 10,135 ms cold.
+
 Earlier rows, for the trend: as of [#2175](https://github.com/pdcarlson/Frapp/issues/2175) the floor
 was 909 KB / 247 KB and `/chat` 1,733 KB / 501 KB; as of
 [#2145](https://github.com/pdcarlson/Frapp/issues/2145) the floor was 898 KB / 242 KB. #2175 put the
@@ -171,7 +199,9 @@ Tiptap's timing is kept under its own name rather than dropped: the ~830 KB of i
 carries ([Bundle size](#bundle-size), above) is mostly that editor, and the shell's number is blind
 to it by design. *(Corrected 2026-11-15: that chunk is on every route's floor since
 [#3779](https://github.com/pdcarlson/Frapp/issues/3779), not `/chat`'s own; moving the editor off the
-first download is [#5050](https://github.com/pdcarlson/Frapp/issues/5050).)*
+first download is [#5050](https://github.com/pdcarlson/Frapp/issues/5050).)* *(Corrected again
+2026-11-15: #5050 moved it. The editor loads behind `ComposerShell`, which stands in for it until
+its chunk arrives, so the gap between the two marks now includes that download.)*
 
 Three things the split makes true, none of them visible from the number alone:
 
@@ -186,7 +216,9 @@ Three things the split makes true, none of them visible from the number alone:
   back-date to and the mark is stamped at emission — i.e. it carries Tiptap's construction time
   under the shell's name. That is a client-side navigation into `/chat` from another dashboard
   route, where the channel list may already be cached and `<Composer>` mounts with no loading state
-  before it. So a rise in this number can mean the navigation mix changed rather than that the
+  before it, unless the editor's chunk has not arrived yet: then the shell stands in for it
+  ([#5050](https://github.com/pdcarlson/Frapp/issues/5050)) and the mark is back-dated to the shell.
+  So a rise in this number can mean the navigation mix changed rather than that the
   shell got slower; `composer-editor-ready` is what separates the two.
 
 They need no reporting code. `apps/web` adds `userTimingIntegration` to the SDK's default
