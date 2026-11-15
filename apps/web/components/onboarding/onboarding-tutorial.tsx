@@ -183,7 +183,7 @@ function withRolesStep(roles: readonly PickableRole[]): Step[] {
  * (`chapter.service.ts`), so the tour never fires for the person the wizard
  * just redirected. It fires for a member whose flag is false and who reaches
  * Plan and billing: an invited member, or a founder who chose "Replay tutorial" in
- * Profile (`profile-panel.tsx` sets the flag back to false). This guard is
+ * Settings → Account (`account-section.tsx` sets the flag back to false). This guard is
  * therefore defensive rather than a fix for a live first-run bug — worth
  * stating, because a comment claiming the founder case would send the next
  * reader looking for behaviour that cannot occur.

@@ -301,6 +301,15 @@ describe("leaving the tour (#5079)", () => {
     );
   });
 
+  it("says where to replay it when Escape ends it early, too", async () => {
+    render(<OnboardingTutorial />);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Tour skipped" }),
+    );
+  });
+
   it("says nothing extra on Finish", async () => {
     render(<OnboardingTutorial />);
     for (let i = 0; i < 8; i++) {

@@ -207,9 +207,9 @@ function JoinPageContent() {
     skipCandidate && sessionState === "ready" && skipDecision === "undecided";
   const [joiningToken, setJoiningToken] = useState<string | null>(null);
   const [offerError, setOfferError] = useState<string | null>(null);
-  // With an emailed invite on offer, its Join is the page's one Join button
-  // (#5076): the paste field and its own Join chapter wait behind "Have a
-  // different invite?" instead of drawing a second Join under the first.
+  // With an emailed invite on offer, the invite card's Join is the one to
+  // press (#5076): the paste field and its own Join chapter wait behind "Have
+  // a different invite?" instead of drawing a second Join under the card's.
   const [pasteOpen, setPasteOpen] = useState(false);
   // Held for the whole join, not just the API call: `selectChapter` and the
   // navigation run after the mutation settles, and a second Join in that
@@ -380,7 +380,14 @@ function JoinPageContent() {
     />
   ) : null;
   const hasOffers = offers.length > 0;
-  const showPasteForm = !hasOffers || pasteOpen;
+  // A field already in use stays: typed into, or showing a redeem's error
+  // that a refetch of the invites must not fold away.
+  const showPasteForm =
+    !hasOffers || pasteOpen || editedToken !== null || redeemError !== null;
+  // Held while the emailed invites are read, so the field never shows and
+  // then folds away under a member already typing in it, taking a redeem
+  // error with it. A link brings its own invite, so that visit doesn't wait.
+  const awaitingOffers = !initialToken && pendingInvites.isLoading;
 
   if (phone !== null && offerApp) {
     return (
@@ -459,7 +466,9 @@ function JoinPageContent() {
               {`You're already in ${openChatMembership.chapter?.name ?? "a chapter"}`}
             </p>
             <p className="text-xs text-muted-foreground">
-              Have an invite to another chapter? Use it below.
+              {hasOffers
+                ? "Your invite to another chapter is below."
+                : "Have an invite to another chapter? Use it below."}
             </p>
           </div>
           <Button
@@ -517,7 +526,13 @@ function JoinPageContent() {
               type="button"
               variant="link"
               className="self-start px-0"
-              onClick={() => setPasteOpen(true)}
+              onClick={() => {
+                setPasteOpen(true);
+                // The link unmounts itself; focus moves to the field it opened.
+                requestAnimationFrame(() =>
+                  document.getElementById("invite-token")?.focus(),
+                );
+              }}
               disabled={busy || otherAccount.signingOut}
             >
               Have a different invite?
@@ -525,7 +540,12 @@ function JoinPageContent() {
           )}
         </section>
       ) : null}
-      {showPasteForm ? (
+      {awaitingOffers ? (
+        <div role="status" aria-busy="true" aria-live="polite">
+          <span className="sr-only">Checking for your invites…</span>
+          <SkeletonText lines={3} />
+        </div>
+      ) : showPasteForm ? (
         <form className="flex flex-col gap-4" onSubmit={handleRedeem}>
           <div className="space-y-1.5">
             <Label htmlFor="invite-token">Invite</Label>
@@ -567,7 +587,7 @@ function JoinPageContent() {
         </form>
       ) : null}
 
-      {showPasteForm ? (
+      {showPasteForm && !awaitingOffers ? (
         <div className="mt-6">
           <AuthNote glyph={<LinkGlyph className="h-5 w-5" />}>
             Got an invite link? Paste it here, or open it and this page fills

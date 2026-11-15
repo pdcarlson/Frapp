@@ -603,7 +603,7 @@ function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const ui = (
     <QueryClientProvider client={queryClient}>
       <FrappClientProvider
         client={
@@ -615,8 +615,9 @@ function renderPage() {
       >
         <JoinPage />
       </FrappClientProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  return { ...render(ui), ui };
 }
 
 const OFFER = {
@@ -877,8 +878,22 @@ describe("web join — Already in a chapter? (replaced /new-account)", () => {
     pending.isLoading = true;
     pending.data = undefined as never;
     renderPage();
-    await screen.findByLabelText("Invite");
+    await screen.findByText("Checking for your invites…");
     expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("holds the field until the emailed invites are read, so it never folds away mid-paste (#5076)", async () => {
+    pending.isLoading = true;
+    pending.data = undefined as never;
+    const view = renderPage();
+    await screen.findByText("Checking for your invites…");
+    expect(screen.queryByLabelText("Invite")).toBeNull();
+
+    pending.isLoading = false;
+    pending.data = [OFFER];
+    view.rerender(view.ui);
+    await screen.findByRole("button", { name: "Join Sigma Chi Alpha" });
+    expect(screen.queryByLabelText("Invite")).toBeNull();
   });
 });
 
