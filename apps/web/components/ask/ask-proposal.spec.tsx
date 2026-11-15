@@ -48,7 +48,7 @@ vi.mock("@/components/ai/report-ai", () => ({
 }));
 
 // The form itself has its own spec (`event-editor-dialog.spec.tsx`).
-vi.mock("@/components/chat/deferred-panels", () => ({
+vi.mock("@/components/events/event-editor-dialog", () => ({
   EventEditorDialog: (props: NonNullable<typeof state.eventForm>) => {
     state.eventForm = props;
     return null;

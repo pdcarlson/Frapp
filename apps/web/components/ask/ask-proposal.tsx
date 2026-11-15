@@ -43,8 +43,8 @@ import {
   DueDateField,
   dueEntryPassed,
 } from "@/components/tasks/due-date-field";
-import { EventEditorDialog } from "@/components/chat/deferred-panels";
-import { isoToLocalInput } from "@/components/events/event-editor-dialog";
+import { deferredPanel } from "@/components/shared/deferred-panel";
+import { isoToLocalInput } from "@/components/events/local-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -93,6 +93,20 @@ import { cn } from "@/lib/utils";
 type Member = NonNullable<ReturnType<typeof useMembers>["data"]>[number];
 
 /** Where a confirmed change can be seen, by the page the card named. */
+/**
+ * The full event form an event card's Edit opens, loaded on first open: Ask
+ * is drawn on every dashboard route, and the form is a large download. Not the
+ * chat shell's own deferred copy, which would import the shell's panels and
+ * make a cycle back to Ask.
+ */
+const EventEditorDialog = deferredPanel(
+  () =>
+    import("@/components/events/event-editor-dialog").then(
+      (m) => m.EventEditorDialog,
+    ),
+  "dialog",
+);
+
 const RESULT_LINKS: Record<string, { href: string; label: string }> = {
   points: { href: "/points", label: ACT_COPY.open_points },
   tasks: { href: "/tasks", label: ACT_COPY.open_tasks },

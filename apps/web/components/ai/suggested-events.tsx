@@ -15,7 +15,7 @@ import {
 import { LAST_YEAR_COPY, lastYearEventLine } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/shared/section-label";
-import { isoToLocalInput } from "@/components/events/event-editor-dialog";
+import { isoToLocalInput } from "@/components/events/local-input";
 import {
   lastYearDay,
   nameForThisYear,

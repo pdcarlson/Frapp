@@ -7,7 +7,7 @@ const toast = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 vi.mock("@sentry/nextjs", () => ({ captureException: vi.fn() }));
 
-const { deferredPanel } = await import("./deferred-panels");
+const { deferredPanel } = await import("@/components/shared/deferred-panel");
 
 function chunkError(): Error {
   const error = new Error("Failed to load chunk /_next/static/chunks/x.js");

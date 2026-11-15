@@ -97,6 +97,7 @@ import {
   parseGuardedInt,
 } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
+import { isoToLocalInput } from "@/components/events/local-input";
 import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
   eventCardOutcomeCopy,
@@ -107,13 +108,6 @@ type EventRecord = Record<string, unknown>;
 
 const textOf = (value: unknown): string | null =>
   typeof value === "string" ? value : null;
-
-export function isoToLocalInput(value: unknown): string {
-  const date = parseInstant(value);
-  if (!date) return "";
-  const timezoneOffset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 16);
-}
 
 function localInputToIso(value: string): string {
   // The editor holds a day and a time apart; either may still be empty.
