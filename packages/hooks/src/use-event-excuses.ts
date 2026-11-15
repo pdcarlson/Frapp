@@ -104,7 +104,10 @@ function useExcuseWrite<V extends { eventId: string }, R>(
     mutationFn: write,
     onSuccess: (_data, { eventId }) => refresh(eventId),
     onError: (error, { eventId }) => {
-      if (statusOf(error) === 409) void refresh(eventId);
+      // 409: decided or moved on meanwhile. 404: withdrawn, which deletes
+      // the row. Either way the cached list is stale.
+      const status = statusOf(error);
+      if (status === 409 || status === 404) void refresh(eventId);
     },
   });
 }
