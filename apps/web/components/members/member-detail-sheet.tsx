@@ -220,11 +220,12 @@ function toggleSelection(
 }
 
 /**
- * A member's profile: one sheet for every door on web (#3726). The
- * directory's Actives and Alumni rows, and in chat a sender's name or photo,
- * an `@` chip that names one member, and a row of the channel's member list
- * all open it, keyed by `users.id`, so a member sees the same card wherever
- * they click a name. Mobile's sheet
+ * A member's profile: one sheet for every door on web (#3726), keyed by
+ * `users.id`, so a member sees the same card wherever they click a name. The
+ * directory's Actives and Alumni rows open it directly. In chat a sender's
+ * name or photo, an `@` chip and a member-list row open the small
+ * `MemberPopout` beside them first, and this sheet is its View profile
+ * (#4593). Mobile's sheet
  * (`apps/mobile/components/directory/member-detail-sheet.tsx`) is the
  * reference, and this draws its order: photo, name and the class-year line,
  * Message, then how to reach them (phone, email) with member since, roles as

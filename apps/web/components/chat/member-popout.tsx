@@ -37,12 +37,14 @@ const POPOUT_ROLE_LIMIT = 4;
  * never jumps to the corner of the window.
  */
 export function anchorFor(element: HTMLElement): {
-  element: HTMLElement;
+  contextElement: HTMLElement;
   getBoundingClientRect: () => DOMRect;
 } {
   let last = element.getBoundingClientRect();
   return {
-    element,
+    // floating-ui's name for the node behind a virtual reference: it is how
+    // the popout learns which scroll container and box to follow.
+    contextElement: element,
     getBoundingClientRect: () => {
       if (element.isConnected) last = element.getBoundingClientRect();
       return last;
@@ -60,7 +62,8 @@ function refocusOpener(
   const active = document.activeElement;
   const stranded =
     !active || active === document.body || !!popout?.contains(active);
-  if (stranded && anchor?.element.isConnected) anchor.element.focus();
+  if (stranded && anchor?.contextElement.isConnected)
+    anchor.contextElement.focus();
 }
 
 /**
@@ -89,6 +92,7 @@ export function MemberPopout({
   onOpenChange,
   identity,
   onViewProfile,
+  side = "right",
 }: {
   userId: string | null;
   anchor: MemberPopoutAnchor | null;
@@ -97,6 +101,8 @@ export function MemberPopout({
   /** The roster's name and photo, drawn until the profile read lands. */
   identity: { name: string | null; avatarUrl: string | null } | null;
   onViewProfile: (userId: string) => void;
+  /** Which side of the anchor it opens on; it flips when there is no room. */
+  side?: "left" | "right";
 }) {
   const memberQuery = useMemberByUserId(userId ?? "");
   const rolesQuery = useRoles();
@@ -137,7 +143,7 @@ export function MemberPopout({
     <Popover open={open && !!userId && !!anchor} onOpenChange={onOpenChange}>
       {anchor ? <PopoverAnchor virtualRef={{ current: anchor }} /> : null}
       <PopoverContent
-        side="right"
+        side={side}
         align="start"
         sideOffset={8}
         collisionPadding={16}
@@ -210,7 +216,8 @@ export function MemberPopout({
             className="flex-1"
             onClick={() => {
               if (!userId) return;
-              if (anchor?.element.isConnected) anchor.element.focus();
+              if (anchor?.contextElement.isConnected)
+                anchor.contextElement.focus();
               onOpenChange(false);
               onViewProfile(userId);
             }}

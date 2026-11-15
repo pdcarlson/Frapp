@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -146,6 +147,35 @@ describe("MemberPopout", () => {
     // Focus is on the name before the sheet opens, so the sheet's close
     // returns there.
     expect(document.activeElement).toBe(opener);
+  });
+
+  it("puts focus back on the name that opened it when it closes", async () => {
+    const opener = document.createElement("button");
+    opener.textContent = "Jane Smith";
+    document.body.appendChild(opener);
+    openers.push(opener);
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <MemberPopout
+          userId="u1"
+          anchor={anchorFor(opener)}
+          open={open}
+          onOpenChange={setOpen}
+          identity={null}
+          onViewProfile={() => {}}
+        />
+      );
+    }
+    render(<Harness />);
+    await waitFor(() =>
+      expect(screen.getByRole("dialog")).toContainElement(
+        document.activeElement as HTMLElement,
+      ),
+    );
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(opener).toHaveFocus();
   });
 
   it("closes on Escape", async () => {

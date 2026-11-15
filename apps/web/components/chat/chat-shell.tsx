@@ -1456,29 +1456,30 @@ export function ChatShell({
     },
     [blockState, userId],
   );
-  // Whose profile is open (#3726): a row of the member list, or a popout's
-  // View profile, opens the directory's own sheet by `users.id`, as mobile's
-  // thread does. The id outlives the close so the sheet keeps its member
-  // through its exit animation instead of blanking.
+  // Whose full profile is open (#3726): a popout's View profile opens the
+  // directory's own sheet by `users.id`. The id outlives the close so the
+  // sheet keeps its member through its exit animation instead of blanking.
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
-  // Read by the Members popover's outside-click guard, which runs between
-  // renders: a profile stacked over the list must not close the list.
-  const profileOpenRef = useRef(false);
-  // A layout effect: the sheet moves focus in its own (passive) mount
-  // effect, which must already see the profile as open.
-  useLayoutEffect(() => {
-    profileOpenRef.current = profileOpen;
-  }, [profileOpen]);
-  // A sender's name or photo, or an `@` chip, opens a small profile popout
-  // beside it instead (#4593), as Discord's user popout does; the sheet is
-  // its View profile. Kept after the close for the exit animation, like the
-  // sheet's id.
+  // A sender's name or photo, an `@` chip, or a member-list row opens a small
+  // profile popout beside it first (#4593), as Discord's user popout does;
+  // the sheet is its View profile. Kept after the close for the exit
+  // animation, like the sheet's id. A row's popout opens to the row's left,
+  // as Discord's member list does.
   const [popout, setPopout] = useState<{
     userId: string;
     anchor: MemberPopoutAnchor;
+    side: "left" | "right";
   } | null>(null);
   const [popoutOpen, setPopoutOpen] = useState(false);
+  // Read by the Members popover's outside-click and focus guards, which run
+  // between renders: a popout or profile stacked over the list must not
+  // close the list. A layout effect, because the popout and the sheet move
+  // focus in their own (passive) mount effects, which must already see it.
+  const stackedOverMembersRef = useRef(false);
+  useLayoutEffect(() => {
+    stackedOverMembersRef.current = profileOpen || popoutOpen;
+  }, [profileOpen, popoutOpen]);
   // The dialogs and forms above load on first open; fetch them once the
   // page is idle so that first open rarely waits (#3716).
   useEffect(() => {
@@ -1488,18 +1489,33 @@ export function ChatShell({
     setProfileUserId(memberUserId);
     setProfileOpen(true);
   }, []);
-  // With the clicked element, the popout beside it; without one (a member
-  // list row), the sheet, stacked over the list as before (#3798).
-  const openProfile = useCallback(
-    (memberUserId: string, anchor?: HTMLElement) => {
+  // The popout beside the clicked element; the sheet only when a caller has
+  // no element to anchor to.
+  const openPopout = useCallback(
+    (
+      memberUserId: string,
+      anchor: HTMLElement | undefined,
+      side: "left" | "right",
+    ) => {
       if (!anchor) {
         openProfileSheet(memberUserId);
         return;
       }
-      setPopout({ userId: memberUserId, anchor: anchorFor(anchor) });
+      setPopout({ userId: memberUserId, anchor: anchorFor(anchor), side });
       setPopoutOpen(true);
     },
     [openProfileSheet],
+  );
+  const openProfile = useCallback(
+    (memberUserId: string, anchor?: HTMLElement) =>
+      openPopout(memberUserId, anchor, "right"),
+    [openPopout],
+  );
+  // A row sits at the window's right edge, so its popout opens leftward.
+  const openProfileFromList = useCallback(
+    (memberUserId: string, anchor?: HTMLElement) =>
+      openPopout(memberUserId, anchor, "left"),
+    [openPopout],
   );
   const handleReport = useCallback(
     (message: ChatMessage) => {
@@ -3580,30 +3596,29 @@ export function ChatShell({
                   </Button>
                 </PopoverAnchor>
                 {/*
-                  The list under its button (#4593, rule 3 of
-                  components.md § Surface size): the column's own list, search
-                  and all, capped to the room below the button. A profile
-                  opened from a row stacks over it and closes back to it
-                  (#3798), so the list ignores the clicks and focus that
-                  profile takes.
+                  The list under its button (#4593: a quick list opens under
+                  its button, as the notification list does; components.md §
+                  Chat member list): the column's own list, search and all,
+                  capped to the room below the button. A popout opened from a
+                  row, and the profile behind its View profile, stack over it
+                  and close back to it (#3798), so the list ignores the clicks
+                  and focus they take.
                 */}
                 <PopoverContent
                   align="end"
                   aria-label="Members"
                   className="flex max-h-[min(32rem,var(--radix-popover-content-available-height))] w-72 flex-col p-0"
                   collisionPadding={16}
+                  // Radix calls this for a press or a focus move outside.
                   onInteractOutside={(event) => {
                     // The button closes the list itself; dismissing here on
                     // its pointerdown would let its click open it again.
                     const onButton = membersButtonRef.current?.contains(
                       event.target as Node,
                     );
-                    if (profileOpenRef.current || onButton) {
+                    if (stackedOverMembersRef.current || onButton) {
                       event.preventDefault();
                     }
-                  }}
-                  onFocusOutside={(event) => {
-                    if (profileOpenRef.current) event.preventDefault();
                   }}
                   onCloseAutoFocus={(event) => {
                     event.preventDefault();
@@ -3621,7 +3636,7 @@ export function ChatShell({
                   {activeChannel ? (
                     <ChannelMemberList
                       channelId={activeChannel.id}
-                      onOpenProfile={openProfileSheet}
+                      onOpenProfile={openProfileFromList}
                     />
                   ) : null}
                 </PopoverContent>
@@ -4342,7 +4357,7 @@ export function ChatShell({
           <ChannelMemberList
             channelId={activeChannel?.id ?? null}
             enabled={isWideChat}
-            onOpenProfile={openProfileSheet}
+            onOpenProfile={openProfileFromList}
           />
         </aside>
       ) : null}
@@ -4351,6 +4366,7 @@ export function ChatShell({
         <MemberPopout
           userId={popout.userId}
           anchor={popout.anchor}
+          side={popout.side}
           open={popoutOpen}
           onOpenChange={setPopoutOpen}
           identity={{
