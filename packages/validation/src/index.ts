@@ -145,6 +145,9 @@ export * from "./new-account";
 // is — it is the fold from server rows onto those keys, and a second copy is
 // how two surfaces come to disagree about what a member's switches say.
 export * from "./notification-categories";
+// The inbox's first page, which the API bootstrap, the SDK batch and
+// `useNotifications` must agree on (#4962).
+export * from "./notification-inbox";
 // ── Ops-setup nudges (issue #492) ────────────────────────────────────────────
 // Shared for the same reason as the categories above: each `key` is written
 // verbatim into `members.dismissed_ops_nudges`, the column is an unconstrained

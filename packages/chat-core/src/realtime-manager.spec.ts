@@ -2159,10 +2159,13 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
     ).not.toThrow();
   });
 
-  test("the first join reports nothing; a rejoin after a drop reports a resync", async () => {
+  test("the first join reports a join, not a resync; a rejoin after a drop reports a resync", async () => {
     const first = inbox();
     first.trigger("SUBSCRIBED");
-    expect(activity).not.toHaveBeenCalled();
+    // The client decides whether the summaries need reading again (#4961).
+    expect(activity).toHaveBeenCalledTimes(1);
+    expect(activity).toHaveBeenCalledWith({ type: "joined" });
+    activity.mockClear();
 
     first.trigger("CHANNEL_ERROR");
     await vi.advanceTimersByTimeAsync(1000);
@@ -2216,6 +2219,77 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
     expect(second).not.toBe(first);
     second.trigger("SUBSCRIBED");
     expect(activity).toHaveBeenCalledWith({ type: "resync" });
+  });
+
+  describe("a viewer resolving after the inbox joined (#4961)", () => {
+    const configureWith = (viewerId: string | null) =>
+      chatRealtime.configure({
+        queryClient,
+        supabase,
+        backfill,
+        kv: memoryStore(),
+        viewerId,
+        onMessageActivity: activity,
+      });
+
+    beforeEach(() => {
+      // Web's cold load: bound at mount, before `GET /v1/users/me` answers.
+      chatRealtime.destroy();
+      channels.clear();
+      configureWith(null);
+    });
+
+    test("the first viewer keeps the joined inbox, and nothing is re-read", async () => {
+      const first = inbox();
+      first.trigger("SUBSCRIBED");
+      activity.mockClear();
+
+      configureWith(VIEWER);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(inbox()).toBe(first);
+      expect(activity).not.toHaveBeenCalled();
+    });
+
+    test("the first viewer resolving before the join changes nothing either", async () => {
+      const first = inbox();
+      configureWith(VIEWER);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(inbox()).toBe(first);
+      first.trigger("SUBSCRIBED");
+      expect(activity).toHaveBeenCalledTimes(1);
+      expect(activity).toHaveBeenCalledWith({ type: "joined" });
+    });
+
+    test("a sign-out through no viewer and a sign-in as another still rejoin", async () => {
+      configureWith(VIEWER);
+      const first = inbox();
+      first.trigger("SUBSCRIBED");
+
+      configureWith(null);
+      await vi.advanceTimersByTimeAsync(0);
+      const signedOut = inbox();
+      expect(signedOut).not.toBe(first);
+      signedOut.trigger("SUBSCRIBED");
+
+      configureWith(OTHER);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(inbox()).not.toBe(signedOut);
+    });
+
+    test("a manager torn down and bound again treats its next viewer as the first", async () => {
+      configureWith(VIEWER);
+      chatRealtime.destroy();
+      channels.clear();
+      configureWith(null);
+      await vi.advanceTimersByTimeAsync(0);
+      const first = inbox();
+      first.trigger("SUBSCRIBED");
+
+      configureWith(OTHER);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(inbox()).toBe(first);
+    });
   });
 
   test("a viewer change rejoins the inbox under the new session", async () => {
@@ -2371,6 +2445,7 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       const before = inbox();
       before.trigger("SUBSCRIBED");
       before.trigger("CLOSED");
+      activity.mockClear();
 
       chatRealtime.resume();
       await vi.advanceTimersByTimeAsync(0);

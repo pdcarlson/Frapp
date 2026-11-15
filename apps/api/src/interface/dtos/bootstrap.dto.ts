@@ -1,4 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { INBOX_FIRST_PAGE_SIZE } from '@repo/validation';
 import { Transform } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsIn, IsOptional } from 'class-validator';
 import {
@@ -248,7 +249,7 @@ export class BootstrapDto {
     type: 'array',
     items: object,
     nullable: true,
-    description: 'As `GET /v1/notifications?limit=50`.',
+    description: `As \`GET /v1/notifications?limit=${INBOX_FIRST_PAGE_SIZE}\`.`,
   })
   notifications?: Record<string, unknown>[] | null;
 }

@@ -21,6 +21,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@repo/validation": "*",
     "openapi-fetch": "^0.17.0"
   }
 }
