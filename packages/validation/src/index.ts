@@ -142,7 +142,6 @@ export * from "./native-app";
 // is — it is the fold from server rows onto those keys, and a second copy is
 // how two surfaces come to disagree about what a member's switches say.
 export * from "./notification-categories";
-export * from "./push-action-categories";
 // The inbox's first page, which the API bootstrap, the SDK batch and
 // `useNotifications` must agree on (#4962).
 export * from "./notification-inbox";
@@ -168,6 +167,7 @@ export * from "./permissions";
 export * from "./phone";
 export * from "./profile-copy";
 export * from "./profile-correction";
+export * from "./push-action-categories";
 // Event recurrence: the repeat-rule format the DTOs validate against, the
 // stepper the series generator materializes from, and the words both apps
 // describe a series with. One source so the generated series and what the
