@@ -25,6 +25,7 @@ import {
 import { buildPollMessage, type PollPayload } from "./polls";
 import type { FormPayload } from "./forms";
 import type { SignupPayload } from "./signups";
+import type { RolePickerPayload } from "./role-pickers";
 import {
   sendMessage,
   insertLocalPlaceholder,
@@ -227,12 +228,12 @@ type PostFormCardResult =
 
 /**
  * The one way a + form posts a card that queues like a message: a poll, a
- * sign-up sheet and a form. Never rejects; the outcomes are `postPoll`'s.
+ * sign-up sheet, a form and a role picker. Never rejects; the outcomes are `postPoll`'s.
  */
 async function postFormCard(
   ctx: ChatActionContext,
   channelId: string,
-  kind: "poll" | "signup" | "form",
+  kind: "poll" | "signup" | "form" | "role_picker",
   card: { content: string; payload: object },
   failureCopy: string,
 ): Promise<PostFormCardResult> {
@@ -294,6 +295,27 @@ export function postForm(
     "form",
     form,
     "Couldn't post that form. Try again.",
+  );
+}
+
+/**
+ * Posts a role picker the New role picker form built
+ * (`buildRolePickerMessage`, #4958), on web's + card and the phone's sheet.
+ * Through the outbox like a sign-up sheet. The send route refuses it without
+ * `roles:manage` or for a role no longer marked; that refusal lands on the
+ * failed row. Never rejects; the outcomes are `postPoll`'s.
+ */
+export function postRolePicker(
+  ctx: ChatActionContext,
+  channelId: string,
+  picker: { content: string; payload: RolePickerPayload },
+): Promise<PostFormCardResult> {
+  return postFormCard(
+    ctx,
+    channelId,
+    "role_picker",
+    picker,
+    "Couldn't post that role picker. Try again.",
   );
 }
 

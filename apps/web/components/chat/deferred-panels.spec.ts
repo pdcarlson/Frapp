@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 const DEFERRED = [
   "./poll-form",
   "./signup-form",
+  "./role-picker-form",
   "./form-builder",
   "./event-quick-form",
   "@/components/tasks/task-form",
