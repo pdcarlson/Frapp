@@ -47,6 +47,7 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
 import { asArray } from "@/lib/utils";
 import { isLockedOutOfChapter } from "@/lib/auth/no-access";
 import {
+  CREATE_CHAPTER_PATH,
   JOIN_IN_BROWSER_KEY,
   JOIN_IN_BROWSER_VALUE,
   JOIN_FROM_SIGN_IN_PATH,
@@ -581,7 +582,7 @@ const JOIN_FOOTER = (
   <p>
     Starting a chapter?{" "}
     <Link
-      href="/chat"
+      href={CREATE_CHAPTER_PATH}
       className="font-semibold text-accent-text hover:underline"
     >
       Create a chapter
