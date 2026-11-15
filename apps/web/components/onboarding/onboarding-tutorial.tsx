@@ -166,8 +166,9 @@ function withRolesStep(roles: readonly PickableRole[]): Step[] {
  * It is mounted in `dashboard-shell.tsx` and gated only on
  * `has_completed_onboarding`, so it is otherwise route-agnostic: it opens over
  * whatever the member happens to have landed on. Since #2297 Plan and billing
- * (`/billing` until #3827 moved it into Chapter settings) is a landing rather
- * than somewhere only a deliberate visitor arrives, and the tour would cover
+ * (`/billing` until #3827 moved it into Chapter settings) is a landing (with
+ * chapter billing on; the wizard ends on chat while it is off for the beta)
+ * rather than somewhere only a deliberate visitor arrives, and the tour would cover
  * its "Complete checkout" CTA and then end on "Dive into your home dashboard."
  * The routes are `CHECKOUT_LANDING_PATHNAMES`, shared with What's new.
  *

@@ -35,7 +35,8 @@ export function isBetaOffModule(key: string): boolean {
  * billing already draws as complimentary (no checkout, no Portal button).
  * Setting this to `false` brings checkout back for chapters created after
  * that; the beta's chapters stay complimentary until someone decides
- * otherwise, and they are the ones with `subscription_status = 'active'` and
- * no `stripe_customer_id`.
+ * otherwise. `active` with no `stripe_customer_id` doesn't single them out:
+ * the App Store demo chapter and chapters Frapp switched on by hand look the
+ * same, so pick them by `created_at` while this was on, minus those.
  */
 export const CHAPTER_BILLING_BETA_OFF: boolean = true;

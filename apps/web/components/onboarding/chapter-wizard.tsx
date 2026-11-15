@@ -102,7 +102,7 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
  * which keeps it consistent with `spec/product/positioning.md`'s "inline
  * nudges rather than a mandatory gate".
  */
-export function postCreatePath(
+function postCreatePath(
   chapterBillingOff: boolean = CHAPTER_BILLING_BETA_OFF,
 ): string {
   return chapterBillingOff ? CHAT_LANDING_PATH : BILLING_SETTINGS_PATH;

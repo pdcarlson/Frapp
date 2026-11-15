@@ -13,6 +13,7 @@ const {
   refreshSession,
   routerPush,
   routerReplace,
+  billing,
 } = vi.hoisted(() => ({
   onboardMutate: vi.fn(),
   createInviteMutate: vi.fn(),
@@ -27,7 +28,20 @@ const {
   // assertable. It was a throwaway `vi.fn()` inline in the mock factory, which
   // made the one thing #2297 changes about this component untestable.
   routerReplace: vi.fn(),
+  // Drives `CHAPTER_BILLING_BETA_OFF` per test, so both landings go through
+  // the real `finish()` and not only through `postCreatePath`.
+  billing: { off: true },
 }));
+
+vi.mock("@repo/validation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/validation")>();
+  return {
+    ...actual,
+    get CHAPTER_BILLING_BETA_OFF() {
+      return billing.off;
+    },
+  };
+});
 
 // useSelectChapter refreshes the Supabase session so the new chapter's
 // active_chapter_id claim is issued before the next API call.
@@ -119,7 +133,7 @@ import {
   DEFAULT_CHAPTER_ACCENT,
   normalizeAccentInput,
 } from "@repo/hooks/chapter-identity";
-import { ChapterWizard, postCreatePath } from "./chapter-wizard";
+import { ChapterWizard } from "./chapter-wizard";
 import { downscaleImage } from "@/lib/downscale-image";
 import { DISPLAY_STEP_TITLE } from "./display-step";
 import { setChatDensity } from "@/lib/chat/chat-density";
@@ -966,12 +980,11 @@ describe("where the wizard leaves a brand-new founder", () => {
     routerReplace.mockReset();
   });
 
-  /**
-   * Chapter billing is off for the beta (`CHAPTER_BILLING_BETA_OFF`, Paul
-   * 2026-11-15), so the API creates the chapter `active` and the founder goes
-   * straight to chat: there is no checkout to show them.
-   */
-  it("lands on chat while chapter billing is off for the beta", async () => {
+  afterEach(() => {
+    billing.off = true;
+  });
+
+  async function finishWizard() {
     render(<ChapterWizard onComplete={() => {}} />);
     gotoIdentityStep();
 
@@ -983,18 +996,32 @@ describe("where the wizard leaves a brand-new founder", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: /Skip for now|Finish/ }),
     );
+    return routerReplace.mock.calls.map(([path]) => String(path));
+  }
 
-    expect(routerReplace).toHaveBeenCalledWith("/chat");
+  /**
+   * Chapter billing is off for the beta (`CHAPTER_BILLING_BETA_OFF`, Paul
+   * 2026-11-15), so the API creates the chapter `active` and the founder goes
+   * straight to chat: there is no checkout to show them.
+   */
+  it("lands on chat while chapter billing is off for the beta", async () => {
+    billing.off = true;
+    expect(await finishWizard()).toEqual(["/chat"]);
   });
 
   /**
    * With billing on, the chapter is created `incomplete`: every screen loads
    * and every paid-ops write 403s permanently (#2297). Landing on chat left
    * the founder in exactly that state, which is the Guideline 2.1 finding, so
-   * the landing is checkout then, and never chat.
+   * the landing is checkout then, and a revert to chat has to fail here
+   * rather than only in manual QA.
    */
-  it("lands on checkout, not chat, once chapter billing is back", () => {
-    expect(postCreatePath(false)).toBe("/settings?tab=billing");
-    expect(postCreatePath(false)).not.toContain("/chat");
+  it("lands on checkout, never chat, once chapter billing is back", async () => {
+    billing.off = false;
+    const destinations = await finishWizard();
+    expect(destinations).toEqual(["/settings?tab=billing"]);
+    expect(destinations).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("/chat")]),
+    );
   });
 });

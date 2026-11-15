@@ -9,6 +9,20 @@ import {
 import { deriveSignetPalette } from '@repo/chapter-theme';
 import * as chapterTheme from '@repo/chapter-theme';
 import { ChapterService } from './chapter.service';
+
+// Drives `CHAPTER_BILLING_BETA_OFF` per test, so the billing-on branch of
+// `create` runs too and turning billing back on stays a one-line change.
+let mockChapterBillingOff = true;
+jest.mock('@repo/validation', () => {
+  const actual: Record<string, unknown> =
+    jest.requireActual('@repo/validation');
+  return {
+    ...actual,
+    get CHAPTER_BILLING_BETA_OFF() {
+      return mockChapterBillingOff;
+    },
+  };
+});
 import { toChapterMemberView } from './chapter-member-view';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import {
@@ -703,6 +717,32 @@ describe('ChapterService', () => {
     expect(mockChapterRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({ subscription_status: 'active' }),
     );
+  });
+
+  it('leaves a new chapter to the schema default once chapter billing is back', async () => {
+    mockChapterBillingOff = false;
+    try {
+      const chapter = chapterFixture();
+      mockChapterRepo.create.mockResolvedValue(chapter);
+      mockRoleRepo.createMany.mockResolvedValueOnce(
+        mockSystemRolesForChapter(chapter.id),
+      );
+
+      await service.create('user-1', {
+        name: 'Alpha',
+        university: 'State U',
+        config: {},
+      });
+
+      // No status at all: the column's `incomplete` default applies, and the
+      // web wizard then lands the founder on checkout (#2297).
+      expect(mockChapterRepo.create).toHaveBeenCalledWith({
+        name: 'Alpha',
+        university: 'State U',
+      });
+    } finally {
+      mockChapterBillingOff = true;
+    }
   });
 
   it('should assign creator as President on chapter creation', async () => {
