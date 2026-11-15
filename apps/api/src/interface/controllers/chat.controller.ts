@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -48,7 +47,6 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
-import { normalizeRolePickerCard } from '#domain/utils/role-picker-card-rules';
 import {
   CARD_VOTE_ACTION_TYPE,
   cardPollChoiceMode,
@@ -644,18 +642,6 @@ export class ChatController {
     // Checked before the send, so a GIF this server's search didn't hand out
     // is a 400 and nothing is written (#4631).
     const gif = dto.gif ? this.gifs.messageGif(dto.gif) : null;
-    // A role picker (#4958) hands out roles, so it is an officer's post and
-    // lists only marked roles. Checked here, where the roles can be read;
-    // `ChatService.sendMessage` normalizes the same payload again.
-    if (dto.kind === 'role_picker') {
-      const checked = normalizeRolePickerCard(dto.payload);
-      if ('error' in checked) throw new BadRequestException(checked.error);
-      await this.rbacService.assertMayPostRolePicker(
-        chapterId,
-        userId,
-        checked.card.role_ids,
-      );
-    }
     const sent = await this.chatService.sendMessage({
       chapter_id: chapterId,
       channel_id: channelId,
@@ -671,6 +657,10 @@ export class ChatController {
       gif,
       mention_picks: dto.mention_picks,
       enabled_modules: enabledModules,
+      // A role picker (#4958) is an officer's post listing marked roles;
+      // the service calls this after its replay check.
+      assertRolePicker: (roleIds) =>
+        this.rbacService.assertMayPostRolePicker(chapterId, userId, roleIds),
     });
     // Tells the provider what got sent, which tunes its results; never fails
     // the send.

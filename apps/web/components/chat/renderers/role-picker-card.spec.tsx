@@ -2,13 +2,11 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ChatMessage } from "@repo/chat-core/types";
-import {
-  RolePickerCard,
-  ROLE_PICKER_CLOSED_CAPTION,
-  ROLE_PICKER_GONE_COPY,
-} from "./role-picker-card";
+import { ROLE_PICKER_CLOSED_CAPTION } from "@repo/chat-core/role-pickers";
+import { RolePickerCard, ROLE_PICKER_GONE_COPY } from "./role-picker-card";
 
 const h = vi.hoisted(() => ({
+  heldKnown: true,
   pickable: [] as {
     id: string;
     name: string;
@@ -25,6 +23,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     ...actual,
     usePickableRoles: () => ({
       roles: h.pickable,
+      heldKnown: h.heldKnown,
       isLoading: false,
       isError: false,
       refetch: vi.fn(),
@@ -51,6 +50,7 @@ function card(payload: unknown): ChatMessage {
 const PAYLOAD = { title: "Fall interests", role_ids: ["r1", "r2", "r3", "r4"] };
 
 beforeEach(() => {
+  h.heldKnown = true;
   h.mutateAsync.mockReset();
   h.pickable = [
     { id: "r1", name: "Intramurals", held: false, joinable: true },
@@ -80,6 +80,13 @@ describe("RolePickerCard (#4958)", () => {
       screen.queryByRole("button", { name: /Video games/ }),
     ).not.toBeInTheDocument();
     expect(screen.getAllByRole("button")).toHaveLength(2);
+  });
+
+  it("offers no button until the viewer's own roles are read", () => {
+    h.heldKnown = false;
+    render(<RolePickerCard message={card(PAYLOAD)} isConfirmed />);
+    expect(screen.queryByRole("button", { name: /^Join / })).toBeNull();
+    expect(screen.getByText("Loading roles…")).toBeInTheDocument();
   });
 
   it("joins and leaves through useSetPickedRole", async () => {

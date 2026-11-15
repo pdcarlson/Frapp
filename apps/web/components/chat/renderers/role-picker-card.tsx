@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   readRolePickerPayload,
+  ROLE_PICKER_CLOSED_CAPTION,
   rolePickerRows,
   type RolePickerRow,
 } from "@repo/chat-core/role-pickers";
@@ -25,9 +26,6 @@ interface RolePickerCardProps {
   /** Confirmed messages can be tapped; a pending optimistic row cannot. */
   isConfirmed: boolean;
 }
-
-/** Under a role the viewer neither holds nor can join now. */
-export const ROLE_PICKER_CLOSED_CAPTION = "No longer open to join";
 
 /** When every role the card listed has been deleted since it was posted. */
 export const ROLE_PICKER_GONE_COPY = "These roles are gone.";
@@ -91,11 +89,14 @@ export function RolePickerCard({ message, isConfirmed }: RolePickerCardProps) {
   }
 
   let body;
-  if (pickable.isLoading) {
+  // Until the viewer's own roles are read, every role would read as one to
+  // join, so the card waits rather than offer the wrong button.
+  const heldUnknown = !pickable.heldKnown;
+  if (pickable.isLoading || (heldUnknown && !pickable.isError)) {
     body = (
       <p className="mt-3 text-caption text-muted-foreground">Loading roles…</p>
     );
-  } else if (pickable.isError && rows.length === 0) {
+  } else if (pickable.isError && (rows.length === 0 || heldUnknown)) {
     body = (
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="text-caption text-muted-foreground">

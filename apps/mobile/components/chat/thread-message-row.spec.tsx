@@ -75,6 +75,7 @@ vi.mock("@repo/hooks", async () => {
     // The role picker card's reads and write (#4958); its own spec covers them.
     usePickableRoles: () => ({
       roles: [],
+      heldKnown: true,
       isLoading: false,
       isError: false,
       refetch: vi.fn(),

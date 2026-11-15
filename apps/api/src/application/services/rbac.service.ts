@@ -484,8 +484,9 @@ export class RbacService {
    * Who may post a role picker in chat (`kind: 'role_picker'`, #4958), and
    * what it may list: a `roles:manage` holder, since the card hands out
    * roles as marking one does, and only roles marked Non-chapter business in
-   * this chapter. A role unmarked or deleted after the post stays on the card
-   * as a row nobody can join (`POST /v1/roles/:id/join` refuses it).
+   * this chapter. A role unmarked after the post stays on the card as a row
+   * nobody can join (`POST /v1/roles/:id/join` refuses it); one deleted
+   * drops off it (`rolePickerRows`).
    */
   async assertMayPostRolePicker(
     chapterId: string,

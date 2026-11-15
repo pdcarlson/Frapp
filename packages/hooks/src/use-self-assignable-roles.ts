@@ -78,6 +78,12 @@ export function usePickableRoles() {
   );
   return {
     roles,
+    /**
+     * Whether the viewer's own roles have been read. Until they have, every
+     * role reads as not held and the viewer as no alum, so a surface that
+     * draws Join or Leave from `roles` waits for this (#4958 review).
+     */
+    heldKnown: heldRoleIds !== undefined,
     isLoading: rolesQuery.isLoading || chaptersQuery.isLoading,
     isError: rolesQuery.isError || chaptersQuery.isError,
     refetch: () => {

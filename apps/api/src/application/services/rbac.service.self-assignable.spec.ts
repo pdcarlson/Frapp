@@ -530,6 +530,7 @@ describe('RbacService self-assignable roles (#4958)', () => {
 
   describe('posting a role picker in chat (#4958)', () => {
     beforeEach(() => {
+      // The permission read resolves the caller's roles by id.
       roleRepo.findByIds.mockImplementation(async (ids: string[]) =>
         roles.filter((role) => ids.includes(role.id)),
       );
@@ -549,6 +550,21 @@ describe('RbacService self-assignable roles (#4958)', () => {
           INTRAMURALS,
         ]),
       ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('reads only this chapter’s roles, so a role marked elsewhere is refused', async () => {
+      roleRepo.findByChapter.mockImplementation(async (chapterId: string) =>
+        chapterId === CHAPTER_ID ? roles : [],
+      );
+      await expect(
+        service.assertMayPostRolePicker('chapter-other', USER.president, [
+          INTRAMURALS,
+        ]),
+      ).rejects.toBeInstanceOf(Error);
+      await service.assertMayPostRolePicker(CHAPTER_ID, USER.president, [
+        INTRAMURALS,
+      ]);
+      expect(roleRepo.findByChapter).toHaveBeenLastCalledWith(CHAPTER_ID);
     });
 
     it('refuses a role that is not marked, or not in the chapter', async () => {

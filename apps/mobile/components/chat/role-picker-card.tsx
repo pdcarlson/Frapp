@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import {
+  ROLE_PICKER_CLOSED_CAPTION,
   rolePickerRows,
   type RolePickerPayload,
 } from "@repo/chat-core/role-pickers";
@@ -18,14 +19,6 @@ import {
   type ChatCardFrameProps,
 } from "./chat-card";
 import { useCardWrite } from "./use-card-write";
-
-/**
- * Under a role the card lists that the viewer can't join now: an officer
- * stopped offering it, or the viewer is an alum. The Add roles sheet's words
- * (`components/roles/pick-roles-sheet.tsx`), less its "You can leave it",
- * since a row here that the viewer holds offers Leave instead.
- */
-export const ROLE_PICKER_CLOSED_LINE = "No longer open to join";
 
 /**
  * The role picker card on the phone (#4958), web's
@@ -78,9 +71,15 @@ export function RolePickerCard({
   };
 
   let body;
-  if (pickable.isLoading && rows.length === 0) {
+  // Until the viewer's own roles are read, every role would read as one to
+  // join, so the card waits rather than offer the wrong button.
+  const heldUnknown = !pickable.heldKnown;
+  if (
+    (pickable.isLoading && rows.length === 0) ||
+    (heldUnknown && !pickable.isError)
+  ) {
     body = <CardNote text="Loading roles…" />;
-  } else if (pickable.isError && rows.length === 0) {
+  } else if (pickable.isError && (rows.length === 0 || heldUnknown)) {
     body = (
       <>
         <CardNote text="Couldn't load these roles." tone="error" />
@@ -103,7 +102,7 @@ export function RolePickerCard({
                 </Text>
                 {row.action === "closed" ? (
                   <Text style={styles.rowCaption}>
-                    {ROLE_PICKER_CLOSED_LINE}
+                    {ROLE_PICKER_CLOSED_CAPTION}
                   </Text>
                 ) : null}
               </View>

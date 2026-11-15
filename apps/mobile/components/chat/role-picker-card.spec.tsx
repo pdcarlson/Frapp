@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   }[],
   chapterRoles: [] as { id: string; name: string }[],
   loading: false,
+  heldKnown: true as boolean | undefined,
   mutateAsync: vi.fn(),
   writeBlockedReason: null as string | null,
 }));
@@ -29,6 +30,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   usePickableRoles: () => ({
     roles: state.pickable,
+    heldKnown: state.heldKnown ?? true,
     isLoading: state.loading,
     isError: false,
     refetch: vi.fn(),
@@ -121,6 +123,7 @@ const hasButton = (tree: ReactTestRenderer, label: string) =>
   ).length > 0;
 
 beforeEach(() => {
+  state.heldKnown = true;
   state.pickable = [
     { id: "im", name: "Intramurals", held: false, joinable: true },
     { id: "study", name: "Study group", held: true, joinable: true },
@@ -150,6 +153,13 @@ describe("RolePickerCard (#4958)", () => {
     expect(hasButton(tree, "Join Video games")).toBe(false);
     // A role deleted since the card was posted is left out.
     expect(text).not.toContain("deleted");
+  });
+
+  it("offers no button until the viewer's own roles are read", () => {
+    state.heldKnown = false;
+    const text = screenText(render(message(["im", "study"])));
+    expect(text).not.toContain("Join");
+    expect(text).toContain("Loading roles");
   });
 
   it("joins and leaves through the Add roles write", async () => {

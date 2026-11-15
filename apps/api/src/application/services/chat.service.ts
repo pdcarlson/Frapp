@@ -197,6 +197,15 @@ export interface SendMessageInput {
    */
   system_originated?: boolean;
   /**
+   * Who may post a role picker and what it may list (#4958), checked by the
+   * caller that can read roles (`RbacService.assertMayPostRolePicker`, passed
+   * by `ChatController.sendMessage`). Called with the card's normalized role
+   * ids after the replay check, so a picker that already committed is
+   * answered as a duplicate even if a role was unmarked since. A
+   * `role_picker` send without it is refused.
+   */
+  assertRolePicker?: (roleIds: readonly string[]) => Promise<void>;
+  /**
    * Internal-only: the copy `forwardMessage` built of the message being
    * forwarded (#4864). Never on `SendMessageDto`, so a client can't claim a
    * copy of something it never read. With it, `content` (the forwarder's
@@ -1185,6 +1194,27 @@ export class ChatService {
     // Before anything is written (thread follows, the attachment repair), so
     // a card that can't be stored costs nothing.
     const payload = cardPayloadForSend(kind, input.payload);
+
+    // A role picker hands out roles, so it is an officer's post that lists
+    // only marked roles. A replay of one that already committed is answered
+    // as the duplicate, as the module gate's is, so a role unmarked or a
+    // grant lost since never fails a card that is already in the channel.
+    if (kind === 'role_picker') {
+      try {
+        if (!input.assertRolePicker) {
+          throw new ForbiddenException(
+            'Only officers who manage roles can post a role picker',
+          );
+        }
+        await input.assertRolePicker(
+          (payload as { role_ids: string[] }).role_ids,
+        );
+      } catch (refusal) {
+        const replay = await committedReplay();
+        if (replay) return replay;
+        throw refusal;
+      }
+    }
 
     const gatedModule = MODULE_GATED_KINDS[kind];
     if (
