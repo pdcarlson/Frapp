@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import {
@@ -23,6 +16,7 @@ import { isCheckoutLandingPath } from "@/components/billing/billing-paths";
 import {
   TOUR_BACK_LABEL,
   TOUR_DONE_LABEL,
+  TOUR_REPLAY_EVENT,
   TOUR_NEXT_LABEL,
   TOUR_SKIPPED_TOAST,
   TOUR_SKIP_LABEL,
@@ -43,11 +37,13 @@ import {
   type TourStop,
   type TourStopKey,
 } from "@/components/onboarding/tour";
+import { REDUCED_MOTION } from "@/components/chat/message-gif";
 import { ChatDensityControl } from "@/components/profile/chat-density-control";
 import { PickRolesList } from "@/components/roles/pick-roles-section";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useMediaQuery } from "@/lib/use-media-query";
 
 type ChapterMembership = {
   chapter_id: string;
@@ -64,21 +60,8 @@ const TOUR_ROUTE = "/chat";
  */
 const START_WAIT_MS = 4000;
 
-const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
-
-function subscribeReducedMotion(onChange: () => void) {
-  const query = window.matchMedia?.(REDUCED_MOTION);
-  query?.addEventListener?.("change", onChange);
-  return () => query?.removeEventListener?.("change", onChange);
-}
-
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(
-    subscribeReducedMotion,
-    () => window.matchMedia?.(REDUCED_MOTION).matches ?? false,
-    () => false,
-  );
-}
+/** While it waits to start, the tour looks for its controls this often. */
+const WAIT_POLL_MS = 150;
 
 /**
  * The first-run tour over the real Chat screen (#5080; the stops and their
@@ -88,7 +71,8 @@ function usePrefersReducedMotion(): boolean {
  * Only Skip tour and Done end it, both PATCHing `/v1/members/me/onboarding`,
  * which also mirrors the phone's flag. Everything else pauses it: Escape, a
  * click on the dim, leaving Chat, a closed tab. A paused tour stays down for
- * the rest of this visit and picks up at its stop on the next one.
+ * the rest of this visit and picks up at its stop on the next one. Replay
+ * tour (`replayTour`) lifts an end or a pause at once and starts it over.
  *
  * It never opens over the Terms prompt (#2302, #5083), and never on the
  * checkout landings (`isCheckoutLandingPath`, #2297), whose "Complete
@@ -121,6 +105,19 @@ export function OnboardingTour() {
   // render so the pause lands with the navigation, not a frame after it.
   const [shownOn, setShownOn] = useState<string | null>(null);
   if (shownOn !== null && pathname !== shownOn && !paused) setPaused(true);
+
+  // Replay tour, from Settings in this same visit: this component stays
+  // mounted across dashboard routes, so its end and pause are lifted here
+  // rather than waiting for a reload (the saved stop is already cleared).
+  useEffect(() => {
+    const onReplay = () => {
+      setEnded(false);
+      setPaused(false);
+      setShownOn(null);
+    };
+    window.addEventListener(TOUR_REPLAY_EVENT, onReplay);
+    return () => window.removeEventListener(TOUR_REPLAY_EVENT, onReplay);
+  }, []);
 
   const activeMembership = useMemo(() => {
     const memberships = Array.isArray(chaptersQuery.data)
@@ -187,13 +184,13 @@ export function OnboardingTour() {
 }
 
 type Layout = {
-  index: number;
+  key: TourStopKey;
   spot: Rect;
   text: string;
   /** The coach mark's corner; null until it has been measured. */
   card: { left: number; top: number } | null;
-  /** Which of the stops have their control on screen, by index. */
-  present: readonly boolean[];
+  /** The stops whose control is on screen. */
+  present: readonly TourStopKey[];
   viewport: { width: number; height: number };
 };
 
@@ -214,30 +211,32 @@ function SpotlightTour({
   onPause: () => void;
   onFinish: (skipped: boolean) => void;
 }) {
-  const reducedMotion = usePrefersReducedMotion();
-  const { roles } = usePickableRoles();
+  const reducedMotion = useMediaQuery(REDUCED_MOTION);
+  const { roles, isLoading: rolesLoading } = usePickableRoles();
   const [saved] = useState<TourStopKey | null>(() => readTourStop(storageKey));
-  // Whether `Pick your roles` is in, settled as the member leaves the display
-  // stop (the slideshow's rule, #4958): until then the stop lands ahead of
-  // them, so a slow roles read still gets it in; after, adding it would move
-  // them back a stop. A tour resumed past the display stop has settled it.
+  // Whether `Pick your roles` is in, settled as the member moves past the
+  // display stop (the slideshow's rule, #4958): until then the stop lands
+  // ahead of them, so a slow roles read still gets it in; after, the count
+  // never grows behind them. A tour resumed past the display stop has settled
+  // it; one resumed on the roles stop asks the roles read again, so roles
+  // that stopped being joinable leave it out.
   const [offerRoles, setOfferRoles] = useState<boolean | null>(() =>
-    saved === "roles"
-      ? true
-      : saved && tourOrder(saved) > tourOrder("display")
-        ? false
-        : null,
+    saved && saved !== "roles" && tourOrder(saved) > tourOrder("display")
+      ? false
+      : null,
   );
   const withRoles = offerRoles ?? roles.some((role) => role.joinable);
   const stops = tourStops(withRoles);
-  const [index, setIndex] = useState(() => resumeIndex(stops, saved));
+  // The stop is held by name, not position: the list gains or loses the roles
+  // stop as the read settles, and a name keeps the member where they are.
+  const [stopKey, setStopKey] = useState<TourStopKey>(saved ?? "channels");
   const [layout, setLayout] = useState<Layout | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
 
   // The frame loop reads these rather than restarting on every change.
-  const live = useRef({ stops, index, chapterName });
+  const live = useRef({ stops, stopKey, rolesLoading });
   useEffect(() => {
-    live.current = { stops, index, chapterName };
+    live.current = { stops, stopKey, rolesLoading };
   });
 
   // Follow the controls: measure every stop's control each frame, move past a
@@ -247,37 +246,47 @@ function SpotlightTour({
     const startedAt = performance.now();
     let started = false;
     let frame = 0;
+    let timer = 0;
     let last: Layout | null = null;
+    const schedule = () => {
+      // Before it starts the tour only polls; once up it follows each frame.
+      if (started) frame = requestAnimationFrame(tick);
+      else timer = window.setTimeout(tick, WAIT_POLL_MS);
+    };
     const tick = () => {
-      frame = requestAnimationFrame(tick);
-      const { stops: list, index: at } = live.current;
+      schedule();
+      const { stops: list, stopKey: at, rolesLoading: loading } = live.current;
       const viewport = { width: window.innerWidth, height: window.innerHeight };
       const located = list.map((stop) => locateStop(stop, document, viewport));
-      const present = located.map((found) => found !== null);
+      const isPresent = (stop: TourStop) =>
+        located[list.indexOf(stop)] !== null;
       if (!started) {
-        // Wait for the channel list, so the first spot lands on rows rather
-        // than the skeleton, unless it never comes.
-        const listReady = present[0] === true;
-        if (!listReady && performance.now() - startedAt < START_WAIT_MS) return;
-        if (!present.some(Boolean)) return;
+        // Wait for the roles read, so a tour resumed on its stop knows
+        // whether it is still in, and for the channel list, so the first spot
+        // lands on rows rather than the skeleton, unless it never comes.
+        const waited = performance.now() - startedAt >= START_WAIT_MS;
+        if (loading && !waited) return;
+        if (located[0] === null && !waited) return;
+        if (!list.some(isPresent)) return;
         started = true;
       }
-      const isPresent = (stop: TourStop) => present[list.indexOf(stop)] === true;
+      const from = resumeIndex(list, at);
       const showing =
-        nextPresentIndex(list, at, 1, isPresent) ??
-        nextPresentIndex(list, at, -1, isPresent);
+        nextPresentIndex(list, from, 1, isPresent) ??
+        nextPresentIndex(list, from, -1, isPresent);
       if (showing === null) {
         if (last !== null) setLayout((last = null));
         return;
       }
-      if (showing !== at) {
-        live.current.index = showing;
-        setIndex(showing);
+      const stop = list[showing]!;
+      if (stop.key !== at) {
+        live.current.stopKey = stop.key;
+        setStopKey(stop.key);
       }
       const found = located[showing]!;
       const card = cardRef.current;
       const next: Layout = {
-        index: showing,
+        key: stop.key,
         spot: found.spot,
         text: found.text,
         card:
@@ -288,37 +297,46 @@ function SpotlightTour({
                 viewport,
               )
             : null,
-        present,
+        present: list.filter(isPresent).map((s) => s.key),
         viewport,
       };
       if (!sameLayout(last, next)) setLayout((last = next));
     };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+    tick();
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
   }, []);
 
-  const shownStop = layout ? stops[layout.index] : undefined;
+  const shownStop = layout
+    ? stops.find((stop) => stop.key === layout.key)
+    : undefined;
   const shown = Boolean(layout && shownStop);
+  const shownKey = shownStop?.key;
+  const measured = Boolean(layout?.card);
 
   // Kept as it moves, so a pause picks up here on the next visit.
   useEffect(() => {
-    if (shown && shownStop) writeTourStop(storageKey, shownStop.key);
-  }, [shown, shownStop, storageKey]);
+    if (shownKey) writeTourStop(storageKey, shownKey);
+  }, [shownKey, storageKey]);
 
   useEffect(() => {
     if (shown) onShown();
   }, [shown, onShown]);
 
-  // Each stop takes focus, so a keyboard member reads it and tabs its buttons.
-  const shownKey = shownStop?.key;
+  // Each stop takes focus once its card is placed (a hidden card can't take
+  // focus), so a keyboard member reads it and tabs its buttons.
   useEffect(() => {
-    if (shownKey) cardRef.current?.focus({ preventScroll: true });
-  }, [shownKey]);
+    if (shownKey && measured) cardRef.current?.focus({ preventScroll: true });
+  }, [shownKey, measured]);
 
   useEffect(() => {
     if (!shown) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onPause();
+      // A menu opened through the spot closes on Escape (Radix marks it
+      // handled); that Escape is the menu's, not a pause.
+      if (event.key === "Escape" && !event.defaultPrevented) onPause();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -326,20 +344,26 @@ function SpotlightTour({
 
   if (!layout || !shownStop || typeof document === "undefined") return null;
 
-  const isPresent = (stop: TourStop) =>
-    layout.present[stops.indexOf(stop)] === true;
-  const nextIndex = nextPresentIndex(stops, layout.index + 1, 1, isPresent);
-  const backIndex = nextPresentIndex(stops, layout.index - 1, -1, isPresent);
-  const count = layout.present.filter(Boolean).length;
-  const position = layout.present
-    .slice(0, layout.index)
-    .filter(Boolean).length;
+  const isPresent = (stop: TourStop) => layout.present.includes(stop.key);
+  const index = stops.indexOf(shownStop);
+  const nextIndex = nextPresentIndex(stops, index + 1, 1, isPresent);
+  const backIndex = nextPresentIndex(stops, index - 1, -1, isPresent);
+  const shownPresent = stops.filter(isPresent);
+  const count = shownPresent.length;
+  const position = shownPresent.indexOf(shownStop);
 
   const goNext = () => {
-    if (tourOrder(shownStop.key) >= tourOrder("display")) {
+    if (nextIndex === null) return;
+    const next = stops[nextIndex]!;
+    // Moving past the display stop, or past where roles would sit (the
+    // display stop skipped), settles whether roles is in.
+    if (
+      tourOrder(shownStop.key) >= tourOrder("display") ||
+      tourOrder(next.key) > tourOrder("roles")
+    ) {
       setOfferRoles((latched) => latched ?? withRoles);
     }
-    if (nextIndex !== null) setIndex(nextIndex);
+    setStopKey(next.key);
   };
 
   const move = reducedMotion
@@ -441,7 +465,7 @@ function SpotlightTour({
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => setIndex(backIndex)}
+                onClick={() => setStopKey(stops[backIndex]!.key)}
               >
                 {TOUR_BACK_LABEL}
               </Button>

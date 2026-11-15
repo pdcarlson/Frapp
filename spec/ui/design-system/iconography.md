@@ -32,7 +32,7 @@ Color per state (roles defined in [foundations](foundations.md)):
 
 The navigation glyphs (the web sidebar, the mobile tab bar and the You tab's
 rows), the web in-screen families' re-exports of them, and the few in-screen
-glyphs drawn beside those (folder, schedule, invite, profile, and Activity's
+glyphs drawn beside those (folder, schedule, invite, and Activity's
 `link`, `confirm`, `signup` and `form`, §6.2.5a) draw one shared
 set instead of the stroke recipe above: [`packages/theme/src/nav-glyphs.ts`](../../../packages/theme/src/nav-glyphs.ts)
 (`@repo/theme/nav-glyphs`), path data from Phosphor's duotone weight (MIT),
@@ -162,8 +162,8 @@ duotone. Interim rules:
 - Do not mix icon packs within a single surface. The §1 stroke recipe and the
   §1.1 nav set count as one Signet family for this rule, and the target is a
   single family: a glyph drawn in the same list as a nav glyph takes the nav
-  set (the folder rail, the event schedule rows, invite and profile,
-  §6.2.3–§6.2.7). The rest of the stroke-recipe glyphs, `SearchGlyph` in the
+  set (the folder rail, the event schedule rows and invite,
+  §6.2.3–§6.2.6). The rest of the stroke-recipe glyphs, `SearchGlyph` in the
   toolbars among them, move over under
   [#3491](https://github.com/pdcarlson/Frapp/issues/3491).
 - Surfaces built or rebuilt under the Signet reskin use the duotone recipe
@@ -715,8 +715,8 @@ the cutover skill calls out by name ("do not add a parallel token set next to
 the one in use"; "a definition or `index.ts` re-export is not evidence anything
 still calls it"). The four preceding family files each earn their place by
 drawing at least one glyph no nav intent covers; this family has none to draw.
-(Since 2026-11-05 the geometry of those glyphs, folder, schedule, invite and
-profile, lives in the shared set in `packages/theme` with the nav glyphs; the
+(Since 2026-11-05 the geometry of those glyphs, folder, schedule and invite
+(and profile, until the slideshow that drew it went in #5080), lives in the shared set in `packages/theme` with the nav glyphs; the
 family files still own the intent and the component.)
 
 **The tab rail stays text-only.** Its triggers (`SETTINGS_TABS`) carry no icons, and adding them would

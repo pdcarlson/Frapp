@@ -1,7 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { useUpdateOnboarding } from "@repo/hooks";
+import {
+  useActiveChapterId,
+  useUpdateOnboarding,
+  useViewerUserId,
+} from "@repo/hooks";
+import { replayTour } from "@/components/onboarding/tour";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
@@ -21,6 +26,8 @@ import { getErrorMessage } from "@/lib/utils";
 export function AccountSection() {
   const { toast } = useToast();
   const updateOnboarding = useUpdateOnboarding();
+  const userId = useViewerUserId();
+  const activeChapterId = useActiveChapterId();
   const deleteFlow = useDeleteAccountFlow({
     onFailed: () => toast({ ...DELETE_ACCOUNT_FAILED, variant: "destructive" }),
   });
@@ -76,6 +83,8 @@ export function AccountSection() {
                   await updateOnboarding.mutateAsync({
                     has_completed_onboarding: false,
                   });
+                  // From its first stop, and in this visit too.
+                  replayTour(userId, activeChapterId);
                   toast({
                     title: "Tour queued",
                     description:

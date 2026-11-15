@@ -6,4 +6,4 @@
  */
 export const DISPLAY_STEP_TITLE = "Pick your chat display";
 export const DISPLAY_STEP_DESCRIPTION =
-  "Choose how messages look on this browser. You can change it anytime in your profile.";
+  "Choose how messages look on this browser. You can change it anytime in Settings.";

@@ -898,7 +898,7 @@ Copy in `apps/mobile/lib/onboarding/display-step.ts` and `apps/web/components/on
 
 | Surface | Title | Copy |
 |---|---|---|
-| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in your profile.` In the tour, then `Cozy`, `Compact` and `Bubbles` as one segmented control over the real messages. In the setup wizard, Profile's three Chat density cards, then `Continue`. |
+| Web | `Pick your chat display` | `Choose how messages look on this browser. You can change it anytime in Settings.` In the tour, then `Cozy`, `Compact` and `Bubbles` as one segmented control over the real messages. In the setup wizard, the three Chat density cards from Settings → Appearance and chat, then `Continue`. (It said "in your profile" until #5080; the control has lived in Settings since #3856.) |
 | Mobile | `Pick your chat display` | `Choose how messages look on this phone. You can change it anytime in Settings.` Then Settings' three cards; gold `Continue` when a roles, Meet Frapp AI or notifications beat follows, else `Go to chat`. In chapter setup, always gold `Continue`. |
 
 ### Pick your roles
@@ -933,7 +933,7 @@ One line each in a coach mark beside the lit control; only the two stops that ca
 |---|---|
 | The channel list | `You're in <chapter>. These are the chapter's channels. Click one to start talking.` (`your chapter` when the name isn't loaded). On the back-to-channels button below the side-by-side width: `You're in <chapter>. The chapter's channels are one tap back, here.` |
 | The messages | Title `Pick your chat display`, then [§ Display step](#display-step-onboarding)'s web line and the segmented control |
-| The Committees group, or the channel list | Title and line from [§ Pick your roles](#pick-your-roles), then the switches |
+| The Committees group, the channel list, or the back-to-channels button below the side-by-side width | Title and line from [§ Pick your roles](#pick-your-roles), then the switches |
 | The sidebar's Chapter group | `Events, points, study hours and the rest of the chapter are here, under Chapter.` On the menu button below `lg`: `Events, points, study hours and the rest of the chapter are in this menu, under Chapter.` |
 | The Direct messages row | `Direct messages are here.` On the menu button below `lg`: `Direct messages are in this menu too.` |
 | The avatar | `Your profile and settings are here. Replay this tour anytime from Settings → Account.` |

@@ -24,8 +24,9 @@ import { describe, expect, it } from "vitest";
  * Verified the way slices 6 and 7 verified theirs, and the result is the reason
  * this file exists: reverting the archetype card to `border-primary
  * bg-primary/5` / `hover:bg-accent/50` and the tutorial strip to
- * `bg-secondary/60` turns **two** tests here red and leaves all thirteen in
- * `profile-contrast.spec.ts` green.
+ * `bg-secondary/60` turned **two** tests here red and left all thirteen in
+ * `profile-contrast.spec.ts` green. (The strip went with the first-run
+ * slideshow in #5080, so only the archetype half can be re-run.)
  */
 
 const ROOT = join(__dirname, "..", "..");

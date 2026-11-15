@@ -122,6 +122,9 @@ export const TOUR_STOPS: readonly TourStop[] = [
         target: (element) => element.parentElement ?? element,
       },
       { selector: CHANNEL_LIST },
+      // Below the side-by-side width, where chat opens on a channel and the
+      // list is one step back, the button that leads there.
+      { selector: BACK_TO_CHANNELS },
     ],
     maxHeight: 320,
   },
@@ -167,7 +170,9 @@ export function tourStopText(
   text: string,
   chapterName: string | null | undefined,
 ): string {
-  return text.replace("{chapter}", chapterName || "your chapter");
+  // A function, so a `$` in the name is never read as a replace pattern.
+  const name = chapterName || "your chapter";
+  return text.replace("{chapter}", () => name);
 }
 
 /** "1 of 5", counted over the stops this member will actually see. */
@@ -241,6 +246,20 @@ export function clearTourStop(key: string): void {
   } catch {
     // As above.
   }
+}
+
+/** Sent on `window` when the member chooses Replay tour. */
+export const TOUR_REPLAY_EVENT = "frapp:tour-replay";
+
+/**
+ * Replay tour (Settings → Account): forget the stop this browser paused on,
+ * so the tour starts from its first stop, and tell a tour already mounted in
+ * this visit to come back (`onboarding-tour.tsx`), since the dashboard shell
+ * keeps it mounted across routes.
+ */
+export function replayTour(userId: string | null, chapterId: string | null) {
+  if (userId && chapterId) clearTourStop(tourStorageKey(userId, chapterId));
+  window.dispatchEvent(new Event(TOUR_REPLAY_EVENT));
 }
 
 // ── Where the spot and the coach mark go ────────────────────────────────────

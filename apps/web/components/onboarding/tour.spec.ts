@@ -48,7 +48,13 @@ describe("the stops", () => {
     expect(tourStopText(first, null)).toMatch(/^You're in your chapter\./);
   });
 
-  it("counts like the phone's tour", () => {
+  it("prints a $ in the chapter's name as written", () => {
+    expect(tourStopText("In {chapter}.", "Cash $$ Club $&")).toBe(
+      "In Cash $$ Club $&.",
+    );
+  });
+
+    it("counts like the phone's tour", () => {
     expect(tourProgressLabel(0, 5)).toBe("1 of 5");
   });
 });

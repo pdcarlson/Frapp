@@ -55,7 +55,7 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
 
 import { OnboardingTour } from "./onboarding-tour";
-import { tourStorageKey } from "./tour";
+import { replayTour, tourStorageKey } from "./tour";
 
 const STORAGE_KEY = tourStorageKey("user-1", "chapter-1");
 
@@ -66,13 +66,24 @@ const STORAGE_KEY = tourStorageKey("user-1", "chapter-1");
 function ChatScreen({
   sidebar = true,
   direct = true,
+  list = true,
 }: {
   sidebar?: boolean;
   direct?: boolean;
+  /** False: below the side-by-side width, on a channel, the list one step back. */
+  list?: boolean;
 }) {
   return (
     <>
-      <div data-box="0,48,240,500" data-channel-list="channels" />
+      {list ? (
+        <div data-box="0,48,240,500" data-channel-list="channels" />
+      ) : (
+        <button
+          aria-label="Back to channels"
+          data-box="8,56,32,32"
+          type="button"
+        />
+      )}
       <div data-box="240,48,784,700" id="chat-timeline" />
       {sidebar ? (
         <>
@@ -152,6 +163,14 @@ afterEach(() => {
 });
 
 const tour = () => screen.findByRole("dialog");
+/** The tour's layer, shown or still being placed: what "never opens" means. */
+const tourLayer = () => document.querySelector("[data-onboarding-tour]");
+/** Long enough for the tour to start, place its card and show it. */
+const settle = () =>
+  act(() => new Promise((resolve) => setTimeout(resolve, 400)));
+const joinable = () => [
+  { id: "im", name: "Intramurals", held: false, joinable: true, color: null },
+];
 const line = async () =>
   (await tour()).querySelector("[id^='tour-text-']")!.textContent;
 const next = async () =>
@@ -176,7 +195,7 @@ describe("the stops", () => {
     expect(await screen.findByText("1 of 5")).toBeInTheDocument();
     expect(await stopLines()).toEqual([
       "You're in Tau Nu. These are the chapter's channels. Click one to start talking.",
-      "Choose how messages look on this browser. You can change it anytime in your profile.",
+      "Choose how messages look on this browser. You can change it anytime in Settings.",
       "Events, points, study hours and the rest of the chapter are here, under Chapter.",
       "Direct messages are here.",
       "Your profile and settings are here. Replay this tour anytime from Settings → Account.",
@@ -262,9 +281,81 @@ describe("pausing", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     state.pathname = "/chat";
     rerender(<ChatScreen />);
-    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await settle();
+    expect(tourLayer()).toBeNull();
     expect(updateOnboarding.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("doesn't pause on an Escape a menu in the spot already handled", async () => {
+    render(<ChatScreen />);
+    await tour();
+    const escape = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    escape.preventDefault();
+    act(() => {
+      document.dispatchEvent(escape);
+    });
+    await settle();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("comes back from its first stop on Replay tour, in the same visit", async () => {
+    render(<ChatScreen />);
+    await next();
+    await screen.findByText("2 of 5");
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(tourLayer()).toBeNull());
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBe("display");
+
+    act(() => replayTour("user-1", "chapter-1"));
+    expect(await screen.findByText("1 of 5")).toBeInTheDocument();
+    expect(await line()).toMatch(/^You're in Tau Nu\./);
+  });
+});
+
+describe("Pick your roles", () => {
+  it("is settled as the member moves past the display stop", async () => {
+    const { rerender } = render(<ChatScreen />);
+    await next();
+    await screen.findByText("2 of 5");
+    await next();
+    await screen.findByText("3 of 5");
+    // The roles read lands late, behind the member: the tour stays put.
+    state.roles = joinable();
+    rerender(<ChatScreen />);
+    await settle();
+    expect(screen.getByText("3 of 5")).toBeInTheDocument();
+    expect(await line()).toMatch(/under Chapter\.$/);
+  });
+
+  it("joins while still ahead of the member", async () => {
+    const { rerender } = render(<ChatScreen />);
+    expect(await screen.findByText("1 of 5")).toBeInTheDocument();
+    state.roles = joinable();
+    rerender(<ChatScreen />);
+    expect(await screen.findByText("1 of 6")).toBeInTheDocument();
+  });
+
+  it("leaves a paused roles stop out once no role is joinable", async () => {
+    window.localStorage.setItem(STORAGE_KEY, "roles");
+    render(<ChatScreen />);
+    expect(await line()).toMatch(/under Chapter\.$/);
+    expect(screen.getByText("3 of 5")).toBeInTheDocument();
+  });
+
+  it("points at the back-to-channels button when the list is a step back", async () => {
+    state.roles = joinable();
+    render(<ChatScreen list={false} />);
+    expect(await screen.findByText("1 of 6")).toBeInTheDocument();
+    await next();
+    await screen.findByText("2 of 6");
+    await next();
+    expect(
+      await screen.findByRole("heading", { name: "Pick your roles" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -299,28 +390,41 @@ describe("finishing", () => {
 });
 
 describe("where it never opens", () => {
-  async function settle() {
-    await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
-  }
+  it("opens, as the control for the cases below", async () => {
+    render(<ChatScreen />);
+    await settle();
+    expect(tourLayer()).not.toBeNull();
+  });
 
   it("not over the Terms prompt", async () => {
     state.termsRequired = true;
     render(<ChatScreen />);
     await settle();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(tourLayer()).toBeNull();
   });
 
   it("not on the checkout landings, or anywhere but Chat", async () => {
     state.pathname = "/settings/chapter/billing";
     render(<ChatScreen />);
     await settle();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(tourLayer()).toBeNull();
   });
 
   it("not once onboarding is complete", async () => {
     state.completed = true;
     render(<ChatScreen />);
     await settle();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(tourLayer()).toBeNull();
+  });
+});
+
+describe("focus", () => {
+  // jsdom lets a `visibility: hidden` element take focus, which a browser
+  // doesn't, so this pins that the card is focused at all; the wait for the
+  // card to be placed first (`measured`) was checked in a browser.
+  it("takes the first stop's card into focus", async () => {
+    render(<ChatScreen />);
+    const dialog = await tour();
+    await waitFor(() => expect(document.activeElement).toBe(dialog));
   });
 });
