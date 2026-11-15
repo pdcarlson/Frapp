@@ -34,6 +34,7 @@ import {
   SHEET_STACK_BEHAVIOR,
   useSheetBackgroundStyle,
   useSheetClose,
+  useSheetVisit,
 } from "@/components/sheet-scaffold";
 
 /**
@@ -49,7 +50,10 @@ import {
  * nothing would read as a missed press.
  *
  * `onSchedule` resolves once the message is scheduled, and the sheet closes;
- * a rejection keeps it open with the reason under the rows.
+ * a rejection keeps it open with the reason under the rows. Either lands only
+ * on the visit it was sent from (`useSheetVisit`, #3405): a member who swiped
+ * the sheet away mid-create doesn't get it wedged, or a new visit closed or
+ * given an old reason.
  */
 export interface ScheduleSendSheetProps {
   /** The draft, as it will post. */
@@ -74,6 +78,8 @@ export const ScheduleSendSheet = forwardRef<
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const closeSheet = useSheetClose(ref);
+  const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
+    useSheetVisit(ref);
   const [mountedAt] = useState(() => new Date());
   const presets = schedulePresets(openedAt ?? mountedAt);
   const [custom, setCustom] = useState<Date | null>(null);
@@ -88,15 +94,20 @@ export const ScheduleSendSheet = forwardRef<
       inFlight.current = true;
       setBusy(true);
       setError(null);
+      const sentFrom = visit();
       onSchedule(at)
-        .then(() => closeSheet())
-        .catch((cause: unknown) => setError(errorCopy(cause)))
+        .then(() => {
+          if (isSameVisit(sentFrom)) dismiss();
+        })
+        .catch((cause: unknown) => {
+          if (isSameVisit(sentFrom)) setError(errorCopy(cause));
+        })
         .finally(() => {
           inFlight.current = false;
           setBusy(false);
         });
     },
-    [closeSheet, onSchedule],
+    [dismiss, isSameVisit, onSchedule, visit],
   );
 
   // Each visit starts fresh.
@@ -116,7 +127,11 @@ export const ScheduleSendSheet = forwardRef<
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
-      onDismiss={reset}
+      onAnimate={onAnimate}
+      onDismiss={() => {
+        markClosed();
+        reset();
+      }}
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetView onAccessibilityEscape={closeSheet} style={styles.body}>

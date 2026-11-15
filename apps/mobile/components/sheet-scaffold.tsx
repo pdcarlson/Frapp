@@ -391,8 +391,9 @@ export function SheetPrimaryButton({
  * deleted: #3795); search for the hook to find them, rather than a list here
  * that would drift. A sheet that closes only on the member's own press
  * (Settings → Blocked members, whose unblock leaves it open) needs only
- * `useSheetClose`. #3405 moved the last unguarded ones (Chapter accent, the
- * member sheet's Remove and Message) onto it.
+ * `useSheetClose`. #3405 moved the ones it found closing unguarded after a
+ * write onto it (Chapter accent, Chat background, Schedule message, the member
+ * sheet's Remove and Message); #5059 checks the remaining candidates.
  *
  * Wire `onAnimate` and call `markClosed` first thing in the modal's
  * `onDismiss`. Then:
