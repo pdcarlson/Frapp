@@ -819,10 +819,10 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   Tiles keep a hairline frame (radius 14, no fill) rather than flush rows, because a tile is a block with its own controls.
   Confirm is the one primary on a tile; the rule that you can't confirm your own task shows on that tile only.
   **Tasks is a Grid or a List** ([#4175](https://github.com/pdcarlson/Frapp/issues/4175), Shawn's idea, 2026-11-12).
-  The List / Grid switch ([`components.md` § Segmented control](../design-system/components.md#segmented-control)) sits on its own row at the page's trailing edge, over the groups, where Linear and Asana keep their List / Board.
+  The List / Grid switch ([`components.md` § Segmented control](../design-system/components.md#segmented-control)) sits at the trailing edge of the row over the groups, where Linear and Asana keep their List / Board; since 2026-11-15 that row also holds the view switch and filter chips (below).
   Grid is the board above and stays the default.
   List is the same groups (To do, In progress, Waiting on an officer, Overdue, then Confirmed) stacked top to bottom as flush rows split by a hairline: the tile's title, one line of description and meta line lead, and its controls (Start or Mark done, Confirm and Send back, Edit and Delete) end the row, wrapping within its trailing half on a narrow page.
-  The add row heads To do in both.
+  The add row heads To do in both, on the status board (elsewhere it heads the page, below).
   Changed in [#4582](https://github.com/pdcarlson/Frapp/pull/4582) by shawnatomklein-eng, 2026-11-12: the framed tiles above are the default Grid, and List adds flush rows beside them.
 - **Tasks: My tasks and All tasks** ([#4295](https://github.com/frapplive/Frapp/issues/4295) step 5, [#3617](https://github.com/frapplive/Frapp/issues/3617); rules in [`tasks.md` § Views](../../behavior/tasks.md#views)).
   One toolbar row sits over the groups: an officer's **My tasks / All tasks** switch leads it ([`components.md` § Segmented control](../design-system/components.md#segmented-control)), as Asana's My tasks sits beside a project and Linear's My issues beside the team's; All tasks adds a **By status / By person** switch and **Assignee**, **Status** and **Due** filter chips ([`components.md` § 4](../design-system/components.md#4-inputs-and-selection)), as Linear's Display and Filter; the List / Grid switch keeps the trailing edge.

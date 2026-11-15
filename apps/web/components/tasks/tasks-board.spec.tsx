@@ -1638,6 +1638,12 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     expect(titlesIn("This week")).toEqual(["Draft the rush calendar"]);
     expect(titlesIn("Later")).toEqual(["Plan formal"]);
     expect(titlesIn("Waiting on an officer")).toEqual(["Book the venue"]);
+    // The heading says it; the tile doesn't repeat it.
+    expect(
+      within(region("Waiting on an officer")).getAllByText(
+        "Waiting on an officer",
+      ),
+    ).toHaveLength(1);
     // No status lane says it, so the tile does.
     expect(within(region("This week")).getByText("In progress")).toBeVisible();
     // A member has nothing to switch or filter.
@@ -1713,6 +1719,62 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
       screen.getByText("No tasks match these filters."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
+    // With no To do lane to head, the add row heads the page.
+    expect(
+      screen.getByRole("button", { name: /^add a task$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a picked value named after its last task leaves", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<TasksBoard />);
+    await user.click(screen.getByRole("button", { name: "Status" }));
+    await user.click(screen.getByRole("menuitem", { name: "Overdue" }));
+    tasksRef.current = ROWS.filter((row) => row.status !== "OVERDUE");
+    rerender(<TasksBoard />);
+    expect(
+      screen.getByRole("button", { name: "Status: Overdue" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("No tasks match these filters."),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps My tasks to the viewer's own when the read holds others' (View as a role)", () => {
+    // A previewed role without tasks:manage, while the read is still the
+    // officer's whole chapter.
+    permissionsRef.current = ["members:view"];
+    render(<TasksBoard />);
+    expect(screen.queryByText("Order shirts")).toBeNull();
+    expect(titlesIn("This week")).toEqual(["Draft the rush calendar"]);
+  });
+
+  it("says My tasks is loading while an officer's account is unknown", async () => {
+    const user = userEvent.setup();
+    currentUserRef.current = undefined;
+    render(<TasksBoard />);
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Whose tasks" })).getByRole(
+        "radio",
+        { name: "My tasks" },
+      ),
+    );
+    expect(screen.getByText("Loading your tasks…")).toBeInTheDocument();
+  });
+
+  it("lists a confirmed task once, under Confirmed, not under Waiting on an officer", () => {
+    permissionsRef.current = ["members:view"];
+    tasksRef.current = [
+      ...ROWS.filter((row) => row.assignee_id === ME),
+      task("done", "Fold the flyers", ME, -1, "COMPLETED", {
+        points_awarded: true,
+        completed_at: "2026-08-10T00:00:00Z",
+        confirmed_at: "2026-08-11T00:00:00Z",
+      }),
+    ];
+    render(<TasksBoard />);
+    expect(titlesIn("Waiting on an officer")).toEqual(["Book the venue"]);
+    expect(screen.getAllByText("Fold the flyers")).toHaveLength(1);
   });
 
   it("groups the chapter's board by person, with each tile's status", async () => {
@@ -1726,6 +1788,16 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     );
 
     expect(titlesIn("Cole Martin")).toEqual(["Order shirts"]);
+    // By name, whatever order the read listed them in.
+    const labels = screen
+      .getAllByRole("region")
+      .map((section) => section.getAttribute("aria-labelledby"))
+      .filter((id): id is string => id?.startsWith("tasks-column-person-") ?? false)
+      .map((id) => document.getElementById(id)?.textContent ?? "");
+    expect(labels.map((label) => label.replace(/\d+$/, "").trim())).toEqual([
+      "Cole Martin",
+      "Paul Carlson (you)",
+    ]);
     expect(titlesIn("Paul Carlson (you)")).toEqual([
       "Return the projector",
       "Sweep the chapter room",

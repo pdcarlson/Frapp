@@ -361,6 +361,12 @@ export function TasksBoard() {
       statuses.add(statusOf(task));
       dues.add(taskDueBucket(task, now));
     }
+    // A value already picked stays listed, and named, after its last task
+    // leaves (marked done, deleted, or past midnight), so the chip never
+    // falls back to the raw value and the member can see what to clear.
+    if (assigneeFilter !== null) assignees.add(assigneeFilter);
+    if (statusFilter !== null) statuses.add(statusFilter);
+    if (dueFilter !== null) dues.add(dueFilter);
     const assignee: FilterOption[] = [...assignees]
       .map((id) => ({
         value: id,
@@ -389,7 +395,15 @@ export function TasksBoard() {
           : `Due ${TASK_DUE_BUCKET_LABELS[value].toLowerCase()}`,
     }));
     return { assignee, status, due };
-  }, [tasks, membersByUserId, myUserId, nowTick]);
+  }, [
+    tasks,
+    membersByUserId,
+    myUserId,
+    nowTick,
+    assigneeFilter,
+    statusFilter,
+    dueFilter,
+  ]);
 
   const { groups, confirmed, shown } = useMemo(() => {
     const now = new Date(nowTick);
@@ -397,14 +411,17 @@ export function TasksBoard() {
       membersByUserId.get(id) ?? memberFallbackLabel(id);
     let pool: Task[];
     if (view === "mine") {
-      // A member's read already holds only their own tasks. An officer's is
-      // the chapter's, so My tasks keeps theirs, and none while their
-      // account is unknown (the page says why above the board).
-      pool = canManage
-        ? tasks.filter(
-            (task) => myUserId !== "" && task.assignee_id === myUserId,
-          )
-        : tasks;
+      // Only the viewer's own, whatever the read holds: an officer's is the
+      // chapter's, and so is one previewing a role without `tasks:manage`
+      // (View as a role keeps the officer's reads). Until the account is
+      // known an officer gets none (the page says why) and a member gets the
+      // read, which the server already keeps to their own.
+      pool =
+        myUserId !== ""
+          ? tasks.filter((task) => task.assignee_id === myUserId)
+          : canManage
+            ? []
+            : tasks;
     } else {
       pool = tasks.filter(
         (task) =>
@@ -694,20 +711,14 @@ export function TasksBoard() {
     );
   }
 
-  // Two reads the board renders without, so neither blanks it (#1346, #1209).
-  // Each says so instead, above a board that keeps working, and only when it
-  // has nothing cached (a failed refetch over a good answer changes nothing
-  // on screen). Your account decides which tasks are yours, so without it
-  // every viewer loses Start, Mark done and the like on their own tasks, and
-  // an officer loses Confirm on every task. The roster is said only to a
-  // viewer who may read it (`GET /v1/members` needs `members:view`), since a
-  // refusal is not a failure a retry can clear; while permissions are unknown
-  // the board says it rather than stay silent.
   // The status lanes say which status a task is in; any other grouping puts
   // the status on the tile.
   const statusGrouped = view === "all" && groupBy === "status";
+  // A board nothing matches draws no lanes, so the add row heads the page.
   const addRowInTodo =
-    statusGrouped && (statusFilter === null || statusFilter === "TODO");
+    statusGrouped &&
+    (statusFilter === null || statusFilter === "TODO") &&
+    !(filtering && shown === 0);
   const addRow =
     canManage || !permissionsKnown ? (
       <Can permission="tasks:manage">
@@ -719,6 +730,15 @@ export function TasksBoard() {
         />
       </Can>
     ) : null;
+  // Two reads the board renders without, so neither blanks it (#1346, #1209).
+  // Each says so instead, above a board that keeps working, and only when it
+  // has nothing cached (a failed refetch over a good answer changes nothing
+  // on screen). Your account decides which tasks are yours, so without it
+  // every viewer loses Start, Mark done and the like on their own tasks, and
+  // an officer loses Confirm on every task. The roster is said only to a
+  // viewer who may read it (`GET /v1/members` needs `members:view`), since a
+  // refusal is not a failure a retry can clear; while permissions are unknown
+  // the board says it rather than stay silent.
   const viewerUnreadable = currentUser.isError && myUserId === "";
   const rosterUnreadable =
     (!permissionsKnown ||
@@ -852,7 +872,13 @@ export function TasksBoard() {
           {canManage && !addRowInTodo ? addRow : null}
           {filtering && shown === 0 ? (
             <InlineNote>No tasks match these filters.</InlineNote>
-          ) : view === "mine" && canManage && myUserId === "" ? null : (
+          ) : view === "mine" && canManage && myUserId === "" ? (
+            // The failed read says so above the board; until it answers,
+            // say what's coming rather than draw an empty page.
+            viewerUnreadable ? null : (
+              <InlineNote>Loading your tasks…</InlineNote>
+            )
+          ) : (
             <div
               className={
                 isGrid
@@ -886,7 +912,10 @@ export function TasksBoard() {
                             key={task.id}
                             layout={layout}
                             task={task}
-                            showStatus={!statusGrouped}
+                            // Not under a heading that already says it.
+                            showStatus={
+                              !statusGrouped && group.id !== "waiting"
+                            }
                             assigneeName={
                               membersByUserId.get(task.assignee_id) ??
                               memberFallbackLabel(task.assignee_id)

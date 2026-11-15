@@ -50,6 +50,25 @@ describe("taskDueBucket (#4295 step 5)", () => {
     ).toBe("week");
   });
 
+  it("calls a timed task overdue from its minute, as its due line does", () => {
+    const thisMorning = new Date(2026, 10, 12, 9).toISOString();
+    expect(
+      taskDueBucket(
+        { due_date: "2026-11-12", due_at: thisMorning, status: "TODO" },
+        NOW,
+      ),
+    ).toBe("overdue");
+  });
+
+  it("falls back to the day when the time can't be read", () => {
+    expect(
+      taskDueBucket(
+        { due_date: "2026-11-12", due_at: "banana", status: "TODO" },
+        NOW,
+      ),
+    ).toBe("today");
+  });
+
   it("keeps a task with an unreadable date, as Later", () => {
     expect(taskDueBucket({ due_date: "banana", status: "TODO" }, NOW)).toBe(
       "later",
@@ -75,6 +94,13 @@ describe("compareTasksByDue", () => {
     status: "TODO" | "OVERDUE" = "TODO",
     due_at: string | null = null,
   ) => ({ title, due_date, status, due_at });
+
+  it("sorts an unreadable time as no time, consistently", () => {
+    const a = task("a", "2026-11-12", "TODO", "banana");
+    const b = task("b", "2026-11-12");
+    expect(compareTasksByDue(a, b)).toBe(-1);
+    expect(compareTasksByDue(b, a)).toBe(1);
+  });
 
   it("leads with overdue, then day, then time with an untimed task last, then title", () => {
     const rows = [
