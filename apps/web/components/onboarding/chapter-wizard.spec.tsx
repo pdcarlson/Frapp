@@ -119,7 +119,7 @@ import {
   DEFAULT_CHAPTER_ACCENT,
   normalizeAccentInput,
 } from "@repo/hooks/chapter-identity";
-import { ChapterWizard } from "./chapter-wizard";
+import { ChapterWizard, postCreatePath } from "./chapter-wizard";
 import { downscaleImage } from "@/lib/downscale-image";
 import { DISPLAY_STEP_TITLE } from "./display-step";
 import { setChatDensity } from "@/lib/chat/chat-density";
@@ -967,12 +967,11 @@ describe("where the wizard leaves a brand-new founder", () => {
   });
 
   /**
-   * `ChapterService.create` has no billing dependency, so the chapter this
-   * wizard just made is `subscription_status 'incomplete'`: every screen loads
-   * and every paid-ops write 403s permanently (#2297). Landing on chat left
-   * the founder in exactly that state, which is the Guideline 2.1 finding.
+   * Chapter billing is off for the beta (`CHAPTER_BILLING_BETA_OFF`, Paul
+   * 2026-11-15), so the API creates the chapter `active` and the founder goes
+   * straight to chat: there is no checkout to show them.
    */
-  it("lands on checkout rather than chat, because a fresh chapter is incomplete", async () => {
+  it("lands on chat while chapter billing is off for the beta", async () => {
     render(<ChapterWizard onComplete={() => {}} />);
     gotoIdentityStep();
 
@@ -985,28 +984,17 @@ describe("where the wizard leaves a brand-new founder", () => {
       await screen.findByRole("button", { name: /Skip for now|Finish/ }),
     );
 
-    expect(routerReplace).toHaveBeenCalledWith("/settings?tab=billing");
+    expect(routerReplace).toHaveBeenCalledWith("/chat");
   });
 
-  it("does not send the founder to the chat landing", async () => {
-    // Asserted by absence, and separately from the positive case: the bug this
-    // closes is *reachability* of the `incomplete` state, so a revert to
-    // `/chat?channel=general` has to fail a test rather than only manual QA.
-    render(<ChapterWizard onComplete={() => {}} />);
-    gotoIdentityStep();
-
-    fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.click(screen.getByRole("button", { name: "Create chapter" }));
-    await waitFor(() => expect(onboardMutate).toHaveBeenCalledTimes(1));
-
-    await passDisplayStep();
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Skip for now|Finish/ }),
-    );
-
-    const destinations = routerReplace.mock.calls.map(([path]) => String(path));
-    expect(destinations).not.toEqual(
-      expect.arrayContaining([expect.stringContaining("/chat")]),
-    );
+  /**
+   * With billing on, the chapter is created `incomplete`: every screen loads
+   * and every paid-ops write 403s permanently (#2297). Landing on chat left
+   * the founder in exactly that state, which is the Guideline 2.1 finding, so
+   * the landing is checkout then, and never chat.
+   */
+  it("lands on checkout, not chat, once chapter billing is back", () => {
+    expect(postCreatePath(false)).toBe("/settings?tab=billing");
+    expect(postCreatePath(false)).not.toContain("/chat");
   });
 });
