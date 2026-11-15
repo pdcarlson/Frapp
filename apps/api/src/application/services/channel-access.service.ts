@@ -22,6 +22,7 @@ import type {
   ChatMessage,
 } from '#domain/entities/chat.entity';
 import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
+import type { Member } from '#domain/entities/member.entity';
 import {
   canAccessChannel,
   EMPTY_ACCESS_HOLDER,
@@ -325,10 +326,13 @@ export class ChannelAccessService {
    * rule for many channels at once, from one chapter-wide resolve however
    * many there are (Activity's vote counts, #4792). The caller has already
    * established it may read these channels; nothing is checked for it here.
+   * `roster` is the chapter's `members` rows when the caller already reads
+   * them (#4908), passed through to the resolve.
    */
   async readersOf(
     chapterId: string,
     channels: readonly ChannelAccessFields[],
+    roster?: () => Promise<readonly Member[]>,
   ): Promise<Map<string, Set<string>>> {
     if (channels.length === 0) return new Map();
     const predicates = channels.map((channel) => ({
@@ -338,6 +342,7 @@ export class ChannelAccessService {
     const access = await this.rbac.getChapterMemberAccess(
       chapterId,
       predicates.some(({ predicate }) => listsNameGroups(predicate)),
+      roster,
     );
     return new Map(
       predicates.map(({ id, predicate }) => [
