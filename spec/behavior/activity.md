@@ -247,8 +247,10 @@ made). The clients draw it as a thin bar with "41 of 60" under the row
   a channel is opened by a group), every vote on the caller's open polls, and who among the
   readers has blocked the caller. For events: the roster, the Alumni role and every attendance
   row on the open ones. The vote and attendance reads are paged, so a busy chapter's rows past
-  the server's row cap are still counted. None of it runs for a member with no open poll and no
-  event open for check-in, which is most members on most opens.
+  the server's row cap are still counted. The roster and the Alumni role are read at most once
+  per Activity read, shared by both counts and the caller's own alumni check (#4908). None of it
+  runs for a member with no open poll and no event open for check-in, which is most members on
+  most opens.
 - **A hint, not a section.** When a count can't be read the rows are served with
   `progress: null` and the failure is reported; nothing lands in `unavailable`.
 
