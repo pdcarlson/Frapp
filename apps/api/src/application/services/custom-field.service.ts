@@ -74,8 +74,8 @@ export class CustomFieldService {
    * with server-side visibility enforcement). Starting from the (already
    * visibility-filtered) definitions means out-of-tier and `sensitive` field
    * values are never even looked up, so they cannot leak. Fields with no value
-   * set for this member are returned with `value: null` so the directory can
-   * render the full (visible) field set per chapter.
+   * set for this member are returned with `value: null`; the directory leaves
+   * those out (`spec/behavior/members.md` § Custom Fields, #1749).
    */
   async findVisibleValuesForMember(
     chapterId: string,

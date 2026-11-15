@@ -95,10 +95,8 @@ function formatCustomValue(
 /**
  * `MemberProfileDto.custom_fields`, already filtered server-side to the tiers
  * the viewer may see (`spec/behavior/members.md` § Custom Fields), so the
- * sheet gates none. A field with no value is left out (#1749): nothing in the
- * product writes a value yet (#581), so a chapter's seeded fields would
- * otherwise draw a block of "Not set" rows on every profile. With none set,
- * More details itself goes.
+ * sheet gates none. A field with no value is left out, and with none set
+ * More details itself goes (`spec/behavior/members.md` § Custom Fields).
  */
 function parseCustomFields(
   member: MemberRecord | null,

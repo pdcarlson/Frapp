@@ -140,9 +140,7 @@ function formatJoinedDate(value: string | null): string | null {
 /**
  * `MemberProfileDto.custom_fields`, already tier-filtered server-side. A
  * field missing an id or label is dropped rather than rendered blank, and so
- * is one with no value (#1749): nothing in the product writes a value yet
- * (#581), so a chapter's seeded fields would otherwise draw a block of empty
- * rows on every profile. With none set, More details itself goes.
+ * is one with no value (`spec/behavior/members.md` § Custom Fields).
  */
 function parseCustomFields(data: unknown): MemberCustomField[] {
   if (!Array.isArray(data)) return [];

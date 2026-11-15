@@ -440,7 +440,7 @@ describe("MemberDetailSheet custom fields", () => {
     expect(screen.getByText("Computer Science")).toBeInTheDocument();
     expect(screen.getByText("Dues Paid")).toBeInTheDocument();
     expect(screen.getByText("Yes")).toBeInTheDocument();
-    // An unset field is left out (#1749): nothing writes a value yet (#581).
+    // An unset field is left out (#1749).
     expect(screen.queryByText("Hometown")).not.toBeInTheDocument();
   });
 
