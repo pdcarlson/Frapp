@@ -496,13 +496,18 @@ export function TasksBoard() {
 
   const myUserId = (currentUser.data as { id?: string } | undefined)?.id ?? "";
   // Two reads the board renders without, so neither blanks it (#1346, #1209).
-  // Each says so instead, above a board that keeps working. Your account
-  // matters only to an officer, since it is what Confirm waits on; the roster
-  // only to a viewer who may read it (`GET /v1/members` needs `members:view`),
-  // since a refusal there is not a failure a retry can clear.
-  const viewerUnreadable = canManage && currentUser.isError && myUserId === "";
+  // Each says so instead, above a board that keeps working, and only when it
+  // has nothing cached (a failed refetch over a good answer changes nothing
+  // on screen). Your account decides which tasks are yours, so without it
+  // every viewer loses Start, Mark done and the like on their own tasks, and
+  // an officer loses Confirm on every task. The roster is said only to a
+  // viewer who may read it (`GET /v1/members` needs `members:view`), since a
+  // refusal is not a failure a retry can clear; while permissions are unknown
+  // the board says it rather than stay silent.
+  const viewerUnreadable = currentUser.isError && myUserId === "";
   const rosterUnreadable =
-    can("members:view", permissionsPayload?.permissions) &&
+    (!permissionsKnown ||
+      can("members:view", permissionsPayload?.permissions)) &&
     membersQuery.isError &&
     membersQuery.data === undefined;
 
@@ -523,7 +528,9 @@ export function TasksBoard() {
         stale={viewerUnreadable || rosterUnreadable}
         message={[
           viewerUnreadable
-            ? "We couldn't confirm your account, so Confirm is hidden on every task until it loads."
+            ? canManage
+              ? "We couldn't confirm your account, so Confirm and the buttons on your own tasks are hidden until it loads."
+              : "We couldn't confirm your account, so the buttons on your tasks are hidden until it loads."
             : null,
           rosterUnreadable
             ? "We couldn't load member names, so tasks show a short id in place of who they're assigned to."
@@ -759,7 +766,7 @@ function TaskCard({
   // `GET /v1/users/me` fails terminally, Confirm stays hidden on *every* row.
   // Hiding a control the server would accept is the safer failure than
   // offering one it will refuse, and the board says why above the columns
-  // (#1346), so an officer doesn't read it as a revoked grant.
+  // (#1346), so nobody reads it as a revoked grant.
   const { toast } = useToast();
   const viewerUnknown = myUserId === "";
   const isMine = !viewerUnknown && task.assignee_id === myUserId;

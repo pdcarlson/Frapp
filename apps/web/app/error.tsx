@@ -4,7 +4,10 @@ import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
 import { CrestPage } from "@/components/shared/crest-page";
 import { Button } from "@/components/ui/button";
-import { isChunkLoadError } from "@/lib/chunk-load-error";
+import {
+  STALE_CHUNK_DESCRIPTION,
+  isChunkLoadError,
+} from "@/lib/chunk-load-error";
 import { useNetwork } from "@/lib/providers/network-provider";
 
 /**
@@ -100,19 +103,31 @@ export default function RouteError({
   const shouldReload = isChunkError && linkOnline;
 
   useEffect(() => {
-    Sentry.captureException(error);
-  }, [error]);
+    // Tagged as `segment-error.tsx` tags it, so one search counts stale
+    // chunks at both boundaries.
+    Sentry.captureException(error, {
+      tags: { chunk_load_error: isChunkError },
+    });
+  }, [error, isChunkError]);
+
+  // Offline, nothing broke on our side, so the title says what did happen
+  // (`writing.md` §7's offline rows state the connection, not a failure).
+  const offlineChunk = isChunkError && !linkOnline;
 
   return (
     <CrestPage
       code="500"
       tone="error"
-      title="Something broke on our side."
+      title={
+        offlineChunk
+          ? "This page couldn't load."
+          : "Something broke on our side."
+      }
       description={
         shouldReload
-          ? "This usually means a new version shipped while the tab was open. Reload to pick it up."
-          : isChunkError
-            ? "You're offline, so this page couldn't load. Retry once you're back."
+          ? STALE_CHUNK_DESCRIPTION
+          : offlineChunk
+            ? "You're offline. Retry once you're back."
             : "The error has been reported. Retrying usually clears it."
       }
     >

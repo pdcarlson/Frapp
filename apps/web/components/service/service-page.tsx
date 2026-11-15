@@ -163,9 +163,11 @@ export function ServiceHoursPage() {
   // The roster only names rows; the rows come from the entries read. So a
   // failed roster is said above a page that keeps working rather than
   // replacing it (#1209). Only for a viewer who may read it (`GET /v1/members`
-  // needs `members:view`): a refusal is not a failure a retry clears.
+  // needs `members:view`): a refusal is not a failure a retry clears. While
+  // permissions are unknown it says it rather than stay silent.
   const rosterUnreadable =
-    can("members:view", permissionsPayload?.permissions ?? []) &&
+    (!permissionsKnown ||
+      can("members:view", permissionsPayload?.permissions ?? [])) &&
     membersQuery.isError &&
     membersQuery.data === undefined;
   const pinnedFallback = viewerUnknown && permissionsKnown && !canApprove;
@@ -482,12 +484,12 @@ export function ServiceHoursPage() {
                           the fail-fast entitlement rule.
 
                           Fails **closed** on an unresolved viewer, matching
-                          `tasks-board.tsx:594-610` on the sibling task path:
+                          the task board's Confirm gate (`TaskCard`):
                           `viewerUserId` is null while `/v1/users/me` is in
                           flight or errored, so keying on `isOwnEntry` alone
                           would put Approve back on your own entry during that
-                          window. Unlike the task board it says why in both
-                          cases — a silently withheld control is #1346.
+                          window. It says why in both cases, as the task board
+                          does since #1346.
                         */}
                       {/*
                           Secondary, not primary: every row in the queue

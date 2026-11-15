@@ -93,7 +93,12 @@ const OFFICER = [
 ];
 const permissionsList = vi.hoisted(() => ({ current: [] as string[] }));
 // `GET /v1/members` failed with nothing cached (#1209).
-const roster = vi.hoisted(() => ({ failed: false, refetch: vi.fn() }));
+const roster = vi.hoisted(() => ({
+  failed: false,
+  // A failed refetch over a good answer: TanStack keeps `data` with `isError`.
+  keepsData: false,
+  refetch: vi.fn(),
+}));
 // `GET /v1/service-entries/points-rate`, or undefined while unread/failed.
 const pointsRate = vi.hoisted(() => ({
   current: undefined as { minutes_per_point: number } | undefined,
@@ -151,7 +156,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
         };
   },
   useMembers: () => ({
-    data: roster.failed ? undefined : [],
+    data: roster.failed && !roster.keepsData ? undefined : [],
     isError: roster.failed,
     refetch: roster.refetch,
   }),
@@ -185,6 +190,7 @@ vi.mock("@/components/shared/can", () => ({
 
 beforeEach(() => {
   roster.failed = false;
+  roster.keepsData = false;
   roster.refetch.mockClear();
   permissionsList.current = [...OFFICER];
   leaderboardState.current = { isPending: false, isError: false };
@@ -299,6 +305,15 @@ describe("ServiceHoursPage when member names can't load (#1209)", () => {
     expect(liveStatus()).toHaveTextContent(/couldn't load member names/i);
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(roster.refetch).toHaveBeenCalledOnce();
+  });
+
+  it("says nothing when a refetch failed over a roster it already has", () => {
+    chapter.active();
+    roster.failed = true;
+    roster.keepsData = true;
+    render(<ServiceHoursPage />);
+
+    expect(screen.queryByText(/couldn't load member names/i)).toBeNull();
   });
 
   it("says nothing to a viewer who may not read the roster", () => {

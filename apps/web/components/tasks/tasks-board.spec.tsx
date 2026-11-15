@@ -35,11 +35,14 @@ const {
   membersFailed,
   currentUserRefetch,
   membersRefetch,
+  failedReadsKeepData,
 } = vi.hoisted(() => ({
   // `GET /v1/users/me` and `GET /v1/members` failed with nothing cached
   // (#1346, #1209).
   currentUserFailed: { current: false },
   membersFailed: { current: false },
+  // A failed refetch over a good answer: TanStack keeps `data` with `isError`.
+  failedReadsKeepData: { current: false },
   currentUserRefetch: vi.fn(),
   membersRefetch: vi.fn(),
   // The lifecycle writes Mark done and Send back make (#4635).
@@ -146,7 +149,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     refetch: vi.fn(),
   }),
   useMembers: () => ({
-    data: membersFailed.current ? undefined : MEMBERS,
+    data:
+      membersFailed.current && !failedReadsKeepData.current
+        ? undefined
+        : MEMBERS,
     isError: membersFailed.current,
     refetch: membersRefetch,
   }),
@@ -176,7 +182,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     return { data: options?.enabled ? eventsRef.current : undefined };
   },
   useCurrentUser: () => ({
-    data: currentUserFailed.current ? undefined : currentUserRef.current,
+    data:
+      currentUserFailed.current && !failedReadsKeepData.current
+        ? undefined
+        : currentUserRef.current,
     isError: currentUserFailed.current,
     refetch: currentUserRefetch,
   }),
@@ -269,6 +278,7 @@ beforeEach(() => {
   eventsModuleOn.current = true;
   currentUserFailed.current = false;
   membersFailed.current = false;
+  failedReadsKeepData.current = false;
   currentUserRefetch.mockClear();
   membersRefetch.mockClear();
 });
@@ -468,21 +478,42 @@ describe("TasksBoard subscription gating", () => {
       screen.queryByRole("button", { name: /^confirm$/i }),
     ).not.toBeInTheDocument();
     expect(liveStatus()).toHaveTextContent(
-      /couldn't confirm your account, so Confirm is hidden/i,
+      /couldn't confirm your account, so Confirm and the buttons on your own tasks are hidden/i,
     );
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(currentUserRefetch).toHaveBeenCalledOnce();
     expect(membersRefetch).not.toHaveBeenCalled();
   });
 
-  it("says nothing about Confirm to a member who never has it", () => {
+  it("tells a member why the buttons on their own tasks are gone (#1346)", () => {
+    // Without the viewer, no row is theirs, so Start and Mark done go too.
+    // A member has no Confirm, so the line doesn't mention it.
     chapter.active();
     permissionsRef.current = [];
     currentUserFailed.current = true;
     tasksRef.current = [{ ...TASKS[0] }];
     render(<TasksBoard />);
 
-    expect(screen.queryByText(/couldn't confirm your account/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /start/i })).toBeNull();
+    expect(liveStatus()).toHaveTextContent(
+      /couldn't confirm your account, so the buttons on your tasks are hidden/i,
+    );
+    expect(liveStatus()).not.toHaveTextContent(/confirm and/i);
+  });
+
+  it("says nothing when a refetch failed over answers it already has", () => {
+    chapter.active();
+    permissionsRef.current = ["tasks:manage", "members:view"];
+    currentUserRef.current = { id: ME };
+    currentUserFailed.current = true;
+    membersFailed.current = true;
+    failedReadsKeepData.current = true;
+    tasksRef.current = [TASKS[2]];
+    render(<TasksBoard />);
+
+    expect(liveStatus()).toBeNull();
+    // The cached viewer still lets Confirm through on someone else's task.
+    expect(confirmButton()).toBeEnabled();
   });
 
   it("keeps the board and says so when member names can't load (#1209)", async () => {
@@ -508,6 +539,17 @@ describe("TasksBoard subscription gating", () => {
     render(<TasksBoard />);
 
     expect(screen.queryByText(/couldn't load member names/i)).toBeNull();
+  });
+
+  it("says the names are missing while permissions are still unknown", () => {
+    chapter.active();
+    permissionsRef.current = undefined;
+    permissionsFailed.current = true;
+    membersFailed.current = true;
+    tasksRef.current = [TASKS[2]];
+    render(<TasksBoard />);
+
+    expect(liveStatus()).toHaveTextContent(/couldn't load member names/i);
   });
 
   it("still offers Confirm on someone else's completed task", () => {

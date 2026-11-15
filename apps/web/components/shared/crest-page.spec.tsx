@@ -235,7 +235,9 @@ describe("the error page", () => {
     captureException.mockClear();
     const error = new Error("boom");
     render(<RouteError error={error} retry={vi.fn()} />);
-    expect(captureException).toHaveBeenCalledWith(error);
+    expect(captureException).toHaveBeenCalledWith(error, {
+      tags: { chunk_load_error: false },
+    });
   });
 
   it("retries rather than resets", async () => {
@@ -270,6 +272,10 @@ describe("the error page", () => {
     await userEvent.click(screen.getByRole("button", { name: "Reload" }));
     expect(reload).toHaveBeenCalledOnce();
     expect(retry).not.toHaveBeenCalled();
+    // Tagged as the degraded segment tags it.
+    expect(captureException).toHaveBeenCalledWith(expect.any(Error), {
+      tags: { chunk_load_error: true },
+    });
   });
 
   it("keeps Retry for a stale chunk while offline, since a reload would lose the tab", async () => {
@@ -278,10 +284,15 @@ describe("the error page", () => {
     const retry = vi.fn();
     try {
       render(<RouteError error={chunkLoadError()} retry={retry} />);
+      // Nothing broke on our side, so the title doesn't say it did.
       expect(
-        screen.getByText(
-          "You're offline, so this page couldn't load. Retry once you're back.",
-        ),
+        screen.getByRole("heading", {
+          level: 1,
+          name: "This page couldn't load.",
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("You're offline. Retry once you're back."),
       ).toBeInTheDocument();
       await userEvent.click(screen.getByRole("button", { name: "Retry" }));
       expect(retry).toHaveBeenCalledOnce();
