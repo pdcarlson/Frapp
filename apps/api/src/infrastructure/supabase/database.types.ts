@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActivityItemRead,
   ActivityItemSnooze,
+  ActivityRecapPush,
   ActivityUnreadStart,
   AiReport,
   AiRun,
@@ -156,6 +157,7 @@ export interface Database {
     Tables: {
       activity_item_reads: TableDefinition<ActivityItemRead>;
       activity_item_snoozes: TableDefinition<ActivityItemSnooze>;
+      activity_recap_pushes: TableDefinition<ActivityRecapPush>;
       activity_unread_starts: TableDefinition<ActivityUnreadStart>;
       ai_ask_feedback: TableDefinition<AskFeedbackRow>;
       ai_ask_trace_steps: TableDefinition<AskTraceStepRow>;

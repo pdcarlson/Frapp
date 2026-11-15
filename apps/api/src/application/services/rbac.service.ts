@@ -1348,13 +1348,18 @@ export class RbacService {
    * `withGroups` also reads who is in each group (#4076), so `channel_access`
    * carries `group:` entries: the push audience and the channel member list
    * pass it for a channel whose lists name a group (`listsNameGroups`).
+   *
+   * `roster` is the chapter's `members` rows when the caller already reads
+   * them for something else in the same request (Activity's progress counts,
+   * #4908), so the roster is read once; the resolve itself stays here.
    */
   async getChapterMemberAccess(
     chapterId: string,
     withGroups = false,
+    roster?: () => Promise<readonly Member[]>,
   ): Promise<ChapterMemberAccess[]> {
     const [members, roles, memberships] = await Promise.all([
-      this.memberRepo.findByChapter(chapterId),
+      roster ? roster() : this.memberRepo.findByChapter(chapterId),
       this.roleRepo.findByChapter(chapterId),
       withGroups
         ? this.groupRepo.findMemberships(chapterId)

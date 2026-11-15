@@ -10,6 +10,7 @@ vi.mock("@gorhom/bottom-sheet", () => ({
 }));
 
 const state = vi.hoisted(() => ({
+  save: (() => Promise.resolve()) as (body: unknown) => Promise<unknown>,
   chapter: undefined as
     | { name: string; accent_color: string; branding: Record<string, unknown> }
     | undefined,
@@ -18,7 +19,7 @@ const state = vi.hoisted(() => ({
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => ({ data: state.chapter, isError: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateChapter: () => ({ mutateAsync: state.save, isPending: false }),
 }));
 
 vi.mock("@/lib/chapter-branding", () => ({
@@ -34,6 +35,8 @@ vi.mock("@/lib/chapter-branding", () => ({
 import { DEFAULT_CHAPTER_ACCENT } from "@repo/hooks/chapter-identity";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
+import { AccentPicker } from "@/components/chapter/accent-picker";
+import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import { AccentSheet, storedAccentOf } from "./accent-sheet";
 
 describe("storedAccentOf", () => {
@@ -85,6 +88,76 @@ describe("AccentSheet", () => {
     expect(screenText(tree)).toContain(
       "Changes the color for everyone in the chapter.",
     );
+    act(() => tree.unmount());
+  });
+});
+
+/**
+ * A save can settle after the officer swiped the sheet away. gorhom 5.2's
+ * `dismiss()` on a dismissed modal leaves it stuck, so the next open draws
+ * nothing; and a sheet reopened since is a new visit the save must not close
+ * (#3405, `useSheetVisit`).
+ */
+describe("AccentSheet closing after a save (#3405)", () => {
+  const dismiss = vi.fn();
+
+  function openWithPendingSave() {
+    state.chapter = {
+      name: "Beta Chapter",
+      accent_color: "#4F2683",
+      branding: {},
+    };
+    let land = () => {};
+    state.save = () =>
+      new Promise<void>((resolve) => {
+        land = resolve;
+      });
+    dismiss.mockReset();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <AccentSheet ref={React.createRef()} />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal"
+              ? { dismiss, present: vi.fn() }
+              : null,
+        },
+      );
+    });
+    const modal = tree.root.find(
+      (node) => node.type === ("BottomSheetModal" as never),
+    );
+    act(() => modal.props.onAnimate(-1, 0)); // presented
+    act(() => tree.root.findByType(AccentPicker).props.onChange("#2563EB"));
+    const save = tree.root.findByType(SheetPrimaryButton);
+    act(() => save.props.onPress());
+    return { tree, modal, land: () => act(async () => land()) };
+  }
+
+  it("closes the sheet when the save lands", async () => {
+    const { tree, land } = openWithPendingSave();
+    await land();
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("doesn't dismiss a sheet already swiped away when the save lands", async () => {
+    const { tree, modal, land } = openWithPendingSave();
+    act(() => modal.props.onDismiss());
+    await land();
+    expect(dismiss).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("leaves a sheet reopened mid-save open when the save lands", async () => {
+    const { tree, modal, land } = openWithPendingSave();
+    act(() => modal.props.onDismiss());
+    act(() => modal.props.onAnimate(-1, 0)); // reopened
+    await land();
+    expect(dismiss).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });

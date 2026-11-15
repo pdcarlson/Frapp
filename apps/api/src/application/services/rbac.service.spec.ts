@@ -95,6 +95,7 @@ describe('RbacService', () => {
       findByIds: jest.fn(),
       isAnalyticsOptedOut: jest.fn(),
       findWithBirthdayChannel: jest.fn(),
+      findForRecapPush: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),
@@ -2186,6 +2187,42 @@ describe('RbacService', () => {
         permissions,
         display_order,
       });
+
+    // #4908: Activity hands over the roster it already read, so the resolve
+    // must use it rather than read the chapter's members again.
+    it('resolves from a roster the caller hands over, without reading one', async () => {
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        role('role-officer', 2, [SystemPermissions.CHANNELS_MANAGE]),
+      ]);
+      mockMemberRepo.findByChapter.mockClear();
+      const roster = jest.fn().mockResolvedValue([
+        memberFixture({
+          id: 'm-1',
+          user_id: 'user-officer',
+          role_ids: ['role-officer'],
+        }),
+        // Still re-scoped to the chapter, whoever read the roster.
+        memberFixture({
+          id: 'm-x',
+          user_id: 'user-elsewhere',
+          chapter_id: 'ch-2',
+          role_ids: ['role-officer'],
+        }),
+      ]);
+
+      const result = await service.getChapterMemberAccess(
+        'ch-1',
+        false,
+        roster,
+      );
+
+      expect(roster).toHaveBeenCalledTimes(1);
+      expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+      expect(result.map((entry) => entry.user_id)).toEqual(['user-officer']);
+      expect(result[0].permissions).toEqual(
+        new Set([SystemPermissions.CHANNELS_MANAGE]),
+      );
+    });
 
     it('ranks each member by their highest live role, null when they hold none', async () => {
       mockRoleRepo.findByChapter.mockResolvedValue([

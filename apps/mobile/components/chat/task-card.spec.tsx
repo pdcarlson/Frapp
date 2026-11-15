@@ -71,16 +71,18 @@ vi.mock("@/lib/chapter-branding", () => ({
 // what it was opened on matters.
 const editSheet = vi.hoisted(() => ({
   editing: null as unknown,
+  keptDraft: undefined as string | undefined,
   present: vi.fn(),
 }));
 vi.mock("@/components/tasks/new-task-sheet", async () => {
   const React = await import("react");
   return {
     NewTaskSheet: React.forwardRef(function NewTaskSheet(
-      props: { editing: unknown },
+      props: { editing: unknown; keptDraft?: string },
       ref: React.Ref<{ present: () => void }>,
     ) {
       editSheet.editing = props.editing;
+      editSheet.keptDraft = props.keptDraft;
       React.useImperativeHandle(ref, () => ({ present: editSheet.present }));
       return null;
     }),
@@ -656,6 +658,8 @@ describe("TaskCard — Edit (#4512)", () => {
     });
     // Mounted is not shown: the sheet has to be presented.
     expect(editSheet.present).toHaveBeenCalledTimes(1);
+    // Kept past a close and the thread, by task (#4872).
+    expect(editSheet.keptDraft).toBe("task-edit:task-1");
   });
 
   it("holds Edit like the card's other writes while a write would be lost", () => {

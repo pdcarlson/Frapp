@@ -32,7 +32,11 @@ silently a second opinion:
 slash palette, both split; the mention list, deliberately not — see below; its Ask drawer and thread
 panel no longer exist —
 [#2142](https://github.com/pdcarlson/Frapp/issues/2142) deleted the thread panel, and Ask is a
-top-bar dialog in the shell).
+top-bar dialog in the shell). *Corrected 2026-11-15:* a thread panel is back
+([#3785](https://github.com/pdcarlson/Frapp/issues/3785)). It is split out of the first download
+with the + card's forms, the event editor and the profile sheet, and all of them are preloaded once
+the page is idle rather than fetched on open
+([#3716](https://github.com/pdcarlson/Frapp/issues/3716), [Bundle size](#bundle-size)).
 
 ## Bundle size
 
@@ -80,7 +84,41 @@ takes the database name from it rather than the reverse. Verified after the buil
 `measure-web-route-bundles.mjs`, which reports sizes and chunk counts but never chunk contents:
 grep the emitted `apps/web/.next/static/chunks/**/*.js` for `dexie` (one file matches), then read
 `entryJSFiles` out of each `apps/web/.next/server/app/**/page_client-reference-manifest.js` and
-check which routes list that chunk (only `/chat`). Nothing in CI does this.
+check which routes list that chunk (only `/chat`). Nothing in CI does this. *Corrected 2026-11-15:*
+since [#3779](https://github.com/pdcarlson/Frapp/issues/3779) put chat on every route, that chunk is
+listed under `(dashboard)/layout` in every dashboard route's manifest, so Dexie is on the floor and
+the check now finds it everywhere. The accent cache's reasoning above still holds for what it
+decided (a cookie, not a second Dexie consumer); the floor it protected has since taken Dexie
+anyway.
+
+As of the slow-connection pass ([#3716](https://github.com/pdcarlson/Frapp/issues/3716), 2026-11-15),
+measured the same way on one tree either side of the change. Chat has been a panel of the shell on
+every route since [#3779](https://github.com/pdcarlson/Frapp/issues/3779), so the floor now holds
+it, and the script reports no `/chat` row: that page renders nothing and has no client entry.
+
+| | Entry JS — before | after | Gzipped — before | after |
+|---|---|---|---|---|
+| Shell floor (every dashboard route) | 2,555.6 KB | 2,486.6 KB | 792.5 KB | 776.1 KB |
+| `/settings` | 2,910.8 KB | 2,842.1 KB | 894.3 KB | 878.0 KB |
+| Pre-hydration chunk (Next runtime, Sentry, PostHog until this change) | 729.6 KB | 369.4 KB | 239.2 KB | 120.2 KB |
+
+The last row is not in the script's output: `instrumentation-client.ts` is a bootstrap entry, not
+in any route's `entryJSFiles`, so `measure-web-route-bundles.mjs` never counts it. It was measured
+by gzipping the emitted chunk. PostHog's SDK (360 KB raw, 119 KB gzipped) now loads after the
+page's `load` event, on an idle callback ([`lib/posthog/client.ts`](../../../apps/web/lib/posthog/client.ts)).
+The chat shell's + card forms, event editor, profile sheet and thread panel are out of the first
+download too, and are fetched on the same idle callback
+([`deferred-panels.tsx`](../../../apps/web/components/chat/deferred-panels.tsx)), so every member
+still downloads them, after the page has drawn rather than before.
+
+What that moved, on a cold open of `/chat` (compressed bytes, from the browser's own network log
+with no throttling): the scripts the page's HTML requests, all of which arrive before it hydrates,
+went from about 1,142 KB to 1,010 KB. About 44 KB of panel chunks now follow on the idle callback,
+and so does PostHog's 119 KB wherever `NEXT_PUBLIC_POSTHOG_KEY` is set. It isn't set on the local
+stack, so the local "after" run never fetched PostHog at all, while the "before" run fetched it
+regardless, statically bundled. `scripts/demo/measure-slow-network.mjs` reports the time each
+screen became usable under throttling; its `js` column is everything fetched by then plus 1.5 s,
+idle-time chunks included, so it is not this before-hydration figure.
 
 Earlier rows, for the trend: as of [#2175](https://github.com/pdcarlson/Frapp/issues/2175) the floor
 was 909 KB / 247 KB and `/chat` 1,733 KB / 501 KB; as of
@@ -102,6 +140,9 @@ deltas to deltas, and re-run the script rather than subtracting.
 `@tiptap` + ProseMirror, `react-virtuoso`, and the `react-markdown` / `remark` / `micromark` chain.
 That is the board's **chat** chunk and it is correctly eager: the timeline has to be readable and
 the composer focusable inside 400ms, so neither can wait on a second request.
+*Corrected 2026-11-15:* since [#3779](https://github.com/pdcarlson/Frapp/issues/3779) the chat panel
+is on every dashboard route, so that chunk is on the shell floor rather than `/chat`'s own cost, and
+every route pays for it. The reasoning about which parts stay eager still holds.
 
 Re-measure before and after any change that touches an import on the shell or chat path. The numbers
 are exact and reproducible from a build, which is why they are stated here at all — a target nobody
@@ -128,7 +169,9 @@ pin 4 is more explicit still — "Composer live at first paint · typing is allo
 loads; the outbox queues it". The shell is what satisfies those, so it is what the mark reports.
 Tiptap's timing is kept under its own name rather than dropped: the ~830 KB of its own that `/chat`
 carries ([Bundle size](#bundle-size), above) is mostly that editor, and the shell's number is blind
-to it by design.
+to it by design. *(Corrected 2026-11-15: that chunk is on every route's floor since
+[#3779](https://github.com/pdcarlson/Frapp/issues/3779), not `/chat`'s own; moving the editor off the
+first download is [#5050](https://github.com/pdcarlson/Frapp/issues/5050).)*
 
 Three things the split makes true, none of them visible from the number alone:
 

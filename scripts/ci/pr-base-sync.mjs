@@ -768,8 +768,8 @@ export function buildConflictComment({ baseRef, baseSha, pr }) {
     instructions: [
       "If you are the agent session watching this PR, resolve them now:",
       "",
-      `1. \`npm run merge:main\` on this PR's branch. It merges \`origin/${baseRef}\`, regenerates a conflicted API contract itself, and stops on any other conflict. A branch without that script yet: \`git fetch origin ${baseRef} && git merge origin/${baseRef}\`.`,
-      "2. Resolve the conflicts — keep both sides' behavior; only ask when a conflict is genuinely ambiguous (both sides changed the same logic and picking one loses behavior). Then `npm run merge:main -- --continue`.",
+      `1. \`npm run merge:main\` on this PR's branch. It merges \`origin/${baseRef}\`, regenerates a conflicted API contract itself, keeps both sides where each only added lines (staged for you to read), and stops on the rest. A branch without that script yet: \`git fetch origin ${baseRef} && git merge origin/${baseRef}\`.`,
+      "2. Read the files it kept both sides of, and resolve the rest — keep both sides' behavior; only ask when a conflict is genuinely ambiguous (both sides changed the same logic and picking one loses behavior). Then `npm run merge:main -- --continue`.",
       "3. Run the checks you can locally, then push. Your push re-runs CI against the new base.",
     ],
   });

@@ -51,6 +51,7 @@ import {
   useTallSheetProps,
   SheetBackToClose,
   useSheetClose,
+  useSheetVisit,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { selectMemberDetail } from "@/lib/directory/member-detail";
@@ -187,6 +188,10 @@ export const MemberDetailSheet = forwardRef<
 >(function MemberDetailSheet({ member, onDismiss, openChannelId }, ref) {
   const userId = member?.userId ?? null;
   const closeSheet = useSheetClose(ref);
+  // A removal or a DM can settle after the member swiped the sheet away: see
+  // `useSheetVisit`. Each closes only the visit it was sent from (#3405).
+  const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
+    useSheetVisit(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
@@ -306,8 +311,11 @@ export const MemberDetailSheet = forwardRef<
         confirmRemoveMember({
           name: target.displayName,
           run: () => {
+            const sentFrom = visit();
             removeMutation.mutate(memberId, {
-              onSuccess: () => closeSheet(),
+              onSuccess: () => {
+                if (isSameVisit(sentFrom)) dismiss();
+              },
               onError: (error) =>
                 Alert.alert(
                   removeFailedTitle(target.displayName),
@@ -353,13 +361,18 @@ export const MemberDetailSheet = forwardRef<
     if (dmInFlightRef.current.has(memberUserId)) return;
     dmInFlightRef.current.add(memberUserId);
     setDmPending(new Set(dmInFlightRef.current));
+    const sentFrom = visit();
     try {
       const channelId = dmChannelIdOf(
         await dmMutation.mutateAsync({ member_id: memberUserId }),
       );
       if (openUserIdRef.current !== memberUserId) return;
       if (!channelId) throw new Error("No channel id returned");
-      closeSheet();
+      // Closed since, or closed and opened again: that visit asked for
+      // nothing, and a thread opening under it would surprise. Message again
+      // finds the same DM.
+      if (!isSameVisit(sentFrom)) return;
+      dismiss();
       if (channelId === openChannelId) return;
       router.push({ pathname: "/chat-thread", params: { channelId } });
     } catch {
@@ -380,7 +393,11 @@ export const MemberDetailSheet = forwardRef<
         backgroundStyle={backgroundStyle}
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
-        onDismiss={onDismiss}
+        onAnimate={onAnimate}
+        onDismiss={() => {
+          markClosed();
+          onDismiss?.();
+        }}
       >
         <SheetBackToClose onClose={closeSheet} />
         <BottomSheetScrollView

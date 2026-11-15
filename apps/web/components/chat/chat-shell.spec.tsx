@@ -1607,6 +1607,30 @@ vi.mock("./message-timeline", async () => {
   return { MessageTimeline, MessageTimelineSkeleton };
 });
 
+// The shell loads its panels on first open (`deferred-panels.tsx`, #3716).
+// Hand it the modules this file mocks, synchronously, so a test finds the
+// panel the render it opened. `vi.mock` is hoisted, so the order in this file
+// doesn't matter.
+vi.mock("./deferred-panels", async () => ({
+  PollForm: (await import("./poll-form")).PollForm,
+  SignupForm: (await import("./signup-form")).SignupForm,
+  RolePickerForm: (await import("./role-picker-form")).RolePickerForm,
+  FormBuilder: (await import("./form-builder")).FormBuilder,
+  EventQuickForm: (await import("./event-quick-form")).EventQuickForm,
+  TaskForm: (await import("@/components/tasks/task-form")).TaskForm,
+  LogHoursForm: (await import("@/components/service/log-hours-form"))
+    .LogHoursForm,
+  PointsAdjustmentForm: (
+    await import("@/components/points/points-adjustment-form")
+  ).PointsAdjustmentForm,
+  EventEditorDialog: (await import("@/components/events/event-editor-dialog"))
+    .EventEditorDialog,
+  MemberDetailSheet: (await import("@/components/members/member-detail-sheet"))
+    .MemberDetailSheet,
+  ThreadPanel: (await import("./thread-panel")).ThreadPanel,
+  preloadChatPanels: () => undefined,
+}));
+
 // The panel's own rows and reads are `thread-panel.spec.tsx`'s and
 // `use-message-thread.spec.tsx`'s; here it echoes what the shell hands it,
 // with Back and one of each row write a reply or the parent can make.

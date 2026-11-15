@@ -38,51 +38,18 @@ import { SubtaskListEditor } from "@/components/tasks/subtask-list-editor";
 import { pointsLabel } from "@/components/events/event-labels";
 import { useToast } from "@/lib/hooks/use-toast";
 import {
-  EMPTY_TASK_PHOTO_DRAFT,
   TaskPhotoFields,
   taskPhotosProblem,
   uploadFailureMessage,
   useUploadTaskPhotos,
-  type TaskPhotoDraft,
 } from "@/components/tasks/task-photo";
 import { guardIntDraft, parseGuardedInt } from "@/lib/utils";
 
-/** What a typed `/task` could read, for the form to open on. */
-export type TaskPrefill = {
-  title?: string;
-  dueDate?: string;
-  pointReward?: number;
-};
-
-/** Everything the form holds, kept by the + card while it is closed. */
-export interface TaskDraft extends TaskPhotoDraft {
-  title: string;
-  assigneeId: string;
-  dueDate: string;
-  points: string;
-  description: string;
-  /** The steps typed so far (#4003). */
-  subtasks: string[];
-  showMore: boolean;
-}
-
-export function taskDraftFrom(
-  prefill: TaskPrefill = {},
-  assigneeId = "",
-): TaskDraft {
-  return {
-    title: prefill.title ?? "",
-    assigneeId,
-    dueDate: prefill.dueDate ?? "",
-    points:
-      prefill.pointReward !== undefined ? String(prefill.pointReward) : "",
-    description: "",
-    subtasks: [],
-    ...EMPTY_TASK_PHOTO_DRAFT,
-    // Open when the typed command set something that lives there.
-    showMore: prefill.pointReward !== undefined,
-  };
-}
+// The draft lives in its own module so the chat shell can build one without
+// loading this form, which it loads only when the + card opens it (#3716).
+// Re-exported for the form's other callers, which import it from here.
+export { taskDraftFrom, type TaskDraft } from "./task-draft";
+import { taskDraftFrom, type TaskDraft } from "./task-draft";
 
 type Missing = {
   title?: boolean;

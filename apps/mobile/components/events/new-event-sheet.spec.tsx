@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import { moduleDisabledMessage } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 
@@ -732,6 +732,145 @@ describe("Edit event", () => {
       expect.anything(),
     );
     expect(onDeleted).toHaveBeenCalled();
+  });
+
+  describe("kept past event details (#4872)", () => {
+    const KEPT = "event-edit:evt-1";
+    const open = (target: EventEditTarget = single) =>
+      renderEdit(target, { keptDraft: KEPT });
+    const room = (tree: ReactTestRenderer) =>
+      byLabel(tree, "Location").props.value;
+    const leave = (tree: ReactTestRenderer) => act(() => tree.unmount());
+
+    it("opens the same event's Edit on what was typed", () => {
+      const first = open();
+      type(first, "Location", "Great Hall");
+      leave(first);
+      expect(room(open())).toBe("Great Hall");
+    });
+
+    it("shows someone else's change to a field this officer didn't edit", async () => {
+      const first = open();
+      type(first, "Location", "Great Hall");
+      leave(first);
+
+      // The name changed on web in the meantime; the room is still this
+      // officer's edit.
+      const second = open({
+        ...single,
+        event: { ...EVENT, name: "Chapter (moved)", location: "Library" },
+      });
+      expect(byLabel(second, "Event name").props.value).toBe("Chapter (moved)");
+      expect(room(second)).toBe("Great Hall");
+      await act(async () => saveButton(second).props.onPress());
+      expect(updateMutate).toHaveBeenCalledWith(
+        { id: "evt-1", body: { location: "Great Hall", scope: "instance" } },
+        expect.anything(),
+      );
+    });
+
+    it("brings a moved end back with the start it was moved against", async () => {
+      const first = open();
+      // The end alone, pushed an hour later.
+      const ends = first.root
+        .findAllByType(WhenRow)
+        .find((row) => row.props.label === "Ends")!;
+      act(() => ends.props.onChange(local(9, 21, 15)));
+      leave(first);
+
+      // Moved a day earlier on web meanwhile.
+      const second = open({
+        ...single,
+        event: {
+          ...EVENT,
+          start_time: local(8, 18, 45).toISOString(),
+          end_time: local(8, 20, 15).toISOString(),
+        },
+      });
+      await act(async () => saveButton(second).props.onPress());
+      // Not Sunday's start with Monday's end: the range the officer chose.
+      expect(updateMutate).toHaveBeenCalledWith(
+        {
+          id: "evt-1",
+          body: expect.objectContaining({
+            start_time: local(9, 18, 45).toISOString(),
+            end_time: local(9, 21, 15).toISOString(),
+          }),
+        },
+        expect.anything(),
+      );
+    });
+
+    it("keeps nothing for an Edit opened and left untouched", () => {
+      leave(open());
+      expect(
+        room(open({ ...single, event: { ...EVENT, location: "Library" } })),
+      ).toBe("Library");
+    });
+
+    it("gives the edit up on Cancel", () => {
+      const first = open();
+      type(first, "Location", "Great Hall");
+      act(() =>
+        first.root
+          .find(
+            (node) =>
+              node.type === ("Pressable" as never) &&
+              drawnText(node) === "Cancel",
+          )
+          .props.onPress(),
+      );
+      leave(first);
+      expect(room(open())).toBe("Sanctuary");
+    });
+
+    it("gives the edit up once it saves, and keeps what is typed after", async () => {
+      const first = open();
+      type(first, "Location", "Great Hall");
+      await act(async () => saveButton(first).props.onPress());
+      expect(updateMutate).toHaveBeenCalledTimes(1);
+      // A visit still open when the save lands: its hold is over.
+      type(first, "Location", "Great Hall 2");
+      leave(first);
+      expect(room(open())).toBe("Great Hall 2");
+
+      updateMutate.mockClear();
+      const again = open();
+      await act(async () => saveButton(again).props.onPress());
+      leave(again);
+      expect(room(open())).toBe("Sanctuary");
+    });
+
+    it("holds the edit out while its save is in flight", async () => {
+      updateMutate.mockImplementationOnce(() => undefined);
+      const first = open();
+      type(first, "Location", "Great Hall");
+      await act(async () => saveButton(first).props.onPress());
+      leave(first);
+      expect(room(open())).toBe("Sanctuary");
+    });
+
+    it("keeps the edit when its save fails", async () => {
+      updateMutate.mockImplementationOnce((_body, options) =>
+        options.onError(FAILED),
+      );
+      const first = open();
+      type(first, "Location", "Great Hall");
+      await act(async () => saveButton(first).props.onPress());
+      leave(first);
+      expect(room(open())).toBe("Great Hall");
+    });
+
+    it("gives the edit up when the event is deleted", async () => {
+      alert.mockImplementation((_title, _message, buttons) => {
+        buttons?.find((b) => b.text === "Delete")?.onPress?.();
+      });
+      const first = open();
+      type(first, "Location", "Great Hall");
+      await act(async () => byLabel(first, "Delete event").props.onPress());
+      leave(first);
+      expect(room(open())).toBe("Sanctuary");
+    });
   });
 });
 

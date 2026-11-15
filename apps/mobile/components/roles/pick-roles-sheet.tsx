@@ -1,10 +1,10 @@
-import { forwardRef, useState } from "react";
+import { forwardRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
-import { errorCopy, useSetPickedRole, type PickableRole } from "@repo/hooks";
+import type { PickableRole } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { ListRow, ListSection } from "@/components/list-section";
-import { Toggle } from "@/components/toggle";
+import { PICK_ROLES_COPY } from "@repo/validation";
+import { PickRolesList } from "@/components/roles/pick-roles-list";
 import {
   SheetBackToClose,
   SheetGrabber,
@@ -27,12 +27,6 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * provisional (Shawn, 2026-11-14), and the sheet is self-contained so moving
  * its button is the whole move.
  */
-/**
- * Under a role the member holds but can't join again: one an officer stopped
- * offering, or any picked role once they're an alum. Leaving still works.
- */
-export const LEAVE_ONLY_CAPTION = "No longer open to join. You can leave it.";
-
 export const PickRolesSheet = forwardRef<
   BottomSheetModal,
   { roles: readonly PickableRole[] }
@@ -42,25 +36,6 @@ export const PickRolesSheet = forwardRef<
   const backgroundStyle = useSheetBackgroundStyle();
   const tallSheet = useTallSheetProps();
   const closeSheet = useSheetClose(ref);
-  const setPicked = useSetPickedRole();
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const [failure, setFailure] = useState<{
-    id: string;
-    message: string;
-  } | null>(null);
-
-  async function toggle(role: PickableRole) {
-    setPendingId(role.id);
-    setFailure(null);
-    try {
-      await setPicked.mutateAsync({ id: role.id, join: !role.held });
-    } catch (error) {
-      setFailure({ id: role.id, message: errorCopy(error) });
-    } finally {
-      setPendingId(null);
-    }
-  }
-
   return (
     <BottomSheetModal
       ref={ref}
@@ -69,7 +44,6 @@ export const PickRolesSheet = forwardRef<
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
-      onDismiss={() => setFailure(null)}
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
@@ -77,35 +51,8 @@ export const PickRolesSheet = forwardRef<
         contentContainerStyle={styles.content}
       >
         <TallSheetHeader title="Add roles" onClose={closeSheet} />
-        <Text style={styles.lede}>
-          Pick what you&apos;re into. Each role adds its channels to Chat, and
-          you can leave any time.
-        </Text>
-        <ListSection>
-          {roles.map((role) => {
-            const failed = failure?.id === role.id ? failure.message : null;
-            const caption =
-              failed ?? (role.joinable ? null : LEAVE_ONLY_CAPTION);
-            return (
-              <ListRow
-                key={role.id}
-                label={role.name}
-                description={caption}
-                descriptionTone={failed ? "destructive" : "default"}
-                trailing={
-                  <Toggle
-                    value={role.held}
-                    disabled={pendingId !== null}
-                    onValueChange={() => void toggle(role)}
-                    accessibilityLabel={
-                      role.held ? `Leave ${role.name}` : `Join ${role.name}`
-                    }
-                  />
-                }
-              />
-            );
-          })}
-        </ListSection>
+        <Text style={styles.lede}>{PICK_ROLES_COPY.lede}</Text>
+        <PickRolesList roles={roles} />
         <View style={styles.footer} />
       </BottomSheetScrollView>
     </BottomSheetModal>

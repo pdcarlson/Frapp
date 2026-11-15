@@ -545,6 +545,22 @@ describe("NotificationsPopover: reading notifications (#3929)", () => {
       "/members",
     );
   });
+
+  it("sends the weekly recap push to Activity (#4985)", () => {
+    notifications.value = [
+      notification(
+        "n-recap",
+        "activity",
+        "2026-09-22T11:00:00Z",
+        "3 events · 2 tasks done",
+      ),
+    ];
+    renderDrawer();
+
+    expect(
+      screen.getByRole("link", { name: /3 events · 2 tasks done/ }),
+    ).toHaveAttribute("href", "/activity");
+  });
 });
 
 /**

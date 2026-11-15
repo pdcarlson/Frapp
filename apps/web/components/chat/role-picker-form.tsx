@@ -24,17 +24,8 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import type { RolePickerDraft } from "./role-picker-draft";
 
-/** What the + card keeps while the Role picker form is closed (#3983). */
-export interface RolePickerDraft {
-  title: string;
-  /** In the order the officer ticked them, which is the card's order. */
-  roleIds: string[];
-}
-
-export function emptyRolePickerDraft(): RolePickerDraft {
-  return { title: "", roleIds: [] };
-}
 
 export interface RolePickerFormProps {
   initialDraft: RolePickerDraft;

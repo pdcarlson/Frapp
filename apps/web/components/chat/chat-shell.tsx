@@ -105,7 +105,6 @@ import { ChevronLeft, SquarePen, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { PanelContent, PanelHeader } from "@/components/shared/panel";
-import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import {
   persistMembersHidden,
   WIDE_CHAT_QUERY,
@@ -139,7 +138,7 @@ import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useDeleteChannelFlow } from "./use-delete-channel-flow";
 import { CreateChannelSheet } from "@/components/chat-admin/create-channel-sheet";
-import { ThreadPanel, type ThreadRowWrites } from "./thread-panel";
+import type { ThreadRowWrites } from "./thread-panel";
 import {
   classifyMessage,
   hiddenQuoteText,
@@ -246,40 +245,36 @@ import {
   type SlashCommand,
 } from "@repo/chat-core/integrations";
 import type { DispatchResult } from "@repo/chat-core/dispatch";
-import {
-  TaskForm,
-  taskDraftFrom,
-  type TaskDraft,
-} from "@/components/tasks/task-form";
-import {
-  LogHoursForm,
-  type HoursDraft,
-} from "@/components/service/log-hours-form";
-import {
-  PointsAdjustmentForm,
-  type PointsDraft,
-} from "@/components/points/points-adjustment-form";
+import { taskDraftFrom, type TaskDraft } from "@/components/tasks/task-draft";
+import type { HoursDraft } from "@/components/service/log-hours-form";
+import type { PointsDraft } from "@/components/points/points-adjustment-form";
 import { useSubscriptionGate } from "@/components/shared/subscription-gate";
-import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 import {
   emptyPollDraft,
   pollDraftFromArgs,
   type PollDraft,
 } from "@repo/chat-core/poll-draft";
-import { PollForm } from "./poll-form";
-import { SignupForm } from "./signup-form";
 import {
   emptyRolePickerDraft,
-  RolePickerForm,
   type RolePickerDraft,
-} from "./role-picker-form";
-import { FormBuilder } from "./form-builder";
+} from "./role-picker-draft";
 import { emptySignupDraft, type SignupDraft } from "@repo/chat-core/signups";
+import { eventQuickDraftFrom, type EventQuickDraft } from "./event-quick-draft";
 import {
+  EventEditorDialog,
   EventQuickForm,
-  eventQuickDraftFrom,
-  type EventQuickDraft,
-} from "./event-quick-form";
+  FormBuilder,
+  LogHoursForm,
+  MemberDetailSheet,
+  PointsAdjustmentForm,
+  PollForm,
+  preloadChatPanels,
+  RolePickerForm,
+  SignupForm,
+  TaskForm,
+  ThreadPanel,
+} from "./deferred-panels";
+import { afterFirstPaint } from "@/lib/after-first-paint";
 import { usePlusDrafts } from "./use-plus-drafts";
 import {
   PLUS_MENU_COMMANDS,
@@ -1455,6 +1450,11 @@ export function ChatShell({
   // member through its exit animation instead of blanking.
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  // The dialogs and forms above load on first open; fetch them once the
+  // page is idle so that first open rarely waits (#3716).
+  useEffect(() => {
+    afterFirstPaint(preloadChatPanels);
+  }, []);
   const openProfile = useCallback((memberUserId: string) => {
     setProfileUserId(memberUserId);
     setProfileOpen(true);
@@ -4263,19 +4263,21 @@ export function ChatShell({
         After the Members sheet, so a profile opened from one of its rows
         stacks over the list and closes back to it, as mobile's does (#3798).
       */}
-      <MemberDetailSheet
-        open={profileOpen}
-        onOpenChange={setProfileOpen}
-        userId={profileUserId}
-        identity={
-          profileUserId
-            ? {
-                name: nameFor(profileUserId),
-                avatarUrl: avatarFor(profileUserId),
-              }
-            : null
-        }
-      />
+      {/*
+        Mounted from the first open on, so its chunk loads with that open
+        rather than with the shell (#3716), and so it can animate closed.
+      */}
+      {profileUserId ? (
+        <MemberDetailSheet
+          open={profileOpen}
+          onOpenChange={setProfileOpen}
+          userId={profileUserId}
+          identity={{
+            name: nameFor(profileUserId),
+            avatarUrl: avatarFor(profileUserId),
+          }}
+        />
+      ) : null}
 
       {catchUp.element}
       {confirmDialog}

@@ -35,8 +35,8 @@ export function useChatSidebar() {
   return useQuery({
     // `chapterId!` is safe under `enabled`: the query never runs without one.
     queryKey: chatSidebarKeys.chapter(chapterId!),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/chat-sidebar");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/chat-sidebar", { signal });
       if (error) throw error;
       return data;
     },

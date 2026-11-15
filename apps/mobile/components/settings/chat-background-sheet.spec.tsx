@@ -33,7 +33,10 @@ vi.mock("@/lib/chat/chat-background-photo", () => ({
 }));
 
 import { FrappThemeProvider } from "@/lib/theme";
-import { ChatBackgroundDefaultPicker } from "./chat-background-sheet";
+import {
+  ChatBackgroundDefaultPicker,
+  ChatBackgroundSheet,
+} from "./chat-background-sheet";
 
 /** Settings → Chat background (#4031): the chapter default's save. */
 function render(onSaved = vi.fn()) {
@@ -41,7 +44,7 @@ function render(onSaved = vi.fn()) {
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <ChatBackgroundDefaultPicker onSaved={onSaved} />
+        <ChatBackgroundDefaultPicker visit={() => 0} onSaved={onSaved} />
       </FrappThemeProvider>,
     );
   });
@@ -115,5 +118,70 @@ describe("ChatBackgroundDefaultPicker", () => {
     });
     expect(onSaved).not.toHaveBeenCalled();
     expect(text(tree)).toContain("Not allowed.");
+  });
+});
+
+/**
+ * A save can land after the officer swiped the sheet away (a photo upload is
+ * slow). gorhom 5.2's `dismiss()` on a dismissed modal leaves it stuck, so the
+ * next open draws nothing, and a sheet reopened since is a new visit the save
+ * must not close (#3405, `useSheetVisit`).
+ */
+describe("ChatBackgroundSheet closing after a save (#3405)", () => {
+  const dismiss = vi.fn();
+
+  function openWithPendingSave() {
+    let land = () => {};
+    save.mockReset();
+    save.mockReturnValue(
+      new Promise((resolve) => {
+        land = () => resolve({ status: "saved" });
+      }),
+    );
+    dismiss.mockReset();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ChatBackgroundSheet ref={React.createRef()} />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal"
+              ? { dismiss, present: vi.fn() }
+              : null,
+        },
+      );
+    });
+    const modal = tree.root.find(
+      (node) => node.type === ("BottomSheetModal" as never),
+    );
+    act(() => modal.props.onAnimate(-1, 0)); // presented
+    act(() => swatch(tree, "letters").props.onPress());
+    return { tree, modal, land: () => act(async () => land()) };
+  }
+
+  it("closes the sheet when the save lands", async () => {
+    const { tree, land } = openWithPendingSave();
+    await land();
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("doesn't dismiss a sheet already swiped away when the save lands", async () => {
+    const { tree, modal, land } = openWithPendingSave();
+    act(() => modal.props.onDismiss());
+    await land();
+    expect(dismiss).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("leaves a sheet reopened mid-save open when the save lands", async () => {
+    const { tree, modal, land } = openWithPendingSave();
+    act(() => modal.props.onDismiss());
+    act(() => modal.props.onAnimate(-1, 0)); // reopened
+    await land();
+    expect(dismiss).not.toHaveBeenCalled();
+    act(() => tree.unmount());
   });
 });
