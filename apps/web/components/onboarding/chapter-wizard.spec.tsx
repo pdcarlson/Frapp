@@ -616,6 +616,43 @@ describe("ChapterWizard chapter mark (#2876)", () => {
       ).toBeChecked();
     });
 
+    it("undoes FIJI's fields when a renamed FIJI pick gives way to another row (#3466)", async () => {
+      directoryRows.current = [fijiRow, sigmaNuRow];
+      render(<ChapterWizard onComplete={() => {}} />);
+      await pick(/Phi Gamma Delta/);
+      // A rename changes the name alone; the row still set the fields.
+      fireEvent.change(screen.getByLabelText("Chapter / organization name"), {
+        target: { value: "Tau Nu Chapter" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      await pick(/Sigma Nu/);
+
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue("");
+      expect(
+        screen.getByRole("switch", { name: /show greek letters/i }),
+      ).toBeChecked();
+    });
+
+    it("fills FIJI's short name when a row renamed \"FIJI\" gives way to FIJI's row (#3466)", async () => {
+      directoryRows.current = [sigmaNuRow, fijiRow];
+      render(<ChapterWizard onComplete={() => {}} />);
+      await pick(/Sigma Nu/);
+      fireEvent.change(screen.getByLabelText("Chapter / organization name"), {
+        target: { value: "FIJI" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      fireEvent.click(screen.getByRole("button", { name: "Back" }));
+      await pick(/Phi Gamma Delta/);
+
+      expect(screen.getByLabelText("Short name (optional)")).toHaveValue(
+        "FIJI",
+      );
+      expect(
+        screen.queryByRole("switch", { name: /show greek letters/i }),
+      ).not.toBeInTheDocument();
+    });
+
     it("keeps FIJI's short name when the founder renames a picked chapter", async () => {
       directoryRows.current = [fijiRow];
       render(<ChapterWizard onComplete={() => {}} />);

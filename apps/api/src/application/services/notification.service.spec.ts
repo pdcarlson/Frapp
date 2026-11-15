@@ -248,6 +248,37 @@ describe('NotificationService', () => {
     return userIds;
   };
 
+  describe('timeZonesFor (#4788)', () => {
+    it('reads every member in one batch, null for one with no zone', async () => {
+      mockSettingsRepo.findByUserIds.mockResolvedValueOnce([
+        { user_id: 'user-1', time_zone: 'Asia/Tokyo', quiet_hours_tz: null },
+        {
+          user_id: 'user-2',
+          time_zone: null,
+          quiet_hours_tz: 'America/Denver',
+        },
+      ] as never);
+
+      const zones = await service.timeZonesFor([
+        'user-1',
+        'user-2',
+        'user-3',
+        'user-1',
+      ]);
+
+      expect(mockSettingsRepo.findByUserIds).toHaveBeenCalledWith([
+        'user-1',
+        'user-2',
+        'user-3',
+      ]);
+      expect([...zones]).toEqual([
+        ['user-1', 'Asia/Tokyo'],
+        ['user-2', 'America/Denver'],
+        ['user-3', null],
+      ]);
+    });
+  });
+
   describe('timeZoneFor', () => {
     it('reads the zone on file, else the quiet-hours zone', async () => {
       mockSettingsRepo.findByUser.mockResolvedValueOnce({

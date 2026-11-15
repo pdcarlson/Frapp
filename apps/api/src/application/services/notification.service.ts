@@ -440,6 +440,24 @@ export class NotificationService {
   }
 
   /**
+   * The zone each of `userIds` reads their clock in ({@link recipientTimeZone}),
+   * from one batched settings read. A member with no settings row, or none
+   * reported, maps to null. A failed read throws: the daily reminder sweeps
+   * (#4788) would rather skip a tick, and retry on the next hourly one, than
+   * guess a zone and wake a member at the wrong hour.
+   */
+  async timeZonesFor(
+    userIds: readonly string[],
+  ): Promise<Map<string, string | null>> {
+    const unique = [...new Set(userIds)];
+    const rows = await this.settingsRepo.findByUserIds(unique);
+    const byUser = new Map(rows.map((row) => [row.user_id, row]));
+    return new Map(
+      unique.map((id) => [id, recipientTimeZone(byUser.get(id) ?? null)]),
+    );
+  }
+
+  /**
    * Notify every member of a chapter.
    *
    * There is no audience filter. Its one caller, `ChatService`'s announcement
