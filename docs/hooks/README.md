@@ -64,8 +64,9 @@ init (`client.GET(path, { signal, params })`), so a cancelled query (a
 unmounting) aborts its request instead of leaving it open beside the next one
 ([#3433](https://github.com/pdcarlson/Frapp/issues/3433)). A helper handed
 `client` is handed `signal` too. `src/query-signal.spec.ts` parses the package
-and fails on a `queryFn` call that drops it; its `PENDING` list names the files
-not yet converted ([#5029](https://github.com/pdcarlson/Frapp/issues/5029)).
+and fails on a `queryFn` call that drops it. Every file is converted; its
+`PENDING` list, empty since [#5029](https://github.com/pdcarlson/Frapp/issues/5029),
+can exempt a file only while an open PR rewrites it.
 
 ## Optimistic mutations
 

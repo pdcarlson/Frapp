@@ -46,6 +46,7 @@ export type NotificationKind =
   | "service"
   | "reports"
   | "import"
+  | "recap"
   | "other";
 
 /** A kind drawn as a tile: no person is behind the notice. */
@@ -68,6 +69,7 @@ export const NOTIFICATION_TILE_HUE: Record<NotificationTileKind, RoleColorHex> =
     service: roleColor("teal"),
     reports: roleColor("rose"),
     import: roleColor("slate"),
+    recap: roleColor("violet"),
     other: roleColor("slate"),
   };
 
@@ -83,6 +85,8 @@ export const NOTIFICATION_TILE_GLYPH: Record<
   service: "service",
   reports: "reports",
   import: "folder",
+  // The weekly recap push (#4985) opens Activity.
+  recap: "activity",
   other: "activity",
 };
 
@@ -134,6 +138,7 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   service: "Service hours",
   reports: "Report",
   import: "Discord import",
+  recap: "Weekly recap",
   other: "Notice",
 };
 
@@ -177,6 +182,8 @@ const SCREEN_TILES: Record<string, NotificationTileKind> = {
   ai_suggestions: "tasks",
   chat_reports: "reports",
   discord_import: "import",
+  // The weekly recap push (#4985).
+  activity: "recap",
 };
 
 const CHAT_KINDS = new Set(["dm", "group", "announcement", "channel"]);

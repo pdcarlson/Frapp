@@ -49,6 +49,7 @@ import type {
   ChatMessage,
 } from '#domain/entities/chat.entity';
 import type { Event } from '#domain/entities/event.entity';
+import type { Member } from '#domain/entities/member.entity';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { TaskView } from '#domain/entities/task.entity';
@@ -586,6 +587,17 @@ function weekCount(done: number, open: number): ActivityWeekCount {
   return { done, total: done + open };
 }
 
+/**
+ * Chapter-wide reads more than one section needs, each made at most once per
+ * `getActivity` and only when asked for (#4908): the roster (the poll count's
+ * reader resolve and the event count's invitees) and the Alumni role id (the
+ * viewer's and the event count's alumni rule).
+ */
+interface ChapterReads {
+  roster: () => Promise<Member[]>;
+  alumniRoleId: () => Promise<string | null>;
+}
+
 /** What the event sections need to know about the caller, read once per request. */
 interface EventViewer {
   roleIds: string[];
@@ -671,18 +683,30 @@ export class ActivityService {
         : defaultWeekStart(nowDate)
     ).getTime();
     const weekEnd = weekStart + WEEK_MS;
+    // The roster and the Alumni role, each read at most once whichever of the
+    // viewer and the progress counts ask (#4908).
+    let rosterRead: Promise<Member[]> | null = null;
+    let alumniRoleRead: Promise<string | null> | null = null;
+    const chapter: ChapterReads = {
+      roster: () => (rosterRead ??= this.memberRepo.findByChapter(chapterId)),
+      alumniRoleId: () =>
+        (alumniRoleRead ??= this.rbacService.getAlumniRoleId(chapterId)),
+    };
+
     // Read once and shared by both event sections, and only when one of them
-    // has an event to answer for.
+    // has an event to answer for. Alumni as `RbacService.hasAlumniRole`
+    // decides it, from the shared role id.
     let viewerRead: Promise<EventViewer> | null = null;
     const viewer = () =>
       (viewerRead ??= Promise.all([
         this.memberRepo.findByUserAndChapter(userId, chapterId),
-        this.rbacService.isAlumni(chapterId, userId),
-      ]).then(([member, isAlumni]) => {
+        chapter.alumniRoleId(),
+      ]).then(([member, alumniRoleId]) => {
         const joined = member ? new Date(member.created_at).getTime() : NaN;
+        const roleIds = member?.role_ids ?? [];
         return {
-          roleIds: member?.role_ids ?? [],
-          isAlumni,
+          roleIds,
+          isAlumni: alumniRoleId !== null && roleIds.includes(alumniRoleId),
           joinedAt: Number.isNaN(joined) ? null : joined,
         };
       }));
@@ -743,7 +767,14 @@ export class ActivityService {
       ),
       this.settle('polls', chapterId, () =>
         on('polls')
-          ? this.readPolls(chapterId, userId, now, chatReads, weekStart)
+          ? this.readPolls(
+              chapterId,
+              userId,
+              now,
+              chatReads,
+              weekStart,
+              chapter,
+            )
           : Promise.resolve({ unvoted: [], mine: [], votedThisWeek: 0 }),
       ),
       // Sign-ups and forms are chat cards with no module switch, as a
@@ -758,7 +789,14 @@ export class ActivityService {
       ),
       this.settle('made_events', chapterId, () =>
         on('events')
-          ? this.readMadeEvents(chapterId, userId, now, viewer, permissions)
+          ? this.readMadeEvents(
+              chapterId,
+              userId,
+              now,
+              viewer,
+              permissions,
+              chapter,
+            )
           : Promise.resolve([]),
       ),
       // Chat has no module switch, so neither does this section.
@@ -1349,6 +1387,7 @@ export class ActivityService {
     now: number,
     chatReads: () => Promise<PollChatReads>,
     weekStart: number,
+    chapter: ChapterReads,
   ): Promise<{
     unvoted: ActivityPoll[];
     mine: ActivityPoll[];
@@ -1464,6 +1503,7 @@ export class ActivityService {
           userId,
           mineRows.filter((row) => !row.is_closed).slice(0, LIST_LIMIT),
           channelById,
+          chapter,
         )),
         ...mineRows.filter((row) => row.is_closed).slice(0, LIST_LIMIT),
       ].sort(byNewest),
@@ -1488,6 +1528,7 @@ export class ActivityService {
     userId: string,
     rows: ActivityPoll[],
     channelById: Map<string, PollChannel>,
+    chapter: ChapterReads,
   ): Promise<ActivityPoll[]> {
     if (rows.length === 0) return rows;
     const channels = [...new Set(rows.map((row) => row.channel_id))]
@@ -1498,7 +1539,8 @@ export class ActivityService {
         // Who could vote: whoever can read the channel, which is what a vote
         // is checked against (`ChatReactionService`), by chat's own reader
         // rule (`ChannelAccessService.readersOf`).
-        this.channelAccess.readersOf(chapterId, channels),
+        // The roster is the request's shared read (#4908).
+        this.channelAccess.readersOf(chapterId, channels, chapter.roster),
         this.actionRepo.findAllActionsOnMessages(
           rows.map((row) => row.message_id),
           CARD_VOTE_ACTION_TYPE,
@@ -1823,6 +1865,7 @@ export class ActivityService {
     now: number,
     viewer: () => Promise<EventViewer>,
     permissions: string[],
+    chapter: ChapterReads,
   ): Promise<ActivityEvent[]> {
     // From the check-in grace behind now, so an event stays here for as long
     // as it stays in Coming up: its maker opens it to take attendance just
@@ -1848,7 +1891,14 @@ export class ActivityService {
     // `events:update` (`spec/behavior/events.md`); making an event grants
     // nothing, so a maker without it gets no count (#4792).
     return can(SystemPermissions.EVENTS_UPDATE, permissions)
-      ? this.withEventProgress(chapterId, userId, now, rows, nextOfEach)
+      ? this.withEventProgress(
+          chapterId,
+          userId,
+          now,
+          rows,
+          nextOfEach,
+          chapter,
+        )
       : rows;
   }
 
@@ -1858,7 +1908,9 @@ export class ActivityService {
    * Before check-in opens nobody can, and a bar at nothing says nothing, so
    * those rows get no count; rarely is more than one open at once. Three
    * reads for the whole list (the roster, the Alumni role, every attendance
-   * row on these events, paged), and none when no event is open.
+   * row on these events, paged), and none when no event is open; the roster
+   * and the Alumni role are the request's shared reads (#4908), so the poll
+   * count and the viewer don't read them again.
    *
    * Who counts is who check-in admits (`checkInAdmits`): the event invites
    * them, and an alumnus only through a role the event names. Excused members are left out of
@@ -1871,6 +1923,7 @@ export class ActivityService {
     now: number,
     rows: ActivityEvent[],
     events: Event[],
+    chapter: ChapterReads,
   ): Promise<ActivityEvent[]> {
     const eventById = new Map(events.map((event) => [event.id, event]));
     const open = rows
@@ -1882,8 +1935,8 @@ export class ActivityService {
     if (open.length === 0) return rows;
     try {
       const [members, alumniRoleId, attendance] = await Promise.all([
-        this.memberRepo.findByChapter(chapterId),
-        this.rbacService.getAlumniRoleId(chapterId),
+        chapter.roster(),
+        chapter.alumniRoleId(),
         this.attendanceRepo.findByEvents(open.map((event) => event.id)),
       ]);
       const statusOf = new Map(

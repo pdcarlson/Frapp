@@ -115,15 +115,24 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
   };
   // Everyone the tests name reads every channel unless a test says otherwise.
   const channelAccess = {
-    readersOf: jest.fn((_chapterId: string, channels: { id: string }[]) =>
-      Promise.resolve(
-        new Map(channels.map((channel) => [channel.id, new Set([ME, OTHER])])),
-      ),
+    readersOf: jest.fn(
+      (
+        _chapterId: string,
+        channels: { id: string }[],
+        _roster?: () => Promise<unknown>,
+      ) =>
+        Promise.resolve(
+          new Map(
+            channels.map((channel) => [channel.id, new Set([ME, OTHER])]),
+          ),
+        ),
     ),
   };
   const rbacService = {
     getEffectivePermissions: jest.fn().mockResolvedValue(permissions),
-    isAlumni: jest.fn().mockResolvedValue(false),
+    // The chapter's Alumni role; the caller holds it only when a test says
+    // so (`asAlumnus`).
+    getAlumniRoleId: jest.fn().mockResolvedValue('role-alumni'),
   };
   const messageRepo = {
     findCardsByChapter: jest.fn().mockResolvedValue([]),
@@ -141,6 +150,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     ]),
   };
   const memberRepo = {
+    findByChapter: jest.fn().mockResolvedValue([]),
     findByUserAndChapter: jest
       .fn()
       .mockResolvedValue({ user_id: ME, role_ids: ['role-member'] }),
@@ -198,6 +208,12 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     actionRepo,
     linkService,
     reminderService,
+    /** The caller holds the chapter's Alumni role beside their member role. */
+    asAlumnus: () =>
+      memberRepo.findByUserAndChapter.mockResolvedValue({
+        user_id: ME,
+        role_ids: ['role-member', 'role-alumni'],
+      }),
   };
 }
 
@@ -1292,8 +1308,8 @@ describe('ActivityService', () => {
     });
 
     it('does not offer an alumnus a check-in the event’s default would refuse', async () => {
-      const { service, eventService, rbacService, attendanceRepo } = build();
-      rbacService.isAlumni.mockResolvedValue(true);
+      const { service, eventService, attendanceRepo, asAlumnus } = build();
+      asAlumnus();
       eventService.findByChapter.mockResolvedValue([openNow()]);
 
       const view = await service.getActivity(CHAPTER, ME, null);
@@ -1311,8 +1327,8 @@ describe('ActivityService', () => {
     });
 
     it('holds an alumnus to an event that lists a role of theirs', async () => {
-      const { service, eventService, rbacService } = build();
-      rbacService.isAlumni.mockResolvedValue(true);
+      const { service, eventService, asAlumnus } = build();
+      asAlumnus();
       eventService.findByChapter.mockResolvedValue([
         openNow({ required_role_ids: ['role-member'] }),
       ]);
@@ -1435,7 +1451,7 @@ describe('ActivityService', () => {
       expect(view.coming_up).toHaveLength(1);
       expect(view.made_by_you.events).toHaveLength(1);
       expect(memberRepo.findByUserAndChapter).toHaveBeenCalledTimes(1);
-      expect(rbacService.isAlumni).toHaveBeenCalledTimes(1);
+      expect(rbacService.getAlumniRoleId).toHaveBeenCalledTimes(1);
     });
 
     it('lists them soonest first, one row per recurring series, and counts none of them as waiting', async () => {
@@ -2452,8 +2468,8 @@ describe('ActivityService', () => {
     });
 
     it('counts for an alumnus only what they can do: no event the default alone invites them to', async () => {
-      const { service, eventService, rbacService, attendanceRepo } = build();
-      rbacService.isAlumni.mockResolvedValue(true);
+      const { service, eventService, attendanceRepo, asAlumnus } = build();
+      asAlumnus();
       eventService.findByChapter.mockResolvedValue([
         event({
           id: 'missed',
@@ -2640,9 +2656,12 @@ describe('ActivityService', () => {
       expect(voteReads(actionRepo)).toEqual([[['mine-open'], 'vote']]);
       // Chat's own reader rule, once for every channel.
       expect(channelAccess.readersOf).toHaveBeenCalledTimes(1);
-      expect(channelAccess.readersOf).toHaveBeenCalledWith(CHAPTER, [
-        expect.objectContaining({ id: READABLE }),
-      ]);
+      expect(channelAccess.readersOf).toHaveBeenCalledWith(
+        CHAPTER,
+        [expect.objectContaining({ id: READABLE })],
+        // The request's one roster read (#4908).
+        expect.any(Function),
+      );
     });
 
     it('leaves out of the count a member who blocked the poster, who can never vote', async () => {
@@ -2865,6 +2884,43 @@ describe('ActivityService', () => {
 
       expect(view.made_by_you.events[0].progress).toBeNull();
       expect(findByEvents).not.toHaveBeenCalled();
+    });
+
+    // #4908: an officer with an open poll and an event open for check-in, both
+    // of which count, and both event sections answering for the viewer.
+    it('reads the roster and the Alumni role once, whichever counts run', async () => {
+      const deps = officer();
+      const now = happeningNow();
+      deps.eventService.findCreatedBy.mockResolvedValue([now]);
+      deps.eventService.findByChapter.mockResolvedValue([now]);
+      servePolls(
+        deps.messageRepo,
+        [],
+        [pollCard({ id: 'mine', sender_id: ME })],
+      );
+      const members = [
+        { user_id: ME, role_ids: ['role-member'] },
+        { user_id: OTHER, role_ids: ['role-member'] },
+      ];
+      const { findByChapter } = serveEventCount(deps, members, []);
+      const getAlumniRoleId = deps.rbacService.getAlumniRoleId;
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      // Both counts ran, and the viewer was resolved.
+      expect(view.made_by_you.polls[0].progress).toEqual({ done: 0, total: 1 });
+      expect(view.made_by_you.events[0].progress).toEqual({
+        done: 0,
+        total: 1,
+      });
+      expect(view.coming_up).toHaveLength(1);
+      // Before #4908: two roster reads and two Alumni role reads.
+      expect(findByChapter).toHaveBeenCalledTimes(1);
+      expect(getAlumniRoleId).toHaveBeenCalledTimes(1);
+      // The poll count's reader resolve was handed that same roster.
+      const [, , roster] = deps.channelAccess.readersOf.mock.calls[0];
+      await expect(roster?.()).resolves.toBe(members);
+      expect(findByChapter).toHaveBeenCalledTimes(1);
     });
 
     it('serves no count for an event whose check-in has not opened, and reads nothing for it', async () => {

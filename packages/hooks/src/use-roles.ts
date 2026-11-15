@@ -13,7 +13,7 @@ import { withHereMention } from "@repo/validation";
 export type CreateRoleBody = components["schemas"]["CreateRoleDto"];
 export type UpdateRoleBody = components["schemas"]["UpdateRoleDto"];
 
-export function useRoles() {
+export function useRoles(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
@@ -24,7 +24,7 @@ export function useRoles() {
       return data;
     },
     staleTime: 60_000,
-    enabled: !!chapterId,
+    enabled: (options?.enabled ?? true) && !!chapterId,
   });
 }
 

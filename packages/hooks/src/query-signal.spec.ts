@@ -26,14 +26,12 @@ const SRC = dirname(fileURLToPath(import.meta.url));
 const CLIENT_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
 /**
- * Files left out while an open PR rewrites the same hooks, so this change
- * doesn't conflict with it. Each entry goes once that PR merges (#5029); the
- * last test fails once an entry has nothing left to excuse.
+ * A file left out while an open PR rewrites the same hook, so the conversion
+ * doesn't conflict with it; the entry names that PR. Empty since every file was
+ * converted (#5029). The last test fails once an entry has nothing left to
+ * excuse.
  */
-const PENDING: Record<string, string> = {
-  "use-chat-sidebar.ts": "#5026 (channel sort) is open on this hook",
-  "use-notifications.ts": "#5024 (cold open) is open on this hook",
-};
+const PENDING: Record<string, string> = {};
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name: string) => {

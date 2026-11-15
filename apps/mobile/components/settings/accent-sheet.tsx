@@ -1,5 +1,5 @@
 import { errorCopy } from "@repo/hooks/error-copy";
-import { forwardRef, useState } from "react";
+import { forwardRef, useMemo, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text } from "react-native";
 import {
   BottomSheetModal,
@@ -19,6 +19,7 @@ import {
   useSheetBackgroundStyle,
   SheetBackToClose,
   useSheetClose,
+  useSheetVisit,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -61,6 +62,20 @@ export const AccentSheet = forwardRef<BottomSheetModal>(function AccentSheet(
 ) {
   const closeSheet = useSheetClose(ref);
   const backgroundStyle = useSheetBackgroundStyle();
+  // A save can settle after the officer swiped the sheet away: see
+  // `useSheetVisit`. It closes only the visit it was sent from, and never a
+  // sheet that is already down (#3405).
+  const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
+    useSheetVisit(ref);
+  const saving = useMemo(
+    () => ({
+      sentFrom: visit,
+      closeAfter: (token: number) => {
+        if (isSameVisit(token)) dismiss();
+      },
+    }),
+    [dismiss, isSameVisit, visit],
+  );
 
   return (
     <BottomSheetModal
@@ -71,16 +86,28 @@ export const AccentSheet = forwardRef<BottomSheetModal>(function AccentSheet(
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
+      onAnimate={onAnimate}
+      onDismiss={markClosed}
     >
       <SheetBackToClose onClose={closeSheet} />
-      <AccentSheetBody
-        onDone={closeSheet}
-      />
+      <AccentSheetBody onDone={closeSheet} saving={saving} />
     </BottomSheetModal>
   );
 });
 
-function AccentSheetBody({ onDone }: { onDone: () => void }) {
+/** How a save closes the sheet: only the visit it was sent from. */
+type AccentSaving = {
+  sentFrom: () => number;
+  closeAfter: (token: number) => void;
+};
+
+function AccentSheetBody({
+  onDone,
+  saving,
+}: {
+  onDone: () => void;
+  saving: AccentSaving;
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const chapter = useCurrentChapter();
@@ -106,13 +133,17 @@ function AccentSheetBody({ onDone }: { onDone: () => void }) {
       </BottomSheetView>
     );
   }
-  return <AccentSheetForm chapter={chapter.data} onDone={onDone} />;
+  return (
+    <AccentSheetForm chapter={chapter.data} onDone={onDone} saving={saving} />
+  );
 }
 
 function AccentSheetForm({
   chapter,
   onDone,
+  saving,
 }: {
+  saving: AccentSaving;
   chapter: NonNullable<ReturnType<typeof useCurrentChapter>["data"]>;
   onDone: () => void;
 }) {
@@ -137,9 +168,10 @@ function AccentSheetForm({
       return;
     }
     setError(null);
+    const sentFrom = saving.sentFrom();
     try {
       await updateChapter.mutateAsync({ accent_color: draft });
-      onDone();
+      saving.closeAfter(sentFrom);
     } catch (caught) {
       setError(
         errorCopy(caught, "Couldn't save the accent. Try again in a moment."),
