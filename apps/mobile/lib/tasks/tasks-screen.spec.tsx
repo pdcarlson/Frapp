@@ -764,6 +764,7 @@ describe("Undo after the checkbox completes a task (P6.1)", () => {
 describe("Mark done with proof on the board (#4635)", () => {
   type SheetProps = {
     task: { id: string; proofKind: string; sentBack: boolean };
+    keptDraft?: string;
     initialProblem: string | null;
     onComplete: (proof: Record<string, unknown>) => Promise<void>;
     onClosed: () => void;
@@ -790,6 +791,8 @@ describe("Mark done with proof on the board (#4635)", () => {
       id: "task-1",
       proofKind: "photo",
     });
+    // The same name as the task's chat card's Mark done (#5041).
+    expect(sheet(tree)?.keptDraft).toBe("mark-done:task-1");
     await act(() =>
       sheet(tree)!.onComplete({ proof_photo_paths: ["p/1.jpg"] }),
     );

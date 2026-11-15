@@ -28,6 +28,7 @@ function render(
   proofKind: TaskProofKind,
   onSubmit = vi.fn(async () => {}),
   keptDraft?: string,
+  submittedAt: string | null = null,
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -37,6 +38,7 @@ function render(
           title="Mop the kitchen"
           proofKind={proofKind}
           keptDraft={keptDraft}
+          submittedAt={submittedAt}
           onSubmit={onSubmit}
           onClosed={() => {}}
         />
@@ -226,6 +228,46 @@ describe("SendBackSheet's kept reason (#5041)", () => {
     expect(reasonField(during).props.value).toBe("");
     act(() => during.unmount());
 
+    await act(async () => fail({ statusCode: 500, message: "Down" }));
+    const after = render("none", undefined, name);
+    expect(reasonField(after).props.value).toBe("Still sticky");
+    act(() => after.unmount());
+  });
+
+  it("doesn't bring back a reason kept for an earlier submission, and drops it", () => {
+    const name = nextDraft();
+    const first = render("none", undefined, name, "2026-11-14T10:00:00Z");
+    act(() => reasonField(first).props.onChangeText("Photo is blurry"));
+    act(() => first.unmount());
+    // Sent back on web since, and submitted again: a new submission.
+    const next = render("none", undefined, name, "2026-11-15T09:00:00Z");
+    expect(reasonField(next).props.value).toBe("");
+    act(() => next.unmount());
+    const again = render("none", undefined, name, "2026-11-14T10:00:00Z");
+    expect(reasonField(again).props.value).toBe("");
+    act(() => again.unmount());
+  });
+
+  it("holds Cancel while it sends, so a failed send keeps the reason", async () => {
+    const name = nextDraft();
+    let fail: (error: unknown) => void = () => {};
+    const first = render(
+      "none",
+      vi.fn(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            fail = reject;
+          }),
+      ),
+      name,
+    );
+    act(() => reasonField(first).props.onChangeText("Still sticky"));
+    // Cancel handled in the same batch as the send, before it is drawn held.
+    await act(async () => {
+      sendBack(first).props.onPress();
+      cancel(first).props.onCancel();
+    });
+    act(() => first.unmount());
     await act(async () => fail({ statusCode: 500, message: "Down" }));
     const after = render("none", undefined, name);
     expect(reasonField(after).props.value).toBe("Still sticky");

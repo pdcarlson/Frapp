@@ -423,6 +423,135 @@ describe("MarkDoneSheet's kept proof (#5041)", () => {
     act(() => after.unmount());
   });
 
+  it("doesn't bring back proof kept for another proof kind, and drops it", () => {
+    const name = nextDraft();
+    const first = open(name);
+    act(() => field(first, "Link").props.onChangeText("htt"));
+    act(() => first.unmount());
+    // An officer made it a photo task since: the half-typed link would be
+    // checked and sent from a field the sheet no longer draws.
+    const onComplete = vi.fn(async () => {});
+    const photo = render(
+      { ...SENT_BACK, proofKind: "none" },
+      onComplete,
+      null,
+      name,
+    );
+    act(() =>
+      field(photo, "Reply to the officer").props.onChangeText("Fixed it"),
+    );
+    return press(markDone(photo)).then(() => {
+      expect(onComplete).toHaveBeenCalledWith({ completion_note: "Fixed it" });
+      act(() => photo.unmount());
+    });
+  });
+
+  it("doesn't bring back proof kept for an earlier round, and drops it", () => {
+    const name = nextDraft();
+    const first = render(
+      { ...SENT_BACK, sentBackAt: "2026-11-14T10:00:00Z" },
+      undefined,
+      null,
+      name,
+    );
+    fill(first);
+    act(() => first.unmount());
+    // Done on web since, then sent back again: a new round.
+    const next = render(
+      { ...SENT_BACK, sentBackAt: "2026-11-15T09:00:00Z" },
+      undefined,
+      null,
+      name,
+    );
+    expect(values(next)).toEqual(["", ""]);
+    act(() => next.unmount());
+    const again = open(name);
+    expect(values(again)).toEqual(["", ""]);
+    act(() => again.unmount());
+  });
+
+  it("holds Cancel while Mark done sends, so a failed send keeps the proof", async () => {
+    const name = nextDraft();
+    let fail: (error: unknown) => void = () => {};
+    const first = open(
+      name,
+      vi.fn(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            fail = reject;
+          }),
+      ),
+    );
+    fill(first);
+    const header = first.root.find(
+      (node) =>
+        typeof node.props.onCancel === "function" &&
+        typeof node.type === "function",
+    );
+    // Cancel handled in the same batch as the send, before it is drawn held.
+    await act(async () => {
+      markDone(first).props.onPress();
+      header.props.onCancel();
+    });
+    act(() => first.unmount());
+    await act(async () => fail({ statusCode: 500, message: "Down" }));
+    const after = open(name);
+    expect(values(after)).toEqual(["https://ex.com/a", "Fixed it"]);
+    act(() => after.unmount());
+  });
+
+  it("puts the picks back when their upload is refused", async () => {
+    vi.mocked(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+    ).mockResolvedValueOnce({ granted: true, canAskAgain: true } as never);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///b.png",
+          fileName: "b.png",
+          mimeType: "image/png",
+          width: 10,
+          height: 10,
+          fileSize: 100,
+        },
+      ],
+    } as never);
+    mint.mockResolvedValue({
+      upload_url: "https://signed",
+      storage_path: "chapters/c/tasks/p1/b.png",
+    });
+    vi.mocked(FileSystem.uploadAsync)
+      .mockReset()
+      .mockResolvedValue({ status: 500, body: "", headers: {} } as never);
+    const name = nextDraft();
+    const first = render({ proofKind: "photo" }, undefined, null, name);
+    const add = first.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Add photos",
+    );
+    await press(add);
+    await press(markDone(first));
+    act(() => first.unmount());
+
+    mint.mockReset();
+    mint.mockResolvedValue({
+      upload_url: "https://signed",
+      storage_path: "chapters/c/tasks/p1/b.png",
+    });
+    vi.mocked(FileSystem.uploadAsync)
+      .mockReset()
+      .mockResolvedValue({ status: 200, body: "", headers: {} } as never);
+    const onComplete = vi.fn(async () => {});
+    const second = render({ proofKind: "photo" }, onComplete, null, name);
+    await press(markDone(second));
+    expect(onComplete).toHaveBeenCalledWith({
+      proof_photo_paths: ["chapters/c/tasks/p1/b.png"],
+    });
+    act(() => second.unmount());
+  });
+
   it("drops it for a task done somewhere else", () => {
     const name = nextDraft();
     const first = open(name);

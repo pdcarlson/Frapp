@@ -66,6 +66,12 @@ export interface MarkDoneSheetTask {
    * before it uploads anything. Omitted reads as not done.
    */
   done?: boolean;
+  /**
+   * When it was last sent back (`sent_back_at`), or null before any
+   * send-back: which round of Mark done this is. A kept draft from another
+   * round (done somewhere else, then sent back) doesn't come back.
+   */
+  sentBackAt?: string | null;
 }
 
 /**
@@ -77,6 +83,13 @@ interface KeptMarkDone {
   photos: PendingTaskPhoto[];
   link: string;
   note: string;
+  /**
+   * The task's proof kind and round as it was typed for. A draft whose kind
+   * has changed since would put proof in a field the sheet no longer draws;
+   * one from an earlier round answers a send-back that has been answered.
+   */
+  proofKind: TaskProofKind;
+  round: string | null;
 }
 
 /** What the sheet says when the task was marked done somewhere else. */
@@ -135,8 +148,18 @@ export function MarkDoneSheet({
   // Done somewhere else: nothing is left to send it with, so it keeps
   // nothing and the kept draft goes.
   const keptName = task.done ? null : (keptDraft ?? null);
-  useDropKeptSheetDraft(keptDraft ?? null, task.done === true);
-  const opening = useKeptSheetOpening<KeptMarkDone>(keptName);
+  const round = task.sentBackAt ?? null;
+  const stored = useKeptSheetOpening<KeptMarkDone>(keptName);
+  const fits =
+    stored !== undefined &&
+    stored.proofKind === task.proofKind &&
+    stored.round === round;
+  const opening = fits ? stored : undefined;
+  // Done somewhere else, or kept for another round or proof kind: it goes.
+  useDropKeptSheetDraft(
+    keptDraft ?? null,
+    task.done === true || (stored !== undefined && !fits),
+  );
   const [photos, setPhotos] = useState<PendingTaskPhoto[]>(
     () => opening?.photos.slice(0, photoRoom(0)) ?? [],
   );
@@ -144,7 +167,13 @@ export function MarkDoneSheet({
   const [note, setNote] = useState(opening?.note ?? "");
   const kept = useKeptSheetDraft<KeptMarkDone>(
     keptName,
-    { photos: photos.map(({ image }) => ({ image })), link, note },
+    {
+      photos: photos.map(({ image }) => ({ image })),
+      link,
+      note,
+      proofKind: task.proofKind,
+      round,
+    },
     undefined,
     opening,
   );
@@ -249,10 +278,6 @@ export function MarkDoneSheet({
       }
       kept.clear();
       if (isSameVisit(sentFrom)) dismiss();
-    } catch (error) {
-      // The upload threw rather than refused: nothing was sent.
-      kept.release();
-      throw error;
     } finally {
       sending.current = false;
       setBusy(false);
@@ -283,6 +308,9 @@ export function MarkDoneSheet({
         <SheetHeader
           title={TASK_ACTION_LABELS.complete}
           onCancel={() => {
+            // Held while a send runs: Cancel can't call the write back, and
+            // giving the draft up here would lose it if the write fails.
+            if (sending.current) return;
             kept.clear();
             dismiss();
           }}

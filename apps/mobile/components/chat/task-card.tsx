@@ -326,6 +326,7 @@ export function TaskCard({
             sentBack,
             sentBackReason: live?.sent_back_reason ?? null,
             done: live?.stored_status === "COMPLETED",
+            sentBackAt: live?.sent_back_at ?? null,
           }}
           initialProblem={marking.problem}
           onComplete={async (proof) => {
@@ -348,6 +349,7 @@ export function TaskCard({
         <SendBackSheet
           key={payload.task_id}
           keptDraft={`send-back:${payload.task_id}`}
+          submittedAt={live?.completed_at ?? null}
           title={payload.title}
           proofKind={proofKind}
           onSubmit={async (body) => {

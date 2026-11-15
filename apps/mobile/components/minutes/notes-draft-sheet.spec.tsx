@@ -491,4 +491,26 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
     expect(field(second).props.value).toBe("From the web.");
     leave(second);
   });
+
+  it("doesn't bring back notes typed over ones the web has replaced since, and drops them", () => {
+    const first = render(draftState({ notes: "Old notes." }));
+    type(first, "Old notes. Budget passed.");
+    leave(first);
+    // Someone drafted from other notes on web meanwhile.
+    const second = render(draftState({ notes: "From the web." }));
+    expect(field(second).props.value).toBe("From the web.");
+    leave(second);
+    const third = render(draftState({ notes: "Old notes." }));
+    expect(field(third).props.value).toBe("Old notes.");
+    leave(third);
+  });
+
+  it("keeps nothing for a transcript put in by itself, so one cleared on web stays cleared", () => {
+    // Mounted with the minutes screen; the transcript fills the empty box.
+    leave(render(draftState(), false, recordingState()));
+    // The officer cleared the notes and the recording on web.
+    const after = render(draftState(), false, null);
+    expect(field(after).props.value).toBe("");
+    leave(after);
+  });
 });

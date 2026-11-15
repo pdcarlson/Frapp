@@ -801,6 +801,7 @@ export default function TasksScreen() {
             sentBack: rowIsSentBack(markingRow),
             sentBackReason: markingRow.sentBackReason,
             done: markingRow.isDone,
+            sentBackAt: markingRow.sentBackAt,
           }}
           initialProblem={marking.problem}
           onComplete={(proof) => completeWithProof(markingRow, proof)}
