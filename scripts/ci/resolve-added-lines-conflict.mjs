@@ -82,6 +82,8 @@ const REFUSED_PATH = [
   /^packages\/api-sdk\/src\/types\.ts$/,
   /^supabase\/migrations\//,
 ];
+/** Whether keep-both must leave a conflict in this path to its own tool. Pure. */
+export const isRefusedPath = (path) => REFUSED_PATH.some((re) => re.test(path));
 const MARKDOWN = /\.(md|mdx|markdown)$/i;
 // Prose-like files where brackets carry no structure.
 const PROSE = /\.(md|mdx|markdown|txt)$/i;
@@ -555,7 +557,7 @@ export async function planAddedLinesConflict({ token, repo, pr, baseRef, baseSha
       if (!merged.ok) return merged;
       // A clean merge of one is what git (and update-branch) would make too;
       // a conflict in one is never kept-both.
-      if (merged.hunks > 0 && REFUSED_PATH.some((re) => re.test(path))) {
+      if (merged.hunks > 0 && isRefusedPath(path)) {
         return { ok: false, reason: `${path} is generated or a lockfile; \`npm run merge:main\` handles it` };
       }
       entries.push({ path, mode: h.mode, type: "blob", content: merged.text });
