@@ -6,6 +6,7 @@ import { AppState, StyleSheet, Text, View } from "react-native";
 import type { AppStateStatus } from "react-native";
 import {
   payIntentErrorCopy,
+  paymentFailedCopy,
   useActiveChapterId,
   useAwaitInvoicePaid,
   useCurrentUser,
@@ -99,7 +100,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * ## How long the hold lasts
  *
  * The hold ends when the invoice list reads the invoice as no longer OPEN
- * (PAID, VOID, or dropped from the list), on a chapter switch, which remounts
+ * (PAID, VOID, or dropped from the list), when a list read taken after the
+ * sheet completed says the payment failed (see "A failed payment ends the
+ * hold"), on a chapter switch, which remounts
  * the screen ({@link DuesScreen}), or when the app is closed. Nothing else
  * ends it. Leaving the screen and coming back, or leaving the app and coming
  * back, doesn't: the captured payments outlive the screen ({@link
@@ -117,19 +120,28 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * doesn't take the line away: each captured payment keeps its own line until
  * the visit ends.
  *
- * Nothing this screen reads tells it a payment failed. A payment that sat in
- * `processing` and then failed leaves the invoice OPEN:
- * `notifyStripePaymentFailure` changes no status. It writes a "Payment
- * declined" notification, the in-app row that s14 Notifications lists plus a
- * push, unless the member turned billing notifications off, and that row
- * carries no invoice id (its `data` is only a billing-screen target), so this
- * screen reads neither. The invoice read carries no payment status, and
- * `createPaymentIntent` answers a failed intent and a processing one alike,
- * with a client secret and no status (#3432). So a hold on a failed payment
- * doesn't end on its own, and Pay stays live under the pending line once the
- * confirming window is over, so that a member who got the decline can pay
- * again. A tap meets `createPaymentIntent`'s answer for the invoice's stored
- * intent (`financial-invoice.service.ts`, `billing.md` § Member payment flow):
+ * ## A failed payment ends the hold
+ *
+ * A payment that sat in `processing` and then failed (a bank debit, a
+ * delayed card decline) leaves the invoice OPEN, but the
+ * `payment_intent.payment_failed` webhook records it on the invoice:
+ * `last_payment_failed_at` and Stripe's `last_payment_failure_reason`
+ * (#3460, `billing.md` § Member payment flow). The pay endpoint clears both on
+ * each new attempt, so a list read that landed after the sheet completed and
+ * still shows a failure is this attempt's. That read ends the hold: the
+ * pending line gives way to "Your payment didn't go through" in the failure
+ * style, with Stripe's reason when it sent one ({@link paymentFailedCopy}),
+ * and Pay is free to try again. A read cached from before the attempt can
+ * still carry the last attempt's failure, which is why the read must be newer
+ * than the capture ({@link CapturedPayment}'s `capturedAt`). The poll ends as
+ * soon as a read shows the failure, so the confirming window ends with it,
+ * and its re-read as it ends is the list read that ends the hold.
+ *
+ * Pay stays live under the pending line once the confirming window is over
+ * all the same: a failure the webhook hasn't recorded yet, or one from before
+ * this server change, still needs a way to pay again. A tap meets
+ * `createPaymentIntent`'s answer for the invoice's stored intent
+ * (`financial-invoice.service.ts`, `billing.md` § Member payment flow):
  *
  * - `succeeded`: a 409, "Payment already completed; confirmation is being
  *   processed". `payIntentErrorCopy` passes a 409's message through as the
@@ -359,18 +371,33 @@ function ChapterDues() {
   // whose rows are withheld until the viewer is known, can't say the invoice
   // left OPEN, so it counts as still open.
   const listLoaded = invoicesQuery.data !== undefined && viewerUserId !== null;
+  // A failure ends the hold only on a read that landed after the capture
+  // (see "A failed payment ends the hold").
+  const listReadAt = invoicesQuery.dataUpdatedAt;
   const captures = useMemo(
     () =>
       payments.map((payment) => {
         const row =
           rows.find((candidate) => candidate.id === payment.id) ?? null;
+        const failed =
+          listLoaded &&
+          row?.status === "OPEN" &&
+          row.paymentFailedAt !== null &&
+          listReadAt > payment.capturedAt;
         return {
           payment,
           row,
-          held: !listLoaded || row?.status === "OPEN",
+          failed,
+          held: !failed && (!listLoaded || row?.status === "OPEN"),
         };
       }),
-    [payments, rows, listLoaded],
+    [payments, rows, listLoaded, listReadAt],
+  );
+  // A failed capture leaves the list of captured payments, and its invoice
+  // gets the failure line, as a failed sheet's would.
+  const failedCaptures = useMemo(
+    () => captures.filter((capture) => capture.failed),
+    [captures],
   );
   // Only one is held once the list has loaded: Pay targets the held invoice,
   // so a new payment is for it or comes after it left OPEN. The latest, should
@@ -534,6 +561,28 @@ function ChapterDues() {
       ? failure.text
       : null;
 
+  const openCount = open.length;
+  useEffect(() => {
+    const last = failedCaptures[failedCaptures.length - 1];
+    if (!last?.row) return;
+    const failedIds = new Set(
+      failedCaptures.map((capture) => capture.payment.id),
+    );
+    // An effect, not the render: `setPayments` also writes the payments that
+    // outlive the screen (`useDuesMemory`), which a render must not do.
+    setPayments((current) =>
+      current.filter((payment) => !failedIds.has(payment.id)),
+    );
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the server's read ended the hold; the failure line is that read's outcome, set once as the capture leaves
+    setFailure({
+      invoiceId: last.payment.id,
+      text: paymentFailedCopy(
+        last.row.paymentFailureReason,
+        openCount > 1 ? last.row.title : undefined,
+      ),
+    });
+  }, [failedCaptures, openCount, setPayments]);
+
   const canPay = isStripeAvailable();
   const blockedReason = canPay ? null : stripeUnavailableReason();
 
@@ -574,7 +623,7 @@ function ChapterDues() {
       // Past this point the card has been charged, and the hold starts.
       setPayments((current) => [
         ...current.filter((payment) => payment.id !== paying.id),
-        { id: paying.id, title: paying.title },
+        { id: paying.id, title: paying.title, capturedAt: Date.now() },
       ]);
       // The sheet is closed; from here the poll, not "Opening…", is what the
       // CTA says, for the poll's budget at most. Only this attempt ends its
@@ -612,8 +661,8 @@ function ChapterDues() {
 
   // The CTA is busy only for the attempt's confirming window. After that the
   // hold keeps the card, the chip and the pending line, and Pay is live
-  // under it: nothing this screen reads says a payment failed, so a re-tap is
-  // how a member whose payment failed retries (see "How long the hold lasts").
+  // under it, for a failure the server hasn't recorded (see "A failed payment
+  // ends the hold").
   const isConfirming = confirming !== null && pollingAttempt !== null;
   const cardStatus: BalanceCardStatus | null = failureText
     ? { text: failureText, tone: "destructive" }
@@ -629,8 +678,8 @@ function ChapterDues() {
   // its invoice: "Paid …" when the list says PAID, and otherwise what became
   // of it. A voided or dropped invoice is never updated again, so its line
   // doesn't promise an update.
-  const receipts = captures.flatMap(({ payment, row, held: isHeld }) =>
-    isHeld
+  const receipts = captures.flatMap(({ payment, row, held: isHeld, failed }) =>
+    isHeld || failed
       ? []
       : row?.status === "PAID"
         ? [paidCopy(row.title)]

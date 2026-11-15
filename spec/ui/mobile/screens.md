@@ -383,8 +383,8 @@ Route: `(app)/dues.tsx`.
 
 Live — the viewer's own invoices from `GET /v1/invoices` (the route serves a `billing:view` holder the whole chapter, so the screen filters), balance from OPEN rows (listed one per row under the card when two or more are open, since HISTORY holds settled rows only), and Stripe PaymentSheet behind the `isStripeAvailable` guard in `lib/payments/stripe.ts`.
 A completed sheet shows **payment received, confirmation pending** and flips to Paid only when the webhook has written it, per [`billing.md`](../../behavior/billing.md) § Member payment flow, which owns that rule.
-The hold on that invoice ends when the list reads it as no longer OPEN (PAID, VOID, or dropped), on a chapter switch, or when the app closes; leaving the screen or the app and coming back doesn't end it.
-Pay stays live under the line once the post-sheet confirming window (about 24s) is over, because Dues reads no payment failure: the member hears of a decline from the push and the Notifications inbox (s14), and Dues reads neither; the states and copy are [`writing.md`](../design-system/writing.md) § Dues (mobile, s11).
+The hold on that invoice ends when the list reads it as no longer OPEN (PAID, VOID, or dropped), when a list read taken after the sheet completed says the payment failed (**Your payment didn't go through**, #3460), on a chapter switch, or when the app closes; leaving the screen or the app and coming back doesn't end it.
+Pay stays live under the line once the post-sheet confirming window (about 24s) is over, for a failure the server hasn't recorded yet; the states and copy are [`writing.md`](../design-system/writing.md) § Dues (mobile, s11).
 Pay settles one invoice at a time — a PaymentIntent is per invoice.
 The drawn payment-plan link, payment-method sub-labels and receipts line are omitted: none has a backing model, and the method detail lives on a `billing:view`-only route
 

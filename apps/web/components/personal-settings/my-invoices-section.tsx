@@ -2,7 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
-import { useCurrentUser, useInvoices } from "@repo/hooks";
+import {
+  invoicePaymentFailure,
+  paymentFailedCopy,
+  useCurrentUser,
+  useInvoices,
+} from "@repo/hooks";
 import { statusLabel } from "@repo/validation";
 import { formatDay } from "@repo/formatting";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +36,9 @@ type Invoice = {
   status: "DRAFT" | "OPEN" | "PAID" | "VOID";
   due_date: string;
   created_at?: string;
+  /** Set when the member's latest card payment failed (#3460). */
+  last_payment_failed_at?: string | null;
+  last_payment_failure_reason?: string | null;
 };
 
 /**
@@ -121,6 +129,11 @@ export function MyInvoicesSection() {
                   .filter(Boolean)
                   .join(" · ")}
               </p>
+              {invoicePaymentFailure(invoice) ? (
+                <p className="text-caption text-destructive-text">
+                  {paymentFailedCopy(invoice.last_payment_failure_reason)}
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2 @xl:justify-end">
               <span className="text-sm font-semibold tabular-nums">

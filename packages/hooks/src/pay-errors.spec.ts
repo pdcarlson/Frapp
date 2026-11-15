@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { payIntentErrorCopy } from "./pay-errors";
+import { payIntentErrorCopy, paymentFailedCopy } from "./pay-errors";
 
 /**
  * Web's pay dialog and mobile s11 both render these. The statuses are
@@ -89,5 +89,25 @@ describe("payIntentErrorCopy", () => {
         "Could not start payment. Please try again.",
       );
     }
+  });
+});
+
+describe("paymentFailedCopy (#3460)", () => {
+  it("says the payment didn't go through, with Stripe's reason", () => {
+    expect(paymentFailedCopy("Your card was declined.")).toBe(
+      "Your payment didn't go through: Your card was declined. You can try again.",
+    );
+  });
+
+  it("stands alone when Stripe sent no reason", () => {
+    expect(paymentFailedCopy(null)).toBe(
+      "Your payment didn't go through. You can try again.",
+    );
+  });
+
+  it("names the invoice when asked to", () => {
+    expect(paymentFailedCopy(null, "Fall dues")).toBe(
+      "Your payment for Fall dues didn't go through. You can try again.",
+    );
   });
 });

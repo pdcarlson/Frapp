@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 // `stripeLoader` stands in for what `getStripe()` returns: a Promise when a
 // publishable key is configured, `null` when it is not. Tests flip it to cover
 // the unconfigured environments (local, CI, the production build prerender)
 // where the pay affordance must vanish rather than throw.
-const { stripeState, payInvoiceMock, awaitPaidMock } = vi.hoisted(() => ({
+const { stripeState, payInvoiceMock, awaitPaidMock, confirmPayment } = vi.hoisted(() => ({
   stripeState: { loader: null as unknown },
+  confirmPayment: vi.fn(),
   payInvoiceMock: {
     mutate: vi.fn(),
     reset: vi.fn(),
@@ -26,7 +27,7 @@ vi.mock("@stripe/react-stripe-js", () => ({
     <div data-testid="stripe-elements">{children}</div>
   ),
   PaymentElement: () => <div data-testid="payment-element" />,
-  useStripe: () => ({ confirmPayment: vi.fn() }),
+  useStripe: () => ({ confirmPayment }),
   useElements: () => ({}),
 }));
 
@@ -108,5 +109,57 @@ describe("PayInvoiceDialog", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "A payment for this invoice is already being processed.",
     );
+  });
+
+  describe("after the payment is submitted (#3460)", () => {
+    beforeEach(() => {
+      payInvoiceMock.mutate = vi.fn(
+        (_id: string, options: { onSuccess: (data: unknown) => void }) => {
+          options.onSuccess({ client_secret: "pi_1_secret_x" });
+        },
+      );
+    });
+
+    async function submit() {
+      render(<PayInvoiceDialog invoice={INVOICE} open onOpenChange={() => {}} />);
+      fireEvent.click(await screen.findByRole("button", { name: /Pay \$150\.00/ }));
+    }
+
+    it("ends a processing payment's wait with \"didn't go through\" when the server records a failure", async () => {
+      confirmPayment.mockResolvedValue({ paymentIntent: { status: "processing" } });
+      awaitPaidMock.mutateAsync.mockResolvedValue({
+        outcome: "failed",
+        reason: "Your bank declined the debit.",
+      });
+
+      await submit();
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Your payment didn't go through: Your bank declined the debit. You can try again.",
+      );
+      expect(awaitPaidMock.mutateAsync).toHaveBeenCalledWith("inv-1");
+    });
+
+    it("starts a new attempt on Try again, so the old failure can't answer the next poll", async () => {
+      confirmPayment.mockResolvedValue({ paymentIntent: { status: "succeeded" } });
+      awaitPaidMock.mutateAsync.mockResolvedValue({ outcome: "failed", reason: null });
+
+      await submit();
+      fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+
+      await waitFor(() => expect(payInvoiceMock.mutate).toHaveBeenCalledTimes(2));
+      expect(await screen.findByTestId("payment-element")).toBeInTheDocument();
+    });
+
+    it("says confirmation is pending when the poll runs out", async () => {
+      confirmPayment.mockResolvedValue({ paymentIntent: { status: "succeeded" } });
+      awaitPaidMock.mutateAsync.mockResolvedValue({ outcome: "pending" });
+
+      await submit();
+
+      expect(await screen.findByRole("status")).toHaveTextContent(
+        "Payment received. Your chapter's records update",
+      );
+    });
   });
 });

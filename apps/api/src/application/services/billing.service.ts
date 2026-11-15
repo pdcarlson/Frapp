@@ -926,7 +926,9 @@ export class BillingService {
   /**
    * Member dues payment declined (#717). Invoice status stays OPEN — the pay
    * endpoint reuses a `requires_payment_method` intent, so the member can retry.
-   * Officers are not notified: a card decline is the payer's business.
+   * The failure is recorded on the invoice (#3460) so a dues screen's pending
+   * hold can end. Officers are not notified: a card decline is the payer's
+   * business.
    */
   private async handlePaymentIntentFailed(event: WebhookEvent): Promise<void> {
     const intent = event.data.object as PaymentIntentWebhookObject;
@@ -936,6 +938,8 @@ export class BillingService {
     await this.financialInvoiceService.notifyStripePaymentFailure({
       invoiceId: ref.invoiceId,
       chapterId: ref.chapterId,
+      paymentIntentId: intent.id,
+      failedAt: new Date(event.created * 1000).toISOString(),
       declineReason: declineReasonFromLastPaymentError(
         intent.last_payment_error,
       ),

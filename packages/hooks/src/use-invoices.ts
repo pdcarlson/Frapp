@@ -103,16 +103,47 @@ export function usePayInvoice() {
   });
 }
 
+/** How a post-payment poll ended: settled, failed, or still unconfirmed. */
+export type AwaitInvoicePaidResult =
+  | { outcome: "paid" }
+  | { outcome: "failed"; reason: string | null }
+  | { outcome: "pending" };
+
 /**
- * Poll an invoice until the Stripe webhook has flipped it to PAID.
+ * The server's record of a failed payment attempt on an invoice read (#3460),
+ * or null. Only an OPEN invoice can carry one that matters: the pay endpoint
+ * clears it on every new attempt, so on a read taken after an attempt started
+ * a set `last_payment_failed_at` belongs to that attempt.
+ */
+export function invoicePaymentFailure(
+  data: unknown,
+): { failedAt: string; reason: string | null } | null {
+  if (!data || typeof data !== "object") return null;
+  const row = data as Record<string, unknown>;
+  if (row.status !== "OPEN") return null;
+  const failedAt = row.last_payment_failed_at;
+  if (typeof failedAt !== "string" || failedAt === "") return null;
+  const reason = row.last_payment_failure_reason;
+  return {
+    failedAt,
+    reason: typeof reason === "string" && reason.trim() !== "" ? reason : null,
+  };
+}
+
+/**
+ * Poll an invoice until the Stripe webhook has flipped it to PAID, or has
+ * recorded that the payment failed.
  *
  * A successful `confirmPayment` in the browser means the money moved, not that
  * the invoice row settled: `payment_intent.succeeded` → `apply_invoice_payment`
  * is what actually writes PAID, and that webhook lands out-of-band. So rather
  * than optimistically marking the invoice paid — which would show PAID even if
- * the reconciliation later failed — re-read until the server agrees.
+ * the reconciliation later failed — re-read until the server agrees. A
+ * `processing` payment can also fail later (a bank debit, a delayed decline);
+ * the `payment_intent.payment_failed` webhook records that on the invoice
+ * (#3460), and the poll ends with `failed` the moment a read shows it.
  *
- * Resolves `false` once the attempts are exhausted so a slow webhook degrades
+ * Resolves `pending` once the attempts are exhausted so a slow webhook degrades
  * to an honest "payment received, confirmation pending" instead of hanging the
  * dialog open forever or lying about the outcome. Invalidates the invoice
  * queries either way, since the row may well have changed.
@@ -128,19 +159,21 @@ export function useAwaitInvoicePaid(options?: {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["invoices", "await-invoice-paid"],
-    mutationFn: async (invoiceId: string) => {
+    mutationFn: async (invoiceId: string): Promise<AwaitInvoicePaidResult> => {
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         const { data } = await client.GET("/v1/invoices/{id}", {
           params: { path: { id: invoiceId } },
         });
         if ((data as { status?: string } | undefined)?.status === "PAID") {
-          return true;
+          return { outcome: "paid" };
         }
+        const failure = invoicePaymentFailure(data);
+        if (failure) return { outcome: "failed", reason: failure.reason };
         if (attempt < attempts - 1) {
           await new Promise((resolve) => setTimeout(resolve, intervalMs));
         }
       }
-      return false;
+      return { outcome: "pending" };
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["invoices", chapterId] });

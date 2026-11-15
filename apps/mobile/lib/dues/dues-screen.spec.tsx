@@ -79,6 +79,8 @@ function deferred<T>() {
 let chapterId = "ch-tau-nu";
 let invoices: unknown[] = [];
 let invoicesPending = false;
+/** When the list's data last arrived (TanStack's `dataUpdatedAt`). */
+let invoicesReadAt = 0;
 /** A failed first read: nothing loaded. A failed refetch keeps its rows. */
 let invoicesError = false;
 let viewerError = false;
@@ -119,6 +121,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     data: invoicesPending || invoicesError ? undefined : invoices,
     isPending: invoicesPending,
     isError: invoicesError,
+    dataUpdatedAt: invoicesReadAt,
     isFetching: false,
     isEnabled: options?.enabled ?? true,
     refetch: refetchInvoices,
@@ -253,6 +256,7 @@ beforeEach(() => {
   chapterId = "ch-tau-nu";
   invoices = [FALL];
   invoicesPending = false;
+  invoicesReadAt = 0;
   invoicesError = false;
   viewerError = false;
   viewerId = VIEWER;
@@ -457,6 +461,42 @@ describe("Dues after a captured payment", () => {
     expect(card(tree)).toContain(paidCopy("Fall dues"));
     expect(card(tree)).not.toContain("Pending");
     expect(screenText(tree)).not.toContain(PENDING_COPY);
+  });
+
+  describe("a failed payment (#3460)", () => {
+    const failedFall = (reason: string | null) => ({
+      ...FALL,
+      last_payment_failed_at: "2099-09-01T12:00:00Z",
+      last_payment_failure_reason: reason,
+    });
+
+    it("ends the hold with \"didn't go through\" when a later list read says it failed", async () => {
+      const tree = mount();
+      await tapPay(tree);
+      expect(card(tree)).toContain(PENDING_COPY);
+
+      invoices = [failedFall(DECLINED)];
+      invoicesReadAt = Date.now() + 1;
+      rerender(tree);
+
+      const failed = `Your payment didn't go through: Your card was declined. You can try again.`;
+      expect(card(tree)).toContain(failed);
+      expect(card(tree)).not.toContain("Pending");
+      expect(screenText(tree)).not.toContain(PENDING_COPY);
+      expect(flatten(line(tree, failed).props.style).color).toBe(DESTRUCTIVE);
+      expect(payButton(tree).props.disabled).toBe(false);
+    });
+
+    it("keeps the hold on a list read from before the payment, which can carry the last attempt's failure", async () => {
+      invoices = [failedFall(null)];
+      invoicesReadAt = 1;
+      const tree = mount();
+      await tapPay(tree);
+
+      expect(card(tree)).toContain("Pending");
+      expect(card(tree)).toContain(PENDING_COPY);
+      expect(screenText(tree)).not.toContain("didn't go through");
+    });
   });
 
   it("keeps the hold when the poll itself fails", async () => {
