@@ -56,8 +56,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { AccessibilityInfo, Alert } from "react-native";
 import { useGlobalSearchParams, usePathname, useRouter } from "expo-router";
 import {
+  useDecideEventExcuse,
   useMarkNotificationRead,
   useRegisterPushToken,
   useRemovePushToken,
@@ -68,11 +70,19 @@ import {
   addNotificationResponseListener,
   addPushTokenListener,
   configureForegroundPresentation,
+  dismissPresentedNotification,
   ensureAndroidChannel,
   getExpoPushToken,
   isPushAvailable,
+  registerPushActionCategories,
   takeLastNotificationResponse,
 } from "./push";
+import {
+  claimActionPress,
+  excuseDecisionFrom,
+  excuseDecisionNotice,
+  type ExcuseDecisionAction,
+} from "./push-actions";
 import { settleChatLaunch } from "@/lib/chat/last-channel";
 import {
   clearStoredPushTokenRow,
@@ -141,6 +151,8 @@ export function usePushRuntime(): void {
   const [pendingTap, setPendingTap] = useState<{
     target: NotificationTarget;
     notificationId: string | null;
+    /** Approve or Decline pressed on an excuse push (#4686). */
+    decision: ExcuseDecisionAction | null;
   } | null>(null);
 
   // Mutation objects are new every render; the effects below must not re-run on
@@ -148,22 +160,42 @@ export function usePushRuntime(): void {
   const registerRef = useRef(registerToken);
   const removeRef = useRef(removeToken);
   const markReadRef = useRef(markRead);
+  const decideExcuse = useDecideEventExcuse();
+  const decideRef = useRef(decideExcuse);
   const authRef = useRef({ isAuthenticated, status });
   useLayoutEffect(() => {
     registerRef.current = registerToken;
     removeRef.current = removeToken;
     markReadRef.current = markRead;
+    decideRef.current = decideExcuse;
     authRef.current = { isAuthenticated, status };
-  }, [registerToken, removeToken, markRead, isAuthenticated, status]);
+  }, [
+    registerToken,
+    removeToken,
+    markRead,
+    decideExcuse,
+    isAuthenticated,
+    status,
+  ]);
 
   const handleResponse = useCallback((response: PushNotificationResponse) => {
     // A tap decides where the member goes, so chat home's launch jump to the
     // last channel stands aside (`lib/chat/last-channel.ts`).
     settleChatLaunch();
     const data = response.notification.request.content.data;
+    const identifier = response.notification.request.identifier;
+    let decision = excuseDecisionFrom(response);
+    if (decision) {
+      // Android leaves the push in the tray after an action press.
+      void dismissPresentedNotification(identifier).catch(() => undefined);
+      // The launch read and the listener can both hand over the same press;
+      // the second must open the event, not decide again into a 409.
+      if (!claimActionPress(identifier)) decision = null;
+    }
     setPendingTap({
       target: resolveNotificationTarget(data),
       notificationId: notificationIdFrom(data),
+      decision,
     });
   }, []);
 
@@ -188,6 +220,8 @@ export function usePushRuntime(): void {
     // nothing — the "channel before permission" ordering in `patterns.md` is
     // satisfied a fortiori by doing it at boot.
     void ensureAndroidChannel();
+    // Before any push that names one can arrive while the app runs (#4686).
+    void registerPushActionCategories();
   }, []);
 
   // The tap that launched the app. Read once — `takeLastNotificationResponse`
@@ -228,9 +262,27 @@ export function usePushRuntime(): void {
     if (status === "hydrating" || isChapterResolving || !isAuthenticated)
       return;
 
-    const { target, notificationId } = pendingTap;
+    const { target, notificationId, decision } = pendingTap;
     setPendingTap(null);
     if (notificationId) markReadRef.current.mutate(notificationId);
+    // The press decides, and the event opens below either way, so the
+    // officer sees the decision land (the write refreshes the event's
+    // excuses) or can make it there when it didn't take.
+    if (decision) {
+      decideRef.current
+        .mutateAsync(decision)
+        .then(() => {
+          AccessibilityInfo.announceForAccessibility(
+            decision.decision === "APPROVED"
+              ? "Excuse approved."
+              : "Excuse declined.",
+          );
+        })
+        .catch((error: unknown) => {
+          const notice = excuseDecisionNotice(error);
+          Alert.alert(notice.title, notice.body);
+        });
+    }
     // The same fallback check `app/(app)/notifications.tsx` makes: an
     // unrecognized payload resolves to the notification list, and pushing that
     // from a tap that arrived *as* a notification stacks the list on itself.

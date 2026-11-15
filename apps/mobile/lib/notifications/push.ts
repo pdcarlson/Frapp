@@ -5,6 +5,7 @@ import { createIsolatedModule } from "../isolated-module";
 import { requireNotifications } from "./push-module";
 import { isRecord, str } from "../more/narrow";
 import { chatChannelIdFrom, isThreadChatPush } from "./targets";
+import { PUSH_ACTION_CATEGORIES } from "./push-actions";
 import type {
   NotificationsModule,
   PushNotificationResponse,
@@ -417,6 +418,42 @@ export function configureForegroundPresentation(): void {
       shouldSetBadge: false,
     }),
   });
+}
+
+/**
+ * Registers the action-button categories (`push-actions.ts`), once at boot,
+ * before any push that names one can arrive while the app runs. The OS keeps
+ * them across launches, so a push that lands while the app is killed shows
+ * its buttons from the second launch of a build onward. A failure is logged,
+ * not thrown: the push still arrives, only without its buttons.
+ */
+export async function registerPushActionCategories(): Promise<void> {
+  const mod = localOnlyModule();
+  if (!mod) return;
+  await Promise.all(
+    PUSH_ACTION_CATEGORIES.map((category) =>
+      mod
+        .setNotificationCategoryAsync(category.id, category.actions)
+        .catch((error: unknown) => {
+          console.warn(
+            `[push] could not register the ${category.id} actions`,
+            error,
+          );
+        }),
+    ),
+  );
+}
+
+/**
+ * Dismisses a presented notification. An action press leaves it in the tray
+ * on Android (iOS removes it), where a second press would decide again.
+ */
+export async function dismissPresentedNotification(
+  identifier: string,
+): Promise<void> {
+  const mod = localOnlyModule();
+  if (!mod) return;
+  await mod.dismissNotificationAsync(identifier);
 }
 
 /**

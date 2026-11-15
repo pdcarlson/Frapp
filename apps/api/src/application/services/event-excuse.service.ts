@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   EVENT_EXCUSE_LATE_HOURS,
+  EXCUSE_PUSH_CATEGORY_ID,
   checkInWindowBounds,
   eventExcuseClosesAt,
 } from '@repo/validation';
@@ -469,7 +470,13 @@ export class EventExcuseService {
         body: excuse.reason,
         priority: 'NORMAL',
         category: 'events',
-        data: { target: { screen: 'events', eventId: event.id } },
+        // Approve and Decline on the push itself (#4686): the phone answers
+        // with PATCH /v1/events/:eventId/excuses/:excuseUserId.
+        categoryId: EXCUSE_PUSH_CATEGORY_ID,
+        data: {
+          target: { screen: 'events', eventId: event.id },
+          excuseUserId: excuse.user_id,
+        },
       });
     } catch (error) {
       reportCaughtFailure(this.logger, {

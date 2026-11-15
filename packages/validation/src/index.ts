@@ -142,6 +142,7 @@ export * from "./native-app";
 // is — it is the fold from server rows onto those keys, and a second copy is
 // how two surfaces come to disagree about what a member's switches say.
 export * from "./notification-categories";
+export * from "./push-action-categories";
 // The inbox's first page, which the API bootstrap, the SDK batch and
 // `useNotifications` must agree on (#4962).
 export * from "./notification-inbox";

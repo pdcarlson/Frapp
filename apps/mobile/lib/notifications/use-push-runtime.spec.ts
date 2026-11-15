@@ -20,6 +20,8 @@ const mockState = vi.hoisted(() => ({
   launchResponse: null as unknown,
   responseListeners: [] as Array<(response: unknown) => void>,
   markRead: vi.fn(),
+  decide: vi.fn<(vars: unknown) => Promise<unknown>>(async () => ({})),
+  dismissed: [] as string[],
   pathname: "/",
   searchParams: {} as Record<string, string>,
   router: {
@@ -51,6 +53,7 @@ vi.mock("@repo/hooks", () => ({
   useRegisterPushToken: () => ({ mutateAsync: mockState.register }),
   useRemovePushToken: () => ({ mutateAsync: mockState.remove }),
   useMarkNotificationRead: () => ({ mutate: mockState.markRead }),
+  useDecideEventExcuse: () => ({ mutateAsync: mockState.decide }),
 }));
 
 vi.mock("./push", () => ({
@@ -85,6 +88,10 @@ vi.mock("./push", () => ({
   hasLaunchNotificationTap: () => mockState.launchResponse !== null,
   configureForegroundPresentation: vi.fn(),
   ensureAndroidChannel: vi.fn(),
+  registerPushActionCategories: vi.fn(),
+  dismissPresentedNotification: async (identifier: string) => {
+    mockState.dismissed.push(identifier);
+  },
 }));
 
 vi.mock("./push-registration", async (importOriginal) => {
@@ -102,6 +109,7 @@ vi.mock("./push-registration", async (importOriginal) => {
 });
 
 const { usePushRuntime } = await import("./use-push-runtime");
+const { Alert } = await import("react-native");
 const { notifyPushPermissionGranted } = await import("./push-token-lifecycle");
 const { claimChatLaunch, resetChatLaunchForTests } =
   await import("@/lib/chat/last-channel");
@@ -117,6 +125,9 @@ beforeEach(() => {
   mockState.launchResponse = null;
   mockState.responseListeners = [];
   mockState.markRead.mockClear();
+  mockState.decide.mockReset();
+  mockState.decide.mockResolvedValue({});
+  mockState.dismissed = [];
   mockState.pathname = "/";
   mockState.searchParams = {};
   mockState.register.mockClear();
@@ -352,5 +363,104 @@ describe("usePushRuntime opens a tapped thread reply (#4054)", () => {
       ["/chat-thread?channelId=c1"],
       ["/chat-thread?channelId=c1&threadRootId=m1"],
     ]);
+  });
+});
+
+describe("usePushRuntime acts on Approve / Decline on an excuse push (#4686)", () => {
+  let pressCount = 0;
+  const press = (actionIdentifier: string) => ({
+    actionIdentifier,
+    notification: {
+      request: {
+        identifier: `excuse-push-${++pressCount}`,
+        content: {
+          data: {
+            notificationId: "notif-excuse",
+            target: { screen: "events", eventId: "evt-1" },
+            excuseUserId: "user-sam",
+          },
+        },
+      },
+    },
+  });
+
+  function signIn() {
+    mockState.isAuthenticated = true;
+    mockState.status = "authenticated";
+  }
+
+  it("decides from the launch press once the session is back, and opens the event", async () => {
+    mockState.status = "hydrating";
+    mockState.launchResponse = press("excuse-approve");
+    const { rerender } = renderHook(() => usePushRuntime());
+    expect(mockState.decide).not.toHaveBeenCalled();
+
+    signIn();
+    rerender();
+
+    expect(mockState.decide).toHaveBeenCalledWith({
+      eventId: "evt-1",
+      userId: "user-sam",
+      decision: "APPROVED",
+    });
+    expect(mockState.markRead).toHaveBeenCalledWith("notif-excuse");
+    expect(mockState.dismissed).toEqual([`excuse-push-${pressCount}`]);
+    const opened = [
+      ...mockState.router.push.mock.calls,
+      ...mockState.router.navigate.mock.calls,
+      ...mockState.router.replace.mock.calls,
+    ];
+    expect(JSON.stringify(opened)).toContain("evt-1");
+  });
+
+  it("declines from a press while the app runs", () => {
+    signIn();
+    renderHook(() => usePushRuntime());
+
+    act(() => {
+      for (const listener of mockState.responseListeners) {
+        listener(press("excuse-decline"));
+      }
+    });
+
+    expect(mockState.decide).toHaveBeenCalledWith(
+      expect.objectContaining({ decision: "DECLINED" }),
+    );
+  });
+
+  it("decides once when the same press is handed over twice", () => {
+    signIn();
+    const same = press("excuse-approve");
+    mockState.launchResponse = same;
+    renderHook(() => usePushRuntime());
+    act(() => {
+      for (const listener of mockState.responseListeners) listener(same);
+    });
+
+    expect(mockState.decide).toHaveBeenCalledTimes(1);
+  });
+
+  it("says a 409 was already handled", async () => {
+    signIn();
+    mockState.decide.mockRejectedValue({ status: 409 });
+    const alert = vi.mocked(Alert.alert);
+    alert.mockClear();
+    mockState.launchResponse = press("excuse-approve");
+    renderHook(() => usePushRuntime());
+
+    await waitFor(() => {
+      expect(alert).toHaveBeenCalledWith("Already handled", expect.any(String));
+    });
+  });
+
+  it("only opens the event on a plain tap", () => {
+    signIn();
+    mockState.launchResponse = press(
+      "expo.modules.notifications.actions.DEFAULT",
+    );
+    renderHook(() => usePushRuntime());
+
+    expect(mockState.decide).not.toHaveBeenCalled();
+    expect(mockState.dismissed).toEqual([]);
   });
 });

@@ -155,6 +155,8 @@ export type NotifyPayload = {
   category?: string;
   /** The push's iOS stack (`PushPayload.threadId`). Not stored on the in-app row. */
   threadId?: string;
+  /** The push's action buttons (`PushPayload.categoryId`). Not stored on the in-app row. */
+  categoryId?: string;
   /**
    * The one chat message this notification quotes (#4418): stored as the
    * row's `chat_message_id`, so deleting the message deletes the row and an
@@ -662,6 +664,7 @@ export class NotificationService {
         // records be sliced by category (see the Expo provider).
         category,
         threadId: payload.threadId,
+        categoryId: payload.categoryId,
       },
     );
 
