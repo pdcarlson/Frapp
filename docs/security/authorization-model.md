@@ -40,7 +40,7 @@ that bound for the session, membership and roles on 2026-11-13 (#3752; [`rbac.md
 | -------------------------------------------------------- | ---------------------------------- | -------------------------------------------------- |
 | Session check (`auth.getUser`)                           | SHA-256 of the bearer token        | `SupabaseAuthGuard` (`sessionLookups`)             |
 | `get_request_context` (user, chapter, membership, roles) | Auth user id and chapter id        | `ChapterGuard` prefetch (`requestContextLookups`)  |
-| The caller's `users` row id                              | Auth user id                       | `ChapterGuard` (`appUserLookups`)                  |
+| The caller's `users` row id                              | Auth user id                       | `ChapterGuard`, and `SupabaseAuthGuard` on a route with `AuthSyncInterceptor` and no `ChapterGuard` (`appUserLookups`, any method) |
 | The chapter's subscription and module state              | Chapter id                         | `ChapterGuard` (`chapterLookups`)                  |
 | Membership row                                           | App user id and chapter id         | `readMemberByUserAndChapter` (`readSharedInBurst`) |
 | Roles by id                                              | Chapter id and the sorted role ids | `readRolesByIds` (`readSharedInBurst`)             |
@@ -54,7 +54,10 @@ read of the caller's membership row (`SupabaseMemberRepository.findByUserAndChap
 chapter rows: the guards read them first, and the handler's access checks (`ChannelAccessService`,
 `RbacService`) reuse them. The guards' reads start while `auth.getUser` is still in flight, on the `sub`
 that `CustomThrottlerGuard` already verified (`prefetchChapterContext`); they are used only once the
-session check passes for that same user. With a chapter named, the user, chapter, membership and roles
+session check passes for that same user. A route with `AuthSyncInterceptor` and no `ChapterGuard` gets
+the same for the `users` row id alone (`prefetchAppUser`, #3583), and only for a session the interceptor
+has already synced; the guard hands that answer to the interceptor itself (`request.appUserLookup`),
+because a write's store is sealed before a controller's interceptor runs. With a chapter named, the user, chapter, membership and roles
 come from one call, `get_request_context`, and each lands in the store under the key its own read uses; if
 the call fails, they are read separately as before #3583, one failed call later, and Sentry gets one warning per
 process every ten minutes. A `GET` or `HEAD` keeps the store to its end. Any other method
