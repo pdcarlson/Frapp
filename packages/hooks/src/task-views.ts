@@ -7,8 +7,9 @@ import type { TaskStatus } from "./use-tasks";
 
 /**
  * Where a task's due date falls from today (#4295 step 5, "Views"): the
- * rule web's My tasks groups by and its Due filter reads, written to be
- * shared so the phone's board can group by it too.
+ * rule My tasks groups by on both apps (web's board, the phone's
+ * `lib/tasks/board.ts`) and web's Due filter reads, so a task is "This week"
+ * in the same place everywhere.
  *
  * - `overdue`: the server derived `OVERDUE` (its own clock decides, as the
  *   board's lanes always have), or an open task past due by `isDueOverdue`,
