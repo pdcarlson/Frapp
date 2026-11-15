@@ -7,10 +7,12 @@ import {
   memberFallbackLabel,
   useLeaderboard,
   useMemberDisplayNames,
+  useMyPermissions,
   useMyPoints,
   useSemesters,
   type SemesterArchive,
 } from "@repo/hooks";
+import { can } from "@repo/validation";
 import { formatDay, formatTimestampFull } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +27,7 @@ import {
 import { anyReadUncached } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import { StaleReadNotice } from "@/components/shared/stale-read-notice";
 import { SectionLabel } from "@/components/shared/section-label";
 import { PageActions } from "@/components/layout/page-actions";
 import { amountToneClassName } from "@/components/points/amount-tone";
@@ -118,7 +121,19 @@ export default function PointsPage() {
   // profile route carries every member's email, bio, graduation year, city and
   // company — see the note on `useChapterRoster` in
   // `packages/hooks/src/use-members.ts` (#1000, #986).
-  const { nameFor, refetch: refetchRoster } = useMemberDisplayNames();
+  const roster = useMemberDisplayNames();
+  const { nameFor, refetch: refetchRoster } = roster;
+  // A roster that failed with nothing cached leaves every row on its fallback
+  // label, so the page says so above the board, with Try again (#1209). Only
+  // to a viewer who may read it (`GET /v1/members/roster` needs
+  // `members:view`): a refusal is not a failure a retry clears. While
+  // permissions are unknown it says it rather than stay silent.
+  const { data: permissionsPayload } = useMyPermissions();
+  const rosterUnreadable =
+    (permissionsPayload === undefined ||
+      can("members:view", permissionsPayload.permissions)) &&
+    roster.isError &&
+    !roster.hasData;
 
   // The roster gates nothing, at either scope. It feeds one column, and a query
   // stays `isLoading` across its whole retry sequence, whose backoff
@@ -324,12 +339,9 @@ export default function PointsPage() {
             void leaderboardQuery.refetch();
             void summaryQuery.refetch();
             // Names are refreshed alongside the reads that raised this state,
-            // so a retry that fixes the board fixes the labels too. Not the
-            // only path and not a complete one: a roster that fails while the
-            // points reads succeed renders no state at all, and recovers on
-            // window focus or reconnect (`query-provider.tsx`) rather than
-            // from any control here. Giving that case a visible signal is
-            // #1209's.
+            // so a retry that fixes the board fixes the labels too. A roster
+            // that fails while the points reads succeed has its own line and
+            // Try again on the loaded page (#1209).
             refetchRoster();
           }}
         />
@@ -358,8 +370,8 @@ export default function PointsPage() {
             void leaderboardQuery.refetch();
             void summaryQuery.refetch();
             // Names are refreshed alongside the reads that raised this state,
-            // so a retry that fixes the board fixes the labels too (#1209
-            // owns the roster-only failure, which raises nothing here).
+            // so a retry that fixes the board fixes the labels too (the
+            // roster-only failure has its own line on the loaded page, #1209).
             refetchRoster();
           }}
         />
@@ -450,6 +462,11 @@ export default function PointsPage() {
       </PageActions>
 
       <SubscriptionNotice gate={adjustGate} feature="point adjustments" />
+      <StaleReadNotice
+        stale={rosterUnreadable}
+        message="We couldn't load member names, so the leaderboard shows a short id in place of each member."
+        onRetry={refetchRoster}
+      />
 
       {/* A stat on the page surface: the label over the number, no frame. */}
       <dl className="space-y-0.5">

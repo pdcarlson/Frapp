@@ -4,6 +4,11 @@ import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
 import { CrestPage } from "@/components/shared/crest-page";
 import { Button } from "@/components/ui/button";
+import {
+  STALE_CHUNK_DESCRIPTION,
+  isChunkLoadError,
+} from "@/lib/chunk-load-error";
+import { useNetwork } from "@/lib/providers/network-provider";
 
 /**
  * The route error boundary — board `1k`'s note: *"Error page uses the same
@@ -68,6 +73,23 @@ import { Button } from "@/components/ui/button";
  * `proxy.ts` bounces a signed-out visitor off `/chat` straight back to
  * `/sign-in` — while a member on `/no-access` would be offered the one route
  * they are being redirected away from.
+ *
+ * ## A stale chunk gets Reload, not Retry (#2200)
+ *
+ * A `ChunkLoadError` reaches this boundary from `(dashboard)/layout.tsx` (a
+ * route `error.tsx` does not wrap the layout above it) and from the pre-auth
+ * routes, which sit above the `(dashboard)` group. `React.lazy` memoises the
+ * rejection for the life of the document, so Retry re-renders into the same
+ * failure; only a reload fetches the new build. `lib/chunk-load-error.ts` has
+ * the mechanism and what not to overstate about it.
+ *
+ * Offline keeps Retry, as `segment-error.tsx` does and for its reason:
+ * `apps/web` registers no service worker, so a reload with no link replaces
+ * the tab with the browser's offline page. That loses nothing on a pre-auth
+ * route, but this boundary also catches the dashboard layout, where it would
+ * throw away a working session. It reads `linkOnline`, not `isOffline`, for
+ * `segment-error.tsx`'s reason too: an API outage on a working link is not a
+ * case where a reload cannot fetch the document.
  */
 export default function RouteError({
   error,
@@ -76,19 +98,45 @@ export default function RouteError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  const { linkOnline } = useNetwork();
+  const isChunkError = isChunkLoadError(error);
+  const shouldReload = isChunkError && linkOnline;
+
   useEffect(() => {
-    Sentry.captureException(error);
-  }, [error]);
+    // Tagged as `segment-error.tsx` tags it, so one search counts stale
+    // chunks at both boundaries.
+    Sentry.captureException(error, {
+      tags: { chunk_load_error: isChunkError },
+    });
+  }, [error, isChunkError]);
+
+  // Offline, nothing broke on our side, so the title says what did happen
+  // (`writing.md` §7's offline rows state the connection, not a failure).
+  const offlineChunk = isChunkError && !linkOnline;
 
   return (
     <CrestPage
       code="500"
       tone="error"
-      title="Something broke on our side."
-      description="The error has been reported. Retrying usually clears it."
+      title={
+        offlineChunk
+          ? "This page couldn't load."
+          : "Something broke on our side."
+      }
+      description={
+        shouldReload
+          ? STALE_CHUNK_DESCRIPTION
+          : offlineChunk
+            ? "You're offline. Retry once you're back."
+            : "The error has been reported. Retrying usually clears it."
+      }
     >
-      <Button size="sm" variant="secondary" onClick={() => retry()}>
-        Retry
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => (shouldReload ? window.location.reload() : retry())}
+      >
+        {shouldReload ? "Reload" : "Retry"}
       </Button>
     </CrestPage>
   );
