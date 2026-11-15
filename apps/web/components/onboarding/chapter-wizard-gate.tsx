@@ -176,7 +176,11 @@ function ChapterWizardFailure({
         <DialogDescription className="sr-only">
           {WIZARD_FAILURE_DESCRIPTION}
         </DialogDescription>
-        <SegmentError error={error} retry={retry} title={WIZARD_FAILURE_TITLE} />
+        <SegmentError
+          error={error}
+          retry={retry}
+          title={WIZARD_FAILURE_TITLE}
+        />
       </DialogContent>
     </Dialog>
   );
@@ -239,7 +243,16 @@ export function ChapterWizardGate() {
   // Trigger: the user has zero chapter memberships. Once opened, the wizard
   // owns its own lifecycle (the membership count flips to 1 mid-flow after the
   // chapter is created), so we never auto-close it from here.
-  const hasNoChapters = chaptersQuery.isSuccess && memberships.length === 0;
+  //
+  // Only on a settled read (#5078). The join page leaves `["chapters"]`
+  // cached as `[]`, and its redeem invalidates it, but the shell mounts on
+  // `/chat` while that refetch is still in flight. Latching on the cached
+  // `[]` opened the wizard behind the tour the refetch then opened, and the
+  // latch kept it there after the tour until a reload.
+  const hasNoChapters =
+    chaptersQuery.isSuccess &&
+    !chaptersQuery.isFetching &&
+    memberships.length === 0;
   // An account with an invite waiting goes to `/join`, not here (#5077).
   // Zero memberships used to mean "starting a chapter", so a member invited
   // by email who signed in got "Set up your chapter" and had to find **I have

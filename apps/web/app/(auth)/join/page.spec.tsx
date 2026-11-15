@@ -700,6 +700,45 @@ describe("web join — invites for the verified address (#3776)", () => {
     expect(redeemMutate).not.toHaveBeenCalled();
   });
 
+  it("shows one Join, with the Terms box above it, and keeps the paste field behind a link (#5076)", async () => {
+    legal.data = { required: true };
+    pending.data = [OFFER];
+    renderPage();
+    const join = await screen.findByRole("button", {
+      name: "Join Sigma Chi Alpha",
+    });
+    expect(screen.queryByRole("button", { name: "Join chapter" })).toBeNull();
+    expect(screen.queryByLabelText("Invite")).toBeNull();
+    const box = screen.getByRole("checkbox");
+    expect(
+      box.compareDocumentPosition(join) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    fireEvent.click(box);
+    fireEvent.click(join);
+    await waitFor(() =>
+      expect(redeemMutate).toHaveBeenCalledWith({
+        token: "emailed-token",
+        accept_terms_privacy: true,
+      }),
+    );
+  });
+
+  it("opens the paste field on Have a different invite?, sharing the one Terms box (#5076)", async () => {
+    legal.data = { required: true };
+    pending.data = [OFFER];
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Have a different invite?" }),
+    );
+    expect(screen.getByLabelText("Invite")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Join chapter" })).toBeTruthy();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: "Have a different invite?" }),
+    ).toBeNull();
+  });
+
   it("shows only the invite a link brought", async () => {
     pending.data = [OFFER];
     searchParams.current = new URLSearchParams("token=link-token");

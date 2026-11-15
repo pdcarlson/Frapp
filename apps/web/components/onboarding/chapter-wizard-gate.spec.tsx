@@ -5,7 +5,9 @@ import userEvent from "@testing-library/user-event";
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
-const { wizard } = vi.hoisted(() => ({ wizard: { throws: null as Error | null } }));
+const { wizard } = vi.hoisted(() => ({
+  wizard: { throws: null as Error | null },
+}));
 vi.mock("@/components/onboarding/chapter-wizard", () => ({
   ChapterWizard: () => {
     if (wizard.throws) throw wizard.throws;
@@ -14,7 +16,7 @@ vi.mock("@/components/onboarding/chapter-wizard", () => ({
 }));
 
 const { chapters } = vi.hoisted(() => ({
-  chapters: { data: [] as unknown[], isSuccess: true },
+  chapters: { data: [] as unknown[], isSuccess: true, isFetching: false },
 }));
 const { invites, invitesCalls } = vi.hoisted(() => ({
   invites: {
@@ -65,6 +67,7 @@ beforeEach(() => {
   wizard.throws = null;
   chapters.data = [];
   chapters.isSuccess = true;
+  chapters.isFetching = false;
   invites.data = [];
   invites.isSuccess = true;
   invites.isError = false;
@@ -158,6 +161,19 @@ describe("the chapter wizard gate's own boundary", () => {
     expect(screen.getByText("chapter wizard")).toBeTruthy();
     expect(screen.queryByText("Couldn't load this page")).toBeNull();
     expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("waits out a refetch of a cached empty list, which is how a join lands (#5078)", () => {
+    // `/join` leaves `[]` cached and its redeem refetches it; the shell mounts
+    // on `/chat` mid-refetch. Latching here put the wizard behind the tour.
+    chapters.isFetching = true;
+    const { container, rerender } = render(<ChapterWizardGate />);
+    expect(container.innerHTML).toBe("");
+
+    chapters.data = [{ id: "chapter-1" }];
+    chapters.isFetching = false;
+    rerender(<ChapterWizardGate />);
+    expect(container.innerHTML).toBe("");
   });
 
   it("stays closed for a member who already has a chapter", () => {

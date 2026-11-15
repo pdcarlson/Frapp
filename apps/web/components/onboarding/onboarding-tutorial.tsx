@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useToast } from "@/lib/hooks/use-toast";
 import { ChatDensityControl } from "@/components/profile/chat-density-control";
 import {
   DISPLAY_STEP_DESCRIPTION,
@@ -38,6 +39,13 @@ import {
 } from "@/components/onboarding/display-step";
 import { PICK_ROLES_COPY } from "@repo/validation";
 import { PickRolesList } from "@/components/roles/pick-roles-section";
+
+/**
+ * Where Replay tutorial lives (`account-section.tsx`), named wherever the tour
+ * tells a member how to get it back (#5079). It said "your profile" before,
+ * which has no such button.
+ */
+const REPLAY_LOCATION = "Settings → Account";
 
 type ChapterMembership = {
   chapter_id: string;
@@ -68,8 +76,7 @@ const STEPS: Step[] = [
   {
     id: "welcome",
     title: "Welcome to Frapp",
-    description:
-      "A quick three-minute tour of the surfaces you'll use most. You can revisit this anytime from your profile.",
+    description: `A quick three-minute tour of the surfaces you'll use most. You can replay it anytime from ${REPLAY_LOCATION}.`,
     glyph: <SignetMark size="sm" />,
   },
   {
@@ -201,6 +208,7 @@ export function OnboardingTutorial() {
     enabled: Boolean(activeChapterId),
   });
   const updateOnboarding = useUpdateOnboarding();
+  const { toast } = useToast();
 
   const [manuallyDismissed, setManuallyDismissed] = useState(false);
 
@@ -229,8 +237,16 @@ export function OnboardingTutorial() {
     !manuallyDismissed &&
     !onSuppressedRoute;
 
-  async function completeOnboarding() {
+  async function completeOnboarding(early: boolean) {
     setManuallyDismissed(true);
+    // Leaving before the last slide says how to come back (#5079), so a
+    // Skip or Escape pressed by accident isn't the end of the tour.
+    if (early) {
+      toast({
+        title: "Tour skipped",
+        description: `Replay it anytime from ${REPLAY_LOCATION}.`,
+      });
+    }
     try {
       await updateOnboarding.mutateAsync({ has_completed_onboarding: true });
     } catch {
@@ -245,7 +261,7 @@ export function OnboardingTutorial() {
   return (
     <OnboardingTutorialDialog
       chapterName={chapterName}
-      onComplete={() => void completeOnboarding()}
+      onComplete={(early) => void completeOnboarding(early)}
     />
   );
 }
@@ -255,7 +271,8 @@ function OnboardingTutorialDialog({
   onComplete,
 }: {
   chapterName: string;
-  onComplete: () => void;
+  /** `early` is true when the member left before the last slide. */
+  onComplete: (early: boolean) => void;
 }) {
   const [stepIndex, setStepIndex] = useState(0);
   const { roles } = usePickableRoles();
@@ -273,10 +290,18 @@ function OnboardingTutorialDialog({
     <Dialog
       open
       onOpenChange={(open) => {
-        if (!open) onComplete();
+        if (!open) onComplete(!isLast);
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      {/*
+        A click outside no longer ends the tour (#5079): a stray click past
+        the dialog's edge used to mark onboarding complete for good. Skip
+        tour, the X and Escape still end it, each on purpose.
+      */}
+      <DialogContent
+        className="sm:max-w-lg"
+        onInteractOutside={(event) => event.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             {step.glyph}
@@ -311,7 +336,7 @@ function OnboardingTutorialDialog({
         />
 
         <DialogFooter className="flex items-center justify-between gap-2 sm:justify-between">
-          <Button variant="ghost" onClick={onComplete}>
+          <Button variant="ghost" onClick={() => onComplete(!isLast)}>
             Skip tour
           </Button>
           <div className="flex gap-2">
@@ -323,7 +348,7 @@ function OnboardingTutorialDialog({
               Back
             </Button>
             {isLast ? (
-              <Button onClick={onComplete}>Finish</Button>
+              <Button onClick={() => onComplete(false)}>Finish</Button>
             ) : (
               <Button
                 onClick={() => {
