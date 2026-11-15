@@ -122,3 +122,32 @@ test("the workflow records each binary under the name and lifetime the plan read
     if (job.includes("secrets.EXPO_TOKEN")) assert.match(job, /environment:\n\s+name: automation\n/, job.slice(0, 20));
   }
 });
+
+test("a run after a staging deploy builds iOS from the record and never Android", async () => {
+  const asked = [];
+  const r = await plan({ choice: "auto", autoPlatforms: ["ios"], exists: async (p) => (asked.push(p), false) });
+  assert.deepEqual([r.ios, r.android], [true, false]);
+  assert.deepEqual(asked, ["ios"]);
+  assert.match(r.reasons.android, /dispatch the workflow/);
+  // A named choice is a person's, and isn't narrowed.
+  const all = await plan({ choice: "all", autoPlatforms: ["ios"], exists: async () => false });
+  assert.deepEqual([all.ios, all.android], [true, true]);
+
+  const logged = [];
+  const base = { BUILD: "auto", RUNTIME: "0.13.0-0123456789ab", GITHUB_REPOSITORY: "o/r", GITHUB_REPOSITORY_ID: "1", GITHUB_TOKEN: "t" };
+  assert.equal(await planMain({ env: { ...base, AUTO_PLATFORMS: "ios,web" }, log: (l) => logged.push(l) }), 1);
+  assert.match(logged[0], /AUTO_PLATFORMS/);
+});
+
+test("the workflow follows Deploy staging and builds the commit its title names", () => {
+  const workflow = readFileSync(new URL("../../../.github/workflows/staging-app.yml", import.meta.url), "utf8");
+  const deploy = readFileSync(new URL("../../../.github/workflows/deploy-staging.yml", import.meta.url), "utf8");
+  const name = /^name: (.+)$/m.exec(deploy)[1];
+  assert.ok(workflow.includes(`workflows: ["${name}"]`));
+  // The title this workflow strips `staging ` from is the one Deploy staging sets.
+  assert.ok(deploy.includes('run-name: "staging ${{ github.event.workflow_run.head_sha }}"'));
+  assert.ok(workflow.includes('SHA="${DEPLOY_TITLE#staging }"'));
+  assert.ok(workflow.includes("AUTO_PLATFORMS: ${{ github.event_name == 'workflow_run' && 'ios' || 'ios,android' }}"));
+  // No job reads the event's own commit: on workflow_run that is main's tip, not the deployed commit.
+  assert.equal([...workflow.matchAll(/\$\{\{ github\.sha \}\}/g)].length, 1);
+});
