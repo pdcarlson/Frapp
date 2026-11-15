@@ -1,1 +1,0 @@
-Signing in for the first time no longer stops you with a warning about a new account; if you're already in a chapter and signed in with the wrong account, a small link on the join screen lets you switch.
