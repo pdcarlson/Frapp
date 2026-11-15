@@ -174,6 +174,23 @@ export function defaultEventStart(now: Date): Date {
 }
 
 /**
+ * Where an event made from the Calendar header's + starts (#5113): on the
+ * day the member picked, at the usual hour, when that day is still ahead;
+ * `null` (the sheet's own default) for today or a day already gone.
+ */
+export function pickedDayStart(day: Date, now: Date): Date | null {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const picked = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+  if (picked <= today) return null;
+  return new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate(),
+    DEFAULT_START_HOUR,
+  );
+}
+
+/**
  * Where an event made from an hour of the Calendar's 3 days or Day grid
  * starts (#4818): that hour, or for the hour under way the next quarter
  * hour, since the form refuses a start that has passed. `null` for an hour

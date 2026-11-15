@@ -254,6 +254,72 @@ describe("Events header Subscribe", () => {
   });
 });
 
+// #5113 (Shawn, 2026-11-15): add an event from the Calendar itself, in every
+// view, not only from the tab bar's + (which a member can take off their
+// panel) or an hour of the grid.
+describe("Events header New event", () => {
+  const nextMonth = (tree: ReactTestRenderer) =>
+    tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Next month" &&
+        typeof node.props.onPress === "function",
+    );
+
+  it("draws a round + after Subscribe for a member who can create", () => {
+    permissions = ["*"];
+    const labels = render()
+      .root.findAllByType(HeaderButton)
+      .map((node) => node.props.label);
+    expect(labels).toEqual([
+      "Subscribe to events in your calendar",
+      "New event",
+    ]);
+    permissions = [];
+  });
+
+  it("draws no + for a member who can't create", () => {
+    permissions = ["events:create"];
+    expect(createButton(render())).toBeUndefined();
+    permissions = [];
+  });
+
+  it("opens New event on the sheet's own default from the List", () => {
+    permissions = ["*"];
+    const tree = render();
+    act(() => createButton(tree)!.props.onPress());
+    expect(newEventSheet.props?.template?.start).toBeNull();
+    expect(newEventSheet.presented).toBe(1);
+    permissions = [];
+  });
+
+  it("starts the event on the day picked in the Calendar", () => {
+    permissions = ["*"];
+    const tree = render();
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityRole === "radio" &&
+            node.props.accessibilityLabel === "Calendar" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress(),
+    );
+    // Today picked: the sheet's own default.
+    act(() => createButton(tree)!.props.onPress());
+    expect(newEventSheet.props?.template?.start).toBeNull();
+    // The next month follows to its 1st, a day still ahead.
+    act(() => nextMonth(tree).props.onPress());
+    act(() => createButton(tree)!.props.onPress());
+    const now = new Date();
+    expect(newEventSheet.props?.template?.start).toEqual(
+      new Date(now.getFullYear(), now.getMonth() + 1, 1, 19),
+    );
+    expect(newEventSheet.presented).toBe(2);
+    permissions = [];
+  });
+});
+
 describe("Events list clock (#2101)", () => {
   it("opens a check-in window that starts while the list is on screen", () => {
     const tree = render();
@@ -411,7 +477,7 @@ describe("Events list states", () => {
     expect(scroll.props.refreshControl).toBeDefined();
   });
 
-  it("points an officer at the tab bar's + when nothing is scheduled", () => {
+  it("points a creator at the header's + when nothing is scheduled", () => {
     // An owner's grant is the wildcard.
     permissions = ["*"];
     events = [];
@@ -420,9 +486,8 @@ describe("Events list states", () => {
     expect(screenText(tree)).toContain(
       "Nothing scheduled yet. Tap + to add the first event.",
     );
-    // New event lives in the quick actions now, so the screen draws no + of
-    // its own beside the tab bar's.
-    expect(createButton(tree)).toBeUndefined();
+    // The + the line names is the screen's own, in the header (#5113).
+    expect(createButton(tree)).toBeDefined();
     permissions = [];
   });
 

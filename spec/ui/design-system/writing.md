@@ -357,7 +357,7 @@ The time-window line is its own row because the default window (Upcoming) hides 
 The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
 
 Mobile's Calendar tab (s06, Events until #4610) opens on whichever of List and Calendar the member last used (#3823).
-With nothing scheduled, either view says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07).
+With nothing scheduled, either view says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). *(Changed in #5113 by shawnatomklein-eng, 2026-11-15: the + the line names is the Calendar header's own, drawn for the same viewers; the words didn't change.)*
 It is mobile's `InlineNote` (`components/inline-note.tsx`), which replaced the `Nothing scheduled` card.
 When the chapter has events but none in the next two weeks, the List says `Nothing in the next two weeks.` above its folded Later row, which reads as web's does: `Later`, its count (`3 events`) and a disclosure chevron (right while folded, down while open), the whole row the control (#4135, 2026-11-13;
 it read `Show 3` and `Hide` until then);
