@@ -439,7 +439,8 @@ It is about the draft preview only, and it ends by saying what a save does inste
 [#2543](https://github.com/pdcarlson/Frapp/issues/2543)).
 It doesn't say what the saved accent paints, which the engine derives (the row's "the palette is derived from it").
 The **Accent hex needed** example, `#5AA9E6`, passes it.
-*(Until 2026-11-12 an **Accent label illegible** row stood beside it, for text unreadable* on *the accent: `Label text on this preview reads at <n>:1, under the 4.5:1 minimum. Saving picks a label color that clears it.` Since the 2026-11-12 surface ladder no color the preview keeps can reach it, so the warning and its row were deleted in [#4388](https://github.com/pdcarlson/Frapp/issues/4388);
+*(Until 2026-11-12 an **Accent label illegible** row stood beside it, for text unreadable* on *the accent: `Label text on this preview reads at <n>:1, under the 4.5:1 minimum. Saving picks a label color that clears it.`
+Since the 2026-11-12 surface ladder no color the preview keeps can reach it, so the warning and its row were deleted in [#4388](https://github.com/pdcarlson/Frapp/issues/4388);
 [`settings-contrast.spec.ts`](../../../apps/web/components/settings/settings-contrast.spec.ts) fails if a ladder change reopens that band.)*
 
 The **Accent server contrast disclosure** row is independent of every row above it.
