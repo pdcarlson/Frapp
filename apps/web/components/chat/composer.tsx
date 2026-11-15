@@ -38,11 +38,7 @@ import {
   pasteAsLines,
   useMentionSourceRefs,
 } from "./chat-editor";
-import {
-  formatScheduledFor,
-  useRequestChatUploadUrl,
-  useUploadSignedUrl,
-} from "@repo/hooks";
+import { useRequestChatUploadUrl, useUploadSignedUrl } from "@repo/hooks";
 import * as Sentry from "@sentry/nextjs";
 import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import { describeChatPhoto } from "@/lib/chat/photo-preview";
@@ -85,7 +81,7 @@ import {
   type PlusMenuForm,
 } from "@repo/chat-core/plus-menu";
 import { QuotedMessage } from "./reply-quote";
-import { ScheduleSendButton } from "./schedule-send";
+import { SCHEDULE_COPY, ScheduleSendButton } from "./schedule-send";
 import {
   getSlashCommand,
   paletteCommandArgs,
@@ -1605,7 +1601,13 @@ export function Composer({
   const schedulingRef = useRef(false);
   const schedule = useCallback(
     async (at: Date) => {
-      if (!editor || !onSchedule || schedulingRef.current) return;
+      if (!editor || !onSchedule) return;
+      // A second schedule while the first is out is refused, not dropped:
+      // resolving would close the custom-time dialog as if it had worked.
+      if (schedulingRef.current) {
+        toast({ title: SCHEDULE_COPY.busy });
+        throw new Error(SCHEDULE_COPY.busy);
+      }
       const typed = chatText(editor).trim();
       const parsed = parseSlashInput(typed);
       const command =
@@ -1614,7 +1616,7 @@ export function Composer({
           : null;
       const text = isBareSlash(typed) ? "" : typed;
       const refusal = isOffline
-        ? "Reconnect to schedule a message."
+        ? SCHEDULE_COPY.offline
         : uploading.length > 0
           ? "Wait for your files to finish uploading."
           : command?.implemented
@@ -1623,9 +1625,9 @@ export function Composer({
               // known whether this member has Ask, it is held the same way.
               askAccess !== "no" &&
                 askMentionQuestion(text, spacedNames) !== null
-              ? "Questions for Frapp can't be scheduled. Send them now."
+              ? SCHEDULE_COPY.askFrapp
               : text.length === 0 && pending.length === 0
-                ? "Type a message to schedule."
+                ? SCHEDULE_COPY.empty
                 : null;
       if (refusal) {
         toast({ title: refusal });
@@ -1663,17 +1665,17 @@ export function Composer({
           setPending(sentPending);
         }
         toast({
-          title: "Couldn't schedule it",
+          title: SCHEDULE_COPY.failed,
           description: untouched
             ? errorCopy(error)
-            : `${errorCopy(error)} It couldn't be put back in the composer.`,
+            : SCHEDULE_COPY.notPutBack(errorCopy(error), "composer"),
           variant: "destructive",
         });
         throw error;
       } finally {
         schedulingRef.current = false;
       }
-      toast({ title: `Scheduled for ${formatScheduledFor(at, new Date())}` });
+      toast({ title: SCHEDULE_COPY.scheduled(at) });
     },
     [
       askAccess,

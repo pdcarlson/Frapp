@@ -3,11 +3,14 @@
  * schedule, files and the quote or thread included.
  */
 import type { ReactNode } from "react";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
-import { useScheduleMessage } from "./use-scheduled-messages";
+import {
+  useScheduleMessage,
+  useScheduledMessages,
+} from "./use-scheduled-messages";
 
 vi.mock("./use-frapp-client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./use-frapp-client")>()),
@@ -80,5 +83,46 @@ describe("useScheduleMessage (#4971)", () => {
         thread_root_id: "r-1",
       },
     });
+  });
+});
+
+describe("useScheduledMessages (#5005)", () => {
+  const row = (id: string, thread: string | null) => ({
+    id,
+    thread_root_id: thread,
+  });
+  let get: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    get = vi.fn(async () => ({
+      data: [row("top", null), row("in-a", "root-a"), row("in-b", "root-b")],
+      error: undefined,
+    }));
+    vi.mocked(useFrappClient).mockReturnValue({
+      GET: get,
+    } as unknown as ReturnType<typeof useFrappClient>);
+    vi.mocked(useActiveChapterId).mockReturnValue("ch-1");
+  });
+
+  it("lists the whole channel, or one thread's replies from the same read", async () => {
+    const client = new QueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(
+      () => ({
+        channel: useScheduledMessages("c"),
+        thread: useScheduledMessages("c", "root-a"),
+      }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.thread.data).toBeDefined());
+    expect(result.current.channel.data?.map((r) => r.id)).toEqual([
+      "top",
+      "in-a",
+      "in-b",
+    ]);
+    expect(result.current.thread.data?.map((r) => r.id)).toEqual(["in-a"]);
+    expect(get).toHaveBeenCalledTimes(1);
   });
 });

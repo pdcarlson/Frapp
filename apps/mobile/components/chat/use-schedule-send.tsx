@@ -1,11 +1,13 @@
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
-import { AccessibilityInfo, Keyboard } from "react-native";
+import { AccessibilityInfo, Alert, Keyboard } from "react-native";
+import { errorCopy } from "@repo/hooks/error-copy";
 import { useFocusEffect } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
@@ -52,8 +54,12 @@ import { ScheduledMessagesSheet } from "./scheduled-messages-sheet";
  * staged reply. They leave the tray and the strip only once it is scheduled
  * (`onScheduled`), so a refusal leaves them where they were.
  */
+/** The alert when a refused schedule can't go back into any composer (#5005). */
+export const SCHEDULE_NOT_SENT_TITLE = "Your message wasn't scheduled";
+
 export function useScheduleSend({
   channelId,
+  threadRootId = null,
   canSchedule,
   showList,
   draft,
@@ -66,6 +72,11 @@ export function useScheduleSend({
   onScheduled,
 }: {
   channelId: string | null;
+  /**
+   * The thread a reply is scheduled into (#5005), or `null` for the channel.
+   * In a thread the line and the list are that thread's alone.
+   */
+  threadRootId?: string | null;
   /** The member may post here: not the audit log, not off a who-can-post list. */
   canSchedule: boolean;
   /** The member's scheduled messages here can be listed: any readable channel. */
@@ -76,7 +87,12 @@ export function useScheduleSend({
   picksFor: (text: string) => MentionPick[];
   /** Sets the draft of the channel on screen. */
   setDraft: (body: string) => void;
-  restoreDraftFor: (channelId: string, body: string) => void;
+  /**
+   * Puts a refused draft back into a channel no longer on screen. Absent in
+   * a thread, which keeps no draft once it is left: there an alert says it
+   * wasn't scheduled and carries the words.
+   */
+  restoreDraftFor?: (channelId: string, body: string) => void;
   /** The tray's photos; only uploaded ones are scheduled (`refusal` holds the rest). */
   photos?: readonly { key: string; attachment: OutboxAttachment | null }[];
   /** The staged reply's message, or `null`. */
@@ -95,12 +111,13 @@ export function useScheduleSend({
   const scheduleRef = useRef<BottomSheetModal>(null);
   const listRef = useRef<BottomSheetModal>(null);
   const listChannel = showList ? channelId : null;
-  const list = useScheduledMessages(listChannel);
+  const list = useScheduledMessages(listChannel, threadRootId);
   const create = useScheduleMessage();
   // What the open sheet schedules, why it can't, and when it opened, as they
   // stood on the long press.
   const [target, setTarget] = useState<{
     channelId: string;
+    threadRootId: string | null;
     text: string;
     photoKeys: string[];
     attachments: OutboxAttachment[];
@@ -110,10 +127,18 @@ export function useScheduleSend({
   } | null>(null);
   // The draft and channel on screen when a schedule settles, which may not be
   // the ones it was opened on.
-  const shownRef = useRef({ channelId, draft });
+  const shownRef = useRef({ channelId, threadRootId, draft });
+  // Whether the screen is still there when a schedule settles.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   useLayoutEffect(() => {
-    shownRef.current = { channelId, draft };
-  }, [channelId, draft]);
+    shownRef.current = { channelId, threadRootId, draft };
+  }, [channelId, threadRootId, draft]);
 
   const openSchedule = useCallback(() => {
     if (!channelId) return;
@@ -121,6 +146,7 @@ export function useScheduleSend({
     const uploaded = photos.filter((photo) => photo.attachment !== null);
     setTarget({
       channelId,
+      threadRootId,
       text: draft.trim(),
       photoKeys: uploaded.map((photo) => photo.key),
       attachments: uploaded.map((photo) => photo.attachment!),
@@ -129,7 +155,7 @@ export function useScheduleSend({
       openedAt: new Date(),
     });
     scheduleRef.current?.present();
-  }, [channelId, draft, photos, refusal, replyToId]);
+  }, [channelId, threadRootId, draft, photos, refusal, replyToId]);
 
   const openList = useCallback(() => {
     Keyboard.dismiss();
@@ -142,6 +168,7 @@ export function useScheduleSend({
       const shown = shownRef.current;
       const cleared =
         shown.channelId === target.channelId &&
+        shown.threadRootId === target.threadRootId &&
         shown.draft.trim() === target.text;
       if (cleared) setDraft("");
       try {
@@ -152,12 +179,24 @@ export function useScheduleSend({
           mentionPicks: picksFor(target.text),
           attachments: target.attachments.map(attachmentRequestBody),
           replyToId: target.replyToId,
+          threadRootId: target.threadRootId,
         });
       } catch (error) {
         if (cleared) {
           const now = shownRef.current;
-          if (now.channelId !== target.channelId) {
-            restoreDraftFor(target.channelId, target.text);
+          const moved =
+            now.channelId !== target.channelId ||
+            now.threadRootId !== target.threadRootId;
+          if (!restoreDraftFor && (moved || !mountedRef.current)) {
+            // A thread keeps no draft once it is left, and its sheet was
+            // dismissed with it: an alert outlives the screen, so the
+            // member learns it didn't go and has the words to send again.
+            Alert.alert(
+              SCHEDULE_NOT_SENT_TITLE,
+              `${errorCopy(error)}\n\n${target.text}`,
+            );
+          } else if (moved) {
+            restoreDraftFor?.(target.channelId, target.text);
           } else if (!now.draft.trim()) {
             setDraft(target.text);
           }
@@ -176,15 +215,17 @@ export function useScheduleSend({
     [create, onScheduled, picksFor, restoreDraftFor, setDraft, target],
   );
 
-  // Leaving the channel closes both, as the + sheet's forms close.
+  // Leaving the channel, or the thread, closes both, as the + sheet's forms
+  // close.
+  const place = channelId ? `${channelId}:${threadRootId ?? ""}` : null;
   useFocusEffect(
     useCallback(() => {
-      if (!channelId) return;
+      if (!place) return;
       return () => {
         scheduleRef.current?.dismiss();
         listRef.current?.dismiss();
       };
-    }, [channelId]),
+    }, [place]),
   );
 
   const line = listChannel ? scheduledLine(list.data ?? [], new Date()) : null;
@@ -198,7 +239,11 @@ export function useScheduleSend({
         openedAt={target?.openedAt ?? null}
         onSchedule={schedule}
       />
-      <ScheduledMessagesSheet ref={listRef} channelId={listChannel} />
+      <ScheduledMessagesSheet
+        ref={listRef}
+        channelId={listChannel}
+        threadRootId={threadRootId}
+      />
     </>
   );
 

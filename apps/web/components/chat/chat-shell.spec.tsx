@@ -1621,6 +1621,7 @@ vi.mock("./thread-panel", () => ({
     onCatchUp,
     beside,
     askRefusal,
+    onSchedule,
   }: import("./thread-panel").ThreadPanelProps) => (
     <section
       aria-label="Thread"
@@ -1642,6 +1643,18 @@ vi.mock("./thread-panel", () => ({
       <span data-testid="thread-can-reply">{String(canReply)}</span>
       <span data-testid="thread-can-post">{String(canPost)}</span>
       <button onClick={onClose}>Back to channel</button>
+      {onSchedule ? (
+        <button
+          onClick={() =>
+            void onSchedule(
+              "Leaving at 6",
+              new Date("2026-11-15T14:00:00.000Z"),
+            )
+          }
+        >
+          thread-schedule-reply
+        </button>
+      ) : null}
       <button onClick={() => writes.delete("reply-1", rootId)}>
         thread-delete-reply
       </button>
@@ -6528,6 +6541,23 @@ describe("ChatShell thread panel", () => {
     fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
     expect(screen.getByTestId("thread-can-post")).toHaveTextContent("false");
     expect(screen.getByTestId("thread-can-reply")).toHaveTextContent("false");
+    // No reply, so nothing to schedule into the thread (#5005).
+    expect(screen.queryByText("thread-schedule-reply")).not.toBeInTheDocument();
+  });
+
+  it("schedules a thread reply into that thread (#5005)", async () => {
+    mockScheduleMutate.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    fireEvent.click(screen.getByText("thread-schedule-reply"));
+    await waitFor(() =>
+      expect(mockScheduleMutate).toHaveBeenCalledWith({
+        channelId: "chan-general",
+        content: "Leaving at 6",
+        sendAt: new Date("2026-11-15T14:00:00.000Z"),
+        threadRootId: "msg-1",
+      }),
+    );
   });
 });
 
