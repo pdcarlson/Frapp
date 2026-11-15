@@ -70,9 +70,17 @@ function fitToContent(node: HTMLTextAreaElement): void {
 }
 
 /**
- * The composer, before there is a channel to send to: a real `<textarea>` that
- * takes focus and takes text, and hands both to `Composer` when the channel
- * resolves.
+ * The composer before the editor exists: a real `<textarea>` that takes focus
+ * and takes text, and hands both to `Composer` when it mounts.
+ *
+ * It stands in twice. On a cold open it is in the server-rendered markup,
+ * before there is a channel to send to (`chat-shell.tsx`, uncontrolled, the
+ * case most of this note is about). Since #5050 it is also what `Composer`
+ * draws while its editor's code loads (`ComposerLoading` in
+ * `deferred-panels.tsx`), when the channel is known but Tiptap is not here yet.
+ * That instance is rendered on the client only, so it is controlled by the
+ * channel's draft (`value`) and takes the caret if the first one held it
+ * (`claimFocus`).
  *
  * ## Why this exists at all
  *
@@ -97,15 +105,14 @@ function fitToContent(node: HTMLTextAreaElement): void {
  *
  * Because this one is focusable *before hydration*. It is ordinary markup in
  * the SSR payload, so the browser can focus it and accept keystrokes from first
- * paint — with `/chat` carrying ~830 KB of its own eager JS, that is a long way
- * ahead of the first client commit. Tiptap cannot do this: `useEditor` runs
+ * paint, a long way ahead of the first client commit on a slow connection. Tiptap cannot do this: `useEditor` runs
  * `immediatelyRender: false`, so no contenteditable exists until the editor is
  * constructed on the client, and constructing one here would mean paying for
  * ProseMirror twice and then throwing the first one away.
  *
- * ## Why it is uncontrolled
+ * ## Why the first one is uncontrolled
  *
- * No `value` prop, deliberately. Text typed before hydration lives only in the
+ * No `value` on the server-rendered one, deliberately. Text typed before hydration lives only in the
  * DOM node, and an uncontrolled `<textarea>` is the one shape React will not
  * reconcile against a prop it thinks is authoritative. The parent still learns
  * every keystroke through `onTextChange`, which is what survives this
@@ -114,11 +121,11 @@ function fitToContent(node: HTMLTextAreaElement): void {
  *
  * ## Why it does not submit
  *
- * There is no channel yet, so there is nothing a send could be addressed to.
- * Enter is swallowed rather than allowed through: letting it insert a newline
- * would silently convert "the member pressed send" into a stray leading blank
- * line that arrives in the editor a moment later. Shift+Enter still breaks a
- * line, which is what it does in the real composer.
+ * There is no channel yet, or no editor to send with, so there is nothing a
+ * send could go through. Enter is swallowed rather than allowed through:
+ * letting it insert a newline would silently convert "the member pressed send"
+ * into a stray leading blank line that arrives in the editor a moment later.
+ * Shift+Enter is swallowed too (see the key handler below).
  *
  * This replaces the inert `aria-hidden` `ComposerSkeleton` that #2145 added to
  * hold the box open. That component's objection to a focusable placeholder —
@@ -129,7 +136,8 @@ function fitToContent(node: HTMLTextAreaElement): void {
 export function ComposerShell({
   onTextChange,
   onFocusChange,
-  defaultValue,
+  value,
+  claimFocus,
   hint = "Still opening your channels. You can keep typing.",
 }: {
   /** Every keystroke, so the text outlives this component's unmount. */
@@ -137,13 +145,24 @@ export function ComposerShell({
   /** Focus entering or leaving, so the upgrade knows whether to carry focus. */
   onFocusChange?: (focused: boolean) => void;
   /**
-   * The channel's saved draft, when the shell stands in for a channel's
-   * composer while the editor's code loads (#5050). Read once, at mount.
+   * The channel's draft, when the shell stands in while the editor's code
+   * loads (#5050). Controlled: a draft restored after mount shows here, as it
+   * would in the editor, and nothing is reported back on mount, so the shell
+   * never claims as typed a text the member didn't type here. Leave it out for
+   * the server-rendered shell, which has to stay uncontrolled.
    */
-  defaultValue?: string;
+  value?: string;
+  /**
+   * Asked once, at mount: whether to take the caret, at the end of the text.
+   * The stand-in passes `claimShellFocus`, so a member typing in the first
+   * shell keeps typing when it is replaced; focusing it re-arms the claim for
+   * the editor.
+   */
+  claimFocus?: () => boolean;
   /** Why Enter can't send yet: what the shell is waiting for. */
   hint?: string;
 }) {
+  const controlled = value !== undefined;
   const input = useRef<HTMLTextAreaElement | null>(null);
   /**
    * Whether the member has pressed Enter with nothing to send to yet.
@@ -184,6 +203,17 @@ export function ComposerShell({
     */
     const node = input.current;
     if (!node) return;
+    if (controlled) {
+      // Client-rendered and fed by the draft: nothing typed before React to
+      // adopt, and echoing `value` would claim it for whatever channel is
+      // current (on a channel switch, the outgoing channel's text).
+      fitToContent(node);
+      if (claimFocus?.()) {
+        node.focus({ preventScroll: true });
+        node.setSelectionRange(node.value.length, node.value.length);
+      }
+      return;
+    }
     if (node.value) {
       onTextChange?.(node.value);
       /*
@@ -203,6 +233,11 @@ export function ComposerShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A controlled value can change without a keystroke (a draft restored late).
+  useEffect(() => {
+    if (controlled && input.current) fitToContent(input.current);
+  }, [controlled, value]);
+
   return (
     <div className={COMPOSER_BOX_CLASS}>
       <div className={cn(COMPOSER_WELL_CLASS, FOCUS_RING_WITHIN)}>
@@ -212,7 +247,7 @@ export function ComposerShell({
           // `min-h-[40px]` is what the real editor uses, and matching it is the
           // whole CLS argument above.
           rows={1}
-          defaultValue={defaultValue}
+          {...(controlled ? { value } : {})}
           aria-label={COMPOSER_LABEL}
           placeholder="Write a message"
           // Not `composerPlaceholder(...)`: that needs a channel name, and the
@@ -280,6 +315,47 @@ export function ComposerShell({
 
 /** Files one message can carry; the mobile composer's limit too. */
 export const CHAT_FILE_LIMIT = 10;
+
+/**
+ * Whether the composer takes text at all: the one rule `Composer` and its
+ * loading stand-in share. Undefined `canPost` (not yet through the server's
+ * capability projection) falls back to `!isReadOnly`, never to `true`.
+ */
+export function composerCanPost({
+  isAuditLog,
+  canPost,
+  isReadOnly,
+}: {
+  isAuditLog?: boolean;
+  canPost?: boolean;
+  isReadOnly: boolean;
+}): boolean {
+  return isAuditLog ? false : (canPost ?? !isReadOnly);
+}
+
+/**
+ * Files dropped on a channel while its composer's code loads (#5050), held
+ * until the composer mounts and attaches them. One channel at a time: a drop
+ * for another channel replaces it, and the composer takes only its own.
+ */
+let droppedWhileLoading: { channelId: string; files: File[] } | null = null;
+
+export function holdDroppedFiles(channelId: string, files: File[]): void {
+  const held =
+    droppedWhileLoading?.channelId === channelId
+      ? droppedWhileLoading.files
+      : [];
+  droppedWhileLoading = {
+    channelId,
+    files: [...held, ...files].slice(0, CHAT_FILE_LIMIT),
+  };
+}
+
+export function takeDroppedFiles(channelId: string): File[] {
+  const held = droppedWhileLoading;
+  droppedWhileLoading = null;
+  return held?.channelId === channelId ? held.files : [];
+}
 
 /** What `onOpenCommandForm` did with a command; `null` hands it to dispatch. */
 export type CommandFormOutcome = "opened" | "refused" | null;

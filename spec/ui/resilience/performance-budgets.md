@@ -144,9 +144,11 @@ stands in, taking focus and text, until it arrives. Cold and warm opens of chat 
 | A channel, cold: ready / editor ready | 10,780 / 8,884 | 9,583 / 8,930 |
 | A channel, warm: ready / editor ready | 1,072 / 872 | 1,165 / 990 |
 
-Editor ready holds within run-to-run noise; the screen is ready about half a second sooner cold,
-because less JavaScript stands before hydration. A first try that fetched the editor only when
-`<Composer>` mounted put it a round trip behind the channel list: editor ready 10,135 ms cold.
+One run per cell, so no noise band was measured: editor ready moved by −23 to +180 ms (+118 ms on
+the warm channel open), and nothing here says whether that is noise or a small cost. Screen ready
+came 0.5 to 1.2 s sooner on the cold opens, consistent with less JavaScript before hydration but not
+shown to be caused by it. A first try that fetched the editor only when `<Composer>` mounted put it
+a round trip behind the channel list: editor ready 10,135 ms cold, against 8,894 before.
 
 Earlier rows, for the trend: as of [#2175](https://github.com/pdcarlson/Frapp/issues/2175) the floor
 was 909 KB / 247 KB and `/chat` 1,733 KB / 501 KB; as of
@@ -170,7 +172,11 @@ That is the board's **chat** chunk and it is correctly eager: the timeline has t
 the composer focusable inside 400ms, so neither can wait on a second request.
 *Corrected 2026-11-15:* since [#3779](https://github.com/pdcarlson/Frapp/issues/3779) the chat panel
 is on every dashboard route, so that chunk is on the shell floor rather than `/chat`'s own cost, and
-every route pays for it. The reasoning about which parts stay eager still holds.
+every route pays for it. The reasoning about which parts stay eager still holds. *Corrected again
+2026-11-15:* [#5050](https://github.com/pdcarlson/Frapp/issues/5050) took `@tiptap` + ProseMirror out
+of that eager chunk (the editor-split rows above). "Composer focusable" is `ComposerShell`, which
+needs no editor, so the editor can wait on a second request; the timeline's half of the argument is
+unchanged.
 
 Re-measure before and after any change that touches an import on the shell or chat path. The numbers
 are exact and reproducible from a build, which is why they are stated here at all — a target nobody

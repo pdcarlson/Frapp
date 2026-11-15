@@ -124,6 +124,7 @@ import {
   COMPOSER_WELL_CLASS,
   CHAT_FILE_LIMIT,
   ComposerShell,
+  holdDroppedFiles,
   notifyDispatchOutcome,
   type CommandFormOutcome,
 } from "./composer-shell";
@@ -2684,6 +2685,15 @@ describe("Composer takes files dropped on the chat column (#4143)", () => {
 
     dragIn([new File(["png"], "photo.png", { type: "image/png" })]);
     expect(screen.getByTestId("chat-drop-target")).toBeInTheDocument();
+  });
+
+  // #5050: a drop while the composer's code loads is held for its channel.
+  it("attaches files dropped on its channel before it loaded", async () => {
+    holdDroppedFiles("chan-1", [
+      new File(["png"], "early.png", { type: "image/png" }),
+    ]);
+    render(<Column />);
+    await waitFor(() => expect(mockUploadSignedUrl).toHaveBeenCalledTimes(1));
   });
 
   it("attaches a dropped image through the attach path", async () => {

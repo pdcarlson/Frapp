@@ -28,12 +28,20 @@ const DEFERRED = [
   "./inline-message-editor",
 ];
 
+/**
+ * Modules only the editor needs (#5050): never imported by a module on every
+ * route, and not lazily either, since they come with the composer's chunk.
+ */
+const EDITOR_ONLY = ["./chat-editor", "./mention-suggestion", "./mention-list"];
+
 /** The modules on every dashboard route that used to load those statically. */
 const STATIC_IMPORTERS = [
   "chat-shell.tsx",
   "message-item.tsx",
   "chat-drop-target.tsx",
   "chat-route-skeleton.tsx",
+  "composer-shell.tsx",
+  "deferred-panels.tsx",
 ];
 
 function resolve(specifier: string): string {
@@ -62,6 +70,23 @@ describe("chat shell panels", () => {
     const target = resolve(path);
     const loading = statements.filter(
       (s) => s.target === target && (s.keyword === "export" || !s.typeOnly),
+    );
+    expect(loading).toEqual([]);
+  });
+
+  it.each(EDITOR_ONLY)("never loads %s statically", (path) => {
+    const target = resolve(path);
+    const loading = statements.filter(
+      (s) => s.target === target && (s.keyword === "export" || !s.typeOnly),
+    );
+    expect(loading).toEqual([]);
+  });
+
+  it("never loads Tiptap or ProseMirror statically", () => {
+    const loading = statements.filter(
+      (s) =>
+        /^(@tiptap\/|prosemirror-)/.test(s.target) &&
+        (s.keyword === "export" || !s.typeOnly),
     );
     expect(loading).toEqual([]);
   });

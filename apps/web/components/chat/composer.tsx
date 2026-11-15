@@ -30,7 +30,9 @@ import {
   COMPOSER_INPUT_CLASS,
   COMPOSER_LABEL,
   COMPOSER_WELL_CLASS,
+  composerCanPost,
   notifyDispatchOutcome,
+  takeDroppedFiles,
   type CommandFormOutcome,
 } from "./composer-shell";
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
@@ -772,7 +774,7 @@ export function Composer({
   // Hoisted above `useEditor` so `onCreate` can honour it — the early return
   // that reads it next is ~400 lines down, but Tiptap builds the editor from
   // here regardless of whether anything ever renders it. See `onCreate`.
-  const resolvedCanPost = isAuditLog ? false : (canPost ?? !isReadOnly);
+  const resolvedCanPost = composerCanPost({ isAuditLog, canPost, isReadOnly });
   const sendRef = useRef<() => void>(() => {});
   /*
     The attach path, for the editor's paste handler (#2246). `editorProps` is
@@ -1552,10 +1554,15 @@ export function Composer({
   useLayoutEffect(() => {
     if (!dropAttachRef || !resolvedCanPost) return;
     dropAttachRef.current = attachFiles;
+    // Files dropped on this channel while this code was loading (#5050),
+    // held outside React: attached as from any other callback, not in the
+    // effect's own pass.
+    const dropped = takeDroppedFiles(channelId);
+    if (dropped.length > 0) queueMicrotask(() => attachFiles(dropped));
     return () => {
       if (dropAttachRef.current === attachFiles) dropAttachRef.current = null;
     };
-  }, [attachFiles, dropAttachRef, resolvedCanPost]);
+  }, [attachFiles, channelId, dropAttachRef, resolvedCanPost]);
   const handleAttach = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files ?? []);

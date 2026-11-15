@@ -15,7 +15,11 @@ import { isChunkLoadError } from "@/lib/chunk-load-error";
 import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 import type { ComposerProps } from "./composer";
-import { ComposerShell } from "./composer-shell";
+import {
+  ComposerShell,
+  composerCanPost,
+  holdDroppedFiles,
+} from "./composer-shell";
 import type { InlineMessageEditor as InlineMessageEditorComponent } from "./inline-message-editor";
 
 /*
@@ -29,6 +33,10 @@ import type { InlineMessageEditor as InlineMessageEditorComponent } from "./inli
  * every member (`performance-budgets.md` § Bundle size has the measured
  * saving); what moved is when. A click before the preload lands waits for its
  * chunk.
+ *
+ * Two exceptions (#5050). The composer draws as soon as there is a channel,
+ * so the chat shell starts its chunk as it mounts, and `ComposerShell` stands
+ * in until it arrives. A message's edit box draws on Edit, like the panels.
  *
  * Not `next/dynamic`, because of what a failed load does there. It is
  * `React.lazy` held in a module-level binding, and `React.lazy` keeps a
@@ -123,12 +131,6 @@ type DialogProps = {
 };
 
 /**
- * A panel whose code loads on first render, with a fresh attempt after a
- * failure. A `dialog` loads only while open, so a closed dialog whose load
- * failed doesn't keep retrying behind the scenes. `Fallback`, given the same
- * props, draws while the code loads (nothing draws otherwise).
- */
-/**
  * A deferred panel, plus `adopt`, which hands it code a preload already
  * fetched: an instance mounted after that draws it straight away, with no
  * Suspense pass (React holds a revealed fallback for 300 ms).
@@ -137,6 +139,12 @@ export type DeferredPanel<P extends object> = ComponentType<P> & {
   adopt: (Component: ComponentType<P>) => void;
 };
 
+/**
+ * A panel whose code loads on first render, with a fresh attempt after a
+ * failure. A `dialog` loads only while open, so a closed dialog whose load
+ * failed doesn't keep retrying behind the scenes. `Fallback`, given the same
+ * props, draws while the code loads (nothing draws otherwise).
+ */
 export function deferredPanel<P extends object>(
   load: () => Promise<ComponentType<P>>,
   kind: "slot" | "dialog",
@@ -271,23 +279,42 @@ export type DeferredComposerProps = ComposerProps & {
 
 /**
  * What the composer draws while its code loads (#5050): `ComposerShell`, the
- * same textarea a cold open shows before the channel list answers. It takes
- * focus and text from the first frame; every keystroke goes to the channel's
- * draft, which the editor is built from when it mounts, and `claimShellFocus`
- * carries the caret across, at the end of the text. A member who can't post
- * here gets nothing until the composer's own explanation loads, rather than a
- * box that takes text it can never send.
+ * textarea a cold open shows before the channel list answers, controlled by
+ * the channel's draft. It follows that draft, so a draft restored after it
+ * mounts shows here and the next keystroke extends it rather than replacing
+ * it; it reports only what the member types, so a channel switch can't save
+ * the outgoing channel's text under the new one. It takes the caret when the
+ * first shell held it (`claimShellFocus`, re-armed by the focus, so the editor
+ * takes it next), says the member is typing, and holds files dropped on the
+ * channel until the composer can attach them. A member who can't post here
+ * gets nothing until the composer's own explanation loads, rather than a box
+ * that takes text it can never send.
  */
 function ComposerLoading(props: DeferredComposerProps) {
-  const canPost = props.isAuditLog
-    ? false
-    : (props.canPost ?? !props.isReadOnly);
+  const canPost = composerCanPost(props);
+  const { channelId, dropAttachRef } = props;
+  useEffect(() => {
+    if (!dropAttachRef || !canPost) return;
+    const hold = (files: File[]) => holdDroppedFiles(channelId, files);
+    dropAttachRef.current = hold;
+    return () => {
+      if (dropAttachRef.current === hold) dropAttachRef.current = null;
+    };
+  }, [canPost, channelId, dropAttachRef]);
   if (!canPost) return null;
   return (
     <ComposerShell
-      defaultValue={props.draft}
-      onTextChange={props.onChangeDraft}
+      value={props.draft}
+      onTextChange={(text) => {
+        props.onChangeDraft(text);
+        // As the editor does: an empty box is nobody typing, and a question
+        // for Frapp is one nobody else will see arrive (#4713).
+        if (text.trim().length > 0 && !/@frapp\b/i.test(text)) {
+          props.onTyping();
+        }
+      }}
       onFocusChange={props.onShellFocusChange}
+      claimFocus={props.claimShellFocus}
       hint="Still opening the composer. You can keep typing."
     />
   );
@@ -340,9 +367,13 @@ export function preloadChatPanels(): void {
     import("./thread-panel"),
     import("@/components/events/event-editor-dialog"),
     import("@/components/members/member-detail-sheet"),
-    import("./inline-message-editor"),
   ];
   for (const load of loads) load.catch(() => undefined);
+  // Handed over like the composer's, so the first Edit after the preload
+  // draws at once instead of blanking the row through a Suspense pass.
+  import("./inline-message-editor")
+    .then((m) => InlineMessageEditor.adopt(m.InlineMessageEditor))
+    .catch(() => undefined);
   preloadComposer();
 }
 
@@ -354,8 +385,8 @@ export function preloadChatPanels(): void {
  * answers, a round trip later (Slow 4G measured it 1.2 s later than when it
  * was in the first download). The shell takes typing meanwhile either way.
  */
-export function preloadComposer(): void {
-  import("./composer")
+export function preloadComposer(): Promise<void> {
+  return import("./composer")
     .then((m) => Composer.adopt(m.Composer))
     .catch(() => undefined);
 }
