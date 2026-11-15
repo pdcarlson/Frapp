@@ -42,6 +42,30 @@ export function latestRunsByName(checkRuns) {
 }
 
 /**
+ * The run of each check name a deploy gate should judge a commit on: the
+ * newest, except that a `skipped` run gives way to the newest run of the same
+ * name that did not skip.
+ *
+ * Why (#5084): once the merge queue has passed a commit, the `push` run CI
+ * starts on `main` for that same commit skips its jobs (`ci.yml`,
+ * `queue_tested`), and those skips are newer than the queue run's real results.
+ * Taking the newest would judge a production deploy on "skipped" rather than on
+ * what the queue actually ran, and would excuse a red queue result under a skip.
+ * Here the real result stands: green deploys, red refuses.
+ *
+ * A check with only skipped runs is still judged `skipped`, which
+ * `ACCEPTED_CONCLUSIONS` accepts as before: the path-gated jobs report it on a
+ * PR, and a commit's own required job can legitimately skip.
+ */
+export function deployEvidenceByName(checkRuns) {
+  const all = Array.isArray(checkRuns) ? checkRuns : [];
+  const latest = latestRunsByName(all);
+  const ran = latestRunsByName(all.filter((run) => run?.conclusion !== "skipped"));
+  for (const [name, run] of ran) latest.set(name, run);
+  return latest;
+}
+
+/**
  * Every check run recorded against `sha`, following pagination.
  *
  * Paginated rather than a single 100-item page because this repo emits well

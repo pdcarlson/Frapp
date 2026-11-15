@@ -149,9 +149,11 @@ export const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS, ...DRIFT_CHECK
 // (`required_status_checks.strict`). Off since 2026-11-11 (Paul): with it on,
 // every merge to `main` restarted CI on every other open PR, so PRs merged no
 // faster than one CI run each. A PR now merges on the checks of its own test
-// merge; a break that only two PRs together cause shows up on `main`'s push
-// run. `configure-branch-protection.mjs` writes it, and `pr-base-sync.mjs`
-// stops updating clean behind PRs and holding the auto-merge slot (#3599)
+// merge; a break that only two PRs together cause is caught by the merge queue
+// below, which tests each entry on top of the ones ahead of it. (`main`'s push
+// run no longer repeats that suite for a commit the queue passed, #5084.)
+// `configure-branch-protection.mjs` writes it, and `pr-base-sync.mjs` stops
+// updating clean behind PRs and holding the auto-merge slot (#3599)
 // while it is off. Turn it back on here, and both follow.
 export const REQUIRE_UP_TO_DATE = false;
 

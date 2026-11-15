@@ -29,6 +29,22 @@ export const JOIN_IN_BROWSER_VALUE = "1";
 export const JOIN_FROM_SIGN_IN_PATH = `/join?from=${JOIN_FROM_SIGN_IN}`;
 
 /**
+ * `/join`'s **Create a chapter**: `/chat`, marked so the chapter wizard gate
+ * opens setup without first sending an account with an emailed invite back
+ * to `/join` (#5077), which would loop.
+ */
+const CREATE_CHAPTER_KEY = "setup";
+const CREATE_CHAPTER_VALUE = "chapter";
+export const CREATE_CHAPTER_PATH = `/chat?${CREATE_CHAPTER_KEY}=${CREATE_CHAPTER_VALUE}`;
+
+/** Whether a dashboard visit came from `/join`'s Create a chapter. */
+export function isCreateChapterVisit(search: string): boolean {
+  return (
+    new URLSearchParams(search).get(CREATE_CHAPTER_KEY) === CREATE_CHAPTER_VALUE
+  );
+}
+
+/**
  * Whether this visit could skip the page at all: the footer's marked visit,
  * with no invite in the URL. The page waits on the reads below only for
  * such a visit, so the rule lives here and nowhere else.

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const {
@@ -9,7 +9,9 @@ const {
   route,
   pickable,
   setPicked,
+  toast,
 } = vi.hoisted(() => ({
+  toast: vi.fn(),
   // Mutable so a test can put the member on a specific route. The tour is
   // mounted in `dashboard-shell.tsx` and is otherwise route-agnostic.
   route: { pathname: "/" },
@@ -54,6 +56,8 @@ vi.mock("@/lib/stores/chapter-store", () => ({
     selector({ activeChapterId: "chapter-1" }),
 }));
 
+vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
+
 import { OnboardingTutorial } from "./onboarding-tutorial";
 
 const INTRAMURALS = {
@@ -66,6 +70,8 @@ const INTRAMURALS = {
 
 afterEach(() => {
   pickable.roles = [];
+  toast.mockClear();
+  updateOnboarding.mutateAsync.mockClear();
 });
 
 /**
@@ -268,5 +274,51 @@ describe("the routes the tour must not cover", () => {
     } finally {
       route.pathname = "/";
     }
+  });
+});
+
+describe("leaving the tour (#5079)", () => {
+  it("ignores a click outside the dialog, which used to end it for good", async () => {
+    render(<OnboardingTutorial />);
+    // Radix dismisses on a pointerdown outside; the overlay blocks a real
+    // click in jsdom, so the event goes to the document directly.
+    // Radix arms its outside listener on the next tick.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.pointerDown(document.body);
+    fireEvent.click(document.body);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(updateOnboarding.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("says where to replay it when skipped early", async () => {
+    render(<OnboardingTutorial />);
+    await userEvent.click(screen.getByRole("button", { name: "Skip tour" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: "Replay it anytime from Settings → Account.",
+      }),
+    );
+  });
+
+  it("says where to replay it when Escape ends it early, too", async () => {
+    render(<OnboardingTutorial />);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Tour skipped" }),
+    );
+  });
+
+  it("says nothing extra on Finish", async () => {
+    render(<OnboardingTutorial />);
+    for (let i = 0; i < 8; i++) {
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    }
+    await userEvent.click(screen.getByRole("button", { name: "Finish" }));
+    expect(toast).not.toHaveBeenCalled();
+    expect(updateOnboarding.mutateAsync).toHaveBeenCalledWith({
+      has_completed_onboarding: true,
+    });
   });
 });

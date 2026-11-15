@@ -421,7 +421,9 @@ test("ci.yml runs the shipped check as a blocking step of the required contract 
   assert.match(String(advisory.if), /!cancelled\(\)/);
 
   const job = workflowJobs(ciPath).find((j) => j.jobId === "api-contract-check");
-  assert.equal(job.if, null);
+  // Ungated, apart from the push the merge queue already passed (#5084), whose
+  // queue run ran this same step on the same commit.
+  assert.equal(job.if, "${{ needs.changes.outputs.queue_tested != 'true' }}");
   assert.doesNotMatch(String(job.keys.get("continue-on-error") ?? ""), /true/);
 });
 

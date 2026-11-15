@@ -154,12 +154,18 @@ describe("ChannelMemberList", () => {
     // role-name lift keys off (#4387); without it hovered Rose/Violet drop under AA.
     expect(row).toHaveClass("group/row");
     fireEvent.click(row);
-    expect(onOpenProfile).toHaveBeenCalledWith("u-member");
+    expect(onOpenProfile).toHaveBeenCalledWith(
+      "u-member",
+      expect.any(HTMLElement),
+    );
 
     onOpenProfile.mockClear();
     row.focus();
     await userEvent.keyboard("{Enter}");
-    expect(onOpenProfile).toHaveBeenCalledWith("u-member");
+    expect(onOpenProfile).toHaveBeenCalledWith(
+      "u-member",
+      expect.any(HTMLElement),
+    );
   });
 
   it("tints each row's initials the way that member's name resolves (#3860)", () => {
@@ -240,7 +246,10 @@ describe("ChannelMemberList", () => {
     expect(row).toHaveAttribute("data-presence", "invisible");
     expect(row.querySelector("[class*='opacity-50']")).not.toBeNull();
     expect(
-      screen.getByText("Bob Member").closest("li")!.querySelector("[class*='opacity-50']"),
+      screen
+        .getByText("Bob Member")
+        .closest("li")!
+        .querySelector("[class*='opacity-50']"),
     ).toBeNull();
   });
 

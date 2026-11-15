@@ -10,7 +10,7 @@ when `pdcarlson/Frapp` went private — see ADR-13 / ADR-17 in
 HTTP 200 against a 404 control — the method and evidence table are in
 [`agent-infra.md`](agent-infra.md) § GitHub environments and bootstrap secrets), so GitHub-native
 secret scanning and push protection are available to it. What is unchanged is what this doc
-describes: the `secret-scan` CI job is still a **required** check on every PR and push to `main`, so
+describes: the `secret-scan` CI job is still a **required** check on every PR, merge queue entry and push to `main` the queue didn't already scan, so
 the enforcement below is live and nothing here is a stopgap waiting to be replaced. **Whether to
 adopt the native features as well, or instead, has not been decided** — ADR-17's "repo re-opens"
 revisit trigger has fired and is unactioned. Do not read this section as recording a decision to
@@ -26,7 +26,7 @@ ruleset) drive three layers, all routed through `scripts/scan-secrets.mjs`:
 | --- | --- | --- | --- |
 | **Pre-commit hook** (`.githooks/pre-commit`) | `git commit` | staged changes | local primary; bypass with `--no-verify` |
 | **Local gate** (`npm run ci:local-gate`) | before opening a PR | branch range (`merge-base..HEAD`) | local; warns if gitleaks is missing |
-| **CI `secret-scan` job** (`.github/workflows/ci.yml`) | every PR + push to `main` | the PR/push commit range | **required check** — the real push-protection replacement |
+| **CI `secret-scan` job** (`.github/workflows/ci.yml`) | every PR, merge queue entry, and push to `main` the queue didn't test (#5084) | the PR, queue entry (`merge_group.base_sha..sha`) or push commit range | **required check** — the real push-protection replacement |
 
 The hook and local gate pass `--soft-missing`, so a contributor without the binary (e.g. offline) gets a
 warning instead of a hard block — **CI is the authoritative gate**.

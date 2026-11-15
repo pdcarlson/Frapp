@@ -571,6 +571,45 @@ describe("AskTurn", () => {
     expect(consent).toHaveBeenCalled();
   });
 
+  // #5082: "not available" offers asking again in place instead of a later.
+  it("offers Try again for an answer Frapp couldn't give, and only for that reason", async () => {
+    const retry = vi.fn();
+    const unavailable = (reason: string) =>
+      exchange({
+        answer: {
+          ...ANSWER,
+          status: "unavailable",
+          reason,
+          text: "",
+          citations: [],
+          sources: [],
+        },
+      });
+    const { unmount } = show(unavailable("not_available"), { retry });
+    expect(
+      screen.getByText(ASK_COPY.unavailable.not_available),
+    ).toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: ASK_COPY.try_again }));
+    expect(retry).toHaveBeenCalledTimes(1);
+    unmount();
+    // A newer server's reason reads the same words, so it acts the same.
+    show(unavailable("over_cap"), { retry }).unmount();
+    for (const reason of [
+      "consent_required",
+      "chapter_off",
+      "chapter_limit",
+      "member_limit",
+    ]) {
+      const { unmount: drop } = show(unavailable(reason), { retry });
+      expect(
+        screen.queryByRole("button", { name: ASK_COPY.try_again }),
+      ).toBeNull();
+      drop();
+    }
+  });
+
   it("holds both ways of asking a turn again while another turn is being answered", () => {
     const view = render(
       <AskTurn

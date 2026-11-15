@@ -73,7 +73,10 @@ import {
 import { MessageRenderer } from "./renderers";
 import type { InlineMessageEditorHandle } from "./inline-message-editor";
 import { InlineMessageEditor } from "./deferred-panels";
-import { MentionOpenerContext } from "./renderers/message-markdown";
+import {
+  MentionOpenerContext,
+  type MentionOpener,
+} from "./renderers/message-markdown";
 import {
   authorProfileUserId,
   mentionedUserId,
@@ -339,9 +342,11 @@ export interface MessageItemProps {
   /**
    * Opens a member's profile by `users.id` (#3726): the author's from their
    * name or photo, or a mentioned member's from an `@` chip, as on mobile.
-   * Optional, so a surface with no profile sheet draws plain names.
+   * Optional, so a surface with no profile sheet draws plain names. The
+   * clicked name, photo or chip comes along as `anchor`, so chat can open its
+   * popout beside it (#4593).
    */
-  onOpenProfile?: (userId: string) => void;
+  onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
 }
 
 /**
@@ -357,7 +362,7 @@ function AuthorName({
   style,
   children,
 }: {
-  openProfile: (() => void) | null;
+  openProfile: ((event: React.MouseEvent<HTMLElement>) => void) | null;
   /** `author-line` where the name is the line itself (compact density). */
   slot?: string;
   className: string;
@@ -472,15 +477,20 @@ export function MessageItem({
     ? authorProfileUserId(message, nameFor)
     : null;
   const openAuthor =
-    onOpenProfile && authorUserId ? () => onOpenProfile(authorUserId) : null;
+    onOpenProfile && authorUserId
+      ? (event: React.MouseEvent<HTMLElement>) =>
+          onOpenProfile(authorUserId, event.currentTarget)
+      : null;
   // An `@` chip in the body opens the member it names, resolved only against
   // the members the server resolved for this message, so a role mention
   // (`@Brothers`) opens nothing (`mentionedUserId`).
   const openMention = useCallback(
-    (token: string): (() => void) | null => {
+    (token: string): MentionOpener | null => {
       if (!onOpenProfile) return null;
       const userId = mentionedUserId(message, token, nameFor);
-      return userId ? () => onOpenProfile(userId) : null;
+      return userId
+        ? (event) => onOpenProfile(userId, event.currentTarget)
+        : null;
     },
     [onOpenProfile, message, nameFor],
   );
@@ -503,8 +513,7 @@ export function MessageItem({
   // block list clears its replier: the parent's echo carries it raw.
   const lastReply = message.thread?.last_reply ?? null;
   const threadPreview =
-    lastReply &&
-    threadPreviewVisible(lastReply, message, blockState, viewerId)
+    lastReply && threadPreviewVisible(lastReply, message, blockState, viewerId)
       ? lastReply
       : null;
   const importantRow = flagView?.important === true;
@@ -876,14 +885,14 @@ export function MessageItem({
     // A GIF message (#4631) is the GIF: no text, no files.
     <MessageGifImage gif={message.gif} />
   ) : message.attachment_count === 0 ? null : (
-      <MessageAttachments
-        channelId={message.channel_id}
-        messageId={message.id}
-        count={message.attachment_count}
-        confirmed={isConfirmed}
-        photos={message.attachment_photos}
-      />
-    );
+    <MessageAttachments
+      channelId={message.channel_id}
+      messageId={message.id}
+      count={message.attachment_count}
+      confirmed={isConfirmed}
+      photos={message.attachment_photos}
+    />
+  );
 
   /*
    * `(edited)` and Pinned, after the body's last line on every row — grouped or
@@ -985,8 +994,8 @@ export function MessageItem({
     ) : null;
   const authorLineFlag =
     flagView && flagOnAuthorLine ? (
-    <MessageFlagCaption view={flagView} inline />
-  ) : null;
+      <MessageFlagCaption view={flagView} inline />
+    ) : null;
   const body = flagCaption ? (
     <>
       {flagCaption}
@@ -1697,9 +1706,7 @@ export function MessageItem({
               The gutter, held open on every row of a run: 32px for the avatar
               in cozy, 56px for the time in compact (§11 § Density).
             */}
-            <div
-              className={cn("relative shrink-0", compact ? "w-14" : "w-8")}
-            >
+            <div className={cn("relative shrink-0", compact ? "w-14" : "w-8")}>
               {message.thread && !compact && !auditLine ? (
                 /*
                   The thread card's connector (#4297, after Discord's): from
@@ -1946,7 +1953,9 @@ function MessageFlagCaption({
   view: MessageFlagView;
   inline?: boolean;
 }) {
-  const tone = view.important ? "text-destructive-text" : "text-muted-foreground";
+  const tone = view.important
+    ? "text-destructive-text"
+    : "text-muted-foreground";
   if (inline) {
     return (
       <span data-slot="message-flag" className="contents">

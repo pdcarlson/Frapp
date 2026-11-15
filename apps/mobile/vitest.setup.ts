@@ -292,6 +292,13 @@ vi.mock("expo-application", () => ({
   nativeBuildVersion: null,
 }));
 
+// `lib/notifications/push-device-name.ts` labels a push-token row with these
+// (#4563); a spec that pins the label mocks its own.
+vi.mock("expo-device", () => ({
+  osVersion: null,
+  modelName: null,
+}));
+
 vi.mock("expo-network", () => ({
   getNetworkStateAsync: vi
     .fn()
