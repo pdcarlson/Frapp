@@ -96,7 +96,9 @@ import {
   onPushPermissionGranted,
   registerCurrentPushToken,
   sessionOwnsPushRegistration,
+  type RegisterPushTokenBody,
 } from "./push-token-lifecycle";
+import { readPushDeviceName } from "./push-device-name";
 import {
   NOTIFICATION_FALLBACK_PATHNAME,
   notificationIdFrom,
@@ -317,7 +319,8 @@ export function usePushRuntime(): void {
 
   const tokenLifecycleDeps = {
     getToken: getExpoPushToken,
-    register: (body: { token: string }) =>
+    getDeviceName: readPushDeviceName,
+    register: (body: RegisterPushTokenBody) =>
       registerRef.current.mutateAsync(body),
     remove: (id: string) => removeRef.current.mutateAsync(id),
     readStored: readStoredPushTokenRow,
