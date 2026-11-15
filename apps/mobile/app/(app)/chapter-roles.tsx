@@ -40,6 +40,9 @@ const SEARCH_FROM = 8;
  * reordering and deleting tiers and roles stay on web, where a chapter sets
  * its structure up once; the phone changes what they can do.
  *
+ * Roles members pick themselves (Non-chapter business, #4958) get their own
+ * section after the roles outside the tiers, as on web.
+ *
  * Tier names, and the word for a tier, are the chapter's own
  * (`tierWords(vocab("tier"))`), never a constant.
  */
@@ -48,7 +51,8 @@ export default function ChapterRolesScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const data = useRolesData();
-  const { rolesQuery, tiersQuery, roles, tiers, memberCounts, words } = data;
+  const { rolesQuery, tiersQuery, roles, tiers, memberCounts, words, canManage } =
+    data;
   const [query, setQuery] = useState("");
   const filtering = normalizeWords(query).length > 0;
 
@@ -63,18 +67,31 @@ export default function ChapterRolesScreen() {
         )
         .filter((role) => !filtering || matchesWordStarts(role.name, query))
         .sort(byDisplayOrder);
+    // Non-chapter business (#4958, Shawn 2026-11-14): the roles members pick
+    // themselves are outside the tiers by rule, and listed apart from the
+    // rest, as on web's Roles tab.
+    const outside = inTier(null);
     return [
       ...tiers.map((tier) => ({
         key: tier.id,
         tier,
+        pickable: false,
         title: tier.name,
         roles: inTier(tier.id),
       })),
       {
         key: "outside",
         tier: null,
+        pickable: false,
         title: `Outside the ${words.plural}`,
-        roles: inTier(null),
+        roles: outside.filter((role) => !role.self_assignable),
+      },
+      {
+        key: "pickable",
+        tier: null,
+        pickable: true,
+        title: "Non-chapter business",
+        roles: outside.filter((role) => role.self_assignable),
       },
     ];
   }, [roles, tiers, filtering, query, words.plural]);
@@ -115,7 +132,8 @@ export default function ChapterRolesScreen() {
   } else {
     const shown = sections.filter(
       (section) =>
-        section.roles.length > 0 || (!filtering && section.tier !== null),
+        section.roles.length > 0 ||
+        (!filtering && (section.tier !== null || (section.pickable && canManage))),
     );
     body = (
       <>
@@ -153,6 +171,13 @@ export default function ChapterRolesScreen() {
               {section.tier && !filtering && section.roles.length === 0 ? (
                 <ListRow
                   label={`No roles in this ${words.singular} yet`}
+                  variant="detail"
+                />
+              ) : null}
+              {section.pickable && section.roles.length === 0 ? (
+                <ListRow
+                  label="None yet"
+                  description={`Members add and remove these themselves, like intramurals or a study group. Turn it on from a role outside the ${words.plural}.`}
                   variant="detail"
                 />
               ) : null}

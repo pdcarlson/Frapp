@@ -120,6 +120,7 @@ const role = (over: Record<string, unknown>) => ({
   mentionable: true,
   tier_id: null,
   permission_overrides: {},
+  self_assignable: false,
   ...over,
 });
 
@@ -410,6 +411,85 @@ describe("A role's permissions (#4074)", () => {
     );
     expect(switchFor(tree, "Invite members").props.disabled).toBe(true);
     expect(switchFor(tree, "Invite members").props.value).toBe(true);
+  });
+});
+
+describe("Non-chapter business on the phone (#4958)", () => {
+  const pickSwitch = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Switch" &&
+        String(node.props.accessibilityLabel).startsWith(
+          "Non-chapter business for",
+        ),
+    );
+
+  it("marks a safe role at once", async () => {
+    h.roles = [...h.roles, role({ id: "r-ims", name: "Intramurals" })];
+    vi.mocked(useLocalSearchParams).mockReturnValue({ roleId: "r-ims" });
+    const tree = render(<RoleScreen />);
+    const [toggle] = pickSwitch(tree);
+    expect(toggle!.props.disabled).toBe(false);
+    await act(async () => {
+      toggle!.props.onValueChange(true);
+    });
+    expect(h.updateRole).toHaveBeenCalledWith({
+      id: "r-ims",
+      body: { self_assignable: true },
+    });
+    expect(pickSwitch(tree)[0]!.props.value).toBe(true);
+  });
+
+  it("says why a role in a tier or with permissions can't be, and offers only off", () => {
+    vi.mocked(useLocalSearchParams).mockReturnValue({ roleId: "r-bro" });
+    let tree = render(<RoleScreen />);
+    expect(screenText(tree)).toContain(
+      "Roles members pick themselves sit outside the tiers",
+    );
+    expect(pickSwitch(tree)[0]!.props.disabled).toBe(true);
+
+    vi.mocked(useLocalSearchParams).mockReturnValue({ roleId: "r-rush" });
+    tree = render(<RoleScreen />);
+    expect(screenText(tree)).toContain(
+      "Roles members pick themselves can't carry permissions",
+    );
+    expect(pickSwitch(tree)[0]!.props.disabled).toBe(true);
+  });
+
+  it("has no switch on a built-in role", () => {
+    vi.mocked(useLocalSearchParams).mockReturnValue({ roleId: "r-pres" });
+    expect(pickSwitch(render(<RoleScreen />))).toHaveLength(0);
+  });
+
+  it("puts a failed save on its row and the switch back", async () => {
+    h.roles = [...h.roles, role({ id: "r-ims", name: "Intramurals" })];
+    h.updateRole.mockRejectedValueOnce(new Error("boom"));
+    vi.mocked(useLocalSearchParams).mockReturnValue({ roleId: "r-ims" });
+    const tree = render(<RoleScreen />);
+    await act(async () => {
+      pickSwitch(tree)[0]!.props.onValueChange(true);
+    });
+    expect(screenText(tree)).toContain("Couldn't update Intramurals.");
+    expect(pickSwitch(tree)[0]!.props.value).toBe(false);
+  });
+
+  it("lists marked roles apart on the Roles screen", () => {
+    h.roles = [
+      ...h.roles,
+      role({ id: "r-ims", name: "Intramurals", self_assignable: true }),
+    ];
+    const text = screenText(render(<ChapterRolesScreen />));
+    const outside = text.indexOf("Outside the tiers");
+    const business = text.indexOf("Non-chapter business");
+    expect(business).toBeGreaterThan(outside);
+    expect(text.indexOf("Rush Chair")).toBeLessThan(business);
+    expect(text.indexOf("Intramurals")).toBeGreaterThan(business);
+  });
+
+  it("tells a roles manager how to fill an empty Non-chapter business", () => {
+    expect(screenText(render(<ChapterRolesScreen />))).toContain(
+      "Turn it on from a role outside the tiers.",
+    );
   });
 });
 

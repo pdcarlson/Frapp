@@ -16,7 +16,11 @@ import {
   type TieredRole,
   type TierRow,
 } from "@repo/hooks/role-tiers";
-import { groupPermissionsByModule } from "@repo/validation";
+import {
+  groupPermissionsByModule,
+  SELF_ASSIGNABLE_REFUSAL_COPY,
+  selfAssignableRefusal,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_ROLES } from "@/components/back-row";
@@ -34,6 +38,7 @@ import {
   OverrideSheet,
   type OverrideTarget,
 } from "@/components/roles/override-sheet";
+import { Toggle } from "@/components/toggle";
 import { describeError } from "@/lib/roles/save-error";
 import {
   CANT_GIVE,
@@ -58,6 +63,11 @@ type Failure = { permission: string; message: string } | null;
  *   a plain switch, as on a tier's page.
  * - **The President's role** (`*`) can do everything and shows every switch
  *   on and still; it moves only through Transfer presidency, on web.
+ *
+ * - **Non-chapter business** (#4958): on a role without a `system_key`, the
+ *   switch that lets members add and remove it themselves, as web's role
+ *   page has. It saves at once, like every switch on this screen, and is
+ *   disabled with the rule's words on a role that can't be marked.
  *
  * Name, color, @mention and moving a role between tiers stay on web with
  * the rest of a role's setup; giving a member a role is the Directory's
@@ -161,6 +171,10 @@ function RoleBody({ role, data }: { role: TieredRole; data: RolesData }) {
         />
       </ListSection>
 
+      {role.system_key ? null : (
+        <PickableSwitch role={role} lockedReason={lockedReason} />
+      )}
+
       {wildcard ? null : (
         <Text style={styles.hint}>
           {tier
@@ -186,6 +200,77 @@ function RoleBody({ role, data }: { role: TieredRole; data: RolesData }) {
         />
       )}
     </ScreenShell>
+  );
+}
+
+/**
+ * Non-chapter business (#4958, Shawn 2026-11-14): whether members add and
+ * remove this role themselves. Only a safe role can be marked
+ * (`spec/behavior/rbac.md` § Self-assignable roles), so on one that isn't the
+ * switch says why and only turns off. A marked role that became unsafe some
+ * other way can still be unmarked.
+ */
+function PickableSwitch({
+  role,
+  lockedReason,
+}: {
+  role: TieredRole;
+  lockedReason: string | null;
+}) {
+  const updateRole = useUpdateRole();
+  // The value saved, shown until the roles refetch carries it, so the switch
+  // doesn't flick back between the save and the refetch.
+  const [wanted, setWanted] = useState<boolean | null>(null);
+  const [inFlight, setInFlight] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  if (wanted !== null && !inFlight && wanted === role.self_assignable) {
+    setWanted(null);
+  }
+  const value = wanted ?? role.self_assignable;
+  const refusal = selfAssignableRefusal(role);
+  const description =
+    failure ??
+    (refusal
+      ? SELF_ASSIGNABLE_REFUSAL_COPY[refusal]
+      : "Members add and remove this role themselves, like an intramurals team or a study group. It opens its channels, and any event that lists it counts them in.");
+
+  async function save(next: boolean) {
+    setWanted(next);
+    setInFlight(true);
+    setFailure(null);
+    try {
+      await updateRole.mutateAsync({
+        id: role.id,
+        body: { self_assignable: next },
+      });
+    } catch (error) {
+      setWanted(null);
+      setFailure(describeError(role.name, error));
+    } finally {
+      setInFlight(false);
+    }
+  }
+
+  return (
+    <ListSection>
+      <ListRow
+        label="Non-chapter business"
+        description={description}
+        descriptionTone={failure ? "destructive" : "default"}
+        trailing={
+          <Toggle
+            value={value}
+            disabled={
+              Boolean(lockedReason) ||
+              inFlight ||
+              (refusal !== null && !value)
+            }
+            onValueChange={(next) => void save(next)}
+            accessibilityLabel={`Non-chapter business for ${role.name}`}
+          />
+        }
+      />
+    </ListSection>
   );
 }
 
