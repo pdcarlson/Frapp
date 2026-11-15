@@ -44,6 +44,7 @@ import {
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { useKeptSheetDraft, useKeptSheetOpening } from "@/lib/kept-sheet-draft";
 import { confirmAlert } from "@/lib/minutes/meetings-on";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -73,6 +74,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * they already typed are theirs, so then it waits behind "Add the
  * transcript". Clearing the notes removes the transcript with them, as web
  * does.
+ *
+ * Notes are stored only when a draft is asked for, so what was typed before
+ * then is kept past the minutes screen (`meeting-notes:<meetingId>`, #5041):
+ * meeting notes are the costliest text in the app to lose to a back swipe.
+ * Asking for a draft gives the kept copy up once the ask lands (the server
+ * holds the notes then), and holds it out while the ask is in flight; Clear
+ * gives it up too. Closing the sheet keeps it, as a swipe does any sheet's.
  */
 export interface NotesDraftSheetProps {
   meetingId: string;
@@ -116,7 +124,10 @@ export const NotesDraftSheet = forwardRef<
   const removeRecording = useRemoveMeetingRecording();
   const { ensureConsent, consentSheet } = useAiConsentGate();
   const reporting = useAiReport();
-  const [notes, setNotes] = useState(state.notes);
+  const keptName = `meeting-notes:${meetingId}`;
+  const opening = useKeptSheetOpening<string>(keptName);
+  const [notes, setNotes] = useState(opening ?? state.notes);
+  const kept = useKeptSheetDraft<string>(keptName, notes, undefined, opening);
   const [problem, setProblem] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
 
@@ -208,6 +219,9 @@ export const NotesDraftSheet = forwardRef<
       setProblem(MEETING_NOTES_COPY.startFailed);
       return;
     }
+    // Out of the kept store until the ask lands or fails: the server holds
+    // the notes once it lands.
+    kept.hold();
     try {
       await request.mutateAsync({
         id: meetingId,
@@ -217,7 +231,9 @@ export const NotesDraftSheet = forwardRef<
           meeting_date: meetingLocalDay(eventStart),
         },
       });
+      kept.clear();
     } catch (error) {
+      kept.release();
       const code = codeOf(error);
       if (code === "meeting.standards_refused")
         setProblem(STANDARDS_MEETING_NOTE);
@@ -261,6 +277,7 @@ export const NotesDraftSheet = forwardRef<
       if (state.status !== "none") await discard.mutateAsync({ id: meetingId });
       // A transcript is notes too: clearing them removes it and its recording.
       if (hasRecording) await removeRecording.mutateAsync({ id: meetingId });
+      kept.clear();
       setNotes("");
       setProblem(null);
     } catch (error) {

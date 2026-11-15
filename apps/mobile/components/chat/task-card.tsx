@@ -317,6 +317,8 @@ export function TaskCard({
       {marking ? (
         <MarkDoneSheet
           key={payload.task_id}
+          // Shared with the Tasks screen's Mark done on this task (#5041).
+          keptDraft={`mark-done:${payload.task_id}`}
           task={{
             id: payload.task_id,
             title: payload.title,
@@ -345,6 +347,7 @@ export function TaskCard({
       {sendingBack ? (
         <SendBackSheet
           key={payload.task_id}
+          keptDraft={`send-back:${payload.task_id}`}
           title={payload.title}
           proofKind={proofKind}
           onSubmit={async (body) => {

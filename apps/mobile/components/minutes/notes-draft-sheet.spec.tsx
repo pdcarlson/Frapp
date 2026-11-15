@@ -11,6 +11,7 @@ import {
   MEETING_NOTES_MAX_LENGTH,
   MEETING_RECORDER_COPY,
 } from "@repo/validation";
+import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
 import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 
@@ -144,6 +145,8 @@ const press = (tree: ReactTestRenderer, label: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Typed notes outlive the sheet (#5041); each spec starts with none kept.
+  dropAllKeptDrafts();
   getVersion.mockResolvedValue("v1");
   hooks.request.mockResolvedValue({});
   hooks.discard.mockResolvedValue({});
@@ -405,5 +408,87 @@ describe("NotesDraftSheet", () => {
     expect(screenText(tree)).toContain(
       "Your chapter has used this month's AI allowance.",
     );
+  });
+});
+
+/**
+ * Notes are stored only once a draft is asked for, so what was typed before
+ * then outlives the minutes screen (#5041): a back swipe used to lose it.
+ */
+describe("NotesDraftSheet's kept notes (#5041)", () => {
+  const type = (tree: ReactTestRenderer, text: string) =>
+    act(() => field(tree).props.onChangeText(text));
+  const leave = (tree: ReactTestRenderer) => act(() => tree.unmount());
+
+  it("keeps typed notes for the meeting's next visit, over the stored ones", () => {
+    const first = render(draftState({ notes: "Old notes." }));
+    type(first, "Old notes. Budget passed 12-3.");
+    leave(first);
+    const second = render(draftState({ notes: "Old notes." }));
+    expect(field(second).props.value).toBe("Old notes. Budget passed 12-3.");
+    leave(second);
+  });
+
+  it("keeps nothing for a sheet opened and left untouched", () => {
+    leave(render(draftState({ notes: "Old notes." })));
+    const second = render(draftState({ notes: "Newer, from the web." }));
+    expect(field(second).props.value).toBe("Newer, from the web.");
+    leave(second);
+  });
+
+  it("gives them up once the draft is asked for, and keeps what is typed after", async () => {
+    const first = render(draftState());
+    type(first, "Budget passed.");
+    await press(first, MEETING_NOTES_COPY.draft);
+    expect(hooks.request).toHaveBeenCalled();
+    leave(first);
+    // The server holds them now, and a later visit opens on them.
+    const stored = render(draftState({ notes: "Budget passed, revised." }));
+    expect(field(stored).props.value).toBe("Budget passed, revised.");
+    leave(stored);
+  });
+
+  it("keeps what is typed in the same visit after the ask lands", async () => {
+    const first = render(draftState());
+    type(first, "Budget passed.");
+    await press(first, MEETING_NOTES_COPY.draft);
+    type(first, "Budget passed. Social on Friday.");
+    leave(first);
+    const second = render(draftState({ notes: "Budget passed." }));
+    expect(field(second).props.value).toBe("Budget passed. Social on Friday.");
+    leave(second);
+  });
+
+  it("holds them out while the ask is in flight, and keeps them when it fails", async () => {
+    let fail: (error: unknown) => void = () => {};
+    hooks.request.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const first = render(draftState());
+    type(first, "Budget passed.");
+    await press(first, MEETING_NOTES_COPY.draft);
+    leave(first);
+    const during = render(draftState());
+    expect(field(during).props.value).toBe("");
+    leave(during);
+
+    await act(async () => fail(new Error("offline")));
+    const after = render(draftState());
+    expect(field(after).props.value).toBe("Budget passed.");
+    leave(after);
+  });
+
+  it("gives them up on Clear, so a later visit opens on the stored notes", async () => {
+    const first = render(draftState({ status: "ready", notes: "Old." }));
+    type(first, "Old. Budget passed.");
+    await press(first, MEETING_NOTES_COPY.clear);
+    expect(field(first).props.value).toBe("");
+    leave(first);
+    // Notes sent from the web since: an emptied box kept here would hide them.
+    const second = render(draftState({ notes: "From the web." }));
+    expect(field(second).props.value).toBe("From the web.");
+    leave(second);
   });
 });

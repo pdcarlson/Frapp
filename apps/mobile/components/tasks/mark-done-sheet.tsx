@@ -29,6 +29,11 @@ import {
 import { SentBackNote, TaskPhotoPicker } from "@/components/tasks/task-photos";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
+  useDropKeptSheetDraft,
+  useKeptSheetDraft,
+  useKeptSheetOpening,
+} from "@/lib/kept-sheet-draft";
+import {
   photoRoom,
   pickTaskPhotos,
   uploadTaskPhotos,
@@ -63,6 +68,17 @@ export interface MarkDoneSheetTask {
   done?: boolean;
 }
 
+/**
+ * What Mark done keeps past its screen (#5041): the photos as picked (never a
+ * path from an upload, which a refused save or the orphan sweep can have
+ * made stale, so a later visit uploads them again), the link, and the reply.
+ */
+interface KeptMarkDone {
+  photos: PendingTaskPhoto[];
+  link: string;
+  note: string;
+}
+
 /** What the sheet says when the task was marked done somewhere else. */
 export const MARK_DONE_ALREADY_DONE = "This task is already marked done.";
 
@@ -84,15 +100,22 @@ export const MARK_DONE_ALREADY_DONE = "This task is already marked done.";
  * photos it was sent, uploads anew.
  *
  * The host mounts one per Mark done (`key` on the task), and the sheet opens
- * itself on mount and calls `onClosed` once it has gone.
+ * itself on mount and calls `onClosed` once it has gone. With `keptDraft`
+ * (`mark-done:<taskId>`, #5041) what was added outlives that: a swipe, the
+ * back gesture or leaving the screen keeps it for the task's next Mark done,
+ * from any host. Cancel and a Mark done that lands give it up; one in flight
+ * holds it out, and one that fails puts it back.
  */
 export function MarkDoneSheet({
   task,
   initialProblem = null,
+  keptDraft,
   onComplete,
   onClosed,
 }: {
   task: MarkDoneSheetTask;
+  /** The kept draft's name, `mark-done:<taskId>`; omitted keeps nothing. */
+  keptDraft?: string;
   /** Why it opened, when a direct Mark done was refused for want of proof. */
   initialProblem?: string | null;
   /** Makes the status write. Rejects with the server's error. */
@@ -109,9 +132,22 @@ export function MarkDoneSheet({
     useSheetVisit(ref);
   const requestUploadUrl = useRequestTaskPhotoUploadUrl();
 
-  const [photos, setPhotos] = useState<PendingTaskPhoto[]>([]);
-  const [link, setLink] = useState("");
-  const [note, setNote] = useState("");
+  // Done somewhere else: nothing is left to send it with, so it keeps
+  // nothing and the kept draft goes.
+  const keptName = task.done ? null : (keptDraft ?? null);
+  useDropKeptSheetDraft(keptDraft ?? null, task.done === true);
+  const opening = useKeptSheetOpening<KeptMarkDone>(keptName);
+  const [photos, setPhotos] = useState<PendingTaskPhoto[]>(
+    () => opening?.photos.slice(0, photoRoom(0)) ?? [],
+  );
+  const [link, setLink] = useState(opening?.link ?? "");
+  const [note, setNote] = useState(opening?.note ?? "");
+  const kept = useKeptSheetDraft<KeptMarkDone>(
+    keptName,
+    { photos: photos.map(({ image }) => ({ image })), link, note },
+    undefined,
+    opening,
+  );
   const [problem, setProblem] = useState<string | null>(initialProblem);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -166,6 +202,9 @@ export function MarkDoneSheet({
     setBusy(true);
     setProblem(null);
     const sentFrom = visit();
+    // Out of the kept store until it lands or fails, so the task's Mark done
+    // reopened mid-send doesn't offer the same proof again.
+    kept.hold();
     try {
       let paths: string[] = [];
       if (photos.length > 0) {
@@ -176,6 +215,7 @@ export function MarkDoneSheet({
         );
         setPhotos(up.photos);
         if (up.status !== "uploaded") {
+          kept.release();
           setProblem(up.reason);
           return;
         }
@@ -192,6 +232,7 @@ export function MarkDoneSheet({
             : {}),
         });
       } catch (error) {
+        kept.release();
         if (!isSameVisit(sentFrom)) return;
         // A path the server turned down can't win again: upload anew next time.
         if (!taskProofRefusal(error) && !taskStatusGateRefusal(error)) {
@@ -206,7 +247,12 @@ export function MarkDoneSheet({
         );
         return;
       }
+      kept.clear();
       if (isSameVisit(sentFrom)) dismiss();
+    } catch (error) {
+      // The upload threw rather than refused: nothing was sent.
+      kept.release();
+      throw error;
     } finally {
       sending.current = false;
       setBusy(false);
@@ -236,7 +282,10 @@ export function MarkDoneSheet({
       >
         <SheetHeader
           title={TASK_ACTION_LABELS.complete}
-          onCancel={() => dismiss()}
+          onCancel={() => {
+            kept.clear();
+            dismiss();
+          }}
           cancelDisabled={busy}
         />
         <Text style={styles.subtitle} numberOfLines={2}>

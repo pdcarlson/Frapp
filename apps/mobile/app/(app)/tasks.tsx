@@ -791,6 +791,9 @@ export default function TasksScreen() {
       {marking && markingRow ? (
         <MarkDoneSheet
           key={marking.id}
+          // Kept past a close and this screen (#5041), shared with the task's
+          // chat card: Mark done on it again opens on what was added.
+          keptDraft={`mark-done:${marking.id}`}
           task={{
             id: markingRow.id,
             title: markingRow.title,

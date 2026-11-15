@@ -41,6 +41,7 @@ function render(
   task: Partial<MarkDoneSheetTask>,
   onComplete = vi.fn(async () => {}),
   initialProblem: string | null = null,
+  keptDraft?: string,
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -49,6 +50,7 @@ function render(
         <MarkDoneSheet
           task={{ ...TASK, ...task }}
           initialProblem={initialProblem}
+          keptDraft={keptDraft}
           onComplete={onComplete}
           onClosed={() => {}}
         />
@@ -289,5 +291,147 @@ describe("MarkDoneSheet (#4635)", () => {
     act(() => field(tree, "Reply to the officer").props.onChangeText("Done"));
     await press(markDone(tree));
     expect(screenText(tree)).toContain(SUBSCRIPTION_REFUSAL_COPY.taskStatus);
+  });
+});
+
+/**
+ * What was added outlives the sheet (#5041): hosts mount one per Mark done,
+ * so a swipe, or going back from Tasks or the chat, used to lose the proof
+ * link, the picked photos and the reply to the officer.
+ */
+describe("MarkDoneSheet's kept proof (#5041)", () => {
+  let draftNo = 0;
+  const nextDraft = () => `mark-done:t${++draftNo}`;
+  const SENT_BACK = {
+    proofKind: "link" as const,
+    sentBack: true,
+    sentBackReason: "No link",
+  };
+  const open = (name: string, onComplete = vi.fn(async () => {})) =>
+    render(SENT_BACK, onComplete, null, name);
+  const fill = (tree: ReactTestRenderer) => {
+    act(() => field(tree, "Link").props.onChangeText("https://ex.com/a"));
+    act(() =>
+      field(tree, "Reply to the officer").props.onChangeText("Fixed it"),
+    );
+  };
+  const values = (tree: ReactTestRenderer) => [
+    field(tree, "Link").props.value,
+    field(tree, "Reply to the officer").props.value,
+  ];
+
+  it("keeps the link and the reply for the task's next Mark done", () => {
+    const name = nextDraft();
+    const first = open(name);
+    fill(first);
+    act(() => first.unmount());
+    const second = open(name);
+    expect(values(second)).toEqual(["https://ex.com/a", "Fixed it"]);
+    act(() => second.unmount());
+  });
+
+  it("keeps the picked photos, to upload again next time", async () => {
+    vi.mocked(
+      ImagePicker.requestMediaLibraryPermissionsAsync,
+    ).mockResolvedValueOnce({ granted: true, canAskAgain: true } as never);
+    vi.mocked(ImagePicker.launchImageLibraryAsync).mockResolvedValueOnce({
+      canceled: false,
+      assets: [
+        {
+          uri: "file:///a.png",
+          fileName: "a.png",
+          mimeType: "image/png",
+          width: 10,
+          height: 10,
+          fileSize: 100,
+        },
+      ],
+    } as never);
+    const name = nextDraft();
+    const first = render({ proofKind: "photo" }, undefined, null, name);
+    const add = first.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === "Add photos",
+    );
+    await press(add);
+    act(() => first.unmount());
+
+    mint.mockResolvedValue({
+      upload_url: "https://signed",
+      storage_path: "chapters/c/tasks/p1/a.png",
+    });
+    const onComplete = vi.fn(async () => {});
+    const second = render({ proofKind: "photo" }, onComplete, null, name);
+    await press(markDone(second));
+    expect(onComplete).toHaveBeenCalledWith({
+      proof_photo_paths: ["chapters/c/tasks/p1/a.png"],
+    });
+    act(() => second.unmount());
+  });
+
+  it("gives it up on Cancel", () => {
+    const name = nextDraft();
+    const first = open(name);
+    fill(first);
+    const header = first.root.find(
+      (node) =>
+        typeof node.props.onCancel === "function" &&
+        typeof node.type === "function",
+    );
+    act(() => header.props.onCancel());
+    act(() => first.unmount());
+    const second = open(name);
+    expect(values(second)).toEqual(["", ""]);
+    act(() => second.unmount());
+  });
+
+  it("gives it up once Mark done lands", async () => {
+    const name = nextDraft();
+    const first = open(name);
+    fill(first);
+    await press(markDone(first));
+    act(() => first.unmount());
+    const second = open(name);
+    expect(values(second)).toEqual(["", ""]);
+    act(() => second.unmount());
+  });
+
+  it("holds it out while Mark done is in flight, and puts it back when it fails", async () => {
+    const name = nextDraft();
+    let fail: (error: unknown) => void = () => {};
+    const first = open(
+      name,
+      vi.fn(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            fail = reject;
+          }),
+      ),
+    );
+    fill(first);
+    await press(markDone(first));
+    act(() => first.unmount());
+
+    const during = open(name);
+    expect(values(during)).toEqual(["", ""]);
+    act(() => during.unmount());
+
+    await act(async () => fail({ statusCode: 500, message: "Down" }));
+    const after = open(name);
+    expect(values(after)).toEqual(["https://ex.com/a", "Fixed it"]);
+    act(() => after.unmount());
+  });
+
+  it("drops it for a task done somewhere else", () => {
+    const name = nextDraft();
+    const first = open(name);
+    fill(first);
+    act(() => first.unmount());
+    const done = render({ ...SENT_BACK, done: true }, undefined, null, name);
+    act(() => done.unmount());
+    const after = open(name);
+    expect(values(after)).toEqual(["", ""]);
+    act(() => after.unmount());
   });
 });
