@@ -119,7 +119,7 @@ width against the budget, and its classes, so there is no artifact to download â
 the log is the diagnosis.
 
 The gate runs as **`web-responsive-floor`**, a required check. It is path-gated:
-every push to `main`, and on pull requests only when the `web` filter in `ci.yml` matches
+every merge queue entry and every push to `main` the queue didn't already test, and on pull requests only when the `web` filter in `ci.yml` matches
 (`apps/web/**`, `packages/**` and the other build-affecting paths listed there), so a docs- or
 API-only PR skips it.
 

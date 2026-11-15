@@ -34,7 +34,8 @@ concurrency:
 # ---------------------------------------------------------------------------
 # `packages-build` runs first. web-tests, web-responsive-floor, landing-fold,
 # pglite-migrations, api-tests, mobile-validate and mobile-tests-tokyo are
-# path-gated on PRs by `changes` and run in full on push and in the merge queue.
+# path-gated on PRs by `changes` and run in full in the merge queue and on a push
+# the queue did not already test (below).
 # They are still required checks, because a job skipped by a job-level `if:` reports
 # Success (ADR-15 amendment 2026-08-19). `clean-checkout-typecheck` and
 # `web-production-build` deliberately prebuild nothing.
@@ -46,8 +47,10 @@ concurrency:
 # job. The skips report Success, so the run stays green and Deploy staging still
 # fires on it; validate-deploy-sha.mjs judges a production deploy on the queue
 # run's check runs, which sit on the same commit. `packages-build` still runs so
-# main keeps seeding the node_modules and turbo caches every PR restores. A
-# commit that reached main without the queue gets the full suite.
+# main keeps seeding the node_modules and turbo caches every PR restores, and
+# `main-caches` runs in the suite's place to seed the tool caches the skipped
+# jobs used to write. A commit that reached main without the queue, and any
+# re-run, gets the full suite.
 #
 # Every job sets `timeout-minutes` (#3129, pinned by workflow-timeouts.test.mjs).
 # Nothing cancels on main, so a job hung at the 360-minute default blocks every
@@ -60,9 +63,10 @@ jobs:
   # Path filter for the gated jobs, and required because they need it
   # (required-checks.mjs). It filters only on pull_request, so a shallow checkout
   # cannot fail the gate; on push and merge_group its outputs are empty and the
-  # gated jobs run in full on their `github.event_name != 'pull_request'` arm.
-  # It also answers `queue_tested` (header), which every job but packages-build
-  # reads, so they all need it; `changes` itself must never skip.
+  # gated jobs run in full on their `github.event_name != 'pull_request'` arm,
+  # unless `queue_tested` skips them. It answers `queue_tested` (header), which
+  # every job but packages-build reads, so they all need it; `changes` itself
+  # must never skip.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -102,6 +106,8 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           HEAD_SHA: ${{ github.sha }}
+          # A re-run tests in full (queue-tested.mjs says why).
+          RUN_ATTEMPT: ${{ github.run_attempt }}
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci/queue-tested.mjs
       - name: Detect changed paths
@@ -219,6 +225,78 @@ jobs:
         uses: ./.github/actions/turbo-packages-build
         with:
           save: "true"
+
+  # ── Main's tool caches on a queue-tested push (#5084) ───────────────────
+  # The other half of skipping the suite: a cache saved on `main` is the only
+  # one every PR and every merge queue ref can restore (a queue ref's own saves
+  # are scoped to that one entry). The skipped jobs used to write these, so on a
+  # push whose suite skipped this job writes any whose key is new: oasdiff,
+  # gitleaks, the Playwright browser, and Playwright's OS packages, whose key
+  # carries the runner image version and so turns over every week or so.
+  # Each step mirrors the job it seeds for (api-contract-check, secret-scan,
+  # web-responsive-floor, landing-fold); `lookup-only` keeps a hit from
+  # downloading what is already there. Not a required check: a failure costs
+  # only a cache miss somewhere else, and it never runs when the suite does.
+  main-caches:
+    needs: [packages-build, changes]
+    if: ${{ needs.changes.outputs.queue_tested == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
+        with:
+          install: ci
+
+      - name: Cache oasdiff
+        id: oasdiff
+        uses: actions/cache@v6
+        with:
+          path: .cache/oasdiff
+          key: oasdiff-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-oasdiff.sh') }}
+          lookup-only: true
+
+      - name: Install oasdiff
+        if: steps.oasdiff.outputs.cache-hit != 'true'
+        run: bash scripts/install-oasdiff.sh
+
+      - name: Cache the pinned gitleaks binary
+        id: gitleaks
+        uses: actions/cache@v6
+        with:
+          path: .cache/gitleaks
+          key: gitleaks-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-gitleaks.sh') }}
+          lookup-only: true
+
+      - name: Install gitleaks
+        if: steps.gitleaks.outputs.cache-hit != 'true'
+        run: bash scripts/install-gitleaks.sh
+
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+          lookup-only: true
+
+      # Saves its .debs under this runner image's key when that key is new.
+      - name: Install Playwright OS deps
+        timeout-minutes: 10
+        uses: ./.github/actions/playwright-os-deps
+
+      - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
 
   # ── Lint + type check (full monorepo) ───────────────────────────────────
   lint-and-typecheck:
@@ -583,7 +661,8 @@ jobs:
         continue-on-error: true
         run: bash scripts/install-oasdiff.sh
 
-      # Runs on push too, so a break that reached main turns main red. On a PR
+      # Runs on push too, so a break that reached main outside the merge queue
+      # turns main red (a queue-tested push skips it: the queue ran it). On a PR
       # it also fails when the registry lost or rewrote an entry the base has
       # (#3783): a bad conflict resolution otherwise passes as "fewer builds".
       - name: Check API compatibility with shipped mobile builds (blocking)
