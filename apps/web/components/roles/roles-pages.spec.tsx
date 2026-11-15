@@ -196,6 +196,7 @@ describe("the tier list", () => {
       "Officers and chairs",
       "Members",
       "Outside the tiers",
+      "Non-chapter business",
     ]);
     const members = screen.getByRole("region", { name: "Members" });
     expect(members).toHaveTextContent("Brothers");
@@ -204,6 +205,45 @@ describe("the tier list", () => {
       screen.getByRole("region", { name: "Outside the tiers" }),
     ).toHaveTextContent("Alumni");
     expect(screen.getByText("Can do everything")).toBeInTheDocument();
+  });
+
+  it("lists the roles members pick themselves under Non-chapter business (#4958)", () => {
+    h.roles = [
+      ...h.roles,
+      role("im", "Intramurals", null, [], { self_assignable: true }),
+    ];
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    expect(
+      screen.getByRole("region", { name: "Non-chapter business" }),
+    ).toHaveTextContent("Intramurals");
+    expect(
+      screen.getByRole("region", { name: "Outside the tiers" }),
+    ).not.toHaveTextContent("Intramurals");
+  });
+
+  it("offers no move into a tier on a Non-chapter business role", async () => {
+    h.roles = [
+      ...h.roles,
+      role("im", "Intramurals", null, [], { self_assignable: true }),
+    ];
+    const user = userEvent.setup();
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    await user.click(
+      screen.getByRole("button", { name: "More for Intramurals" }),
+    );
+    expect(screen.queryByRole("menuitem", { name: "Exec board" })).toBeNull();
+    expect(
+      screen.getByRole("menuitem", { name: "Delete role" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides an empty Non-chapter business from a member who can't manage roles", () => {
+    h.members = [{ user_id: "me", role_ids: ["brother"] }];
+    h.mine = MEMBERS.permissions;
+    render(<RolesOverview onOpenTier={vi.fn()} onOpenRole={vi.fn()} />);
+    expect(
+      screen.queryByRole("region", { name: "Non-chapter business" }),
+    ).toBeNull();
   });
 
   it("uses the chapter's own word for a tier", () => {
@@ -601,6 +641,87 @@ describe("a role's page", () => {
         tier_id: "t2",
       },
     });
+  });
+
+  it("marks a role outside the tiers as Non-chapter business (#4958)", async () => {
+    const user = userEvent.setup();
+    render(<RolePage roleId="alum" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    await user.click(
+      screen.getByRole("switch", { name: "Non-chapter business" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Save role" }));
+    expect(h.updateRole.mock.calls[0]![0].body).toMatchObject({
+      self_assignable: true,
+    });
+  });
+
+  it("explains why a role in a tier can't be Non-chapter business", () => {
+    render(<RolePage roleId="brother" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    expect(
+      screen.getByRole("switch", { name: "Non-chapter business" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/Roles members pick themselves sit outside the tiers/),
+    ).toBeInTheDocument();
+  });
+
+  it("lets a tiered role moved out of its tier be marked in the same save", async () => {
+    // The switch judges the permissions the save leaves: Brothers carries
+    // only its tier's, so outside the tiers it holds none.
+    const user = userEvent.setup();
+    render(<RolePage roleId="brother" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    await user.click(screen.getByRole("combobox", { name: "Tier" }));
+    await user.click(screen.getByRole("option", { name: "Outside the tiers" }));
+    const pick = screen.getByRole("switch", { name: "Non-chapter business" });
+    expect(pick).toBeEnabled();
+    await user.click(pick);
+    await user.click(screen.getByRole("button", { name: "Save role" }));
+    expect(h.updateRole.mock.calls[0]![0].body).toMatchObject({
+      tier_id: null,
+      self_assignable: true,
+    });
+  });
+
+  it("refuses to mark a role outside the tiers that carries a permission", () => {
+    h.roles = [
+      ...h.roles,
+      role("rush", "Rush crew", null, ["events:create"], {
+        permission_overrides: { "events:create": true },
+      }),
+    ];
+    render(<RolePage roleId="rush" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    expect(
+      screen.getByRole("switch", { name: "Non-chapter business" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/can't carry permissions, since anyone can join them/),
+    ).toBeInTheDocument();
+  });
+
+  it("judges a drafted move into a tier, and still lets a marked role be turned off", async () => {
+    h.roles = [
+      ...h.roles,
+      role("im", "Intramurals", null, [], { self_assignable: true }),
+    ];
+    const user = userEvent.setup();
+    render(<RolePage roleId="im" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    await user.click(screen.getByRole("combobox", { name: "Tier" }));
+    await user.click(screen.getByRole("option", { name: "Members" }));
+    expect(
+      screen.getByText(/Roles members pick themselves sit outside the tiers/),
+    ).toBeInTheDocument();
+    const pick = screen.getByRole("switch", { name: "Non-chapter business" });
+    expect(pick).toBeEnabled();
+    await user.click(pick);
+    expect(pick).not.toBeChecked();
+    expect(pick).toBeDisabled();
+  });
+
+  it("offers no Non-chapter business switch on a built-in role", () => {
+    render(<RolePage roleId="member" onBack={vi.fn()} onOpenTier={vi.fn()} />);
+    expect(
+      screen.queryByRole("switch", { name: "Non-chapter business" }),
+    ).toBeNull();
   });
 
   it("saves a picked swatch, and leaves an untouched color out", async () => {

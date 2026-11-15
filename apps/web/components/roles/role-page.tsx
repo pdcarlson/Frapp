@@ -8,6 +8,8 @@ import {
   isEveryoneRole,
   roleColorOrNull,
   type RoleColorHex,
+  SELF_ASSIGNABLE_REFUSAL_COPY,
+  selfAssignableRefusal,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +45,23 @@ import {
   reachesTier,
   type TieredRole,
 } from "@repo/hooks/role-tiers";
+
+/**
+ * A role's permissions after a move: the tier's, plus its overrides that are
+ * on, minus those that are off. The API's `effectivePermissions` rule, which
+ * the database applies on the write.
+ */
+function permissionsAfterMove(
+  tierPermissions: readonly string[],
+  overrides: Readonly<Record<string, boolean>>,
+): string[] {
+  const result = new Set(tierPermissions);
+  for (const [permission, on] of Object.entries(overrides)) {
+    if (on) result.add(permission);
+    else result.delete(permission);
+  }
+  return [...result];
+}
 
 /** The Select's value for "outside the tiers"; Radix can't carry `""`. */
 const OUTSIDE = "__outside__";
@@ -170,6 +189,26 @@ function RoleBody({
   const [colorTouched, setColorTouched] = useState(false);
   const [placement, setPlacement] = useState(role.tier_id ?? OUTSIDE);
   const [mentionable, setMentionable] = useState(role.mentionable);
+  // "Non-chapter business" (#4958, Shawn 2026-11-14): members add and remove
+  // the role themselves. Judged against the drafted placement, since a move
+  // into a tier is what most often rules it out.
+  const [pickable, setPickable] = useState(role.self_assignable);
+  const draftTierId = placement === OUTSIDE ? null : placement;
+  const pickRefusal = selfAssignableRefusal({
+    system_key: role.system_key,
+    tier_id: draftTierId,
+    // The permissions the save leaves it with, as the API judges them: its
+    // stored ones while it stays put, else the drafted tier's with its own
+    // overrides on top (a role moved out of a tier drops that tier's).
+    permissions:
+      draftTierId === (role.tier_id ?? null)
+        ? role.permissions
+        : permissionsAfterMove(
+            tiers.find((candidate) => candidate.id === draftTierId)
+              ?.permissions ?? [],
+            role.permission_overrides,
+          ),
+  });
   const [order, setOrder] = useState(String(role.display_order));
 
   async function save() {
@@ -187,6 +226,8 @@ function RoleBody({
           display_order: parseGuardedInt(order),
           mentionable:
             mentionable !== role.mentionable ? mentionable : undefined,
+          self_assignable:
+            pickable !== role.self_assignable ? pickable : undefined,
           tier_id: nextTier !== role.tier_id ? nextTier : undefined,
           // **No `permissions` key.** The switches below save on their own;
           // sending a list here would roll back a flip made since this page
@@ -418,6 +459,35 @@ function RoleBody({
               onCheckedChange={setMentionable}
             />
           </div>
+          {/*
+            Non-chapter business (#4958): interest roles members pick
+            themselves. Built-in roles never are, so they don't show it.
+            spec/behavior/rbac.md § Self-assignable roles.
+          */}
+          {role.system_key ? null : (
+            <div className="flex items-start justify-between gap-4 md:col-span-2">
+              <div className="grid gap-1">
+                <Label htmlFor="role-self-assignable">
+                  Non-chapter business
+                </Label>
+                <p
+                  id="role-self-assignable-description"
+                  className="text-sm text-muted-foreground"
+                >
+                  {pickRefusal
+                    ? SELF_ASSIGNABLE_REFUSAL_COPY[pickRefusal]
+                    : "Members add and remove this role themselves, like an intramurals team or a study group. It opens its channels, and any event that lists it counts them in."}
+                </p>
+              </div>
+              <Switch
+                id="role-self-assignable"
+                aria-describedby="role-self-assignable-description"
+                checked={pickable}
+                disabled={!editable || (!!pickRefusal && !pickable)}
+                onCheckedChange={setPickable}
+              />
+            </div>
+          )}
         </div>
         {editable ? (
           <div className="flex flex-wrap items-center gap-2">
@@ -471,9 +541,7 @@ function RoleBody({
             extraPermissions={wildcard ? [] : held}
             lockedReason={lockedReason}
             rowLockedReason={(permission, on) =>
-              !on && !mayGrant(reach, permission)
-                ? CANT_GIVE
-                : null
+              !on && !mayGrant(reach, permission) ? CANT_GIVE : null
             }
             pendingPermission={
               pending?.id === role.id ? pending.permission : null

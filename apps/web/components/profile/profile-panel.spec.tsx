@@ -77,6 +77,11 @@ vi.mock("@/components/members/member-pledge-class-section", () => ({
     mocks.classSection(props),
 }));
 
+// The picker is its own spec's business (#4958).
+vi.mock("@/components/roles/pick-roles-section", () => ({
+  PickRolesSection: () => null,
+}));
+
 vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));

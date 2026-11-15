@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { selfAssignableRefusal } from "./self-assignable-roles";
+import {
+  NOT_SELF_ASSIGNABLE_CODE,
+  selfAssignableRefusal,
+} from "./self-assignable-roles";
+import { refusalCopy } from "./error-copy";
 
 describe("selfAssignableRefusal (#4958)", () => {
   const safe = { system_key: null, tier_id: null, permissions: [] };
@@ -49,5 +53,19 @@ describe("selfAssignableRefusal (#4958)", () => {
     expect(selfAssignableRefusal({ system_key: "" })).toBe(
       "role.self_assignable_keyed",
     );
+  });
+});
+
+describe("refusal copy for role.not_self_assignable (#4958 review)", () => {
+  // One code, several refusals: each keeps the API's own sentence, so an
+  // officer's save race never reads as a member's picker refusal.
+  it.each([
+    "Members started picking this role while you were saving. Reload and try again.",
+    "Alumni don't pick roles. Ask an officer if you need one.",
+    "Officers give this role. Ask one if you need it.",
+  ])("keeps %s", (message) => {
+    expect(
+      refusalCopy({ status: 409, code: NOT_SELF_ASSIGNABLE_CODE, message }),
+    ).toBe(message);
   });
 });
