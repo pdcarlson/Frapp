@@ -81,6 +81,7 @@ function planOf(overrides: Plan): Plan {
     details: null,
     location: null,
     required: null,
+    repeats: null,
     ...overrides,
   };
 }
