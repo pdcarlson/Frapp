@@ -173,11 +173,7 @@ function ChapterWizardFailure({
         <DialogDescription className="sr-only">
           {WIZARD_FAILURE_DESCRIPTION}
         </DialogDescription>
-        <SegmentError
-          error={error}
-          retry={retry}
-          title={WIZARD_FAILURE_TITLE}
-        />
+        <SegmentError error={error} retry={retry} title={WIZARD_FAILURE_TITLE} />
       </DialogContent>
     </Dialog>
   );
