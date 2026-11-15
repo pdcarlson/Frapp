@@ -156,17 +156,6 @@ describe("in a sheet", () => {
       tint(signetDarkTokens.color.semantic.destructive, 0.28),
     );
   });
-
-  it("draws flush rows on a screen a step above the page", () => {
-    const fills = blockFills(
-      render(
-        <SkeletonRegion label="Loading" flush>
-          <SkeletonBlock width="60%" height={12} />
-        </SkeletonRegion>,
-      ),
-    );
-    expect(fills).toEqual([surface.surface1]);
-  });
 });
 
 describe("ErrorState", () => {

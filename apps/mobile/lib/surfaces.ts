@@ -32,6 +32,13 @@ export interface RaisedSurfaces {
    * its own: a lead tile, a chip, a row while it is held.
    */
   raised: string;
+  /**
+   * A state card's fill (a skeleton card, an error card). On a screen it is
+   * {@link card}; in a sheet it is none, since `card` one step under the
+   * sheet reads as a hole, and the card keeps its hairline
+   * (`components.md` §10 "Nested inside a card", #4690).
+   */
+  stateCard: string;
 }
 
 /** The steps for something that sits on a screen's background. */
@@ -39,6 +46,7 @@ export function pageSurfaces(tokens: SignetTokens): RaisedSurfaces {
   return {
     card: tokens.color.surface.surface1,
     raised: tokens.color.surface.card,
+    stateCard: tokens.color.surface.surface1,
   };
 }
 
@@ -47,6 +55,7 @@ export function sheetSurfaces(tokens: SignetTokens): RaisedSurfaces {
   return {
     card: tokens.color.surface.card,
     raised: tokens.color.surface.popover,
+    stateCard: "transparent",
   };
 }
 

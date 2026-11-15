@@ -410,8 +410,8 @@ A centered card on the card fill, recolored semantic (the anatomy the empty card
 | ---- | ---- |
 | Card border | 1px `rgba(248,81,73,.28)` — the sanctioned semantic border |
 | Icon tile | 44px, radius 14, fill `--destructive-tint` (danger @ 13%), "!" glyph `--destructive` |
-| Title | 16.5px / 700 `#EDEAE3` (what failed) |
-| Body | 14.5px `#A9A399` (actionable hint) |
+| Title | 16.5px / 700 `--foreground` (what failed) |
+| Body | 14.5px `--muted-foreground` (actionable hint) |
 | Action | Secondary button, 44px, radius 12 — wiring per [resilience](../resilience/README.md). Labelled `Retry` unless the surface's remedy is genuinely something else: [#2175](https://github.com/pdcarlson/Frapp/issues/2175)'s degraded segment says `Reload` for a stale chunk, because `React.lazy` memoises the rejection for the life of the document, so only replacing the document revives the control that failed (not because retrying does nothing — see writing.md §7). It stays **one** button either way — this family differs in colour rather than in shape, so a second action beside it is the defect, not a second label. `ErrorState`'s `actionLabel` carries this; the strings are [writing.md](writing.md) §7's |
 
 Error surfaces MUST NOT use the chapter accent. Field-level validation errors use the input error state (§4), not this surface.

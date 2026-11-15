@@ -129,7 +129,7 @@ export function SkeletonLines({
       accessibilityLabel="Loading"
       style={[
         styles.card,
-        { backgroundColor: inSheet ? "transparent" : surfaces.card },
+        { backgroundColor: surfaces.stateCard },
         tone === "list" ? styles.listCard : null,
       ]}
     >
@@ -217,7 +217,7 @@ export function SkeletonPulse({ children }: { children: ReactNode }) {
 const SkeletonPulseContext = createContext<SharedValue<number> | null>(null);
 
 /**
- * Whether the blocks inside sit straight on a screen's or a sheet's own fill
+ * Whether the blocks inside sit straight on a sheet's own fill
  * (`true`) rather than on a card (`false`, the default). A block can't tell
  * which from where it is drawn, so its caller says: {@link SkeletonRegion}'s
  * `flush`, or {@link SkeletonLines} in a sheet, where its card drops its fill.
@@ -275,7 +275,7 @@ function PulsedBlock({
         styles.skeletonBlock,
         {
           // A bar is one step above what it sits on: the card's own step
-          // above a card, the card step on a bare screen or sheet. A sheet's
+          // above a card, the card step straight on a sheet. A sheet's
           // `raised` is its own fill, so a flush bar taking it was invisible
           // (#4690).
           backgroundColor: flush ? surfaces.card : surfaces.raised,
@@ -305,7 +305,7 @@ function PulsedBlock({
  * `ScreenShell`'s content gap so the frames inside sit where their real
  * counterparts land.
  *
- * `flush` is for rows that sit straight on the screen's or the sheet's own
+ * `flush` is for rows that sit straight on a sheet's own
  * fill, with no card frame under them (a sheet's member or thread list): their
  * bars take the card step instead of the one above a card (#4690).
  */
@@ -423,14 +423,13 @@ export function ErrorState({
 }) {
   const { tokens } = useFrappTheme();
   const surfaces = useRaisedSurfaces();
-  const inSheet = useInSheet();
   const styles = createStyles(tokens);
 
   return (
     <View
       style={[
         styles.card,
-        { backgroundColor: inSheet ? "transparent" : surfaces.card },
+        { backgroundColor: surfaces.stateCard },
         styles.errorCard,
       ]}
     >
@@ -570,8 +569,8 @@ function createStyles(tokens: SignetTokens) {
       // foundations.md bans.
       // Its fill is the step above a card where it is drawn
       // (`useRaisedSurfaces`), so a loading screen is as quiet as a loaded
-      // one. Bars drawn straight on a screen's or a sheet's own fill take the
-      // card step instead (`SkeletonGroundContext`, #4690).
+      // one. Bars drawn straight on a sheet's own fill take the card step
+      // instead (`SkeletonGroundContext`, #4690).
       borderRadius: tokens.radius.chip,
     },
   });
