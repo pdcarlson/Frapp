@@ -37,6 +37,9 @@ const row = (over: Record<string, unknown> = {}) => ({
   channel_id: "chan-1",
   content: "Chapter at 8",
   mention_picks: null,
+  attachments: [],
+  reply_to_id: null,
+  thread_root_id: null,
   send_at: new Date(Date.now() + 86_400_000).toISOString(),
   status: "pending",
   failure_reason: null,
@@ -124,6 +127,23 @@ describe("ScheduledMessagesBar (#4956)", () => {
     ).toBeInTheDocument();
     // A failed one is edited to go again; it offers no Send now.
     expect(screen.getAllByRole("button", { name: "Send now" })).toHaveLength(1);
+  });
+
+  it("says what a row carries besides its text (#4971)", async () => {
+    mocks.rows = [
+      row({
+        content: "",
+        reply_to_id: "m-1",
+        attachments: [
+          { filename: "IMG_1.jpg", content_type: "image/jpeg" },
+          { filename: "dues.pdf", content_type: "application/pdf" },
+        ],
+      }),
+    ];
+    render(<ScheduledMessagesBar channelId="chan-1" />);
+    await userEvent.click(screen.getByRole("button", { name: /1 scheduled/ }));
+    const extras = await screen.findByText(/Reply · 1 photo · 1 file/);
+    expect(extras).toHaveTextContent("IMG_1.jpg, dues.pdf");
   });
 
   it("sends one now and deletes one", async () => {

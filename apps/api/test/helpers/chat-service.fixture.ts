@@ -21,6 +21,7 @@ import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { CHAT_MESSAGE_REPORT_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
+import { CHAT_SCHEDULED_MESSAGE_REPOSITORY } from '#domain/repositories/chat-scheduled-message.repository.interface';
 import type { ChatChannel, ChatMessage } from '#domain/entities/chat.entity';
 import { memberFixture } from './entity-fixtures';
 import { ChatService } from '../../src/application/services/chat.service';
@@ -242,6 +243,10 @@ export async function createChatServiceFixture() {
   };
 
   // No open report holds anything unless a case says so (#2481).
+  // What scheduled messages still name (#4971): nothing, unless a test says.
+  const mockScheduledRepo: { findPathsInUse: jest.Mock } = {
+    findPathsInUse: jest.fn().mockResolvedValue([]),
+  };
   const mockReportRepo: { findHeldObjects: jest.Mock } = {
     findHeldObjects: jest.fn().mockResolvedValue([]),
   };
@@ -355,6 +360,10 @@ export async function createChatServiceFixture() {
       { provide: ChannelCacheService, useValue: mockChannelCache },
       { provide: ChatBlockService, useValue: mockChatBlocks },
       { provide: CHAT_MESSAGE_REPORT_REPOSITORY, useValue: mockReportRepo },
+      {
+        provide: CHAT_SCHEDULED_MESSAGE_REPOSITORY,
+        useValue: mockScheduledRepo,
+      },
       { provide: CHAT_THREAD_REPOSITORY, useValue: mockThreadRepo },
       { provide: USER_REPOSITORY, useValue: mockUserRepo },
     ],
@@ -385,6 +394,7 @@ export async function createChatServiceFixture() {
     mockGroupRepo,
     mockChatBlocks,
     mockReportRepo,
+    mockScheduledRepo,
     mockThreadRepo,
     mockUserRepo,
   };

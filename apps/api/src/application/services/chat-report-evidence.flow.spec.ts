@@ -184,6 +184,8 @@ describe('Reported attachment evidence, end to end (#2481)', () => {
       reportRepo,
       unused,
       unused,
+      // No scheduled message names these files (#4971).
+      { findPathsInUse: async () => [] } as never,
     );
     chat = new ChatService(
       { findById: jest.fn(async () => ({ id: CHANNEL })) } as never,

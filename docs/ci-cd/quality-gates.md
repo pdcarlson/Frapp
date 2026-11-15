@@ -25,6 +25,8 @@ baseline story actually supports.
 | 375px responsive floor | `npm run test:floor -w apps/web` | `web-responsive-floor` | **Required** | No baseline at all — it reads one integer per route. Nothing to grandfather and nothing to drift |
 | Vercel-parity production build | `npm ci --omit=dev` + `turbo run build --filter=web --filter=landing` | `web-production-build` | **Required** | Nothing to grandfather: the build either succeeds on a pruned tree or it does not, and it was already succeeding when the job landed. Advisory was never on the table — the two failures it catches (#1331, #1372) both reached production precisely because nothing blocked on them |
 
+**Every required gate also runs in the merge queue** (#4795), on the commit the queue builds from `main` plus the PRs ahead of it, and there it runs in full: the path filters that skip `api-tests`, `mobile-validate` and the other gated jobs on a PR apply to pull requests only, and the diff-based gates measure against the queue's base commit. A gate added to the roster in a workflow without a `merge_group` trigger fails [`merge-queue-triggers.test.mjs`](../../scripts/ci/__tests__/merge-queue-triggers.test.mjs). Where the queue lives and how it is turned on: [`github-branch-protection-runbook.md` § Merge queue](../ops/github-branch-protection-runbook.md#merge-queue).
+
 **The dashboard visual snapshot gate used to sit in this table and is gone.** `web-visual-regression`
 shot each dashboard route at 1440×960 and compared it to one of sixteen committed PNGs. It was
 **advisory**, because baselines

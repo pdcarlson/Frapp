@@ -54,6 +54,24 @@ export interface OutboxAttachment {
   previewStoragePath?: string | null;
 }
 
+/**
+ * A staged file as `POST /v1/channels/{id}/messages` and
+ * `POST /v1/scheduled-messages` take it (`MessageAttachmentDto`): the one
+ * shape for a send now and a send later (#4971).
+ */
+export function attachmentRequestBody(attachment: OutboxAttachment) {
+  return {
+    storage_path: attachment.storagePath,
+    filename: attachment.filename,
+    content_type: attachment.contentType,
+    byte_size: attachment.byteSize ?? undefined,
+    width: attachment.width ?? undefined,
+    height: attachment.height ?? undefined,
+    thumbhash: attachment.thumbhash ?? undefined,
+    preview_storage_path: attachment.previewStoragePath ?? undefined,
+  };
+}
+
 export interface OutboxRow {
   clientId: string;
   channelId: string;

@@ -33,6 +33,10 @@ import type {
   ChatMessageAttachment,
   ChatMessageAttachmentWithUrl,
 } from '#domain/entities/chat.entity';
+import {
+  CHAT_SCHEDULED_MESSAGE_REPOSITORY,
+  type IChatScheduledMessageRepository,
+} from '#domain/repositories/chat-scheduled-message.repository.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import {
@@ -175,6 +179,10 @@ export class ChatAttachmentService {
     private readonly reportRepo: IChatMessageReportRepository,
     private readonly channelAccess: ChannelAccessService,
     private readonly chatBlocks: ChatBlockService,
+    // A scheduled message holds its uploads until it posts (#4971): every
+    // delete here asks which of them a message not yet posted still needs.
+    @Inject(CHAT_SCHEDULED_MESSAGE_REPOSITORY)
+    private readonly scheduledRepo: IChatScheduledMessageRepository,
   ) {}
 
   // ── Upload and send ──────────────────────────────────────────────────
@@ -844,9 +852,29 @@ export class ChatAttachmentService {
       }
     }
 
-    await this.deleteChatObjects([...doomed, ...doomedPreviews], {
-      messageId,
-    });
+    // A scheduled message that names one of these (the same files sent now
+    // and scheduled, #4971) still needs it. Fail closed, as above.
+    let scheduledKeys: Set<string>;
+    try {
+      scheduledKeys = await this.namedByScheduled(chapterId, [
+        ...doomed,
+        ...doomedPreviews,
+      ]);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not check scheduled messages for the attachments of message ${messageId}; keeping objects`,
+        error,
+      );
+      return;
+    }
+    await this.deleteChatObjects(
+      [...doomed, ...doomedPreviews].filter(
+        (object) => !scheduledKeys.has(objectKey(object)),
+      ),
+      { messageId },
+    );
 
     const keptCount = sharedKeys.size + (unshared.length - doomed.length);
     if (keptCount > 0) {
@@ -856,6 +884,96 @@ export class ChatAttachmentService {
         heldByReports: unshared.length - doomed.length,
       });
     }
+  }
+
+  /**
+   * Deletes the uploads of a message that will never post: a scheduled
+   * message deleted before its time (#4971). Its files were uploaded when it
+   * was scheduled and no message row names them, so nothing else will.
+   *
+   * Best effort, as the purge above: failures are logged, never thrown, and
+   * every unanswerable read keeps the objects. A claim's path is checked only
+   * against the channel prefix (#1622), so a scheduled message can name a
+   * file someone else's message uses. Kept, then: what a live message or
+   * another scheduled message names (a send of this one that posted and died
+   * before deleting the row included), and what a report holds as evidence
+   * (#2481), whose own message may already be deleted. Each photo's preview
+   * goes with it, under the same checks.
+   */
+  async discardUnsentAttachments(
+    chapterId: string,
+    scheduledMessageId: string,
+    attachments: readonly { storage_path: string; content_type: string }[],
+  ): Promise<void> {
+    const context = { chapterId, scheduledMessageId };
+    const candidates = uniqueObjects(
+      attachments.flatMap((attachment) => {
+        const original = {
+          bucket: CHAT_BUCKET,
+          storage_path: attachment.storage_path,
+        };
+        return attachment.content_type.startsWith('image/')
+          ? [
+              original,
+              {
+                bucket: CHAT_BUCKET,
+                storage_path: chatPreviewPathFor(attachment.storage_path),
+              },
+            ]
+          : [original];
+      }),
+    );
+    if (candidates.length === 0) return;
+    let kept: Set<string>;
+    try {
+      kept = new Set([
+        ...objectKeys(
+          await this.attachmentRepo.findSharedObjects(candidates, null),
+        ),
+        ...objectKeys(await this.reportRepo.findHeldObjects(chapterId)),
+        ...(await this.namedByScheduled(
+          chapterId,
+          candidates,
+          scheduledMessageId,
+        )),
+      ]);
+    } catch (error) {
+      logThrowable(
+        this.logger,
+        'warn',
+        `Could not check whether unsent uploads are in use ${JSON.stringify(context)}; keeping them`,
+        error,
+      );
+      return;
+    }
+    await this.deleteChatObjects(
+      candidates.filter((object) => !kept.has(objectKey(object))),
+      context,
+    );
+  }
+
+  /**
+   * The keys of these objects that a scheduled message in the chapter still
+   * names (#4971), leaving out `excludingId`. Only `chat` holds uploads, so
+   * only its objects are asked. Throws when it can't tell: callers keep.
+   */
+  private async namedByScheduled(
+    chapterId: string,
+    objects: readonly StoredObjectRef[],
+    excludingId: string | null = null,
+  ): Promise<Set<string>> {
+    const paths = objects
+      .filter((object) => object.bucket === CHAT_BUCKET)
+      .map((object) => object.storage_path);
+    if (paths.length === 0) return new Set();
+    const inUse = await this.scheduledRepo.findPathsInUse(
+      chapterId,
+      paths,
+      excludingId,
+    );
+    return objectKeys(
+      inUse.map((storage_path) => ({ bucket: CHAT_BUCKET, storage_path })),
+    );
   }
 
   /**
@@ -963,9 +1081,13 @@ export class ChatAttachmentService {
     let heldBy = new Map<string, HeldObject>();
     if (objects.length > 0) {
       try {
-        live = objectKeys(
-          await this.attachmentRepo.findSharedObjects(objects, null),
-        );
+        // A message still to post counts as live (#4971).
+        live = new Set([
+          ...objectKeys(
+            await this.attachmentRepo.findSharedObjects(objects, null),
+          ),
+          ...(await this.namedByScheduled(chapterId, objects)),
+        ]);
         const held = await this.reportRepo.findHeldObjects(
           chapterId,
           reports.map(({ id }) => id),

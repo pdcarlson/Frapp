@@ -803,7 +803,8 @@ store uploads; after that it will follow every staging deploy (#4917).
 
 Binaries are compiled on GitHub's runners with `eas build --local` (Paul, 2026-11-13, after the
 spike in #4877), so they cost no Expo build. They are signed with the credentials EAS holds for
-`live.frapp.mobile.staging`, and uploaded through EAS Submit, whose free queue adds about 47
+`live.frapp.mobile.staging`, and uploaded through EAS Submit (`submit.staging` in `eas.json`; its
+`ascAppId`, `6834835826`, is the Frapp Staging app in App Store Connect), whose free queue adds about 47
 minutes before a binary reaches the store. The run's summary says what each platform did, and its
 `confirm` job goes red when an upload didn't finish.
 

@@ -53,6 +53,11 @@ import {
   type ForwardSheetHandle,
 } from "@/components/chat/forward-sheet";
 import type { ForwardTarget } from "@repo/chat-core/forward";
+import {
+  RemindSheet,
+  type RemindSheetHandle,
+} from "@/components/chat/remind-sheet";
+import { MESSAGE_REMINDER_LABEL } from "@repo/hooks/use-message-reminders";
 import { QUICK_REACTIONS, canonicalEmoji } from "@repo/chat-core/emoji-recent";
 import { recordRecentEmoji } from "@/lib/chat/recent-emoji";
 import {
@@ -126,6 +131,11 @@ import type { ChatMessageFlag } from "@repo/validation";
  * private bookmark, on any confirmed message. Each reads its current state
  * live and flips it, "Unpin message" and "Remove from Saved" once set. The
  * lists they feed open from the thread header's menu (`MessageListSheet`).
+ *
+ * **Remind me about this** (#4957) sits after Save, the other private,
+ * for-later row, worded as Slack's is. It asks when in its own sheet
+ * (`RemindSheet`), which replaces the menu as Forward's picker does; the
+ * reminder then waits under Reminders on Activity.
  *
  * **Separate sheets, not one with panes.** The menu is the quick reactions and
  * a handful of rows (Reply, Edit, Copy text, Save and Delete on your own
@@ -338,6 +348,11 @@ export interface MessageActionsSheetProps {
   onSetPinned?: (messageId: string, pinned: boolean) => void;
   /** Save (`true`) or unsave (`false`) the message for the viewer (#3723). */
   onSetSaved?: (messageId: string, saved: boolean) => void;
+  /**
+   * Remind the viewer about the message at a time (#4957). Omit it and the
+   * "Remind me about this" row is not drawn.
+   */
+  onRemind?: (messageId: string, remindAt: Date) => void;
 }
 
 export const MessageActionsSheet = forwardRef<
@@ -360,6 +375,7 @@ export const MessageActionsSheet = forwardRef<
     onFlag,
     onSetPinned,
     onSetSaved,
+    onRemind,
   },
   ref,
 ) {
@@ -373,6 +389,7 @@ export const MessageActionsSheet = forwardRef<
   const reportRef = useRef<BottomSheetModal>(null);
   const pickerRef = useRef<BottomSheetModal>(null);
   const forwardSheetRef = useRef<ForwardSheetHandle>(null);
+  const remindSheetRef = useRef<RemindSheetHandle>(null);
   const closeMenu = useSheetClose(menuRef);
   const closeReport = useSheetClose(reportRef);
   // Whether each modal is up, so the thread's dismiss (its message was
@@ -416,6 +433,7 @@ export const MessageActionsSheet = forwardRef<
         dismissMenu();
         dismissPicker();
         forwardSheetRef.current?.dismiss();
+        remindSheetRef.current?.dismiss();
       },
     }),
     [dismissMenu, dismissPicker, willPresentMenu],
@@ -597,6 +615,11 @@ export const MessageActionsSheet = forwardRef<
     forwardSheetRef.current?.present();
   }, []);
   const canForward = !!target?.forward && !!nameFor;
+  // "Remind me about this" (#4957) asks when in its own sheet, which replaces
+  // the menu the same way.
+  const openRemind = useCallback(() => {
+    remindSheetRef.current?.present();
+  }, []);
 
   /** Block, from the report form or its "Report sent" screen. */
   const startBlock = useCallback(() => {
@@ -814,6 +837,7 @@ export const MessageActionsSheet = forwardRef<
           target?.link ||
           (target?.pin && onSetPinned) ||
           (target?.save && onSetSaved) ||
+          (target && onRemind) ||
           (target?.canMention && onMention) ? (
             <ListSection>
               {target.copyText ? (
@@ -855,6 +879,13 @@ export const MessageActionsSheet = forwardRef<
                     const next = !target.save?.saved;
                     handOff((id) => onSetSaved(id, next));
                   }}
+                />
+              ) : null}
+              {onRemind ? (
+                <ListRow
+                  label={MESSAGE_REMINDER_LABEL}
+                  action
+                  onPress={openRemind}
                 />
               ) : null}
               {target.canMention && onMention ? (
@@ -1026,6 +1057,14 @@ export const MessageActionsSheet = forwardRef<
           target={target?.forward ?? null}
           nameFor={nameFor}
           viewerId={viewerId}
+        />
+      ) : null}
+
+      {onRemind ? (
+        <RemindSheet
+          ref={remindSheetRef}
+          messageId={target?.messageId ?? null}
+          onRemind={onRemind}
         />
       ) : null}
 

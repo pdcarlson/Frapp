@@ -10,10 +10,11 @@ import { withoutObjectReplacement } from "@repo/validation";
 export interface ScheduleRefusalInput {
   /** The draft as typed. */
   text: string;
-  /** Photos staged in the tray. */
-  photos: number;
-  /** A reply is staged. */
-  replying: boolean;
+  /** Photos staged in the tray: upload status, and the claim once uploaded. */
+  photos: readonly {
+    status: "uploading" | "ready" | "failed";
+    attachment?: unknown;
+  }[];
   /** The draft names `@Frapp`, so Send would ask rather than post. */
   asksFrapp: boolean;
   /** Why a write can't go out this second (offline), or `null`. */
@@ -21,21 +22,30 @@ export interface ScheduleRefusalInput {
 }
 
 /**
- * Why the draft can't be scheduled, or `null` when it can. Text only for now,
- * as on web: a photo or a reply would be dropped on the way, so the sheet
- * says so and keeps everything, rather than scheduling half the message.
+ * Why the draft can't be scheduled, or `null` when it can. The text, the
+ * photos and a staged reply all go (#4971), but a photo must be uploaded
+ * first: a scheduled message holds its photos' storage paths, and a photo
+ * still uploading has none yet, while one that failed would be dropped.
  * Scheduling is a write with no outbox, so offline says so too.
  */
 export function scheduleRefusal(input: ScheduleRefusalInput): string | null {
-  if (input.photos > 0) {
-    return "Photos can't be scheduled yet. Send them now, or remove them first.";
+  if (input.photos.some((photo) => photo.status === "failed")) {
+    return "A photo didn't upload. Tap it to try again, or remove it.";
   }
-  if (input.replying) {
-    return "Replies can't be scheduled yet. Remove the reply first.";
+  // Ready with no claim is still on its way: nothing to schedule yet.
+  if (
+    input.photos.some(
+      (photo) => photo.status === "uploading" || photo.attachment === null,
+    )
+  ) {
+    return "Wait for your photos to finish uploading.";
   }
   if (input.asksFrapp) return "A question for Frapp can't be scheduled.";
   // A belt: the long press is offered only on a sendable draft.
-  if (withoutObjectReplacement(input.text).trim().length === 0) {
+  if (
+    withoutObjectReplacement(input.text).trim().length === 0 &&
+    input.photos.length === 0
+  ) {
     return "Type a message to schedule.";
   }
   return input.writeBlocked;

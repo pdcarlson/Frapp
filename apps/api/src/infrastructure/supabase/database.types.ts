@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActivityItemRead,
+  ActivityItemSnooze,
   ActivityUnreadStart,
   AiReport,
   AiRun,
@@ -48,6 +49,7 @@ import type {
   ChatMessageBookmark,
   ChatMessageImportantSeen,
   ChatMessageLink,
+  ChatMessageReminder,
   ChatMessageReport,
   ChatNotificationPreference,
   ChatPushDispatch,
@@ -153,6 +155,7 @@ export interface Database {
   public: {
     Tables: {
       activity_item_reads: TableDefinition<ActivityItemRead>;
+      activity_item_snoozes: TableDefinition<ActivityItemSnooze>;
       activity_unread_starts: TableDefinition<ActivityUnreadStart>;
       ai_ask_feedback: TableDefinition<AskFeedbackRow>;
       ai_ask_trace_steps: TableDefinition<AskTraceStepRow>;
@@ -198,6 +201,7 @@ export interface Database {
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
       chat_message_important_seen: TableDefinition<ChatMessageImportantSeen>;
       chat_message_links: TableDefinition<ChatMessageLink>;
+      chat_message_reminders: TableDefinition<ChatMessageReminder>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
       chat_messages: TableDefinition<ChatMessage>;
       chat_notification_preferences: TableDefinition<ChatNotificationPreference>;

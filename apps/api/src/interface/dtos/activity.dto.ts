@@ -18,6 +18,10 @@ import type { ActivityItemRef } from '#domain/repositories/activity-item-read.re
 import { CHAT_LINK_MEMBER_STATES } from '#domain/entities/chat.entity';
 import type { ChatLinkMemberStateValue } from '#domain/entities/chat.entity';
 import type { ActivityLink } from '../../application/services/activity-link.service';
+import type {
+  ActivityReminder,
+  ChatMessageReminderRef,
+} from '../../application/services/chat-reminder.service';
 import { ChatMessageDto } from './chat.dto';
 import { TaskStatus } from '#domain/entities/task.entity';
 import type { ChannelType } from '#domain/entities/chat.entity';
@@ -44,6 +48,7 @@ import type {
   ActivityEvent,
   ActivityHoursEntry,
   ActivityPoll,
+  ActivityProgress,
   ActivitySection,
   ActivityTask,
   ActivityView,
@@ -159,6 +164,15 @@ export class ActivityTaskDto implements ActivityTask {
       'Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 }
 
 export class ActivityHoursEntryDto implements ActivityHoursEntry {
@@ -190,13 +204,33 @@ export class ActivityHoursEntryDto implements ActivityHoursEntry {
       'Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
+}
+
+export class ActivityProgressDto implements ActivityProgress {
+  @ApiProperty({ description: 'How many have answered: voted, or checked in.' })
+  done: number;
+
+  @ApiProperty({
+    description:
+      'Of how many can answer. Never 0 (a row with nobody to answer has no progress) and never less than `done`.',
+  })
+  total: number;
 }
 
 export class ActivityPollDto implements ActivityPoll {
   @ApiProperty({
     format: 'uuid',
     description:
-      'The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.',
+      'The chat message that is the poll card. It is served whole in `message`; this row carries no tallies by option. Its one count is `progress`, on an open poll the caller posted.',
   })
   message_id: string;
 
@@ -245,6 +279,14 @@ export class ActivityPollDto implements ActivityPoll {
   @ApiProperty()
   has_voted: boolean;
 
+  @ApiProperty({
+    type: ActivityProgressDto,
+    nullable: true,
+    description:
+      'In `made_by_you`, on an open poll: how many of the other members who can read its channel have voted (#4792). Null everywhere else, when nobody else can read it, and when the count could not be read.',
+  })
+  progress: ActivityProgressDto | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 
@@ -253,6 +295,15 @@ export class ActivityPollDto implements ActivityPoll {
       'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 
   @ApiProperty({
     type: ChatMessageDto,
@@ -318,6 +369,15 @@ export class ActivityCardDto implements ActivityCard {
       'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 }
 
 export class ActivityEventDto implements ActivityEvent {
@@ -384,6 +444,14 @@ export class ActivityEventDto implements ActivityEvent {
   })
   created_by: string | null;
 
+  @ApiProperty({
+    type: ActivityProgressDto,
+    nullable: true,
+    description:
+      'In `made_by_you`, once check-in has opened: how many of the other members the event invites, and who can check in, have checked in (#4792). Excused members are left out. Null before check-in opens, everywhere else, when it invites nobody else who can check in, and when the count could not be read.',
+  })
+  progress: ActivityProgressDto | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 
@@ -392,6 +460,15 @@ export class ActivityEventDto implements ActivityEvent {
       'Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
 }
 
 /** A file the caller uploaded. Never served since #4291; see `ActivityMadeByYouDto.files`. */
@@ -479,6 +556,128 @@ export class ActivityLinkDto implements ActivityLink {
       'Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null.',
   })
   unread: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.',
+  })
+  snoozed_until: string | null;
+}
+
+/**
+ * A reminder the caller set on a chat message (#4957), on their Activity
+ * page. Private to them.
+ */
+export class ActivityReminderDto implements ActivityReminder {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'The message it is about: opening the row opens chat at this message, and `PUT`/`DELETE /v1/reminders/messages/{message_id}` snooze and clear it.',
+  })
+  message_id: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Set when the message is a thread reply, which the channel’s timeline doesn’t show: opening the row opens this thread.',
+  })
+  thread_root_id: string | null;
+
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The channel’s name; null when the caller can no longer read the channel. A direct message’s is server-generated, so label those from `channel_type`.',
+  })
+  channel_name: string | null;
+
+  @ApiProperty({
+    enum: ACTIVITY_CHANNEL_TYPES,
+    nullable: true,
+    description: 'Null when the caller can no longer read the channel.',
+  })
+  channel_type: ChannelType | null;
+
+  @ApiProperty({
+    description:
+      'Who wrote the message. Empty when they can’t be named: unresolved, blocked by the caller, or in a channel the caller can no longer read.',
+  })
+  author_name: string;
+
+  @ApiProperty({
+    description:
+      'What the message says, cut as a push quotes it. The blocked-member tombstone for a member the caller blocked, `[message deleted]` for a deleted message, and an unavailable line when the caller can no longer read the channel.',
+  })
+  preview: string;
+
+  @ApiProperty({ format: 'date-time' })
+  message_created_at: string;
+
+  @ApiProperty({
+    description:
+      'False when the caller can no longer read the channel: the row can’t be opened, only cleared.',
+  })
+  message_available: boolean;
+
+  @ApiProperty({ format: 'date-time' })
+  remind_at: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description:
+      'When the reminder’s push went out; null while it is still waiting.',
+  })
+  fired_at: string | null;
+
+  @ApiProperty({
+    description:
+      'Whether `remind_at` has passed. A due reminder waits on the caller and is counted in `needs_you_count` until they clear it.',
+  })
+  due: boolean;
+}
+
+/** `PUT /v1/reminders/messages/{messageId}`. */
+export class SetChatReminderDto {
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting a reminder again moves it, and one already sent fires again at the new time.',
+  })
+  @IsISO8601({ strict: true })
+  remind_at: string;
+}
+
+/** The caller’s reminder after `PUT /v1/reminders/messages/{messageId}`. */
+export class ChatReminderRefDto implements ChatMessageReminderRef {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ format: 'uuid' })
+  message_id: string;
+
+  @ApiProperty({ format: 'date-time' })
+  remind_at: string;
+
+  @ApiProperty({
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    description: 'Always null after a set: a new time is a new reminder.',
+  })
+  fired_at: string | null;
 }
 
 /** `PUT /v1/activity/links/{id}/state`. */
@@ -505,6 +704,17 @@ export class ActivityItemRefDto implements ActivityItemRef {
   @ApiProperty({ format: 'uuid' })
   @IsUUID()
   item_id: string;
+}
+
+/** `PUT /v1/activity/snoozes`. */
+export class SnoozeActivityItemDto extends ActivityItemRefDto {
+  @ApiProperty({
+    format: 'date-time',
+    description:
+      'When the row comes back. In the future and at most 90 days away.',
+  })
+  @IsISO8601({ strict: true })
+  until: string;
 }
 
 /** `POST /v1/activity/reads`. */
@@ -673,12 +883,19 @@ export class ActivityDto implements ActivityView {
   })
   links: ActivityLinkDto[];
 
+  @ApiProperty({
+    type: [ActivityReminderDto],
+    description:
+      'Reminders the caller set on chat messages (#4957): those due that they haven’t cleared, newest first, then those still waiting, soonest first; at most 50 of each. Private to the caller. Due ones are counted in `needs_you_count` (so at most 50).',
+  })
+  reminders: ActivityReminderDto[];
+
   @ApiProperty({ type: ActivityMadeByYouDto })
   made_by_you: ActivityMadeByYouDto;
 
   @ApiProperty({
     description:
-      'How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t.',
+      'How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`, less what the caller snoozed (`snoozed_until`).',
   })
   needs_you_count: number;
 

@@ -275,6 +275,53 @@ describe('ChatService.sendMessage into a thread', () => {
     ).rejects.toThrow('reply_to_id cannot reference a reply inside a thread');
   });
 
+  describe('assertSendTargets, which a scheduled send checks too (#4971)', () => {
+    const channel = { id: 'ch-chan-1', type: 'PUBLIC', is_audit_log: false };
+
+    it('answers the root and the quote it names', async () => {
+      f.mockMessageRepo.findById.mockResolvedValue(root);
+      await expect(
+        service.assertSendTargets(channel as ChatChannel, {
+          reply_to_id: null,
+          thread_root_id: 'root-1',
+        }),
+      ).resolves.toEqual({ threadRoot: root, replyTo: null });
+    });
+
+    it('refuses a thread in a channel that takes none', async () => {
+      await expect(
+        service.assertSendTargets({ ...channel, type: 'DM' } as ChatChannel, {
+          reply_to_id: null,
+          thread_root_id: 'root-1',
+        }),
+      ).rejects.toThrow('This channel does not take threads');
+    });
+
+    it('refuses a quote of a message in another channel', async () => {
+      f.mockMessageRepo.findById.mockResolvedValue({
+        ...root,
+        channel_id: 'other-channel',
+      });
+      await expect(
+        service.assertSendTargets(channel as ChatChannel, {
+          reply_to_id: 'root-1',
+          thread_root_id: null,
+        }),
+      ).rejects.toThrow(
+        'reply_to_id must reference a message in the same channel',
+      );
+    });
+
+    it('refuses a quote and a thread together', async () => {
+      await expect(
+        service.assertSendTargets(channel as ChatChannel, {
+          reply_to_id: 'root-1',
+          thread_root_id: 'root-1',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
   it('does not fail a committed reply when the read cursor cannot move', async () => {
     f.mockThreadRepo.markRead.mockRejectedValue(new Error('db down'));
 

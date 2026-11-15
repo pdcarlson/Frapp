@@ -1,3 +1,4 @@
+import { fetchAllPages } from '../supabase.utils';
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type {
@@ -121,13 +122,21 @@ export class SupabaseChatMessageActionRepository implements IChatMessageActionRe
     >[]
   > {
     if (messageIds.length === 0) return [];
-    const { data, error } = await this.supabase
-      .from('chat_message_actions')
-      .select('message_id, user_id, payload, created_at')
-      .in('message_id', messageIds)
-      .eq('action_type', actionType);
-    if (error) throw new SupabaseQueryError(error);
-    return (data ?? []).map((row) => ({
+    // Paged: every member's row on many cards passes the server's row cap
+    // (`max_rows`, 1000) in a busy chapter, and a capped read is a 200 with
+    // the rest silently missing (#4792: a vote count read short).
+    const data = await fetchAllPages(
+      (from, to) =>
+        this.supabase
+          .from('chat_message_actions')
+          .select('id, message_id, user_id, payload, created_at')
+          .in('message_id', messageIds)
+          .eq('action_type', actionType)
+          .order('id', { ascending: true })
+          .range(from, to),
+      { pageSize: 1000 },
+    );
+    return data.map((row) => ({
       message_id: row.message_id,
       user_id: row.user_id,
       payload: row.payload ?? {},

@@ -108,6 +108,7 @@ describe('AttendanceService', () => {
       findByEvent: jest.fn(),
       findByEventAndUser: jest.fn(),
       findByUserForEvents: jest.fn(),
+      findByEvents: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
       checkInAtomic: jest.fn(),

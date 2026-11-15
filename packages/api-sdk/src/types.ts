@@ -2256,7 +2256,7 @@ export interface paths {
         /** List the caller's scheduled messages in this chapter (pending and failed), soonest first */
         get: operations["ChatScheduledMessageController_list_v1"];
         put?: never;
-        /** Schedule a text message to post later */
+        /** Schedule a message to post later: text, uploaded files, and a quote or a thread */
         post: operations["ChatScheduledMessageController_create_v1"];
         delete?: never;
         options?: never;
@@ -4481,6 +4481,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/activity/snoozes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Snooze an item on the caller’s Activity until a time
+         * @description The row leaves the caller’s list and `needs_you_count` until `until`, then comes back, unread unless they open it again after that (`snoozed_until` on its row). Per member; snoozing again replaces the time. Like a read, nothing checks that the caller can see the item: a snooze is theirs alone and changes nothing anyone else sees. `spec/behavior/activity.md` § Snooze.
+         */
+        put: operations["ActivityController_snooze_v1"];
+        post?: never;
+        /**
+         * Bring a snoozed item back on the caller’s Activity now
+         * @description Idempotent. `spec/behavior/activity.md` § Snooze.
+         */
+        delete: operations["ActivityController_unsnooze_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/activity/links/{id}/state": {
         parameters: {
             query?: never;
@@ -4521,6 +4545,30 @@ export interface paths {
         post?: never;
         /** Undo an officer’s remove, so a link shows on Activity again (channels:manage) */
         delete: operations["ActivityController_restoreLink_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/reminders/messages/{messageId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Remind the caller about a message at a time, or move the reminder
+         * @description One reminder per member per message: setting it again moves it, and one already sent fires again at the new time (Activity’s snooze). Needs read access to the message’s channel.
+         */
+        put: operations["ChatReminderController_setReminder_v1"];
+        post?: never;
+        /**
+         * Clear the caller’s reminder on a message (idempotent)
+         * @description Done on Activity, or cancel. Works after the caller lost the channel, and answers 204 whether or not there was one.
+         */
+        delete: operations["ChatReminderController_clearReminder_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -7309,6 +7357,10 @@ export interface components {
             results: components["schemas"]["GifResultDto"][];
             next_page: number | null;
         };
+        ScheduledAttachmentDto: {
+            filename: string;
+            content_type: string;
+        };
         ScheduledMessageDto: {
             /** Format: uuid */
             id: string;
@@ -7316,6 +7368,18 @@ export interface components {
             channel_id: string;
             content: string;
             mention_picks: components["schemas"]["MentionPickDto"][] | null;
+            /** @description The files it carries; empty for a text message. */
+            attachments: components["schemas"]["ScheduledAttachmentDto"][];
+            /**
+             * Format: uuid
+             * @description The message it quotes.
+             */
+            reply_to_id: string | null;
+            /**
+             * Format: uuid
+             * @description The thread it posts into.
+             */
+            thread_root_id: string | null;
             /** Format: date-time */
             send_at: string;
             /**
@@ -7339,7 +7403,20 @@ export interface components {
              * @description The channel or DM to post in.
              */
             channel_id: string;
+            /** @description May be empty only when `attachments` is not, as on a send. */
             content: string;
+            /** @description Files uploaded through `POST /v1/channels/{id}/upload-url`, as `SendMessageDto.attachments`. Deleted from storage if the scheduled message is deleted before it posts. */
+            attachments?: components["schemas"]["MessageAttachmentDto"][];
+            /**
+             * Format: uuid
+             * @description Quote this message, as `SendMessageDto.reply_to_id`. If it is gone when this posts, it posts without the quote.
+             */
+            reply_to_id?: string;
+            /**
+             * Format: uuid
+             * @description Post inside this message’s thread, as `SendMessageDto.thread_root_id`. Not with `reply_to_id`.
+             */
+            thread_root_id?: string;
             /**
              * Format: date-time
              * @description When to post it: a date-time with its offset (`Z` or `±hh:mm`), at most 120 days ahead. The client picks it on the member’s own clock.
@@ -7348,6 +7425,7 @@ export interface components {
             mention_picks?: components["schemas"]["MentionPickDto"][];
         };
         UpdateScheduledMessageDto: {
+            /** @description May be empty only on a message with files. Files, the quote and the thread can’t be changed. */
             content?: string;
             /** Format: date-time */
             send_at?: string;
@@ -9181,6 +9259,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it started waiting on them: since it was assigned or last sent back, or for a confirmation since it was completed (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for a task the caller assigned to themselves that was never sent back. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityHoursEntryDto: {
             /** Format: uuid */
@@ -9200,11 +9283,22 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was submitted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
+        };
+        ActivityProgressDto: {
+            /** @description How many have answered: voted, or checked in. */
+            done: number;
+            /** @description Of how many can answer. Never 0 (a row with nobody to answer has no progress) and never less than `done`. */
+            total: number;
         };
         ActivityPollDto: {
             /**
              * Format: uuid
-             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies.
+             * @description The chat message that is the poll card. It is served whole in `message`; this row carries no tallies by option. Its one count is `progress`, on an open poll the caller posted.
              */
             message_id: string;
             /** Format: uuid */
@@ -9229,10 +9323,17 @@ export interface components {
             closed_at: string | null;
             is_closed: boolean;
             has_voted: boolean;
+            /** @description In `made_by_you`, on an open poll: how many of the other members who can read its channel have voted (#4792). Null everywhere else, when nobody else can read it, and when the count could not be read. */
+            progress: components["schemas"]["ActivityProgressDto"] | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null, and in `made_by_you`. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
             /** @description The poll’s chat message, as `GET /v1/channels/{id}/messages` serves it, for chat’s own poll card. Its votes are read from `chat_message_actions`, as chat reads them. */
             message: components["schemas"]["ChatMessageDto"];
         };
@@ -9267,6 +9368,11 @@ export interface components {
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityNeedsYouDto: {
             /** @description Open tasks assigned to the caller, soonest due first. */
@@ -9309,10 +9415,17 @@ export interface components {
              * @description Who made it. Null for an event made before makers were recorded (2026-11-11).
              */
             created_by: string | null;
+            /** @description In `made_by_you`, once check-in has opened: how many of the other members the event invites, and who can check in, have checked in (#4792). Excused members are left out. Null before check-in opens, everywhere else, when it invites nobody else who can check in, and when the count could not be read. */
+            progress: components["schemas"]["ActivityProgressDto"] | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was made (`POST /v1/activity/reads`). Always false while `unread_since` is null, in `made_by_you`, and for an event the caller made. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
         };
         ActivityLinkDto: {
             /** Format: uuid */
@@ -9356,6 +9469,51 @@ export interface components {
             posted_at: string;
             /** @description Whether the caller hasn’t opened it from Activity since it was posted (`POST /v1/activity/reads`). Always false while `unread_since` is null. */
             unread: boolean;
+            /**
+             * Format: date-time
+             * @description Until when the caller snoozed it (`PUT /v1/activity/snoozes`), while the snooze lasts; null when it isn’t snoozed. A snoozed row is not counted in `needs_you_count`; a client lists it apart and brings it back at that time, unread unless opened since. Always null in `made_by_you`.
+             */
+            snoozed_until: string | null;
+        };
+        ActivityReminderDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description The message it is about: opening the row opens chat at this message, and `PUT`/`DELETE /v1/reminders/messages/{message_id}` snooze and clear it.
+             */
+            message_id: string;
+            /**
+             * Format: uuid
+             * @description Set when the message is a thread reply, which the channel’s timeline doesn’t show: opening the row opens this thread.
+             */
+            thread_root_id: string | null;
+            /** Format: uuid */
+            channel_id: string;
+            /** @description The channel’s name; null when the caller can no longer read the channel. A direct message’s is server-generated, so label those from `channel_type`. */
+            channel_name: string | null;
+            /**
+             * @description Null when the caller can no longer read the channel.
+             * @enum {string|null}
+             */
+            channel_type: "PUBLIC" | "PRIVATE" | "ROLE_GATED" | "DM" | "GROUP_DM" | null;
+            /** @description Who wrote the message. Empty when they can’t be named: unresolved, blocked by the caller, or in a channel the caller can no longer read. */
+            author_name: string;
+            /** @description What the message says, cut as a push quotes it. The blocked-member tombstone for a member the caller blocked, `[message deleted]` for a deleted message, and an unavailable line when the caller can no longer read the channel. */
+            preview: string;
+            /** Format: date-time */
+            message_created_at: string;
+            /** @description False when the caller can no longer read the channel: the row can’t be opened, only cleared. */
+            message_available: boolean;
+            /** Format: date-time */
+            remind_at: string;
+            /**
+             * Format: date-time
+             * @description When the reminder’s push went out; null while it is still waiting.
+             */
+            fired_at: string | null;
+            /** @description Whether `remind_at` has passed. A due reminder waits on the caller and is counted in `needs_you_count` until they clear it. */
+            due: boolean;
         };
         ActivityFileDto: {
             /** Format: uuid */
@@ -9413,11 +9571,13 @@ export interface components {
             coming_up: components["schemas"]["ActivityEventDto"][];
             /** @description Sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels the caller can read and an officer has not left out of Activity. Never the caller’s own, a blocked member’s, one an officer removed, or one the caller marked Done or Hidden. Newest first, at most 25. Not counted in `needs_you_count`. */
             links: components["schemas"]["ActivityLinkDto"][];
+            /** @description Reminders the caller set on chat messages (#4957): those due that they haven’t cleared, newest first, then those still waiting, soonest first; at most 50 of each. Private to the caller. Due ones are counted in `needs_you_count` (so at most 50). */
+            reminders: components["schemas"]["ActivityReminderDto"][];
             made_by_you: components["schemas"]["ActivityMadeByYouDto"];
-            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t. */
+            /** @description How many things wait on the caller: every `needs_you` row, counted before the 25-row cap on each list, plus events the caller can check in to now and hasn’t, plus due `reminders`, less what the caller snoozed (`snoozed_until`). */
             needs_you_count: number;
             /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
-            unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links")[];
+            unavailable: ("tasks" | "hours_approvals" | "polls" | "cards" | "coming_up" | "made_events" | "links" | "reminders")[];
             /** @description How the caller’s week is going, for the ring at the top of the page (`spec/behavior/activity.md` § Week): what they finished since the week began and what is still theirs to do in it, by kind. Their own things only; what waits on their review is not counted. */
             week: components["schemas"]["ActivityWeekDto"];
             /**
@@ -9509,12 +9669,46 @@ export interface components {
             /** @description The items the caller opened. At most 100. */
             items: components["schemas"]["ActivityItemRefDto"][];
         };
+        SnoozeActivityItemDto: {
+            /**
+             * @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`).
+             * @enum {string}
+             */
+            kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
+            /** Format: uuid */
+            item_id: string;
+            /**
+             * Format: date-time
+             * @description When the row comes back. In the future and at most 90 days away.
+             */
+            until: string;
+        };
         SetActivityLinkStateDto: {
             /**
              * @description `done`: the caller filled it in. `hidden`: not chapter business for them. Either takes it off their own list only.
              * @enum {string}
              */
             state: "done" | "hidden";
+        };
+        SetChatReminderDto: {
+            /**
+             * Format: date-time
+             * @description When to remind the caller: from now (a couple of minutes’ grace for clock drift) to 365 days ahead. Setting a reminder again moves it, and one already sent fires again at the new time.
+             */
+            remind_at: string;
+        };
+        ChatReminderRefDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            message_id: string;
+            /** Format: date-time */
+            remind_at: string;
+            /**
+             * Format: date-time
+             * @description Always null after a set: a new time is a new reminder.
+             */
+            fired_at: string | null;
         };
         RoleGoalDto: {
             /** Format: uuid */
@@ -20747,6 +20941,73 @@ export interface operations {
             };
         };
     };
+    ActivityController_snooze_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnoozeActivityItemDto"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `until` is not in the future, or is more than 90 days away. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_unsnooze_v1: {
+        parameters: {
+            query: {
+                /** @description Which module’s id `item_id` is. `task` for a row in `tasks` or `task_confirmations`, `hours_entry` for `hours_approvals`, `poll` for a poll (its `message_id`), `event` for `coming_up`, `link` for `links`, `signup` for a sign-up or headcount card and `form` for a form card in `cards` (its `message_id`). */
+                kind: "task" | "hours_entry" | "poll" | "event" | "link" | "signup" | "form";
+                item_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ActivityController_setLinkState_v1: {
         parameters: {
             query?: never;
@@ -20841,6 +21102,68 @@ export interface operations {
             header?: never;
             path: {
                 id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatReminderController_setReminder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetChatReminderDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatReminderRefDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChatReminderController_clearReminder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
             };
             cookie?: never;
         };

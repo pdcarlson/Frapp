@@ -1,4 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import type { TaskProofKind } from '@repo/validation';
 import {
   CHECK_IN_GRACE_MINUTES,
@@ -11,7 +16,10 @@ import type {
   ActivityItemRef,
   IActivityItemReadRepository,
 } from '#domain/repositories/activity-item-read.repository.interface';
-import type { ActivityItemKind } from '#domain/entities/activity-item-read.entity';
+import type {
+  ActivityItemKind,
+  ActivityItemSnooze,
+} from '#domain/entities/activity-item-read.entity';
 import { CHAT_FORM_RESPONSE_REPOSITORY } from '#domain/repositories/chat-form-response.repository.interface';
 import type { IChatFormResponseRepository } from '#domain/repositories/chat-form-response.repository.interface';
 import { isCardClosed } from '#domain/utils/card-closing';
@@ -35,7 +43,11 @@ import type {
 } from '#domain/repositories/chat.repository.interface';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
-import type { ChannelType, ChatMessage } from '#domain/entities/chat.entity';
+import type {
+  ChannelType,
+  ChatChannelView,
+  ChatMessage,
+} from '#domain/entities/chat.entity';
 import type { Event } from '#domain/entities/event.entity';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
 import { TaskStatus } from '#domain/entities/task.entity';
@@ -55,17 +67,32 @@ import {
   defaultWeekStart,
 } from './activity-standing.service';
 import type { ActivityLink, ChatReads } from './activity-link.service';
+import { ChatReminderService } from './chat-reminder.service';
+import type { ActivityReminder } from './chat-reminder.service';
 import { displayNamesById } from './display-names';
 import { maskBlockedMessages } from './chat-block-mask';
 import type { MaskedChatMessage } from './chat-block-mask';
 import { ChatBlockService } from './chat-block.service';
 import { ChatService } from './chat.service';
+import { ChannelAccessService } from './channel-access.service';
 import { EventService } from './event.service';
-import { attendanceFor } from './event-role-targeting';
+import { attendanceFor, checkInAdmits } from './event-role-targeting';
 import type { EnabledModules } from './module-gate';
 import { RbacService } from './rbac.service';
 import { ServiceEntryService } from './service-entry.service';
 import { TaskService } from './task.service';
+
+/**
+ * A channel as the polls section reads it: chat's own list rows, which carry
+ * what decides who reads each one, so the caller's polls can be counted
+ * against it (#4792) without reading the channels again.
+ */
+type PollChannel = ChatChannelView;
+
+/** Chat's reads with the channels whole, as `getActivity` reads them. */
+type PollChatReads = Omit<ChatReads, 'channels'> & {
+  channels: PollChannel[];
+};
 
 /** The sections of the read, as `unavailable` names them. */
 export const ACTIVITY_SECTIONS = [
@@ -76,6 +103,7 @@ export const ACTIVITY_SECTIONS = [
   'coming_up',
   'made_events',
   'links',
+  'reminders',
 ] as const;
 export type ActivitySection = (typeof ACTIVITY_SECTIONS)[number];
 
@@ -117,6 +145,12 @@ export interface ActivityTask {
    * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
 }
 
 /** A pending service entry, for a member who can approve it. */
@@ -134,12 +168,29 @@ export interface ActivityHoursEntry {
    * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
+}
+
+/**
+ * How far along something the caller made is (#4792): how many have
+ * answered, of how many can (`spec/behavior/activity.md` § Progress).
+ * `total` is never 0 (a row with nobody to answer has no progress) and
+ * `done` never passes it.
+ */
+export interface ActivityProgress {
+  done: number;
+  total: number;
 }
 
 /**
  * A poll card, as a pointer to its chat message plus what a list row shows.
  *
- * No tallies: a client draws chat's own poll card from the message itself,
+ * No tallies by option: a client draws chat's own poll card from the message itself,
  * which it reads the way chat does (so the same access rule and the same live
  * updates apply), and the card counts the votes.
  */
@@ -158,12 +209,24 @@ export interface ActivityPoll {
   closed_at: string | null;
   is_closed: boolean;
   has_voted: boolean;
+  /**
+   * In `made_by_you` only: how many of the members who can read its channel
+   * have voted (#4792). `null` everywhere else, when nobody but the poster can
+   * read it, and when the count could not be read.
+   */
+  progress: ActivityProgress | null;
   created_at: string;
   /**
    * Whether the caller hasn't opened it since it appeared
    * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
   /**
    * The poll's chat message, as `GET /v1/channels/{id}/messages` serves it,
    * so a client can hand it to chat's own poll card. Its votes are not in it:
@@ -198,6 +261,12 @@ export interface ActivityCard {
    * (`spec/behavior/activity.md` § Unread).
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
 }
 
 /** An upcoming event the member is invited to. */
@@ -246,6 +315,13 @@ export interface ActivityEvent {
    * (`spec/behavior/events.md` § Event Creation).
    */
   created_by: string | null;
+  /**
+   * In `made_by_you` only, once its check-in has opened: how many of the
+   * members it invites, and who can check in, have checked in (#4792).
+   * `null` before check-in opens, everywhere else, when it invites nobody
+   * who can check in, and when the count could not be read.
+   */
+  progress: ActivityProgress | null;
   /** When the event was made, which is when it appeared on Activity. */
   created_at: string;
   /**
@@ -253,6 +329,12 @@ export interface ActivityEvent {
    * (`spec/behavior/activity.md` § Unread). Always false in `made_by_you`.
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
 }
 
 /** The kinds of thing the week counts, as `week.unavailable` names them. */
@@ -317,6 +399,11 @@ export interface ActivityView {
    * (`ActivityLinkService.listFor`). Not counted in `needs_you_count`.
    */
   links: ActivityLink[];
+  /**
+   * The caller's reminders on chat messages (#4957), soonest first
+   * (`ChatReminderService.listFor`). Due ones count in `needs_you_count`.
+   */
+  reminders: ActivityReminder[];
   made_by_you: {
     /**
      * The caller's poll cards, newest first: up to 25 open and the 25 most
@@ -340,7 +427,8 @@ export interface ActivityView {
   };
   /**
    * How many things wait on the caller: every `needs_you` row, counted before
-   * the per-list cap, plus events whose check-in is open and not yet used.
+   * the per-list cap, plus events whose check-in is open and not yet used,
+   * less what the caller snoozed (`snoozed_until`).
    */
   needs_you_count: number;
   /** Sections that could not be read this time and are served empty. */
@@ -371,6 +459,28 @@ const COMING_UP_LIMIT = 10;
 const MADE_EVENTS_SCAN_LIMIT = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
+/**
+ * How long an ended snooze still counts for `unread`: a row that came back
+ * within it is unread unless opened since (`spec/behavior/activity.md` §
+ * Snooze). Links show for 30 days, so none outlives it.
+ */
+const SNOOZE_LOOKBACK_MS = 30 * DAY_MS;
+/** The furthest ahead a snooze may end. */
+export const SNOOZE_MAX_AHEAD_MS = 90 * DAY_MS;
+
+/** A member's snoozes, split by whether they still hold at `now`. */
+interface Snoozes {
+  /** `kind:id` → until, for snoozes that still hold. */
+  active: Map<string, string>;
+  /** `kind:id` → when the row came back, for snoozes that have ended. */
+  ended: Map<string, number>;
+}
+
+const NO_SNOOZES: Snoozes = { active: new Map(), ended: new Map() };
+
+function itemKey(kind: ActivityItemKind, id: string): string {
+  return `${kind}:${id}`;
+}
 
 /**
  * Whether an open task falls in the week that ends at `weekEnd`: due before
@@ -521,6 +631,7 @@ export class ActivityService {
     private readonly chatBlocks: ChatBlockService,
     private readonly rbacService: RbacService,
     private readonly linkService: ActivityLinkService,
+    private readonly reminderService: ChatReminderService,
     @Inject(CHAT_MESSAGE_REPOSITORY)
     private readonly messageRepo: IChatMessageRepository,
     @Inject(CHAT_MESSAGE_ACTION_REPOSITORY)
@@ -535,6 +646,7 @@ export class ActivityService {
     private readonly readRepo: IActivityItemReadRepository,
     @Inject(CHAT_FORM_RESPONSE_REPOSITORY)
     private readonly formResponseRepo: IChatFormResponseRepository,
+    private readonly channelAccess: ChannelAccessService,
   ) {}
 
   async getActivity(
@@ -578,7 +690,7 @@ export class ActivityService {
     // Chat's channel list and the caller's block list, read once and shared
     // by the two sections that list chat messages (polls and links), and only
     // when one of them runs.
-    let chatRead: Promise<ChatReads> | null = null;
+    let chatRead: Promise<PollChatReads> | null = null;
     const chatReads = () =>
       (chatRead ??= Promise.all([
         this.chatService.getChannels(chapterId, userId),
@@ -598,62 +710,81 @@ export class ActivityService {
         ).toISOString(),
       }));
 
-    const [tasks, hours, polls, cards, events, madeEvents, links, weekEvents] =
-      await Promise.all([
-        this.settle('tasks', chapterId, () =>
-          on('tasks')
-            ? this.readTasks(chapterId, userId, permissions, weekStart)
-            : Promise.resolve({
-                mine: [],
-                confirmations: [],
-                confirmationsWaiting: 0,
-                assigned: [],
-                doneThisWeek: 0,
-              }),
+    // The member's snoozes, read beside the sections. A failure serves
+    // nothing as snoozed rather than failing the page.
+    const snoozesRead = this.readSnoozes(chapterId, userId, now);
+
+    const [
+      tasks,
+      hours,
+      polls,
+      cards,
+      events,
+      madeEvents,
+      links,
+      reminders,
+      weekEvents,
+    ] = await Promise.all([
+      this.settle('tasks', chapterId, () =>
+        on('tasks')
+          ? this.readTasks(chapterId, userId, permissions, weekStart)
+          : Promise.resolve({
+              mine: [],
+              confirmations: [],
+              confirmationsWaiting: 0,
+              assigned: [],
+              doneThisWeek: 0,
+            }),
+      ),
+      this.settle('hours_approvals', chapterId, () =>
+        on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
+          ? this.readHoursApprovals(chapterId, userId)
+          : Promise.resolve([]),
+      ),
+      this.settle('polls', chapterId, () =>
+        on('polls')
+          ? this.readPolls(chapterId, userId, now, chatReads, weekStart)
+          : Promise.resolve({ unvoted: [], mine: [], votedThisWeek: 0 }),
+      ),
+      // Sign-ups and forms are chat cards with no module switch, as a
+      // message has none (#3926).
+      this.settle('cards', chapterId, () =>
+        this.readCards(chapterId, userId, now, chatReads, weekStart),
+      ),
+      this.settle('coming_up', chapterId, () =>
+        on('events')
+          ? this.readComingUp(userId, now, viewer, invitedEvents)
+          : Promise.resolve([]),
+      ),
+      this.settle('made_events', chapterId, () =>
+        on('events')
+          ? this.readMadeEvents(chapterId, userId, now, viewer, permissions)
+          : Promise.resolve([]),
+      ),
+      // Chat has no module switch, so neither does this section.
+      this.settle('links', chapterId, () =>
+        chatReads().then((reads) =>
+          this.linkService.listFor(chapterId, userId, now, reads),
         ),
-        this.settle('hours_approvals', chapterId, () =>
-          on('hours') && can(SystemPermissions.SERVICE_APPROVE, permissions)
-            ? this.readHoursApprovals(chapterId, userId)
-            : Promise.resolve([]),
+      ),
+      // The member's own, and chat has no module switch.
+      this.settle('reminders', chapterId, () =>
+        chatReads().then((reads) =>
+          this.reminderService.listFor(chapterId, userId, now, reads),
         ),
-        this.settle('polls', chapterId, () =>
-          on('polls')
-            ? this.readPolls(chapterId, userId, now, chatReads, weekStart)
-            : Promise.resolve({ unvoted: [], mine: [], votedThisWeek: 0 }),
-        ),
-        // Sign-ups and forms are chat cards with no module switch, as a
-        // message has none (#3926).
-        this.settle('cards', chapterId, () =>
-          this.readCards(chapterId, userId, now, chatReads, weekStart),
-        ),
-        this.settle('coming_up', chapterId, () =>
-          on('events')
-            ? this.readComingUp(userId, now, viewer, invitedEvents)
-            : Promise.resolve([]),
-        ),
-        this.settle('made_events', chapterId, () =>
-          on('events')
-            ? this.readMadeEvents(chapterId, userId, now, viewer)
-            : Promise.resolve([]),
-        ),
-        // Chat has no module switch, so neither does this section.
-        this.settle('links', chapterId, () =>
-          chatReads().then((reads) =>
-            this.linkService.listFor(chapterId, userId, now, reads),
-          ),
-        ),
-        this.settle('week_events', chapterId, () =>
-          on('events')
-            ? this.readWeekEvents(
-                userId,
-                now,
-                { start: weekStart, end: weekEnd },
-                viewer,
-                invitedEvents,
-              )
-            : Promise.resolve(null),
-        ),
-      ]);
+      ),
+      this.settle('week_events', chapterId, () =>
+        on('events')
+          ? this.readWeekEvents(
+              userId,
+              now,
+              { start: weekStart, end: weekEnd },
+              viewer,
+              invitedEvents,
+            )
+          : Promise.resolve(null),
+      ),
+    ]);
 
     const unavailable: ActivitySection[] = [];
     const valueOf = <T>(
@@ -687,26 +818,77 @@ export class ActivityService {
     const comingUp = valueOf('coming_up', events, []);
     const myEvents = valueOf('made_events', madeEvents, []);
     const myLinks = valueOf('links', links, []);
+    const myReminders = valueOf('reminders', reminders, []);
+
+    const snoozes = await snoozesRead;
+    // A snoozed row is still served, carrying `snoozed_until`, so a client
+    // can list it under Snoozed and bring it back on its own clock. It is
+    // not counted: it doesn't wait on the member until it comes back.
+    const snoozed = (kind: ActivityItemKind, id: string) =>
+      snoozes.active.get(itemKey(kind, id)) ?? null;
+    const withSnooze = <T extends { snoozed_until: string | null }>(
+      kind: ActivityItemKind,
+      rows: T[],
+      idOf: (row: T) => string,
+    ): T[] =>
+      rows.map((row) => {
+        const until = snoozed(kind, idOf(row));
+        return until === null ? row : { ...row, snoozed_until: until };
+      });
+    const awake = <T extends { snoozed_until: string | null }>(rows: T[]) =>
+      rows.filter((row) => row.snoozed_until === null);
+    // What still waits keeps the list's slots: a snoozed row goes after
+    // every awake one, in its own order, so snoozing the first 25 never
+    // pushes the next ones out of the read (a stable sort keeps each group's
+    // order). A list read already capped (confirmations, Coming up, links)
+    // can only reorder what it holds.
+    const awakeFirst = <T extends { snoozed_until: string | null }>(
+      rows: T[],
+    ): T[] =>
+      [...rows].sort(
+        (a, b) =>
+          Number(a.snoozed_until !== null) - Number(b.snoozed_until !== null),
+      );
+
+    const myTasks = withSnooze('task', taskLists.mine, (row) => row.id);
+    const confirmations = withSnooze(
+      'task',
+      taskLists.confirmations,
+      (row) => row.id,
+    );
+    const approvals = withSnooze('hours_entry', hoursApprovals, (r) => r.id);
+    const unvoted = withSnooze('poll', pollLists.unvoted, (r) => r.message_id);
+    const unanswered = openCards.map((row) => {
+      const until = snoozed(cardReadKind(row), row.message_id);
+      return until === null ? row : { ...row, snoozed_until: until };
+    });
+    const upcoming = withSnooze('event', comingUp, (row) => row.id);
 
     const needsYouCount =
-      taskLists.mine.length +
-      taskLists.confirmationsWaiting +
-      hoursApprovals.length +
-      pollLists.unvoted.length +
-      openCards.length +
-      comingUp.filter((event) => event.check_in_open && !event.checked_in)
-        .length;
+      awake(myTasks).length +
+      // Only the 25 read can be told apart; a snoozed one past them is
+      // still counted, which takes 26 waiting confirmations to matter.
+      taskLists.confirmationsWaiting -
+      (confirmations.length - awake(confirmations).length) +
+      awake(approvals).length +
+      awake(unvoted).length +
+      awake(unanswered).length +
+      awake(upcoming).filter(
+        (event) => event.check_in_open && !event.checked_in,
+      ).length +
+      myReminders.filter((reminder) => reminder.due).length;
 
-    return this.withUnread(chapterId, userId, {
+    return this.withUnread(chapterId, userId, snoozes.ended, {
       needs_you: {
-        tasks: taskLists.mine.slice(0, LIST_LIMIT),
-        task_confirmations: taskLists.confirmations.slice(0, LIST_LIMIT),
-        hours_approvals: hoursApprovals.slice(0, LIST_LIMIT),
-        polls: pollLists.unvoted.slice(0, LIST_LIMIT),
-        cards: openCards.slice(0, LIST_LIMIT),
+        tasks: awakeFirst(myTasks).slice(0, LIST_LIMIT),
+        task_confirmations: awakeFirst(confirmations).slice(0, LIST_LIMIT),
+        hours_approvals: awakeFirst(approvals).slice(0, LIST_LIMIT),
+        polls: awakeFirst(unvoted).slice(0, LIST_LIMIT),
+        cards: awakeFirst(unanswered).slice(0, LIST_LIMIT),
       },
-      coming_up: comingUp,
-      links: myLinks,
+      coming_up: awakeFirst(upcoming),
+      links: awakeFirst(withSnooze('link', myLinks, (row) => row.id)),
+      reminders: myReminders,
       made_by_you: {
         // Capped per state in `readPolls`: 25 open and 25 closed.
         polls: pollLists.mine,
@@ -763,6 +945,73 @@ export class ActivityService {
   }
 
   /**
+   * Snoozes one item for the caller until `until`, replacing any snooze it
+   * had (`spec/behavior/activity.md` § Snooze). Like a read, it is the
+   * caller's alone, so an item they can't see is stored and never matters.
+   */
+  async snooze(
+    chapterId: string,
+    userId: string,
+    item: ActivityItemRef,
+    until: Date,
+    now: Date = new Date(),
+  ): Promise<void> {
+    const ahead = until.getTime() - now.getTime();
+    if (!(ahead > 0) || ahead > SNOOZE_MAX_AHEAD_MS) {
+      throw new BadRequestException(
+        'until must be in the future and no more than 90 days away',
+      );
+    }
+    await this.readRepo.snooze(chapterId, userId, item, until.toISOString());
+  }
+
+  /** Brings a snoozed item back now. Idempotent. */
+  async unsnooze(
+    chapterId: string,
+    userId: string,
+    item: ActivityItemRef,
+  ): Promise<void> {
+    await this.readRepo.unsnooze(chapterId, userId, item);
+  }
+
+  /**
+   * The caller's snoozes that hold at `now` and those that ended within
+   * `SNOOZE_LOOKBACK_MS`. A failure is reported and nothing is snoozed: the
+   * rows show, and the page doesn't fail over a hint.
+   */
+  private async readSnoozes(
+    chapterId: string,
+    userId: string,
+    now: number,
+  ): Promise<Snoozes> {
+    let rows: ActivityItemSnooze[];
+    try {
+      rows = await this.readRepo.findSnoozes(
+        chapterId,
+        userId,
+        new Date(now - SNOOZE_LOOKBACK_MS).toISOString(),
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-snooze',
+        message: `Activity snoozes failed for chapter ${chapterId}; serving nothing as snoozed`,
+        error,
+      });
+      return NO_SNOOZES;
+    }
+    const snoozes: Snoozes = { active: new Map(), ended: new Map() };
+    for (const row of rows) {
+      const until = new Date(row.until).getTime();
+      if (Number.isNaN(until)) continue;
+      const key = itemKey(row.kind, row.item_id);
+      if (until > now) snoozes.active.set(key, row.until);
+      else snoozes.ended.set(key, until);
+    }
+    return snoozes;
+  }
+
+  /**
    * Records that the caller opened these items from Activity, so their rows
    * read as seen (`spec/behavior/activity.md` § Unread). The read is the
    * caller's own and names no one else, so an id the caller can't see, or
@@ -805,6 +1054,7 @@ export class ActivityService {
   private async withUnread(
     chapterId: string,
     userId: string,
+    cameBack: Map<string, number>,
     view: ActivityView,
   ): Promise<ActivityView> {
     let unreadSince: string | null;
@@ -829,8 +1079,12 @@ export class ActivityService {
       appearedAt: string | null,
       madeByCaller = false,
     ) => {
-      const at = appearedAt ? new Date(appearedAt).getTime() : NaN;
-      if (madeByCaller || Number.isNaN(at) || at < since) return;
+      const appeared = appearedAt ? new Date(appearedAt).getTime() : NaN;
+      if (madeByCaller || Number.isNaN(appeared)) return;
+      // A row back from a snooze appeared again when it came back, as Gmail
+      // brings a snoozed thread back unread.
+      const at = Math.max(appeared, cameBack.get(itemKey(kind, id)) ?? 0);
+      if (at < since) return;
       candidates.push({ kind, id, appearedAt: at });
     };
     const { needs_you } = view;
@@ -1052,6 +1306,7 @@ export class ActivityService {
       proof_kind: task.proof_kind ?? 'none',
       created_at: task.created_at,
       unread: false,
+      snoozed_until: null,
     });
     return {
       mine: mine.map(toRow),
@@ -1084,6 +1339,7 @@ export class ActivityService {
       description: entry.description,
       created_at: entry.created_at,
       unread: false,
+      snoozed_until: null,
     }));
   }
 
@@ -1091,7 +1347,7 @@ export class ActivityService {
     chapterId: string,
     userId: string,
     now: number,
-    chatReads: () => Promise<ChatReads>,
+    chatReads: () => Promise<PollChatReads>,
     weekStart: number,
   ): Promise<{
     unvoted: ActivityPoll[];
@@ -1182,8 +1438,11 @@ export class ActivityService {
         closed_at: card.closed_at,
         is_closed: pollCardClosed(card, nowDate),
         has_voted: votedIds.has(message.id),
+        // Set on the caller's open polls below (`withPollProgress`).
+        progress: null,
         created_at: message.created_at,
         unread: false,
+        snoozed_until: null,
         // Through the mask every chat read uses, with the block list read
         // above. A blocked author's poll never reaches this line; the mask is
         // what gives the row chat's own shape (`sender_blocked` set).
@@ -1193,21 +1452,104 @@ export class ActivityService {
     const rowsOf = (messages: ChatMessage[]): ActivityPoll[] =>
       messages.map(toRow).filter((row): row is ActivityPoll => row !== null);
 
+    const mineRows = rowsOf(mine);
     return {
       unvoted: rowsOf(openOthers)
         .filter((row) => !row.has_voted)
         .sort((a, b) => closesAtMs(a) - closesAtMs(b)),
       // Newest first, as read: the open ones, then the closed, 25 of each.
       mine: [
-        ...rowsOf(mine)
-          .filter((row) => !row.is_closed)
-          .slice(0, LIST_LIMIT),
-        ...rowsOf(mine)
-          .filter((row) => row.is_closed)
-          .slice(0, LIST_LIMIT),
+        ...(await this.withPollProgress(
+          chapterId,
+          userId,
+          mineRows.filter((row) => !row.is_closed).slice(0, LIST_LIMIT),
+          channelById,
+        )),
+        ...mineRows.filter((row) => row.is_closed).slice(0, LIST_LIMIT),
       ].sort(byNewest),
       votedThisWeek,
     };
+  }
+
+  /**
+   * How many have voted on each of the caller's open polls, of the other
+   * members who can read its channel and haven't blocked the caller (#4792).
+   * The same reads for the whole list, whatever its length: chat's reader
+   * rule over every channel at once (`ChannelAccessService.readersOf`, the
+   * resolve its member list uses), every vote row on these polls (paged), and
+   * who among the readers blocked the caller. None when the caller has no
+   * open poll, which is most members on most opens.
+   *
+   * A closed poll waits on nobody, so it gets no count. Best effort: a failed
+   * read leaves every row without one rather than failing the section.
+   */
+  private async withPollProgress(
+    chapterId: string,
+    userId: string,
+    rows: ActivityPoll[],
+    channelById: Map<string, PollChannel>,
+  ): Promise<ActivityPoll[]> {
+    if (rows.length === 0) return rows;
+    const channels = [...new Set(rows.map((row) => row.channel_id))]
+      .map((id) => channelById.get(id))
+      .filter((channel): channel is PollChannel => !!channel);
+    try {
+      const [readers, votes] = await Promise.all([
+        // Who could vote: whoever can read the channel, which is what a vote
+        // is checked against (`ChatReactionService`), by chat's own reader
+        // rule (`ChannelAccessService.readersOf`).
+        this.channelAccess.readersOf(chapterId, channels),
+        this.actionRepo.findAllActionsOnMessages(
+          rows.map((row) => row.message_id),
+          CARD_VOTE_ACTION_TYPE,
+        ),
+      ]);
+      // A member who blocked the poster sees their polls masked and can't
+      // vote on one, so they would hold the count short of full forever.
+      // The caller is the poster of every row here, so one read covers all.
+      const allReaders = [
+        ...new Set([...readers.values()].flatMap((set) => [...set])),
+      ].filter((reader) => reader !== userId);
+      const canVote = new Set(
+        await this.chatBlocks.filterOutBlockers(chapterId, userId, allReaders),
+      );
+      // The poster is left out: the row says what waits on others.
+      const readersOf = new Map(
+        [...readers].map(([channelId, set]) => [
+          channelId,
+          new Set([...set].filter((reader) => canVote.has(reader))),
+        ]),
+      );
+      // A vote row with no picks is a cleared vote (#3793), as above.
+      const votersOf = new Map<string, Set<string>>();
+      for (const vote of votes) {
+        if (cardVoteSelection(vote.payload ?? undefined).length === 0) continue;
+        const voters = votersOf.get(vote.message_id) ?? new Set<string>();
+        voters.add(vote.user_id);
+        votersOf.set(vote.message_id, voters);
+      }
+      return rows.map((row) => {
+        const readers = readersOf.get(row.channel_id);
+        // Nobody else can read it: no count, never "0 of 0".
+        if (!readers || readers.size === 0) return row;
+        // Only voters who can still read it, so `done` never passes `total`.
+        const voters = [...(votersOf.get(row.message_id) ?? [])].filter(
+          (voter) => readers.has(voter),
+        );
+        return {
+          ...row,
+          progress: { done: voters.length, total: readers.size },
+        };
+      });
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-poll-progress',
+        message: `Activity could not count votes on polls in chapter ${chapterId}`,
+        error,
+      });
+      return rows;
+    }
   }
 
   /**
@@ -1352,6 +1694,7 @@ export class ActivityService {
             : null,
         created_at: message.created_at,
         unread: false,
+        snoozed_until: null,
       };
     };
     const slotCount = (message: ChatMessage) => {
@@ -1479,6 +1822,7 @@ export class ActivityService {
     userId: string,
     now: number,
     viewer: () => Promise<EventViewer>,
+    permissions: string[],
   ): Promise<ActivityEvent[]> {
     // From the check-in grace behind now, so an event stays here for as long
     // as it stays in Coming up: its maker opens it to take attendance just
@@ -1496,10 +1840,84 @@ export class ActivityService {
       seenSeries.add(series);
       return true;
     });
-    return this.toEventRows(userId, now, nextOfEach, viewer, {
+    const rows = await this.toEventRows(userId, now, nextOfEach, viewer, {
       startsBefore: Number.POSITIVE_INFINITY,
       limit: LIST_LIMIT,
     });
+    // Who has checked in is the attendance roster's to show, which needs
+    // `events:update` (`spec/behavior/events.md`); making an event grants
+    // nothing, so a maker without it gets no count (#4792).
+    return can(SystemPermissions.EVENTS_UPDATE, permissions)
+      ? this.withEventProgress(chapterId, userId, now, rows, nextOfEach)
+      : rows;
+  }
+
+  /**
+   * How many have checked in to each event the caller made whose check-in
+   * has opened, of the other members it invites who can check in (#4792).
+   * Before check-in opens nobody can, and a bar at nothing says nothing, so
+   * those rows get no count; rarely is more than one open at once. Three
+   * reads for the whole list (the roster, the Alumni role, every attendance
+   * row on these events, paged), and none when no event is open.
+   *
+   * Who counts is who check-in admits (`checkInAdmits`): the event invites
+   * them, and an alumnus only through a role the event names. Excused members are left out of
+   * both sides, as the week leaves them out. Best effort, like
+   * {@link withPollProgress}.
+   */
+  private async withEventProgress(
+    chapterId: string,
+    userId: string,
+    now: number,
+    rows: ActivityEvent[],
+    events: Event[],
+  ): Promise<ActivityEvent[]> {
+    const eventById = new Map(events.map((event) => [event.id, event]));
+    const open = rows
+      .map((row) => eventById.get(row.id))
+      .filter((event): event is Event => {
+        const window = event ? this.checkInWindowOf(event) : null;
+        return window !== null && window.opensAt <= now;
+      });
+    if (open.length === 0) return rows;
+    try {
+      const [members, alumniRoleId, attendance] = await Promise.all([
+        this.memberRepo.findByChapter(chapterId),
+        this.rbacService.getAlumniRoleId(chapterId),
+        this.attendanceRepo.findByEvents(open.map((event) => event.id)),
+      ]);
+      const statusOf = new Map(
+        attendance.map((row) => [`${row.event_id}:${row.user_id}`, row.status]),
+      );
+      const progressOf = new Map<string, ActivityProgress>();
+      for (const event of open) {
+        let done = 0;
+        let total = 0;
+        for (const member of members) {
+          if (member.user_id === userId) continue;
+          const alumnus =
+            alumniRoleId !== null && member.role_ids.includes(alumniRoleId);
+          if (!checkInAdmits(event, member.role_ids, alumnus)) continue;
+          const status = statusOf.get(`${event.id}:${member.user_id}`);
+          if (status === 'EXCUSED') continue;
+          total += 1;
+          if (status === 'PRESENT' || status === 'LATE') done += 1;
+        }
+        if (total > 0) progressOf.set(event.id, { done, total });
+      }
+      return rows.map((row) => {
+        const progress = progressOf.get(row.id);
+        return progress ? { ...row, progress } : row;
+      });
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'activity-event-progress',
+        message: `Activity could not count check-ins in chapter ${chapterId}`,
+        error,
+      });
+      return rows;
+    }
   }
 
   /**
@@ -1583,10 +2001,13 @@ export class ActivityService {
           check_in_needs_code: needsCode,
           checked_in: checkedIn,
           created_by: event.created_by,
+          // Set on the caller's own events (`withEventProgress`).
+          progress: null,
           created_at: event.created_at,
           // Set for Coming up once the caller's reads are in
           // (`withUnread`); an event in Made by you is never unread.
           unread: false,
+          snoozed_until: null,
         };
       }),
     );

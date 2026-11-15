@@ -31,7 +31,7 @@ import {
   askUnavailableLine,
   type AiReportReason,
   type AskAnswer,
-  type AskNamedEntity,
+  type AskEntity,
   type AskPostedAnswer,
   type AskSource,
 } from "@repo/validation";
@@ -715,7 +715,7 @@ function EntityText({
   onOpenChannel,
 }: {
   text: string;
-  entities: readonly AskNamedEntity[];
+  entities: readonly AskEntity[];
   mentionStyle: StyleProp<TextStyle>;
   canOpenChannel: (channelId: string) => boolean;
   onOpenChannel?: (channelId: string) => void;

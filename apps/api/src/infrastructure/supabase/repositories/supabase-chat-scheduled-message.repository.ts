@@ -17,6 +17,8 @@ import type {
 import { SupabaseQueryError } from '../supabase-query-error';
 
 const TABLE = 'chat_scheduled_messages';
+/** The tail `chatPreviewPathFor` gives every photo's preview copy. */
+const PREVIEW_SUFFIX = '/preview/preview.jpg';
 
 /**
  * Scheduled chat messages (#4956). The table has RLS on and no policies; the
@@ -118,7 +120,11 @@ export class SupabaseChatScheduledMessageRepository implements IChatScheduledMes
     userId: string,
     id: string,
     now: string,
-  ): Promise<'deleted' | 'held' | 'missing'> {
+  ): Promise<
+    | { outcome: 'deleted'; row: ChatScheduledMessage }
+    | { outcome: 'held' }
+    | { outcome: 'missing' }
+  > {
     const { data, error } = await this.supabase
       .from(TABLE)
       .delete()
@@ -126,13 +132,46 @@ export class SupabaseChatScheduledMessageRepository implements IChatScheduledMes
       .eq('user_id', userId)
       .eq('id', id)
       .or(`lease_until.is.null,lease_until.lt."${now}"`)
-      .select('id');
+      .select('*');
     if (error) throw new SupabaseQueryError(error);
-    if ((data ?? []).length > 0) return 'deleted';
+    const [row] = data ?? [];
+    if (row) return { outcome: 'deleted', row };
     // Nothing deleted: either no such row, or a send holds it.
     return (await this.findForAuthor(chapterId, userId, id))
-      ? 'held'
-      : 'missing';
+      ? { outcome: 'held' }
+      : { outcome: 'missing' };
+  }
+
+  async findPathsInUse(
+    chapterId: string,
+    paths: readonly string[],
+    excludingId: string | null,
+  ): Promise<string[]> {
+    // One containment probe per path and field: `contains` sends the value as
+    // JSON, so a path with quotes or commas can't break a list syntax and be
+    // read as unused (the reason `findSharedObjects` probes one by one). A
+    // path that looks like a preview is also asked as a preview.
+    const inUse: string[] = [];
+    for (const path of new Set(paths)) {
+      const fields = path.endsWith(PREVIEW_SUFFIX)
+        ? ['storage_path', 'preview_storage_path']
+        : ['storage_path'];
+      for (const field of fields) {
+        let query = this.supabase
+          .from(TABLE)
+          .select('id')
+          .eq('chapter_id', chapterId)
+          .contains('attachments', JSON.stringify([{ [field]: path }]));
+        if (excludingId) query = query.neq('id', excludingId);
+        const { data, error } = await query.limit(1);
+        if (error) throw new SupabaseQueryError(error);
+        if ((data ?? []).length > 0) {
+          inUse.push(path);
+          break;
+        }
+      }
+    }
+    return inUse;
   }
 
   async findDue(now: string, limit: number): Promise<ChatScheduledMessage[]> {

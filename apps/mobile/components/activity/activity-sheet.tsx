@@ -18,6 +18,11 @@ import {
 } from "@repo/chat-core/cards";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { useReviewServiceEntry, type ActivityRow } from "@repo/hooks";
+import {
+  MESSAGE_REMINDER_PRESETS,
+  messageReminderPresetTime,
+  type MessageReminderPresetId,
+} from "@repo/hooks/use-message-reminders";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   CardActions,
@@ -26,6 +31,7 @@ import {
   type ChatCardFrameProps,
 } from "@/components/chat/chat-card";
 import { EventCard } from "@/components/chat/event-card";
+import { ListRow, ListSection } from "@/components/list-section";
 import { HoursCard } from "@/components/chat/hours-card";
 import { PollCard } from "@/components/chat/poll-card";
 import { TaskCard } from "@/components/chat/task-card";
@@ -45,6 +51,10 @@ import {
 } from "@/lib/activity/row-action";
 import { useActivityPoll } from "@/lib/activity/use-activity-poll";
 import { confirmClosePoll } from "@/lib/chat/confirm-close-poll";
+import {
+  reminderAtLabel,
+  reminderPresetValue,
+} from "@/lib/chat/message-reminder";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -62,6 +72,17 @@ export interface LinkSheetActions {
   hide: (row: RowOf<"link">) => void;
   openInChat: (row: RowOf<"link">) => void;
   remove: (row: RowOf<"link">) => void;
+}
+
+/**
+ * What a message reminder's sheet can do (#4957), the screen's as a link's
+ * are: Done takes the row off the list at once, and opening the message
+ * leaves the screen.
+ */
+export interface ReminderSheetActions {
+  open: (row: RowOf<"reminder">) => void;
+  snooze: (row: RowOf<"reminder">, preset: MessageReminderPresetId) => void;
+  done: (row: RowOf<"reminder">) => void;
 }
 
 const noop = () => {};
@@ -118,6 +139,7 @@ export function ActivitySheet({
   onClosed,
   onActed,
   linkActions,
+  reminderActions,
 }: {
   row: ActivityRow | null;
   viewerId: string | null;
@@ -129,6 +151,7 @@ export function ActivitySheet({
   onClosed: () => void;
   onActed: () => void;
   linkActions: LinkSheetActions;
+  reminderActions: ReminderSheetActions;
 }) {
   const sheet = useRef<BottomSheetModal>(null);
   const closeSheet = useSheetClose(sheet);
@@ -178,6 +201,7 @@ export function ActivitySheet({
                 onActed={onActed}
                 onNavigate={closeSheet}
                 linkActions={linkActions}
+                reminderActions={reminderActions}
               />
             ) : row ? (
               // The cards decide whose controls to show from the viewer's id;
@@ -198,6 +222,7 @@ function SheetCard({
   onActed,
   onNavigate,
   linkActions,
+  reminderActions,
 }: {
   row: ActivityRow;
   viewerId: string;
@@ -206,6 +231,7 @@ function SheetCard({
   /** Closes the sheet before leaving this screen for another. */
   onNavigate: () => void;
   linkActions: LinkSheetActions;
+  reminderActions: ReminderSheetActions;
 }) {
   switch (row.kind) {
     case "task":
@@ -231,10 +257,103 @@ function SheetCard({
       return (
         <LinkSheet row={row} actions={linkActions} onNavigate={onNavigate} />
       );
+    case "reminder":
+      return (
+        <ReminderSheet
+          row={row}
+          actions={reminderActions}
+          onNavigate={onNavigate}
+        />
+      );
     case "card":
       // A sign-up or form row opens its message in chat, never this sheet.
       return null;
   }
+}
+
+/** Said where a reminder's message can't be opened any more. */
+export const REMINDER_UNAVAILABLE_NOTE =
+  "You can't see this conversation any more, so the message can't be opened.";
+
+/**
+ * A reminder on a chat message (#4957): the message's words, who wrote it,
+ * where and when it was for, as the row says, then what Slack's Later list
+ * offers on one: open the message, Done, or Snooze to a preset (the same ones
+ * the message menu sets it with). Every button closes the sheet first. A
+ * message the member can no longer read is only cleared.
+ */
+function ReminderSheet({
+  row,
+  actions,
+  onNavigate,
+}: {
+  row: RowOf<"reminder">;
+  actions: ReminderSheetActions;
+  onNavigate: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createLinkStyles(tokens);
+  // Read once per sheet: the presets' times as they stood when it opened.
+  const [now] = useState(() => new Date());
+  const then = (action: () => void) => () => {
+    onNavigate();
+    action();
+  };
+  const available = row.reminder.message_available;
+  return (
+    <>
+      <View style={styles.head}>
+        <Text style={styles.title} accessibilityRole="header">
+          {row.title}
+        </Text>
+        {row.detail ? <Text style={styles.detail}>{row.detail}</Text> : null}
+      </View>
+      {available ? null : <CardNote text={REMINDER_UNAVAILABLE_NOTE} />}
+      <CardActions>
+        {available ? (
+          <CardButton
+            label="Open message"
+            variant="primary"
+            accessibilityHint={
+              row.reminder.thread_root_id
+                ? "Opens the thread, at the message."
+                : "Opens the conversation, at the message."
+            }
+            onPress={then(() => actions.open(row))}
+          />
+        ) : null}
+        <CardButton
+          label="Done"
+          accessibilityHint="Clears the reminder and takes it off your Activity."
+          onPress={then(() => actions.done(row))}
+        />
+      </CardActions>
+      {available ? (
+        <View style={styles.head}>
+          {/* Slack's word for a reminder whose time came; one still to
+              come is only moved. */}
+          <Text style={styles.detail}>
+            {row.reminder.due ? "Snooze" : "Change the time"}
+          </Text>
+          <ListSection>
+            {MESSAGE_REMINDER_PRESETS.map((preset) => {
+              const at = messageReminderPresetTime(preset.id, now);
+              return (
+                <ListRow
+                  key={preset.id}
+                  label={preset.label}
+                  value={reminderPresetValue(at, now)}
+                  action
+                  accessibilityHint={`Reminds you ${reminderAtLabel(at, now)}.`}
+                  onPress={then(() => actions.snooze(row, preset.id))}
+                />
+              );
+            })}
+          </ListSection>
+        </View>
+      ) : null}
+    </>
+  );
 }
 
 /**

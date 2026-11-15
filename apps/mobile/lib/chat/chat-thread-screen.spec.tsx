@@ -501,6 +501,11 @@ const bookmarkWrites = vi.hoisted(() => ({
   save: { mutateAsync: vi.fn(async () => undefined) },
   unsave: { mutateAsync: vi.fn(async () => undefined) },
 }));
+/** Remind me about this (#4957): the set, seen and answered. */
+const reminderWrites = vi.hoisted(() => ({
+  set: { mutateAsync: vi.fn(async (input: unknown) => void input) },
+}));
+
 /** The unread counts' fetch, stood in for `GET /v1/channels/unread`. */
 const unreadCountsFetch = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
 
@@ -526,6 +531,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useBookmarkedMessageIds: () => SAVED,
     useBookmarkMessage: () => bookmarkWrites.save,
     useUnbookmarkMessage: () => bookmarkWrites.unsave,
+    // Remind me about this (#4957): writes that succeed.
+    useSetMessageReminder: () => reminderWrites.set,
     useBookmarks: () => ({ data: [], isPending: false, isError: false }),
     usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
     // Scheduled messages (#4956): none, and a schedule that never lands.
@@ -868,7 +875,7 @@ describe("chat thread in the audit log", () => {
     act(() => tree.unmount());
   });
 
-  it("hands Schedule message the reason a staged photo can't be scheduled (#4956)", () => {
+  it("hands Schedule message the reason a photo still uploading can't be scheduled (#4971)", () => {
     channel = channelState({
       draft: "Chapter at 8",
       photos: [
@@ -886,11 +893,41 @@ describe("chat thread in the audit log", () => {
     const tree = render();
     act(() => tree.root.findByType(ChatComposer).props.onSchedule());
     expect(tree.root.findByType(ScheduleSendSheet).props.refusal).toMatch(
-      /^Photos can't be scheduled yet/,
+      /^Wait for your photos/,
     );
     expect(tree.root.findByType(ScheduleSendSheet).props.preview).toBe(
       "Chapter at 8",
     );
+    act(() => tree.unmount());
+  });
+
+  it("takes scheduled photos out of the tray once scheduled (#4971)", async () => {
+    channel = channelState({
+      draft: "Agenda",
+      photos: [
+        {
+          key: "p1",
+          previewUri: "file:///a.jpg",
+          width: 10,
+          height: 10,
+          status: "ready",
+          attachment: {
+            storagePath: "chapters/c/chat/ch/a/a.jpg",
+            filename: "a.jpg",
+            contentType: "image/jpeg",
+          },
+          reason: null,
+        },
+      ],
+    } as unknown as Partial<UseChatChannelResult>);
+    const tree = render();
+    act(() => tree.root.findByType(ChatComposer).props.onSchedule());
+    const sheet = tree.root.findByType(ScheduleSendSheet);
+    expect(sheet.props.refusal).toBeNull();
+    await act(async () => {
+      await sheet.props.onSchedule(new Date(Date.now() + 3_600_000));
+    });
+    expect(channel.removePhoto).toHaveBeenCalledWith("p1");
     act(() => tree.unmount());
   });
 
@@ -2974,6 +3011,21 @@ describe("chat thread Pin and Save from the actions sheet", () => {
     expect(other.save).toEqual({ saved: SAVED.has(other.messageId) });
     expect([first, other.messageId].sort()).toEqual(["m1", "m2"]);
     SAVED.clear();
+    act(() => tree.unmount());
+  });
+
+  it("sets a reminder on the sheet's message (#4957)", () => {
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree, 0);
+    const at = new Date("2026-11-20T14:00:00.000Z");
+    act(() =>
+      (sheet.props.onRemind as (id: string, at: Date) => void)("m1", at),
+    );
+    expect(reminderWrites.set.mutateAsync).toHaveBeenCalledWith({
+      messageId: "m1",
+      remindAt: at,
+    });
     act(() => tree.unmount());
   });
 

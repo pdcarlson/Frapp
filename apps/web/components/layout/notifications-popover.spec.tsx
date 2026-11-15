@@ -785,6 +785,43 @@ describe("deepLinkFor: task notifications", () => {
   });
 });
 
+describe("deepLinkFor: message reminders (#4957)", () => {
+  const chat = (
+    target: Record<string, string>,
+    extra: { reminder?: boolean; chat_message_id?: string | null } = {},
+  ) => ({
+    ...notification("n-chat", "chat", "2026-11-13T01:00:00Z"),
+    data: {
+      target: { screen: "chat", channelId: "c1", ...target },
+      ...(extra.reminder ? { reminder: true } : {}),
+    },
+    chat_message_id: extra.chat_message_id ?? null,
+  });
+
+  it("opens a reminder on the message it was set on", () => {
+    expect(
+      deepLinkFor(chat({}, { reminder: true, chat_message_id: "m1" })),
+    ).toBe("/chat?channel=c1&message=m1");
+  });
+
+  it("opens a reminder on a thread reply at the thread's first message", () => {
+    expect(
+      deepLinkFor(
+        chat(
+          { threadRootId: "root-1" },
+          { reminder: true, chat_message_id: "reply-1" },
+        ),
+      ),
+    ).toBe("/chat?channel=c1&message=root-1");
+  });
+
+  it("opens any other chat row on its channel", () => {
+    expect(deepLinkFor(chat({}, { chat_message_id: "m1" }))).toBe(
+      "/chat?channel=c1",
+    );
+  });
+});
+
 describe("NotificationsPopover: grouped by conversation, Unread / All (#3948)", () => {
   const inGeneral = (id: string, createdAt: string, read = false) => ({
     ...notification(id, "chat", createdAt, "Ryan in #general"),

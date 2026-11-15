@@ -550,6 +550,8 @@ export interface MessageTimelineProps {
    */
   bookmarkedMessageIds?: Set<string>;
   onToggleBookmark?: (messageId: string, next: boolean) => void;
+  /** "Remind me about this" (#4957); see `MessageItemProps`. */
+  onRemind?: (messageId: string, remindAt: Date) => void;
   canManageChannel?: boolean;
   /** A row's Report and Block (#2687); see `MessageItemProps`. */
   onReport?: (message: ChatMessage) => void;
@@ -647,6 +649,7 @@ export const MessageTimeline = forwardRef<
     onFlag,
     bookmarkedMessageIds,
     onToggleBookmark,
+    onRemind,
     canManageChannel,
     onReport,
     onBlock,
@@ -1419,6 +1422,7 @@ export const MessageTimeline = forwardRef<
                   onFlag={onFlag}
                   isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
                   onToggleBookmark={onToggleBookmark}
+                  onRemind={onRemind}
                   canManageChannel={canManageChannel}
                   onReport={onReport}
                   onBlock={onBlock}

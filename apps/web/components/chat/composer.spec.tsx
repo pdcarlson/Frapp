@@ -3120,6 +3120,7 @@ describe("Composer schedule (#4956)", () => {
     const { editor, onSchedule } = await scheduleText("Chapter at 8");
     expect(onSchedule).toHaveBeenCalledWith(
       "Chapter at 8",
+      [],
       expect.any(Array),
       expect.any(Date),
     );
@@ -3133,15 +3134,6 @@ describe("Composer schedule (#4956)", () => {
 
   it.each([
     ["a slash command", '/poll "Formal?" Yes No', {}, /Commands/],
-    [
-      "a reply",
-      "sounds good",
-      {
-        replyTo: { id: "m-1", author: "A", preview: "x" },
-        onCancelReply: vi.fn(),
-      },
-      /Replies/,
-    ],
     ["offline", "later", { isOffline: true }, /Reconnect/],
     [
       "a question for Frapp",
@@ -3159,6 +3151,56 @@ describe("Composer schedule (#4956)", () => {
     expect(mockToast).toHaveBeenCalledWith(
       expect.objectContaining({ title: expect.stringMatching(copy) }),
     );
+  });
+
+  it("schedules with a reply staged, leaving the reply to the parent (#4971)", async () => {
+    const onCancelReply = vi.fn();
+    const { onSchedule } = await scheduleText("sounds good", {
+      replyTo: { id: "m-1", author: "A", preview: "x" },
+      onCancelReply,
+    });
+    expect(onSchedule).toHaveBeenCalledWith(
+      "sounds good",
+      [],
+      expect.any(Array),
+      expect.any(Date),
+    );
+  });
+
+  it("schedules a staged file with no text, and clears the tray (#4971)", async () => {
+    const editor = fakeEditor("");
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    const onSchedule = vi.fn(async () => {});
+    const { container } = render(
+      <Composer {...baseProps({ draft: "", onSchedule })} />,
+    );
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "notes.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await screen.findByRole("button", { name: "Remove notes.pdf" });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+    );
+    expect(onSchedule).toHaveBeenCalledWith(
+      "",
+      [expect.objectContaining({ filename: "notes.pdf" })],
+      expect.any(Array),
+      expect.any(Date),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Remove notes.pdf" }),
+    ).not.toBeInTheDocument();
   });
 
   it("schedules text that only starts with a slash, as Send posts it", async () => {
@@ -3180,5 +3222,103 @@ describe("Composer schedule (#4956)", () => {
       await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
     );
     expect(editor.getText()).toBe("Chapter at 8");
+  });
+
+  function stage(container: HTMLElement, name: string) {
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [new File(["%PDF-1.4"], name, { type: "application/pdf" })],
+        },
+      },
+    );
+    return screen.findByRole("button", { name: `Remove ${name}` });
+  }
+
+  async function pickTomorrow() {
+    await userEvent.click(
+      screen.getByRole("button", { name: "Schedule message" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: /^Tomorrow at/ }),
+    );
+  }
+
+  it("puts the files back with the text when scheduling fails (#4971)", async () => {
+    const editor = fakeEditor("Agenda");
+    editorDouble.current = editor;
+    const onSchedule = vi.fn(async () => {
+      throw new Error("down");
+    });
+    const { container } = render(
+      <Composer {...baseProps({ draft: "Agenda", onSchedule })} />,
+    );
+    await stage(container, "notes.pdf");
+    await pickTomorrow();
+    expect(editor.getText()).toBe("Agenda");
+    expect(
+      await screen.findByRole("button", { name: "Remove notes.pdf" }),
+    ).toBeInTheDocument();
+  });
+
+  it("puts nothing back when a file was started while it was out, and says so (#4971)", async () => {
+    const editor = fakeEditor("Agenda");
+    editorDouble.current = editor;
+    mockToast.mockClear();
+    let reject!: (error: Error) => void;
+    const onSchedule = vi.fn(
+      () =>
+        new Promise<void>((_, no) => {
+          reject = no;
+        }),
+    );
+    const { container } = render(
+      <Composer {...baseProps({ draft: "Agenda", onSchedule })} />,
+    );
+    await stage(container, "notes.pdf");
+    await pickTomorrow();
+    // A second file still uploading when the schedule fails.
+    let finishUpload!: () => void;
+    const uploadsBefore = mockUploadSignedUrl.mock.calls.length;
+    mockUploadSignedUrl.mockImplementationOnce(
+      () =>
+        new Promise<undefined>((done) => {
+          finishUpload = () => done(undefined);
+        }),
+    );
+    fireEvent.change(
+      container.querySelector('input[type="file"]') as HTMLInputElement,
+      {
+        target: {
+          files: [
+            new File(["%PDF-1.4"], "later.pdf", { type: "application/pdf" }),
+          ],
+        },
+      },
+    );
+    await waitFor(() =>
+      expect(mockUploadSignedUrl.mock.calls.length).toBe(uploadsBefore + 1),
+    );
+    await act(async () => {
+      reject(new Error("down"));
+    });
+    expect(
+      screen.queryByRole("button", { name: "Remove notes.pdf" }),
+    ).not.toBeInTheDocument();
+    await act(async () => {
+      finishUpload();
+    });
+    expect(
+      await screen.findByRole("button", { name: "Remove later.pdf" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Remove notes.pdf" }),
+    ).not.toBeInTheDocument();
+    expect(mockToast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringMatching(/couldn't be put back/),
+      }),
+    );
   });
 });

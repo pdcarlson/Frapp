@@ -72,6 +72,12 @@ export interface ActivityLink {
    * reads every section's opens at once.
    */
   unread: boolean;
+  /**
+   * Until when the caller snoozed it, while the snooze lasts; `null` when it
+   * isn't snoozed (`spec/behavior/activity.md` § Snooze). Always null in
+   * `made_by_you`.
+   */
+  snoozed_until: string | null;
 }
 
 /**
@@ -158,6 +164,7 @@ export class ActivityLinkService {
         posted_by_name: link.posted_by ? (names.get(link.posted_by) ?? '') : '',
         posted_at: link.posted_at,
         unread: false,
+        snoozed_until: null,
       };
     });
   }

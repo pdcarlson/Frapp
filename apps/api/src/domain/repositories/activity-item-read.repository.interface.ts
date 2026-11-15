@@ -1,6 +1,7 @@
 import type {
   ActivityItemKind,
   ActivityItemRead,
+  ActivityItemSnooze,
 } from '../entities/activity-item-read.entity';
 
 export const ACTIVITY_ITEM_READ_REPOSITORY = 'ACTIVITY_ITEM_READ_REPOSITORY';
@@ -41,5 +42,28 @@ export interface IActivityItemReadRepository {
     userId: string,
     items: ActivityItemRef[],
     readAt: string,
+  ): Promise<void>;
+  /**
+   * The member's snoozes in the chapter that end after `endedAfter`: the
+   * active ones and those that ended since, whose end decides whether their
+   * row came back unread (`spec/behavior/activity.md` § Snooze).
+   */
+  findSnoozes(
+    chapterId: string,
+    userId: string,
+    endedAfter: string,
+  ): Promise<ActivityItemSnooze[]>;
+  /** Snoozes the item until `until`, replacing any snooze it had. */
+  snooze(
+    chapterId: string,
+    userId: string,
+    item: ActivityItemRef,
+    until: string,
+  ): Promise<void>;
+  /** Drops the member's snooze of the item, if any. Idempotent. */
+  unsnooze(
+    chapterId: string,
+    userId: string,
+    item: ActivityItemRef,
   ): Promise<void>;
 }
