@@ -4,6 +4,8 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { inSheet, skeletonBarFills } from "@/test/sheet-skeleton";
 import { ChannelMemberSheet, MemberRows } from "./channel-member-sheet";
 import { memberAvatarHue, memberAvatarTint } from "@repo/hooks";
 import { MemberAvatar } from "@/components/member-avatar";
@@ -210,6 +212,19 @@ describe("MemberRows", () => {
     const tree = render(<MemberRows channelId="chan-1" />);
     expect(rowNames(tree)).toEqual(["Loading members"]);
     expect(text(tree)).not.toContain("members");
+  });
+
+  // #4690: the rows sit straight on the sheet's `popover` fill, so bars in
+  // that fill drew a blank area while the members loaded.
+  it("draws its loading bars a step under the sheet, never in its fill", () => {
+    state.roster = { isPending: true };
+    const fills = inSheet(() =>
+      skeletonBarFills(render(<MemberRows channelId="chan-1" />)),
+    );
+    expect(fills.length).toBeGreaterThan(0);
+    expect(new Set(fills)).toEqual(
+      new Set([signetDarkTokens.color.surface.card]),
+    );
   });
 
   it("holds the skeleton without a channel", () => {

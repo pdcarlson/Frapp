@@ -308,8 +308,9 @@ There is no ⌘K. Cmd/Ctrl+F opens the Find dialog without being advertised: the
 
 ## 8. Cards
 
-- Fill card `#211E1A`, 1px border `rgba(255,255,255,.08)`, radius 16 (14 for dense/small cards), padding 16.
-- Title 16.5px / 700 `#EDEAE3`; metadata line 14.5px `#A9A399`; a trailing badge (§5) MAY sit in the title row.
+- Fill `--card` (on a phone screen `--surface-1`, [foundations.md](foundations.md) §2 "On the phone a card is one step above the page"), 1px border `--border`, radius 16 (14 for dense/small cards), padding 16.
+- Title 16.5px / 700 `--foreground`; metadata line 14.5px `--muted-foreground`; a trailing badge (§5) MAY sit in the title row.
+- *(Corrected 2026-11-15, [#4690](https://github.com/frapplive/Frapp/issues/4690): these lines quoted `#211E1A`, `#EDEAE3` and `#A9A399`, the warm values the neutral ladder replaced on 2026-11-05. They name the tokens now, whose values live in [foundations.md](foundations.md) §2 and `packages/theme/src/signet.css`.)*
 - Action rows use Inline buttons (§3), gap 8, 13px above. *(Chat cards, 2026-11-13, [#4136](https://github.com/pdcarlson/Frapp/issues/4136): 8 from the eyebrow to the title, 8 to the meta, 12 to the actions, on both apps; § Chat messages (compact layout), "Cards". Neither app drew 13.)*
 - Cards never carry shadows; a raised card is a lighter surface ([foundations.md](foundations.md)).
 
@@ -409,8 +410,8 @@ A centered card on the card fill, recolored semantic (the anatomy the empty card
 | ---- | ---- |
 | Card border | 1px `rgba(248,81,73,.28)` — the sanctioned semantic border |
 | Icon tile | 44px, radius 14, fill `--destructive-tint` (danger @ 13%), "!" glyph `--destructive` |
-| Title | 16.5px / 700 `#EDEAE3` (what failed) |
-| Body | 14.5px `#A9A399` (actionable hint) |
+| Title | 16.5px / 700 `--foreground` (what failed) |
+| Body | 14.5px `--muted-foreground` (actionable hint) |
 | Action | Secondary button, 44px, radius 12 — wiring per [resilience](../resilience/README.md). Labelled `Retry` unless the surface's remedy is genuinely something else: [#2175](https://github.com/pdcarlson/Frapp/issues/2175)'s degraded segment says `Reload` for a stale chunk, because `React.lazy` memoises the rejection for the life of the document, so only replacing the document revives the control that failed (not because retrying does nothing — see writing.md §7). It stays **one** button either way — this family differs in colour rather than in shape, so a second action beside it is the defect, not a second label. `ErrorState`'s `actionLabel` carries this; the strings are [writing.md](writing.md) §7's |
 
 Error surfaces MUST NOT use the chapter accent. Field-level validation errors use the input error state (§4), not this surface.
