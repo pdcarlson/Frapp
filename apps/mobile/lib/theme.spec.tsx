@@ -93,6 +93,18 @@ describe("token helpers", () => {
     expect(tint("#F85149", 0.3)).toBe("rgba(248,81,73,0.3)");
   });
 
+  // #1640: a chapter accent reaches `tint` from a `jsonb` palette, so every
+  // input must come back a colour. An 8-digit value is rejected, not cut to
+  // its first six digits with its own alpha dropped.
+  it.each([
+    ["", "transparent"],
+    ["not-a-color", "transparent"],
+    ["#FF907F80", "transparent"],
+    ["#fff", "rgba(255,255,255,0.13)"],
+  ])("tint(%j) is %s", (input, expected) => {
+    expect(tint(input)).toBe(expected);
+  });
+
   it("avatarRadius halves the size (radius.avatar is a percent string)", () => {
     expect(avatarRadius(48)).toBe(24);
   });
