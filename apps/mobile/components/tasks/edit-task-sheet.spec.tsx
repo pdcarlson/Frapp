@@ -5,7 +5,7 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import * as ImagePicker from "expo-image-picker";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 import type { TaskEditTarget } from "@/lib/tasks/create-task";
 
 /**
@@ -15,15 +15,16 @@ import type { TaskEditTarget } from "@/lib/tasks/create-task";
  */
 
 const mintPhoto = vi.hoisted(() => vi.fn());
-let updateOutcome: "ok" | "fail" = "ok";
+let updateOutcome: "ok" | "fail" | "pending" = "ok";
 const update = vi.fn(
   (
     _vars: unknown,
     options: { onSuccess: () => void; onError: (error: unknown) => void },
-  ) =>
-    updateOutcome === "ok"
-      ? options.onSuccess()
-      : options.onError({ statusCode: 500, message: "down" }),
+  ) => {
+    if (updateOutcome === "ok") options.onSuccess();
+    else if (updateOutcome === "fail")
+      options.onError({ statusCode: 500, message: "down" });
+  },
 );
 const create_ = vi.fn();
 
@@ -64,12 +65,21 @@ const TASK: TaskEditTarget = {
   proofKind: "none",
 };
 
-function render(task: TaskEditTarget = TASK, onSaved = vi.fn()) {
+function render(
+  task: TaskEditTarget = TASK,
+  onSaved = vi.fn(),
+  keptDraft?: string,
+) {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <NewTaskSheet now={NOW} editing={task} onSaved={onSaved} />
+        <NewTaskSheet
+          now={NOW}
+          editing={task}
+          onSaved={onSaved}
+          keptDraft={keptDraft}
+        />
       </FrappThemeProvider>,
     );
   });
@@ -242,5 +252,171 @@ describe("Edit task photos and proof (#4635)", () => {
       { id: "task-1", body: { reference_photo_paths: ["p/b.jpg"] } },
       expect.anything(),
     );
+  });
+});
+
+describe("Edit task kept past its screen (#4872)", () => {
+  const KEPT = "task-edit:task-1";
+  /** The sheet opened from the Tasks screen, which keeps its edit. */
+  const open = (task: TaskEditTarget = TASK) => render(task, vi.fn(), KEPT);
+  const title = (tree: ReactTestRenderer) =>
+    byLabel(tree, "Task title").props.value;
+  const leave = (tree: ReactTestRenderer) => act(() => tree.unmount());
+  const pressCancel = (tree: ReactTestRenderer) =>
+    act(() =>
+      tree.root
+        .find(
+          (node) =>
+            node.type === ("Pressable" as never) &&
+            drawnText(node) === "Cancel",
+        )
+        .props.onPress(),
+    );
+
+  it("opens the same task's Edit on what was typed", () => {
+    const first = open();
+    act(() =>
+      byLabel(first, "Task title").props.onChangeText("Porch and hall"),
+    );
+    leave(first);
+
+    const second = open();
+    expect(title(second)).toBe("Porch and hall");
+    leave(second);
+  });
+
+  it("keeps nothing for an edit opened and left untouched", () => {
+    leave(open());
+    expect(title(open({ ...TASK, title: "Renamed on web" }))).toBe(
+      "Renamed on web",
+    );
+  });
+
+  it("keeps another task's edit apart", () => {
+    const first = open();
+    act(() =>
+      byLabel(first, "Task title").props.onChangeText("Porch and hall"),
+    );
+    leave(first);
+    const other = render(
+      { ...TASK, id: "task-2" },
+      vi.fn(),
+      "task-edit:task-2",
+    );
+    expect(title(other)).toBe("Sweep the porch");
+  });
+
+  it("shows someone else's change to a field this member didn't edit", () => {
+    const first = open();
+    act(() =>
+      byLabel(first, "Task title").props.onChangeText("Porch and hall"),
+    );
+    leave(first);
+
+    // Points moved on web in the meantime; the title is still this member's.
+    const second = open({ ...TASK, title: "Sweep it", pointReward: 9 });
+    expect(title(second)).toBe("Porch and hall");
+    expect(byLabel(second, "Point reward").props.value).toBe("9");
+    act(() => saveButton(second).props.onPress());
+    expect(update).toHaveBeenCalledWith(
+      { id: "task-1", body: { title: "Porch and hall" } },
+      expect.anything(),
+    );
+  });
+
+  it("keeps a removed photo removed, and one added elsewhere since", () => {
+    const a = { id: "a", kind: "reference" as const, storage_path: "p/a.jpg" };
+    const b = { id: "b", kind: "reference" as const, storage_path: "p/b.jpg" };
+    const c = { id: "c", kind: "reference" as const, storage_path: "p/c.jpg" };
+    const first = open({ ...TASK, referencePhotos: [a, b] });
+    act(() =>
+      first.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Remove photo 1" &&
+            typeof node.props.onPress === "function",
+        )
+        .props.onPress(),
+    );
+    leave(first);
+
+    const second = open({ ...TASK, referencePhotos: [a, b, c] });
+    act(() => saveButton(second).props.onPress());
+    expect(update).toHaveBeenCalledWith(
+      { id: "task-1", body: { reference_photo_paths: ["p/b.jpg", "p/c.jpg"] } },
+      expect.anything(),
+    );
+  });
+
+  it("gives the edit up on Cancel", () => {
+    const first = open();
+    act(() =>
+      byLabel(first, "Task title").props.onChangeText("Porch and hall"),
+    );
+    pressCancel(first);
+    leave(first);
+    expect(title(open())).toBe("Sweep the porch");
+  });
+
+  it("gives the edit up once it saves", () => {
+    const first = open();
+    act(() =>
+      byLabel(first, "Task title").props.onChangeText("Porch and hall"),
+    );
+    act(() => saveButton(first).props.onPress());
+    expect(update).toHaveBeenCalledTimes(1);
+    leave(first);
+    expect(title(open())).toBe("Sweep the porch");
+  });
+
+  it("keeps what is typed after a save lands in a visit still open", () => {
+    // A visit reopened mid-save stays open when the save lands; the save's
+    // hold is over, so what the member types next is kept again.
+    const first = open();
+    act(() =>
+      byLabel(first, "Task title").props.onChangeText("Porch and hall"),
+    );
+    act(() => saveButton(first).props.onPress());
+    act(() => byLabel(first, "Task title").props.onChangeText("Porch, hall"));
+    leave(first);
+    expect(title(open())).toBe("Porch, hall");
+  });
+
+  it("gives the edit up on a Save with nothing changed", () => {
+    const first = open();
+    act(() =>
+      byLabel(first, "Task title").props.onChangeText("Porch and hall"),
+    );
+    act(() =>
+      byLabel(first, "Task title").props.onChangeText("Sweep the porch"),
+    );
+    act(() => saveButton(first).props.onPress());
+    leave(first);
+    expect(title(open({ ...TASK, title: "Renamed on web" }))).toBe(
+      "Renamed on web",
+    );
+  });
+
+  it("holds the edit out while its save is in flight", () => {
+    updateOutcome = "pending";
+    const first = open();
+    act(() =>
+      byLabel(first, "Task title").props.onChangeText("Porch and hall"),
+    );
+    act(() => saveButton(first).props.onPress());
+    leave(first);
+    // Reopened mid-save: the same edit isn't offered to send again.
+    expect(title(open())).toBe("Sweep the porch");
+  });
+
+  it("keeps the edit when its save fails", () => {
+    updateOutcome = "fail";
+    const first = open();
+    act(() =>
+      byLabel(first, "Task title").props.onChangeText("Porch and hall"),
+    );
+    act(() => saveButton(first).props.onPress());
+    leave(first);
+    expect(title(open())).toBe("Porch and hall");
   });
 });

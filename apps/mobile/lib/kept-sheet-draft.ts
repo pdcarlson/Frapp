@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  dropKeptDraft,
   hasKeptDraft,
   readKeptDraft,
   useKeptDraftKeys,
@@ -86,4 +87,38 @@ export function useKeptSheetDraft<T>(
     () => ({ clear, hold, release: releaseWith }),
     [clear, hold, releaseWith],
   );
+}
+
+/**
+ * An edit's kept draft laid over the record as it is now (#4872): only the
+ * fields the member changed from `base` (the record as the sheet opened on
+ * it) come from `kept`, and the rest from `now`, so a draft kept past its
+ * screen never sends back a field someone else has changed since. Web's
+ * event and study-zone editors do the same (`keepEditsOver`,
+ * `keepZoneEditsOver`).
+ */
+export function keepEditsOver<T extends object>(
+  kept: T,
+  base: T,
+  now: T,
+  keys: readonly (keyof T)[],
+): T {
+  const merged = { ...now };
+  for (const key of keys) {
+    if (JSON.stringify(kept[key]) !== JSON.stringify(base[key])) {
+      merged[key] = kept[key];
+    }
+  }
+  return merged;
+}
+
+/**
+ * Drops a kept draft whose record is gone (deleted, or no longer this
+ * member's to see), so nothing keeps it for a sheet that can't open again.
+ */
+export function useDropKeptSheetDraft(name: string | null, gone: boolean) {
+  const keys = useKeptDraftKeys();
+  useEffect(() => {
+    if (gone && name !== null) dropKeptDraft(keys.draft(name));
+  }, [gone, name, keys]);
 }
