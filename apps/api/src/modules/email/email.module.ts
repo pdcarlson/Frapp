@@ -12,12 +12,41 @@ import { ResendEmailProvider } from '../../infrastructure/email/resend-email.pro
 const EMAIL_PROVIDER_LOG_CONTEXT = 'EmailProvider';
 
 /**
- * Used when `RESEND_FROM_EMAIL` is unset. Must be a local-part on a Resend-
- * verified sending domain (`mail.frapp.live`). The apex `invites@frapp.live`
- * is retired: Gmail trained it as spam on the first hosted Magic Link sends,
- * and Resend's guidance is not to send From the root domain.
+ * The sender when nothing can be derived: production's. Must be a local-part
+ * on a Resend-verified sending domain (`mail.frapp.live`). The apex
+ * `invites@frapp.live` is retired: Gmail trained it as spam on the first
+ * hosted Magic Link sends, and Resend's guidance is not to send From the root
+ * domain.
  */
 const DEFAULT_FROM_ADDRESS = 'Frapp <invites@mail.frapp.live>';
+
+/**
+ * The invite sender for this environment, built from `APP_URL`: the mail
+ * domain is the app's host with `app.` swapped for `mail.`, so
+ * `app.frapp.live` sends from `mail.frapp.live` and `app.staging.frapp.live`
+ * from `mail.staging.frapp.live` (both verified with Resend). One rule for
+ * every environment (Paul, 2026-11-15), because a fixed default made staging
+ * send from production's domain, which its domain-scoped Resend key is
+ * refused for (403, #2655).
+ *
+ * Only an `app.` host under `frapp.live` is derived from. Anything else
+ * (unset, localhost, a tunnel) gets production's sender, as before, since no
+ * other mail domain is verified.
+ */
+export function inviteFromAddress(appUrl: string | undefined): string {
+  let host: string;
+  try {
+    host = new URL(appUrl?.trim() ?? '').hostname.toLowerCase();
+  } catch {
+    return DEFAULT_FROM_ADDRESS;
+  }
+  if (!host.startsWith('app.')) return DEFAULT_FROM_ADDRESS;
+  const base = host.slice('app.'.length);
+  if (base !== 'frapp.live' && !base.endsWith('.frapp.live')) {
+    return DEFAULT_FROM_ADDRESS;
+  }
+  return `Frapp <invites@mail.${base}>`;
+}
 
 /**
  * Choose the invite-email transport: Resend when an API key is configured,
@@ -47,7 +76,8 @@ export function selectEmailProvider(config: ConfigService): IEmailProvider {
   }
 
   const fromAddress =
-    config.get<string>('RESEND_FROM_EMAIL')?.trim() || DEFAULT_FROM_ADDRESS;
+    config.get<string>('RESEND_FROM_EMAIL')?.trim() ||
+    inviteFromAddress(config.get<string>('APP_URL'));
   Logger.log(
     `Invite emails will be sent via Resend from ${fromAddress}.`,
     EMAIL_PROVIDER_LOG_CONTEXT,

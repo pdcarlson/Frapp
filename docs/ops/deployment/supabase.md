@@ -251,10 +251,11 @@ says `Signet` until the owner makes that change (the table above has the last re
 
 - Staging Auth: `Frapp <no-reply@mail.staging.frapp.live>`
 - Prod Auth: `Frapp <no-reply@mail.frapp.live>`
-- API invite default: `Frapp <invites@mail.frapp.live>`. `RESEND_FROM_EMAIL` is unset on
-  staging (its boot log, read 2026-09-24), so staging invites use this production
-  subdomain too. Moving them to `Frapp <invites@mail.staging.frapp.live>` is
-  [#2655](https://github.com/pdcarlson/Frapp/issues/2655).
+- API invite sender: built from `APP_URL`, `app.` swapped for `mail.` (`inviteFromAddress`,
+  2026-11-15): `Frapp <invites@mail.frapp.live>` on production,
+  `Frapp <invites@mail.staging.frapp.live>` on staging. `RESEND_FROM_EMAIL` overrides it and
+  is left unset on both. Until then staging sent from production's subdomain and Resend
+  refused its domain-scoped key with 403 ([#2655](https://github.com/pdcarlson/Frapp/issues/2655)).
 
 Leave the existing `frapp.live` Resend domain in place until nothing uses it.
 

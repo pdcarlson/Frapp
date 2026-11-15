@@ -382,6 +382,7 @@ export function CardButton({
   variant = "secondary",
   disabled = false,
   accessibilityHint,
+  accessibilityLabel,
   icon,
 }: {
   label: string;
@@ -389,6 +390,11 @@ export function CardButton({
   variant?: "primary" | "secondary" | "link";
   disabled?: boolean;
   accessibilityHint?: string;
+  /**
+   * What a screen reader says, when the label alone doesn't say what it acts
+   * on: a list of Join buttons is "Join Intramurals" (#4958). Defaults to the label.
+   */
+  accessibilityLabel?: string;
   /** Drawn before the label, in the label's color. */
   icon?: (color: string) => ReactNode;
 }) {
@@ -405,7 +411,7 @@ export function CardButton({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled }}
       accessibilityHint={accessibilityHint}
       disabled={disabled}

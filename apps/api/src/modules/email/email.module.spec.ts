@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PRODUCTION_SUPABASE_PROJECT_REF } from '@repo/validation';
-import { selectEmailProvider } from './email.module';
+import { inviteFromAddress, selectEmailProvider } from './email.module';
 import { NoopEmailProvider } from '../../infrastructure/email/noop-email.provider';
 import { ResendEmailProvider } from '../../infrastructure/email/resend-email.provider';
 
@@ -96,5 +96,48 @@ describe('selectEmailProvider', () => {
       expect.stringContaining('Chapter <hello@example.com>'),
       'EmailProvider',
     );
+  });
+});
+
+describe('inviteFromAddress', () => {
+  it.each([
+    ['https://app.frapp.live', 'Frapp <invites@mail.frapp.live>'],
+    [
+      'https://app.staging.frapp.live',
+      'Frapp <invites@mail.staging.frapp.live>',
+    ],
+    [
+      'https://APP.Staging.frapp.live/',
+      'Frapp <invites@mail.staging.frapp.live>',
+    ],
+  ])('sends %s from its own mail domain', (appUrl, expected) => {
+    expect(inviteFromAddress(appUrl)).toBe(expected);
+  });
+
+  it.each([
+    undefined,
+    '',
+    'not a url',
+    'http://localhost:3000',
+    'https://frapp.live',
+    'https://app.example.com',
+    'https://app.notfrapp.live',
+  ])('falls back to the production sender for %s', (appUrl) => {
+    expect(inviteFromAddress(appUrl)).toBe('Frapp <invites@mail.frapp.live>');
+  });
+
+  it("uses staging's mail domain when staging names no sender", () => {
+    const log = jest.spyOn(Logger, 'log').mockImplementation();
+    selectEmailProvider(
+      makeConfig({
+        RESEND_API_KEY: 're_test',
+        APP_URL: 'https://app.staging.frapp.live',
+      }),
+    );
+    expect(log).toHaveBeenCalledWith(
+      expect.stringContaining('Frapp <invites@mail.staging.frapp.live>'),
+      'EmailProvider',
+    );
+    jest.restoreAllMocks();
   });
 });
