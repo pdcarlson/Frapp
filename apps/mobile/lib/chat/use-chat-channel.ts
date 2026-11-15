@@ -115,6 +115,7 @@ import {
   postHours,
   postPoll,
   postSignup,
+  postRolePicker,
   postForm,
   postTask,
   SIGNED_OUT_POST_COPY,
@@ -1107,8 +1108,6 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, ctx],
   );
 
-  // chat-core's `postFormCard` takes poll, signup and form only, so the role
-  // picker queues through `sendMessage` the same way it does.
   const sendRolePicker = useCallback(
     async (picker: {
       content: string;
@@ -1116,26 +1115,10 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     }): Promise<
       { ok: true; warning?: string } | { ok: false; error: string }
     > => {
-      if (!channelId || !ctx?.userId) {
-        return { ok: false, error: SIGNED_OUT_POST_COPY };
-      }
-      try {
-        const sent = await sendMessage(ctx, {
-          channelId,
-          content: picker.content,
-          kind: "role_picker",
-          payload: picker.payload as unknown as Record<string, unknown>,
-          keepDraft: true,
-        });
-        return sent.warning
-          ? { ok: true, warning: sent.warning }
-          : { ok: true };
-      } catch {
-        return {
-          ok: false,
-          error: "Couldn't post that role picker. Try again.",
-        };
-      }
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
+      const result = await postRolePicker(ctx, channelId, picker);
+      if (result.ok) return result;
+      return { ok: false, error: result.error };
     },
     [channelId, ctx],
   );

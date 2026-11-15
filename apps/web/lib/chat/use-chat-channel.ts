@@ -95,7 +95,7 @@ import {
   postForm,
   postPoll,
   postSignup,
-  SIGNED_OUT_POST_COPY,
+  postRolePicker,
   postTask,
   retryPointsDispatch,
   trackEventCard,
@@ -859,37 +859,19 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [ctx],
   );
 
-  // `postSignup`'s shape, written here because chat-core's dispatch has no
-  // role picker poster yet: the outbox send, keeping the channel's draft.
   const sendRolePicker = useCallback(
-    async (
+    (
       targetChannelId: string,
       picker: { content: string; payload: RolePickerPayload },
-    ): Promise<
-      { ok: true; warning?: string } | { ok: false; error: string }
-    > => {
-      if (!ctx.userId) return { ok: false, error: SIGNED_OUT_POST_COPY };
-      try {
-        const sent = await sendMessage(ctx, {
-          channelId: targetChannelId,
-          content: picker.content,
-          kind: "role_picker",
-          payload: picker.payload as unknown as Record<string, unknown>,
-          keepDraft: true,
-        });
-        return sent.warning
-          ? { ok: true, warning: sent.warning }
-          : { ok: true };
-      } catch (cause) {
-        Sentry.captureException(cause, {
-          tags: { chat_send: "role_picker_form" },
-        });
-        return {
-          ok: false,
-          error: "Couldn't post that role picker. Try again.",
-        };
-      }
-    },
+    ) =>
+      postRolePicker(ctx, targetChannelId, picker).then((result) => {
+        if (!result.ok && result.cause !== undefined) {
+          Sentry.captureException(result.cause, {
+            tags: { chat_send: "role_picker_form" },
+          });
+        }
+        return result;
+      }),
     [ctx],
   );
 
