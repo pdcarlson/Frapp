@@ -479,6 +479,34 @@ describe('AnthropicLanguageModel', () => {
       ]);
     });
 
+    it('keeps the note of a result with no sources inside that result', async () => {
+      const { create, model } = clientReturning(message({ content: [] }));
+      await model.generate({
+        ...agent,
+        cache: false,
+        rounds: [
+          {
+            replay: calling,
+            results: [
+              { callId: 'toolu_1', sources: [], note: 'No messages matched.' },
+            ],
+          },
+        ],
+      });
+      const [params] = create.mock.calls[0] as [
+        { messages: { content: unknown }[] },
+      ];
+      // Nothing follows the result: a note travels outside it only when the
+      // result is all sources.
+      expect(params.messages.at(-1)?.content).toEqual([
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_1',
+          content: [{ type: 'text', text: 'No messages matched.' }],
+        },
+      ]);
+    });
+
     it('takes the tools away for a round that must answer, without forcing a choice', async () => {
       const { create, model } = clientReturning(message({ content: [] }));
 
