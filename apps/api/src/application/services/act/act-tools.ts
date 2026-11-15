@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import {
+  LEGACY_CHILD_COUNT,
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
+  REPEAT_DEFAULT_COUNT,
   TASK_TITLE_MAX_LENGTH,
+  WEEKDAY_CODES,
+  formatRepeatRule,
   isModuleEnabled,
 } from '@repo/validation';
 import { SystemPermissions, WILDCARD } from '#domain/constants/permissions';
@@ -21,7 +25,7 @@ import {
   NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH,
   NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH,
 } from '../ai-suggestion-new-event-kind';
-import type { ActPlan } from './act-prompt';
+import type { ActPlan, ActRepeat } from './act-prompt';
 import type {
   ActDraft,
   ActEventChoice,
@@ -364,12 +368,56 @@ export class CreateTaskActTool implements ActTool {
   }
 }
 
+/**
+ * The repeat rule for a proposed series, in the event form's own format and
+ * with its own default lengths (`repeat-draft.ts`): weekly and monthly as the
+ * form's untouched Weekly and Monthly, every other week as the legacy
+ * BIWEEKLY token. It keeps the wall clock of `timeZone`, the member's, and
+ * meets on the first meeting's weekday or day of the month. How long it runs
+ * is the form's to change (the card's Edit).
+ */
+export function proposedRepeatRule(
+  repeats: ActRepeat,
+  date: string,
+  timeZone: string,
+): string {
+  // The local day's weekday and day of the month, read from the date itself.
+  const [year, month, day] = date.split('-').map(Number);
+  const weekday =
+    WEEKDAY_CODES[new Date(Date.UTC(year, month - 1, day)).getUTCDay()];
+  const base = { nthWeekday: null, timeZone };
+  if (repeats === 'monthly') {
+    return formatRepeatRule({
+      ...base,
+      freq: 'MONTHLY',
+      interval: 1,
+      byDay: [],
+      monthDay: day,
+      end: { kind: 'count', count: REPEAT_DEFAULT_COUNT.MONTHLY },
+    });
+  }
+  const everyOther = repeats === 'every_other_week';
+  return formatRepeatRule({
+    ...base,
+    freq: 'WEEKLY',
+    interval: everyOther ? 2 : 1,
+    byDay: [weekday],
+    monthDay: null,
+    end: {
+      kind: 'count',
+      count: everyOther
+        ? LEGACY_CHILD_COUNT.BIWEEKLY + 1
+        : REPEAT_DEFAULT_COUNT.WEEKLY,
+    },
+  });
+}
+
 /** Put one event on the calendar. Mirrors `POST /v1/events`. */
 @Injectable()
 export class CreateEventActTool implements ActTool {
   readonly name = 'create_event';
   readonly description =
-    'Put one event on the chapter calendar. Uses title (its name), date, start_time, end_time, location, details, required (whether members must attend) and amount (the points it is worth, when said).';
+    'Put one event, or a repeating series, on the chapter calendar. Uses title (its name), date (its first day), start_time, end_time, location, details, required (whether members must attend), amount (the points it is worth, when said) and repeats (how often it happens again, when said).';
   readonly permission = SystemPermissions.EVENTS_CREATE;
   readonly module = 'events';
   readonly effect = 'propose' as const;
@@ -413,6 +461,9 @@ export class CreateEventActTool implements ActTool {
         end_time: end.toISOString(),
         point_value: points,
         is_mandatory: plan.required === true,
+        recurrence_rule: plan.repeats
+          ? proposedRepeatRule(plan.repeats, plan.date, context.timeZone)
+          : null,
       },
       notes: [],
     };

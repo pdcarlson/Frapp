@@ -146,6 +146,7 @@ export function useAcceptAiSuggestion() {
       task,
       points,
       eventId,
+      newEventId,
     }: {
       id: string;
       task?: TaskSuggestionEdits;
@@ -155,12 +156,20 @@ export function useAcceptAiSuggestion() {
        * through the event form. The accept records it and makes nothing.
        */
       eventId?: string;
+      /**
+       * For an event Ask proposed (#5117): the event the member added from
+       * the card's Edit, through the event form. The accept records it and
+       * makes nothing.
+       */
+      newEventId?: string;
     }): Promise<AiSuggestionDecision> => {
+      let body;
+      if (newEventId) body = { new_event: { event_id: newEventId } };
+      else if (eventId) body = { event: { event_id: eventId } };
+      else body = { ...(task ? { task } : {}), ...(points ? { points } : {}) };
       const result = await client.POST("/v1/ai/suggestions/{id}/accept", {
         params: { path: { id } },
-        body: eventId
-          ? { event: { event_id: eventId } }
-          : { ...(task ? { task } : {}), ...(points ? { points } : {}) },
+        body,
       });
       throwUnlessOk(result);
       return bodyOf(result.data);

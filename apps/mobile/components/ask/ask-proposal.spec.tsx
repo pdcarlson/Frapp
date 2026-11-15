@@ -30,6 +30,12 @@ const hooks = vi.hoisted(() => ({
   accept: vi.fn(),
   dismiss: vi.fn(),
   seed: undefined as unknown,
+  eventForm: undefined as
+    | undefined
+    | {
+        template?: Record<string, unknown>;
+        onCreated?: (created: { id: string | null }) => void;
+      },
   cards: { byId: new Map<string, unknown>(), settled: true, failed: false },
 }));
 // A purple chapter: Confirm takes its solid accent pair (#4702).
@@ -72,6 +78,19 @@ vi.mock("@/components/tasks/new-task-sheet", async () => {
       suggestion?: unknown;
     }) {
       hooks.seed = props.suggestion;
+      return null;
+    }),
+  };
+});
+
+vi.mock("@/components/events/new-event-sheet", async () => {
+  const { forwardRef } = await import("react");
+  return {
+    NewEventSheet: forwardRef(function NewEventSheet(props: {
+      template?: Record<string, unknown>;
+      onCreated?: (created: { id: string | null }) => void;
+    }) {
+      hooks.eventForm = props;
       return null;
     }),
   };
@@ -188,6 +207,7 @@ const TASK = {
 beforeEach(() => {
   vi.clearAllMocks();
   hooks.seed = undefined;
+  hooks.eventForm = undefined;
   hooks.accept.mockResolvedValue({
     result: { outcome: { adjusted: 2, skipped: 0 } },
   });
@@ -384,6 +404,127 @@ describe("a proposal in the Ask conversation", () => {
     expect(onOpen).toHaveBeenCalledWith({
       href: "/events",
       label: ACT_COPY.open_events,
+    });
+  });
+
+  describe("Edit (#5117)", () => {
+    // Paul's request on 2026-11-15: "Chapter, every Sunday night at 6:48 PM".
+    const EVENT = {
+      ...BASE,
+      status: "proposed",
+      action: "create_event",
+      suggestion: {
+        id: "sg-4",
+        kind: "new_event",
+        points: null,
+        task: null,
+        new_event: {
+          name: "Chapter",
+          start_time: "2026-11-15T23:48:00Z",
+          end_time: "2026-11-16T00:48:00Z",
+          location: null,
+          is_mandatory: false,
+          point_value: null,
+          description: null,
+          recurrence_rule:
+            "FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=13;TZID=America/New_York",
+        },
+      },
+    };
+
+    it("says a series repeats, written out", () => {
+      const text = screenText(show(EVENT));
+      expect(text).toContain(ACT_COPY.field_repeats);
+      expect(text).toContain(
+        "Every Sunday, 13 times, the last on Sunday, February 7, 2027",
+      );
+    });
+
+    it("opens New event filled in from the card, and Create there is the confirm", async () => {
+      const tree = show(EVENT);
+      expect(hooks.eventForm).toBeUndefined();
+      act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
+      const form = hooks.eventForm!;
+      expect(form.template).toMatchObject({
+        name: "Chapter",
+        start: new Date("2026-11-15T23:48:00Z"),
+        end: new Date("2026-11-16T00:48:00Z"),
+        attendance: { everyone: "optional", roles: {} },
+        showMore: true,
+      });
+      expect(form.template?.repeat).toMatchObject({
+        preset: "WEEKLY",
+        countInput: "13",
+        pristine: false,
+      });
+      expect(hooks.accept).not.toHaveBeenCalled();
+
+      await act(async () => form.onCreated?.({ id: "ev-1" }));
+      // Recorded, not made again.
+      expect(hooks.accept).toHaveBeenCalledWith({
+        id: "sg-4",
+        newEventId: "ev-1",
+      });
+      expect(screenText(tree)).toContain(ACT_COPY.done_event);
+    });
+
+    it("says the event was added even when the proposal can't record it", async () => {
+      hooks.accept.mockRejectedValueOnce(new Error("expired"));
+      const tree = show(EVENT);
+      act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
+      await act(async () => hooks.eventForm!.onCreated?.({ id: "ev-1" }));
+      expect(screenText(tree)).toContain(ACT_COPY.done_event);
+    });
+
+    it("opens the task form on a complete task", () => {
+      const tree = show(TASK);
+      act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
+      expect(hooks.seed).toMatchObject({ title: "Book the bus" });
+      expect(hooks.accept).not.toHaveBeenCalled();
+    });
+
+    it("turns a points card's amount and reason into fields, and confirms only what changed", async () => {
+      const tree = show(POINTS);
+      act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
+      const field = (label: string) =>
+        tree.root.findAll(
+          (node) =>
+            node.props.accessibilityLabel === label &&
+            typeof node.props.onChangeText === "function",
+        )[0];
+      act(() => field(ACT_COPY.field_amount).props.onChangeText("10"));
+      expect(screenText(tree)).toContain(actPointsHeadline(10, 2));
+
+      act(() => field(ACT_COPY.field_reason).props.onChangeText("  "));
+      await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+      expect(hooks.accept).not.toHaveBeenCalled();
+      expect(screenText(tree)).toContain(ACT_COPY.no_reason);
+
+      act(() =>
+        field(ACT_COPY.field_reason).props.onChangeText("Came to chapter"),
+      );
+      await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+      expect(hooks.accept).toHaveBeenCalledWith({
+        id: "sg-1",
+        points: { amount: 10 },
+      });
+      expect(screenText(tree)).toContain(actPointsDoneLine(10, 2, 0));
+    });
+
+    it("won't send an amount that isn't a whole number other than 0", async () => {
+      const tree = show(POINTS);
+      act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
+      const amount = tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel === ACT_COPY.field_amount &&
+          typeof node.props.onChangeText === "function",
+      )[0];
+      for (const typed of ["0", "2.5", "five"]) {
+        act(() => amount.props.onChangeText(typed));
+        await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+        expect(screenText(tree)).toContain(ACT_COPY.bad_amount);
+      }
+      expect(hooks.accept).not.toHaveBeenCalled();
     });
   });
 

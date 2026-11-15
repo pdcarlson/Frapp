@@ -8507,6 +8507,8 @@ export interface components {
             /** @description Null leaves the chapter’s usual amount. */
             point_value: number | null;
             is_mandatory: boolean;
+            /** @description The repeat the series is made with (the `recurrence_rule` format of `POST /v1/events`), or null for one event. */
+            recurrence_rule: string | null;
         };
         AiSuggestionDto: {
             /** Format: uuid */
@@ -8579,6 +8581,13 @@ export interface components {
              */
             event_id: string;
         };
+        NewEventSuggestionAcceptDto: {
+            /**
+             * Format: uuid
+             * @description The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller.
+             */
+            event_id: string;
+        };
         AcceptAiSuggestionDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
             task?: components["schemas"]["TaskSuggestionEditsDto"];
@@ -8586,6 +8595,8 @@ export interface components {
             points?: components["schemas"]["PointsSuggestionEditsDto"];
             /** @description Required to accept a suggested event. */
             event?: components["schemas"]["EventSuggestionAcceptDto"];
+            /** @description For a proposed event the caller already added in the event form: records it instead of making one. */
+            new_event?: components["schemas"]["NewEventSuggestionAcceptDto"];
         };
         AiSuggestionOutcomeDto: {
             /** @description A points change: how many members’ points were changed. */
@@ -8623,6 +8634,8 @@ export interface components {
             points?: components["schemas"]["PointsSuggestionEditsDto"];
             /** @description Required to accept a suggested event. */
             event?: components["schemas"]["EventSuggestionAcceptDto"];
+            /** @description For a proposed event the caller already added in the event form: records it instead of making one. */
+            new_event?: components["schemas"]["NewEventSuggestionAcceptDto"];
             /** Format: uuid */
             id: string;
             /** @enum {string} */

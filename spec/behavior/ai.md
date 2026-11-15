@@ -717,11 +717,20 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   A member is added to a points change from the chapter's roster in a tall sheet with a search field, which is how the phone picks a member everywhere else.
   A task's who and when are changed in the ordinary New task form opened on the proposal, where web changes them on the card; Confirm on a task missing either opens that form.
   A finished task or event links to Tasks or Events; a finished points change links nowhere, because the phone has no points page.
+- **Every card has Edit beside Cancel and Confirm** (Paul, 2026-11-15, #5117).
+  An event's Edit opens the ordinary New event form filled in from the card, with More options open (who's coming by role, the end, notes, the repeat), and Create in that form is the confirm: the event is made through the event route and the proposal records it, without making a second.
+  If the proposal can no longer record it (a day passed), the event is still made and the card still says it was added.
+  A task's Edit opens the task form on the phone (as Confirm on a task missing who or when already did) and turns the task's name and details into fields on web, where who and when are already fields on the card.
+  A points card's Edit turns its amount and reason into fields on the card, on both; Confirm then sends only what changed.
+  The forms keep what was typed when closed, as every form does (#4593).
+  Comparable: Google Calendar's "Add to calendar" on an event found in mail opens its full editor; Siri's suggested reminders and Linear's issue-from-text hand the draft to the ordinary form.
 - **What it can do** (three actions; each needs the permission and the module of the route it stands in for, and one the member lacks is not offered):
   - **Give or take away points** (`points:adjust`), for members named, for everyone who holds a role, or for everyone who came to an event.
   - **Create a task** for one member (`tasks:manage`).
-  - **Put one event on the calendar** (`events:create`), open to the whole chapter.
-    Who is invited by role, a check-in zone and a repeat are set on the event form afterwards.
+  - **Put one event, or a repeating series, on the calendar** (`events:create`), open to the whole chapter.
+    A series is weekly, every other week or monthly, on the first meeting's weekday or day of the month, as long as the event form's own default (13 meetings weekly, 7 every other week or monthly), and the card says so ("Repeats: Every Sunday, 13 times, the last on Sunday, February 7, 2027").
+    Who is invited by role, a check-in zone, a longer or shorter series and anything else the card does not show are set through the card's Edit.
+    *(Changed in #5117 by pdcarlson, 2026-11-15: until then a proposal was always one event, and "every Sunday at 6:48 PM" came back as one hour-long event with the repeat silently dropped.)*
 - **Through the tool loop, a card can rest on what Frapp read** (changed in #4899 by pdcarlson, 2026-11-13, approved by Paul the same day; off with the loop, `ASK_AGENT=on`).
   The model that reads the chapter is also offered the three actions, for a member who holds `ai:act` in a client that draws cards, so "make a task for each action item in last night's minutes" reads the minutes and comes back with a card for each.
   The separate reading of the request is not run then.

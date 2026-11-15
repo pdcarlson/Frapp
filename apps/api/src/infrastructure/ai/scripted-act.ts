@@ -145,6 +145,7 @@ export function scriptedActPlan(request: LanguageModelRequest): ScriptedReply {
     details: null,
     location: null as string | null,
     required: null as boolean | null,
+    repeats: null as 'weekly' | 'every_other_week' | 'monthly' | null,
   };
 
   const points = /(-?\d+)\s+points?\b/i.exec(said);
@@ -202,6 +203,13 @@ export function scriptedActPlan(request: LanguageModelRequest): ScriptedReply {
       /\bat the\s+(.+?)(?:\s+(?:on|at|for)\b|$)/i.exec(said)?.[1],
     );
     if (/\b(required|mandatory)\b/i.test(said)) plan.required = true;
+    if (/\b(every other|biweekly)\b/i.test(said)) {
+      plan.repeats = 'every_other_week';
+    } else if (/\b(every month|monthly)\b/i.test(said)) {
+      plan.repeats = 'monthly';
+    } else if (/\b(every|weekly)\b/i.test(said)) {
+      plan.repeats = 'weekly';
+    }
   }
   return { text: JSON.stringify(plan), object: plan };
 }

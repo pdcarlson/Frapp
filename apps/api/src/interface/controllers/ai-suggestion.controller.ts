@@ -42,6 +42,7 @@ import {
   DismissAiSuggestionDto,
   ListAiSuggestionsQueryDto,
   type EventSuggestionAcceptDto,
+  type NewEventSuggestionAcceptDto,
   type PointsSuggestionEditsDto,
   type TaskSuggestionEditsDto,
 } from '../dtos/ai-suggestion.dto';
@@ -54,7 +55,9 @@ function editsOf(dto: {
   task?: TaskSuggestionEditsDto;
   points?: PointsSuggestionEditsDto;
   event?: EventSuggestionAcceptDto;
+  new_event?: NewEventSuggestionAcceptDto;
 }): AiSuggestionEdits | undefined {
+  if (dto.new_event) return { kind: 'new_event', fields: { ...dto.new_event } };
   if (dto.event) return { kind: 'event', fields: { ...dto.event } };
   if (dto.points) return { kind: 'points', fields: { ...dto.points } };
   return dto.task ? { kind: 'task', fields: { ...dto.task } } : undefined;

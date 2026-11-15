@@ -27,6 +27,7 @@ export function plan(overrides: Partial<ActPlan> = {}): ActPlan {
     details: null,
     location: null,
     required: null,
+    repeats: null,
     ...overrides,
   };
 }
