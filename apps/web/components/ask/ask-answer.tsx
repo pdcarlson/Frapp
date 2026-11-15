@@ -24,6 +24,7 @@ import {
   askSourceChip,
   askStepLine,
   askUnavailableLine,
+  askUnavailableOffersRetry,
   type AskAnswer,
   type AskPostedAnswer,
   type AskSource,
@@ -107,7 +108,11 @@ export function AskTurn({
    * so this turn's Try again and consent buttons wait.
    */
   busy?: boolean;
-  /** Asks the same thing again, after a failure that may not repeat. */
+  /**
+   * Asks the same thing again in this turn's place: after a failure that may
+   * not repeat, and on an answer Frapp couldn't give for a reason on its side
+   * (`askUnavailableOffersRetry`).
+   */
   onRetry: () => void;
   /**
    * Asks the same thing again in this turn's place with more effort (#4904).
@@ -415,9 +420,10 @@ function AskAnswerBody({
             {ASK_COPY.consent_action}
           </Button>
         ) : null}
-        {/* The one reason with nothing the member did and no day it ends:
-            asking again is the thing to do (#5082). The others say when. */}
-        {answer.reason === "not_available" ? (
+        {/* A problem on Frapp's side, or a reason this build does not
+            know: asking again is all a member can do (#5082). The other
+            reasons say what to do or when. */}
+        {askUnavailableOffersRetry(answer.reason) ? (
           <Button
             type="button"
             variant="secondary"

@@ -29,6 +29,7 @@ import {
   askSourceChip,
   askStepLine,
   askUnavailableLine,
+  askUnavailableOffersRetry,
   type AiReportReason,
   type AskAnswer,
   type AskEntity,
@@ -136,7 +137,11 @@ export function AskTurn({
   /** The source whose document link is being fetched, so its chip says so. */
   openingSourceId?: string | null;
   onOpenSource: (source: AskSource) => void;
-  /** Asks the same question again, after a failure that may not repeat. */
+  /**
+   * Asks the same question again in this turn's place: after a failure that
+   * may not repeat, and on an answer Frapp couldn't give for a reason on its
+   * side (`askUnavailableOffersRetry`).
+   */
   onRetry: () => void;
   /**
    * Asks the same question again in this turn's place with more effort
@@ -618,9 +623,10 @@ function AnswerBody({
             disabled={busy}
           />
         ) : null}
-        {/* The one reason with nothing the member did and no day it ends:
-            asking again is the thing to do (#5082). The others say when. */}
-        {answer.reason === "not_available" ? (
+        {/* A problem on Frapp's side, or a reason this build does not
+            know: asking again is all a member can do (#5082). The other
+            reasons say what to do or when. */}
+        {askUnavailableOffersRetry(answer.reason) ? (
           <CardAction
             label={ASK_COPY.try_again}
             onPress={onRetry}

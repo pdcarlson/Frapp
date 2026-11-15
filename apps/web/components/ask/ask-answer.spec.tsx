@@ -594,10 +594,20 @@ describe("AskTurn", () => {
       .click(screen.getByRole("button", { name: ASK_COPY.try_again }));
     expect(retry).toHaveBeenCalledTimes(1);
     unmount();
-    show(unavailable("chapter_limit"), { retry });
-    expect(
-      screen.queryByRole("button", { name: ASK_COPY.try_again }),
-    ).toBeNull();
+    // A newer server's reason reads the same words, so it acts the same.
+    show(unavailable("over_cap"), { retry }).unmount();
+    for (const reason of [
+      "consent_required",
+      "chapter_off",
+      "chapter_limit",
+      "member_limit",
+    ]) {
+      const { unmount: drop } = show(unavailable(reason), { retry });
+      expect(
+        screen.queryByRole("button", { name: ASK_COPY.try_again }),
+      ).toBeNull();
+      drop();
+    }
   });
 
   it("holds both ways of asking a turn again while another turn is being answered", () => {

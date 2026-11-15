@@ -213,7 +213,11 @@ export const ASK_UNAVAILABLE_REASONS = [
   "chapter_limit",
   /** The member used their AI allowance for the day. */
   "member_limit",
-  /** Frapp's own ceiling for the month, or no provider is set up. */
+  /**
+   * Something on Frapp's side: AI is off on this server, no provider is set
+   * up, Frapp's own ceiling for the month, or a turn cut off before it wrote
+   * anything. A client offers Try again (`askUnavailableOffersRetry`).
+   */
   "not_available",
 ] as const;
 export type AskUnavailableReason = (typeof ASK_UNAVAILABLE_REASONS)[number];
@@ -656,10 +660,10 @@ export const ASK_COPY = {
       "Your chapter has used its AI allowance for this month. Ask comes back on the 1st.",
     member_limit:
       "You've reached today's limit for questions. Ask comes back tomorrow.",
-    // Nothing the member did, and no date it comes back: the turn offers
-    // Try again in its place, as ChatGPT's and Claude's apps do, rather
-    // than "later" (#5082).
-    not_available: "Frapp couldn't answer that.",
+    // Frapp's side, not the question's, and with no date a member could be
+    // told: the turn offers Try again in its place, as ChatGPT's and
+    // Claude's apps do, rather than "later" (#5082).
+    not_available: "Frapp couldn't answer because of a problem on its end.",
   } satisfies Record<AskUnavailableReason, string>,
   /** Live data is read at the moment of the answer, so it has no date. */
   live: "Read just now",
@@ -954,4 +958,14 @@ export function askUnavailableLine(reason: string | null): string {
     (ASK_COPY.unavailable as Record<string, string>)[reason ?? ""] ??
     ASK_COPY.unavailable.not_available
   );
+}
+
+/**
+ * Whether an unavailable answer offers Try again (#5082): every reason that
+ * reads `not_available`'s words, so one this build does not know too. The
+ * four that say what to do, or when Ask is back, do not: asking again would
+ * be refused the same way.
+ */
+export function askUnavailableOffersRetry(reason: string | null): boolean {
+  return askUnavailableLine(reason) === ASK_COPY.unavailable.not_available;
 }

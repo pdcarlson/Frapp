@@ -1,1 +1,1 @@
-When Ask Frapp can't answer a question, it now offers Try again right there instead of telling you to come back later.
+When Ask Frapp runs into a problem on its end, you can now try your question again right there instead of being told to come back later.

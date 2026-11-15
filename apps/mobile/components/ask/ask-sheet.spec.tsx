@@ -491,6 +491,33 @@ describe("AskSheet", () => {
     expect(found()).toHaveLength(0);
   });
 
+  // #5082: hung from the composer over the thread, the list ran on under
+  // the field on an iPhone with the keyboard up. It is the sheet's own row
+  // now, between the thread and the composer, never inside the composer.
+  it("lists places in the sheet's column, between the thread and the field", () => {
+    const tree = render();
+    open(tree);
+    act(() => field(tree).props.onChangeText("rush"));
+    const found = tree.root.find(
+      (node) => (node.type as unknown) === "AskFind",
+    );
+    const typed = field(tree);
+    // The nearest box holding both the list and the field.
+    const holders = new Set<unknown>();
+    for (let node = typed.parent; node; node = node.parent) holders.add(node);
+    let shared = found.parent;
+    while (shared && !holders.has(shared)) shared = shared.parent;
+    // It is the sheet's column, which holds the header too; the composer
+    // alone (where the list used to hang from) does not.
+    expect(
+      shared!.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props.accessibilityRole === "header",
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
   it("closes for a place found while typing, opens it, and drops what was typed", () => {
     const onClosed = vi.fn();
     const tree = render(onClosed);
