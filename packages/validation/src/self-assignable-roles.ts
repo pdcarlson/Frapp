@@ -83,3 +83,18 @@ export const SELF_ASSIGNABLE_REFUSAL_COPY: Record<
   [SELF_ASSIGNABLE_PERMISSIONS_CODE]:
     "Roles members pick themselves can't carry permissions, since anyone can join them. Turn its permissions off, or turn off Non-chapter business.",
 };
+
+/**
+ * What the role page's Non-chapter business switch says under its label, on
+ * web and the phone, while the role can be marked.
+ */
+export const SELF_ASSIGNABLE_SWITCH_DESCRIPTION =
+  "Members add and remove this role themselves, like an intramurals team or a study group. It opens its channels, and any event that lists it counts them in.";
+
+/**
+ * What the Roles overview says about its Non-chapter business section, on web
+ * and the phone. `tierPlural` is the chapter's word for tiers.
+ */
+export function selfAssignableSectionCaption(tierPlural: string): string {
+  return `Members add and remove these themselves, like intramurals or a study group. Each opens its channels, and any event that lists it counts them in. Turn it on from a role outside the ${tierPlural}.`;
+}

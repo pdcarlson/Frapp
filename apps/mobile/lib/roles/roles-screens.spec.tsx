@@ -19,6 +19,7 @@ import { screenText } from "@/test/screen-text";
 const h = vi.hoisted(() => ({
   permissions: [] as string[],
   roles: [] as unknown[],
+  rolesUpdatedAt: 0,
   tiers: [] as unknown[],
   members: [] as unknown[],
   vocabulary: {} as Record<string, string>,
@@ -56,7 +57,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       real.isPermissionHidden(permission, h.aiConsent !== null),
     usePermissionList: () => h.permissions,
     useMyPermissions: () => ok({ permissions: h.permissions }),
-    useRoles: () => ok(h.roles),
+    useRoles: () => ({ ...ok(h.roles), dataUpdatedAt: h.rolesUpdatedAt }),
     useRoleTiers: () => ok(h.tiers),
     useMembers: () => ok(h.members),
     useViewerUserId: () => "me",
@@ -169,6 +170,7 @@ beforeEach(() => {
   h.updateRole.mockClear().mockResolvedValue({});
   h.updateTier.mockClear().mockResolvedValue({});
   h.aiConsent = null;
+  h.rolesUpdatedAt = 0;
   vi.mocked(useLocalSearchParams).mockReturnValue({});
 });
 
@@ -443,8 +445,9 @@ describe("Non-chapter business on the phone (#4958)", () => {
   it("says why a role in a tier or with permissions can't be, and offers only off", () => {
     vi.mocked(useLocalSearchParams).mockReturnValue({ roleId: "r-bro" });
     let tree = render(<RoleScreen />);
+    // The phone can't move a role between tiers, so it says where to.
     expect(screenText(tree)).toContain(
-      "Roles members pick themselves sit outside the tiers",
+      "Move it out of its tier on the web dashboard first.",
     );
     expect(pickSwitch(tree)[0]!.props.disabled).toBe(true);
 
@@ -454,6 +457,37 @@ describe("Non-chapter business on the phone (#4958)", () => {
       "Roles members pick themselves can't carry permissions",
     );
     expect(pickSwitch(tree)[0]!.props.disabled).toBe(true);
+  });
+
+  it("lets a marked role that became unsafe be turned off", () => {
+    h.roles = [
+      ...h.roles,
+      role({ id: "r-ims", name: "Intramurals", tier_id: "t-bro", self_assignable: true }),
+    ];
+    vi.mocked(useLocalSearchParams).mockReturnValue({ roleId: "r-ims" });
+    const [toggle] = pickSwitch(render(<RoleScreen />));
+    expect(toggle!.props.value).toBe(true);
+    expect(toggle!.props.disabled).toBe(false);
+  });
+
+  it("shows what the roles read says once it lands after a save", async () => {
+    h.roles = [...h.roles, role({ id: "r-ims", name: "Intramurals" })];
+    vi.mocked(useLocalSearchParams).mockReturnValue({ roleId: "r-ims" });
+    const tree = render(<RoleScreen />);
+    await act(async () => {
+      pickSwitch(tree)[0]!.props.onValueChange(true);
+    });
+    expect(pickSwitch(tree)[0]!.props.value).toBe(true);
+    // Another officer turned it back off before this read landed.
+    h.rolesUpdatedAt = Date.now() + 1000;
+    act(() => {
+      tree.update(
+        <FrappThemeProvider>
+          <RoleScreen />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(pickSwitch(tree)[0]!.props.value).toBe(false);
   });
 
   it("has no switch on a built-in role", () => {
@@ -469,7 +503,9 @@ describe("Non-chapter business on the phone (#4958)", () => {
     await act(async () => {
       pickSwitch(tree)[0]!.props.onValueChange(true);
     });
-    expect(screenText(tree)).toContain("Couldn't update Intramurals.");
+    expect(screenText(tree)).toContain(
+      "Couldn't update Intramurals. Non-chapter business was not changed.",
+    );
     expect(pickSwitch(tree)[0]!.props.value).toBe(false);
   });
 
@@ -484,6 +520,13 @@ describe("Non-chapter business on the phone (#4958)", () => {
     expect(business).toBeGreaterThan(outside);
     expect(text.indexOf("Rush Chair")).toBeLessThan(business);
     expect(text.indexOf("Intramurals")).toBeGreaterThan(business);
+  });
+
+  it("shows no empty Non-chapter business to a member who can't fill it", () => {
+    h.permissions = ["members:view"];
+    expect(screenText(render(<ChapterRolesScreen />))).not.toContain(
+      "Non-chapter business",
+    );
   });
 
   it("tells a roles manager how to fill an empty Non-chapter business", () => {

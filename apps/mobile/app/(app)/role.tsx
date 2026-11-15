@@ -19,7 +19,10 @@ import {
 import {
   groupPermissionsByModule,
   SELF_ASSIGNABLE_REFUSAL_COPY,
+  SELF_ASSIGNABLE_SWITCH_DESCRIPTION,
+  SELF_ASSIGNABLE_TIERED_CODE,
   selfAssignableRefusal,
+  type SelfAssignableRefusal,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
@@ -172,7 +175,11 @@ function RoleBody({ role, data }: { role: TieredRole; data: RolesData }) {
       </ListSection>
 
       {role.system_key ? null : (
-        <PickableSwitch role={role} lockedReason={lockedReason} />
+        <PickableSwitch
+          role={role}
+          lockedReason={lockedReason}
+          rolesUpdatedAt={data.rolesQuery.dataUpdatedAt}
+        />
       )}
 
       {wildcard ? null : (
@@ -213,41 +220,54 @@ function RoleBody({ role, data }: { role: TieredRole; data: RolesData }) {
 function PickableSwitch({
   role,
   lockedReason,
+  rolesUpdatedAt,
 }: {
   role: TieredRole;
   lockedReason: string | null;
+  /** When the roles read last landed (`dataUpdatedAt`). */
+  rolesUpdatedAt: number;
 }) {
   const updateRole = useUpdateRole();
-  // The value saved, shown until the roles refetch carries it, so the switch
-  // doesn't flick back between the save and the refetch.
+  // The value saved, shown until the roles read after the save lands, so the
+  // switch doesn't flick back between the save and the refetch. Dropped on
+  // the first read after the save whatever it says, so a value another
+  // officer wrote meanwhile shows rather than this one sticking.
   const [wanted, setWanted] = useState<boolean | null>(null);
-  const [inFlight, setInFlight] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  if (wanted !== null && !inFlight && wanted === role.self_assignable) {
+  if (
+    wanted !== null &&
+    savedAt !== null &&
+    (rolesUpdatedAt > savedAt || wanted === role.self_assignable)
+  ) {
     setWanted(null);
+    setSavedAt(null);
   }
+  const inFlight = wanted !== null && savedAt === null;
   const value = wanted ?? role.self_assignable;
   const refusal = selfAssignableRefusal(role);
   const description =
-    failure ??
-    (refusal
-      ? SELF_ASSIGNABLE_REFUSAL_COPY[refusal]
-      : "Members add and remove this role themselves, like an intramurals team or a study group. It opens its channels, and any event that lists it counts them in.");
+    failure ?? (refusal ? refusalOnPhone(refusal) : SELF_ASSIGNABLE_SWITCH_DESCRIPTION);
 
   async function save(next: boolean) {
     setWanted(next);
-    setInFlight(true);
+    setSavedAt(null);
     setFailure(null);
     try {
       await updateRole.mutateAsync({
         id: role.id,
         body: { self_assignable: next },
       });
+      setSavedAt(Date.now());
     } catch (error) {
       setWanted(null);
-      setFailure(describeError(role.name, error));
-    } finally {
-      setInFlight(false);
+      setFailure(
+        describeError(
+          role.name,
+          error,
+          "Non-chapter business was not changed. Try again in a moment.",
+        ),
+      );
     }
   }
 
@@ -272,6 +292,17 @@ function PickableSwitch({
       />
     </ListSection>
   );
+}
+
+/**
+ * Why a role can't be marked, in the phone's words. Web's tiered refusal says
+ * to move the role out of its tier, which the phone can't do (moving roles
+ * stays on web), so the phone says where.
+ */
+function refusalOnPhone(refusal: SelfAssignableRefusal): string {
+  return refusal === SELF_ASSIGNABLE_TIERED_CODE
+    ? "Roles members pick themselves sit outside the tiers, since a tier carries rank. Move it out of its tier on the web dashboard first."
+    : SELF_ASSIGNABLE_REFUSAL_COPY[refusal];
 }
 
 /** A role outside the tiers, or the President's: one switch per permission. */

@@ -8,7 +8,11 @@ import {
   isWildcardRole,
   type TieredRole,
 } from "@repo/hooks/role-tiers";
-import { isEveryoneRole, roleColorOrNull } from "@repo/validation";
+import {
+  isEveryoneRole,
+  roleColorOrNull,
+  selfAssignableSectionCaption,
+} from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { BACK_TO_CHAPTER_SETTINGS } from "@/components/back-row";
@@ -177,7 +181,7 @@ export default function ChapterRolesScreen() {
               {section.pickable && section.roles.length === 0 ? (
                 <ListRow
                   label="None yet"
-                  description={`Members add and remove these themselves, like intramurals or a study group. Turn it on from a role outside the ${words.plural}.`}
+                  description={selfAssignableSectionCaption(words.plural)}
                   variant="detail"
                 />
               ) : null}
