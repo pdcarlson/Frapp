@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CronExpression } from '@nestjs/schedule';
-import { can } from '@repo/validation';
-import { formatMinutesRounded } from '@repo/formatting';
+import { RECAP_PUSH_AUDIENCE } from '@repo/validation';
+import { recapFigures } from '@repo/formatting';
 import { ReportedCron } from './reported-cron.decorator';
 import {
   CHAPTER_REPOSITORY,
@@ -12,7 +12,7 @@ import {
   ACTIVITY_RECAP_PUSH_REPOSITORY,
   type IActivityRecapPushRepository,
 } from '#domain/repositories/activity-recap-push.repository.interface';
-import { SystemPermissions } from '#domain/constants/permissions';
+import { zonedTimeToUtc } from '#domain/utils/zoned-time';
 import {
   ActivityRecapService,
   type ActivityRecap,
@@ -20,11 +20,7 @@ import {
 import { NotificationService } from '../services/notification.service';
 import { RbacService } from '../services/rbac.service';
 import { DEFAULT_PUSH_TIME_ZONE } from '../services/push-copy';
-import {
-  localClock,
-  localDateKey,
-  localMidnight,
-} from '../services/local-clock';
+import { localClock, localDateKey } from '../services/local-clock';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /**
@@ -75,15 +71,18 @@ export function recapPushWeek(
     return null;
   }
   const lastSunday = new Date(Date.UTC(year, month - 1, day - 7));
-  return {
-    weekStart: localMidnight(year, month, day, zone),
-    lastWeekStart: localMidnight(year, month, day - 7, zone),
-    firstDay: localDateKey({
-      year: lastSunday.getUTCFullYear(),
-      month: lastSunday.getUTCMonth() + 1,
-      day: lastSunday.getUTCDate(),
-    }),
-  };
+  const firstDay = localDateKey({
+    year: lastSunday.getUTCFullYear(),
+    month: lastSunday.getUTCMonth() + 1,
+    day: lastSunday.getUTCDate(),
+  });
+  // Each Sunday's own local midnight, so a week that crossed a clock change
+  // is an hour longer or shorter, as the card's is; a skipped midnight
+  // begins the day at the first instant it has.
+  const weekStart = zonedTimeToUtc(localDateKey(clock), '00:00', zone);
+  const lastWeekStart = zonedTimeToUtc(firstDay, '00:00', zone);
+  if (!weekStart || !lastWeekStart) return null;
+  return { weekStart, lastWeekStart, firstDay };
 }
 
 /**
@@ -96,35 +95,16 @@ export function recapPushSeason(now: Date): boolean {
   return day === 0 || (day === 6 && now.getUTCHours() >= 19);
 }
 
-const plural = (count: number, one: string, many: string) =>
-  count === 1 ? one : many;
-
 /**
- * The push's line: the figures Activity's "Last week" card shows, in its
- * words (`activityRecapCard` in `@repo/hooks`), joined with " · ". A part
- * that is off, unread or zero is left out, as the card leaves it out; with
- * nothing left there is no push.
+ * The push's line: the recap's figures as Activity's "Last week" card words
+ * them (`recapFigures` in `@repo/formatting`, the card's own wording), each
+ * in a few words, joined with " · ". With nothing to recap there is no push.
  */
 export function recapPushBody(recap: ActivityRecap): string | null {
-  const figures: string[] = [];
-  const {
-    events_attended: events,
-    tasks_done: tasks,
-    points,
-    service_minutes: service,
-    study_minutes: study,
-  } = recap;
-  if (events) figures.push(`${events} ${plural(events, 'event', 'events')}`);
-  if (tasks) {
-    figures.push(`${tasks} ${plural(tasks, 'task done', 'tasks done')}`);
-  }
-  if (points) {
-    const label = plural(Math.abs(points), 'point', 'points');
-    figures.push(`${points > 0 ? `+${points}` : points} ${label}`);
-  }
-  if (service) figures.push(`${formatMinutesRounded(service)} of service`);
-  if (study) figures.push(`${formatMinutesRounded(study)} studied`);
-  return figures.length > 0 ? figures.join(' · ') : null;
+  const figures = recapFigures(recap);
+  return figures.length > 0
+    ? figures.map((figure) => figure.spokenLabel).join(' · ')
+    : null;
 }
 
 /**
@@ -140,9 +120,12 @@ export function recapPushBody(recap: ActivityRecap): string | null {
  * Before reading a member's recap, a sweep claims their week for the chapter
  * (`activity_recap_pushes`, keyed by chapter, member and the week's first
  * day): only the claim that lands sends, so a member hears once however many
- * replicas tick. A recap that couldn't be read whole, or a push that failed,
- * gives its claim back, so the next tick in the window tries again; an empty
- * week keeps it, so it isn't read again each hour. Ticks on one replica don't
+ * replicas tick. A recap that couldn't be read whole, or a send that failed
+ * before its in-app row was written (`notifyUser` rejects only then; a push
+ * the provider drops after that is reported there and not retried, or the
+ * row would be written twice), gives its claim back, so the next tick in the
+ * window tries again; an empty week keeps it, so it isn't read again each
+ * hour. Ticks on one replica don't
  * overlap. A canceled chapter sends none.
  */
 @Injectable()
@@ -197,12 +180,12 @@ export class ActivityRecapPushService {
     chapter: ChapterRecapPushTarget,
     now: Date,
   ): Promise<number> {
-    const access = await this.rbac.getChapterMemberAccess(chapter.id);
-    const readers = access
-      .filter((member) =>
-        can(SystemPermissions.MEMBERS_VIEW, [...member.permissions]),
-      )
-      .map((member) => member.user_id);
+    // The audience the "Weekly recap" switch is drawn for, so the switch and
+    // the push can't name different members.
+    const readers = await this.rbac.findUserIdsWithAnyPermissions(
+      chapter.id,
+      RECAP_PUSH_AUDIENCE,
+    );
     if (readers.length === 0) return 0;
     // The zone a push to the member would use (`recipientTimeZone`).
     const zones = await this.notificationService.timeZonesFor(readers);
@@ -216,15 +199,23 @@ export class ActivityRecapPushService {
       try {
         if (await this.sendRecap(chapter, userId, week, now)) sent += 1;
       } catch (error) {
-        await this.claims
-          .release(chapter.id, userId, week.firstDay)
-          .catch(() => undefined);
         reportCaughtFailure(this.logger, {
           level: 'warning',
           site: 'activity-recap-push',
           message: `recap push failed for a member of chapter ${chapter.id}; tried again next tick`,
           error,
         });
+        await this.claims
+          .release(chapter.id, userId, week.firstDay)
+          .catch((releaseError: unknown) => {
+            // The claim stays, so this member's recap won't go out this week.
+            reportCaughtFailure(this.logger, {
+              level: 'error',
+              site: 'activity-recap-push-release',
+              message: `recap push claim for a member of chapter ${chapter.id} could not be given back; their recap is skipped this week`,
+              error: releaseError,
+            });
+          });
       }
     }
     return sent;

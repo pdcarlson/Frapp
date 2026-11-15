@@ -302,6 +302,41 @@ describe('SupabaseChapterRepository — tenant scope', () => {
 
       expect(chapter?.id).toBe(CHAPTER_B);
     });
+
+    // #4985: the weekly recap push's work list, across chapters by design.
+    it('findForRecapPush lists every chapter but a canceled one', async () => {
+      const canceled = createTenantHarness({
+        tables: {
+          chapters: [
+            { ...seed().chapters[0], enabled_modules: { points: false } },
+            {
+              ...seed().chapters[1],
+              enabled_modules: { points: false },
+              subscription_status: 'canceled',
+            },
+          ],
+        },
+        tenantColumns: { chapters: 'id' },
+        collisionExempt: {
+          // The filter under test is on this column, so the twins differ.
+          chapters: [
+            'stripe_customer_id',
+            'subscription_id',
+            'subscription_status',
+          ],
+        },
+      });
+
+      await expect(
+        new SupabaseChapterRepository(canceled.client).findForRecapPush(),
+      ).resolves.toEqual([
+        {
+          id: CHAPTER_A,
+          name: 'Beta Chapter',
+          enabled_modules: { points: false },
+        },
+      ]);
+    });
   });
 });
 

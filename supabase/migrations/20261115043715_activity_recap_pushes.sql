@@ -13,3 +13,31 @@ create table if not exists public.activity_recap_pushes (
 
 -- Read and written only by the API's service role: no member policies.
 alter table public.activity_recap_pushes enable row level security;
+
+-- Account deletion: `anonymize_user` tombstones the users row rather than
+-- deleting it, so the cascade above never fires. A claim records which weeks
+-- a member was sent a recap in which chapter, current-state data the scrub
+-- drops (spec/behavior/data-retention.md), as `birthday_posts`' trigger does.
+create or replace function public.users_clear_activity_recap_pushes_on_tombstone()
+returns trigger
+language plpgsql
+set search_path = public, pg_temp
+as $$
+begin
+  if new.deleted_at is not null then
+    delete from public.activity_recap_pushes where user_id = new.id;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists users_clear_activity_recap_pushes_on_tombstone on public.users;
+create trigger users_clear_activity_recap_pushes_on_tombstone
+  after update on public.users
+  for each row
+  when (new.deleted_at is not null)
+  execute function public.users_clear_activity_recap_pushes_on_tombstone();
+
+-- A trigger needs no grant, and must not be callable as an RPC (#830).
+revoke execute on function public.users_clear_activity_recap_pushes_on_tombstone()
+  from public, anon, authenticated;

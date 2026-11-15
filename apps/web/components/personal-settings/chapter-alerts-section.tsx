@@ -59,7 +59,7 @@ export function ChapterAlertsSection() {
    * earlier version of this comment claimed otherwise; the rungs earn their
    * place for a different and more serious reason.
    *
-   * Without them the card falls through every branch to `null` and renders six
+   * Without them the card falls through every branch to `null` and renders its
    * live-looking switches whose clicks `handleCategoryToggle` silently drops at
    * its own `!chapterId` guard — a control that looks operable and does
    * nothing, which is the dead-control failure the shared catalog exists to
@@ -148,7 +148,7 @@ export function ChapterAlertsSection() {
      * once and un-moves itself if the PATCH loses. All this owes the member is
      * the sentence explaining why it moved back.
      *
-     * `mutateAsync().catch()`, NOT `mutate(…, { onError })`. All six switches
+     * `mutateAsync().catch()`, NOT `mutate(…, { onError })`. All the switches
      * share one mutation observer, and v5's `MutationObserver.mutate` detaches
      * the observer from the previous mutation and overwrites its stored
      * per-call options — so a superseded mutation's `onError` never fires, and
@@ -221,7 +221,7 @@ export function ChapterAlertsSection() {
                     // queueless rule is explicit that it wires to the control
                     // itself. Without this a screen-reader member offline
                     // hears "Points, switch, on, unavailable" and nothing
-                    // about why, with the explanation sitting six rows below
+                    // about why, with the explanation sitting rows below
                     // and the toast arriving only after they activate a
                     // control their AT has just called unavailable.
                     aria-describedby={
@@ -256,12 +256,12 @@ export function ChapterAlertsSection() {
                      * But the real `disabled` attribute cost more than it
                      * bought. `switch.tsx` scopes every state colour to
                      * `enabled:`, and its thumb takes `group-data-[disabled]`
-                     * which outranks the `data-[state]` rules — so all six
+                     * which outranks the `data-[state]` rules — so all the
                      * switches render an identical track and thumb, and the
                      * only surviving on/off cue is the thumb offset at about
                      * 2.24:1, under WCAG 1.4.11's 3:1 for non-text. Reading
                      * which categories are muted is the *more* common offline
-                     * need, and `disabled` also drops all six out of the tab
+                     * need, and `disabled` also drops every one out of the tab
                      * order. `aria-disabled` keeps the colours, the tab order
                      * and the announced state while still refusing the write.
                      */

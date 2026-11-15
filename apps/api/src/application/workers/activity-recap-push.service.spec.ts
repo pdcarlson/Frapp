@@ -6,7 +6,7 @@ import {
   recapPushWeek,
 } from './activity-recap-push.service';
 import type { ActivityRecap } from '../services/activity-recap.service';
-import { localMidnight } from '../services/local-clock';
+import { RECAP_PUSH_AUDIENCE } from '@repo/validation';
 
 /** 2026-11-15 and 2026-11-08 are Sundays; 2026-11-01 is the US clock change. */
 describe('recapPushWeek (#4985)', () => {
@@ -55,22 +55,31 @@ describe('recapPushWeek (#4985)', () => {
     });
   });
 
+  it("starts a week at a skipped midnight's first instant, as the card does", () => {
+    // Santiago skips midnight on Sunday, September 6, 2026: the day begins
+    // at 1:00 (-03), 04:00 UTC, the start the phone's own week reads.
+    expect(
+      recapPushWeek(new Date('2026-09-06T12:30:00Z'), 'America/Santiago')
+        ?.weekStart,
+    ).toEqual(new Date('2026-09-06T04:00:00Z'));
+  });
+
+  it('starts a week east of UTC at its own midnight on a clock-change day', () => {
+    // Sydney moves forward at 2 AM on Sunday, October 4, 2026; midnight is
+    // still +10. Sunday 09:30 there (+11) is Saturday 22:30 UTC.
+    expect(
+      recapPushWeek(new Date('2026-10-03T22:30:00Z'), 'Australia/Sydney'),
+    ).toEqual({
+      weekStart: new Date('2026-10-03T14:00:00Z'),
+      lastWeekStart: new Date('2026-09-26T14:00:00Z'),
+      firstDay: '2026-09-27',
+    });
+  });
+
   it('falls back to New York for no zone or one that does not resolve', () => {
     const now = new Date('2026-11-15T14:30:00Z');
     expect(recapPushWeek(now, null)?.firstDay).toBe('2026-11-08');
     expect(recapPushWeek(now, 'Not/AZone')?.firstDay).toBe('2026-11-08');
-  });
-});
-
-describe('localMidnight', () => {
-  it('is the local midnight on the day of a clock change', () => {
-    // US clocks went back at 2 AM on Nov 1: midnight was still EDT.
-    expect(localMidnight(2026, 11, 1, 'America/New_York')).toEqual(
-      new Date('2026-11-01T04:00:00Z'),
-    );
-    expect(localMidnight(2026, 11, 2, 'America/New_York')).toEqual(
-      new Date('2026-11-02T05:00:00Z'),
-    );
   });
 });
 
@@ -109,13 +118,13 @@ describe('recapPushBody', () => {
         }),
       ),
     ).toBe(
-      '3 events · 1 task done · +15 points · 4h of service · 1h 30m studied',
+      '3 events attended · 1 task done · 15 points earned · 4h of service · 1h 30m studied',
     );
     expect(
       recapPushBody(
         recap({ events_attended: 1, tasks_done: null, points: -1 }),
       ),
-    ).toBe('1 event · -1 point');
+    ).toBe('1 event attended · 1 point lost');
   });
 
   it('is null for a week with nothing to recap', () => {
@@ -151,13 +160,11 @@ describe('ActivityRecapPushService', () => {
       claim: jest.fn().mockResolvedValue(true),
       release: jest.fn().mockResolvedValue(undefined),
     };
+    // Who satisfies the recap's audience; `RbacService` decides that.
     const rbac = {
-      getChapterMemberAccess: jest.fn().mockResolvedValue([
-        { user_id: 'u-member', permissions: new Set(['members:view']) },
-        { user_id: 'u-president', permissions: new Set(['*']) },
-        // Can't read the recap, so isn't sent it.
-        { user_id: 'u-guest', permissions: new Set(['events:view']) },
-      ]),
+      findUserIdsWithAnyPermissions: jest
+        .fn()
+        .mockResolvedValue(['u-member', 'u-president']),
     };
     const recapService = {
       getRecap: jest.fn().mockResolvedValue(recap({ events_attended: 2 })),
@@ -190,6 +197,11 @@ describe('ActivityRecapPushService', () => {
 
     await expect(deps.service.sweep(NOW)).resolves.toBe(2);
 
+    // The audience the Weekly recap switch is drawn for, not one of its own.
+    expect(deps.rbac.findUserIdsWithAnyPermissions).toHaveBeenCalledWith(
+      'chap-1',
+      RECAP_PUSH_AUDIENCE,
+    );
     expect(deps.claims.claim.mock.calls).toEqual([
       ['chap-1', 'u-member', '2026-11-08'],
       ['chap-1', 'u-president', '2026-11-08'],
@@ -210,7 +222,7 @@ describe('ActivityRecapPushService', () => {
       'chap-1',
       {
         title: 'Last week in Alpha Beta',
-        body: '2 events',
+        body: '2 events attended',
         category: RECAP_NOTIFICATION_CATEGORY,
         data: { target: { screen: 'activity' } },
       },
@@ -269,13 +281,26 @@ describe('ActivityRecapPushService', () => {
     ]);
   });
 
+  it('keeps going, and says the recap is skipped, when a claim cannot be given back', async () => {
+    const deps = build();
+    deps.recapService.getRecap.mockRejectedValue(new Error('read down'));
+    deps.claims.release.mockRejectedValue(new Error('release down'));
+
+    await expect(deps.service.sweep(NOW)).resolves.toBe(0);
+
+    // Both members were tried; neither release failure stopped the sweep.
+    expect(deps.claims.release).toHaveBeenCalledTimes(2);
+  });
+
   it("goes on to the next chapter when one chapter's read fails", async () => {
     const deps = build();
     deps.chapterRepo.findForRecapPush.mockResolvedValue([
       { ...CHAPTER, id: 'chap-broken' },
       CHAPTER,
     ]);
-    deps.rbac.getChapterMemberAccess.mockRejectedValueOnce(new Error('down'));
+    deps.rbac.findUserIdsWithAnyPermissions.mockRejectedValueOnce(
+      new Error('down'),
+    );
     await expect(deps.service.sweep(NOW)).resolves.toBe(2);
   });
 });
