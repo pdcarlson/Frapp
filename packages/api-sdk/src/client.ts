@@ -1,4 +1,5 @@
 import createClient, { Middleware } from "openapi-fetch";
+import { failureOf } from "./api-error";
 import { createFirstScreenBatchMiddleware } from "./first-screen-batch";
 import { mintRequestId, REQUEST_ID_HEADER } from "./request-id";
 
@@ -44,7 +45,157 @@ export interface FrappClientConfig {
    * sends every read on its own route as before.
    */
   batchFirstScreenReads?: boolean;
+  /**
+   * Replaces {@link requestTimeoutMs}'s choice for every request; a test can
+   * shorten it. Unset, each request gets its own limit.
+   */
+  requestTimeoutMs?: number;
 }
+
+/**
+ * How long an API request may wait for its response (#3433), as
+ * `spec/ui/resilience/api-retry.md` § Per-Endpoint Timeout Configuration
+ * sets it: 15s for a read, 20s for a write, 10s for what the member is
+ * watching (search, a chat send), and 90s for the calls that answer only once
+ * slow work is done (a model call, a Discord scan).
+ *
+ * Nothing else bounds it on Android. React Native's OkHttp client is built
+ * with connect, read and write timeouts of 0 ("no timeout"), so a request on a
+ * half-open connection (a Wi-Fi to cellular handoff) never fails, its query
+ * sits in `isFetching` for good, and it holds one of OkHttp's five
+ * connections to the API host. Uploads don't go through this client (they
+ * `PUT` to a signed storage URL), so they aren't held to it.
+ *
+ * It bounds the whole response, body included, except a streamed one (Ask's,
+ * whose headers go out before the model starts), which it bounds only up to
+ * its headers.
+ */
+export const REQUEST_TIMEOUT_MS = {
+  read: 15_000,
+  write: 20_000,
+  watched: 10_000,
+  model: 90_000,
+} as const;
+
+/** The requests whose limit isn't their method's, by `METHOD schemaPath`. */
+const TIMEOUT_BY_ROUTE: Readonly<Record<string, number>> = {
+  "GET /v1/search": REQUEST_TIMEOUT_MS.watched,
+  "GET /v1/members/search": REQUEST_TIMEOUT_MS.watched,
+  // Idempotent by `client_message_id`, so a send cut off here and sent again
+  // lands once (`spec/ui/resilience/message-delivery.md`).
+  "POST /v1/channels/{id}/messages": REQUEST_TIMEOUT_MS.watched,
+  // A model call answered in the request, not streamed (Ask streams).
+  "POST /v1/ai/act": REQUEST_TIMEOUT_MS.model,
+  "POST /v1/ai/act/event-audience": REQUEST_TIMEOUT_MS.model,
+  "POST /v1/ai/catch-up": REQUEST_TIMEOUT_MS.model,
+  // Walks the guild's channels and their threads through Discord's REST API
+  // (rate-limited) before it answers.
+  "POST /v1/discord-imports/{id}/discover": REQUEST_TIMEOUT_MS.model,
+};
+
+/** The limit {@link REQUEST_TIMEOUT_MS} sets for one request. */
+export const requestTimeoutMs = (method: string, schemaPath: string): number =>
+  TIMEOUT_BY_ROUTE[`${method.toUpperCase()} ${schemaPath}`] ??
+  (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD"
+    ? REQUEST_TIMEOUT_MS.read
+    : REQUEST_TIMEOUT_MS.write);
+
+/**
+ * What a request that ran out of time fails with: a `TypeError` reading
+ * "Network request timed out", the shape React Native's own timeout has. So
+ * every reader of a dead request already knows it: `@repo/hooks`' `errorCopy`
+ * and `canTryAgain` (the connection copy, with Try again), the Sentry query
+ * reporter (`@repo/observability`, one `network` issue rather than an
+ * exception per screen), mobile check-in's `instanceof TypeError`, and the
+ * retry predicates, which retry a statusless failure.
+ */
+export class RequestTimeoutError extends TypeError {
+  constructor() {
+    super("Network request timed out");
+  }
+}
+
+/** Whether `error` is a request this client gave up on (#3433). */
+export const isRequestTimeout = (error: unknown): boolean =>
+  error instanceof RequestTimeoutError;
+
+/** A streamed answer, which runs as long as its body does: Ask's. */
+const isStream = (response: Response): boolean =>
+  (response.headers.get("Content-Type") ?? "").includes("text/event-stream");
+
+/** Statuses whose response may not carry a body (`new Response` refuses one). */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+/**
+ * `fetch`, failing with {@link RequestTimeoutError} when `timeoutOf(request)`
+ * runs out before the response is in, body included. A streamed response
+ * ({@link isStream}) is bounded only up to its headers, since its body runs as
+ * long as the answer does; any other body is read here, under the same limit,
+ * so a connection that goes half-open after the headers still fails.
+ *
+ * The caller's own `signal` (TanStack Query's when a query is cancelled,
+ * Ask's Stop) aborts the request for as long as it lives, body included: the
+ * request goes out on a controller that both abort. The global `fetch` is
+ * read per call, so an instrumented one (Sentry's) installed after the client
+ * was built is still the one used. The timeout also rejects by itself rather
+ * than only aborting, so a `fetch` that ignores its signal still lets go.
+ */
+const fetchWithTimeout =
+  (timeoutOf: (request: Request) => number) =>
+  async (request: Request, init?: RequestInit): Promise<Response> => {
+    const controller = new AbortController();
+    const callerSignal = request.signal as AbortSignal | null | undefined;
+    // Never removed: a stream's body outlives this function, and the caller
+    // must still be able to stop it. It goes with the caller's signal.
+    if (callerSignal?.aborted) controller.abort(callerSignal.reason);
+    else
+      callerSignal?.addEventListener(
+        "abort",
+        () => controller.abort(callerSignal.reason),
+        { once: true },
+      );
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new RequestTimeoutError();
+        controller.abort(error);
+        reject(error);
+      }, timeoutOf(request));
+    });
+    try {
+      const response = await Promise.race([
+        globalThis.fetch(request, { ...init, signal: controller.signal }),
+        timedOut,
+      ]);
+      if (isStream(response)) return response;
+      const body = NULL_BODY_STATUSES.has(response.status)
+        ? null
+        : await Promise.race([response.text(), timedOut]);
+      return new Response(body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+/** The client's request methods, each wrapped by {@link createFrappClient}. */
+const REQUEST_METHODS = [
+  "GET",
+  "PUT",
+  "POST",
+  "DELETE",
+  "OPTIONS",
+  "HEAD",
+  "PATCH",
+  "TRACE",
+  "request",
+] as const;
+
+type CallResult = { error?: unknown; response: Response };
 
 /**
  * Matches the API's `TIME_ZONE_HEADER`. The API records it per member so a
@@ -112,9 +263,38 @@ export const normalizeApiBaseUrl = (baseUrl: string): string => {
 };
 
 export const createFrappClient = (config: FrappClientConfig) => {
+  // Each request's limit, recorded by the last middleware from its schema
+  // path (which `fetch` never sees) for the request object `fetch` gets.
+  const timeouts = new WeakMap<Request, number>();
+  const timeoutOf = (request: Request): number =>
+    config.requestTimeoutMs ??
+    timeouts.get(request) ??
+    requestTimeoutMs(request.method, "");
+
   const client = createClient<paths>({
     baseUrl: normalizeApiBaseUrl(config.baseUrl),
+    fetch: fetchWithTimeout(timeoutOf),
   });
+
+  // A failed call always reports what it failed with, status included
+  // (#3394). openapi-fetch hands back a falsy `error` for a non-2xx with an
+  // empty body (an edge's 502), and most hooks end in `if (error) throw
+  // error; return data`, which then reads the failure as a success: the
+  // mutation's success toast fires for a write that never happened. Settled
+  // here, every hook throws it with its status, whatever its body.
+  const methods = client as unknown as Record<
+    (typeof REQUEST_METHODS)[number],
+    (...args: unknown[]) => Promise<CallResult>
+  >;
+  for (const name of REQUEST_METHODS) {
+    const call = methods[name];
+    methods[name] = async (...args) => {
+      const result = await call(...args);
+      return result.response.ok
+        ? result
+        : { ...result, error: failureOf(result) };
+    };
+  }
 
   const authMiddleware: Middleware = {
     async onRequest({ request }) {
@@ -162,6 +342,13 @@ export const createFrappClient = (config: FrappClientConfig) => {
   if (config.batchFirstScreenReads) {
     client.use(createFirstScreenBatchMiddleware());
   }
+  // Last, so the request it records is the one `fetch` is handed.
+  client.use({
+    onRequest({ request, schemaPath }) {
+      timeouts.set(request, requestTimeoutMs(request.method, schemaPath));
+      return undefined;
+    },
+  });
 
   return client;
 };

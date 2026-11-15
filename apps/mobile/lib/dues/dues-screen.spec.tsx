@@ -970,7 +970,8 @@ describe("Dues after a captured payment", () => {
   });
 
   it("switches Pay back on after the poll's budget when a poll read never answers", async () => {
-    // Android times no request out (#3433), so the poll can hang for good.
+    // A poll read can run to the client's request timeout (#3433) and past
+    // the window; the stub never answers.
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
       awaitPaid.mockReturnValue(new Promise<boolean>(() => {}));

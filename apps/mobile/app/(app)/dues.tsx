@@ -87,7 +87,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the hold lasts" for why), and with two or more open its accessibility hint
  * is the footnote naming the invoice a tap pays. The window has its own
  * deadline rather than waiting for the poll to settle, because a poll read
- * can hang for good on Android (#3433). The poll's PAID ends nothing on its
+ * can run to the client's request timeout (#3433) and its retries after it.
+ * The poll's PAID ends nothing on its
  * own: it makes the list re-read (`useAwaitInvoicePaid`'s onSettled), and the
  * "Paid …" line waits for that read, so the card never says Paid beside a
  * Pending chip.
@@ -154,16 +155,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * lands after the poll gives up still ends the hold in front of the member.
  * Re-reads wait for the viewer's id, so none goes out unfiltered.
  *
- * The re-reads join a read already in flight rather than cancelling it, so on
- * Android a read that never answers keeps the hold: nothing there times a
- * request out (#3433). The poll's own re-read as it ends
- * (`useAwaitInvoicePaid`'s invalidation), like any invoice invalidation, does
- * cancel the read in flight and send a fresh one. A tick doesn't restart a
- * stuck read. A fresh request could answer, but cancelling aborts nothing
- * (`useInvoices` passes no `signal`), so every restart would leave one more
- * request open on Android's timeout-free networking, and a read that is only
- * slow would be thrown away. Once #3433 adds a client-side timeout, a stuck
- * read ends in an error and the next tick sends a fresh one.
+ * The re-reads join a read already in flight rather than cancelling it. The
+ * poll's own re-read as it ends (`useAwaitInvoicePaid`'s invalidation), like
+ * any invoice invalidation, does cancel the read in flight and send a fresh
+ * one. A tick doesn't restart a stuck read, because a read that is only slow
+ * would be thrown away: the API client times every request out instead
+ * (15s for a read, #3433), so a read that never answers ends in an error
+ * after its one retry (about 30s) and the next tick sends a fresh one.
  *
  * ## What a visit resets
  *
@@ -220,9 +218,9 @@ const POLL_ATTEMPTS = 12;
 const POLL_INTERVAL_MS = 2000;
 /**
  * How long the CTA reads "Confirming payment…" after a sheet completes: the
- * poll's budget, about 24s, whether or not the poll has settled by then. On
- * Android a poll read can hang for good (#3433), and a window that waited for
- * it would keep Pay off for the rest of the session.
+ * poll's budget, about 24s, whether or not the poll has settled by then. A
+ * poll read can run to the client's request timeout (#3433), so a window that
+ * waited for the poll could keep Pay off well past it.
  */
 const CONFIRMING_WINDOW_MS = POLL_ATTEMPTS * POLL_INTERVAL_MS;
 
