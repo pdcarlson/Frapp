@@ -219,6 +219,22 @@ export function ChapterWizardGate() {
   if (createInUrl && !createLatched) setCreateLatched(true);
   const choseCreate = createInUrl || createLatched;
 
+  // Every latch here belongs to one account. A sign-in in another tab swaps
+  // the uid under a mounted shell (FrappProvider clears the cache but nothing
+  // remounts this), and the next account must start undecided, not inherit an
+  // open wizard or a Create a chapter choice (#5077 review). Reset only on a
+  // swap between two known accounts: the first uid (null → A) is the session
+  // arriving, and a Create a chapter visit may already have latched by then.
+  const [gateUserId, setGateUserId] = useState(authUserId);
+  if (authUserId !== gateUserId) {
+    setGateUserId(authUserId);
+    if (gateUserId !== null) {
+      setOpen(false);
+      setDismissed(false);
+      setCreateLatched(false);
+    }
+  }
+
   const memberships = asArray<unknown>(chaptersQuery.data);
   // Trigger: the user has zero chapter memberships. Once opened, the wizard
   // owns its own lifecycle (the membership count flips to 1 mid-flow after the
@@ -236,12 +252,22 @@ export function ChapterWizardGate() {
   // chapter** comes back marked (`isCreateChapterVisit`), and that visit skips
   // the read: the member chose to start a chapter, and sending them back to
   // `/join` would loop.
-  const checkInvites = hasNoChapters && !choseCreate;
+  //
+  // The read stops once the wizard is open: a later refetch (focus, reconnect)
+  // that turned up an invite would otherwise navigate away mid-setup and lose
+  // everything typed so far. And it decides only from a read that isn't being
+  // refreshed, because the cache can still hold an invite the member just
+  // redeemed on `/join` while its refetch is in flight.
+  const checkInvites = hasNoChapters && !choseCreate && !open;
   const pendingInvites = usePendingInvites(checkInvites ? authUserId : null);
+  const invitesFresh = !pendingInvites.isFetching;
   const inviteWaiting =
-    checkInvites && asArray<unknown>(pendingInvites.data).length > 0;
+    checkInvites &&
+    invitesFresh &&
+    asArray<unknown>(pendingInvites.data).length > 0;
   const invitesSettled =
-    !checkInvites || pendingInvites.isSuccess || pendingInvites.isError;
+    !checkInvites ||
+    (invitesFresh && (pendingInvites.isSuccess || pendingInvites.isError));
 
   useEffect(() => {
     if (inviteWaiting) router.replace("/join");

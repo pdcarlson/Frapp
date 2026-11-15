@@ -35,7 +35,9 @@ is expected — every pre-auth route, `/join` included, composes one column.
 
 The **onboarding wizard** is the second, and it is the harder one. It is never
 a route: `ChapterWizardGate` mounts it as a full-screen overlay when
-`GET /v1/chapters` comes back empty, so no `page.goto` reaches it and neither
+`GET /v1/chapters` comes back empty and `GET /v1/invites/mine` finds no invite
+waiting (one that does sends the account to `/join` instead, #5077, so a
+seeded run needs an account with neither), so no `page.goto` reaches it and neither
 suite can. `spec/ui/web-dashboard/README.md` asserted it held the floor for
 some time on nothing at all; that claim now says what is true instead.
 

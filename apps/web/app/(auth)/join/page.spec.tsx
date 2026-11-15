@@ -295,6 +295,17 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
     expect(screen.queryByText("Join in the Frapp app")).toBeNull();
   });
 
+  it("marks Create a chapter so chapter setup opens without bouncing back here (#5077)", async () => {
+    renderPage();
+
+    await screen.findByLabelText("Invite");
+    // Bare `/chat` would loop an account with an emailed invite: the wizard
+    // gate would find the invite and send it straight back to this page.
+    expect(
+      screen.getByRole("link", { name: "Create a chapter" }).getAttribute("href"),
+    ).toBe("/chat?setup=chapter");
+  });
+
   it("sends a signed-out desktop visitor straight to sign-in, as before", async () => {
     sessionUser.mockResolvedValue(null);
     searchParams.current = new URLSearchParams("token=abc");
