@@ -193,6 +193,7 @@ describe('InviteService', () => {
       findByIds: jest.fn(),
       isAnalyticsOptedOut: jest.fn(),
       findWithBirthdayChannel: jest.fn(),
+      findForRecapPush: jest.fn(),
       findBySubscriptionId: jest.fn(),
       findByCustomerId: jest.fn(),
       claimSubscriptionId: jest.fn(),

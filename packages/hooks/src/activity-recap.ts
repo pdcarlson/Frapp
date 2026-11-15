@@ -2,7 +2,11 @@
 
 import { useQuery } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
-import { formatMinutesRounded, formatWeekSpan } from "@repo/formatting";
+import {
+  formatWeekSpan,
+  recapFigures,
+  type RecapFigure as FormattedRecapFigure,
+} from "@repo/formatting";
 import { localWeekStart } from "./activity-standing";
 import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
@@ -77,14 +81,12 @@ export function recapWeek(now: Date = new Date()): {
   };
 }
 
-/** One figure on the recap card: "3" and "events". */
-export interface RecapFigure {
-  id: ActivityRecapPart;
-  figure: string;
-  label: string;
-  /** For a screen reader: the figure in a few words. */
-  spokenLabel: string;
-}
+/**
+ * One figure on the recap card: "3" and "events", worded by `recapFigures`
+ * in `@repo/formatting`, which the weekly recap push shares (#4985).
+ * `spokenLabel` is for a screen reader.
+ */
+export type RecapFigure = FormattedRecapFigure;
 
 /** The recap's card, or `null` when there is nothing to recap. */
 export interface RecapCard {
@@ -99,9 +101,6 @@ export interface RecapCard {
   dismissKey: string;
 }
 
-const plural = (count: number, one: string, many: string) =>
-  count === 1 ? one : many;
-
 /**
  * The recap as the card draws it. A part the chapter has off, that couldn't
  * be read, or that is zero is left out: the card is a digest of what the
@@ -115,60 +114,7 @@ export function activityRecapCard(
   // A recap still in the cache after Tuesday is not drawn: the query stops
   // reading then, but keeps what it read.
   if (!recapInSeason(now)) return null;
-  const figures: RecapFigure[] = [];
-  const {
-    events_attended,
-    tasks_done,
-    points,
-    service_minutes,
-    study_minutes,
-  } = recap;
-  if (events_attended) {
-    const label = plural(events_attended, "event", "events");
-    figures.push({
-      id: "events",
-      figure: String(events_attended),
-      label,
-      spokenLabel: `${events_attended} ${label} attended`,
-    });
-  }
-  if (tasks_done) {
-    const label = plural(tasks_done, "task done", "tasks done");
-    figures.push({
-      id: "tasks",
-      figure: String(tasks_done),
-      label,
-      spokenLabel: `${tasks_done} ${label}`,
-    });
-  }
-  if (points) {
-    const label = plural(Math.abs(points), "point", "points");
-    figures.push({
-      id: "points",
-      figure: points > 0 ? `+${points}` : String(points),
-      label,
-      spokenLabel:
-        points > 0 ? `${points} ${label} earned` : `${-points} ${label} lost`,
-    });
-  }
-  if (service_minutes) {
-    const time = formatMinutesRounded(service_minutes);
-    figures.push({
-      id: "service",
-      figure: time,
-      label: "service",
-      spokenLabel: `${time} of service`,
-    });
-  }
-  if (study_minutes) {
-    const time = formatMinutesRounded(study_minutes);
-    figures.push({
-      id: "study",
-      figure: time,
-      label: "studied",
-      spokenLabel: `${time} studied`,
-    });
-  }
+  const figures: RecapFigure[] = recapFigures(recap);
   if (figures.length === 0) return null;
   return {
     range: weekRange(new Date(recap.start), new Date(recap.end)),

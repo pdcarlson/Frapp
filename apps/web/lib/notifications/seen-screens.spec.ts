@@ -12,6 +12,11 @@ describe("notificationScreensForPath", () => {
       "ai_suggestions",
     ]);
     expect(notificationScreensForPath("/members")).toEqual(["members"]);
+    // Task reviews, and the weekly recap push (#4985).
+    expect(notificationScreensForPath("/activity")).toEqual([
+      "tasks",
+      "activity",
+    ]);
     // Suggested tasks are reviewed on the board and under their minutes.
     expect(notificationScreensForPath("/tasks")).toEqual([
       "tasks",

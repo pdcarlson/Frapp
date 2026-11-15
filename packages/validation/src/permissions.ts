@@ -115,6 +115,16 @@ export const MEMBER_JOINED_AUDIENCE: readonly (readonly string[])[] = [
   ["members:view", "roles:manage"],
 ];
 
+/**
+ * Who is sent the weekly recap push (#4985): whoever can read the recap,
+ * `GET /v1/activity/recap`'s permission. `ActivityRecapPushService` in the API
+ * sends to them, and the `recap` row of `NOTIFICATION_CATEGORIES` is drawn
+ * for them.
+ */
+export const RECAP_PUSH_AUDIENCE: readonly (readonly string[])[] = [
+  ["members:view"],
+];
+
 /** Does `permissions` satisfy every permission in at least one of `sets`? */
 export function canAllOfAny(
   sets: readonly (readonly string[])[],

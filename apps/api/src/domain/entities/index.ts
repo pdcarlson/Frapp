@@ -1,4 +1,5 @@
 export * from './activity-item-read.entity';
+export * from './activity-recap-push.entity';
 export * from './ai-consent.entity';
 export * from './ai-report.entity';
 export * from './ai-run.entity';

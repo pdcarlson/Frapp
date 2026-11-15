@@ -96,6 +96,8 @@ describe("notificationLook", () => {
     expect(tile("events").kind).toBe("events");
     expect(tile("billing").kind).toBe("billing");
     expect(tile("chat_reports").kind).toBe("reports");
+    // The weekly recap push (#4985).
+    expect(tile("activity").kind).toBe("recap");
     expect(tile("something-new").kind).toBe("other");
     expect(notificationLook({ title: "t", body: null, data: null }).kind).toBe(
       "other",
