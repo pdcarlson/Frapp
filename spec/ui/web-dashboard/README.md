@@ -1013,7 +1013,7 @@ These are the places it departs from the board, recorded here so they read as de
   The standalone `/home` overview was removed in the chat-first rework; chapter health at a glance is meant to become the pulse card, an inline chat artifact that is designed but not built yet ([`spec/behavior/chat/catch-up.md`](../../behavior/chat/catch-up.md)).
   Users with zero permissions land on `/no-access`, which explains how to request a role without dumping them back to sign-in.
   The shell sends them there once `GET /v1/users/me/permissions` has answered with an empty set ([`no-access-redirect.tsx`](../../../apps/web/components/layout/no-access-redirect.tsx)), never while that read is loading or after it failed with nothing cached, and only when the active chapter is their only one: `/no-access` has no chapter switcher, so a member of another chapter stays in the shell, where they can switch.
-  An account with no chapter at all gets the chapter wizard instead.
+  An account with no chapter at all gets the chapter wizard instead, unless an invite was emailed to it: then it is sent to `/join`, which offers that invite ([`onboarding.md`](../../behavior/onboarding.md), #5077).
   *Corrected 2026-11-06 ([#3236](https://github.com/pdcarlson/Frapp/issues/3236)):* until then nothing routed anyone to `/no-access`, so a role-less member landed on `/chat`, where every read 403s because the chat endpoints require `members:view`.
 - **Unauthenticated deep links keep their destination.**
   [`apps/web/proxy.ts`](../../../apps/web/proxy.ts) guards every protected prefix: with no Supabase session it redirects to `/sign-in?redirectTo=<pathname + search>`, and once a session exists the same proxy returns the caller there instead of the `/chat` default.
