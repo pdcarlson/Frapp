@@ -6,7 +6,7 @@ import {
   type User,
 } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { signOutCurrentSession } from "@/lib/auth/session";
+import { signOutCurrentSession, signingOutHere } from "@/lib/auth/session";
 import { reportAuthFailure } from "@/lib/sentry/auth-failures";
 
 /**
@@ -49,6 +49,29 @@ export function isSessionOver(result: {
     error.status !== 429
   );
 }
+
+/**
+ * Auth's verdict on a session this browser held when it asked. A session
+ * revoked elsewhere (sign out everywhere, a password change) comes back from
+ * GoTrue as `session_not_found`, which auth-js turns into
+ * `AuthSessionMissingError`, not an `AuthApiError`, and auth-js has already
+ * dropped the stored session by the time `getUser()` returns (#4440). Read
+ * alone, that error means "never signed in", so it counts as over only when
+ * a local session existed before the call. Its report names the code, which
+ * the error itself doesn't carry.
+ */
+export function sessionVerdict(
+  result: { data: { user: unknown }; error: unknown },
+  hadLocalSession: boolean,
+): { over: boolean; code?: string } {
+  if (hadLocalSession && isAuthSessionMissingError(result.error)) {
+    return { over: true, code: REVOKED_SESSION_CODE };
+  }
+  return { over: isSessionOver(result) };
+}
+
+/** GoTrue's code for a revoked session, which `AuthSessionMissingError` drops. */
+const REVOKED_SESSION_CODE = "session_not_found";
 
 let checking = false;
 /** Set once this tab is on its way to `/sign-in` with the notice. */
@@ -97,7 +120,8 @@ export function leaveWhenSignedOutElsewhere(): void {
  *
  * A 401 that lands after the local session is already gone (a slow read from
  * the burst) has nothing left to sign out, so it returns before asking Auth,
- * whose "no session" answer would otherwise read as another ended session.
+ * whose "no session" answer would otherwise read as another ended session:
+ * past that check, `sessionVerdict` reads "no session" as a revoke (#4440).
  */
 export async function handleRejectedSession(): Promise<void> {
   if (checking) return;
@@ -107,7 +131,9 @@ export async function handleRejectedSession(): Promise<void> {
     const { data: local } = await supabase.auth.getSession();
     if (!local.session) return;
     const verdict = await supabase.auth.getUser();
-    if (!isSessionOver(verdict)) return;
+    // This tab's own sign-out drops the session too; that isn't a revoke.
+    const { over, code } = sessionVerdict(verdict, !signingOutHere());
+    if (!over) return;
     // Auth's reason (`user_not_found` for an account deleted elsewhere,
     // `session_not_found` for a revoked one) is the count; a code nobody
     // expects here (`bad_jwt`) is a fault (#3832).
@@ -115,6 +141,7 @@ export async function handleRejectedSession(): Promise<void> {
       flow: "session_check",
       screen: window.location.pathname,
       error: verdict.error,
+      code,
     });
     // Before the sign-out: its `SIGNED_OUT` reaches the identity effect in
     // `frapp-client-provider.tsx`, which must not send this tab to a bare
@@ -139,14 +166,15 @@ export async function handleRejectedSession(): Promise<void> {
  * The signed-in user, for a page that sends a signed-out visitor to sign in
  * itself (`/join`, `/check-in`), which names itself as `screen` for the
  * failure report. Null when there is no live session, and once Auth judges
- * the browser's session over (`isSessionOver`) the local one is cleared first.
+ * the browser's session over (`sessionVerdict`) the local one is cleared first.
  *
  * Clearing it is the point (#3776). `proxy.ts` decides with `getSession()`,
  * which trusts the cookie, while this asks Auth. With a cookie Auth no longer
- * accepts (an account deleted elsewhere, a session revoked by a sign-out on
- * another device), the page sent the visitor to `/sign-in`, the proxy saw the
- * cookie and sent them straight back to `/join`, and the page sat on its
- * skeleton in that loop for good.
+ * accepts (an account deleted elsewhere), the page sent the visitor to
+ * `/sign-in`, the proxy saw the cookie and sent them straight back to
+ * `/join`, and the page sat on its skeleton in that loop for good. A session
+ * revoked by a sign-out on another device never looped: auth-js drops the
+ * stored session itself on that answer, so this only reports it (#4440).
  *
  * Throws when Auth could not be asked (an outage is not a verdict, as in
  * `isSessionOver`), so the page shows its retryable error instead of signing
@@ -156,15 +184,20 @@ export async function getLiveSessionUser(
   screen: "/join" | "/check-in" = "/join",
 ): Promise<User | null> {
   const supabase = createSupabaseBrowserClient();
+  // Read before asking Auth, never alongside it: a revoked session comes back
+  // as "no session" (`sessionVerdict`) and auth-js has dropped the stored one
+  // by then, so only this read tells it from a visitor who never had one.
+  const { data: local } = await supabase.auth.getSession();
   const result = await supabase.auth.getUser();
   if (result.data.user) return result.data.user;
-  // No session in this browser at all: nothing to clear.
-  if (isAuthSessionMissingError(result.error)) return null;
-  if (!isSessionOver(result)) {
-    reportAuthFailure({ flow: "session_check", screen, error: result.error });
-    throw result.error;
-  }
-  reportAuthFailure({ flow: "session_check", screen, error: result.error });
+  const { over, code } = sessionVerdict(
+    result,
+    Boolean(local.session) && !signingOutHere(),
+  );
+  // No session in this browser at all: nothing to clear, nothing to report.
+  if (!over && isAuthSessionMissingError(result.error)) return null;
+  reportAuthFailure({ flow: "session_check", screen, error: result.error, code });
+  if (!over) throw result.error;
   await signOutCurrentSession({ scope: "local" });
   return null;
 }

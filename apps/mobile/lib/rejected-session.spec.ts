@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthApiError, AuthRetryableFetchError } from "@supabase/supabase-js";
+import {
+  AuthApiError,
+  AuthRetryableFetchError,
+  AuthSessionMissingError,
+} from "@supabase/supabase-js";
 import { createRejectedSessionHandler, isSessionOver } from "./rejected-session";
 
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
@@ -68,6 +72,51 @@ describe("createRejectedSessionHandler", () => {
       flow: "session_check",
       error: { code: "user_not_found" },
     });
+  });
+
+  it("ends a session revoked elsewhere, which Auth answers as no session (#4440)", async () => {
+    const supabase = fakeSupabase({
+      data: { user: null },
+      error: new AuthSessionMissingError(),
+    });
+    const signOut = vi.fn(async () => {});
+    const notify = vi.fn();
+    const handle = createRejectedSessionHandler({
+      getSupabase: () => supabase as never,
+      signOut,
+      notify,
+    });
+
+    handle();
+    await flush();
+
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(reportAuthFailure.mock.calls[0]![0]).toMatchObject({
+      flow: "session_check",
+      code: "session_not_found",
+    });
+  });
+
+  it("asks Auth nothing once the local session is gone", async () => {
+    const supabase = fakeSupabase({
+      data: { user: null },
+      error: new AuthSessionMissingError(),
+    });
+    supabase.signOutLocally();
+    const signOut = vi.fn(async () => {});
+    const handle = createRejectedSessionHandler({
+      getSupabase: () => supabase as never,
+      signOut,
+      notify: vi.fn(),
+    });
+
+    handle();
+    await flush();
+
+    expect(supabase.auth.getUser).not.toHaveBeenCalled();
+    expect(signOut).not.toHaveBeenCalled();
+    expect(reportAuthFailure).not.toHaveBeenCalled();
   });
 
   it("leaves a session Auth still recognises", async () => {
