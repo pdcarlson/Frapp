@@ -719,7 +719,8 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   A finished task or event links to Tasks or Events; a finished points change links nowhere, because the phone has no points page.
 - **Every card has Edit beside Cancel and Confirm** (Paul, 2026-11-15, #5117).
   An event's Edit opens the ordinary New event form filled in from the card, with More options open (who's coming by role, the end, notes, the repeat), and Create in that form is the confirm: the event is made through the event route and the proposal records it, without making a second.
-  If the proposal can no longer record it (a day passed), the event is still made and the card still says it was added.
+  The event is made either way, and the card says it was added.
+  If the form's answer carries no event id, or the proposal can no longer record it, the proposal is taken down instead, so it is never drawn again with a Confirm that would make the event a second time.
   A task's Edit opens the task form on the phone (as Confirm on a task missing who or when already did) and turns the task's name and details into fields on web, where who and when are already fields on the card.
   A points card's Edit turns its amount and reason into fields on the card, on both; Confirm then sends only what changed.
   The forms keep what was typed when closed, as every form does (#4593).
@@ -728,8 +729,8 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   - **Give or take away points** (`points:adjust`), for members named, for everyone who holds a role, or for everyone who came to an event.
   - **Create a task** for one member (`tasks:manage`).
   - **Put one event, or a repeating series, on the calendar** (`events:create`), open to the whole chapter.
-    A series is weekly, every other week or monthly, on the first meeting's weekday or day of the month, as long as the event form's own default (13 meetings weekly, 7 every other week or monthly), and the card says so ("Repeats: Every Sunday, 13 times, the last on Sunday, February 7, 2027").
-    Who is invited by role, a check-in zone, a longer or shorter series and anything else the card does not show are set through the card's Edit.
+    A series is weekly, every other week or monthly, on the first meeting's weekday or day of the month, as long as the event form's own default (13 meetings weekly or every other week, 7 monthly), and the card says so ("Repeats: Every Sunday, 13 times, the last on Sunday, February 7, 2027").
+    Who is invited by role, a longer or shorter series and anything else the card does not show are set through the card's Edit (and a check-in zone on web, whose event form is the only one with it).
     *(Changed in #5117 by pdcarlson, 2026-11-15: until then a proposal was always one event, and "every Sunday at 6:48 PM" came back as one hour-long event with the repeat silently dropped.)*
 - **Through the tool loop, a card can rest on what Frapp read** (changed in #4899 by pdcarlson, 2026-11-13, approved by Paul the same day; off with the loop, `ASK_AGENT=on`).
   The model that reads the chapter is also offered the three actions, for a member who holds `ai:act` in a client that draws cards, so "make a task for each action item in last night's minutes" reads the minutes and comes back with a card for each.
@@ -743,7 +744,7 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   What this changes about a planted message is in [`ai-prompt-injection.md` § The tool loop](../../docs/security/ai-prompt-injection.md#the-tool-loop-added-2026-11-13-epic-4898).
 - **Both clients draw the cards an answer comes with** (added in #4904 by pdcarlson, 2026-11-14, the building session's, Paul's to change; off with the loop).
   Web and the phone send `answer_cards` whenever they ask for a card.
-  The cards sit under the answer's words and sources, in the order the server named them, each with its own Confirm and Cancel; deciding one leaves the others waiting.
+  The cards sit under the answer's words and sources, in the order the server named them, each with its own Cancel, Edit and Confirm; deciding one leaves the others waiting.
   A card that ended becomes one line in its place saying what happened, as a turn's single card does, and still says what it was about.
   The cards are read from the asker's own waiting requests; one that is no longer among them (decided on another device, or its day passed) reads "This is no longer waiting.
   Ask again." in the card's place.
@@ -774,7 +775,7 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   A points change reads "Give 5 points to 42 members", with "210 points in all, in 42 separate changes" under it, the reason, and the members listed.
   The officer can take a member off or add one before confirming.
   A task card lets them pick who and when.
-  An event card shows the name, the time written out in full, the place, whether it is required, and the points.
+  An event card shows the name, the time written out in full, how a series repeats, the place, whether it is required, and the points.
 - **An officer cannot change their own points,** so they are left off a points change that would include them, and the card says so.
 - **A waiting card is a [suggestion](#suggestions)** only the officer who asked can open.
   It is not in the Suggested list, sends no push, and is gone after one day.

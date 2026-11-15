@@ -183,6 +183,38 @@ export function useAcceptAiSuggestion() {
   });
 }
 
+/**
+ * Settles an event Ask proposed once the member made it in the event form
+ * from the card's Edit (#5117): records it on the proposal, or, if that
+ * can't land (the proposal expired, the network dropped, or the form's answer
+ * carried no id), takes the proposal down, so it is never drawn again with a
+ * Confirm that would make the event a second time. The event is made either
+ * way, so nothing here is the member's to fix and nothing is thrown. A
+ * proposal that can't be taken down either was already decided, or expires
+ * the next day.
+ */
+export async function settleProposedEvent(
+  mutations: {
+    accept: ReturnType<typeof useAcceptAiSuggestion>;
+    dismiss: ReturnType<typeof useDismissAiSuggestion>;
+  },
+  suggestionId: string,
+  eventId: string | null,
+): Promise<void> {
+  if (eventId) {
+    try {
+      await mutations.accept.mutateAsync({
+        id: suggestionId,
+        newEventId: eventId,
+      });
+      return;
+    } catch {
+      // Taken down below.
+    }
+  }
+  await mutations.dismiss.mutateAsync(suggestionId).catch(() => undefined);
+}
+
 export function useDismissAiSuggestion() {
   const client = useFrappClient();
   const drop = useDropFromLists();

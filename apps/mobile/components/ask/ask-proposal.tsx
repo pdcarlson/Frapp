@@ -6,11 +6,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   BottomSheetFlatList,
   BottomSheetModal,
   BottomSheetTextInput,
+  useBottomSheetInternal,
 } from "@gorhom/bottom-sheet";
 import { codeOf } from "@repo/api-sdk";
 import {
@@ -21,6 +22,7 @@ import {
   useChapterRoster,
   useCurrentUser,
   useDismissAiSuggestion,
+  settleProposedEvent,
   type ActResponse,
   type AiSuggestion,
   type AskCardEnd,
@@ -561,10 +563,14 @@ function CardField({
   styles: Styles;
 }) {
   const { tokens } = useFrappTheme();
+  // A card is drawn in the Ask sheet and also under a question asked in a
+  // channel, which is a screen: the sheet's own input throws outside a sheet.
+  const inSheet = useBottomSheetInternal(true) != null;
+  const Field = inSheet ? BottomSheetTextInput : TextInput;
   return (
     <View style={styles.cardRow}>
       <Text style={styles.eyebrow}>{label}</Text>
-      <BottomSheetTextInput
+      <Field
         value={value}
         onChangeText={onChangeText}
         accessibilityLabel={label}
@@ -676,9 +682,10 @@ function ActCard({
   } | null>(null);
   const shownAmount = useMemo(() => {
     if (!points || !editingPoints) return points?.amount ?? 0;
-    const read = actPointsEdits(points, amountInput, reasonInput || "-");
+    // The amount alone: a reason not yet written says nothing about it.
+    const read = actPointsEdits(points, amountInput, "-");
     return read.ok ? (read.edits.amount ?? points.amount) : points.amount;
-  }, [points, editingPoints, amountInput, reasonInput]);
+  }, [points, editingPoints, amountInput]);
   const pickerRef = useRef<BottomSheetModal>(null);
   useEffect(() => {
     if (formOpen) formRef.current?.present();
@@ -793,17 +800,12 @@ function ActCard({
   }
 
   // Create in the event form is the confirm: the form made the event through
-  // its own route, and the accept records it on this proposal. The event is
-  // made whatever the accept does, so the card says so either way; a
-  // proposal left waiting expires the next day.
+  // its own route, and the proposal records it (or is taken down). The event
+  // is made either way, so the card says so either way.
   async function recordMadeEvent(eventId: string | null) {
-    if (eventId) {
-      setDeciding(true);
-      await accept
-        .mutateAsync({ id: suggestion.id, newEventId: eventId })
-        .catch(() => undefined);
-      setDeciding(false);
-    }
+    setDeciding(true);
+    await settleProposedEvent({ accept, dismiss }, suggestion.id, eventId);
+    setDeciding(false);
     onDone(ACT_COPY.done_event, "events");
   }
 

@@ -462,7 +462,7 @@ describe('CreateEventActTool', () => {
     ).toMatchObject({
       payload: {
         recurrence_rule:
-          'FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;COUNT=7;TZID=America/New_York',
+          'FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;COUNT=13;TZID=America/New_York',
       },
     });
     expect(

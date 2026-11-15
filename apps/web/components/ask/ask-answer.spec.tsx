@@ -89,7 +89,11 @@ vi.mock("./ask-proposal", async (importOriginal) => ({
             type="button"
             onClick={() =>
               props.onEnded(id, {
-                resolution: { kind: "done", line: "Task created", page: "tasks" },
+                resolution: {
+                  kind: "done",
+                  line: "Task created",
+                  page: "tasks",
+                },
                 headline: null,
               })
             }
@@ -110,7 +114,10 @@ vi.mock("./ask-proposal", async (importOriginal) => ({
           <button
             type="button"
             onClick={() =>
-              props.onEnded(id, { resolution: { kind: "gone" }, headline: null })
+              props.onEnded(id, {
+                resolution: { kind: "gone" },
+                headline: null,
+              })
             }
           >
             gone {id}
@@ -814,7 +821,9 @@ describe("AskTurn", () => {
     it("say so when a rating did not send", () => {
       thumbs.state = { rating: null, reason: null };
       thumbs.failed = true;
-      show(exchange({ askId: "a-1", answer: { ...ANSWER, ask_id: "trace-1" } }));
+      show(
+        exchange({ askId: "a-1", answer: { ...ANSWER, ask_id: "trace-1" } }),
+      );
       expect(screen.getByRole("alert")).toHaveTextContent(
         ASK_FEEDBACK_COPY.failed,
       );

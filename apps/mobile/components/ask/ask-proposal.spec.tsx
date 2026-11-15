@@ -473,6 +473,9 @@ describe("a proposal in the Ask conversation", () => {
       const tree = show(EVENT);
       act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
       await act(async () => hooks.eventForm!.onCreated?.({ id: "ev-1" }));
+      // Taken down, so it is never drawn again with a Confirm that would
+      // make the event a second time.
+      expect(hooks.dismiss).toHaveBeenCalledWith("sg-4");
       expect(screenText(tree)).toContain(ACT_COPY.done_event);
     });
 

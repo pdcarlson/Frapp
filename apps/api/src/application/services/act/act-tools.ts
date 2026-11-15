@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import {
-  LEGACY_CHILD_COUNT,
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
   REPEAT_DEFAULT_COUNT,
@@ -370,9 +369,9 @@ export class CreateTaskActTool implements ActTool {
 
 /**
  * The repeat rule for a proposed series, in the event form's own format and
- * with its own default lengths (`repeat-draft.ts`): weekly and monthly as the
- * form's untouched Weekly and Monthly, every other week as the legacy
- * BIWEEKLY token. It keeps the wall clock of `timeZone`, the member's, and
+ * with its own default lengths (`REPEAT_DEFAULT_COUNT`): what the form's
+ * Weekly, Weekly every 2, and Monthly make when the officer changes nothing
+ * else (13, 13 and 7 meetings). It keeps the wall clock of `timeZone`, the member's, and
  * meets on the first meeting's weekday or day of the month. How long it runs
  * is the form's to change (the card's Edit).
  */
@@ -403,16 +402,11 @@ export function proposedRepeatRule(
     interval: everyOther ? 2 : 1,
     byDay: [weekday],
     monthDay: null,
-    end: {
-      kind: 'count',
-      count: everyOther
-        ? LEGACY_CHILD_COUNT.BIWEEKLY + 1
-        : REPEAT_DEFAULT_COUNT.WEEKLY,
-    },
+    end: { kind: 'count', count: REPEAT_DEFAULT_COUNT.WEEKLY },
   });
 }
 
-/** Put one event on the calendar. Mirrors `POST /v1/events`. */
+/** Put one event, or a series, on the calendar. Mirrors `POST /v1/events`. */
 @Injectable()
 export class CreateEventActTool implements ActTool {
   readonly name = 'create_event';

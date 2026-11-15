@@ -203,11 +203,17 @@ export function scriptedActPlan(request: LanguageModelRequest): ScriptedReply {
       /\bat the\s+(.+?)(?:\s+(?:on|at|for)\b|$)/i.exec(said)?.[1],
     );
     if (/\b(required|mandatory)\b/i.test(said)) plan.required = true;
-    if (/\b(every other|biweekly)\b/i.test(said)) {
+    // "every Sunday", "every week", "weekly"; never "every member".
+    const day = '(?:sun|mon|tues|wednes|thurs|fri|satur)day';
+    if (
+      new RegExp(`\\b(every other (?:week|${day})|biweekly)\\b`, 'i').test(said)
+    ) {
       plan.repeats = 'every_other_week';
     } else if (/\b(every month|monthly)\b/i.test(said)) {
       plan.repeats = 'monthly';
-    } else if (/\b(every|weekly)\b/i.test(said)) {
+    } else if (
+      new RegExp(`\\b(every (?:week|${day})|weekly)\\b`, 'i').test(said)
+    ) {
       plan.repeats = 'weekly';
     }
   }

@@ -11,6 +11,7 @@ import {
   useCurrentUser,
   useDismissAiSuggestion,
   useMembers,
+  settleProposedEvent,
   type ActResponse,
   type AiSuggestion,
   type AskCardEnd,
@@ -97,6 +98,9 @@ const RESULT_LINKS: Record<string, { href: string; label: string }> = {
   tasks: { href: "/tasks", label: ACT_COPY.open_tasks },
   events: { href: "/events", label: ACT_COPY.open_events },
 };
+
+/** The accept route's limit on a task suggestion's details. */
+const TASK_SUGGESTION_DETAILS_MAX_LENGTH = 2000;
 
 const CARD_FRAME = "rounded-[14px] border border-border bg-card p-3";
 
@@ -605,7 +609,8 @@ function ActCard({
           });
         }
         if (name !== task.title) changes.title = name;
-        const said = details.trim() || null;
+        const said =
+          details.trim().slice(0, TASK_SUGGESTION_DETAILS_MAX_LENGTH) || null;
         if (said !== (task.description ?? null)) changes.description = said;
       }
       if (!assigneeId || !due) return setFlagged(true);
@@ -680,14 +685,14 @@ function ActCard({
   }
 
   // Create in the event form is the confirm: the form made the event through
-  // its own route, and the accept records it on this proposal. The event is
-  // made whatever the accept does, so the card says so either way; a
-  // proposal left waiting expires the next day.
-  async function recordMadeEvent(eventId: string) {
-    await accept
-      .mutateAsync({ id: suggestion.id, newEventId: eventId })
-      .catch(() => undefined);
-    onDone(ACT_COPY.done_event, "events");
+  // its own route, and the proposal records it (or is taken down). The event
+  // is made either way, so the card says so either way. Not awaited by the
+  // form, which closes at once rather than offering Create again while this
+  // runs.
+  function recordMadeEvent(eventId: string) {
+    void settleProposedEvent({ accept, dismiss }, suggestion.id, eventId).then(
+      () => onDone(ACT_COPY.done_event, "events"),
+    );
   }
 
   const addable = members.filter(
@@ -854,6 +859,7 @@ function ActCard({
                   id={`${suggestion.id}-details`}
                   value={details}
                   rows={3}
+                  maxLength={TASK_SUGGESTION_DETAILS_MAX_LENGTH}
                   disabled={busy}
                   onChange={(change) => setDetails(change.target.value)}
                 />
