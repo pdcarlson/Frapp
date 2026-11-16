@@ -44,7 +44,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@/components/ai/report-ai", () => ({
-  ReportAiButton: () => null,
+  ReportAiDialog: () => null,
 }));
 
 // The form itself has its own spec (`event-editor-dialog.spec.tsx`).
@@ -79,6 +79,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     };
   },
   useCurrentUser: () => ({ data: { id: ME } }),
+  useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useMembers: () => ({
     isSuccess: true,
     data: [
@@ -92,6 +93,17 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 
 const { AskAnswerCards, AskProposal, AskCardEditsContext } =
   await import("./ask-proposal");
+
+/** The card's one named action: "Give 5 points", "Create task", "Create event" (#5148). */
+const CONFIRM = /^(Give|Take away) \d+ points?$|^Create (event|task)$/;
+
+/** Dismiss sits in the card's ··· menu (Paul, 2026-11-16, #5148). */
+async function dismissCard() {
+  await userEvent.click(await screen.findByRole("button", { name: /^More/ }));
+  await userEvent.click(
+    await screen.findByRole("menuitem", { name: ACT_COPY.dismiss }),
+  );
+}
 type AskCardEditsStore = import("./ask-proposal").AskCardEditsStore;
 
 const base = {
@@ -200,7 +212,7 @@ describe("AskProposal", () => {
     expect(state.accept).not.toHaveBeenCalled();
 
     await userEvent.click(
-      within(card).getByRole("button", { name: ACT_COPY.confirm }),
+      within(card).getByRole("button", { name: CONFIRM }),
     );
     // Unchanged, so no edits are sent.
     expect(state.accept).toHaveBeenCalledWith({ id: "suggestion-1" });
@@ -224,7 +236,7 @@ describe("AskProposal", () => {
     );
     expect(screen.getByText("Give 5 points to 1 member")).toBeDefined();
     await userEvent.click(
-      screen.getByRole("button", { name: ACT_COPY.confirm }),
+      screen.getByRole("button", { name: CONFIRM }),
     );
     expect(state.accept).toHaveBeenCalledWith({
       id: "suggestion-1",
@@ -240,7 +252,7 @@ describe("AskProposal", () => {
       ),
     ).toBeDefined();
     await userEvent.click(
-      screen.getByRole("button", { name: ACT_COPY.confirm }),
+      screen.getByRole("button", { name: CONFIRM }),
     );
     expect(state.accept).not.toHaveBeenCalled();
     expect(screen.getByText(ACT_COPY.no_members)).toBeDefined();
@@ -263,9 +275,7 @@ describe("AskProposal", () => {
   it("cancels a card without changing anything", async () => {
     state.dismiss.mockResolvedValue({});
     show(pointsCard([JORDAN]));
-    await userEvent.click(
-      await screen.findByRole("button", { name: ACT_COPY.cancel }),
-    );
+    await dismissCard();
     expect(state.dismiss).toHaveBeenCalledWith("suggestion-1");
     expect(state.accept).not.toHaveBeenCalled();
     expect(await screen.findByText(ACT_COPY.cancelled)).toBeDefined();
@@ -282,13 +292,13 @@ describe("AskProposal", () => {
     });
     show(pointsCard([JORDAN]));
     await userEvent.click(
-      await screen.findByRole("button", { name: ACT_COPY.confirm }),
+      await screen.findByRole("button", { name: CONFIRM }),
     );
     expect((await screen.findByRole("alert")).textContent).toBe(
       ACT_COPY.refused_confirm["ai.suggestion.points.over_limit"],
     );
     expect(
-      screen.getByRole("button", { name: ACT_COPY.confirm }),
+      screen.getByRole("button", { name: CONFIRM }),
     ).toBeDefined();
   });
 
@@ -302,15 +312,13 @@ describe("AskProposal", () => {
       state.accept.mockRejectedValue({ status: 409, code });
       show(pointsCard([JORDAN]));
       await userEvent.click(
-        await screen.findByRole("button", { name: ACT_COPY.confirm }),
+        await screen.findByRole("button", { name: CONFIRM }),
       );
       expect(await screen.findByText(ACT_COPY.gone)).toBeDefined();
       expect(
-        screen.queryByRole("button", { name: ACT_COPY.confirm }),
+        screen.queryByRole("button", { name: CONFIRM }),
       ).toBeNull();
-      expect(
-        screen.queryByRole("button", { name: ACT_COPY.cancel }),
-      ).toBeNull();
+      expect(screen.queryByRole("button", { name: /^More/ })).toBeNull();
       expect(screen.queryByText(ACT_COPY.cancelled)).toBeNull();
     },
   );
@@ -321,9 +329,7 @@ describe("AskProposal", () => {
       code: "ai.suggestion.decided",
     });
     show(pointsCard([JORDAN]));
-    await userEvent.click(
-      await screen.findByRole("button", { name: ACT_COPY.cancel }),
-    );
+    await dismissCard();
     expect(await screen.findByText(ACT_COPY.gone)).toBeDefined();
     expect(screen.queryByText(ACT_COPY.cancelled)).toBeNull();
   });
@@ -334,9 +340,7 @@ describe("AskProposal", () => {
       code: "ai.suggestion.not_found",
     });
     show(pointsCard([JORDAN]));
-    await userEvent.click(
-      await screen.findByRole("button", { name: ACT_COPY.cancel }),
-    );
+    await dismissCard();
     expect(await screen.findByText(ACT_COPY.cancelled)).toBeDefined();
   });
 
@@ -360,7 +364,7 @@ describe("AskProposal", () => {
     expect(await screen.findByText("Give 5 points to 1 member")).toBeDefined();
     expect(screen.queryByText("Jacob Miller")).toBeNull();
     await userEvent.click(
-      screen.getByRole("button", { name: ACT_COPY.confirm }),
+      screen.getByRole("button", { name: CONFIRM }),
     );
     expect(state.accept).toHaveBeenCalledWith({
       id: "suggestion-1",
@@ -394,10 +398,9 @@ describe("AskProposal", () => {
     it("says a series repeats, written out", async () => {
       series();
       expect(
-        await screen.findByText(
-          "Every Sunday, 13 times, the last on Sunday, February 7, 2027",
-        ),
+        await screen.findByText("Every Sunday until February 7, 2027"),
       ).toBeDefined();
+      expect(screen.getByText("13 times")).toBeDefined();
     });
 
     it("opens the event form filled in from the card, and Create there is the confirm", async () => {
@@ -444,7 +447,7 @@ describe("AskProposal", () => {
       await userEvent.clear(amount);
       await userEvent.type(amount, "0");
       await userEvent.click(
-        screen.getByRole("button", { name: ACT_COPY.confirm }),
+        screen.getByRole("button", { name: CONFIRM }),
       );
       expect(state.accept).not.toHaveBeenCalled();
       expect(screen.getByText(ACT_COPY.bad_amount)).toBeDefined();
@@ -455,7 +458,7 @@ describe("AskProposal", () => {
         screen.getByText("Take 10 points away from 2 members"),
       ).toBeDefined();
       await userEvent.click(
-        screen.getByRole("button", { name: ACT_COPY.confirm }),
+        screen.getByRole("button", { name: CONFIRM }),
       );
       expect(state.accept).toHaveBeenCalledWith({
         id: "suggestion-1",
@@ -483,7 +486,7 @@ describe("AskProposal", () => {
       const name = screen.getByLabelText(ACT_COPY.field_task_name);
       await userEvent.clear(name);
       await userEvent.click(
-        screen.getByRole("button", { name: ACT_COPY.confirm }),
+        screen.getByRole("button", { name: CONFIRM }),
       );
       expect(screen.getByText(ACT_COPY.no_task_name)).toBeDefined();
       await userEvent.type(name, "Book the bus for formal");
@@ -492,7 +495,7 @@ describe("AskProposal", () => {
         "Two buses, 60 seats",
       );
       await userEvent.click(
-        screen.getByRole("button", { name: ACT_COPY.confirm }),
+        screen.getByRole("button", { name: CONFIRM }),
       );
       expect(state.accept).toHaveBeenCalledWith({
         id: "suggestion-1",
@@ -519,7 +522,7 @@ describe("AskProposal", () => {
     });
     expect(await screen.findByText("Book the bus")).toBeDefined();
     await userEvent.click(
-      screen.getByRole("button", { name: ACT_COPY.confirm }),
+      screen.getByRole("button", { name: CONFIRM }),
     );
     expect(state.accept).not.toHaveBeenCalled();
     expect(screen.getByText(ACT_COPY.need_assignee)).toBeDefined();
@@ -540,16 +543,61 @@ describe("AskProposal", () => {
         is_mandatory: false,
       }),
     });
+    expect(await screen.findByText("Tuesday, November 17")).toBeDefined();
+    expect(screen.getByText(/^7:00 to 8:00\sPM · Library$/)).toBeDefined();
+    expect(screen.getByText("TUE")).toBeDefined();
+    expect(screen.getByText(ACT_COPY.everyone_optional)).toBeDefined();
+    // Nobody said the points and nothing matched (Paul, 2026-11-16): the
+    // field is empty and marked, and the card waits for it.
+    expect(screen.getByText(ACT_COPY.points_missing)).toBeDefined();
+    await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
+    expect(state.accept).not.toHaveBeenCalled();
     expect(
-      await screen.findByText("Tuesday, November 17, 7:00 PM to 8:00 PM"),
-    ).toBeDefined();
-    expect(screen.getByText("Library")).toBeDefined();
-    expect(screen.getByText(ACT_COPY.optional)).toBeDefined();
-    expect(screen.getByText(ACT_COPY.default_points)).toBeDefined();
-    await userEvent.click(
-      screen.getByRole("button", { name: ACT_COPY.confirm }),
+      (await screen.findByRole("alert")).textContent,
+    ).toBe(ACT_COPY.bad_event_points);
+    await userEvent.type(
+      screen.getByLabelText(ACT_COPY.points_label),
+      "0",
     );
+    await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
+    expect(state.accept).toHaveBeenCalledWith({
+      id: "suggestion-1",
+      newEventPoints: 0,
+    });
+    // It stays in place, greyed, with what was made and a link to it.
     expect(await screen.findByText(ACT_COPY.done_event)).toBeDefined();
+    expect(screen.getByText("Study night")).toBeDefined();
+    expect(screen.getByText("No points")).toBeDefined();
+    expect(
+      screen
+        .getByRole("link", { name: ACT_COPY.open_event })
+        .getAttribute("href"),
+    ).toBe("/events?event=e");
+  });
+
+  it("shows points copied from the chapter's event type, and where from", async () => {
+    show({
+      ...base,
+      action: "create_event",
+      suggestion: suggestion("new_event", {
+        name: "Chapter",
+        description: null,
+        location: null,
+        start_time: "2026-11-22T18:48:00",
+        end_time: "2026-11-22T19:48:00",
+        point_value: 10,
+        points_from: { kind: "type", name: "Chapter meeting" },
+        event_type_id: null,
+        is_mandatory: true,
+        recurrence_rule: null,
+      }),
+    });
+    expect(await screen.findByText("10 points")).toBeDefined();
+    expect(
+      screen.getByText("From your Chapter meeting event type"),
+    ).toBeDefined();
+    expect(screen.getByText(ACT_COPY.everyone_required)).toBeDefined();
+    expect(screen.queryByText(ACT_COPY.points_missing)).toBeNull();
   });
 
   it("asks which event, and sends the pick with the amount it was given", async () => {
@@ -649,11 +697,11 @@ describe("AskProposal", () => {
       }),
     });
     await userEvent.click(
-      screen.getByRole("button", { name: ACT_COPY.confirm }),
+      screen.getByRole("button", { name: CONFIRM }),
     );
     expect(await screen.findByText(ACT_COPY.done_task)).toBeDefined();
     expect(screen.getByText("Book the bus")).toBeDefined();
-    expect(screen.queryByRole("button", { name: ACT_COPY.confirm })).toBeNull();
+    expect(screen.queryByRole("button", { name: CONFIRM })).toBeNull();
     expect(
       screen
         .getByRole("link", { name: ACT_COPY.open_tasks })
@@ -703,15 +751,18 @@ describe("AskAnswerCards", () => {
     render(<Cards ids={["s1", "s2"]} />);
     expect(screen.getByText("Buy cups")).toBeDefined();
     expect(screen.getByText("Book the hall")).toBeDefined();
-    const cancels = screen.getAllByRole("button", { name: ACT_COPY.cancel });
-    expect(cancels).toHaveLength(2);
-    await userEvent.click(cancels[0]!);
+    const menus = screen.getAllByRole("button", { name: /^More/ });
+    expect(menus).toHaveLength(2);
+    await userEvent.click(menus[0]!);
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: ACT_COPY.dismiss }),
+    );
     expect(state.dismiss).toHaveBeenCalledWith("s1");
     expect(await screen.findByText(ACT_COPY.cancelled)).toBeDefined();
     // The line still says what the card was about.
     expect(screen.getByText("Buy cups")).toBeDefined();
     expect(
-      screen.getAllByRole("button", { name: ACT_COPY.confirm }),
+      screen.getAllByRole("button", { name: CONFIRM }),
     ).toHaveLength(1);
     // Only the card still waiting is asked for again.
     expect(state.cards.asked.at(-1)).toEqual(["s2"]);

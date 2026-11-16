@@ -2,7 +2,21 @@
 
 import Link from "next/link";
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import {
+  AlignLeft,
+  CalendarDays,
+  CircleCheck,
+  CircleX,
+  Clock,
+  ListChecks,
+  MoreHorizontal,
+  Repeat,
+  Star,
+  User,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import {
   errorCopy,
   useAcceptAiSuggestion,
@@ -11,6 +25,7 @@ import {
   useCurrentUser,
   useDismissAiSuggestion,
   useMembers,
+  useMyPermissions,
   settleProposedEvent,
   type ActResponse,
   type AiSuggestion,
@@ -24,21 +39,29 @@ import { codeOf } from "@repo/api-sdk";
 import { dueEntryFields, dueEntryFromTask } from "@repo/formatting";
 import {
   ACT_COPY,
+  AI_REPORT_COPY,
   ASK_CARDS_COPY,
   actActionLabel,
+  actEventPointsInput,
+  actEventPointsLine,
+  actPointsAction,
+  actPointsFromLine,
+  actRepeatParts,
+  actWhenParts,
   actMissingLine,
   actNoteLine,
   actPointsDoneLine,
   actPointsEdits,
-  actRepeatLine,
   actAttendanceLine,
   actConfirmRefusalLine,
+  can,
   actPointsHeadline,
   actPointsTotalLine,
   actWhenLine,
+  meetingDueLabel,
   TASK_TITLE_MAX_LENGTH,
 } from "@repo/validation";
-import { ReportAiButton } from "@/components/ai/report-ai";
+import { ReportAiDialog } from "@/components/ai/report-ai";
 import {
   DueDateField,
   dueEntryPassed,
@@ -48,6 +71,12 @@ import { isoToLocalInput } from "@/components/events/local-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
   Select,
@@ -129,6 +158,8 @@ interface CardEdits {
   reason: string;
   taskName: string;
   details: string;
+  /** Points typed into an event card's empty field (#5148). */
+  eventPoints: string;
 }
 
 /**
@@ -162,7 +193,7 @@ export function AskProposal({
 
   if (resolution) {
     return (
-      <ProposalReceipt
+      <FinishedCard
         headline={
           proposal.suggestion ? cardHeadline(proposal.suggestion) : null
         }
@@ -196,9 +227,11 @@ export function AskProposal({
         response={proposal}
         busy={audience.isPending}
         onPickEvent={(eventId) => void pickEvent(eventId)}
-        onDone={(line, page) => onResolved({ kind: "done", line, page })}
-        onCancelled={() => onResolved({ kind: "cancelled" })}
-        onGone={() => onResolved({ kind: "gone" })}
+        onDone={(line, page, made) =>
+          onResolved({ kind: "done", line, page, ...made })
+        }
+        onCancelled={(shown) => onResolved({ kind: "cancelled", shown })}
+        onGone={(shown) => onResolved({ kind: "gone", shown })}
       />
       {problem ? (
         <p role="alert" className="text-sm text-destructive-text">
@@ -216,31 +249,69 @@ function cardHeadline(suggestion: AiSuggestion): string | null {
   return suggestion.points?.reason ?? null;
 }
 
-/** What a card that ended says in its place. */
+/** What a card that ended says in its top line. */
 function resolutionLine(resolution: AskProposalResolution): string {
   if (resolution.kind === "done") return resolution.line;
   return resolution.kind === "gone" ? ACT_COPY.gone : ACT_COPY.cancelled;
 }
 
-/** A card that ended: what happened, in the frame the card had. */
-function ProposalReceipt({
+/** Where a finished change can be opened: the event itself, else its page. */
+function resultLink(
+  resolution: AskProposalResolution,
+): { href: string; label: string } | null {
+  if (resolution.kind !== "done") return null;
+  if (resolution.page === "events" && resolution.id) {
+    return {
+      href: `/events?event=${encodeURIComponent(resolution.id)}`,
+      label: ACT_COPY.open_event,
+    };
+  }
+  return RESULT_LINKS[resolution.page ?? ""] ?? null;
+}
+
+/**
+ * A card that ended (Paul, 2026-11-16, #5148: "we should still see it and
+ * just grey it out"). Slack's approval messages stay where they were once
+ * handled, greyed, with what happened on top, so the conversation still
+ * reads. Here the card keeps its details as they stood, faded and with no
+ * controls, under one line that says how it ended. Without the card as it
+ * stood (an event made in the full form, a card from before), its name.
+ */
+function FinishedCard({
   headline,
   resolution,
 }: {
   headline: string | null;
   resolution: AskProposalResolution;
 }) {
-  const link =
-    resolution.kind === "done" ? RESULT_LINKS[resolution.page ?? ""] : null;
+  const link = resultLink(resolution);
+  const shown = resolution.shown ?? null;
+  const Icon: LucideIcon =
+    resolution.kind === "done"
+      ? CircleCheck
+      : resolution.kind === "gone"
+        ? Clock
+        : CircleX;
+  const title = shown ? cardHeadline(shown) : headline;
   return (
-    <section className={cn(CARD_FRAME, "space-y-1")}>
-      {headline ? (
-        <p className="break-words text-sm font-semibold text-foreground">
-          {headline}
-        </p>
-      ) : null}
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <p className="text-sm text-muted-foreground">
+    <section
+      className={cn(CARD_FRAME, "space-y-2.5 bg-surface-1")}
+      data-testid="ask-card-finished"
+    >
+      <div className="flex min-h-8 items-center gap-2">
+        <Icon
+          className={cn(
+            "h-4 w-4 shrink-0",
+            resolution.kind === "done" ? "text-success" : "text-muted",
+          )}
+          aria-hidden="true"
+        />
+        <p
+          className={cn(
+            "min-w-0 flex-1 text-sm font-semibold",
+            resolution.kind === "done" ? "text-success" : "text-muted",
+          )}
+        >
           {resolutionLine(resolution)}
         </p>
         {link ? (
@@ -249,8 +320,59 @@ function ProposalReceipt({
           </Button>
         ) : null}
       </div>
+      <div className="space-y-2.5 opacity-55">
+        {title ? (
+          <p
+            className={cn(
+              "break-words text-base font-semibold text-foreground",
+              resolution.kind === "cancelled" && "line-through",
+            )}
+          >
+            {title}
+          </p>
+        ) : null}
+        {shown ? <CardDetails suggestion={shown} /> : null}
+      </div>
     </section>
   );
+}
+
+/**
+ * What a finished card still shows under its name: the same rows the
+ * waiting card had, as words.
+ */
+function CardDetails({ suggestion }: { suggestion: AiSuggestion }) {
+  const { points, task, new_event: event } = suggestion;
+  if (event) return <EventFacts event={event} />;
+  if (task) {
+    return (
+      <div className="space-y-1.5">
+        {task.description ? (
+          <p className="break-words text-sm text-muted-foreground">
+            {task.description}
+          </p>
+        ) : null}
+        {task.due_date ? (
+          <Fact icon={Clock}>
+            {meetingDueLabel(task.due_date)}
+          </Fact>
+        ) : null}
+      </div>
+    );
+  }
+  if (points) {
+    return (
+      <div className="space-y-1.5">
+        <Fact icon={AlignLeft}>{points.reason}</Fact>
+        {points.event_name ? (
+          <Fact icon={Users}>
+            {actAttendanceLine(points.event_name, points.event_start_time)}
+          </Fact>
+        ) : null}
+      </div>
+    );
+  }
+  return null;
 }
 
 /**
@@ -281,7 +403,7 @@ export function AskAnswerCards({
         const end = ended[id];
         if (end) {
           return (
-            <ProposalReceipt
+            <FinishedCard
               key={id}
               headline={end.headline}
               resolution={end.resolution}
@@ -296,17 +418,20 @@ export function AskAnswerCards({
               key={id}
               suggestion={suggestion}
               notes={NO_NOTES}
-              onDone={(line, page) =>
+              onDone={(line, page, made) =>
                 onEnded(id, {
-                  resolution: { kind: "done", line, page },
+                  resolution: { kind: "done", line, page, ...made },
                   headline,
                 })
               }
-              onCancelled={() =>
-                onEnded(id, { resolution: { kind: "cancelled" }, headline })
+              onCancelled={(shown) =>
+                onEnded(id, {
+                  resolution: { kind: "cancelled", shown },
+                  headline,
+                })
               }
-              onGone={() =>
-                onEnded(id, { resolution: { kind: "gone" }, headline })
+              onGone={(shown) =>
+                onEnded(id, { resolution: { kind: "gone", shown }, headline })
               }
             />
           );
@@ -329,7 +454,7 @@ export function AskAnswerCards({
           );
         }
         return (
-          <ProposalReceipt
+          <FinishedCard
             key={id}
             headline={null}
             resolution={{ kind: "gone" }}
@@ -355,10 +480,10 @@ function ActAnswer({
   /** An event pick is on its way: the choices wait. */
   busy: boolean;
   onPickEvent: (eventId: string) => void;
-  onDone: (line: string, page: string) => void;
-  onCancelled: () => void;
+  onDone: CardDone;
+  onCancelled: (shown: AiSuggestion) => void;
   /** The proposal stopped waiting before the member decided. */
-  onGone: () => void;
+  onGone: (shown: AiSuggestion) => void;
 }) {
   if (response.status === "proposed" && response.suggestion) {
     return (
@@ -455,18 +580,175 @@ function refusalLine(error: unknown): string {
   );
 }
 
-function CardRow({
-  label,
+/** What a card reports once it was carried out. */
+type CardDone = (
+  line: string,
+  page: string,
+  made: { id?: string | null; shown?: AiSuggestion | null },
+) => void;
+
+/** One detail on a card: its icon, then the words (Google Calendar's rows). */
+function Fact({
+  icon: Icon,
   children,
+  under,
 }: {
-  label: string;
+  icon: LucideIcon;
   children: React.ReactNode;
+  /** A quieter line under it: where copied points came from, a count. */
+  under?: string;
 }) {
   return (
-    <div className="space-y-0.5">
-      <dt className={cn(EYEBROW, "text-muted-foreground")}>{label}</dt>
-      <dd className="break-words text-sm text-foreground">{children}</dd>
+    <div className="flex items-start gap-2.5 text-sm text-foreground">
+      <Icon
+        className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+        aria-hidden="true"
+      />
+      <div className="min-w-0 break-words">
+        {children}
+        {under ? (
+          <span className="block text-caption text-muted-foreground">
+            {under}
+          </span>
+        ) : null}
+      </div>
     </div>
+  );
+}
+
+type ProposedEvent = NonNullable<AiSuggestion["new_event"]>;
+
+/**
+ * When a proposed event is, the way a calendar invite opens: a small tile
+ * with the weekday and the day, then the whole date over the times.
+ */
+function EventWhen({ event }: { event: ProposedEvent }) {
+  const when = actWhenParts(event.start_time, event.end_time);
+  if (!when) return null;
+  return (
+    <div className="flex items-center gap-3">
+      <div
+        aria-hidden="true"
+        className="w-11 shrink-0 rounded-[10px] border border-border bg-surface-1 py-1 text-center"
+      >
+        <span className="block text-[10.5px] font-bold tracking-[0.06em] text-primary">
+          {when.weekday}
+        </span>
+        <span className="block text-lg font-semibold leading-tight text-foreground">
+          {when.day}
+        </span>
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-foreground">{when.date}</p>
+        <p className="text-sm text-muted-foreground">
+          {when.times}
+          {event.location ? ` · ${event.location}` : ""}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** A proposed event's details, as words: shared by the live and finished card. */
+function EventFacts({
+  event,
+  pointsField,
+}: {
+  event: ProposedEvent;
+  /** The empty points field, in place of the points line, while it waits. */
+  pointsField?: React.ReactNode;
+}) {
+  const repeat = actRepeatParts(event.recurrence_rule, event.start_time);
+  return (
+    <div className="space-y-2.5">
+      <EventWhen event={event} />
+      <div className="grid gap-x-5 gap-y-2 sm:grid-cols-2">
+        {repeat ? (
+          <Fact icon={Repeat} under={repeat.count || undefined}>
+            {repeat.line}
+          </Fact>
+        ) : null}
+        <Fact icon={Users}>
+          {event.is_mandatory
+            ? ACT_COPY.everyone_required
+            : ACT_COPY.everyone_optional}
+        </Fact>
+        {pointsField ??
+          (event.point_value === null ? null : (
+            <Fact
+              icon={Star}
+              under={actPointsFromLine(event.points_from) || undefined}
+            >
+              {actEventPointsLine(event.point_value, !!event.recurrence_rule)}
+            </Fact>
+          ))}
+      </div>
+      {event.description ? (
+        <p className="break-words text-sm text-muted-foreground">
+          {event.description}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The ··· in a card's corner (Paul, 2026-11-16, #5148: Cancel goes into the
+ * menu): Dismiss, and Report this for the Frapp team (#4315). Report is left
+ * out for a member who could never send one, as `ReportAiButton` does.
+ */
+function CardMenu({
+  title,
+  suggestionId,
+  disabled,
+  onDismiss,
+}: {
+  title: string;
+  suggestionId: string;
+  disabled: boolean;
+  onDismiss: () => void;
+}) {
+  const [reporting, setReporting] = useState(false);
+  const [reported, setReported] = useState(false);
+  const permissions = useMyPermissions().data?.permissions;
+  const canReport = !!permissions && can("ai:use", permissions);
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="-mr-1.5 h-8 w-8"
+            aria-label={`${ACT_COPY.more}: ${title}`}
+            disabled={disabled}
+          >
+            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onSelect={onDismiss}>
+            {ACT_COPY.dismiss}
+          </DropdownMenuItem>
+          {canReport ? (
+            <DropdownMenuItem
+              disabled={reported}
+              onSelect={() => setReporting(true)}
+            >
+              {reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}
+            </DropdownMenuItem>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {reporting ? (
+        <ReportAiDialog
+          target={{ subject: "ai_suggestion", subjectId: suggestionId }}
+          onClose={() => setReporting(false)}
+          onReported={() => setReported(true)}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -479,10 +761,11 @@ function ActCard({
 }: {
   suggestion: AiSuggestion;
   notes: ActResponse["notes"];
-  onDone: (line: string, page: string) => void;
-  onCancelled: () => void;
+  onDone: CardDone;
+  /** Dismissed: the card as it stood, to stay in place greyed. */
+  onCancelled: (shown: AiSuggestion) => void;
   /** The proposal stopped waiting before the member decided. */
-  onGone: () => void;
+  onGone: (shown: AiSuggestion) => void;
 }) {
   const accept = useAcceptAiSuggestion();
   const dismiss = useDismissAiSuggestion();
@@ -524,6 +807,8 @@ function ActCard({
   const [details, setDetails] = useState(
     kept?.details ?? task?.description ?? "",
   );
+  // An event's points when nobody said them and nothing matched (#5148).
+  const [eventPoints, setEventPoints] = useState(kept?.eventPoints ?? "");
   useEffect(() => {
     store?.set(suggestion.id, {
       targets,
@@ -534,6 +819,7 @@ function ActCard({
       reason,
       taskName,
       details,
+      eventPoints,
     });
   }, [
     store,
@@ -546,9 +832,10 @@ function ActCard({
     reason,
     taskName,
     details,
+    eventPoints,
   ]);
   const [fieldProblem, setFieldProblem] = useState<{
-    field: "amount" | "reason" | "taskName";
+    field: "amount" | "reason" | "taskName" | "eventPoints";
     error: string;
   } | null>(null);
   // The event form: mounted on the first Edit and kept, so it can animate
@@ -578,6 +865,7 @@ function ActCard({
   const [flagged, setFlagged] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const busy = accept.isPending || dismiss.isPending;
+  const needsPoints = !!event && event.point_value === null;
 
   const noteLines = notes.flatMap((note) => {
     const line = actNoteLine({
@@ -594,8 +882,11 @@ function ActCard({
 
   async function confirm() {
     setProblem(null);
-    let edits: { points?: PointsSuggestionEdits; task?: TaskSuggestionEdits } =
-      {};
+    let edits: {
+      points?: PointsSuggestionEdits;
+      task?: TaskSuggestionEdits;
+      newEventPoints?: number;
+    } = {};
     if (points) {
       if (targets.length === 0) return setFlagged(true);
       const changes: PointsSuggestionEdits = {};
@@ -644,10 +935,24 @@ function ActCard({
       }
       if (Object.keys(changes).length > 0) edits = { task: changes };
     }
+    if (needsPoints) {
+      const read = actEventPointsInput(eventPoints);
+      if (!read.ok) {
+        return setFieldProblem({ field: "eventPoints", error: read.error });
+      }
+      edits = { newEventPoints: read.value };
+    }
     try {
       const decision = await accept.mutateAsync({
         id: suggestion.id,
         ...edits,
+      });
+      const shown = shownAfter(suggestion, {
+        targets,
+        amount: edits.points?.amount,
+        reason: edits.points?.reason,
+        task: edits.task,
+        eventPoints: edits.newEventPoints,
       });
       if (points) {
         const outcome = decision.result?.outcome;
@@ -658,15 +963,19 @@ function ActCard({
             outcome?.skipped ?? 0,
           ),
           "points",
+          { shown },
         );
       } else if (task) {
-        onDone(ACT_COPY.done_task, "tasks");
+        onDone(ACT_COPY.done_task, "tasks", { shown });
       } else {
-        onDone(ACT_COPY.done_event, "events");
+        onDone(ACT_COPY.done_event, "events", {
+          id: decision.result?.id ?? null,
+          shown,
+        });
       }
     } catch (error) {
       // A card that stopped waiting says so in its place, with no buttons.
-      if (isGone(error)) onGone();
+      if (isGone(error)) onGone(suggestion);
       else setProblem(refusalLine(error));
     }
   }
@@ -679,7 +988,7 @@ function ActCard({
       // Already decided elsewhere: it may have been confirmed, so the card
       // does not say cancelled.
       if (codeOf(error) === "ai.suggestion.decided") {
-        onGone();
+        onGone(suggestion);
         return;
       }
       // Already gone is what Cancel wanted.
@@ -688,7 +997,7 @@ function ActCard({
         return;
       }
     }
-    onCancelled();
+    onCancelled(suggestion);
   }
 
   /** Edit: the event form, or the card's words as fields. */
@@ -702,10 +1011,10 @@ function ActCard({
   // its own route, and the proposal records it (or is taken down). The event
   // is made either way, so the card says so either way. Not awaited by the
   // form, which closes at once rather than offering Create again while this
-  // runs.
+  // runs. What the form made is the form's, so the card keeps only its name.
   function recordMadeEvent(eventId: string) {
     void settleProposedEvent({ accept, dismiss }, suggestion.id, eventId).then(
-      () => onDone(ACT_COPY.done_event, "events"),
+      () => onDone(ACT_COPY.done_event, "events", { id: eventId }),
     );
   }
 
@@ -715,14 +1024,21 @@ function ActCard({
   );
 
   let title: string = ACT_COPY.card_event_title;
+  let icon: LucideIcon = CalendarDays;
+  let action: string = ACT_COPY.create_event;
   if (points) {
     title =
       shownAmount < 0
         ? ACT_COPY.card_points_title_take
         : ACT_COPY.card_points_title_give;
+    icon = Star;
+    action = actPointsAction(shownAmount);
   } else if (task) {
     title = ACT_COPY.card_task_title;
+    icon = ListChecks;
+    action = ACT_COPY.create_task;
   }
+  const HeadIcon = icon;
 
   // Above the controls it points at ("Add them below").
   const notesStrip =
@@ -734,15 +1050,62 @@ function ActCard({
       </ul>
     ) : null;
 
+  const pointsMissing = fieldProblem?.field === "eventPoints";
+  const eventPointsField = needsPoints ? (
+    <div
+      className={cn(
+        "rounded-[10px] border-[1.5px] border-warning/70 bg-warning-tint px-2.5 py-2 sm:col-span-2",
+        pointsMissing && "border-destructive",
+      )}
+    >
+      <div className="flex items-center gap-2.5">
+        <Star
+          className="h-4 w-4 shrink-0 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <label
+          htmlFor={`${suggestion.id}-event-points`}
+          className="text-sm text-foreground"
+        >
+          {ACT_COPY.points_label}
+        </label>
+        <Input
+          id={`${suggestion.id}-event-points`}
+          inputMode="numeric"
+          value={eventPoints}
+          disabled={busy}
+          className="ml-auto h-8 w-20 text-right"
+          aria-invalid={pointsMissing || undefined}
+          aria-describedby={`${suggestion.id}-event-points-hint`}
+          onChange={(change) => {
+            setEventPoints(change.target.value);
+            if (pointsMissing) setFieldProblem(null);
+          }}
+        />
+      </div>
+      <p
+        id={`${suggestion.id}-event-points-hint`}
+        role={pointsMissing ? "alert" : undefined}
+        className={cn(
+          "mt-1 pl-[26px] text-caption",
+          pointsMissing ? "text-destructive-text" : "text-warning",
+        )}
+      >
+        {pointsMissing ? fieldProblem.error : ACT_COPY.points_missing}
+      </p>
+    </div>
+  ) : null;
+
   return (
     <section aria-label={title} className={cn(CARD_FRAME, "space-y-3")}>
-      <div className="flex min-h-8 items-center justify-between gap-2">
-        <p className={cn(EYEBROW, "text-muted-foreground")}>{title}</p>
-        {/* Report this (#4315): what the agent proposed, for the Frapp team. */}
-        <ReportAiButton
-          iconOnly
-          name={title}
-          target={{ subject: "ai_suggestion", subjectId: suggestion.id }}
+      <div className="flex min-h-8 items-center gap-2 text-muted-foreground">
+        <HeadIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <p className="min-w-0 flex-1 text-sm font-semibold">{title}</p>
+        <CardMenu
+          title={title}
+          suggestionId={suggestion.id}
+          disabled={busy}
+          onDismiss={() => void cancel()}
         />
       </div>
 
@@ -799,16 +1162,14 @@ function ActCard({
               </CardField>
             </div>
           ) : null}
-          <dl className="space-y-2">
-            {editing ? null : (
-              <CardRow label={ACT_COPY.field_reason}>{points.reason}</CardRow>
-            )}
+          <div className="space-y-2">
+            {editing ? null : <Fact icon={AlignLeft}>{points.reason}</Fact>}
             {points.event_name ? (
-              <CardRow label={ACT_COPY.field_attendance}>
+              <Fact icon={Users}>
                 {actAttendanceLine(points.event_name, points.event_start_time)}
-              </CardRow>
+              </Fact>
             ) : null}
-          </dl>
+          </div>
           {notesStrip}
           <MemberList
             targets={targets}
@@ -892,57 +1253,64 @@ function ActCard({
             </>
           )}
           {notesStrip}
-          <div className="space-y-2">
-            <div className="space-y-1">
-              <p className={cn(EYEBROW, "text-muted-foreground")}>
-                {ACT_COPY.field_for}
-              </p>
-              <Select
-                value={assigneeId}
-                onValueChange={setAssigneeId}
-                disabled={busy}
-              >
-                <SelectTrigger
-                  aria-label={ACT_COPY.field_for}
-                  aria-invalid={(flagged && !assigneeId) || undefined}
-                >
-                  <SelectValue placeholder={ACT_COPY.pick_member} />
-                </SelectTrigger>
-                <SelectContent>
-                  {members.map((member) => (
-                    <SelectItem
-                      key={String(member.user_id)}
-                      value={String(member.user_id)}
-                    >
-                      {memberLabel(member.display_name, member.user_id)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {flagged && !assigneeId ? (
-                <p
-                  role="alert"
-                  className="mt-1 text-caption text-destructive-text"
-                >
-                  {ACT_COPY.need_assignee}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-1">
-              <p className={cn(EYEBROW, "text-muted-foreground")}>
-                {ACT_COPY.field_due}
-              </p>
-              <DueDateField
-                aria-label={ACT_COPY.field_due}
-                placeholder={ACT_COPY.pick_due}
-                missing={flagged && !due}
-                passed={
-                  flagged && dueEntryPassed(due, new Date(), suggestedDue)
-                }
-                value={due}
-                onChange={setDue}
-                disabled={busy}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="flex items-start gap-2.5">
+              <User
+                className="mt-2.5 h-4 w-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
               />
+              <div className="min-w-0 flex-1 space-y-1">
+                <Select
+                  value={assigneeId}
+                  onValueChange={setAssigneeId}
+                  disabled={busy}
+                >
+                  <SelectTrigger
+                    aria-label={ACT_COPY.field_for}
+                    aria-invalid={(flagged && !assigneeId) || undefined}
+                    className={cn(
+                      !assigneeId &&
+                        "border-[1.5px] border-warning/70 bg-warning-tint",
+                    )}
+                  >
+                    <SelectValue placeholder={ACT_COPY.pick_member} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {members.map((member) => (
+                      <SelectItem
+                        key={String(member.user_id)}
+                        value={String(member.user_id)}
+                      >
+                        {memberLabel(member.display_name, member.user_id)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {flagged && !assigneeId ? (
+                  <p role="alert" className="text-caption text-destructive-text">
+                    {ACT_COPY.need_assignee}
+                  </p>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex items-start gap-2.5">
+              <Clock
+                className="mt-2.5 h-4 w-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <div className="min-w-0 flex-1">
+                <DueDateField
+                  aria-label={ACT_COPY.field_due}
+                  placeholder={ACT_COPY.pick_due}
+                  missing={flagged && !due}
+                  passed={
+                    flagged && dueEntryPassed(due, new Date(), suggestedDue)
+                  }
+                  value={due}
+                  onChange={setDue}
+                  disabled={busy}
+                />
+              </div>
             </div>
           </div>
         </>
@@ -953,42 +1321,17 @@ function ActCard({
           <p className="break-words text-base font-semibold text-foreground">
             {event.name}
           </p>
-          <dl className="space-y-2">
-            <CardRow label={ACT_COPY.field_when}>
-              {actWhenLine(event.start_time, event.end_time)}
-            </CardRow>
-            {event.recurrence_rule ? (
-              <CardRow label={ACT_COPY.field_repeats}>
-                {actRepeatLine(event.recurrence_rule, event.start_time)}
-              </CardRow>
-            ) : null}
-            {event.location ? (
-              <CardRow label={ACT_COPY.field_where}>{event.location}</CardRow>
-            ) : null}
-            <CardRow label={ACT_COPY.field_attendance}>
-              {event.is_mandatory ? ACT_COPY.required : ACT_COPY.optional}
-            </CardRow>
-            <CardRow label={ACT_COPY.field_points}>
-              {event.point_value === null
-                ? ACT_COPY.default_points
-                : event.point_value}
-            </CardRow>
-          </dl>
-          {event.description ? (
-            <p className="break-words text-sm text-muted-foreground">
-              {event.description}
-            </p>
-          ) : null}
+          <EventFacts event={event} pointsField={eventPointsField} />
         </>
       ) : null}
 
       <p className="text-caption text-muted-foreground">
+        {ACT_COPY.mine_only}{" "}
         {points
           ? ACT_COPY.points_push
           : task
             ? ACT_COPY.task_push
-            : ACT_COPY.event_push}{" "}
-        {ACT_COPY.mine_only}
+            : ACT_COPY.event_push}
       </p>
 
       {problem ? (
@@ -998,19 +1341,10 @@ function ActCard({
       ) : null}
 
       <div className="flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={busy}
-          onClick={() => void cancel()}
-        >
-          {ACT_COPY.cancel}
-        </Button>
         {editing ? null : (
           <Button
             type="button"
-            variant="ghost"
+            variant="secondary"
             size="sm"
             disabled={busy}
             onClick={edit}
@@ -1018,13 +1352,15 @@ function ActCard({
             {ACT_COPY.edit}
           </Button>
         )}
+        {/* Its words stay while it saves; only the button dims (P4). */}
         <Button
           type="button"
           size="sm"
           disabled={busy}
+          aria-busy={accept.isPending || undefined}
           onClick={() => void confirm()}
         >
-          {ACT_COPY.confirm}
+          {action}
         </Button>
       </div>
       {event && eventForm !== null ? (
@@ -1045,6 +1381,39 @@ function ActCard({
       ) : null}
     </section>
   );
+}
+
+/**
+ * The card as it was carried out, with what the member changed on it, for
+ * the greyed card that stays in its place (#5148).
+ */
+function shownAfter(
+  suggestion: AiSuggestion,
+  changes: {
+    targets: string[];
+    amount?: number;
+    reason?: string;
+    task?: TaskSuggestionEdits;
+    eventPoints?: number;
+  },
+): AiSuggestion {
+  const { points, task, new_event: event } = suggestion;
+  return {
+    ...suggestion,
+    points: points
+      ? {
+          ...points,
+          target_user_ids: changes.targets,
+          amount: changes.amount ?? points.amount,
+          reason: changes.reason ?? points.reason,
+        }
+      : points,
+    task: task ? { ...task, ...changes.task } : task,
+    new_event:
+      event && changes.eventPoints !== undefined
+        ? { ...event, point_value: changes.eventPoints, points_from: null }
+        : event,
+  };
 }
 
 /** A field on the card under its Edit, with its label above. */

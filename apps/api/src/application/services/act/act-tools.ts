@@ -10,6 +10,7 @@ import {
 } from '@repo/validation';
 import { SystemPermissions, WILDCARD } from '#domain/constants/permissions';
 import type { Event } from '#domain/entities/event.entity';
+import type { EventType } from '#domain/entities/event-type.entity';
 import {
   localDateIn,
   parseLocalDate,
@@ -19,6 +20,7 @@ import {
 import { POINTS_SUGGESTION_MAX_MEMBERS } from '../ai-suggestion-points-kind';
 import { AttendanceService } from '../attendance.service';
 import { EventService } from '../event.service';
+import { EventTypeService } from '../event-type.service';
 import { ActPeopleResolver } from './act-people';
 import {
   NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH,
@@ -66,10 +68,8 @@ function words(text: string): string[] {
     .filter((word) => word.length > 1 && word !== 'the');
 }
 
-/** "chapter" fits "Chapter Meeting"; "formal" fits "Winter Formal". */
-function eventNamed(typed: string, event: Event): boolean {
-  const want = words(typed);
-  const have = words(event.name);
+/** Every word of `want` begins, or is begun by, a word of `have`. */
+function wordsFit(want: string[], have: string[]): boolean {
   return (
     want.length > 0 &&
     want.every((word) =>
@@ -77,6 +77,14 @@ function eventNamed(typed: string, event: Event): boolean {
     )
   );
 }
+
+/** "chapter" fits "Chapter Meeting"; "formal" fits "Winter Formal". */
+function eventNamed(typed: string, event: Event): boolean {
+  return wordsFit(words(typed), words(event.name));
+}
+
+/** How far back an earlier event of the same name is looked for. */
+const SAME_NAME_BACK_DAYS = 180;
 
 function holds(context: ActToolContext, permission: string): boolean {
   return (
@@ -417,11 +425,12 @@ export class CreateEventActTool implements ActTool {
   readonly effect = 'propose' as const;
   readonly kind = 'new_event' as const;
 
-  draft(plan: ActPlan, context: ActToolContext): Promise<ActDraft> {
-    return Promise.resolve(this.draftSync(plan, context));
-  }
+  constructor(
+    private readonly events: EventService,
+    private readonly eventTypes: EventTypeService,
+  ) {}
 
-  private draftSync(plan: ActPlan, context: ActToolContext): ActDraft {
+  async draft(plan: ActPlan, context: ActToolContext): Promise<ActDraft> {
     const name = titled(clean(plan.title, EVENT_NAME_MAX_LENGTH));
     if (!name) return { status: 'unclear', missing: 'title' };
     if (!plan.date || !parseLocalDate(plan.date)) {
@@ -438,13 +447,33 @@ export class CreateEventActTool implements ActTool {
     if (!end) end = new Date(start.getTime() + HOUR_MS);
     else if (end <= start) end = new Date(end.getTime() + DAY_MS);
 
-    const points =
+    const said =
       plan.amount !== null &&
       Number.isInteger(plan.amount) &&
       plan.amount >= 0 &&
       plan.amount <= POINTS_ADJUSTMENT_MAX
         ? plan.amount
         : null;
+    // Points the member did not say are copied from the chapter's own
+    // records, and the card says from where (Paul, 2026-11-16: never "the
+    // chapter's usual amount"). With nothing to copy they stay empty, and
+    // the card asks for them before it can be confirmed.
+    const type = await this.matchingType(name, context);
+    const earlier =
+      said === null && !type
+        ? await this.earlierNamed(name, context).catch(() => null)
+        : null;
+    const points = said ?? type?.point_value ?? earlier?.point_value ?? null;
+    const pointsFrom =
+      said !== null
+        ? null
+        : type
+          ? { kind: 'type' as const, name: type.name }
+          : earlier
+            ? { kind: 'event' as const, name: earlier.name }
+            : null;
+    // Attendance not said follows the type, as the event form does.
+    const mandatory = plan.required ?? type?.is_mandatory ?? false;
     return {
       status: 'draft',
       payload: {
@@ -454,12 +483,65 @@ export class CreateEventActTool implements ActTool {
         start_time: start.toISOString(),
         end_time: end.toISOString(),
         point_value: points,
-        is_mandatory: plan.required === true,
+        points_from: pointsFrom,
+        event_type_id: type?.id ?? null,
+        is_mandatory: mandatory,
         recurrence_rule: plan.repeats
           ? proposedRepeatRule(plan.repeats, plan.date, context.timeZone)
           : null,
       },
       notes: [],
     };
+  }
+
+  /**
+   * The chapter's event type this event is one of: the type of that exact
+   * name, or the one type whose name fits it word for word either way
+   * ("Chapter" is a "Chapter meeting"; "Philanthropy 5K" is "Philanthropy").
+   * None when two types fit, or the list cannot be read.
+   */
+  private async matchingType(
+    name: string,
+    context: ActToolContext,
+  ): Promise<EventType | null> {
+    const types = await this.eventTypes
+      .list(context.chapterId)
+      .catch(() => [] as EventType[]);
+    const lower = name.toLowerCase();
+    const exact = types.find((type) => type.name.toLowerCase() === lower);
+    if (exact) return exact;
+    const typed = words(name);
+    const fits = types.filter((type) => {
+      const have = words(type.name);
+      return wordsFit(typed, have) || wordsFit(have, typed);
+    });
+    return fits.length === 1 ? fits[0] : null;
+  }
+
+  /**
+   * The latest event this member can see with the same name, in the last
+   * half year, for its points.
+   */
+  private async earlierNamed(
+    name: string,
+    context: ActToolContext,
+  ): Promise<Event | null> {
+    const lower = name.toLowerCase();
+    const nowIso = context.now.toISOString();
+    const events = await this.events.findByChapter(
+      context.chapterId,
+      context.userId,
+      {
+        endsAfter: new Date(
+          context.now.getTime() - SAME_NAME_BACK_DAYS * DAY_MS,
+        ).toISOString(),
+        startsBefore: nowIso,
+      },
+    );
+    return (
+      events
+        .filter((event) => event.name.trim().toLowerCase() === lower)
+        .sort((a, b) => b.start_time.localeCompare(a.start_time))[0] ?? null
+    );
   }
 }

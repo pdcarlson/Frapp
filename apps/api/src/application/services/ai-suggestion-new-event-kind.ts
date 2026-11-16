@@ -37,14 +37,44 @@ export interface NewEventSuggestionPayload {
   location: string | null;
   start_time: string;
   end_time: string;
-  /** Null leaves the event service's own default. */
+  /**
+   * Points for coming. Null when the member did not say and nothing could
+   * be copied: the card asks for them, and accepting waits for them.
+   */
   point_value: number | null;
+  /**
+   * Where points the member did not say were copied from, for the card's
+   * line under them ("From your Chapter meeting event type"). Null when
+   * they were said, or are still missing.
+   */
+  points_from: NewEventPointsFrom | null;
+  /** The chapter's event type the event is one of, when one matched. */
+  event_type_id: string | null;
   is_mandatory: boolean;
   /**
    * The repeat the series is made with (`packages/validation` recurrence
    * format), or null for one event.
    */
   recurrence_rule: string | null;
+}
+
+export interface NewEventPointsFrom {
+  /** The chapter's event type of that name, or its last event of that name. */
+  kind: 'type' | 'event';
+  name: string;
+}
+
+function pointsFromOrNull(value: unknown): NewEventPointsFrom | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const from = value as Record<string, unknown>;
+  const name = text(from.name, NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH);
+  return (from.kind === 'type' || from.kind === 'event') && name
+    ? { kind: from.kind, name }
+    : null;
+}
+
+function idOrNull(value: unknown): string | null {
+  return typeof value === 'string' && UUID.test(value) ? value : null;
 }
 
 /**
@@ -104,6 +134,8 @@ export function readNewEventPayload(
     start_time: instantOrNull(payload.start_time) ?? '',
     end_time: instantOrNull(payload.end_time) ?? '',
     point_value: pointsOrNull(payload.point_value),
+    points_from: pointsFromOrNull(payload.points_from),
+    event_type_id: idOrNull(payload.event_type_id),
     is_mandatory: payload.is_mandatory === true,
     recurrence_rule: ruleOrNull(payload.recurrence_rule),
   };
@@ -155,6 +187,8 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
       start_time: start,
       end_time: end,
       point_value: pointsOrNull(input.point_value),
+      points_from: pointsFromOrNull(input.points_from),
+      event_type_id: idOrNull(input.event_type_id),
       is_mandatory: input.is_mandatory === true,
       recurrence_rule: ruleOrNull(input.recurrence_rule),
     };
@@ -198,6 +232,17 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
       if (!end) throw new BadRequestException('Pick when it ends.');
       next.end_time = end;
     }
+    if (has('point_value')) {
+      const points = pointsOrNull(edits.point_value);
+      if (points === null) {
+        throw new BadRequestException(
+          `Points are a whole number from 0 to ${POINTS_ADJUSTMENT_MAX}.`,
+        );
+      }
+      // Typed on the card: no longer copied from anywhere.
+      if (points !== next.point_value) next.points_from = null;
+      next.point_value = points;
+    }
     if (next.end_time <= next.start_time) {
       throw new BadRequestException('An event ends after it starts.');
     }
@@ -226,6 +271,10 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
     if (!event.name) throw incomplete('An event needs a name.');
     if (!event.start_time || !event.end_time) {
       throw incomplete('Pick when it starts and ends.');
+    }
+    // Never a default nobody chose (Paul, 2026-11-16).
+    if (event.point_value === null) {
+      throw incomplete('Say how many points it is worth, 0 for none.');
     }
   }
 
@@ -256,6 +305,9 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
       end_time: event.end_time,
       is_mandatory: event.is_mandatory,
       ...(event.point_value === null ? {} : { point_value: event.point_value }),
+      ...(event.event_type_id === null
+        ? {}
+        : { event_type_id: event.event_type_id }),
       ...(event.recurrence_rule === null
         ? {}
         : { recurrence_rule: event.recurrence_rule }),

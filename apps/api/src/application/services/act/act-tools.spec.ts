@@ -2,6 +2,8 @@ import { NotFoundException } from '@nestjs/common';
 import type { Event } from '#domain/entities/event.entity';
 import type { AttendanceService } from '../attendance.service';
 import type { EventService } from '../event.service';
+import type { EventTypeService } from '../event-type.service';
+import type { ActPlan } from './act-prompt';
 import type { ActPeopleResolver } from './act-people';
 import {
   CHAPTER,
@@ -405,7 +407,28 @@ describe('CreateTaskActTool', () => {
 });
 
 describe('CreateEventActTool', () => {
-  const tool = new CreateEventActTool();
+  const TYPES = [
+    { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', name: 'Chapter meeting', point_value: 10, is_mandatory: true },
+    { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2', name: 'Committee meeting', point_value: 5, is_mandatory: false },
+    { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3', name: 'Philanthropy', point_value: 15, is_mandatory: false },
+  ];
+  function buildEvent(options: { types?: unknown[]; events?: Event[] } = {}) {
+    const events = {
+      findByChapter: jest.fn().mockResolvedValue(options.events ?? []),
+    };
+    const eventTypes = {
+      list: jest.fn().mockResolvedValue(options.types ?? []),
+    };
+    return {
+      tool: new CreateEventActTool(
+        events as unknown as EventService,
+        eventTypes as unknown as EventTypeService,
+      ),
+      events,
+      eventTypes,
+    };
+  }
+  const { tool } = buildEvent();
   const context = toolContext(['events:create']);
 
   it("proposes an hour-long event at the time said, in the member's zone", async () => {
@@ -423,10 +446,84 @@ describe('CreateEventActTool', () => {
         start_time: '2026-11-18T00:00:00.000Z',
         end_time: '2026-11-18T01:00:00.000Z',
         point_value: null,
+        points_from: null,
+        event_type_id: null,
         is_mandatory: false,
         recurrence_rule: null,
       },
       notes: [],
+    });
+  });
+
+  describe('points the member did not say (Paul, 2026-11-16)', () => {
+    const said = (over: Partial<ActPlan> = {}) =>
+      plan({ title: 'Chapter', date: '2026-11-22', start_time: '18:48', ...over });
+
+    it('copies points and attendance from the one type it fits', async () => {
+      const { tool: typed } = buildEvent({ types: TYPES });
+      expect(await typed.draft(said(), context)).toMatchObject({
+        payload: {
+          point_value: 10,
+          is_mandatory: true,
+          points_from: { kind: 'type', name: 'Chapter meeting' },
+          event_type_id: TYPES[0].id,
+        },
+      });
+      // A longer name still fits its type.
+      expect(
+        await typed.draft(said({ title: 'Philanthropy 5K' }), context),
+      ).toMatchObject({
+        payload: { point_value: 15, points_from: { kind: 'type', name: 'Philanthropy' } },
+      });
+    });
+
+    it('keeps what the member said over the type', async () => {
+      const { tool: typed } = buildEvent({ types: TYPES });
+      expect(
+        await typed.draft(said({ amount: 3, required: false }), context),
+      ).toMatchObject({
+        payload: {
+          point_value: 3,
+          is_mandatory: false,
+          points_from: null,
+          event_type_id: TYPES[0].id,
+        },
+      });
+    });
+
+    it('takes no type when two fit', async () => {
+      const { tool: typed } = buildEvent({ types: TYPES });
+      expect(
+        await typed.draft(said({ title: 'Meeting' }), context),
+      ).toMatchObject({
+        payload: { point_value: null, points_from: null, event_type_id: null },
+      });
+    });
+
+    it('copies the points of the last event with the same name', async () => {
+      const older = { ...event('e1', 'Study hours', '2026-10-01T00:00:00.000Z'), point_value: 2 } as Event;
+      const newer = { ...event('e2', 'study hours', '2026-11-05T00:00:00.000Z'), point_value: 4 } as Event;
+      const { tool: earlier } = buildEvent({ events: [older, newer] });
+      expect(
+        await earlier.draft(said({ title: 'Study hours' }), context),
+      ).toMatchObject({
+        payload: {
+          point_value: 4,
+          points_from: { kind: 'event', name: 'study hours' },
+          event_type_id: null,
+        },
+      });
+    });
+
+    it('leaves points empty when there is nothing to copy, or the reads fail', async () => {
+      const failing = new CreateEventActTool(
+        { findByChapter: jest.fn().mockRejectedValue(new Error('down')) } as unknown as EventService,
+        { list: jest.fn().mockRejectedValue(new Error('down')) } as unknown as EventTypeService,
+      );
+      expect(await failing.draft(said({ title: 'Study hours' }), context)).toMatchObject({
+        status: 'draft',
+        payload: { point_value: null, points_from: null },
+      });
     });
   });
 

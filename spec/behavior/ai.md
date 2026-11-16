@@ -718,6 +718,7 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   A task's who and when are changed in the ordinary New task form opened on the proposal, where web changes them on the card; Confirm on a task missing either opens that form.
   A finished task or event links to Tasks or Events; a finished points change links nowhere, because the phone has no points page.
 - **Every card has Edit beside Cancel and Confirm** (Paul, 2026-11-15, #5117).
+  *(Changed in #5148 by pdcarlson, 2026-11-16: Cancel is now Dismiss in the card's ··· menu, and Confirm is named for the action; see How a card reads above.)*
   An event's Edit opens the ordinary New event form filled in from the card, with More options open (who's coming by role, the end, notes, the repeat), and Create in that form is the confirm: the event is made through the event route and the proposal records it, without making a second.
   The event is made either way, and the card says it was added.
   If the form's answer carries no event id, or the proposal can no longer record it, the proposal is taken down instead, so it is never drawn again with a Confirm that would make the event a second time.
@@ -725,6 +726,18 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   A points card's Edit turns its amount and reason into fields on the card, on both; Confirm then sends only what changed.
   The forms keep what was typed when closed, as every form does (#4593).
   Comparable: Google Calendar's "Add to calendar" on an event found in mail opens its full editor; Siri's suggested reminders and Linear's issue-from-text hand the draft to the ordinary form.
+- **How a card reads** (Paul, 2026-11-16, #5148).
+  A card opens with a small mark and what it makes ("New event", "New task", "Give points"), and a ··· menu holding Dismiss and Report this.
+  Its details are rows, each with a small mark in place of an all-caps label; an event's date sits in a tile beside its written-out day and times.
+  Its buttons are Edit and one named action ("Create event", "Create task", "Give 5 points"); Dismiss is in the menu, because a card is far more often confirmed than dropped.
+  Once decided, the card stays where it was, greyed, under a line that says what happened ("Event created", or struck through with "Dismissed. Nothing was changed."), and an event's links straight to that event.
+  *(Changed in #5148 by pdcarlson, 2026-11-16: until then the buttons were Cancel, Edit and Confirm, the details sat under all-caps labels, and a decided card shrank to its one line.)*
+  Comparable: Google Calendar's event chip in Gmail, Apple Mail's Siri-found events, Slack's approval messages and ChatGPT's tool approvals all name the action on the button and keep the item visible once handled.
+- **An event's points are never guessed** (Paul, 2026-11-16, #5148).
+  Points the member said are used.
+  Otherwise they are copied from the chapter's event type of the same name, then from the chapter's latest event of the same name in the last 180 days, and the card says which ("From your Chapter meeting event type", "Same as your last Study hours"); a matching type also sets whether the event is required.
+  With nothing to copy, the points field is empty and outlined, and the action waits until a number is entered (0 for none); the server refuses a proposal still missing them.
+  *(Changed in #5148 by pdcarlson, 2026-11-16: until then the card said "The chapter's usual amount" and the event was made with 10.)*
 - **What it can do** (three actions; each needs the permission and the module of the route it stands in for, and one the member lacks is not offered):
   - **Give or take away points** (`points:adjust`), for members named, for everyone who holds a role, or for everyone who came to an event.
   - **Create a task** for one member (`tasks:manage`).
@@ -746,6 +759,7 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   Web and the phone send `answer_cards` whenever they ask for a card.
   The cards sit under the answer's words and sources, in the order the server named them, each with its own Cancel, Edit and Confirm; deciding one leaves the others waiting.
   A card that ended becomes one line in its place saying what happened, as a turn's single card does, and still says what it was about.
+  *(Changed in #5148 by pdcarlson, 2026-11-16: an ended card now stays drawn, greyed, under that line.)*
   The cards are read from the asker's own waiting requests; one that is no longer among them (decided on another device, or its day passed) reads "This is no longer waiting.
   Ask again." in the card's place.
   An answer that is cards and nothing else draws the cards with no words above them.

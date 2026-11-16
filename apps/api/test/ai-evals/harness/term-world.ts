@@ -1153,7 +1153,7 @@ export function createTermWorld(
   const acting = [
     new GivePointsActTool(people, events as never, attendance as never),
     new CreateTaskActTool(people),
-    new CreateEventActTool(),
+    new CreateEventActTool(events as never, { list: async () => [] } as never),
   ];
   const act = new ActService(
     gateway,

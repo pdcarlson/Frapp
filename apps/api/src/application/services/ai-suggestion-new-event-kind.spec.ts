@@ -28,6 +28,8 @@ const proposal = (extra: Record<string, unknown> = {}) => ({
   start_time: '2026-11-18T00:00:00.000Z',
   end_time: '2026-11-18T01:00:00.000Z',
   point_value: null,
+  points_from: null,
+  event_type_id: null,
   is_mandatory: false,
   recurrence_rule: null,
   ...extra,
@@ -168,15 +170,61 @@ describe('NewEventSuggestionKind', () => {
     });
   });
 
-  it("passes a points value only when one was said, leaving the service's default otherwise", async () => {
+  it('passes the points and the matched event type to the service', async () => {
     const { kind, events } = build();
+    const type = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9';
     await kind.commit({
       chapterId: CHAPTER,
       userId: OFFICER,
-      payload: proposal({ point_value: 20 }),
+      payload: proposal({ point_value: 20, event_type_id: type }),
     });
     expect(events.create).toHaveBeenCalledWith(
-      expect.objectContaining({ point_value: 20 }),
+      expect.objectContaining({ point_value: 20, event_type_id: type }),
     );
+  });
+
+  describe('points nobody chose (Paul, 2026-11-16)', () => {
+    it('will not be accepted without points', () => {
+      const { kind } = build();
+      expect(() => kind.assertAcceptable(proposal())).toThrow(
+        expect.objectContaining({
+          response: expect.objectContaining({ code: 'ai.suggestion.incomplete' }),
+        }),
+      );
+      expect(() =>
+        kind.assertAcceptable(proposal({ point_value: 0 })),
+      ).not.toThrow();
+    });
+
+    it('takes points typed on the card, and drops where copied points came from', () => {
+      const { kind } = build();
+      const copied = proposal({
+        point_value: 10,
+        points_from: { kind: 'type', name: 'Chapter meeting' },
+      });
+      expect(kind.applyEdits(copied, { point_value: 10 })).toMatchObject({
+        point_value: 10,
+        points_from: { kind: 'type', name: 'Chapter meeting' },
+      });
+      expect(kind.applyEdits(copied, { point_value: 0 })).toMatchObject({
+        point_value: 0,
+        points_from: null,
+      });
+      expect(() => kind.applyEdits(copied, { point_value: -1 })).toThrow();
+    });
+
+    it('keeps where copied points came from, and drops a malformed one', () => {
+      const { kind } = build();
+      expect(
+        kind.normalizeProposal(
+          proposal({ points_from: { kind: 'type', name: 'Social' } }),
+        ),
+      ).toMatchObject({ points_from: { kind: 'type', name: 'Social' } });
+      expect(
+        kind.normalizeProposal(
+          proposal({ points_from: { kind: 'guess', name: 'x' }, event_type_id: 'nope' }),
+        ),
+      ).toMatchObject({ points_from: null, event_type_id: null });
+    });
   });
 });

@@ -13,6 +13,12 @@ import {
   actPointsHeadline,
   actPointsTotalLine,
   actWhenLine,
+  actEventPointsInput,
+  actEventPointsLine,
+  actPointsAction,
+  actPointsFromLine,
+  actRepeatParts,
+  actWhenParts,
 } from "./act";
 import { proposedRepeatDraft } from "./repeat-draft";
 
@@ -149,5 +155,63 @@ describe("a proposal's Edit and repeat (#5117)", () => {
       pristine: false,
     });
     expect(proposedRepeatDraft(null).preset).toBe("NONE");
+  });
+});
+
+describe("the redesigned card's lines (#5148)", () => {
+  const WEEKLY =
+    "FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=13;TZID=America/New_York";
+
+  it("names the action on the button", () => {
+    expect(actPointsAction(5)).toBe("Give 5 points");
+    expect(actPointsAction(-1)).toBe("Take away 1 point");
+  });
+
+  it("says points plainly, and per time for a series", () => {
+    expect(actEventPointsLine(10, false)).toBe("10 points");
+    expect(actEventPointsLine(10, true)).toBe("10 points each time");
+    expect(actEventPointsLine(0, true)).toBe("No points");
+  });
+
+  it("says where copied points came from", () => {
+    expect(actPointsFromLine({ kind: "type", name: "Chapter meeting" })).toBe(
+      "From your Chapter meeting event type",
+    );
+    expect(actPointsFromLine({ kind: "event", name: "Study hours" })).toBe(
+      "Same as your last Study hours",
+    );
+    expect(actPointsFromLine(null)).toBe("");
+  });
+
+  it("reads typed points as a whole number from 0", () => {
+    expect(actEventPointsInput(" 10 ")).toEqual({ ok: true, value: 10 });
+    expect(actEventPointsInput("0")).toEqual({ ok: true, value: 0 });
+    for (const bad of ["", "-5", "2.5", "ten"]) {
+      expect(actEventPointsInput(bad)).toEqual({
+        ok: false,
+        error: ACT_COPY.bad_event_points,
+      });
+    }
+  });
+
+  it("splits a time into the date tile and one short range", () => {
+    const parts = actWhenParts(
+      "2026-11-15T23:48:00.000Z",
+      "2026-11-16T00:48:00.000Z",
+      "America/New_York",
+    );
+    expect(parts?.weekday).toBe("SUN");
+    expect(parts?.day).toBe("15");
+    expect(parts?.date).toBe("Sunday, November 15");
+    expect(parts?.times.replace(/\s/g, " ")).toBe("6:48 to 7:48 PM");
+    expect(actWhenParts("not a date", "", "America/New_York")).toBeNull();
+  });
+
+  it("splits a series into its pattern and its count", () => {
+    expect(actRepeatParts(WEEKLY, "2026-11-15T23:48:00.000Z")).toEqual({
+      line: "Every Sunday until February 7, 2027",
+      count: "13 times",
+    });
+    expect(actRepeatParts(null, "2026-11-15T23:48:00.000Z")).toBeNull();
   });
 });
