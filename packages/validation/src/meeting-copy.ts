@@ -269,7 +269,7 @@ export const MEETING_NOTE_TAKERS_COPY = {
   youDecide: "You decide",
   tieBody:
     "Neither the recording nor who wrote it settles this, so it isn't in the minutes yet.",
-  useVersion: (from: string, mine = false) =>
+  takeVersion: (from: string, mine = false) =>
     mine ? "Use yours instead" : `Use ${from}'s instead`,
   pickVersion: (from: string, mine = false) =>
     mine ? "Use yours" : `Use ${from}'s`,

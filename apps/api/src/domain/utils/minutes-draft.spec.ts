@@ -744,10 +744,11 @@ describe('several sources (#4935)', () => {
       }),
       request({ sources: [AUTHOR, CHAIR] }),
     );
-    // One real account is an ordinary decision, not a disagreement.
+    // One real account, which wins anyway, is an ordinary decision; both
+    // unmatched versions are counted.
     expect(content.decisions).toHaveLength(1);
     expect(review.conflicts).toEqual([]);
-    expect(review.left_out).toBe(1);
+    expect(review.left_out).toBe(2);
   });
 
   it('reads versions that say the same thing as one item', () => {
@@ -785,5 +786,63 @@ describe('several sources (#4935)', () => {
       settledBy: 'authority',
     });
     expect(settle([CHAIR, PEER])).toEqual({ chosen: null, settledBy: null });
+  });
+
+  it('never lets a misquoted version from a higher source lose to the other one', () => {
+    const { content, review } = verifyMinutesDraft(
+      djConflict(
+        // The author's version is paraphrased, so it fails its check.
+        voteVersion('S1', 'the formal DJ was approved 22 to 5', 22, 5),
+        voteVersion('S2', 'formal DJ approved 21-6', 21, 6),
+      ),
+      request({ sources: [AUTHOR, CHAIR] }),
+    );
+    expect(content.decisions).toEqual([]);
+    expect(review.left_out).toBe(1);
+    expect(review.gaps[0]).toContain('The notes disagree about "The DJ vote"');
+  });
+
+  it('settles disagreements past the list’s length and says how many aren’t listed', () => {
+    const many = Array.from(
+      { length: 14 },
+      (_, i) => `item ${i} approved 2${i}-1`,
+    );
+    const author = { ...AUTHOR, text: many.join('\n') };
+    const chair = {
+      ...CHAIR,
+      text: many.map((line) => line.replace(/-1$/, '-2')).join('\n'),
+    };
+    const { content, review } = verifyMinutesDraft(
+      output({
+        conflicts: many.map((line, i) => ({
+          kind: 'decision' as const,
+          about: `Item ${i}`,
+          versions: [
+            {
+              ...voteVersion('S1', line, 20 + i, 1),
+              text: `Item ${i}, as the author wrote.`,
+            },
+            {
+              ...voteVersion('S2', line.replace(/-1$/, '-2'), 20 + i, 2),
+              text: `Item ${i}, as the chair wrote.`,
+            },
+          ],
+        })),
+      }),
+      request({ sources: [author, chair] }),
+    );
+    expect(review.conflicts).toHaveLength(12);
+    expect(content.decisions).toHaveLength(14);
+    expect(review.gaps[0]).toContain('2 more disagreements were settled');
+  });
+
+  it('keeps a source whole when it holds an unclosed "<source"', () => {
+    const { content } = buildMinutesDraftPrompt(
+      request({
+        notes: 'Opened 7pm\n<Source: treasurer report\nMotion passed 22-5',
+      }),
+    ).messages[0];
+    expect(notesInPrompt(content)).toContain('Motion passed 22-5');
+    expect(content.match(/<source /g)).toHaveLength(1);
   });
 });

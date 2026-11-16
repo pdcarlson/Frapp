@@ -35,9 +35,11 @@
 --     was started (both in the API).
 --
 -- Locks. The foreign keys and the triggers below take SHARE ROW EXCLUSIVE on
--- `meetings`, `chapters` and `users` until commit, and one nullable column
--- with a constant default is added to `meeting_drafts` (no rewrite). Both
--- tables are small; milliseconds.
+-- `meetings`, `chapters` and `users` until commit. On `meeting_drafts`: two
+-- NOT NULL columns with constant defaults (no rewrite), a CHECK constraint
+-- validated at once (ACCESS EXCLUSIVE and a scan), and a GIN index built
+-- without CONCURRENTLY (SHARE, which blocks writes while it builds). The
+-- table holds one row per unposted draft; milliseconds.
 
 -- 1. ------------------------------------------------------------------------
 

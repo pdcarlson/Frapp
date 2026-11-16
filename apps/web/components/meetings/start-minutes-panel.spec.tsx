@@ -1,13 +1,19 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ start: vi.fn(), push: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  start: vi.fn(),
+  push: vi.fn(),
+  permissions: { current: ["events:create"] as string[] },
+}));
 
 vi.mock("@repo/hooks", () => ({
   useEvents: () => ({ isPending: false, data: [] }),
   useMeetings: () => ({ data: [], refetch: vi.fn() }),
   useRoles: () => ({ data: [] }),
-  useMyPermissions: () => ({ data: { permissions: ["events:create"] } }),
+  useMyPermissions: () => ({
+    data: { permissions: mocks.permissions.current },
+  }),
   useStartMeeting: () => ({ mutateAsync: mocks.start, isPending: false }),
 }));
 
@@ -50,6 +56,23 @@ describe("StartMinutesPanel, a meeting not on the calendar", () => {
   beforeEach(() => {
     mocks.start.mockReset().mockResolvedValue({ id: "m-1" });
     mocks.push.mockReset();
+    mocks.permissions.current = ["events:create"];
+  });
+
+  it("offers it to an officer who can start minutes but not create events (#4935)", () => {
+    mocks.permissions.current = ["meetings:record"];
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(
+      screen.getByRole("button", { name: "It isn't on the calendar" }),
+    ).toBeTruthy();
+  });
+
+  it("offers it to nobody who can do neither", () => {
+    mocks.permissions.current = [];
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(
+      screen.queryByRole("button", { name: "It isn't on the calendar" }),
+    ).toBeNull();
   });
 
   it("takes the day in words and starts the minutes for it", async () => {

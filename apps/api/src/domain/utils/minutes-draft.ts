@@ -130,8 +130,18 @@ const ROLES_PER_MEMBER_MAX = 6;
 
 /** Each source is fenced: `<source id="S1" ...>` … `</source>`. */
 const SOURCE_CLOSE = '</source>';
-/** A fence typed into a source would open or end one early. */
-const FENCE = /<\/?\s*source\b[^>]*>?/gi;
+/**
+ * A fence typed into a source would open or end one early. A whole tag on
+ * one line goes; an unclosed "<source" loses only that word, so "<Source:
+ * treasurer report" keeps the rest of its line and every line after it.
+ */
+const FENCE_TAG = /<\/?\s*source\b[^<>\n]*>/gi;
+const FENCE_OPEN = /<\/?\s*source\b/gi;
+
+/** A source's text with every fence-shaped piece taken out. */
+function unfenced(text: string): string {
+  return text.replace(FENCE_TAG, '').replace(FENCE_OPEN, '');
+}
 
 const SECTION_GUIDE: Readonly<Record<string, string>> = {
   summary:
@@ -202,11 +212,9 @@ export function buildMinutesDraftPrompt(
       `by="${attr(source.label)}"`,
       ...(source.standing ? [`standing="${attr(source.standing)}"`] : []),
     ].join(' ');
-    return [
-      `<source ${attrs}>`,
-      source.text.replace(FENCE, ''),
-      SOURCE_CLOSE,
-    ].join('\n');
+    return [`<source ${attrs}>`, unfenced(source.text), SOURCE_CLOSE].join(
+      '\n',
+    );
   });
 
   const content = [
@@ -235,6 +243,24 @@ export function buildMinutesDraftPrompt(
     system: `${SYSTEM_RULES}\n\n${TYPE_GUIDE[request.meetingType]}`,
     messages: [{ role: 'user', content }],
   };
+}
+
+/**
+ * What a draft was written from, as one text a person reads (a report keeps
+ * it): each source under its writer's name.
+ */
+export function readableSources(sources: readonly MinutesSource[]): string {
+  // One officer's notes read as they were typed.
+  if (sources.length === 1 && sources[0].kind === 'notes') {
+    return sources[0].text;
+  }
+  return sources
+    .map((source) =>
+      source.kind === 'recording'
+        ? `Recording:\n${source.text}`
+        : `${source.label}'s notes:\n${source.text}`,
+    )
+    .join('\n\n');
 }
 
 /** The sources a prompt built by {@link buildMinutesDraftPrompt} carries. */
@@ -396,27 +422,46 @@ export function verifyMinutesDraft(
     }
   }
 
+  /** Disagreements settled but past the list's length, so not listed. */
+  let unlisted = 0;
+  /** Disagreements whose one checkable version doesn't settle them. */
+  const unsettled: string[] = [];
   for (const conflict of (output.conflicts ?? []).slice(
     0,
-    MEETING_DRAFT_CONFLICTS_MAX * 2,
+    MEETING_LIST_MAX_ITEMS * 2,
   )) {
     if (!wants(conflict.kind === 'decision' ? 'decisions' : 'action_items')) {
       continue;
     }
-    const outcome = checkConflict(conflict, checkDecision, checkAction);
+    const outcome = checkConflict(
+      conflict,
+      checkDecision,
+      checkAction,
+      sources,
+    );
     if (outcome === 'unquoted') {
       leftOut += 1;
       continue;
     }
     if (outcome === 'none') continue;
+    leftOut += outcome.unquoted;
     if (outcome.versions.length === 1) {
-      // Only one account survived the checks: an ordinary item.
       const [only] = outcome.versions;
-      if (outcome.kind === 'decision') pushDecision(only.decision!);
-      else pushAction(only.action!);
+      // One account survived. It goes in only when it would have won anyway:
+      // a version that failed its check but came from a source that settles
+      // more (the recording, or a higher rank) must not be beaten by being
+      // misquoted. Otherwise the author fills it in.
+      const rivals = outcome.failedSources;
+      const wins =
+        rivals.length === 0 || settle([only.source, ...rivals]).chosen === 0;
+      if (wins) {
+        if (outcome.kind === 'decision') pushDecision(only.decision!);
+        else pushAction(only.action!);
+      } else {
+        unsettled.push(clamp(oneLine(conflict.about), 120));
+      }
       continue;
     }
-    if (conflicts.length >= MEETING_DRAFT_CONFLICTS_MAX) continue;
     const { chosen, settledBy } = settle(
       outcome.versions.map((version) => version.source),
     );
@@ -428,6 +473,12 @@ export function verifyMinutesDraft(
       const winner = outcome.versions[chosen];
       if (outcome.kind === 'decision') pushDecision(winner.decision!);
       else pushAction(winner.action!);
+    }
+    // Settled either way; the list shows the first ones, and the rest are
+    // counted so the author knows to check.
+    if (conflicts.length >= MEETING_DRAFT_CONFLICTS_MAX) {
+      unlisted += 1;
+      continue;
     }
     conflicts.push({
       kind: outcome.kind,
@@ -445,9 +496,23 @@ export function verifyMinutesDraft(
   if (wants('decisions')) content.decisions = decisions;
   if (wants('action_items')) content.action_items = actionItems;
 
+  // Frapp's own gaps first, so the list's limit never cuts them.
+  const ownGaps = [
+    ...unsettled.map(
+      (about) =>
+        `The notes disagree about "${about}", and one version couldn't be matched to its notes. Check it and fill it in.`,
+    ),
+    ...(unlisted > 0
+      ? [
+          unlisted === 1
+            ? 'One more disagreement was settled but isn’t listed. Check the decisions and action items against the notes.'
+            : `${unlisted} more disagreements were settled but aren’t listed. Check the decisions and action items against the notes.`,
+        ]
+      : []),
+  ];
   const gaps = [
     ...new Set(
-      output.open_questions
+      [...ownGaps, ...output.open_questions]
         .map((gap) => clamp(oneLine(gap), MEETING_DRAFT_GAP_MAX_LENGTH))
         .filter((gap) => gap.length > 0),
     ),
@@ -510,16 +575,29 @@ function checkConflict(
         ownerCleared: boolean;
         due_date: string | null;
       },
+  sources: readonly MinutesSource[],
 ):
   | 'none'
   | 'unquoted'
-  | { kind: 'decision' | 'action_item'; versions: CheckedVersion[] } {
+  | {
+      kind: 'decision' | 'action_item';
+      versions: CheckedVersion[];
+      /** Versions whose quote is in no source, counted as left out. */
+      unquoted: number;
+      /** The sources those versions named, when they name one. */
+      failedSources: MinutesSource[];
+    } {
   const versions: CheckedVersion[] = [];
   let unquoted = 0;
+  const failedIds = new Set<string>();
+  const failed = (named: string) => {
+    unquoted += 1;
+    failedIds.add(named);
+  };
   for (const drafted of conflict.versions) {
     if (conflict.kind === 'decision') {
       const kept = checkDecision(drafted);
-      if (kept === 'unquoted') unquoted += 1;
+      if (kept === 'unquoted') failed(drafted.source);
       if (typeof kept === 'string') continue;
       if (versions.some((v) => v.source.id === kept.source.id)) continue;
       versions.push({
@@ -537,7 +615,7 @@ function checkConflict(
       });
     } else {
       const kept = checkAction(drafted);
-      if (kept === 'unquoted') unquoted += 1;
+      if (kept === 'unquoted') failed(drafted.source);
       if (typeof kept === 'string') continue;
       if (versions.some((v) => v.source.id === kept.source.id)) continue;
       versions.push({
@@ -556,6 +634,11 @@ function checkConflict(
     }
   }
   if (versions.length === 0) return unquoted > 0 ? 'unquoted' : 'none';
+  const failedSources = sources.filter(
+    (source) =>
+      failedIds.has(source.id) &&
+      !versions.some((version) => version.source.id === source.id),
+  );
   const sameAccount = versions.every(
     (v) =>
       v.text === versions[0].text &&
@@ -566,9 +649,14 @@ function checkConflict(
   if (sameAccount) {
     // Everyone wrote the same thing: one item, quoting whoever settles most.
     const { chosen } = settle(versions.map((v) => v.source));
-    return { kind: conflict.kind, versions: [versions[chosen ?? 0]] };
+    return {
+      kind: conflict.kind,
+      versions: [versions[chosen ?? 0]],
+      unquoted,
+      failedSources,
+    };
   }
-  return { kind: conflict.kind, versions };
+  return { kind: conflict.kind, versions, unquoted, failedSources };
 }
 
 /**

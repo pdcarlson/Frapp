@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EMPTY_MEETING_CONTENT } from '@repo/validation';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import type { IMeetingRepository } from '#domain/repositories/meeting.repository.interface';
 import type { IAttendanceRepository } from '#domain/repositories/attendance.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
@@ -127,7 +128,7 @@ describe('MeetingService', () => {
   let eventService: jest.Mocked<
     Pick<
       EventService,
-      'findById' | 'findVisibleByIds' | 'visibleToAll' | 'create'
+      'findById' | 'findVisibleByIds' | 'visibleToAll' | 'create' | 'delete'
     >
   >;
   let notifyMembers: jest.Mock;
@@ -244,6 +245,9 @@ describe('MeetingService', () => {
         });
         events.set(row.id, row);
         return row;
+      }),
+      delete: jest.fn(async (id: string, _chapterId: string) => {
+        events.delete(id);
       }),
     };
     notifyMembers = jest.fn().mockResolvedValue(undefined);
@@ -994,6 +998,58 @@ describe('MeetingService', () => {
       expect(eventService.create).toHaveBeenCalledWith(
         expect.objectContaining({ silent: true, is_mandatory: false }),
       );
+    });
+
+    it('refuses an event that already has minutes', async () => {
+      rows.set('mtg-1', meeting({ event_id: null }));
+      rows.set('mtg-2', meeting({ id: 'mtg-2', event_id: CHAPTER_EVENT.id }));
+      await expect(
+        service.linkEvent(CHAPTER, 'mtg-1', PRESIDENT, {
+          event_id: CHAPTER_EVENT.id,
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'meeting.already_started' }),
+      });
+    });
+
+    it('answers a race on the event with 409, and removes an event it made', async () => {
+      rows.set('mtg-1', meeting({ event_id: null }));
+      repo.update.mockRejectedValueOnce(
+        Object.assign(
+          new SupabaseQueryError({ message: 'dup', code: '23505' }),
+        ),
+      );
+      await expect(
+        service.linkEvent(CHAPTER, 'mtg-1', PRESIDENT, {
+          new_event: {
+            name: 'Chapter meeting',
+            start_time: '2026-11-11T00:00:00.000Z',
+            end_time: '2026-11-11T01:00:00.000Z',
+          },
+        }),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'meeting.already_started' }),
+      });
+      expect(eventService.delete).toHaveBeenCalledWith('evt-new', CHAPTER);
+    });
+
+    it('makes no event for meetings:edit alone', async () => {
+      PERMISSIONS['user-editor'] = ['meetings:edit'];
+      try {
+        rows.set('mtg-1', meeting({ event_id: null }));
+        await expect(
+          service.linkEvent(CHAPTER, 'mtg-1', 'user-editor', {
+            new_event: {
+              name: 'Chapter meeting',
+              start_time: '2026-11-11T00:00:00.000Z',
+              end_time: '2026-11-11T01:00:00.000Z',
+            },
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+        expect(eventService.create).not.toHaveBeenCalled();
+      } finally {
+        delete PERMISSIONS['user-editor'];
+      }
     });
 
     it('refuses minutes that already have their event', async () => {

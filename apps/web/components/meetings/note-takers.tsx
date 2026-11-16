@@ -62,7 +62,11 @@ export function useNotesAutosave(meetingId: string, initial: string) {
   const [text, setText] = useState(initial);
   const [status, setStatus] = useState<SaveStatus>("idle");
   const savedText = useRef(initial);
+  /** The same as `savedText`, for render: a ref can't be read there. */
+  const [saved, setSaved] = useState(initial);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** What a pending save will send, so leaving the page can send it now. */
+  const pending = useRef<string | null>(null);
   const mutate = useRef(save.mutateAsync);
   useEffect(() => {
     mutate.current = save.mutateAsync;
@@ -71,11 +75,13 @@ export function useNotesAutosave(meetingId: string, initial: string) {
   async function persist(value: string): Promise<boolean> {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
+    pending.current = null;
     if (value === savedText.current) return true;
     setStatus("saving");
     try {
       await mutate.current({ id: meetingId, notes: value });
       savedText.current = value;
+      setSaved(value);
       setStatus("saved");
       return true;
     } catch {
@@ -88,6 +94,7 @@ export function useNotesAutosave(meetingId: string, initial: string) {
     setText(value);
     if (timer.current) clearTimeout(timer.current);
     if (value.length > MEETING_NOTES_MAX_LENGTH) return;
+    pending.current = value;
     timer.current = setTimeout(() => void persist(value), SAVE_AFTER_MS);
   }
 
@@ -95,13 +102,15 @@ export function useNotesAutosave(meetingId: string, initial: string) {
   function reset(value: string) {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
+    pending.current = null;
     savedText.current = value;
+    setSaved(value);
     setText(value);
     setStatus("idle");
   }
 
   // Leaving with typing not yet saved asks first.
-  const unsaved = text !== savedText.current;
+  const unsaved = text !== saved;
   useEffect(() => {
     if (!unsaved) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
@@ -109,11 +118,18 @@ export function useNotesAutosave(meetingId: string, initial: string) {
     return () => window.removeEventListener("beforeunload", warn);
   }, [unsaved]);
 
+  // Leaving the page within the pause before a save (a link, closing the
+  // editor) sends what was typed rather than dropping it. The mutation runs
+  // on after this component is gone.
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
+      const value = pending.current;
+      if (value !== null && value !== savedText.current) {
+        void mutate.current({ id: meetingId, notes: value }).catch(() => {});
+      }
     },
-    [],
+    [meetingId],
   );
 
   return {
@@ -274,7 +290,9 @@ export function NoteTakersList({
                     ))}
                   </p>
                   <p className="text-caption text-muted-foreground">
-                    {row.held ? MEETING_NOTE_TAKERS_COPY.heldConsent : row.detail}
+                    {row.held
+                      ? MEETING_NOTE_TAKERS_COPY.heldConsent
+                      : row.detail}
                   </p>
                 </div>
                 {row.text ? (
@@ -283,7 +301,9 @@ export function NoteTakersList({
                     variant="ghost"
                     aria-expanded={open === row.key}
                     onClick={() =>
-                      setOpen((current) => (current === row.key ? null : row.key))
+                      setOpen((current) =>
+                        current === row.key ? null : row.key,
+                      )
                     }
                   >
                     {open === row.key

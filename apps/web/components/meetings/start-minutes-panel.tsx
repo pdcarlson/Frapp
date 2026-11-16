@@ -7,7 +7,6 @@ import {
   useEvents,
   useMeetings,
   useMyPermissions,
-  useRoles,
   useStartMeeting,
 } from "@repo/hooks";
 import {
@@ -33,13 +32,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
-import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
-import { toRoleOptions } from "@repo/hooks/chapter-roles";
 import {
   readKeptDraft,
   useKeptDraftKeys,
   useKeptFormDraft,
 } from "@repo/hooks/kept-drafts";
+import { MinutesAudienceField } from "@/components/meetings/minutes-audience";
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
@@ -53,8 +51,6 @@ import {
 const RECENT_DAYS = 30;
 /** And forward: minutes started at the top of a meeting that hasn't begun. */
 const AHEAD_HOURS = 24;
-/** Past this many roles the audience list gets a filter (a chapter can hold 100). */
-const ROLE_FILTER_AT = 8;
 
 type EventRow = { id: string; name: string; start_time: string };
 type Source = { kind: "event"; id: string } | { kind: "new" };
@@ -136,7 +132,6 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
   const eventsQuery = useEvents();
   const meetingsQuery = useMeetings();
-  const rolesQuery = useRoles();
   const permissions = useMyPermissions().data?.permissions ?? [];
   // Starting minutes is enough to make the quiet after-the-fact event
   // (#4935): it requires nobody, earns no points and pushes nothing.
@@ -223,19 +218,8 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     setProblems({});
     fill(freshMinutesDraft());
   }
-  const [roleFilter, setRoleFilter] = useState("");
   const [problems, setProblems] = useState<Record<string, string>>({});
 
-  const roles = useMemo(
-    () => toRoleOptions(rolesQuery.data),
-    [rolesQuery.data],
-  );
-  const shownRoles = useMemo(() => {
-    const term = roleFilter.trim().toLowerCase();
-    return term
-      ? roles.filter((role) => role.name.toLowerCase().includes(term))
-      : roles;
-  }, [roles, roleFilter]);
 
   function pickEvent(event: EventRow) {
     const existing = started.get(event.id);
@@ -464,65 +448,13 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
                   </div>
                 ) : null}
               </div>
-              <div className="grid gap-2">
-                <Label id={`${ids}-audience`}>Who reads the minutes</Label>
-                <SegmentedChoice
-                  label="Who reads the minutes"
-                  value={audience}
-                  onChange={setAudience}
-                  options={[
-                    { value: "everyone", label: "Everyone" },
-                    { value: "roles", label: "Some roles" },
-                  ]}
-                />
-                {audience === "roles" ? (
-                  <div className="grid gap-2">
-                    {roles.length > ROLE_FILTER_AT ? (
-                      <Input
-                        aria-label="Find a role"
-                        placeholder="Find a role"
-                        value={roleFilter}
-                        onChange={(event) => setRoleFilter(event.target.value)}
-                      />
-                    ) : null}
-                    <ul
-                      role="list"
-                      aria-labelledby={`${ids}-audience`}
-                      className="grid max-h-56 gap-0.5 overflow-y-auto"
-                    >
-                      {shownRoles.map((role) => {
-                        const checked = roleIds.includes(role.id);
-                        return (
-                          <li key={role.id}>
-                            <label className="flex min-h-9 cursor-pointer items-center gap-2 rounded-md px-2 text-sm hover:bg-card-hover pointer-coarse:min-h-11">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() =>
-                                  setRoleIds((current) =>
-                                    checked
-                                      ? current.filter((id) => id !== role.id)
-                                      : [...current, role.id],
-                                  )
-                                }
-                                className={dashboardTableCheckboxClassName}
-                              />
-                              <span className="truncate">{role.name}</span>
-                            </label>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                    {problems.roles ? (
-                      <FieldError>{problems.roles}</FieldError>
-                    ) : null}
-                  </div>
-                ) : null}
-                <p className="text-caption text-muted-foreground">
-                  It goes on the calendar with nobody required, no points, and
-                  no notification.
-                </p>
-              </div>
+              <MinutesAudienceField
+                audience={audience}
+                onAudienceChange={setAudience}
+                roleIds={roleIds}
+                onRoleIdsChange={setRoleIds}
+                error={problems.roles}
+              />
             </section>
           ) : null}
 

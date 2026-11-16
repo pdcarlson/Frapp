@@ -36,6 +36,8 @@ import { RbacService } from './rbac.service';
 import { NotificationService } from './notification.service';
 import { isInvited, type EventViewer } from './event-role-targeting';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
+import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
+import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 
 /**
  * What a feature does each time posted minutes are saved: when they are
@@ -755,18 +757,32 @@ export class MeetingService {
     } else {
       event = await this.createEventFor(chapterId, userId, input.new_event!);
     }
-    const saved = await this.meetingRepo.update(
-      chapterId,
-      id,
-      meeting.updated_at,
-      {
+    let saved: Meeting | null;
+    try {
+      saved = await this.meetingRepo.update(chapterId, id, meeting.updated_at, {
         event_id: event.id,
         event_name: event.name,
         event_start_time: event.start_time,
         updated_by: userId,
-      },
-    );
-    if (!saved) throw this.stale();
+      });
+    } catch (error) {
+      // Someone started or linked minutes on that event a moment ago: the
+      // one-minutes-per-event index refused this.
+      if (
+        error instanceof SupabaseQueryError &&
+        error.code === PG_UNIQUE_VIOLATION
+      ) {
+        if (input.new_event) await this.events.delete(event.id, chapterId);
+        throw this.alreadyStarted();
+      }
+      throw error;
+    }
+    if (!saved) {
+      // The minutes changed meanwhile; an event made for this link goes, so
+      // trying again doesn't leave a second one behind.
+      if (input.new_event) await this.events.delete(event.id, chapterId);
+      throw this.stale();
+    }
     return this.view(chapterId, saved, event, userId, access);
   }
 
@@ -843,15 +859,12 @@ export class MeetingService {
   ): Promise<Event> {
     // Starting minutes is enough (#4935): this event requires nobody, earns
     // no points and sends no push, so it can't do what `events:create`
-    // guards. Linking an event takes `meetings:edit`, which is checked first.
+    // guards. `meetings:edit` alone is not: linking orphaned minutes to a
+    // new event still needs one of these two.
     const canCreate = await this.rbac.memberHasAnyPermission(
       chapterId,
       userId,
-      [
-        SystemPermissions.EVENTS_CREATE,
-        SystemPermissions.MEETINGS_RECORD,
-        SystemPermissions.MEETINGS_EDIT,
-      ],
+      [SystemPermissions.EVENTS_CREATE, SystemPermissions.MEETINGS_RECORD],
     );
     if (!canCreate) {
       throw new ForbiddenException(

@@ -32,11 +32,15 @@ import type { Meeting, MeetingNote } from '#domain/entities/meeting.entity';
 import { SystemPermissions, WILDCARD } from '#domain/constants/permissions';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
 import { OUTSIDE_TIERS_RANK } from '#domain/utils/role-rank';
-import type { MinutesSource } from '#domain/utils/minutes-draft';
+import {
+  readableSources,
+  type MinutesSource,
+} from '#domain/utils/minutes-draft';
 import { MeetingService } from './meeting.service';
 import { RbacService } from './rbac.service';
 import { NotificationService } from './notification.service';
 import { AiConsentService } from './ai/ai-consent.service';
+import { AiRunService } from './ai-run.service';
 
 /** The catalog task whose consent a note-taker's notes go out under. */
 const MINUTES_DRAFT_TASK = 'minutes.draft';
@@ -47,13 +51,15 @@ export const MEETING_NOTES_RETENTION_DAYS = 30;
 /**
  * Ranks a note-taker's notes for settling a disagreement: lower wins. The
  * minutes' author, then `meetings:edit` holders, then role tier by the
- * chapter's own order (#4071). Tier positions start at 0 for the wildcard;
- * the two below sit above every tier.
+ * chapter's own order (#4071). Tier positions start at 0 for the wildcard.
+ * An editor's rank is their tier's moved below every tier, so two editors
+ * are still told apart by tier, and any editor outranks any plain
+ * note-taker.
  */
-const AUTHOR_RANK = -2;
-const EDITOR_RANK = -1;
 /** A rank that survives JSON: outside every tier. */
 const OUTSIDE_RANK = 1_000_000;
+const EDITOR_OFFSET = -2 * OUTSIDE_RANK;
+const AUTHOR_RANK = 2 * EDITOR_OFFSET;
 
 /** Why a member's notes are left out of the next draft, if they are. */
 export type MeetingNoteHeld = 'consent_required' | null;
@@ -147,6 +153,7 @@ export class MeetingNotesService {
     private readonly rbac: RbacService,
     private readonly notifications: NotificationService,
     private readonly consent: AiConsentService,
+    private readonly runs: AiRunService,
   ) {}
 
   async state(
@@ -170,10 +177,7 @@ export class MeetingNotesService {
   ): Promise<MeetingNotesState> {
     const access = await this.access(chapterId, meetingId, userId);
     await this.write(chapterId, access, userId, text);
-    return this.stateOf(chapterId, userId, {
-      ...access,
-      own: await this.notes.find(chapterId, meetingId, userId),
-    });
+    return this.stateOf(chapterId, userId, access);
   }
 
   /**
@@ -284,7 +288,7 @@ export class MeetingNotesService {
       );
     }
     await this.notes.delete(chapterId, meetingId, targetId);
-    await this.drafts.deleteWrittenFrom(chapterId, meetingId, targetId);
+    await this.dropDraftsFrom(chapterId, meetingId, targetId);
   }
 
   /**
@@ -354,9 +358,12 @@ export class MeetingNotesService {
     const names = new Map(identities.map((m) => [m.user_id, m.display_name]));
     const written = rows.filter((row) => row.notes.trim().length > 0);
 
+    const standings = await Promise.all(
+      written.map((row) => this.standingOf(chapterId, meeting, row)),
+    );
     const ranked: (MinutesSource & { order: number })[] = [];
-    for (const row of written) {
-      const standing = await this.standingOf(chapterId, meeting, row);
+    for (const [index, row] of written.entries()) {
+      const standing = standings[index];
       if (!standing) continue;
       ranked.push({
         id: '',
@@ -401,8 +408,9 @@ export class MeetingNotesService {
     if (sources.length === 0) {
       throw new BadRequestException('Paste or type your notes first.');
     }
-    const total = sources.reduce((sum, source) => sum + source.text.length, 0);
-    if (total > MEETING_DRAFT_SOURCES_MAX_LENGTH) {
+    // What the draft stores is the labelled text, so that is what is measured
+    // against the table's limit (`meeting_drafts_notes_len`).
+    if (readableSources(sources).length > MEETING_DRAFT_SOURCES_MAX_LENGTH) {
       throw new BadRequestException({
         code: 'meeting.notes_too_long',
         message: `Together the notes and the transcript run past ${MEETING_DRAFT_SOURCES_MAX_LENGTH.toLocaleString('en-US')} characters. Shorten someone’s notes, or draft the meeting in two parts.`,
@@ -414,6 +422,29 @@ export class MeetingNotesService {
         source.userId ? [source.userId] : [],
       ),
     };
+  }
+
+  /**
+   * The sources a queued draft may still send, checked again when its run
+   * runs (#4935): a note-taker who has since said No to Frapp AI, lost the
+   * meeting's event, or stopped taking notes is left out. The recording
+   * stays. Ranks stay as they were asked on.
+   */
+  async stillContributing(
+    chapterId: string,
+    meeting: Meeting,
+    sources: readonly MinutesSource[],
+  ): Promise<MinutesSource[]> {
+    const rows = await this.notes.findByMeeting(chapterId, meeting.id);
+    const kept = await Promise.all(
+      sources.map(async (source) => {
+        if (source.kind !== 'notes' || !source.userId) return true;
+        const row = rows.find((r) => r.user_id === source.userId);
+        if (!row || !row.notes.trim()) return false;
+        return (await this.standingOf(chapterId, meeting, row)) !== null;
+      }),
+    );
+    return sources.filter((_, index) => kept[index]);
   }
 
   /** The retention sweep: every note-taker's notes older than the limit. */
@@ -451,6 +482,24 @@ export class MeetingNotesService {
     return { meeting, canEdit: view.canEdit, own };
   }
 
+  /**
+   * Deletes the meeting's draft when it was written from `userId`'s notes,
+   * stopping its run first when it is still being written, so a provider
+   * call isn't paid for a draft that is gone.
+   */
+  private async dropDraftsFrom(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+  ): Promise<void> {
+    const draft = await this.drafts.find(chapterId, meetingId);
+    if (!draft || !draft.source_user_ids?.includes(userId)) return;
+    if (draft.status === 'drafting' && draft.run_id) {
+      await this.runs.cancel(chapterId, draft.run_id);
+    }
+    await this.drafts.deleteWrittenFrom(chapterId, meetingId, userId);
+  }
+
   private async write(
     chapterId: string,
     access: NotesAccess,
@@ -478,7 +527,7 @@ export class MeetingNotesService {
       } else if (own) {
         await this.notes.delete(chapterId, meeting.id, userId);
       }
-      await this.drafts.deleteWrittenFrom(chapterId, meeting.id, userId);
+      await this.dropDraftsFrom(chapterId, meeting.id, userId);
       return;
     }
     await this.notes.upsert({
@@ -588,14 +637,18 @@ export class MeetingNotesService {
       canEditAny || (visible && (isAuthor || !!row.added_by || canRecord));
     if (!may) return null;
     if (isAuthor) return { rank: AUTHOR_RANK, label: 'minutes author' };
-    if (canEditAny) return { rank: EDITOR_RANK, label: 'edits any minutes' };
-    if (reach.rank === OUTSIDE_TIERS_RANK) {
-      return { rank: OUTSIDE_RANK, label: 'member' };
-    }
+    const tierRank =
+      reach.rank === OUTSIDE_TIERS_RANK ? OUTSIDE_RANK - 1 : reach.rank;
     const tier = context.tiers.find(
       (t) => context.positions.get(t.id) === reach.rank,
     );
-    return { rank: reach.rank, label: tier?.name ?? 'member' };
+    if (canEditAny) {
+      return {
+        rank: EDITOR_OFFSET + tierRank,
+        label: `edits any minutes${tier ? `, ${tier.name}` : ''}`,
+      };
+    }
+    return { rank: tierRank, label: tier?.name ?? 'member' };
   }
 }
 

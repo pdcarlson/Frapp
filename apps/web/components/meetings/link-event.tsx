@@ -15,6 +15,10 @@ import { Label } from "@/components/ui/label";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { localIso } from "@/components/meetings/start-minutes-panel";
+import {
+  MinutesAudienceField,
+  type MinutesAudience,
+} from "@/components/meetings/minutes-audience";
 
 /** How far back the picker looks for the meeting's event. */
 const RECENT_DAYS = 60;
@@ -46,18 +50,24 @@ export function LinkEventPanel({
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("19:00");
   const [endTime, setEndTime] = useState("20:00");
+  const [audience, setAudience] = useState<MinutesAudience>("everyone");
+  const [roleIds, setRoleIds] = useState<string[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
 
   const [now] = useState(() => Date.now());
   const recent = useMemo(() => {
     const withMinutes = new Set(
-      (meetingsQuery.data ?? []).flatMap((m) => (m.event_id ? [m.event_id] : [])),
+      (meetingsQuery.data ?? []).flatMap((m) =>
+        m.event_id ? [m.event_id] : [],
+      ),
     );
     const from = now - RECENT_DAYS * 86_400_000;
     return asArray<EventRow>(eventsQuery.data)
       .filter((event) => {
         const at = Date.parse(event?.start_time ?? "");
-        return !!event?.id && at >= from && at <= now && !withMinutes.has(event.id);
+        return (
+          !!event?.id && at >= from && at <= now && !withMinutes.has(event.id)
+        );
       })
       .sort((a, b) => Date.parse(b.start_time) - Date.parse(a.start_time));
   }, [eventsQuery.data, meetingsQuery.data, now]);
@@ -79,12 +89,26 @@ export function LinkEventPanel({
   function makeIt() {
     const start = localIso(date, startTime);
     const end = localIso(date, endTime);
-    if (!name.trim() || !start || !end || Date.parse(end) <= Date.parse(start)) {
+    if (
+      !name.trim() ||
+      !start ||
+      !end ||
+      Date.parse(end) <= Date.parse(start)
+    ) {
       setProblem("Give the meeting a name, a day, and an end after its start.");
       return;
     }
+    if (audience === "roles" && roleIds.length === 0) {
+      setProblem("Pick at least one role, or choose Everyone.");
+      return;
+    }
     void submit({
-      new_event: { name: name.trim(), start_time: start, end_time: end },
+      new_event: {
+        name: name.trim(),
+        start_time: start,
+        end_time: end,
+        role_ids: audience === "roles" ? roleIds : [],
+      },
     });
   }
 
@@ -183,6 +207,12 @@ export function LinkEventPanel({
                   />
                 </div>
               </div>
+              <MinutesAudienceField
+                audience={audience}
+                onAudienceChange={setAudience}
+                roleIds={roleIds}
+                onRoleIdsChange={setRoleIds}
+              />
               <div>
                 <Button size="sm" disabled={link.isPending} onClick={makeIt}>
                   {MEETING_NOTE_TAKERS_COPY.linkEvent}

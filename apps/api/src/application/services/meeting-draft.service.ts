@@ -45,6 +45,7 @@ import {
   verifyMinutesDraft,
   type MinutesDraftRequest,
   type MinutesRosterMember,
+  readableSources,
   type MinutesSource,
 } from '#domain/utils/minutes-draft';
 import { MeetingService } from './meeting.service';
@@ -373,6 +374,8 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     const consent = await this.consentFor(chapterId, userId);
     return {
       ...this.stateOf(used ?? { ...draft, status: 'applied' }),
+      // The stored notes are every source's; the box shows the caller's own.
+      notes: await this.meetingNotes.ownNotes(chapterId, meetingId, userId),
       blocked: consent.allowed
         ? null
         : consent.reason === 'chapter_off'
@@ -599,6 +602,19 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     }
 
     const request = await this.draftRequest(chapterId, meeting, draft);
+    if (request.sources) {
+      // Who may still contribute is checked as late as the call: a
+      // note-taker who said No to Frapp AI or left since the officer asked
+      // is not sent (#4935).
+      request.sources = await this.meetingNotes.stillContributing(
+        chapterId,
+        meeting,
+        request.sources,
+      );
+      if (request.sources.length === 0) {
+        return fail('not_permitted', 'not_permitted');
+      }
+    }
     const prompt = buildMinutesDraftPrompt(request);
     const result = await this.gateway.generateObject(
       MINUTES_DRAFT_TASK,
@@ -882,24 +898,6 @@ function storedSources(stored: unknown): MinutesSource[] {
       },
     ];
   });
-}
-
-/**
- * What a draft was written from, as one text a person reads (a report keeps
- * it): each source under its writer's name.
- */
-function readableSources(sources: readonly MinutesSource[]): string {
-  // One officer's notes read as they were typed.
-  if (sources.length === 1 && sources[0].kind === 'notes') {
-    return sources[0].text;
-  }
-  return sources
-    .map((source) =>
-      source.kind === 'recording'
-        ? `Recording:\n${source.text}`
-        : `${source.label}'s notes:\n${source.text}`,
-    )
-    .join('\n\n');
 }
 
 /**

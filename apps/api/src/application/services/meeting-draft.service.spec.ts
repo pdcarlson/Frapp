@@ -210,6 +210,17 @@ class FakeNotes {
     });
   }
   deleteExpired = jest.fn().mockResolvedValue(1);
+  /** Who has dropped out since the draft was asked for. */
+  droppedOut = new Set<string>();
+  stillContributing(
+    _c: string,
+    _m: Meeting,
+    sources: readonly MinutesSource[],
+  ): Promise<MinutesSource[]> {
+    return Promise.resolve(
+      sources.filter((s) => !s.userId || !this.droppedOut.has(s.userId)),
+    );
+  }
 }
 
 interface Setup {
@@ -957,6 +968,25 @@ describe('MeetingDraftService', () => {
       await service.discard(CHAPTER, MEETING, SECRETARY);
       expect(notes.own.has(SECRETARY)).toBe(false);
       expect(notes.others).toHaveLength(1);
+    });
+
+    it('leaves out a note-taker who said No to Frapp AI after the draft was asked for', async () => {
+      const { ask, work, seen, notes } = withSam();
+      await ask();
+      notes.droppedOut.add(SAM);
+      await work();
+      expect(seen[0].messages[0].content).not.toContain('Sam Abernathy');
+    });
+
+    it('Use the draft shows the officer’s own notes, not every source', async () => {
+      const { ask, work, drafts, meetings, service } = withSam();
+      await ask();
+      meetings.update.mockRejectedValueOnce(new ConflictException('stale'));
+      await work();
+      expect(drafts.row?.status).toBe('ready');
+      meetings.update.mockResolvedValue({});
+      const state = await service.use(CHAPTER, MEETING, SECRETARY, V1);
+      expect(state.notes).toBe(NOTES);
     });
 
     it('a report quotes every note-taker the draft read', async () => {

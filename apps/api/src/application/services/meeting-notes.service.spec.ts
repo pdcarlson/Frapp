@@ -15,6 +15,7 @@ import type { MeetingService } from './meeting.service';
 import type { RbacService } from './rbac.service';
 import type { NotificationService } from './notification.service';
 import type { AiConsentService } from './ai/ai-consent.service';
+import type { AiRunService } from './ai-run.service';
 
 const CHAPTER = 'ch-1';
 const MEETING = 'mtg-1';
@@ -22,6 +23,8 @@ const AUTHOR = 'u-author';
 const OFFICER = 'u-officer';
 const PLEDGE_ED = 'u-pledge-ed';
 const OUTSIDER = 'u-outsider';
+const PRESIDENT = 'u-president';
+const VP_EDITOR = 'u-vp-editor';
 
 const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
   id: MEETING,
@@ -103,11 +106,21 @@ const PEOPLE: Record<string, Person> = {
   [OFFICER]: { permissions: ['meetings:record'], rank: 1 },
   [PLEDGE_ED]: { permissions: [], rank: 3 },
   [OUTSIDER]: { permissions: ['meetings:record'], rank: 1, invited: false },
+  [PRESIDENT]: { permissions: ['*'], rank: 0 },
+  [VP_EDITOR]: { permissions: ['meetings:edit', 'meetings:record'], rank: 3 },
 };
 
 function setup(stored: Meeting = meeting(), people = PEOPLE) {
   const notes = new FakeNotes();
-  const drafts = { deleteWrittenFrom: jest.fn().mockResolvedValue(undefined) };
+  const drafts = {
+    deleteWrittenFrom: jest.fn().mockResolvedValue(undefined),
+    find: jest.fn().mockResolvedValue({
+      status: 'drafting',
+      run_id: 'run-1',
+      source_user_ids: [AUTHOR, OFFICER, PLEDGE_ED],
+    }),
+  };
+  const runs = { cancel: jest.fn().mockResolvedValue(true) };
   const recordings = { find: jest.fn().mockResolvedValue(null) };
   const person = (id: string): Person =>
     people[id] ?? { permissions: [], invited: false };
@@ -190,8 +203,9 @@ function setup(stored: Meeting = meeting(), people = PEOPLE) {
     rbac as unknown as RbacService,
     notifications as unknown as NotificationService,
     consent as unknown as AiConsentService,
+    runs as unknown as AiRunService,
   );
-  return { service, notes, drafts, recordings, notifications, meetings };
+  return { service, notes, drafts, recordings, notifications, meetings, runs };
 }
 
 describe('MeetingNotesService', () => {
@@ -304,11 +318,12 @@ describe('MeetingNotesService', () => {
   });
 
   describe('clearing and removing', () => {
-    it('clearing notes removes them and any draft written from them', async () => {
-      const { service, notes, drafts } = setup();
+    it('clearing notes removes them and any draft written from them, stopping its run', async () => {
+      const { service, notes, drafts, runs } = setup();
       await service.save(CHAPTER, MEETING, OFFICER, 'notes');
       await service.clear(CHAPTER, MEETING, OFFICER);
       expect(notes.rows).toEqual([]);
+      expect(runs.cancel).toHaveBeenCalledWith(CHAPTER, 'run-1');
       expect(drafts.deleteWrittenFrom).toHaveBeenCalledWith(
         CHAPTER,
         MEETING,
@@ -362,12 +377,15 @@ describe('MeetingNotesService', () => {
         CHAPTER,
         meeting(),
       );
-      expect(sources.map((s) => [s.id, s.label, s.standing, s.rank])).toEqual([
-        ['S1', 'Eli Sorensen', 'minutes author', -2],
-        ['S2', 'Sam Abernathy', 'Exec board', 1],
-        ['S3', 'Theo Vasquez', 'Members', 3],
-        ['S4', 'Recording', null, 1_000_000],
+      expect(sources.map((s) => [s.id, s.label, s.standing])).toEqual([
+        ['S1', 'Eli Sorensen', 'minutes author'],
+        ['S2', 'Sam Abernathy', 'Exec board'],
+        ['S3', 'Theo Vasquez', 'Members'],
+        ['S4', 'Recording', null],
       ]);
+      const [author, officer, pledgeEd] = sources.map((s) => s.rank);
+      expect(author).toBeLessThan(officer);
+      expect(officer).toBeLessThan(pledgeEd);
       expect(sourceUserIds).toEqual([AUTHOR, OFFICER, PLEDGE_ED]);
     });
 
@@ -413,6 +431,40 @@ describe('MeetingNotesService', () => {
       });
       const { sources } = await service.sourcesFor(CHAPTER, meeting());
       expect(sources).toHaveLength(1);
+    });
+
+    it('ranks meetings:edit holders above plain note-takers, and by tier among themselves', async () => {
+      const { service, notes } = setup();
+      for (const user of [OFFICER, PRESIDENT, VP_EDITOR]) {
+        notes.rows.push({
+          meeting_id: MEETING,
+          chapter_id: CHAPTER,
+          user_id: user,
+          notes: `${user} notes`,
+          added_by: null,
+          created_at: '',
+          updated_at: '',
+        });
+      }
+      const { sources } = await service.sourcesFor(CHAPTER, meeting());
+      const rank = (id: string) => sources.find((s) => s.userId === id)!.rank;
+      expect(rank(PRESIDENT)).toBeLessThan(rank(VP_EDITOR));
+      expect(rank(VP_EDITOR)).toBeLessThan(rank(OFFICER));
+    });
+
+    it('checks again when the run runs: a note-taker who said No since is left out', async () => {
+      const people = { ...PEOPLE };
+      const { service } = setup(meeting(), people);
+      await service.save(CHAPTER, MEETING, AUTHOR, 'author notes');
+      await service.save(CHAPTER, MEETING, OFFICER, 'officer notes');
+      const { sources } = await service.sourcesFor(CHAPTER, meeting());
+      people[OFFICER] = { ...PEOPLE[OFFICER], consented: false };
+      const still = await service.stillContributing(
+        CHAPTER,
+        meeting(),
+        sources,
+      );
+      expect(still.map((s) => s.label)).toEqual(['Eli Sorensen']);
     });
 
     it('has nothing to draft from with no notes and no transcript', async () => {

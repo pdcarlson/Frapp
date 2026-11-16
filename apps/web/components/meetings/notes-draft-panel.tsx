@@ -166,11 +166,15 @@ export function NotesDraftPanel({
       });
       if (!answer) return;
     }
+    // A save still waiting goes first: otherwise the draft would read the
+    // notes as they were, and the late save of an emptied box would then
+    // delete the draft just asked for.
+    if (!(await autosave.flush())) return;
     const expected = await prepare();
     if (!expected) return;
     try {
-      // The officer's notes go with the request, so the draft reads exactly
-      // what is in the box even if the last save is still on its way.
+      // The officer's notes go with the request too, so the draft reads
+      // exactly what is in the box.
       await request.mutateAsync({
         id: meetingId,
         body: {
@@ -502,7 +506,7 @@ export function NotesDraftPanel({
                                 version.from,
                                 isMine(version.from),
                               )
-                            : MEETING_NOTE_TAKERS_COPY.useVersion(
+                            : MEETING_NOTE_TAKERS_COPY.takeVersion(
                                 version.from,
                                 isMine(version.from),
                               )}
