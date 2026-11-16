@@ -42,6 +42,8 @@ function render(
   onComplete = vi.fn(async () => {}),
   initialProblem: string | null = null,
   keptDraft?: string,
+  /** The modal's stand-in, for a spec that watches it close. */
+  modal?: { present: () => void; dismiss: () => void },
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -55,6 +57,12 @@ function render(
           onClosed={() => {}}
         />
       </FrappThemeProvider>,
+      modal
+        ? {
+            createNodeMock: (element) =>
+              (element.type as unknown) === "BottomSheetModal" ? modal : null,
+          }
+        : undefined,
     );
   });
   return tree;
@@ -397,14 +405,16 @@ describe("MarkDoneSheet's kept proof (#5041)", () => {
     act(() => second.unmount());
   });
 
-  it("holds it out while Mark done is in flight, and puts it back when it fails", async () => {
-    const name = nextDraft();
+  /** Mark done sent from a sheet that has gone, still out. */
+  async function sentAndLeft(name: string) {
+    let land: () => void = () => {};
     let fail: (error: unknown) => void = () => {};
     const first = open(
       name,
       vi.fn(
         () =>
-          new Promise<void>((_resolve, reject) => {
+          new Promise<void>((resolve, reject) => {
+            land = resolve;
             fail = reject;
           }),
       ),
@@ -412,14 +422,74 @@ describe("MarkDoneSheet's kept proof (#5041)", () => {
     fill(first);
     await press(markDone(first));
     act(() => first.unmount());
+    return { land: () => land(), fail: (error: unknown) => fail(error) };
+  }
 
+  it("reopens mid-send on the proof it sent, held until the send settles (#5086)", async () => {
+    const name = nextDraft();
+    await sentAndLeft(name);
+    const onComplete = vi.fn(async () => {});
+    const during = open(name, onComplete);
+    expect(values(during)).toEqual(["https://ex.com/a", "Fixed it"]);
+    // The same proof isn't offered to send again while the first is out:
+    // Mark done is held busy, as on the sheet that sent it.
+    const held = during.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityState?.busy === true,
+    );
+    expect(held).toHaveLength(1);
+    expect(held[0]!.props.disabled).toBe(true);
+    expect(field(during, "Link").props.editable).toBe(false);
+    await press(held[0]!);
+    expect(onComplete).not.toHaveBeenCalled();
+    act(() => during.unmount());
+  });
+
+  it("keeps what a reopened sheet shows when the send fails, through an edit (#5086)", async () => {
+    const name = nextDraft();
+    const send = await sentAndLeft(name);
     const during = open(name);
-    expect(values(during)).toEqual(["", ""]);
+    await act(async () => send.fail({ statusCode: 500, message: "Down" }));
+    expect(markDone(during).props.disabled).toBe(false);
+    expect(values(during)).toEqual(["https://ex.com/a", "Fixed it"]);
+    act(() =>
+      field(during, "Reply to the officer").props.onChangeText(
+        "Fixed it twice",
+      ),
+    );
     act(() => during.unmount());
 
-    await act(async () => fail({ statusCode: 500, message: "Down" }));
+    const after = open(name);
+    expect(values(after)).toEqual(["https://ex.com/a", "Fixed it twice"]);
+    act(() => after.unmount());
+  });
+
+  it("puts it back when it fails with no sheet open", async () => {
+    const name = nextDraft();
+    const send = await sentAndLeft(name);
+    await act(async () => send.fail({ statusCode: 500, message: "Down" }));
     const after = open(name);
     expect(values(after)).toEqual(["https://ex.com/a", "Fixed it"]);
+    act(() => after.unmount());
+  });
+
+  it("closes a reopened sheet when the send lands, and keeps nothing (#5086)", async () => {
+    const name = nextDraft();
+    const send = await sentAndLeft(name);
+    const modal = { present: vi.fn(), dismiss: vi.fn() };
+    const during = render(SENT_BACK, undefined, null, name, modal);
+    act(() =>
+      during.root
+        .findByType("BottomSheetModal" as never)
+        .props.onAnimate(-1, 0),
+    );
+    await act(async () => send.land());
+    expect(modal.dismiss).toHaveBeenCalledTimes(1);
+    act(() => during.unmount());
+
+    const after = open(name);
+    expect(values(after)).toEqual(["", ""]);
     act(() => after.unmount());
   });
 

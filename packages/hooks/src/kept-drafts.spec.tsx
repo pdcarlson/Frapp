@@ -9,6 +9,7 @@ import {
   hasKeptDraft,
   readKeptDraft,
   readKeptPanel,
+  readKeptSend,
   useKeptDraftKeys,
   useKeptFormDraft,
   useKeptPanel,
@@ -240,5 +241,81 @@ describe("keepEditsOver (#4872)", () => {
     expect(
       keepEditsOver(kept, base, now, KEYS, [["start", "end"]]),
     ).toMatchObject({ start: "18:45", end: "21:15" });
+  });
+});
+
+describe("a form mounted on another form's save in flight (#5086)", () => {
+  type Note = { text: string };
+  const wrapper = inChapter("chapter-a");
+
+  /** The form that sends "Hi", held mid-save, and the form mounted after it. */
+  function sendThenReopen() {
+    const key = renderHook(() => useKeptDraftKeys(), {
+      wrapper,
+    }).result.current.draft("note");
+    const sender = renderHook(
+      ({ value }: { value: Note }) => useKeptFormDraft("note", true, value),
+      { wrapper, initialProps: { value: { text: "" } } },
+    );
+    act(() => {
+      sender.result.current.take();
+    });
+    sender.rerender({ value: { text: "" } });
+    sender.rerender({ value: { text: "Hi" } });
+    act(() => sender.result.current.hold());
+    // What a sheet mounted per open reads for its first state.
+    const opening = readKeptDraft<Note>(key) ?? readKeptSend<Note>(key);
+    expect(opening).toEqual({ text: "Hi" });
+    const reopened = renderHook(
+      ({ value }: { value: Note }) =>
+        useKeptFormDraft("note", true, value, {
+          restoredAtMount: true,
+          adoptsSend: true,
+        }),
+      { wrapper, initialProps: { value: opening! } },
+    );
+    reopened.rerender({ value: opening! });
+    return { key, sender, reopened };
+  }
+
+  it("waits on the save without offering it again", () => {
+    const { key, reopened } = sendThenReopen();
+    expect(reopened.result.current.sendingElsewhere).toBe(true);
+    expect(hasKeptDraft(key)).toBe(false);
+  });
+
+  it("keeps the draft a failed save puts back, through an edit", () => {
+    const { key, sender, reopened } = sendThenReopen();
+    act(() => sender.result.current.release());
+    expect(reopened.result.current.sendingElsewhere).toBe(false);
+    expect(reopened.result.current.landedElsewhere).toBe(false);
+    expect(readKeptDraft(key)).toEqual({ text: "Hi" });
+    reopened.rerender({ value: { text: "Hi there" } });
+    expect(readKeptDraft(key)).toEqual({ text: "Hi there" });
+  });
+
+  it("hears a save that lands from a form that has gone, and keeps nothing it sent", () => {
+    const { key, sender, reopened } = sendThenReopen();
+    sender.unmount();
+    act(() => sender.result.current.settleGone("landed"));
+    expect(reopened.result.current.sendingElsewhere).toBe(false);
+    expect(reopened.result.current.landedElsewhere).toBe(true);
+    reopened.rerender({ value: { text: "Hi" } });
+    expect(hasKeptDraft(key)).toBe(false);
+    // A new edit is a new draft.
+    reopened.rerender({ value: { text: "Next" } });
+    expect(readKeptDraft(key)).toEqual({ text: "Next" });
+  });
+
+  it("leaves a form that didn't open on the save to keep what it writes", () => {
+    const { key } = sendThenReopen();
+    const fresh = renderHook(
+      ({ value }: { value: Note }) => useKeptFormDraft("note", true, value),
+      { wrapper, initialProps: { value: { text: "" } } },
+    );
+    fresh.rerender({ value: { text: "" } });
+    fresh.rerender({ value: { text: "Other" } });
+    expect(readKeptDraft(key)).toEqual({ text: "Other" });
+    expect(fresh.result.current.sendingElsewhere).toBe(false);
   });
 });

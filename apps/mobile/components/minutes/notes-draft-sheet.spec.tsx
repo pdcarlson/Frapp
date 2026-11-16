@@ -203,7 +203,10 @@ describe("a recording's transcript in the notes", () => {
         element(
           draftState(),
           false,
-          recordingState({ upload_id: "upload-2", transcript: "Speaker 1: Round two." }),
+          recordingState({
+            upload_id: "upload-2",
+            transcript: "Speaker 1: Round two.",
+          }),
         ),
       ),
     );
@@ -279,7 +282,10 @@ describe("NotesDraftSheet", () => {
 
   it("stops saying consent is missing once the member has said yes", async () => {
     confirm.mockResolvedValue(false);
-    const tree = render(draftState({ blocked: "consent_required" } as never), true);
+    const tree = render(
+      draftState({ blocked: "consent_required" } as never),
+      true,
+    );
     act(() => field(tree).props.onChangeText("Notes"));
     // Yes on the sheet, then Cancel on "replace what's written?".
     await press(tree, MEETING_NOTES_COPY.draft);
@@ -459,7 +465,24 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
     leave(second);
   });
 
-  it("holds them out while the ask is in flight, and keeps them when it fails", async () => {
+  it("reopens mid-ask on the notes it sent, held until the ask settles (#5086)", async () => {
+    hooks.request.mockReturnValueOnce(new Promise(() => {}));
+    const first = render(draftState());
+    type(first, "Budget passed.");
+    await press(first, MEETING_NOTES_COPY.draft);
+    leave(first);
+    const calls = hooks.request.mock.calls.length;
+
+    const during = render(draftState());
+    expect(field(during).props.value).toBe("Budget passed.");
+    expect(field(during).props.editable).toBe(false);
+    // Nothing offers the same ask again while the first is out.
+    expect(screenText(during)).not.toContain(MEETING_NOTES_COPY.draft);
+    expect(hooks.request.mock.calls.length).toBe(calls);
+    leave(during);
+  });
+
+  it("keeps what a reopened sheet shows when the ask fails, through an edit (#5086)", async () => {
     let fail: (error: unknown) => void = () => {};
     hooks.request.mockReturnValueOnce(
       new Promise((_resolve, reject) => {
@@ -471,11 +494,55 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
     await press(first, MEETING_NOTES_COPY.draft);
     leave(first);
     const during = render(draftState());
-    expect(field(during).props.value).toBe("");
+
+    await act(async () => fail(new Error("offline")));
+    expect(field(during).props.editable).toBe(true);
+    expect(field(during).props.value).toBe("Budget passed.");
+    type(during, "Budget passed. Dues next.");
     leave(during);
+
+    const after = render(draftState());
+    expect(field(after).props.value).toBe("Budget passed. Dues next.");
+    leave(after);
+  });
+
+  it("keeps them when the ask fails with no sheet open", async () => {
+    let fail: (error: unknown) => void = () => {};
+    hooks.request.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const first = render(draftState());
+    type(first, "Budget passed.");
+    await press(first, MEETING_NOTES_COPY.draft);
+    leave(first);
 
     await act(async () => fail(new Error("offline")));
     const after = render(draftState());
+    expect(field(after).props.value).toBe("Budget passed.");
+    leave(after);
+  });
+
+  it("keeps nothing once the ask a reopened sheet waited on lands (#5086)", async () => {
+    let land: () => void = () => {};
+    hooks.request.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        land = resolve;
+      }),
+    );
+    const first = render(draftState());
+    type(first, "Budget passed.");
+    await press(first, MEETING_NOTES_COPY.draft);
+    leave(first);
+    const during = render(draftState());
+
+    await act(async () => land());
+    expect(field(during).props.editable).toBe(true);
+    leave(during);
+
+    // The server holds them now: nothing is kept over it.
+    const after = render(draftState({ notes: "Budget passed." }));
     expect(field(after).props.value).toBe("Budget passed.");
     leave(after);
   });
