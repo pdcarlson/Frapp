@@ -14,7 +14,7 @@
   - `select pg_get_function_result('public.read_chat_corpus_window(uuid, uuid)'::regprocedure);` ends with `kind text`.
   - `select has_function_privilege('authenticated', 'public.read_chat_corpus_window(uuid, uuid)', 'execute');` returns false.
   - `select has_function_privilege('service_role', 'public.read_chat_corpus_window(uuid, uuid)', 'execute');` returns true.
-- **Promoter notes**: no data is written, and either deploy order works. An older API ignores the extra column, and a newer API reading the old function treats a missing kind as plain text. The API that ships with this migration raises `CORPUS_PIPELINE_VERSION`, so every indexed source is indexed again in the background over the following hours, within the spend caps.
+- **Promoter notes**: no data is written. **Migrate before the API**, as the deploy workflows already do. An older API ignores the extra column. The API that ships with this migration raises `CORPUS_PIPELINE_VERSION`, so every indexed source is indexed again in the background over the following hours, within the spend caps. If that API ran against the old function, it would read every message as plain text and stamp the re-indexed windows with the new version, and nothing would index them again once the migration landed. If that happens out of band, raise `CORPUS_PIPELINE_VERSION` once more after migrating.
 
 ## Rollback
 

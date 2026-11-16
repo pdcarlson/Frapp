@@ -98,8 +98,18 @@ export function chatSourceTitle(channelName: string): string {
  * than rank it in code.
  */
 function lineOf(message: ChatWindowMessage): string {
-  const name = message.senderName.trim() || UNNAMED_AUTHOR;
-  const text = normalizeCorpusText(message.content).replace(/\n{2,}/g, '\n');
+  // One message is one line, and the part before the first ": " is the
+  // indexer's words: the name loses the characters that separate a name
+  // from its fact, and the message its line breaks, so no member can write
+  // a line that reads as another author's, or as an announcement they did
+  // not post (#4915). The same rule as the live tools' lines
+  // (`conversation-lines.ts` `messageSource`).
+  const name =
+    message.senderName
+      .replace(/[:;.,|()[\]]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() || UNNAMED_AUTHOR;
+  const text = normalizeCorpusText(message.content).replace(/\s+/g, ' ').trim();
   const how = chatLineKind(message.kind, message.threadRootId !== null);
   return how ? `${name}, ${how}: ${text}` : `${name}: ${text}`;
 }

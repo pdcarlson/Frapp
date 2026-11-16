@@ -136,8 +136,10 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
       -- next morning, and a message at 03:00 UTC on November 10 that belongs
       -- to the evening of the 9th.
       insert into chat_messages (id, channel_id, sender_id, content, created_at) values
-        ('${ROOT}', '${GEN}', '${U1}', 'Who has the van keys?', '2026-11-09T22:00:00Z'),
-        ('${LATE}', '${GEN}', '${U2}', 'still up, anyone?', '2026-11-10T03:00:00Z');
+        ('${ROOT}', '${GEN}', '${U1}', 'Who has the van keys?', '2026-11-09T22:00:00Z');
+      -- Posted as an announcement, which is chat (#4915): the read names it.
+      insert into chat_messages (id, channel_id, sender_id, content, created_at, kind) values
+        ('${LATE}', '${GEN}', '${U2}', 'still up, anyone?', '2026-11-10T03:00:00Z', 'announcement');
       insert into chat_messages (id, channel_id, sender_id, content, created_at, thread_root_id) values
         ('${REPLY}', '${GEN}', '${U2}', 'I do, on the hook.', '2026-11-11T14:00:00Z', '${ROOT}');
       insert into chat_messages (channel_id, sender_id, content, created_at) values
@@ -198,7 +200,7 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
     );
     check(
       "the window read says what kind each message is, so a line can name an announcement (#4915)",
-      read.every((r) => typeof r.kind === "string" && r.kind !== ""),
+      read.map((r) => r.kind).join() === ["text", "text", "announcement"].join(),
       { kinds: read.map((r) => r.kind) },
     );
     check(

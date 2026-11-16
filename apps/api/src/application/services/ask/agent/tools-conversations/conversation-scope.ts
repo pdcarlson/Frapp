@@ -59,24 +59,36 @@ export class ConversationScope {
    * needs `members:view`, the roster's own permission, so this shows nothing
    * the asker could not read with `roster`. A member with no role but
    * Everyone has no entry. Never a contact detail: only role names.
+   *
+   * Roles only add context to a line, so this never fails a read: one
+   * membership row per distinct author (not the chapter's whole roster), and
+   * an author whose row or the roles can't be read just has no entry, as
+   * `MemberService.findRosterByChapter` paints a name plain when its roles
+   * read fails.
    */
   async authorRoles(
     context: AgentToolContext,
     userIds: readonly string[],
   ): Promise<Map<string, string[]>> {
-    const wanted = new Set(userIds);
-    if (wanted.size === 0) return new Map();
-    const [profiles, roles] = await Promise.all([
-      this.members.findProfilesByChapter(context.chapterId),
-      this.rbac.findByChapter(context.chapterId),
-    ]);
-    const names = roleNames(roles);
+    const wanted = [...new Set(userIds)];
     const held = new Map<string, string[]>();
-    for (const profile of profiles) {
-      if (!wanted.has(profile.user_id)) continue;
-      const list = rolesHeld(profile, names);
-      if (list.length > 0) held.set(profile.user_id, list);
+    if (wanted.length === 0) return held;
+    let names: Map<string, string>;
+    try {
+      names = roleNames(await this.rbac.findByChapter(context.chapterId));
+    } catch {
+      return held;
     }
+    const rows = await Promise.allSettled(
+      wanted.map((userId) =>
+        this.members.findByUserAndChapter(userId, context.chapterId),
+      ),
+    );
+    rows.forEach((row, index) => {
+      if (row.status !== 'fulfilled') return;
+      const list = rolesHeld(row.value, names);
+      if (list.length > 0) held.set(wanted[index], list);
+    });
     return held;
   }
 
