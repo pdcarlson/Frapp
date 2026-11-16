@@ -1,4 +1,4 @@
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { Alert } from "react-native";
 import {
   activityRowSnoozable,
   activitySnoozeOptions,
@@ -6,6 +6,7 @@ import {
   type ActivityRow,
   type ActivitySnoozeOption,
 } from "@repo/hooks";
+import { showActionMenu } from "@/lib/action-menu";
 import { alertFailure } from "@/lib/failure-alert";
 import type { ActivityRowMenu } from "./activity-row";
 
@@ -56,31 +57,18 @@ export function useActivitySnoozeMenu(): {
   const openSnooze = (row: ActivityRow) => {
     // Read when the sheet opens, so "Later today" is never in the past.
     const options = activitySnoozeOptions(new Date());
-    const labels = options.map((option) => option.menuLabel);
-    if (Platform.OS === "ios") {
-      const buttons = [...labels, "Cancel"];
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title: `Snooze “${row.title}” until`,
-          options: buttons,
-          cancelButtonIndex: buttons.length - 1,
-        },
-        (index) => {
-          const option = options[index];
-          if (option) pick(row, option);
-        },
-      );
-      return;
-    }
-    Alert.alert(
-      "Snooze until",
-      row.title,
-      options.slice(0, ANDROID_BUTTONS).map((option, index) => ({
-        text: labels[index],
+    showActionMenu({
+      title: `Snooze “${row.title}” until`,
+      rows: options.map((option) => ({
+        label: option.menuLabel,
         onPress: () => pick(row, option),
       })),
-      { cancelable: true },
-    );
+      android: {
+        title: "Snooze until",
+        message: row.title,
+        maxButtons: ANDROID_BUTTONS,
+      },
+    });
   };
 
   return {
