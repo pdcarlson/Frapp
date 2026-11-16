@@ -30,12 +30,8 @@ import {
 import { isSubscriptionHardLocked } from '#domain/constants/subscription-grace';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
-import type { RankContext } from './rbac.service';
-import {
-  permissionsNotHeld,
-  ranksAtOrAbove,
-  roleRank,
-} from '#domain/utils/role-rank';
+import type { RankContext } from '#domain/utils/rank-context';
+import { inviteRefusal, memberRoleOf } from '#domain/utils/invite-reach';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
@@ -276,6 +272,7 @@ export class InviteService {
     ) {
       role = member.name;
     }
+    assertInviteRoleExists(context, role);
     assertInviteRoleWithinReach(context, role);
     return { role, context };
   }
@@ -565,8 +562,8 @@ export class InviteService {
    * relabelled it would otherwise leave redeemers with no role at all.
    */
   private async resolveRedeemRole(invite: Invite) {
-    const { role } = await this.resolveRedeemRoles(invite);
-    return role;
+    const { role, refusal } = await this.resolveRedeemRoles(invite);
+    return refusal ? undefined : role;
   }
 
   /**
@@ -583,20 +580,25 @@ export class InviteService {
    * is granted alone, as before.
    */
   private async resolveRedeemRoles(invite: Invite) {
-    const roles = await this.roleRepo.findByChapter(invite.chapter_id);
-    const member = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
-    // A role carrying `*` is never granted by a redeem, even by an invite
-    // minted before invites refused it (#4071): presidency moves only through
-    // Transfer presidency. The redeem grants the Member role instead.
-    const named = roles.find((r) => r.name === invite.role);
-    const role =
-      named && !named.permissions.includes(WILDCARD) ? named : member;
-    if (!role) return { role, roleIds: [] as string[] };
+    // The inviter's reach as it stands now, not when they sent the invite
+    // (Paul, 2026-11-16, #1830): an officer demoted since can't bring someone
+    // in at the rank they lost. One read of the chapter's roles serves both.
+    const context = await this.rbac.getRankContext(
+      invite.chapter_id,
+      invite.created_by,
+    );
+    const member = memberRoleOf(context);
+    // A role deleted since the invite was sent grants the Everyone role.
+    const role = context.roles.find((r) => r.name === invite.role) ?? member;
+    // Fails closed: an invite for a role carrying `*`, or one its sender can
+    // no longer grant, joins nobody, rather than quietly joining as Everyone.
+    const refusal = inviteRefusal(context, role);
+    if (!role) return { role, roleIds: [] as string[], refusal };
     const roleIds = [role.id];
     if (member && member.id !== role.id && lacksBaseAccess(role)) {
       roleIds.push(member.id);
     }
-    return { role, roleIds };
+    return { role, roleIds, refusal };
   }
 
   /**
@@ -748,8 +750,15 @@ export class InviteService {
     // checkbox; before the claim, so a refusal leaves the token usable.
     await this.legalAcceptance.requireOrAccept(userId, acceptTerms);
 
-    // Before the claim, so a roles outage does not consume the token (#1863).
-    const { roleIds } = await this.resolveRedeemRoles(invite);
+    // Before the claim, so a roles outage does not consume the token (#1863),
+    // and a refusal leaves it for an officer to revoke.
+    const { roleIds, refusal } = await this.resolveRedeemRoles(invite);
+    if (refusal) {
+      throw new ForbiddenException({
+        code: 'invite.role_out_of_reach',
+        message: INVITE_REDEEM_REFUSAL,
+      });
+    }
 
     const claimedAt = await this.inviteRepo.markUsedAtomically(invite.id);
     if (!claimedAt) throw new GoneException('Invite already used');
@@ -956,30 +965,18 @@ export class InviteService {
   }
 }
 
-/** The chapter's Member (Everyone) role, by its rename-proof key. */
-function memberRoleOf(context: RankContext): Role | undefined {
-  return context.roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
-}
+/**
+ * What a joiner reads when the invite's role is out of its sender's reach
+ * (#1830): the President's, or one ranked at or above the sender's roles now.
+ */
+const INVITE_REDEEM_REFUSAL =
+  "This invite is for a role its sender can't give. Ask an officer for a new invite.";
 
 /**
- * The rank rule for invites (#4071): an invite may grant a role ranked at
- * or below the inviter, so a member brings in a peer or someone junior and
- * never a superior. A chair holding `members:invite` cannot mint a
- * Vice President's invite and redeem it on a second account. A chapter
- * default the inviter can't reach gives way to the Everyone role before this
- * check (`InviteService.resolveInviteRole`).
- *
- * A role carrying `*` is never granted by an invite, the President's
- * included: the President role moves only through Transfer presidency, and
- * the redeem refuses it as well (`InviteService.resolveRedeemRoles`).
- *
- * The inviter must also hold every permission the role carries, so an
- * invite into a peer's role cannot bring in what the inviter lacks (a Vice
- * President inviting a second account as Treasurer for `billing:manage`).
- * What the chapter's Member role carries is exempt: every member gets it.
- *
- * A name no role carries is checked as the Member role the redeem falls
- * back to.
+ * The invite rule (`inviteRefusal`, #4071, #1830) at create: the President's
+ * role never, and otherwise only a role ranked below the inviter whose
+ * permissions they hold. A chapter default the inviter can't reach gives way
+ * to the Everyone role before this check (`InviteService.resolveInviteRole`).
  */
 function assertInviteRoleWithinReach(
   context: RankContext,
@@ -993,6 +990,19 @@ function assertInviteRoleWithinReach(
  * The role an invite naming `roleName` is checked as when it is minted: the
  * role of that name, or the Member (Everyone) role when none carries it.
  */
+/**
+ * Refuses (400) a role name the chapter has no role for (#1830). Stored as
+ * typed, it would be matched by name at redeem, so a role created later under
+ * that name would capture the invite.
+ */
+function assertInviteRoleExists(context: RankContext, roleName: string): void {
+  if (context.roles.some((candidate) => candidate.name === roleName)) return;
+  throw new BadRequestException({
+    code: 'invite.role_unknown',
+    message: `This chapter has no role named "${roleName}".`,
+  });
+}
+
 function namedRole(context: RankContext, roleName: string): Role | undefined {
   return (
     context.roles.find((candidate) => candidate.name === roleName) ??
@@ -1001,10 +1011,11 @@ function namedRole(context: RankContext, roleName: string): Role | undefined {
 }
 
 /**
- * The role an invite naming `roleName` grants at redeem, as
- * `InviteService.resolveRedeemRoles` decides it: the role of that name, or
- * the Member (Everyone) role when none carries it or the one that does
- * carries `*` (an invite minted before #4071).
+ * The role an invite naming `roleName` is judged as for who may see and
+ * revoke it: the role of that name, or the Everyone role when none carries
+ * it or the one that does carries `*` (an invite minted before #4071). The
+ * redeem refuses that last kind (`InviteService.resolveRedeemRoles`), so any
+ * inviter may see and revoke it as a dead link.
  */
 function redeemedRole(
   context: RankContext,
@@ -1033,38 +1044,6 @@ function visibilityIn(context: RankContext): (invite: Invite) => boolean {
     }
     return visible;
   };
-}
-
-/**
- * Why the caller in `context` may not invite someone into `role`, in plain
- * words, or null when they may. The rule is
- * `assertInviteRoleWithinReach`'s; an absent role (a chapter
- * with no Member role) refuses nothing, as before.
- */
-function inviteRefusal(
-  context: RankContext,
-  role: Role | undefined,
-): string | null {
-  if (!role) return null;
-  if (role.permissions.includes(WILDCARD)) {
-    return 'An invite cannot grant the President role; use Transfer presidency';
-  }
-  const { reach, positions } = context;
-  if (
-    !reach.wildcard &&
-    !ranksAtOrAbove(reach.rank, roleRank(role, positions))
-  ) {
-    return 'You can only invite people into a role ranked at or below your own.';
-  }
-  const member = memberRoleOf(context);
-  const base = new Set(member?.permissions ?? []);
-  const missing = permissionsNotHeld(reach, role.permissions).filter(
-    (permission) => !base.has(permission),
-  );
-  if (missing.length > 0) {
-    return `You can only invite people into a role whose permissions you hold: ${missing.join(', ')}.`;
-  }
-  return null;
 }
 
 /**

@@ -127,7 +127,17 @@ describe('InviteService', () => {
 
     mockRoleRepo = {
       findById: jest.fn(),
-      findByChapter: jest.fn().mockResolvedValue([]),
+      // The chapter's Member role unless a test says otherwise: invites
+      // naming no role the chapter has are refused (#1830).
+      findByChapter: jest.fn().mockResolvedValue([
+        roleFixture({
+          id: 'role-member',
+          chapter_id: 'ch-1',
+          name: 'Member',
+          system_key: SystemRoleKeys.MEMBER,
+          is_system: true,
+        }),
+      ]),
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
       findByChapterAndSystemKey: jest.fn(),
@@ -148,18 +158,23 @@ describe('InviteService', () => {
     mockRbac = {
       findUserIdsWithAnyPermissions: jest.fn().mockResolvedValue([]),
       // The inviter holds `*` unless a test says otherwise, so the rank rule
-      // (#4071) lets every role through.
-      getRankContext: jest.fn().mockResolvedValue({
+      // (#4071) lets every role but the President's through. The chapter's
+      // roles are whatever `mockRoleRepo.findByChapter` answers, read through
+      // its implementation so the service's own role reads stay countable.
+      getRankContext: jest.fn(async (chapterId: string, _userId: string) => ({
         reach: {
           memberId: 'member-president',
           rank: 0,
           permissions: new Set(['*']),
           wildcard: true,
         },
-        roles: [],
+        roles:
+          (await mockRoleRepo.findByChapter.getMockImplementation()?.(
+            chapterId,
+          )) ?? [],
         tiers: [],
         positions: new Map(),
-      }),
+      })),
     };
 
     mockEmailProvider = { sendInviteEmail: jest.fn().mockResolvedValue(true) };
@@ -2277,8 +2292,9 @@ describe('InviteService', () => {
    * service resolves the chapter's configured default, then the seeded Member
    * role.
    */
-  // #4071: an invite grants a role ranked at or below the inviter, and never
-  // the President's.
+  // #4071, #1830 (Paul, 2026-11-16): an invite grants only a role ranked
+  // below the inviter, and never the President's, checked at create and
+  // again at redeem.
   describe('invite role rank rule', () => {
     beforeEach(() => {
       mockRoleRepo.findByChapter.mockResolvedValue(tieredChapterRoles());
@@ -2297,29 +2313,69 @@ describe('InviteService', () => {
       expect(mockInviteRepo.create).not.toHaveBeenCalled();
     });
 
-    it('lets a chair invite a peer or a brother', async () => {
-      mockRbac.getRankContext.mockResolvedValue(
-        tieredRankContext(USER.riskChair),
-      );
-      await service.create(CHAPTER_ID, USER.riskChair, 'Social chair');
-      await service.create(CHAPTER_ID, USER.riskChair, 'Brother');
-      expect(mockInviteRepo.create).toHaveBeenCalledTimes(2);
-    });
-
-    it("stops an inviter bringing in a role whose permissions they don't hold, a peer's included", async () => {
+    it("stops a chair inviting a peer: their own tier's role is an equal rank", async () => {
       mockRbac.getRankContext.mockResolvedValue(
         tieredRankContext(USER.riskChair),
       );
       await expect(
-        service.create(CHAPTER_ID, USER.riskChair, 'Treasury assistant'),
-      ).rejects.toThrow(/billing:view/);
-      // The Vice President ranks with the Treasurer but lacks billing:manage.
+        service.create(CHAPTER_ID, USER.riskChair, 'Social chair'),
+      ).rejects.toThrow('You can only invite people into a role ranked below');
+      // Their own role is no different.
+      await expect(
+        service.create(CHAPTER_ID, USER.riskChair, 'Risk chair'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockInviteRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('lets a chair invite a brother, a role ranked below them', async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      await service.create(CHAPTER_ID, USER.riskChair, 'Brother');
+      expect(mockInviteRepo.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses an equal or higher rank on the batch and email routes too', async () => {
       mockRbac.getRankContext.mockResolvedValue(
         tieredRankContext(USER.vicePresident),
       );
       await expect(
-        service.create(CHAPTER_ID, USER.vicePresident, 'Treasurer'),
-      ).rejects.toThrow(/billing:manage/);
+        service.createBatch(
+          CHAPTER_ID,
+          USER.vicePresident,
+          'Vice President',
+          2,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(
+        service.createWithEmails(CHAPTER_ID, USER.vicePresident, 'President', [
+          'pat@example.com',
+        ]),
+      ).rejects.toThrow('An invite cannot grant the President role');
+      expect(mockInviteRepo.createMany).not.toHaveBeenCalled();
+    });
+
+    it('refuses a role name the chapter has no role for with 400', async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.president),
+      );
+      await expect(
+        service.create(CHAPTER_ID, USER.president, 'Grand Poobah'),
+      ).rejects.toMatchObject({ response: { code: 'invite.role_unknown' } });
+      await expect(
+        service.create(CHAPTER_ID, USER.president, 'Grand Poobah'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(mockInviteRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("stops an inviter bringing in a role whose permissions they don't hold", async () => {
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+      // Ranked below the chair, but carrying billing:view, which they lack.
+      await expect(
+        service.create(CHAPTER_ID, USER.riskChair, 'Treasury assistant'),
+      ).rejects.toThrow(/billing:view/);
       expect(mockInviteRepo.create).not.toHaveBeenCalled();
     });
 
@@ -2332,47 +2388,98 @@ describe('InviteService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('grants the Member role, not the President, for an invite minted before the rule', async () => {
-      const memberRole = roleFixture({
-        id: 'role-member',
-        name: 'Member',
-        system_key: SystemRoleKeys.MEMBER,
-        is_system: true,
-      });
-      const presidentRole = roleFixture({
-        id: 'role-president',
-        name: 'President',
-        system_key: SystemRoleKeys.PRESIDENT,
-        is_system: true,
-        permissions: ['*'],
-      });
-      mockInviteRepo.findByToken.mockResolvedValue({
+    function liveInvite(role: string, createdBy: string): Invite {
+      return {
         id: 'inv-old',
         token: 'old-token',
-        chapter_id: 'ch-1',
-        role: 'President',
+        chapter_id: CHAPTER_ID,
+        role,
         expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-        created_by: 'user-1',
+        created_by: createdBy,
         used_at: null,
         created_at: '2024-01-01',
         email: null,
         revoked_at: null,
-      });
+      };
+    }
+
+    beforeEach(() => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
       mockInviteRepo.markUsedAtomically.mockResolvedValue(
         '2026-01-01T00:00:00.000Z',
       );
-      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
       mockMemberRepo.create.mockResolvedValue(
-        memberFixture({ user_id: 'user-2', role_ids: [memberRole.id] }),
+        memberFixture({ user_id: 'user-joiner', chapter_id: CHAPTER_ID }),
+      );
+    });
+
+    it('refuses to redeem a President invite minted before the rule, leaving the token unused', async () => {
+      mockInviteRepo.findByToken.mockResolvedValue(
+        liveInvite('President', USER.president),
+      );
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.president),
       );
 
-      await service.redeem('old-token', 'user-2');
+      await expect(
+        service.redeem('old-token', 'user-joiner'),
+      ).rejects.toMatchObject({
+        response: { code: 'invite.role_out_of_reach' },
+      });
+      // Fails closed: no second President, and no quiet join as someone else.
+      expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+      expect(mockMemberRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("judges the redeem by the inviter's roles now: a demoted chair's invite fails", async () => {
+      // The chair sent a Brother invite, then lost the chair role.
+      mockInviteRepo.findByToken.mockResolvedValue(
+        liveInvite('Brother', USER.riskChair),
+      );
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.brother),
+      );
+
+      await expect(
+        service.redeem('old-token', 'user-joiner'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockRbac.getRankContext).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        USER.riskChair,
+      );
+      expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
+      expect(mockMemberRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses an invite equal to the inviter's rank at redeem, as at create", async () => {
+      // A row from before the strict rule: a chair's peer invite.
+      mockInviteRepo.findByToken.mockResolvedValue(
+        liveInvite('Social chair', USER.riskChair),
+      );
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+
+      await expect(
+        service.redeem('old-token', 'user-joiner'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockMemberRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('redeems an invite the inviter still outranks', async () => {
+      mockInviteRepo.findByToken.mockResolvedValue(
+        liveInvite('Brother', USER.riskChair),
+      );
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.riskChair),
+      );
+
+      await service.redeem('old-token', 'user-joiner');
 
       expect(mockMemberRepo.create).toHaveBeenCalledWith({
-        user_id: 'user-2',
-        chapter_id: 'ch-1',
-        role_ids: [memberRole.id],
+        user_id: 'user-joiner',
+        chapter_id: CHAPTER_ID,
+        role_ids: ['role-brother'],
       });
     });
   });
@@ -2403,8 +2510,8 @@ describe('InviteService', () => {
       pending('inv-assistant', 'Treasury assistant'),
       // A role since deleted: the redeem grants Member, so it lists.
       pending('inv-gone', 'Deleted role'),
-      // Minted before #4071: the redeem grants the Everyone role instead, so
-      // it lists as that and the chair can revoke it.
+      // Minted before #4071: the redeem refuses it (#1830), so it lists as a
+      // dead link any inviter can revoke.
       pending('inv-old-president', 'President'),
     ];
 
@@ -2419,10 +2526,9 @@ describe('InviteService', () => {
 
       const rows = await service.findByChapter(CHAPTER_ID, USER.riskChair);
 
-      // A peer's role and a brother's list; the board's, and a junior role
-      // carrying billing:view the chair lacks, do not.
+      // A brother's lists; a peer's, the board's, and a junior role carrying
+      // billing:view the chair lacks, do not.
       expect(rows.map((row) => row.id)).toEqual([
-        'inv-social',
         'inv-brother',
         'inv-gone',
         'inv-old-president',
@@ -2437,10 +2543,8 @@ describe('InviteService', () => {
 
       const rows = await service.findByChapter(CHAPTER_ID, USER.vicePresident);
 
-      // Equal rank lists (the VP's own role), but the Treasurer's carries
-      // billing:manage, which the VP does not hold.
+      // Equal rank (the VP's own role, the Treasurer's) does not list.
       expect(rows.map((row) => row.id)).toEqual([
-        'inv-vp',
         'inv-social',
         'inv-brother',
         'inv-gone',
@@ -2534,12 +2638,7 @@ describe('InviteService', () => {
       );
       expect(
         await service.findInvitableRoleIds(CHAPTER_ID, USER.riskChair),
-      ).toEqual([
-        'role-risk-chair',
-        'role-social-chair',
-        'role-brother',
-        'role-pledge',
-      ]);
+      ).toEqual(['role-brother', 'role-pledge']);
 
       mockRbac.getRankContext.mockResolvedValue(
         tieredRankContext(USER.president),

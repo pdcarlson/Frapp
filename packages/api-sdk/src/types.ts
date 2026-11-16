@@ -836,7 +836,7 @@ export interface paths {
         };
         /**
          * List chapter invites, newest first
-         * @description Only invites granting a role the caller could invite someone into now (#4546): ranked at or below them, carrying only permissions they hold. The rest are left out, and still work. A `*` holder gets every invite.
+         * @description Only invites granting a role the caller could invite someone into now (#4546): ranked below them, carrying only permissions they hold. The rest are left out. A `*` holder gets every invite.
          */
         get: operations["InviteController_list_v1"];
         put?: never;
@@ -942,7 +942,7 @@ export interface paths {
         };
         /**
          * The roles the caller may invite someone into
-         * @description Roles ranked at or below the caller whose permissions they hold, never one carrying `*` (#4071, #4546). The invite dialog offers only these; POST /v1/invites refuses the rest.
+         * @description Roles ranked below the caller whose permissions they hold, never one carrying `*` (#4071, #4546, #1830). The Everyone role is always among them for a caller who may invite. The invite dialog offers only these; POST /v1/invites refuses the rest.
          */
         get: operations["InviteController_listInvitableRoles_v1"];
         put?: never;
@@ -6255,7 +6255,7 @@ export interface components {
             module_key: "dues" | "events" | "tasks" | "points" | "setup-checklist";
         };
         CreateInviteDto: {
-            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
             role?: string;
         };
         /**
@@ -6280,13 +6280,13 @@ export interface components {
             created_at: string;
         };
         BatchCreateInvitesDto: {
-            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
             role?: string;
             /** @description Number of invites to generate */
             count: number;
         };
         BulkEmailInviteDto: {
-            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
             role?: string;
             /** @description Email addresses to invite, one invite token per address */
             emails: string[];

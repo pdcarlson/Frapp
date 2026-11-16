@@ -200,7 +200,7 @@ export class InviteController {
   @ApiOperation({
     summary: 'The roles the caller may invite someone into',
     description:
-      'Roles ranked at or below the caller whose permissions they hold, never one carrying `*` (#4071, #4546). The invite dialog offers only these; POST /v1/invites refuses the rest.',
+      'Roles ranked below the caller whose permissions they hold, never one carrying `*` (#4071, #4546, #1830). The Everyone role is always among them for a caller who may invite. The invite dialog offers only these; POST /v1/invites refuses the rest.',
   })
   @ApiOkResponse({ type: InvitableRolesDto })
   async listInvitableRoles(
@@ -221,7 +221,7 @@ export class InviteController {
   @ApiOperation({
     summary: 'List chapter invites, newest first',
     description:
-      'Only invites granting a role the caller could invite someone into now (#4546): ranked at or below them, carrying only permissions they hold. The rest are left out, and still work. A `*` holder gets every invite.',
+      'Only invites granting a role the caller could invite someone into now (#4546): ranked below them, carrying only permissions they hold. The rest are left out. A `*` holder gets every invite.',
   })
   @ApiOkResponse({ type: InviteListItemDto, isArray: true })
   async list(

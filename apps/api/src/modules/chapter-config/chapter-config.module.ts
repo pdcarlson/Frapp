@@ -23,6 +23,10 @@ import { CHAPTER_CONFIG_REPOSITORY } from '#domain/repositories/chapter-config.r
 import { SupabaseChapterConfigRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-config.repository';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
+import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
+import { SupabaseRoleTierRepository } from '../../infrastructure/supabase/repositories/supabase-role-tier.repository';
 import { ActivationModule } from '../activation/activation.module';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
@@ -56,6 +60,10 @@ import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/rep
     // decide who sees exec-only rows (#1773), and `ChapterConfigService`
     // checks a default invite role belongs to the chapter (#422).
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
+    // `ChapterConfigService` holds the default invite role to the invite
+    // rule for whoever sets it (#1830), which needs their rank.
+    { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
+    { provide: ROLE_TIER_REPOSITORY, useClass: SupabaseRoleTierRepository },
     // `ChapterConfigService` checks the birthday post channel is the
     // chapter's own (#4959).
     {
