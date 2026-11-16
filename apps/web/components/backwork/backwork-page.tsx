@@ -23,7 +23,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  selectDownloadUrl,
   useBackworkCourses,
   useBackworkResources,
   useDeleteBackworkResource,
@@ -63,6 +62,7 @@ import { BulkDropZone } from "@/components/shared/bulk-drop-zone";
 import type { CollectedFiles } from "@/lib/bulk-upload/collect-files";
 import { stageBulkUpload } from "@/lib/backwork-bulk/handoff";
 import { BackworkRowsSkeleton } from "@/components/backwork/backwork-skeleton";
+import { openBackworkFile } from "@/components/backwork/backwork-download";
 import {
   CopyLabel,
   Highlighted,
@@ -104,7 +104,6 @@ import {
 } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
-import { pausedRead } from "@/components/shared/async-states";
 
 /**
  * `/backwork`, rebuilt 2026-11-05 around the files instead of a filter form
@@ -274,12 +273,7 @@ export function BackworkPage() {
     const id = row.resource.id;
     setDownloading((prev) => new Set(prev).add(id));
     try {
-      const url = selectDownloadUrl(await fetchResource(row.resource.id));
-      if (!url) throw new Error("No download URL returned.");
-      // A new tab, not this one: the link forces a download (#3867), but a
-      // server from before it signs an inline link, and a storage error
-      // answers with a page of its own. Either would replace the library.
-      window.open(url, "_blank", "noopener");
+      await openBackworkFile(fetchResource, row.resource.id);
     } catch (error) {
       toast({
         title: "Couldn't fetch download link",
@@ -786,7 +780,8 @@ export function BackworkPage() {
             }}
           />
         ) : resourcesQuery.isLoading ||
-          pausedRead(resourcesQuery) ||
+          (resourcesQuery.isPending &&
+            resourcesQuery.fetchStatus === "paused") ||
           // Rows join departments and professors on the client; without them
           // a course reads as a bare number and search misses "cogs". Course
           // names are not waited on: rows show the department's name until
