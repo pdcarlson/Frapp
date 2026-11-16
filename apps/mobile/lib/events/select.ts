@@ -25,6 +25,10 @@ import {
 import {
   attendanceFieldsOf,
   checkInOpensMinutes,
+  readEventAgenda,
+  readEventAttachments,
+  type EventAgendaItem,
+  type EventAttachment,
   type EventAttendanceFields,
 } from "@repo/validation";
 import { formatDayHeading, localIsoDate, parseInstant } from "@repo/formatting";
@@ -66,14 +70,16 @@ export interface EventRow {
 export interface EventDetail extends EventRow {
   description: string | null;
   /**
-   * Meeting minutes (`spec/behavior/events.md` § Meeting minutes) — editable
-   * by admins with `events:update` after the event. Rendered here on the same
-   * terms as `description`: whatever `GET /v1/events/:id` returns, since
-   * neither field is filtered server-side by the event's `required_role_ids`
-   * targeting — see #1463. Web's `event-detail-sheet.tsx` labels the section
-   * "Internal notes"; mirrored here rather than inventing a second label.
+   * The event's notes (`spec/behavior/events.md` § Meeting minutes), editable
+   * with `events:update` and read by every member the event invites, so the
+   * screen labels them Notes (or Meeting minutes while the meetings module is
+   * off), as web's sheet does, never "internal" (#4934).
    */
   notes: string | null;
+  /** This meeting's agenda, in order (§ Agenda and attachments). */
+  agenda: EventAgendaItem[];
+  /** This meeting's links and Chapter Files documents, in order. */
+  attachments: EventAttachment[];
   check_in_zone_name: string | null;
   /**
    * Whether the event carries a check-in geofence.
@@ -398,6 +404,8 @@ export function selectEventDetail(data: unknown): EventDetail | null {
     ...row,
     description: str(data, "description"),
     notes: str(data, "notes"),
+    agenda: readEventAgenda(data.agenda),
+    attachments: readEventAttachments(data.attachments),
     check_in_zone_name: str(data, "check_in_zone_name"),
     hasCheckInZone:
       Array.isArray(data.check_in_zone) && data.check_in_zone.length > 0,

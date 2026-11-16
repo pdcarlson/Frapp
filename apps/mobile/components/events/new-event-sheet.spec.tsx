@@ -61,6 +61,10 @@ let permissions: string[] = ["*"];
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  // The chapter, for the Notes field's name (#4934).
+  useCurrentChapter: () => ({
+    data: { id: "chapter-1", enabled_modules: {} },
+  }),
   useCreateEvent: () => ({ mutate, mutateAsync, isPending: false }),
   useUpdateEvent: () => ({ mutate: updateMutate, isPending: false }),
   useDeleteEvent: () => ({ mutate: deleteMutate, isPending: false }),
@@ -586,6 +590,8 @@ describe("Edit event", () => {
     },
     description: null,
     notes: null,
+    agenda: [],
+    attachments: [],
     check_in_zone_name: null,
     event_type_id: null,
     created_by: null,
@@ -662,6 +668,27 @@ describe("Edit event", () => {
     // Editing clears the line.
     type(tree, "Location", "Great Hall 2");
     expect(screenText(tree)).not.toContain("That change can't be saved.");
+  });
+
+  it("edits the event's notes under More options, named as Event details names them (#4934)", async () => {
+    const tree = renderEdit({
+      ...single,
+      event: { ...single.event, notes: "Old" },
+    });
+    act(() => byLabel(tree, "More options").props.onPress());
+    expect(byLabel(tree, "Notes").props.value).toBe("Old");
+    type(tree, "Notes", "  Bring dues ");
+    await act(async () => saveButton(tree).props.onPress());
+    expect(updateMutate).toHaveBeenCalledWith(
+      { id: "evt-1", body: { notes: "Bring dues", scope: "instance" } },
+      expect.anything(),
+    );
+  });
+
+  it("has no notes field on a new event, which sets them once it exists", () => {
+    const tree = render();
+    act(() => byLabel(tree, "More options").props.onPress());
+    expect(() => byLabel(tree, "Notes")).toThrow();
   });
 
   it("saves nothing for an untouched form", async () => {

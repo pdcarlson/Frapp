@@ -71,6 +71,8 @@ import { eyebrowStyle } from "@/components/eyebrow";
 import { pageSurfaces } from "@/lib/surfaces";
 import { InlineNote } from "@/components/inline-note";
 import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
+import { EventMeetingLists } from "@/components/events/event-agenda";
+import { useMeetingsOn } from "@/lib/minutes/meetings-on";
 
 /**
  * s07 — Event detail (`canvas-screens.dc.html:246`).
@@ -205,6 +207,9 @@ export default function EventDetailsScreen() {
     server enforces the real window regardless — this is UX only.
   */
   const now = useNowDate();
+  // With meetings on, the minutes are their own record and `notes` is the
+  // event's notes (`spec/behavior/meetings.md` § Where minutes live).
+  const meetingsOn = useMeetingsOn();
 
   if (!eventId) {
     return (
@@ -242,6 +247,8 @@ export default function EventDetailsScreen() {
     event.check_in_opens_minutes,
   );
   const requiredOfViewer = requiredOf(event.attendance);
+  // A refetch that found the event deleted since it loaded.
+  const eventGone = eventQuery.isError && statusOf(eventQuery.error) === 404;
 
   return (
     <>
@@ -312,9 +319,23 @@ export default function EventDetailsScreen() {
           />
         ) : null}
 
+        {/* Keyed by meeting: a half-typed item, or a change still waiting
+            to save, must not carry over to another occurrence opened from
+            the series list (the old one's is sent as it goes). */}
+        <EventMeetingLists
+          key={`lists-${event.id}`}
+          eventId={event.id}
+          lists={{ agenda: event.agenda, attachments: event.attachments }}
+          // A real events:update answer, and an event still there: every
+          // write to one deleted since would 404.
+          canEdit={canDecideExcuses && !eventGone}
+        />
+
         {event.notes ? (
+          // Every member the event invites reads these, so never "internal"
+          // (#4934); labeled as web's sheet labels them.
           <DetailSection
-            label="INTERNAL NOTES"
+            label={meetingsOn ? "NOTES" : "MEETING MINUTES"}
             body={event.notes}
             styles={styles}
           />
@@ -547,7 +568,7 @@ function CheckInCard({
 /**
  * The screen's loading state, on the loaded screen's own styles: the check-in
  * card's frame and header line (components.md §10). The badge row and the
- * DETAILS and INTERNAL NOTES sections are left out: each draws only when the
+ * DETAILS and NOTES sections are left out: each draws only when the
  * event carries one, and a placeholder for one would leave a gap when it
  * doesn't land.
  *
@@ -660,7 +681,7 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
   );
 }
 
-/** DETAILS and INTERNAL NOTES share this shape; only the label and body differ. */
+/** DETAILS and NOTES share this shape; only the label and body differ. */
 function DetailSection({
   label,
   body,

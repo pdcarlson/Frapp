@@ -96,6 +96,7 @@ import {
   useKeptSheetOpening,
 } from "@/lib/kept-sheet-draft";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import { useMeetingsOn } from "@/lib/minutes/meetings-on";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 
 /**
@@ -210,6 +211,7 @@ const EVENT_EDIT_KEYS = [
   "attendance",
   "repeat",
   "description",
+  "notes",
 ] as const satisfies readonly (keyof NewEventDraft)[];
 
 /** A kept edit over the event as it is now: only what the officer changed. */
@@ -355,8 +357,17 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       opening,
     );
     const [focused, setFocused] = useState<
-      "name" | "location" | "points" | "checkInOpens" | "description" | null
+      | "name"
+      | "location"
+      | "points"
+      | "checkInOpens"
+      | "description"
+      | "notes"
+      | null
     >(null);
+    // Notes, or Meeting minutes while the chapter keeps no separate minutes
+    // (`spec/behavior/meetings.md` § Where minutes live).
+    const notesLabel = useMeetingsOn() ? "Notes" : "Meeting minutes";
     // Written by Create; a field's line goes when that field is edited.
     const [errors, setErrors] = useState<NewEventErrors>({});
     const [submitFailed, setSubmitFailed] = useState(false);
@@ -942,6 +953,38 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     ]}
                   />
                 </View>
+
+                {/* Notes once the event exists (#4934): every member it
+                    invites reads them on Event details. Named as that
+                    screen names them. */}
+                {editing ? (
+                  <Text style={styles.notesLabel}>{notesLabel}</Text>
+                ) : null}
+                {editing ? (
+                  <View
+                    style={[
+                      styles.ring,
+                      focused === "notes" ? styles.ringActive : null,
+                    ]}
+                  >
+                    <BottomSheetTextInput
+                      value={draft.notes ?? ""}
+                      onChangeText={(notes) => update({ notes }, [])}
+                      onFocus={() => setFocused("notes")}
+                      onBlur={() => setFocused(null)}
+                      editable={!pending}
+                      placeholder={`${notesLabel} (optional)`}
+                      placeholderTextColor={tokens.color.text.muted}
+                      accessibilityLabel={notesLabel}
+                      multiline
+                      style={[
+                        styles.field,
+                        styles.fieldMultiline,
+                        focused === "notes" ? styles.fieldFocused : null,
+                      ]}
+                    />
+                  </View>
+                ) : null}
               </View>
             ) : null}
 
@@ -1152,6 +1195,12 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     // Starts and Ends as one grouped field, the way Calendar sets them; the
     // options under "More options" are rows of the same kind of group.
+    // Repeat's heading, so filled-in notes read apart from the description.
+    notesLabel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+      marginTop: tokens.spacing.xs,
+    },
     group: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,

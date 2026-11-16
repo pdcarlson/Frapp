@@ -88,6 +88,12 @@ export interface NewEventDraft {
    */
   repeat: RepeatDraft;
   description: string;
+  /**
+   * The event's notes (#4934), edited only once the event exists, as the
+   * spec has them: absent on a new event, and on an edit kept by an older
+   * build, which then takes the event's own.
+   */
+  notes?: string;
   /** Whether "More options" is open: kept with the draft, so a reopen keeps it. */
   showMore: boolean;
 }
