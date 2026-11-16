@@ -59,23 +59,44 @@ export function CheckPagesDialog({
   draft: BackworkDraft | null;
   onClose: () => void;
 }) {
+  // Closing mid-save would tear down the document while it is flattened and
+  // leave an uploaded copy no draft points at, so the dialog stays until the
+  // save answers.
+  const [saving, setSaving] = useState(false);
   return (
-    <Dialog open={!!draft} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={!!draft} onOpenChange={(open) => !open && !saving && onClose()}>
       <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
-        {draft ? <CheckPages key={draft.id} draft={draft} onDone={onClose} /> : null}
+        {draft ? (
+          <CheckPages
+            key={draft.id}
+            draft={draft}
+            saving={saving}
+            onSaving={setSaving}
+            onDone={onClose}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
 }
 
-function CheckPages({ draft, onDone }: { draft: BackworkDraft; onDone: () => void }) {
+function CheckPages({
+  draft,
+  saving,
+  onSaving,
+  onDone,
+}: {
+  draft: BackworkDraft;
+  saving: boolean;
+  onSaving: (saving: boolean) => void;
+  onDone: () => void;
+}) {
   const { toast } = useToast();
   const fetchFileUrl = useFetchBackworkDraftFileUrl();
   const requestUpload = useRequestBackworkUploadUrl();
   const check = useCheckBackworkDraft();
   const [loaded, setLoaded] = useState<Loaded>({ status: "loading" });
   const [boxes, setBoxes] = useState<BoxesByPage>({});
-  const [saving, setSaving] = useState(false);
   const previews = useRef(new Map<number, Promise<PagePreview>>());
 
   useEffect(() => {
@@ -141,7 +162,7 @@ function CheckPages({ draft, onDone }: { draft: BackworkDraft; onDone: () => voi
 
   async function looksRight() {
     if (!doc || saving) return;
-    setSaving(true);
+    onSaving(true);
     try {
       if (added === 0) {
         await check.mutateAsync({ id: draft.id });
@@ -164,6 +185,7 @@ function CheckPages({ draft, onDone }: { draft: BackworkDraft; onDone: () => voi
           replacement: { storage_path: storagePath, file_hash: await sha256Hex(body) },
         });
       }
+      onSaving(false);
       onDone();
     } catch (error) {
       toast({
@@ -171,8 +193,7 @@ function CheckPages({ draft, onDone }: { draft: BackworkDraft; onDone: () => voi
         description: getErrorMessage(error, "Check your connection and try again."),
         variant: "destructive",
       });
-    } finally {
-      setSaving(false);
+      onSaving(false);
     }
   }
 

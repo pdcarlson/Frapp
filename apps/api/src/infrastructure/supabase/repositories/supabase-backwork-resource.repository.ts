@@ -295,10 +295,17 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     return this.reassignColumn(chapterId, 'professor_id', fromId, toId);
   }
 
+  async countByStoragePath(
+    chapterId: string,
+    storagePath: string,
+  ): Promise<number> {
+    return this.countByColumn(chapterId, 'storage_path', storagePath);
+  }
+
   /** Shared by `countByDepartment`/`countByProfessor` — same table, same shape, differing only by column. */
   private async countByColumn(
     chapterId: string,
-    column: 'department_id' | 'professor_id',
+    column: 'department_id' | 'professor_id' | 'storage_path',
     value: string,
   ): Promise<number> {
     const { count, error } = await this.supabase

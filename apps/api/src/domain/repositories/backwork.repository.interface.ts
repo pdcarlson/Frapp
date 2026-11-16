@@ -81,6 +81,11 @@ export interface IBackworkResourceRepository {
     fields: BackworkDraftFields,
   ): Promise<BackworkResource | null>;
   /**
+   * Rows, drafts included, whose file is at this path: a path already in use
+   * is never taken by another row, nor deleted while one still points at it.
+   */
+  countByStoragePath(chapterId: string, storagePath: string): Promise<number>;
+  /**
    * Points a draft at a new stored file and sets its fields, only while it is
    * the uploader's draft. Null when it isn't.
    */

@@ -323,6 +323,9 @@ describe("Backwork drafts waiting note", () => {
         draft("a", { title: "Midterm 1" }),
         draft("u", { title: "Quiz 3", pages_unchecked: true }),
       ];
+      state.draftsError = false;
+      state.publish.mockReset().mockResolvedValue({ published: [], failed: [] });
+      state.fill.mockReset().mockResolvedValue({ status: "nothing_found", draft: null });
     });
 
     it("asks for a page check instead of publishing it, and leaves it out of Publish", async () => {
@@ -340,6 +343,14 @@ describe("Backwork drafts waiting note", () => {
       render(<DraftsReview />);
       await waitFor(() => expect(state.fill).toHaveBeenCalledWith("a"));
       expect(state.fill).not.toHaveBeenCalledWith("u");
+    });
+
+    it("fills it once its pages are checked", async () => {
+      const { rerender } = render(<DraftsReview />);
+      await waitFor(() => expect(state.fill).toHaveBeenCalledWith("a"));
+      state.drafts = [state.drafts[0]!, draft("u", { title: "Quiz 3" })];
+      rerender(<DraftsReview />);
+      await waitFor(() => expect(state.fill).toHaveBeenCalledWith("u"));
     });
 
     it("has nothing to publish when every draft waits for its check", () => {

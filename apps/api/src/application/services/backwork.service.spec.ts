@@ -102,6 +102,7 @@ describe('BackworkService', () => {
       findDraftsByIds: jest.fn(),
       updateDraftFields: jest.fn(),
       replaceDraftFile: jest.fn(),
+      countByStoragePath: jest.fn().mockResolvedValue(0),
       publishDraft: jest.fn(),
       deleteDraft: jest.fn(),
     };
@@ -1894,6 +1895,58 @@ describe('BackworkService', () => {
           service.checkDraft('draft-1', 'ch-1', 'user-1', replacement),
         ).rejects.toThrow(ConflictException);
         expect(mockResourceRepo.replaceDraftFile).not.toHaveBeenCalled();
+      });
+
+      it("never points a draft at another row's file", async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([unchecked()]);
+        mockResourceRepo.countByStoragePath.mockResolvedValue(1);
+
+        await expect(
+          service.checkDraft('draft-1', 'ch-1', 'user-1', {
+            ...replacement,
+            storage_path: baseResource.storage_path,
+          }),
+        ).rejects.toThrow(ConflictException);
+        expect(mockResourceRepo.replaceDraftFile).not.toHaveBeenCalled();
+        expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
+      });
+
+      it('takes a new file only while the draft waits for its check', async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([draftRow()]);
+
+        await expect(
+          service.checkDraft('draft-1', 'ch-1', 'user-1', replacement),
+        ).rejects.toThrow(ConflictException);
+        expect(mockResourceRepo.replaceDraftFile).not.toHaveBeenCalled();
+      });
+
+      it('keeps the old file when another row still uses it', async () => {
+        mockResourceRepo.findDraftsByIds.mockResolvedValue([unchecked()]);
+        mockResourceRepo.findByFileHash.mockResolvedValue(null);
+        mockResourceRepo.replaceDraftFile.mockResolvedValue(draftRow());
+        mockResourceRepo.countByStoragePath.mockImplementation(
+          async (_chapter: string, path: string) =>
+            path === baseResource.storage_path ? 1 : 0,
+        );
+
+        await service.checkDraft('draft-1', 'ch-1', 'user-1', replacement);
+
+        expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
+      });
+
+      it("refuses a new upload at a path another row's file is at", async () => {
+        mockResourceRepo.countByStoragePath.mockResolvedValue(1);
+
+        await expect(
+          service.confirmUpload({
+            chapter_id: 'ch-1',
+            uploader_id: 'user-1',
+            storage_path: baseResource.storage_path,
+            file_hash: 'h',
+            draft: true,
+          }),
+        ).rejects.toThrow(ConflictException);
+        expect(mockResourceRepo.create).not.toHaveBeenCalled();
       });
 
       it("answers 404 for a draft that is not the caller's", async () => {

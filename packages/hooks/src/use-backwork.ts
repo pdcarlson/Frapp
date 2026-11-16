@@ -455,8 +455,12 @@ export function useFillBackworkDraft() {
       };
       return { id, status: data.status, draft: data.draft ?? null };
     },
-    onSuccess: ({ draft }) => {
+    onSuccess: async ({ draft }) => {
       if (!draft) return;
+      // As in `useCheckBackworkDraft`: an older refetch mustn't land after.
+      await queryClient.cancelQueries({
+        queryKey: ["backwork", chapterId, "drafts"],
+      });
       queryClient.setQueryData(
         ["backwork", chapterId, "drafts"],
         (current: unknown) =>
@@ -516,7 +520,12 @@ export function useCheckBackworkDraft() {
       throwUnlessOk(result);
       return result.data as unknown as BackworkDraft;
     },
-    onSuccess: (draft) => {
+    onSuccess: async (draft) => {
+      // A list refetch that started before the check (Save all the rest
+      // refetches as each draft lands) would put the unchecked row back.
+      await queryClient.cancelQueries({
+        queryKey: ["backwork", chapterId, "drafts"],
+      });
       queryClient.setQueryData(
         ["backwork", chapterId, "drafts"],
         (current: unknown) =>

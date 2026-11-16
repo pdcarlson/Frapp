@@ -273,8 +273,54 @@ export class BackworkService {
     }
   }
 
+  /**
+   * A path a client names for a new row's file: inside the chapter's folder,
+   * and not already another row's file. Without the second check a member
+   * could point a draft at a published resource's object (every path is in
+   * the library list) and then delete it by deleting the draft.
+   */
+  private async assertUnusedStoragePath(
+    chapterId: string,
+    storagePath: string,
+  ) {
+    this.assertChapterStoragePath(chapterId, storagePath);
+    if (
+      (await this.resourceRepo.countByStoragePath(chapterId, storagePath)) > 0
+    ) {
+      throw new ConflictException(
+        'storage_path is already in use; request a new upload URL',
+      );
+    }
+  }
+
+  /**
+   * Deletes a file a row no longer points at, unless another row still does,
+   * and only logs when storage refuses: the row change already stands.
+   */
+  private async deleteFileIfUnused(
+    chapterId: string,
+    storagePath: string,
+    context: string,
+  ) {
+    try {
+      if (
+        (await this.resourceRepo.countByStoragePath(chapterId, storagePath)) > 0
+      ) {
+        this.logger.warn(
+          `${context}: kept ${storagePath}, another backwork row still uses it`,
+        );
+        return;
+      }
+      await this.storageProvider.deleteFile(BACKWORK_BUCKET, storagePath);
+    } catch (error) {
+      this.logger.warn(
+        `${context}: couldn't delete ${storagePath}: ${(error as Error)?.message ?? String(error)}`,
+      );
+    }
+  }
+
   async confirmUpload(input: ConfirmUploadInput): Promise<BackworkResource> {
-    this.assertChapterStoragePath(input.chapter_id, input.storage_path);
+    await this.assertUnusedStoragePath(input.chapter_id, input.storage_path);
 
     const existing = await this.resourceRepo.findByFileHash(
       input.chapter_id,
@@ -490,7 +536,12 @@ export class BackworkService {
       return row;
     }
 
-    this.assertChapterStoragePath(chapterId, replacement.storage_path);
+    // Only a draft still waiting for its check takes a new file: the check
+    // is the one flow that flattens the file again (#5252).
+    if (!draft.draft_fields?.pages_unchecked) {
+      throw new ConflictException("This draft's pages are already checked.");
+    }
+    await this.assertUnusedStoragePath(chapterId, replacement.storage_path);
     const existing = await this.resourceRepo.findByFileHash(
       chapterId,
       replacement.file_hash,
@@ -517,18 +568,11 @@ export class BackworkService {
       },
     );
     if (!row) throw new NotFoundException('Draft not found');
-    if (draft.storage_path !== replacement.storage_path) {
-      try {
-        await this.storageProvider.deleteFile(
-          BACKWORK_BUCKET,
-          draft.storage_path,
-        );
-      } catch (error) {
-        this.logger.warn(
-          `Replaced backwork draft ${id}'s file but couldn't delete the old one ${draft.storage_path}: ${(error as Error)?.message ?? String(error)}`,
-        );
-      }
-    }
+    await this.deleteFileIfUnused(
+      chapterId,
+      draft.storage_path,
+      `Replaced backwork draft ${id}'s file`,
+    );
     return row;
   }
 
@@ -620,16 +664,11 @@ export class BackworkService {
       uploaderId,
     );
     if (!deleted) throw new NotFoundException('Draft not found');
-    try {
-      await this.storageProvider.deleteFile(
-        BACKWORK_BUCKET,
-        draft.storage_path,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Deleted backwork draft ${id} but not its file ${draft.storage_path}: ${(error as Error)?.message ?? String(error)}`,
-      );
-    }
+    await this.deleteFileIfUnused(
+      chapterId,
+      draft.storage_path,
+      `Deleted backwork draft ${id}`,
+    );
   }
 
   /**
