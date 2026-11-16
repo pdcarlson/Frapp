@@ -26,6 +26,7 @@ the targets resolve — so add the row in the same change that adds the topic fi
 | Events, attendance, recurring events, calendar       | [`events.md`](events.md)                   |
 | Onboarding wizard + invites + walkthrough            | [`onboarding.md`](onboarding.md)           |
 | Polls and voting                                     | [`polls.md`](polls.md)                     |
+| Predictions (stake points on chapter questions)      | [`predictions.md`](predictions.md)         |
 | Member directory and profiles                        | [`members.md`](members.md)                 |
 | Activity feed                                        | [`activity-feed.md`](activity-feed.md)     |
 | Activity page (what needs you, what you made)        | [`activity.md`](activity.md)               |
