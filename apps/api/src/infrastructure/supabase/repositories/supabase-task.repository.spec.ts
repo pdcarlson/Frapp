@@ -718,4 +718,104 @@ describe('SupabaseTaskRepository — task photos (#4635)', () => {
     await expect(repo.deletePhotos(CHAPTER_B, TASK_B, [])).resolves.toEqual([]);
     expect(harness.ops).toHaveLength(0);
   });
+
+  describe('repeating tasks (#5119)', () => {
+    const SERIES_A = '0a000000-0000-4000-8000-000000000061';
+    const SERIES_B = '0b000000-0000-4000-8000-000000000061';
+    const series = (row: typeof inA, id: string) =>
+      row({
+        id,
+        created_by: USER_SHARED,
+        title: 'Kitchen duty',
+        assignee_id: USER_SHARED,
+        recurrence_rule: 'FREQ=DAILY;INTERVAL=1;TZID=UTC',
+        first_due_date: '2026-11-16',
+        next_due_date: '2026-11-17',
+        latest_due_at: '2026-11-17T00:00:00.000Z',
+        made_count: 1,
+        ended_at: null,
+      });
+
+    beforeEach(() => {
+      harness = createTenantHarness({
+        tables: {
+          tasks: seed().tasks.map((row) => ({
+            ...row,
+            series_id: row.chapter_id === CHAPTER_A ? SERIES_A : SERIES_B,
+            occurrence_date: '2026-11-16',
+          })),
+          task_series: [series(inA, SERIES_A), series(inB, SERIES_B)],
+          task_subtasks: [
+            inA({ id: 'st-a', task_id: TASK_A, done_at: '2026-11-16T00:00Z' }),
+            inB({ id: 'st-b', task_id: TASK_B, done_at: '2026-11-16T00:00Z' }),
+          ],
+        },
+        rpc: { create_task_series: { data: [{ id: TASK_B }] } },
+        // A copy names its own chapter's series, a step its own task.
+        collisionExempt: { tasks: ['series_id'], task_subtasks: ['task_id'] },
+      });
+      repo = new SupabaseTaskRepository(harness.client);
+    });
+
+    it('createSeries passes the chapter to the RPC', async () => {
+      await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.createSeries({
+          chapter_id: CHAPTER_B,
+          created_by: USER_SHARED,
+          title: 'Kitchen duty',
+          description: null,
+          assignee_id: USER_SHARED,
+          point_reward: null,
+          proof_kind: 'none',
+          subtask_titles: [],
+          due_time: null,
+          recurrence_rule: 'FREQ=DAILY;INTERVAL=1;TZID=UTC',
+          first_due_date: '2026-11-16',
+          first_due_at: null,
+          latest_due_at: '2026-11-17T00:00:00.000Z',
+          next_due_date: '2026-11-17',
+        }),
+      );
+      expect(harness.rpcCalls[0].args).toMatchObject({
+        p_chapter_id: CHAPTER_B,
+      });
+    });
+
+    it('findSeries reads only the chapter series', async () => {
+      const found = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.findSeries(CHAPTER_B, [SERIES_A, SERIES_B]),
+      );
+      expect(found.map((row) => row.id)).toEqual([SERIES_B]);
+    });
+
+    it('findLatestSeriesCopy reads only the chapter copies', async () => {
+      const latest = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.findLatestSeriesCopy(CHAPTER_B, SERIES_B),
+      );
+      expect(latest?.id).toBe(TASK_B);
+    });
+
+    it('updateSeriesIfNext writes only while next_due_date still matches', async () => {
+      const stale = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.updateSeriesIfNext(CHAPTER_B, SERIES_B, '2026-11-20', {
+          title: 'x',
+        }),
+      );
+      expect(stale).toBeNull();
+      const written = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.updateSeriesIfNext(CHAPTER_B, SERIES_B, '2026-11-17', {
+          title: 'Kitchen',
+        }),
+      );
+      expect(written?.title).toBe('Kitchen');
+    });
+
+    it('hasCheckedSubtask counts only the chapter steps', async () => {
+      await expect(
+        harness.expectTenantScoped(CHAPTER_B, () =>
+          repo.hasCheckedSubtask(CHAPTER_B, TASK_B),
+        ),
+      ).resolves.toBe(true);
+    });
+  });
 });

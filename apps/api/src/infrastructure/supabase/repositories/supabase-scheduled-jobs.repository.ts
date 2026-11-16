@@ -17,8 +17,10 @@ import {
 import { PG_UNIQUE_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { eventRequiresAnyone } from '@repo/validation';
+import type { Task, TaskSeries } from '#domain/entities';
 import type {
   IScheduledJobsRepository,
+  MaterializeTaskSeriesCopyInput,
   StalePaletteRow,
   SweepEventRow,
   SweepInvoiceRow,
@@ -203,6 +205,65 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
           .order('id', { ascending: true })
           .range(from, to),
     );
+  }
+
+  async findDueTaskSeries(now: Date, limit: number): Promise<TaskSeries[]> {
+    // Bounded, not paged: the sweep runs every five minutes, so a backlog
+    // larger than one run's share is taken up by the next run.
+    const { data, error } = await this.supabase
+      .from('task_series')
+      .select('*')
+      .is('ended_at', null)
+      .lte('latest_due_at', now.toISOString())
+      .order('latest_due_at', { ascending: true })
+      .order('id', { ascending: true })
+      .limit(limit);
+    if (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'error',
+        site: 'scheduled-sweep-candidate-read:task-series',
+        message: 'task series sweep: lookup failed',
+        error: new SupabaseQueryError(error),
+      });
+      return [];
+    }
+    return data ?? [];
+  }
+
+  async materializeTaskSeriesCopy(
+    input: MaterializeTaskSeriesCopyInput,
+  ): Promise<Task | null> {
+    const { data, error } = await this.supabase.rpc(
+      'materialize_task_series_copy',
+      {
+        p_series_id: input.seriesId,
+        p_expected_next: input.expectedNext,
+        p_expected_latest_due_at: input.expectedLatestDueAt,
+        p_occurrence_date: input.occurrenceDate,
+        p_due_at: input.dueAt,
+        p_latest_due_at: input.latestDueAt,
+        p_next_due_date: input.nextDueDate,
+        p_end: input.end,
+      },
+    );
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? [])[0] ?? null;
+  }
+
+  async endTaskSeries(
+    seriesId: string,
+    expectedNext: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('task_series')
+      .update({ ended_at: new Date().toISOString() })
+      .eq('id', seriesId)
+      .eq('next_due_date', expectedNext)
+      .is('ended_at', null)
+      .select('id')
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data !== null;
   }
 
   async findIncompleteTimedTasksDueBetween(

@@ -9,6 +9,7 @@ import { ChapterModule } from '../chapter/chapter.module';
 import { ReportRetentionModule } from '../report-retention/report-retention.module';
 import { PollModule } from '../poll/poll.module';
 import { ChatModule } from '../chat/chat.module';
+import { TaskModule } from '../task/task.module';
 
 /**
  * Scheduled workers for spec-required, time-triggered behavior that no user
@@ -32,6 +33,8 @@ import { ChatModule } from '../chat/chat.module';
  * for the `system_audit` expiry announcement (#404), and `ChatModule` for
  * `ChatReportService`, whose evidence sweep releases what a resolved chat
  * report held when the release at resolve time did not finish (#2481).
+ * `TaskModule` for `TaskService`, whose assignment push each new copy of a
+ * repeating task sends (#5119).
  */
 @Module({
   imports: [
@@ -42,6 +45,7 @@ import { ChatModule } from '../chat/chat.module';
     ReportRetentionModule,
     PollModule,
     ChatModule,
+    TaskModule,
   ],
   providers: [
     ScheduledJobsService,
