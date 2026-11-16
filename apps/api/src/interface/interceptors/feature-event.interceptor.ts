@@ -84,7 +84,9 @@ export class FeatureEventInterceptor implements NestInterceptor {
         params: request.params ?? {},
         query: request.query ?? {},
         result,
-        signInMethod: signInMethodOf(request.supabaseUser),
+        // A read verified locally (#5043) has no Auth user, but its token
+        // carries the same `app_metadata.provider`.
+        signInMethod: signInMethodOf(request.supabaseUser ?? request.jwtClaims),
       };
       const described = metadata.describe ? metadata.describe(input) : {};
       if (described === null) return;

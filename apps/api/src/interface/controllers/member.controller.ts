@@ -44,6 +44,7 @@ import {
   FeatureEvent,
   type FeatureEventInput,
 } from '../decorators/feature-event.decorator';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Members')
 @ApiBearerAuth()
@@ -55,6 +56,7 @@ export class MemberController {
   constructor(private readonly memberService: MemberService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'List chapter members' })
   @ApiOkResponse({ type: MemberProfileDto, isArray: true })
   async list(@CurrentChapterId() chapterId: string) {
@@ -86,6 +88,7 @@ export class MemberController {
   // `getOne('roster')` and answering 404 for a route that exists.
   // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('roster')
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       'Display roster for the chapter — id, name, avatar and role color only',

@@ -33,10 +33,16 @@ const SECURITY_EVENT_KINDS: Readonly<Record<number, SecurityEventKind>> = {
  *    calling a guarded route signed out, or something that isn't our client.
  *  - `token_rejected`: a bearer token Supabase Auth refused, usually one that
  *    expired while a client kept using it.
+ *  - `claims_rejected`: a bearer token the guard refused itself, on a read
+ *    it verifies locally (#5043): `getClaims` refused it, or its `iss`,
+ *    `aud`, `role`, `sub` or `exp` did not check out (`failedClaimCheck`).
  *
  * Any other 401 (the Stripe webhook's signature check) carries no reason.
  */
-export type AuthFailureReason = 'no_bearer' | 'token_rejected';
+export type AuthFailureReason =
+  | 'no_bearer'
+  | 'token_rejected'
+  | 'claims_rejected';
 
 /**
  * What the guard knew about a refused credential. Never the token, and never
@@ -47,6 +53,11 @@ export interface AuthFailureDetail {
   /**
    * Supabase Auth's error code for a `token_rejected` (`bad_jwt`,
    * `session_not_found`, `user_not_found`, …), when it sent a well-formed one.
+   * For a `claims_rejected`, the local check that failed: `getClaims`'s code
+   * (`invalid_jwt` for a bad signature or an expired token; `bad_jwt` when it
+   * gave none), or `failedClaimCheck`'s (`iss_mismatch`,
+   * `aud_mismatch`, `role_mismatch`, `bad_sub`, `expired`, `alg_not_allowed`),
+   * or `sub_mismatch`.
    */
   authErrorCode?: string;
   /**

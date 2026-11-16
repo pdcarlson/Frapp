@@ -33,6 +33,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
 import { ChatMessageDto } from '../dtos/chat.dto';
 import { parseBooleanQueryParam } from '../utils/query-boolean';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Polls')
 @ApiBearerAuth()
@@ -136,6 +137,7 @@ export class PollController {
   }
 
   @Get('polls')
+  @VerifySessionLocally()
   @RequirePermissions(SystemPermissions.POLLS_VIEW_ALL)
   @ApiOperation({
     summary: 'List polls across the chapter',

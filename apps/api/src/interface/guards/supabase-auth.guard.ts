@@ -3,7 +3,9 @@ import {
   ExecutionContext,
   Inject,
   Injectable,
+  Optional,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   GUARDS_METADATA,
   INTERCEPTORS_METADATA,
@@ -12,6 +14,7 @@ import { Reflector } from '@nestjs/core';
 import type { JwtPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RequestContext, getHeaderValue } from '../types/request-context.types';
+import { VERIFY_SESSION_LOCALLY_KEY } from '../decorators/session-check.decorator';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { createHash } from 'node:crypto';
 import { isAuthOutage, lookupUnavailable } from './guard-lookup';
@@ -49,6 +52,65 @@ const sessionLookups = new InFlightLookups<
   Awaited<ReturnType<FrappSupabaseClient['auth']['getUser']>>
 >();
 
+/**
+ * The signing algorithms a token may carry to be verified locally (#5043):
+ * the asymmetric ones `getClaims` checks against the project's JWKS. For any
+ * other (`HS256`, `none`, none at all) `getClaims` would ask Auth instead, so
+ * such a token takes the `getUser` path and is never accepted on its claims.
+ */
+export const LOCALLY_VERIFIABLE_ALGS: ReadonlySet<string> = new Set([
+  'ES256',
+  'RS256',
+]);
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * What `getClaims` leaves unchecked on a token whose signature and expiry it
+ * accepted (#5043): that this project issued it (`iss`) for a signed-in user
+ * (`aud` and `role` `authenticated`, as `getUser` would require), and that it
+ * names one (`sub`). Returns the first check that failed, or null. `exp` is
+ * checked again so the answer never rests on the library alone.
+ */
+export function failedClaimCheck(
+  header: { alg?: unknown },
+  claims: Record<string, unknown>,
+  issuer: string,
+  nowSeconds: number,
+): string | null {
+  if (typeof header.alg !== 'string' || !LOCALLY_VERIFIABLE_ALGS.has(header.alg)) {
+    return 'alg_not_allowed';
+  }
+  if (claims.iss !== issuer) return 'iss_mismatch';
+  const audiences: unknown[] = Array.isArray(claims.aud)
+    ? claims.aud
+    : [claims.aud];
+  if (!audiences.includes('authenticated')) return 'aud_mismatch';
+  if (claims.role !== 'authenticated') return 'role_mismatch';
+  if (typeof claims.sub !== 'string' || !UUID_PATTERN.test(claims.sub)) {
+    return 'bad_sub';
+  }
+  if (typeof claims.exp !== 'number' || claims.exp <= nowSeconds) {
+    return 'expired';
+  }
+  return null;
+}
+
+/** The `alg` in a token's header, read without verifying anything. */
+function tokenAlg(token: string): string | undefined {
+  const [headerSeg] = token.split('.');
+  if (!headerSeg) return undefined;
+  try {
+    const header = JSON.parse(
+      Buffer.from(headerSeg, 'base64url').toString('utf8'),
+    ) as { alg?: unknown };
+    return typeof header.alg === 'string' ? header.alg : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The key `sessionLookups` shares a token's session check under. */
 export function sessionLookupKey(token: string): string {
   return createHash('sha256').update(token).digest('base64url');
@@ -56,10 +118,22 @@ export function sessionLookupKey(token: string): string {
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
+  /**
+   * The `iss` this project's Auth stamps on its tokens,
+   * `<SUPABASE_URL>/auth/v1`. Undefined without a config (a stripped-down test
+   * module), which turns the local path off: every request then calls
+   * `getUser`.
+   */
+  private readonly issuer: string | undefined;
+
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     private readonly reflector: Reflector,
-  ) {}
+    @Optional() config?: ConfigService,
+  ) {
+    const url = config?.get<string>('SUPABASE_URL');
+    this.issuer = url ? `${url.replace(/\/+$/, '')}/auth/v1` : undefined;
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestContext>();
@@ -75,6 +149,13 @@ export class SupabaseAuthGuard implements CanActivate {
     }
 
     const token = authHeader.slice(7);
+
+    // A read that opted in verifies the token here instead of asking Auth
+    // (#5043, Paul 2026-11-16). Every other request, and every write, still
+    // calls `getUser` below.
+    if (this.mayVerifyLocally(context, request, token)) {
+      return this.verifyLocally(token, request);
+    }
 
     // The session check is the slowest call a request makes (#3728). While it
     // is in flight, the chapter guard's lookups start on the `sub` the global
@@ -137,6 +218,84 @@ export class SupabaseAuthGuard implements CanActivate {
         ? () => prefetched
         : () => readAppUserId(this.supabase, authId);
     }
+    return true;
+  }
+
+  /**
+   * Whether this request may skip `getUser` (`@VerifySessionLocally()`): a
+   * `GET` or `HEAD` to a handler that carries the marker, on a route
+   * `ChapterGuard` also guards (it re-reads the `users` row and the
+   * membership on every request, so a deleted user or removed member is still
+   * refused at once), with a token signed by an asymmetric key that the
+   * throttler has already verified. That last condition keeps the throttler's
+   * bound on unknown signing keys: a token whose `kid` it would not send to
+   * the JWKS verifier never reaches one from here either.
+   */
+  private mayVerifyLocally(
+    context: ExecutionContext,
+    request: RequestContext,
+    token: string,
+  ): boolean {
+    if (!this.issuer) return false;
+    const method = request.method?.toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') return false;
+    const optedIn = this.reflector.get<boolean | undefined>(
+      VERIFY_SESSION_LOCALLY_KEY,
+      context.getHandler(),
+    );
+    if (optedIn !== true) return false;
+    if (!this.chapterGuardFollows(context)) return false;
+    if (typeof request.throttlerVerifiedClaims?.sub !== 'string') return false;
+    const alg = tokenAlg(token);
+    return alg !== undefined && LOCALLY_VERIFIABLE_ALGS.has(alg);
+  }
+
+  /**
+   * Verifies the token against the project's JWKS (`getClaims`, cached) and
+   * the claims `getClaims` leaves unchecked (`failedClaimCheck`). Fails
+   * closed: a token that does not verify is a 401, and a verifier that could
+   * not answer (the JWKS unreachable, a thrown error) is a 503, never a pass.
+   */
+  private async verifyLocally(
+    token: string,
+    request: RequestContext,
+  ): Promise<boolean> {
+    let answer: Awaited<
+      ReturnType<FrappSupabaseClient['auth']['getClaims']>
+    >;
+    try {
+      answer = await this.supabase.auth.getClaims(token);
+    } catch (error) {
+      throw lookupUnavailable('Could not verify your session right now', error);
+    }
+    const { data, error } = answer;
+    if (error && isAuthOutage(error)) {
+      throw lookupUnavailable('Could not verify your session right now', error);
+    }
+    const refuse = (check: string | undefined) =>
+      authRejected('Invalid or expired token', 'claims_rejected', {
+        authErrorCode: check,
+        tokenExpired: tokenExpired(token),
+      });
+    if (error || !data?.claims) {
+      throw refuse(safeAuthErrorCode(error?.code) ?? 'bad_jwt');
+    }
+    const claims = data.claims as Record<string, unknown>;
+    const failed = failedClaimCheck(
+      data.header,
+      claims,
+      this.issuer as string,
+      Math.floor(Date.now() / 1000),
+    );
+    if (failed) throw refuse(failed);
+    // The throttler verified this same token; a different `sub` here means
+    // something is badly wrong, so it is refused rather than reasoned about.
+    if (claims.sub !== request.throttlerVerifiedClaims?.sub) {
+      throw refuse('sub_mismatch');
+    }
+
+    request.locallyVerifiedAuthId = claims.sub as string;
+    request.jwtClaims = data.claims;
     return true;
   }
 

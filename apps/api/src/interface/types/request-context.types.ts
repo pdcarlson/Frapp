@@ -20,7 +20,22 @@ export interface MemberContext {
 
 export interface RequestContext extends Request {
   requestId?: string;
+  /**
+   * The caller's Auth user as `auth.getUser` returned it, once
+   * `SupabaseAuthGuard` has checked the session with Supabase Auth. Absent on
+   * a read the guard verified locally (`locallyVerifiedAuthId`): read the
+   * caller's id with `authUserIdOf`, and never treat this as always present.
+   */
   supabaseUser?: SupabaseAuthUser;
+  /**
+   * Set by `SupabaseAuthGuard` instead of `supabaseUser` when it verified the
+   * access token locally rather than asking Auth (#5043,
+   * `@VerifySessionLocally()`): the token's `sub`, after its signature,
+   * expiry, issuer, audience and role checked out. The session itself may
+   * since have been signed out or revoked; spec/behavior/multi-tenancy.md
+   * records that bound.
+   */
+  locallyVerifiedAuthId?: string;
   /**
    * Verified claims from the caller's access token, including the
    * `active_chapter_id` claim issued by `custom_access_token_hook`.
@@ -111,4 +126,15 @@ export function getOptionalChapterId(
   const jwtChapterId = getActiveChapterClaim(request.jwtClaims);
   if (jwtChapterId) return jwtChapterId;
   return getHeaderValue(request.headers, 'x-chapter-id');
+}
+
+/**
+ * The Auth user id `SupabaseAuthGuard` accepted for this request, whichever
+ * way it checked the session (`supabaseUser` or `locallyVerifiedAuthId`), or
+ * undefined before that guard has run.
+ */
+export function authUserIdOf(
+  request: Pick<RequestContext, 'supabaseUser' | 'locallyVerifiedAuthId'>,
+): string | undefined {
+  return request.supabaseUser?.id ?? request.locallyVerifiedAuthId;
 }

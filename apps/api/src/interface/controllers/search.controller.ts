@@ -36,6 +36,7 @@ import {
   SEARCH_MESSAGE_HAS,
   type SearchMessageHas,
 } from '#domain/repositories/search.repository.interface';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * Coerce the raw `channelId` query value to a single trimmed id, or `undefined`
@@ -120,6 +121,7 @@ export class SearchController {
   constructor(private readonly searchService: SearchService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ThrottleExpensiveRead()
   @ApiOperation({
     summary: 'Cross-domain search (backwork, events, members, messages)',

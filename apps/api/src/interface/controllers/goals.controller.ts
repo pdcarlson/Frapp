@@ -24,6 +24,7 @@ import {
   GoalSetDto,
   MyGoalsDto,
 } from '../dtos/goals.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 // Goals live beside the rules on each module's settings page, so they share
 // that page's gates: reading them all is `chapter-config:view`, changing them
@@ -37,6 +38,7 @@ export class GoalsController {
   constructor(private readonly goalService: ChapterGoalService) {}
 
   @Get()
+  @VerifySessionLocally()
   @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_VIEW)
   @ApiOperation({
     summary: "The chapter's goals for points, service hours and study hours",
@@ -47,6 +49,7 @@ export class GoalsController {
   }
 
   @Get('mine')
+  @VerifySessionLocally()
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({
     summary:
