@@ -113,6 +113,7 @@ vi.mock("@repo/hooks", () => ({
   useUpdateUser: () => mocks.updateUser,
   useUpdateUserSettings: () => mocks.updateSettings,
   useUpdateOnboarding: () => mocks.noopMutation,
+  useViewerUserId: () => "user-1",
   useDeleteAccount: () => mocks.deleteAccount,
   useActiveChapterId: () => mocks.chapterId,
   usePermissionList: () => mocks.permissions,

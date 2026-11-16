@@ -27,6 +27,8 @@ baseline story actually supports.
 
 **Every required gate also runs in the merge queue** (#4795), on the commit the queue builds from `main` plus the PRs ahead of it, and there it runs in full: the path filters that skip `api-tests`, `mobile-validate` and the other gated jobs on a PR apply to pull requests only, and the diff-based gates measure against the queue's base commit. A gate added to the roster in a workflow without a `merge_group` trigger fails [`merge-queue-triggers.test.mjs`](../../scripts/ci/__tests__/merge-queue-triggers.test.mjs). Where the queue lives and how it is turned on: [`github-branch-protection-runbook.md` § Merge queue](../ops/github-branch-protection-runbook.md#merge-queue).
 
+**A push to `main` the queue already passed skips the gates** (#5084). The queue fast-forwards `main` to the commit it tested, so the push run that follows would repeat the queue run job for job. `ci.yml`'s `changes` job asks the Actions API for a successful `merge_group` run of CI on that exact commit ([`queue-tested.mjs`](../../scripts/ci/queue-tested.mjs)); when there is one, every other job except `packages-build` (which keeps seeding `main`'s caches) skips. The run still concludes green, so Deploy staging fires on it, and Deploy production's [`validate-deploy-sha.mjs`](../../scripts/ci/validate-deploy-sha.mjs) judges the commit on the newest check runs that actually ran, which are the queue run's, rather than on the skips. The queue run counts once it concluded green, or once every required CI job in it has, since the queue merges before its advisory jobs finish. A commit that reaches `main` any other way, a re-run of the push run, and a lookup that fails all get the full suite. The skipped jobs used to write `main`'s tool caches (oasdiff, gitleaks, Playwright's browser and OS packages), which every PR and queue ref restores, so `main-caches` writes any new key in their place.
+
 **The dashboard visual snapshot gate used to sit in this table and is gone.** `web-visual-regression`
 shot each dashboard route at 1440×960 and compared it to one of sixteen committed PNGs. It was
 **advisory**, because baselines
@@ -296,8 +298,9 @@ blocks a PR over the advisory base comparison, which carries it too. That compar
 can't run (a `::warning::` that it was skipped), and its `!cancelled()` condition keeps it running
 after the blocking step fails, since it alone reports breaks to routes no shipped build had. It can't turn the blocking check
 green: `--shipped` fails on a missing oasdiff whenever a build is listed, and needs none when no build
-is. The blocking step also runs on push to `main`, so a break that reaches `main` anyway turns `main`
-red. [`check-api-breaking-changes.test.mjs`](../../scripts/ci/__tests__/check-api-breaking-changes.test.mjs)
+is. The blocking step also runs on a push to `main` the merge queue didn't test (a queue-tested push
+skips it, since the queue ran it on the same commit), so a break that reaches `main` anyway turns
+`main` red. [`check-api-breaking-changes.test.mjs`](../../scripts/ci/__tests__/check-api-breaking-changes.test.mjs)
 fails if that step gains a `continue-on-error` or an `if:`.
 
 ---

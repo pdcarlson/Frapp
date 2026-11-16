@@ -12,6 +12,7 @@ const mockState = vi.hoisted(() => ({
   isChapterResolving: false,
   pushAvailable: true,
   token: "ExponentPushToken[abc]",
+  deviceName: undefined as string | undefined,
   stored: null as PushTokenRow | null,
   register: vi.fn(async (body: { token: string }) => ({
     id: `row-${body.token}`,
@@ -98,6 +99,10 @@ vi.mock("./push", () => ({
   },
 }));
 
+vi.mock("./push-device-name", () => ({
+  readPushDeviceName: () => mockState.deviceName,
+}));
+
 vi.mock("./push-registration", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./push-registration")>();
   return {
@@ -124,6 +129,7 @@ beforeEach(() => {
   mockState.isChapterResolving = false;
   mockState.pushAvailable = true;
   mockState.token = "ExponentPushToken[abc]";
+  mockState.deviceName = undefined;
   mockState.stored = null;
   mockState.tokenListeners = [];
   mockState.launchResponse = null;
@@ -154,6 +160,20 @@ describe("usePushRuntime token lifecycle", () => {
         token: "ExponentPushToken[abc]",
       });
     });
+  });
+
+  it("sends the token and this device's platform label to the register route (#4563)", async () => {
+    mockState.isAuthenticated = true;
+    mockState.status = "authenticated";
+    mockState.deviceName = "android 15 · Pixel 9";
+    renderHook(() => usePushRuntime());
+
+    await waitFor(() => {
+      expect(mockState.register).toHaveBeenCalledTimes(1);
+    });
+    expect(mockState.register.mock.calls[0]).toEqual([
+      { token: "ExponentPushToken[abc]", device_name: "android 15 · Pixel 9" },
+    ]);
   });
 
   it("subscribes to token rotation and re-registers a rotated token", async () => {

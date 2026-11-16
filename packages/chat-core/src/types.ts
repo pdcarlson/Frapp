@@ -134,6 +134,9 @@ export const CHAT_MESSAGE_KINDS = [
   "signup",
   "form",
   "ask_answer",
+  // An officer's role picker (#4958): members tap to join or leave the
+  // Non-chapter business roles it lists.
+  "role_picker",
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 

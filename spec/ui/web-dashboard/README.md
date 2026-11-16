@@ -569,7 +569,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   Clicking the open tool's row closes it, and clicking another tool switches to it, so chat and at most one tool are open.
   With neither open the shell shows the **home view**: the chapter's mark, name and school on a glow of its accent ([`chapter-home.tsx`](../../../apps/web/components/layout/chapter-home.tsx)).
   Between chat and the tool page a **divider** sets the split: it starts 50/50 between the thread and the page, drags, moves with the arrow keys (Home and End to the limits, Enter or a double-click to reset), is remembered in a cookie read on the server, and never lets the thread or the page drop below **375px**, the width the thread is tested at ([`split-divider.tsx`](../../../apps/web/components/layout/split-divider.tsx)).
-  While chat and a tool are both open the **member column closes on its own** and the people button opens the list as a Panel; the member's own show-or-hide choice is kept for chat alone.
+  While chat and a tool are both open the **member column closes on its own** and the people button opens the list in a popover under it (2026-11-15, #4593; a Panel until then); the member's own show-or-hide choice is kept for chat alone.
   **Every tool page can be closed from itself** (Paul, 2026-11-11): before, only a tool with a nav row of its own could be closed, by clicking the row again, and the Settings tools, Profile and the personal Settings page had none, so a member who opened Chat admin beside chat could not get rid of it.
   From 1056px up the tool page has a 48px header lined up with chat's channel header, its title on the left and a close button on the right ([`tool-page-header.tsx`](../../../apps/web/components/layout/tool-page-header.tsx));
   Escape inside the page closes it too, except from a text field or when a dialog or menu inside used the key;
@@ -625,7 +625,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
 - **A member list on the right, and no reply panel.**
   `1t` drew Chat as two flush columns with no details rail.
   Once the channels moved into the shell's left column (since replaced by the chat panel, [#3779](https://github.com/pdcarlson/Frapp/issues/3779)), Paul asked for the freed width to hold a member list "similar to that of discord" (2026-11-05, [#3536](https://github.com/pdcarlson/Frapp/issues/3536)), so from 1280px a 240px members column sits right of the thread, on `--surface-1` like the channels column, shown unless the member hid it with the people toggle in the channel header (a cookie remembers that, read on the server so the column never paints and vanishes), and closed on its own while a tool page is open beside chat.
-  Below 1280px, and beside a tool, there is no room for a third column and the same toggle opens the list in a Panel ([`components.md` § 9](../design-system/components.md#9-sheets-and-dialogs)).
+  Below 1280px, and beside a tool, there is no room for a third column and the same toggle opens the list in a popover under it ([`components.md` § Chat member list](../design-system/components.md#chat-member-list); a Panel until 2026-11-15, #4593).
   Who is listed and how it sorts: [`spec/behavior/chat/README.md`](../../behavior/chat/README.md) § Member list; geometry: [`components.md` § 7](../design-system/components.md#7-navigation-items-web).
   Reply opens no panel: clicking the quote above a reply calls `onJumpToParent`, which scrolls the timeline to the message it quotes, the same machinery pins, saved messages and deep links use.
   The panel it replaced was a read-only copy of messages already in the timeline.
@@ -708,8 +708,8 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   Actives and alumni rows both open `MemberDetailSheet` (alumni since [#2484](https://github.com/pdcarlson/Frapp/issues/2484)).
   There is no trailing "View details" button: a 44px button inside a 36px row sets the row's height on its own.
 - **One member profile, every door** ([#3726](https://github.com/pdcarlson/Frapp/issues/3726)).
-  `MemberDetailSheet` (`components/members/member-detail-sheet.tsx`) reads a member by `users.id` (`GET /v1/members/by-user/{userId}`), so chat opens the same sheet from a sender's name or photo, an `@` chip, or a member-list row ([`chat/README.md` § Mentions](../../behavior/chat/README.md#mentions)).
-  It follows mobile s13's order ([`../mobile/screens.md`](../mobile/screens.md)): photo, name and the class-year line, Message as the sheet's one accent button, then a flat list of Phone (when set: the number is a `tel:` link and Text beside it an `sms:` link), Email (a `mailto:` link) and Member since, then roles as chips in the chapter's rank with each role's color dot, then the bio, with the custom fields the viewer's tier can see behind a More details toggle that starts closed on every opening (#3711, 2026-11-12: contact first, logistics a tap away).
+  `MemberDetailSheet` (`components/members/member-detail-sheet.tsx`) reads a member by `users.id` (`GET /v1/members/by-user/{userId}`), so chat can open it with only a sender or mention id: since 2026-11-15 (#4593) a sender's name or photo, an `@` chip or a member-list row opens chat's profile popout first, and the sheet is its View profile ([`chat/README.md` § Mentions](../../behavior/chat/README.md#mentions), "The web profile popout").
+  It follows mobile s13's order ([`../mobile/screens.md`](../mobile/screens.md)): photo, name and the class-year line, Message as the sheet's one accent button, then a flat list of Phone (when set: the number is a `tel:` link and Text beside it an `sms:` link), Email (a `mailto:` link) and Member since, then roles as chips in the chapter's rank with each role's color dot, then the bio, with the custom fields the viewer's tier can see, those with a value (#1749), behind a More details toggle that starts closed on every opening (#3711, 2026-11-12: contact first, logistics a tap away).
   In the Directory (actives and alumni) it opens docked in place of the list, led by a Back to directory arrow, and chat still opens it as a sheet beside the conversation ([`components.md` § Surface size](../design-system/components.md#surface-size), 2026-11-12).
   Its title row draws no title, only the close or the back arrow (with the `⋯` below at its end), and the name heads the body, as § Surface size has a member sheet do.
   Under the roles sits the member's pledge class and order number ([#3939](https://github.com/pdcarlson/Frapp/issues/3939)), drawn when set, and always for a `roles:manage` holder, who gets Edit there;
@@ -873,7 +873,7 @@ The personal page has a rail of links, one address per section (`?section=`, the
 | ----- | ------- | ----------- | ----- |
 | My account | Notifications | _(none)_ | Quiet hours (`user_settings`) |
 | My account | Appearance and chat | `appearance` | Chat density, kept on the browser. No theme choice: the product is dark-only ([#3330](https://github.com/pdcarlson/Frapp/issues/3330)) |
-| My account | Account | `account` | Replay the tutorial, sign out, delete account |
+| My account | Account | `account` | Replay the tour, sign out, delete account |
 | My account | AI | `ai` | One Frapp AI switch: on opens Meet Frapp AI, off turns it off ([`ai.md` § Consent](../../behavior/ai.md#consent); #4790). Listed only while the server has AI; the rail waits for that answer |
 | In _chapter name_ | Chapter alerts | `alerts` | Chat messages (All messages / Mentions and DMs only, [#4124](https://github.com/pdcarlson/Frapp/issues/4124)), then the active chapter's notification categories |
 | In _chapter name_ | Blocked members | `blocked` | The active chapter's block list |
@@ -883,6 +883,7 @@ The personal page has a rail of links, one address per section (`?section=`, the
 The decision listed blocked members under the account; they sit in the chapter group because `GET /v1/chat/blocks` is the active chapter's list.
 Only the open section mounts, and each carries its own offline, loading and error states, so the page has no page-scale ladder.
 My invoices sits in the chapter group since billing moved into Chapter settings ([#3827](https://github.com/pdcarlson/Frapp/issues/3827)): the member's own invoices with Pay on each open one, hidden while dues is beta-off.
+Pay opens the pay dialog. After a card or bank payment is submitted it re-reads the invoice ([`billing.md`](../../behavior/billing.md) § Member payment flow): `Payment complete. This invoice is now marked paid.` once the server says PAID; `Payment received. Your chapter's records update as soon as the confirmation lands, usually within a minute.` while it hasn't, re-reading every 10s while the dialog stays open; and `Your payment didn't go through: <Stripe's reason>. You can try again.` (or without the reason) once the server records a failure newer than that submit (#3460), with `Try again`, which starts a new attempt rather than reusing the last one.
 
 ### Billing
 
@@ -994,7 +995,6 @@ These are the places it departs from the board, recorded here so they read as de
   Add to calendar was a third until the `.ics` export was withdrawn (#3708).
 - **No decorative glyph before a dialog or sheet title.**
   The create task, new event, adjust points, log service hours, invite and member sheets each drew one before the title, repeating the button just pressed.
-  The onboarding tutorial's per-slide mark names the slide rather than the button, so it stays ([`iconography.md`](../design-system/iconography.md)).
 
 ## Gating & routing semantics
 
@@ -1014,7 +1014,7 @@ These are the places it departs from the board, recorded here so they read as de
   The standalone `/home` overview was removed in the chat-first rework; chapter health at a glance is meant to become the pulse card, an inline chat artifact that is designed but not built yet ([`spec/behavior/chat/catch-up.md`](../../behavior/chat/catch-up.md)).
   Users with zero permissions land on `/no-access`, which explains how to request a role without dumping them back to sign-in.
   The shell sends them there once `GET /v1/users/me/permissions` has answered with an empty set ([`no-access-redirect.tsx`](../../../apps/web/components/layout/no-access-redirect.tsx)), never while that read is loading or after it failed with nothing cached, and only when the active chapter is their only one: `/no-access` has no chapter switcher, so a member of another chapter stays in the shell, where they can switch.
-  An account with no chapter at all gets the chapter wizard instead.
+  An account with no chapter at all gets the chapter wizard instead, unless an invite was emailed to it: then it is sent to `/join`, which offers that invite ([`onboarding.md`](../../behavior/onboarding.md), #5077).
   *Corrected 2026-11-06 ([#3236](https://github.com/pdcarlson/Frapp/issues/3236)):* until then nothing routed anyone to `/no-access`, so a role-less member landed on `/chat`, where every read 403s because the chat endpoints require `members:view`.
 - **Unauthenticated deep links keep their destination.**
   [`apps/web/proxy.ts`](../../../apps/web/proxy.ts) guards every protected prefix: with no Supabase session it redirects to `/sign-in?redirectTo=<pathname + search>`, and once a session exists the same proxy returns the caller there instead of the `/chat` default.

@@ -34,10 +34,23 @@ concurrency:
 # ---------------------------------------------------------------------------
 # `packages-build` runs first. web-tests, web-responsive-floor, landing-fold,
 # pglite-migrations, api-tests, mobile-validate and mobile-tests-tokyo are
-# path-gated on PRs by `changes` and run in full on push and in the merge queue.
+# path-gated on PRs by `changes` and run in full in the merge queue and on a push
+# the queue did not already test (below).
 # They are still required checks, because a job skipped by a job-level `if:` reports
 # Success (ADR-15 amendment 2026-08-19). `clean-checkout-typecheck` and
 # `web-production-build` deliberately prebuild nothing.
+#
+# Every job but `changes` and `packages-build` also skips on a push to main whose
+# commit the merge queue already passed (#5084): `changes` sets `queue_tested`
+# when a successful `merge_group` run of this workflow exists for the same SHA,
+# which the queue fast-forwarded main to, so the push run would repeat it job for
+# job. The skips report Success, so the run stays green and Deploy staging still
+# fires on it; validate-deploy-sha.mjs judges a production deploy on the queue
+# run's check runs, which sit on the same commit. `packages-build` still runs so
+# main keeps seeding the node_modules and turbo caches every PR restores, and
+# `main-caches` runs in the suite's place to seed the tool caches the skipped
+# jobs used to write. A commit that reached main without the queue, and any
+# re-run, gets the full suite.
 #
 # Every job sets `timeout-minutes` (#3129, pinned by workflow-timeouts.test.mjs).
 # Nothing cancels on main, so a job hung at the 360-minute default blocks every
@@ -50,14 +63,23 @@ jobs:
   # Path filter for the gated jobs, and required because they need it
   # (required-checks.mjs). It filters only on pull_request, so a shallow checkout
   # cannot fail the gate; on push and merge_group its outputs are empty and the
-  # gated jobs run in full on their `github.event_name != 'pull_request'` arm.
+  # gated jobs run in full on their `github.event_name != 'pull_request'` arm,
+  # unless `queue_tested` skips them. It answers `queue_tested` (header), which
+  # every job but packages-build reads, so they all need it; `changes` itself
+  # must never skip.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
+      # The merge queue's runs of this workflow (scripts/ci/queue-tested.mjs).
+      actions: read
     outputs:
+      # 'true' only on a push whose exact commit a merge_group run of this
+      # workflow already passed. Anything else, a failed lookup included, is
+      # 'false', which runs the full suite.
+      queue_tested: ${{ steps.queue.outputs.tested == 'true' }}
       web: ${{ steps.filter.outputs.web }}
       landing: ${{ steps.filter.outputs.landing }}
       pglite: ${{ steps.filter.outputs.pglite }}
@@ -69,6 +91,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+      # Push only, and never fatal: a failure here costs the full suite, not a
+      # red `changes` (a failed `changes` skips every job that needs it).
+      - name: Setup Node
+        if: github.event_name == 'push'
+        continue-on-error: true
+        uses: ./.github/actions/node-setup
+        with:
+          install: none
+      - name: Did the merge queue already pass this commit?
+        id: queue
+        if: github.event_name == 'push'
+        continue-on-error: true
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+          # A re-run tests in full (queue-tested.mjs says why).
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci/queue-tested.mjs
       - name: Detect changed paths
         id: filter
         if: github.event_name == 'pull_request'
@@ -185,9 +226,82 @@ jobs:
         with:
           save: "true"
 
+  # ── Main's tool caches on a queue-tested push (#5084) ───────────────────
+  # The other half of skipping the suite: a cache saved on `main` is the only
+  # one every PR and every merge queue ref can restore (a queue ref's own saves
+  # are scoped to that one entry). The skipped jobs used to write these, so on a
+  # push whose suite skipped this job writes any whose key is new: oasdiff,
+  # gitleaks, the Playwright browser, and Playwright's OS packages, whose key
+  # carries the runner image version and so turns over every week or so.
+  # Each step mirrors the job it seeds for (api-contract-check, secret-scan,
+  # web-responsive-floor, landing-fold); `lookup-only` keeps a hit from
+  # downloading what is already there. Not a required check: a failure costs
+  # only a cache miss somewhere else, and it never runs when the suite does.
+  main-caches:
+    needs: [packages-build, changes]
+    if: ${{ needs.changes.outputs.queue_tested == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node and install dependencies
+        uses: ./.github/actions/node-setup
+        with:
+          install: ci
+
+      - name: Cache oasdiff
+        id: oasdiff
+        uses: actions/cache@v6
+        with:
+          path: .cache/oasdiff
+          key: oasdiff-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-oasdiff.sh') }}
+          lookup-only: true
+
+      - name: Install oasdiff
+        if: steps.oasdiff.outputs.cache-hit != 'true'
+        run: bash scripts/install-oasdiff.sh
+
+      - name: Cache the pinned gitleaks binary
+        id: gitleaks
+        uses: actions/cache@v6
+        with:
+          path: .cache/gitleaks
+          key: gitleaks-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-gitleaks.sh') }}
+          lookup-only: true
+
+      - name: Install gitleaks
+        if: steps.gitleaks.outputs.cache-hit != 'true'
+        run: bash scripts/install-gitleaks.sh
+
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+          lookup-only: true
+
+      # Saves its .debs under this runner image's key when that key is new.
+      - name: Install Playwright OS deps
+        timeout-minutes: 10
+        uses: ./.github/actions/playwright-os-deps
+
+      - name: Install Playwright browser
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
+
   # ── Lint + type check (full monorepo) ───────────────────────────────────
   lint-and-typecheck:
-    needs: packages-build
+    needs: [packages-build, changes]
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -270,8 +384,12 @@ jobs:
       # ── Clean-checkout guard (fresh-install path) ───────────────────────────
   # `npm ci && check-types && lint` with no prebuilt packages/*/dist, so reverting
   # turbo.json's `^build` dependency fails here while every prebuilding job stays
-  # green. Keep it free of `needs:`, build and cache steps: adding one disarms it.
+  # green. Keep it free of build and cache steps, and of any `needs:` but
+  # `changes`, which builds nothing and is read only for `queue_tested`: adding
+  # one disarms it.
   clean-checkout-typecheck:
+    needs: changes
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -295,10 +413,13 @@ jobs:
   # ── Production-shaped frontend build (Vercel parity) ────────────────────
   # Builds web and landing on a devDependency-pruned tree, as Vercel's production
   # install does. #1331 and #1372 broke production through this gap
-  # (docs/ci-cd/agent-infra.md, docs/ci-cd/quality-gates.md). No `needs:`, no
-  # prebuilt-package or cache step, and no path filter (`changes.web` misses
-  # apps/landing): adding any of them disarms it.
+  # (docs/ci-cd/agent-infra.md, docs/ci-cd/quality-gates.md). No `needs:` but
+  # `changes` (for `queue_tested` only), no prebuilt-package or cache step, and
+  # no path filter (`changes.web` misses apps/landing): adding any of them
+  # disarms it.
   web-production-build:
+    needs: changes
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -362,7 +483,7 @@ jobs:
   # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:
     needs: [packages-build, changes]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.api == 'true' }}
+    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.api == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -394,7 +515,7 @@ jobs:
   # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
   web-tests:
     needs: [packages-build, changes]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -424,6 +545,8 @@ jobs:
 
   # ── API Docker image (same path as Render native Dockerfile builds) ─────
   api-docker-build:
+    needs: changes
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -499,7 +622,8 @@ jobs:
 
   # ── API contract freshness check ────────────────────────────────────────
   api-contract-check:
-    needs: packages-build
+    needs: [packages-build, changes]
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -537,7 +661,8 @@ jobs:
         continue-on-error: true
         run: bash scripts/install-oasdiff.sh
 
-      # Runs on push too, so a break that reached main turns main red. On a PR
+      # Runs on push too, so a break that reached main outside the merge queue
+      # turns main red (a queue-tested push skips it: the queue ran it). On a PR
       # it also fails when the registry lost or rewrote an entry the base has
       # (#3783): a bad conflict resolution otherwise passes as "fewer builds".
       - name: Check API compatibility with shipped mobile builds (blocking)
@@ -556,7 +681,8 @@ jobs:
   # § dependency-cruiser). Needs built packages: the cruise resolves workspace
   # imports through node_modules symlinks.
   dependency-cruiser:
-    needs: packages-build
+    needs: [packages-build, changes]
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -588,6 +714,8 @@ jobs:
   # § jscpd). A breach fails the job visibly; never add `continue-on-error`, which
   # would turn it green.
   duplicate-detection:
+    needs: changes
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -618,6 +746,8 @@ jobs:
 
   # ── Migration safety ────────────────────────────────────────────────────
   migration-safety:
+    needs: changes
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -648,6 +778,8 @@ jobs:
   # baseline (counts in .squawk.toml; `check-migration-lock-safety.mjs --strict` is
   # the switch), so not a required check.
   migration-lock-safety:
+    needs: changes
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Reports; never blocks. Don't remove without that baseline.
@@ -676,6 +808,8 @@ jobs:
   # supabase/seed/chapter_directory.csv. Blocking because a bad hex renders as a
   # plausible wrong color (#840). Node builtins only, so no install.
   chapter-directory-seed:
+    needs: changes
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -697,7 +831,7 @@ jobs:
   # ── Mobile app validation ───────────────────────────────────────────────
   mobile-validate:
     needs: [packages-build, changes]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true' }}
+    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -780,7 +914,7 @@ jobs:
   # no time to a run.
   mobile-tests-tokyo:
     needs: [packages-build, changes]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true' }}
+    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -802,6 +936,8 @@ jobs:
 
   # ── Deploy-gate script unit tests ───────────────────────────────────────
   ci-scripts-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -821,6 +957,8 @@ jobs:
   # No install: audits the lockfile. Allowlist entries need a reason, an issue and
   # an expiry (docs/security/security-fixes.md § npm audit sweep + CI gate).
   dependency-audit:
+    needs: changes
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -841,6 +979,8 @@ jobs:
   # gitleaks over the commit range; the pre-commit hook is the local primary
   # (docs/ci-cd/secret-scanning.md).
   secret-scan:
+    needs: changes
+    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -886,7 +1026,7 @@ jobs:
   # § RLS enforcement.
   pglite-migrations:
     needs: changes
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.pglite == 'true' }}
+    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.pglite == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -940,7 +1080,7 @@ jobs:
   # the guards against a zero-test run: docs/ci-cd/quality-gates.md.
   web-responsive-floor:
     needs: [packages-build, changes]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.web == 'true' }}
+    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -992,7 +1132,7 @@ jobs:
   # No `continue-on-error`.
   landing-fold:
     needs: [packages-build, changes]
-    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.landing == 'true' }}
+    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.landing == 'true') }}
     permissions:
       contents: read
     runs-on: ubuntu-latest

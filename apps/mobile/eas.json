@@ -56,6 +56,8 @@
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api-staging.frapp.live",
         "EXPO_PUBLIC_SENTRY_ENVIRONMENT": "staging",
+        "EXPO_PUBLIC_APP_URL": "https://app.staging.frapp.live",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://2e96eb281e26af1c6e2ba4bb0d4653ac@o4511001013977088.ingest.us.sentry.io/4511991231676416",
         "FRAPP_APP_VARIANT": "staging"
       }
     },

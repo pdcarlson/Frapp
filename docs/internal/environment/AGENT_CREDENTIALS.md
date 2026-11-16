@@ -13,12 +13,11 @@ so use **test-mode / read-only** credentials only.
 ## Provider / research credentials
 
 When present, gather runtime truth (CI, deploys, schema, secret presence) via provider
-APIs before proposing changes. Usage policy for `GITHUB_PAT` lives in
-[`../../ci-cd/agent-infra.md`](../../ci-cd/agent-infra.md) ("GitHub PAT usage policy").
+APIs before proposing changes. Sessions carry no GitHub token: how they reach GitHub is
+[`agent-infra.md` § GitHub access policy](../../ci-cd/agent-infra.md#github-access-policy).
 
 | Env var | Typical use |
 | ------- | ----------- |
-| `GITHUB_PAT` | GitHub PAT — branch-protection script, agent-owned PRs/issues; export as `GH_TOKEN` for `gh` |
 | `INFISICAL_SERVICE_TOKEN` | Infisical service token (`st.*` format — scoped at mint time; per [#1279](https://github.com/pdcarlson/Frapp/issues/1279) minted `dev` + `staging` **read-only**, never `prod`, and confirmed so against `GET /api/v2/service-token` on 2026-08-27). The Infisical CLI reads it as `INFISICAL_TOKEN`: `export INFISICAL_TOKEN="$INFISICAL_SERVICE_TOKEN"` |
 | `INFISICAL_PROJECT_ID` | Infisical project (workspace) id — same value as `workspaceId` in `.infisical.json` |
 
@@ -38,6 +37,7 @@ from the Claude Code environment.
 | `RENDER_API_KEY` (older images: `RENDER_APIKEY`) | Removed 2026-09-23 and the agent's Render key revoked ([#2583](https://github.com/pdcarlson/Frapp/issues/2583)). The same name is still a GitHub Actions environment secret: [`agent-infra.md` § No repository secrets](../../ci-cd/agent-infra.md#no-repository-secrets-2518). |
 | `VERCEL_API_KEY` | Removed 2026-09-24; no live Vercel token matched it. Same Actions caveat as `RENDER_API_KEY`. |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN`, `SUPABASE_API_KEY`, `SUPABASE_ACCESS_TOKEN` | Removed from the environment by 2026-09-24T16:03Z; a session whose container started earlier still carries them, so check its start time (`ps -o lstart= -p 1`) before telling Paul. Every Supabase account token except CI's two project-scoped read-only ones was revoked the same day, `claude-code` (the agents' token) among them ([#2583](https://github.com/pdcarlson/Frapp/issues/2583)). `SUPABASE_ACCESS_TOKEN` is still the name CI reads from Infisical `staging` and `prod`, where it holds those read-only tokens ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md)); leave that copy alone. No script reads the other two names. |
+| `GITHUB_PAT` | Removed 2026-11-15, when the repository moved to `frapplive/Frapp`; sessions use the GitHub MCP and the agent proxy instead ([`agent-infra.md` § GitHub access policy](../../ci-cd/agent-infra.md#github-access-policy)). The name survives only as the variable a person's own admin token may sit in for `npm run configure:branch-protection` on a laptop ([runbook](../../ops/github-branch-protection-runbook.md#prerequisites)). |
 | `LINEAR_API_KEY` | Linear personal API key — **dead**: Linear was retired 2026-08-08 (work tracking moved to GitHub Issues, see [`../../ci-cd/github-pm.md`](../../ci-cd/github-pm.md) and [#680](https://github.com/pdcarlson/Frapp/issues/680)). Revoke it. |
 
 > **Infisical naming.** Older docs said `INFISICAL_API_KEY`; cloud-sandbox sessions don't
@@ -57,12 +57,11 @@ from the Claude Code environment.
 > [`infrastructure-research`](../../../.claude/skills/infrastructure-research/SKILL.md)
 > § "Infisical: Secret configuration".
 >
-> **Canonical names & aliases.** The hosted-agent GitHub PAT is `GITHUB_PAT` — **not**
-> `GITHUB_TOKEN` (the GitHub Actions runtime token, which lacks branch-administration
-> scope). Scripts still tolerate the aliases `GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`, and
-> older images may expose `GITHUB_PERSONAL_ACCESS_TOKEN` /
-> `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` — but new code and docs use the canonical names only.
-> `RENDER_APIKEY` is retired with `RENDER_API_KEY` (the table above).
+> **GitHub tokens in a session.** The `GITHUB_TOKEN` and `GH_TOKEN` a session sees are the
+> agent proxy's placeholders: they work on the proxy route and get a 401 sent direct
+> ([`agent-infra.md` → The `api.github.com` route rule](../../ci-cd/agent-infra.md#the-apigithubcom-route-rule)).
+> Older images may expose `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`;
+> don't use them. `RENDER_APIKEY` is retired with `RENDER_API_KEY` (the table above).
 
 ## Cloud-sandbox runtime vars
 

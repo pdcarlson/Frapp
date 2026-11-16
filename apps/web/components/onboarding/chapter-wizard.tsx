@@ -41,6 +41,7 @@ import {
   type ChapterLogoUpload,
 } from "@repo/hooks";
 import {
+  CHAPTER_BILLING_BETA_OFF,
   CHAPTER_SHORT_NAME_MAX_LENGTH,
   EVERYONE_ROLE_NAME,
   acceptAttribute,
@@ -85,28 +86,35 @@ import { useConfirmDropBulkUploads } from "@/components/backwork/bulk/use-confir
 /**
  * Where a brand-new founder lands when the wizard finishes.
  *
- * **Checkout, not chat (#2297).** `ChapterService.create` has no billing
- * dependency, so a freshly created chapter sits at `subscription_status
- * 'incomplete'` — every screen loads and every paid-ops *write* 403s, with
- * each failure inviting a retry that cannot succeed (Guideline 2.1). The
- * recorded decision is to make that state unreachable on the normal path
- * rather than to widen the free tier, so the founder is put in front of
- * checkout while `#913`'s 14-day trial makes it free on day zero
- * (`grantTrial: !chapter.subscription_id` → Stripe reports `trialing`, which
- * `mapStripeStatus` folds to `active`, opening every gate immediately).
+ * **Chat while chapter billing is off for the beta** (`CHAPTER_BILLING_BETA_OFF`,
+ * Paul 2026-11-15). The API then creates the chapter `active`, so every write
+ * works from the first screen and there is nothing on Plan and billing to do.
  *
- * **A landing, not a gate.** Nothing blocks navigating away — the dashboard
- * shell and its nav are fully available, which is what keeps this consistent
- * with `spec/product/positioning.md`'s "inline nudges rather than a mandatory
- * gate". Plan and billing already offers checkout at this exact status.
+ * **Checkout otherwise, not chat (#2297).** With billing on, the chapter is
+ * created at `subscription_status 'incomplete'`: every screen loads and every
+ * paid-ops *write* 403s, with each failure inviting a retry that cannot
+ * succeed (Guideline 2.1). The recorded decision is to make that state
+ * unreachable on the normal path rather than to widen the free tier, so the
+ * founder is put in front of checkout while `#913`'s 14-day trial makes it
+ * free on day zero (`grantTrial: !chapter.subscription_id` → Stripe reports
+ * `trialing`, which `mapStripeStatus` folds to `active`, opening every gate
+ * immediately). It is a landing, not a gate: nothing blocks navigating away,
+ * which keeps it consistent with `spec/product/positioning.md`'s "inline
+ * nudges rather than a mandatory gate".
  */
-const POST_CREATE_PATH = BILLING_SETTINGS_PATH;
+function postCreatePath(
+  chapterBillingOff: boolean = CHAPTER_BILLING_BETA_OFF,
+): string {
+  return chapterBillingOff ? CHAT_LANDING_PATH : BILLING_SETTINGS_PATH;
+}
+/** Chat home: `?channel=` takes a channel id, which the wizard does not hold. */
+const CHAT_LANDING_PATH = "/chat";
 /** The Everyone role: setup invites join as nobody in particular (#4191). */
 const INVITE_ROLE = EVERYONE_ROLE_NAME;
 
 /**
  * `display` is the founder's own chat display pick (#4056): founders never see
- * the tutorial that asks a joining member, so the wizard asks it once the
+ * the first-run tour that asks a joining member, so the wizard asks it once the
  * chapter exists, before the invite.
  */
 type WizardStep = "find" | "archetype" | "identity" | "display" | "invite";
@@ -285,7 +293,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
   function finish() {
     onComplete();
-    router.replace(POST_CREATE_PATH);
+    router.replace(postCreatePath());
     router.refresh();
   }
 
@@ -851,7 +859,7 @@ function IdentityStep({
 }
 
 /**
- * The same cards as Profile's Chat density and the tutorial's display slide.
+ * The same cards as Profile's Chat density (the first-run tour's display stop draws them as one segmented control).
  * The browser's current display is preselected (Cozy on a browser that never
  * picked one) and a click saves at once, so Continue keeps what is checked.
  */

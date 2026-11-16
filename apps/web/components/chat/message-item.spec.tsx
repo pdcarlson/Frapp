@@ -2460,12 +2460,12 @@ describe("MessageItem opens profiles", () => {
     const name = screen.getByRole("button", { name: "Alice Chen" });
     expect(name.tagName).toBe("BUTTON");
     fireEvent.click(name);
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
 
     onOpenProfile.mockClear();
     name.focus();
     await userEvent.keyboard("{Enter}");
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
   });
 
   it("opens the author's profile from their photo, which is not a second Tab stop", () => {
@@ -2477,7 +2477,7 @@ describe("MessageItem opens profiles", () => {
     )!;
     expect(photo.tabIndex).toBe(-1);
     fireEvent.click(photo);
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
   });
 
   it("does not toggle the row's action bar when the name is clicked", () => {
@@ -2526,12 +2526,12 @@ describe("MessageItem opens profiles", () => {
     // The mark still paints the chip; the button sits inside it.
     expect(chip.closest("mark")).toHaveAttribute("data-mention", "AliceChen");
     fireEvent.click(chip);
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
 
     onOpenProfile.mockClear();
     chip.focus();
     await userEvent.keyboard(" ");
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
   });
 
   it("opens nothing from a role mention", () => {

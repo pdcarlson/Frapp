@@ -1,3 +1,5 @@
+import { parseHex } from "@repo/color";
+
 /**
  * The glass layer: one recipe for the chrome that floats over content on both
  * clients (owner pick 2026-11-05, "Floating bar, no glow";
@@ -29,11 +31,17 @@ export const signetGlass = {
   scrimBlur: 6,
 } as const;
 
-/** `#RRGGBB` at `alpha`, for the glass fill over a ladder step. */
+/**
+ * `#RRGGBB` (or `#RGB`) at `alpha`, for the glass fill over a ladder step.
+ *
+ * The phone's `tint()` delegates here, and some of its callers pass a chapter
+ * accent read out of a `jsonb` palette. A value `parseHex` does not accept
+ * (blank, not a colour, or an 8-digit `#RRGGBBAA` whose own alpha this would
+ * otherwise drop) paints nothing rather than `rgba(NaN,NaN,NaN,…)`, which is
+ * not a colour and fails with no error (#1640).
+ */
 export function glassFill(surfaceHex: string, alpha: number): string {
-  const value = surfaceHex.replace("#", "");
-  const r = parseInt(value.slice(0, 2), 16);
-  const g = parseInt(value.slice(2, 4), 16);
-  const b = parseInt(value.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
+  const rgb = parseHex(surfaceHex);
+  if (!rgb) return "transparent";
+  return `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
 }

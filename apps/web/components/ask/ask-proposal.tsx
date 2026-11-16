@@ -43,7 +43,7 @@ import {
   DueDateField,
   dueEntryPassed,
 } from "@/components/tasks/due-date-field";
-import { deferredPanel } from "@/components/shared/deferred-panel";
+import { deferredPanel } from "@/components/chat/deferred-panel";
 import { isoToLocalInput } from "@/components/events/local-input";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

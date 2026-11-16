@@ -657,6 +657,10 @@ export class ChatController {
       gif,
       mention_picks: dto.mention_picks,
       enabled_modules: enabledModules,
+      // A role picker (#4958) is an officer's post listing marked roles;
+      // the service calls this after its replay check.
+      assertRolePicker: (roleIds) =>
+        this.rbacService.assertMayPostRolePicker(chapterId, userId, roleIds),
     });
     // Tells the provider what got sent, which tunes its results; never fails
     // the send.

@@ -199,7 +199,7 @@ describe("useAwaitInvoicePaid", () => {
     queryClient = makeQueryClient();
   });
 
-  it("resolves true once the webhook has flipped the invoice to PAID", async () => {
+  it("resolves paid once the webhook has flipped the invoice to PAID", async () => {
     // First read still OPEN (the webhook has not landed yet), second is PAID.
     const mockGet = vi
       .fn()
@@ -230,7 +230,7 @@ describe("useAwaitInvoicePaid", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(result.current.data).toBe(true);
+    expect(result.current.data).toEqual({ outcome: "paid" });
     expect(mockGet).toHaveBeenCalledTimes(2);
     expect(mockGet).toHaveBeenCalledWith(INVOICE_PATH, {
       params: { path: { id: "inv-1" } },
@@ -264,13 +264,91 @@ describe("useAwaitInvoicePaid", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    // Resolves false — "payment received, confirmation pending" — never true.
-    expect(result.current.data).toBe(false);
+    // Resolves pending — "payment received, confirmation pending" — never paid.
+    expect(result.current.data).toEqual({ outcome: "pending" });
     expect(mockGet).toHaveBeenCalledTimes(3);
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: INVOICES_QUERY_KEY,
     });
   });
+  it("doesn't read an earlier decline in the same attempt as this payment's outcome (#3460)", async () => {
+    // First card declined at 17:00:05, second card submitted at 17:00:30 and
+    // succeeded: the succeeded webhook hasn't landed, the decline is still on
+    // the row.
+    const mockGet = vi.fn().mockResolvedValue({
+      data: {
+        id: "inv-1",
+        status: "OPEN",
+        last_payment_failed_at: "2026-11-15T17:00:05.000Z",
+        last_payment_failure_reason: "Your card was declined.",
+      },
+      error: null,
+    });
+
+    const { result } = renderHook(
+      () => useAwaitInvoicePaid({ attempts: 2, intervalMs: 0 }),
+      {
+        wrapper: makeWrapper(
+          queryClient,
+          { GET: mockGet },
+          "UseAwaitPaidEarlierDeclineTestWrapper",
+        ),
+      },
+    );
+
+    result.current.mutate({
+      invoiceId: "inv-1",
+      since: Date.parse("2026-11-15T17:00:30.000Z"),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data).toEqual({ outcome: "pending" });
+  });
+
+  it("ends with failed once the server records the attempt failed (#3460)", async () => {
+    const mockGet = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: { id: "inv-1", status: "OPEN", last_payment_failed_at: null },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          id: "inv-1",
+          status: "OPEN",
+          last_payment_failed_at: "2026-11-15T17:00:00.000Z",
+          last_payment_failure_reason: "Your card was declined.",
+        },
+        error: null,
+      });
+
+    const { result } = renderHook(
+      () => useAwaitInvoicePaid({ attempts: 5, intervalMs: 0 }),
+      {
+        wrapper: makeWrapper(
+          queryClient,
+          { GET: mockGet },
+          "UseAwaitPaidFailedTestWrapper",
+        ),
+      },
+    );
+
+    result.current.mutate("inv-1");
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(result.current.data).toEqual({
+      outcome: "failed",
+      reason: "Your card was declined.",
+    });
+    expect(mockGet).toHaveBeenCalledTimes(2);
+  });
+
 });
 
 describe("useInvoices cancellation (#3433)", () => {
@@ -293,4 +371,5 @@ describe("useInvoices cancellation (#3433)", () => {
 
     expect(signals[0]?.aborted).toBe(true);
   });
+
 });

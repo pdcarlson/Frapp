@@ -9,32 +9,11 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { useNetwork } from "@/lib/providers/network-provider";
 
 /*
- * A panel, dialog or sheet whose code loads on first render, kept out of the
- * JavaScript a cold open downloads before its first screen (#3716). The chat
- * shell's panels are in `components/chat/deferred-panels.tsx`; this module
- * holds only the loader, so a screen that the shell itself draws (Ask's cards)
- * can defer a panel without importing the shell's other panels, which would
- * make an import cycle back to it.
- *
- * The shell is on every dashboard route, so everything it imports statically
- * is in that download. None of these draws until a member opens it: the + card's
- * forms, the full event editor, a member's profile, an open thread.
- * `preloadChatPanels` fetches them once the page is idle, so they still reach
- * every member (`performance-budgets.md` § Bundle size has the measured
- * saving); what moved is when. A click before the preload lands waits for its
- * chunk.
- *
- * Not `next/dynamic`, because of what a failed load does there. It is
- * `React.lazy` held in a module-level binding, and `React.lazy` keeps a
- * rejection for the life of the document (`lib/chunk-load-error.ts`): the
- * error throws to `ChatPanelBoundary`, which replaces the whole chat panel
- * (and drops the + card's drafts on Retry), and the control stays dead until a
- * reload. On the slow connections this split is for, a member can easily go
- * offline before the preload finishes. So each panel here keeps its own lazy
- * per attempt: a failure draws in the panel's own place, and trying again
- * builds a fresh one. Turbopack drops a failed chunk's resolver, so the fresh
- * import really refetches. When the chunk is gone because a deploy rotated
- * the hashes, only a reload helps, and the copy says so.
+ * The loader behind every chat panel whose code is split out of the first
+ * download (#3716): what a failed load shows, and a fresh attempt after one.
+ * Why it is not `next/dynamic` is in `deferred-panels.tsx`. Kept apart from
+ * the panels so a module a panel itself imports (a message row, for its edit
+ * box) can use it without an import cycle back through the panels (#5050).
  */
 
 /** One report per error, however often the member retries it. */
@@ -114,14 +93,25 @@ type DialogProps = {
 };
 
 /**
+ * A deferred panel, plus `adopt`, which hands it code a preload already
+ * fetched: an instance mounted after that draws it straight away, with no
+ * Suspense pass (React holds a revealed fallback for 300 ms).
+ */
+export type DeferredPanel<P extends object> = ComponentType<P> & {
+  adopt: (Component: ComponentType<P>) => void;
+};
+
+/**
  * A panel whose code loads on first render, with a fresh attempt after a
  * failure. A `dialog` loads only while open, so a closed dialog whose load
- * failed doesn't keep retrying behind the scenes.
+ * failed doesn't keep retrying behind the scenes. `Fallback`, given the same
+ * props, draws while the code loads (nothing draws otherwise).
  */
 export function deferredPanel<P extends object>(
   load: () => Promise<ComponentType<P>>,
   kind: "slot" | "dialog",
-): ComponentType<P> {
+  Fallback?: ComponentType<P>,
+): DeferredPanel<P> {
   let loaded: ComponentType<P> | null = null;
 
   function Attempt({ props, retry }: { props: P; retry: () => void }) {
@@ -148,7 +138,7 @@ export function deferredPanel<P extends object>(
       }),
     );
     return (
-      <Suspense fallback={null}>
+      <Suspense fallback={Fallback ? <Fallback {...props} /> : null}>
         <Lazy {...props} />
       </Suspense>
     );
@@ -181,5 +171,9 @@ export function deferredPanel<P extends object>(
       />
     );
   }
-  return DeferredPanel;
+  return Object.assign(DeferredPanel, {
+    adopt: (Component: ComponentType<P>) => {
+      loaded ??= Component;
+    },
+  });
 }

@@ -20,7 +20,8 @@
  * Note this script does not DELETE protection rules, so removing the
  * `production` branch's rule after deleting the branch is a manual step.
  *
- * Usage:
+ * Usage (a person's own admin token; cloud sessions carry none and run only
+ * `npm run configure:branch-protection:verify`, which reads through the agent proxy):
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs --dry-run
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs --verify
@@ -34,7 +35,7 @@
  * The token may also sit in `.env.local` or `.env` at the repo root instead of being
  * exported — see resolveToken(). An exported variable still wins over the file.
  *
- * The PAT needs "repo" scope for public repos or "admin:repo" for private repos.
+ * The token needs "repo" scope for public repos or "admin:repo" for private repos.
  *
  * Required status checks map to emitted GitHub check-run names.
  *
@@ -604,12 +605,13 @@ async function main() {
           `--verify cannot confirm ${branch}: live protection is unreadable (${readFailure}). ` +
             "An unreadable answer is not a passing one, so this fails rather than reporting a " +
             "match. node's fetch goes direct unless NODE_USE_ENV_PROXY=1 or --use-env-proxy " +
-            "(on the command line or in NODE_OPTIONS) routes it through a proxy. Direct, a 403 is GitHub's answer to the token sent, " +
-            "unless it reads \"Host not in allowlist\": that is this environment's network " +
-            "allowlist, which then needs api.github.com. Through a cloud sandbox's agent proxy, " +
-            "a 403 says nothing about the token, whatever its body: drop the switch and re-run " +
-            "before touching the PAT. Route rule: ADR-20 amendment of 2026-09-02, (b), and its " +
-            "2026-09-22 correction.",
+            "(on the command line or in NODE_OPTIONS) routes it through a proxy. On a laptop, direct, " +
+            "a 401 or 403 is GitHub's answer to the token sent. In a cloud session, which carries " +
+            "no token of its own, go through the agent proxy: `npm run " +
+            "configure:branch-protection:verify` already does; a 401 \"Bad credentials\" means the " +
+            "request went direct with the proxy's placeholder token, and a 403 through the proxy is " +
+            "its path policy, not a verdict on the settings. Route rule: docs/ci-cd/agent-infra.md, " +
+            "The api.github.com route rule.",
         );
       }
     } else {

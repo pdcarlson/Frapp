@@ -88,6 +88,14 @@
  */
 const CHUNK_LOAD_ERROR_NAME = "ChunkLoadError";
 
+/**
+ * What a stale chunk's error surface says, written once: the route boundary
+ * (`app/error.tsx`) and the degraded segment (`segment-error.tsx`) both say it
+ * over a Reload, and `writing.md` §7 lists it on both rows.
+ */
+export const STALE_CHUNK_DESCRIPTION =
+  "This usually means a new version shipped while the tab was open. Reload to pick it up.";
+
 const CHUNK_LOAD_MESSAGES = [
   // Turbopack and webpack, respectively. Both are matched on message as well
   // as name so a stripped `name` still classifies.

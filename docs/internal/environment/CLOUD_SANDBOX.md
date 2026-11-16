@@ -103,7 +103,7 @@ STRIPE_PRICE_ID=price_...
 - `STRIPE_*` should be **restricted test-mode** keys. Optional: if absent, the bringup
   writes non-empty placeholders so the API still boots (billing endpoints that call
   Stripe won't work).
-- Provider/research creds (`GITHUB_PAT`, etc.) and the full list:
+- Provider/research creds (Infisical) and the full list:
   [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md).
 
 `FRAPP_CLOUD_SANDBOX` is **optional** — the setup script drops a marker

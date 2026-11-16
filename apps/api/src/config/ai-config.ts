@@ -137,10 +137,20 @@ export function validateAiEnv(env: Env): string[] {
 
 /**
  * Whether Ask answers through its tool loop (`AskService`, epic #4898) or
- * through the one-shot search-and-answer it replaces. `ASK_AGENT=on` turns
- * the loop on; anything else, unset included, leaves it off. It is a switch
- * for the cutover and goes when the one-shot path is deleted.
+ * through the one-shot search-and-answer it replaces.
+ *
+ * Until the cutover the loop is on everywhere but production: staging and
+ * local are where it is tested (Paul, 2026-11-15: "We are the ones testing
+ * it. This is staging"), so they need no variable, and production keeps the
+ * one-shot path. With no `SUPABASE_URL` at all (a unit test) it is off.
+ * `ASK_AGENT=on` or `off` overrides either way, which is how production
+ * turns it on for the cutover. The switch goes when the one-shot
+ * path is deleted.
  */
 export function askAgentEnabled(env: Env = process.env): boolean {
-  return envSetting(env, 'ASK_AGENT') === 'on';
+  const setting = envSetting(env, 'ASK_AGENT');
+  if (setting === 'on') return true;
+  if (setting === 'off') return false;
+  const supabaseUrl = envSetting(env, 'SUPABASE_URL');
+  return !!supabaseUrl && !isProductionSupabaseUrl(supabaseUrl);
 }

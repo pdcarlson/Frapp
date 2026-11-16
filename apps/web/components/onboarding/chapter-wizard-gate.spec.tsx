@@ -5,7 +5,9 @@ import userEvent from "@testing-library/user-event";
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
-const { wizard } = vi.hoisted(() => ({ wizard: { throws: null as Error | null } }));
+const { wizard } = vi.hoisted(() => ({
+  wizard: { throws: null as Error | null },
+}));
 vi.mock("@/components/onboarding/chapter-wizard", () => ({
   ChapterWizard: () => {
     if (wizard.throws) throw wizard.throws;
@@ -14,9 +16,40 @@ vi.mock("@/components/onboarding/chapter-wizard", () => ({
 }));
 
 const { chapters } = vi.hoisted(() => ({
-  chapters: { data: [] as unknown[], isSuccess: true },
+  chapters: { data: [] as unknown[], isSuccess: true, isFetching: false },
 }));
-vi.mock("@repo/hooks", () => ({ useAccessibleChapters: () => chapters }));
+const { invites, invitesCalls } = vi.hoisted(() => ({
+  invites: {
+    data: [] as unknown[] | undefined,
+    isSuccess: true,
+    isError: false,
+    isFetching: false,
+  },
+  invitesCalls: [] as Array<string | null>,
+}));
+vi.mock("@repo/hooks", () => ({
+  useAccessibleChapters: () => chapters,
+  usePendingInvites: (userId: string | null) => {
+    invitesCalls.push(userId);
+    return userId
+      ? invites
+      : { data: undefined, isSuccess: false, isError: false, isFetching: false };
+  },
+}));
+
+const { auth } = vi.hoisted(() => ({ auth: { userId: "user-1" as string | null } }));
+vi.mock("@/lib/auth/use-auth-user-id", () => ({
+  useAuthUserId: () => auth.userId,
+}));
+
+const { replace, search } = vi.hoisted(() => ({
+  replace: vi.fn(),
+  search: { value: "" },
+}));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace }),
+  useSearchParams: () => new URLSearchParams(search.value),
+}));
 
 vi.mock("@/lib/providers/network-provider", () => ({
   useNetwork: () => ({ linkOnline: true }),
@@ -34,7 +67,16 @@ beforeEach(() => {
   wizard.throws = null;
   chapters.data = [];
   chapters.isSuccess = true;
+  chapters.isFetching = false;
+  invites.data = [];
+  invites.isSuccess = true;
+  invites.isError = false;
+  invites.isFetching = false;
+  auth.userId = "user-1";
+  invitesCalls.length = 0;
+  replace.mockClear();
   captureException.mockClear();
+  search.value = "";
 });
 
 /**
@@ -121,6 +163,19 @@ describe("the chapter wizard gate's own boundary", () => {
     expect(captureException).not.toHaveBeenCalled();
   });
 
+  it("waits out a refetch of a cached empty list, which is how a join lands (#5078)", () => {
+    // `/join` leaves `[]` cached and its redeem refetches it; the shell mounts
+    // on `/chat` mid-refetch. Latching here put the wizard behind the tour.
+    chapters.isFetching = true;
+    const { container, rerender } = render(<ChapterWizardGate />);
+    expect(container.innerHTML).toBe("");
+
+    chapters.data = [{ id: "chapter-1" }];
+    chapters.isFetching = false;
+    rerender(<ChapterWizardGate />);
+    expect(container.innerHTML).toBe("");
+  });
+
   it("stays closed for a member who already has a chapter", () => {
     chapters.data = [{ id: "chapter-1" }];
     const { container } = render(<ChapterWizardGate />);
@@ -128,5 +183,116 @@ describe("the chapter wizard gate's own boundary", () => {
     // The boundary must not change the gate's own trigger: a member with a
     // chapter must never see a flash of onboarding.
     expect(container.innerHTML).toBe("");
+  });
+});
+
+/**
+ * #5077: Shawn signed in with the address Paul had invited, watched chat start
+ * loading, and was then handed "Set up your chapter". Zero memberships is not
+ * "starting a chapter" when an invite was emailed to the account.
+ */
+describe("an account with an invite waiting", () => {
+  it("goes to /join instead of chapter setup", async () => {
+    invites.data = [{ token: "tok", chapterName: "Beta" }];
+    const { container } = render(<ChapterWizardGate />);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/join"));
+    expect(screen.queryByText("chapter wizard")).toBeNull();
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("opens nothing while the invite read is still out", () => {
+    invites.data = undefined;
+    invites.isSuccess = false;
+    const { container } = render(<ChapterWizardGate />);
+
+    // The wizard must not flash before the read says there is no invite.
+    expect(container.innerHTML).toBe("");
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("opens setup when the read fails, where I have an invite still leads out", () => {
+    invites.data = undefined;
+    invites.isSuccess = false;
+    invites.isError = true;
+    render(<ChapterWizardGate />);
+
+    expect(screen.getByText("chapter wizard")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("opens setup without asking when the member chose Create a chapter on /join", () => {
+    search.value = "setup=chapter";
+    invites.data = [{ token: "tok", chapterName: "Beta" }];
+    render(<ChapterWizardGate />);
+
+    // Sending them back to /join would loop between the two pages.
+    expect(screen.getByText("chapter wizard")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
+    expect(invitesCalls.every((id) => id === null)).toBe(true);
+  });
+
+  it("keeps that choice once the marker leaves the URL", () => {
+    search.value = "setup=chapter";
+    chapters.isSuccess = false;
+    invites.data = [{ token: "tok", chapterName: "Beta" }];
+    const { rerender } = render(<ChapterWizardGate />);
+
+    search.value = "";
+    chapters.isSuccess = true;
+    rerender(<ChapterWizardGate />);
+
+    expect(screen.getByText("chapter wizard")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("does not read invites for a member who has a chapter", () => {
+    chapters.data = [{ id: "chapter-1" }];
+    render(<ChapterWizardGate />);
+
+    expect(invitesCalls.every((id) => id === null)).toBe(true);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("never pulls a member out of setup once it is open", () => {
+    // The first read found nothing, so the wizard opened; a focus refetch then
+    // turns up an invite. Navigating now would lose the half-entered setup.
+    const { rerender } = render(<ChapterWizardGate />);
+    expect(screen.getByText("chapter wizard")).toBeTruthy();
+
+    invites.data = [{ token: "tok", chapterName: "Beta" }];
+    rerender(<ChapterWizardGate />);
+
+    expect(screen.getByText("chapter wizard")).toBeTruthy();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("waits while the invite read is being refreshed", () => {
+    // Just after a Join on /join the cache can still hold the redeemed invite
+    // while its refetch is in flight; deciding from it would bounce the new
+    // member back to /join.
+    invites.data = [{ token: "tok", chapterName: "Beta" }];
+    invites.isFetching = true;
+    const { container } = render(<ChapterWizardGate />);
+
+    expect(container.innerHTML).toBe("");
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("starts over for the next account when another tab swaps it", async () => {
+    // Account A chose Create a chapter and has the wizard open; a sign-in in
+    // another tab swaps the uid under the mounted shell to B, who has an
+    // invite waiting. B must get /join, not A's open wizard.
+    search.value = "setup=chapter";
+    const { rerender } = render(<ChapterWizardGate />);
+    expect(screen.getByText("chapter wizard")).toBeTruthy();
+
+    search.value = "";
+    auth.userId = "user-2";
+    invites.data = [{ token: "tok", chapterName: "Beta" }];
+    rerender(<ChapterWizardGate />);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/join"));
+    expect(screen.queryByText("chapter wizard")).toBeNull();
   });
 });

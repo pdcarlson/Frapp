@@ -527,4 +527,55 @@ describe('RbacService self-assignable roles (#4958)', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
+
+  describe('posting a role picker in chat (#4958)', () => {
+    beforeEach(() => {
+      // The permission read resolves the caller's roles by id.
+      roleRepo.findByIds.mockImplementation(async (ids: string[]) =>
+        roles.filter((role) => ids.includes(role.id)),
+      );
+    });
+
+    it('lets a roles manager list marked roles', async () => {
+      await expect(
+        service.assertMayPostRolePicker(CHAPTER_ID, USER.riskChair, [
+          INTRAMURALS.toUpperCase(),
+        ]),
+      ).resolves.toBeUndefined();
+    });
+
+    it('refuses a member who does not manage roles', async () => {
+      await expect(
+        service.assertMayPostRolePicker(CHAPTER_ID, USER.brother, [
+          INTRAMURALS,
+        ]),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('reads only this chapter’s roles, so a role marked elsewhere is refused', async () => {
+      roleRepo.findByChapter.mockImplementation(async (chapterId: string) =>
+        chapterId === CHAPTER_ID ? roles : [],
+      );
+      await expect(
+        service.assertMayPostRolePicker('chapter-other', USER.president, [
+          INTRAMURALS,
+        ]),
+      ).rejects.toBeInstanceOf(Error);
+      await service.assertMayPostRolePicker(CHAPTER_ID, USER.president, [
+        INTRAMURALS,
+      ]);
+      expect(roleRepo.findByChapter).toHaveBeenLastCalledWith(CHAPTER_ID);
+    });
+
+    it('refuses a role that is not marked, or not in the chapter', async () => {
+      for (const id of [BRAND_NEW, ROLE.brother, 'role-elsewhere']) {
+        await expect(
+          service.assertMayPostRolePicker(CHAPTER_ID, USER.president, [
+            INTRAMURALS,
+            id,
+          ]),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      }
+    });
+  });
 });

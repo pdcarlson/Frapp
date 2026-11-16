@@ -99,12 +99,15 @@ describe("queue runs take the full and diff arms", () => {
     // the filter's outputs are empty, and a skipped required job reports Success.
     for (const file of emitting) {
       for (const job of workflowJobs(file.path)) {
-        if (job.if === null || !/needs\.changes\.outputs/.test(job.if)) continue;
+        if (job.if === null || !/needs\.changes\.outputs\.(?!queue_tested\b)/.test(job.if)) continue;
+        // ci.yml ANDs `queue_tested` in front (#5084, queue-tested.test.mjs);
+        // the path arm keeps this exact form inside its parentheses.
         assert.match(
           job.if,
-          /^\$\{\{ github\.event_name != 'pull_request' \|\| needs\.changes\.outputs\.\w+ == 'true' \}\}$/,
+          /^\$\{\{ (needs\.changes\.outputs\.queue_tested != 'true' && \()?github\.event_name != 'pull_request' \|\| needs\.changes\.outputs\.\w+ == 'true'(\))? \}\}$/,
           `${file.name} ${job.jobId}`,
         );
+        assert.equal(/queue_tested/.test(job.if), /\)\s*\}\}$/.test(job.if), `${file.name} ${job.jobId}: parenthesize the path arm`);
       }
     }
   });

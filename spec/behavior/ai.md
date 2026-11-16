@@ -301,7 +301,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   Live data has no date; it says "Read just now".
 - **Left-out messages are counted, never named.**
   When the channels an answer drew on hold messages from members who have not agreed, the answer says how many were not included.
-- **When it can't answer** it says which: the member has not turned Frapp AI on (with a button that opens Meet Frapp AI), the president turned Ask off, the chapter or the member reached its allowance, or Ask is not available.
+- **When it can't answer** it says which: the member has not turned Frapp AI on (with a button that opens Meet Frapp AI), the president turned Ask off, the chapter or the member reached its allowance, or a problem on Frapp's side kept it from answering ("Frapp couldn't answer because of a problem on its end.", with Try again in the turn's place; a reason a build does not know reads and acts the same; changed in #5082, 2026-11-15, from "Ask isn't available right now. Try again later.").
   A provider refusal reads "Ask can't help with that question."
 - **The stream format is versioned and defined once,** in `@repo/validation` (`ask.ts`), for the API that writes it and for web and mobile that read it.
   A reader ignores an event type, a key or a source kind it does not know, so an installed mobile build keeps working when the format grows.
@@ -311,7 +311,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
 
 > **Changed in #4899 by pdcarlson, 2026-11-13 (Paul: "feels like working with GPT 2"; "we're building essentially an agentic harness").**
 > Ask is being rebuilt so that Frapp decides what to read and reads in several steps, in place of one search and one writing call (epic #4898).
-> The loop is built and off: a server answers through it only with `ASK_AGENT=on`, and "How an answer is made" above describes what members get until the one-shot path is deleted.
+> The loop is built, and on everywhere but production since 2026-11-15 (staging is where it is tested). Production answers through it only with `ASK_AGENT=on`, and "How an answer is made" above describes what members get until the one-shot path is deleted.
 > Through the loop, the model is offered the reads this member may use (since 2026-11-13: seven that find and read channels, documents and minutes, #4900, and fifteen that read people, tasks, events, attendance, points, hours and dues, #4901), calls them with arguments, and may read again on what it found: at most six model calls and ten reads a turn, or ten and sixteen, with longer to read and the model working harder, when the member asks Frapp to think harder (`effort: more`, read since 2026-11-13;
 > the button is #4904's).
 > The line under a working turn names each read as it starts.
@@ -601,7 +601,7 @@ How Frapp finds out whether an answer was any good, without keeping anyone's wor
 - **Think harder** (added in #4904 by pdcarlson, 2026-11-14, the building session's, Paul's to change).
   An answer the tool loop wrote, or its "couldn't find that", carries one more control in the row: Think harder.
   It asks the same question again with more effort (the request says `effort: more`;
-  how much more Frapp reads and writes for it is the server's, #4899, and a server that does not read it yet answers as before) and the new answer takes the old one's place in the thread, the way Try again replaces a failed turn;
+  how much more Frapp reads and writes for it is the server's, #4899, and a server that does not read it yet answers as before) and the new answer takes the old one's place in the thread, the way Try again replaces a failed turn or one Frapp couldn't answer;
   the earlier turns are sent with it as before.
   It is offered once: the harder answer does not offer it again.
   It waits while another question is being answered.
@@ -614,7 +614,7 @@ How Frapp finds out whether an answer was any good, without keeping anyone's wor
 > **Not running yet (2026-11-13).**
 > The API for this is built (#4902), the tool loop writes the trace an answer is rated against (#4899) and both clients draw the thumbs (#4904), but the loop is off unless the server sets `ASK_AGENT=on`, and an answer made the one-shot way has no trace.
 > Until the loop is on a member sees none of this.
-> Of the counted taps, both clients send a source opened (#4904); Think harder is counted where it is asked (#4904); Try again has no answer to count against (it is only offered on a turn that failed); a card under an answer confirmed or dismissed is counted since #4904 (2026-11-14).
+> Of the counted taps, both clients send a source opened (#4904); Think harder is counted where it is asked (#4904); Try again is not counted (offered on a turn that failed and, since #5082 on 2026-11-15, on an answer Frapp couldn't give for a reason on its side); a card under an answer confirmed or dismissed is counted since #4904 (2026-11-14).
 
 > **Added 2026-11-13 (#4902, the building session's, Paul's to change).**
 > Paul asked for feedback and observability and approved a thumbs down that may offer to send the exchange.

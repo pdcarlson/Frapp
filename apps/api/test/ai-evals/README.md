@@ -144,10 +144,31 @@ path with no network. `--only id,id` asks a few questions, `--agent` picks what 
 `agents.ts`, or the absolute path of a module that exports `createRealQuestionAgent`), and `--json`
 writes every result for a result page.
 
-**Nothing here has been run against a real model yet.** No key is available to the evals
-([`ENV_REFERENCE.md`](../../../../docs/internal/environment/ENV_REFERENCE.md) lists
-`ANTHROPIC_API_KEY` as unset everywhere, #3279). The one-shot baseline, the loop's score, the
-judge's agreement and the model bake-off are numbers this README does not have.
+**First real run, 2026-11-15** (`claude-sonnet-5-5` at the catalog's effort, judged by
+`claude-opus-5-5`, each question asked once, so a few questions either way is noise):
+
+| Agent | Right | Code checks | Judge | Cost per question |
+| --- | --- | --- | --- | --- |
+| `one-shot` | 1/40 | 8/40 | 2/40 | $0.014 |
+| `loop` (`ask.agent@v6`) | 8/40 | 23/40 | 10/40 | $0.043 |
+
+What the loop's misses were, read answer by answer (`--json` keeps each answer and the tools it
+used):
+
+- **A decline reads as a miss.** Eight of the nine questions Frapp must decline, and a request to
+  act from a member who may not, came back as "I couldn't find that in your chapter's documents,
+  minutes or records." The model wrote the right sentence ("Frapp does not give out phone
+  numbers"), it cited nothing, and an answer with no source is replaced. The largest single cause.
+- **The set expects what a role does not hold.** A chair is expected to get task cards
+  (`ai:act` is the president's), and a House Manager to see who came to an event
+  (`event_attendance` takes `events:update`). Frapp said it could not, which is what ships.
+- **No queue of hours to approve.** `service_hours` counts approved hours only, so "which hours are
+  waiting on me" has nothing to read, and "who has logged none" names members whose hours wait.
+- **Length.** Most other code-check misses are an answer a few words over its question's limit.
+
+The run also found a request the provider refuses outright (a tool result with both sources and a
+note), fixed with it. The judge's agreement with the hand-graded sample and the model bake-off
+have not been run.
 
 ### Reading a result
 

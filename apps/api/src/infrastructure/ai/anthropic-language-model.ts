@@ -274,12 +274,10 @@ function agentParams(
         ...CACHED,
       };
     }
+    const replay = round.replay as Anthropic.ContentBlockParam[];
     messages.push(
-      {
-        role: 'assistant',
-        content: round.replay as Anthropic.ContentBlockParam[],
-      },
-      { role: 'user', content: results },
+      { role: 'assistant', content: replay },
+      { role: 'user', content: [...results, ...resultNotes(round, replay)] },
     );
   });
 
@@ -320,15 +318,38 @@ function agentParams(
   };
 }
 
+/**
+ * The notes of results that also carry sources ("Showing 10 of 31."), as
+ * text after the round's results, each under its tool's name. Text there is
+ * read and cannot be cited, which is right for a line Frapp wrote.
+ */
+function resultNotes(
+  round: AgentLanguageModelRequest['rounds'][number],
+  replay: Anthropic.ContentBlockParam[],
+): Anthropic.TextBlockParam[] {
+  return round.results.flatMap((result): Anthropic.TextBlockParam[] => {
+    if (!result.note || result.sources.length === 0) return [];
+    const call = replay.find(
+      (block) => block.type === 'tool_use' && block.id === result.callId,
+    );
+    const name = call?.type === 'tool_use' ? call.name : 'that call';
+    return [{ type: 'text', text: `About ${name}'s result: ${result.note}` }];
+  });
+}
+
 function toolResultBlock(
   result: LanguageModelToolResult,
 ): Anthropic.ToolResultBlockParam {
+  // The API takes a result that is all `search_result` blocks or none: one
+  // text block beside a source is a 400. So a result with sources is its
+  // sources, and its note follows the round's results (`resultNotes`).
   const content: Array<
     Anthropic.TextBlockParam | Anthropic.SearchResultBlockParam
-  > = result.sources.map(searchResultBlock);
-  if (result.note) content.push({ type: 'text', text: result.note });
-  // An empty result is rejected by the API, and tells the model nothing.
-  if (content.length === 0) content.push({ type: 'text', text: 'Nothing.' });
+  > =
+    result.sources.length > 0
+      ? result.sources.map(searchResultBlock)
+      : // An empty result is rejected by the API, and tells the model nothing.
+        [{ type: 'text', text: result.note || 'Nothing.' }];
   return {
     type: 'tool_result',
     tool_use_id: result.callId,

@@ -59,6 +59,7 @@ Added for [#4076](https://github.com/pdcarlson/Frapp/issues/4076) (epic #4068, P
 ## Custom Fields
 
 - Custom fields (defined in the settings Fields tab) render per chapter on the member detail view, each respecting its configured visibility (`self` / `chapter` / `exec` / `president`).
+- **Only fields with a value are shown** (#1749, 2026-11-15): a field the member has no value for is left off the detail view, and with none set the More details row itself is not drawn. Nothing in the product writes a value yet (the write path is #581), so a chapter's seeded fields would otherwise draw a block of empty rows on every profile.
 - Field **definitions** live in `chapter_custom_fields`; a member's **values** live in `member_custom_field_values` (one row per member+field), so the visibility check is applied as a query predicate against the definition rather than a post-fetch scrub.
 - **Visibility is enforced server-side.** `GET /members/:id`, and `GET /members/by-user/:userId` (the same profile looked up by `users.id`, which is what chat holds; 404 for someone outside the chapter), resolve the viewer's allowed visibility tiers and only fields in that set are queried, so a sensitive field is never returned to a viewer who lacks access. Client-side filtering alone is never trusted for `sensitive` fields. The allowed-tier rule is defined in [`rbac.md`](rbac.md#custom-field-visibility-tiers):
   - `chapter` → any viewer who can see the directory (`members:view`).

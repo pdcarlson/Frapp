@@ -75,7 +75,7 @@ table disagrees with them, the table is stale — fix it there, and do not add a
 Live branch protection is whatever an admin last applied and can lag the arrays, so **no doc claims
 per-check whether a gate is live today** — read live state per the runbook. New gates land
 report-only and are promoted by adding them to an array and re-running
-`npm run configure:branch-protection`, which is a live `PUT` and a human step with an admin PAT: an
+`npm run configure:branch-protection`, which is a live `PUT` and a human step with a person's own admin token: an
 agent session runs `npm run configure:branch-protection:verify` (which writes nothing) and nothing
 else.
 

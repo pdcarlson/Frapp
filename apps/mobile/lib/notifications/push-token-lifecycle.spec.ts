@@ -50,14 +50,35 @@ describe("registerCurrentPushToken", () => {
       token: "ExponentPushToken[new]",
     });
     await registerCurrentPushToken(d);
-    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
     expect(d.remove).not.toHaveBeenCalled();
+  });
+
+  it("sends the device label with the token when there is one (#4563)", async () => {
+    const d = { ...deps(null), getDeviceName: () => "ios 26.1 · iPhone 16" };
+    await registerCurrentPushToken(d);
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+      device_name: "ios 26.1 · iPhone 16",
+    });
+  });
+
+  it("sends the token alone when there is no device label", async () => {
+    const d = { ...deps(null), getDeviceName: () => undefined };
+    await registerCurrentPushToken(d);
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
   });
 
   it("POSTs a first token and does not DELETE", async () => {
     const d = deps(null);
     await registerCurrentPushToken(d);
-    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
     expect(d.stored.current).toEqual({
       id: "row-ExponentPushToken[new]",
       token: "ExponentPushToken[new]",
@@ -78,7 +99,9 @@ describe("registerCurrentPushToken", () => {
 
     await registerCurrentPushToken(d);
 
-    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
     expect(d.remove).toHaveBeenCalledWith("row-old");
     expect(d.stored.current).toEqual({
       id: "row-new",
@@ -168,7 +191,9 @@ describe("registerCurrentPushToken overlap", () => {
     await first;
 
     expect(d.register).toHaveBeenCalledTimes(1);
-    expect(d.register).toHaveBeenCalledWith({ token: "ExponentPushToken[new]" });
+    expect(d.register).toHaveBeenCalledWith({
+      token: "ExponentPushToken[new]",
+    });
   });
 });
 

@@ -431,12 +431,13 @@ export const AskSheet = forwardRef<
           )}
         </BottomSheetScrollView>
 
+        {/* Places that match what is typed, between the thread and the
+            field (`ask-find.tsx`, #4904; in the column since #5082). Send
+            still asks. */}
+        {shownOpen && isSearchRunnable(draft) ? (
+          <AskFind query={draft} onOpen={openFound} />
+        ) : null}
         <View style={styles.composer}>
-          {/* Places that match what is typed, over the thread's last lines
-              (`ask-find.tsx`, #4904). Send still asks. */}
-          {shownOpen && isSearchRunnable(draft) ? (
-            <AskFind query={draft} onOpen={openFound} />
-          ) : null}
           {savedUntil !== null ? (
             <Text style={styles.caption}>
               {askSavedLine(formatAiAnswerDate(savedUntil))}
@@ -538,8 +539,9 @@ function AskEmpty({
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     scroll: {
-      // Takes the space the header and composer do not, so the composer
-      // stays pinned to the sheet's bottom edge at every thread length.
+      // Takes the space the header, the search results and the composer do
+      // not, so the composer stays pinned to the sheet's bottom edge at
+      // every thread length.
       flex: 1,
     },
     scrollContent: {

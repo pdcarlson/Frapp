@@ -127,6 +127,9 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .from('financial_invoices')
       .update({
         stripe_payment_intent_id: paymentIntentId,
+        last_payment_attempt_at: new Date().toISOString(),
+        last_payment_failed_at: null,
+        last_payment_failure_reason: null,
       } satisfies TablesUpdate<'financial_invoices'>)
       .eq('id', id)
       .eq('chapter_id', chapterId)
@@ -136,4 +139,40 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
     if (error) throw new SupabaseQueryError(error);
     return data;
   }
+
+  async recordPaymentFailure(
+    id: string,
+    chapterId: string,
+    paymentIntentId: string,
+    failedAt: string,
+    reason: string | null,
+  ): Promise<FinancialInvoice | null> {
+    const { data, error } = await this.supabase
+      .from('financial_invoices')
+      .update({
+        last_payment_failed_at: failedAt,
+        last_payment_failure_reason: reason,
+      } satisfies TablesUpdate<'financial_invoices'>)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('status', 'OPEN')
+      .eq('stripe_payment_intent_id', paymentIntentId)
+      // A row from before #3460 has no attempt stamp; its failure still counts.
+      // Stripe's `created` is whole seconds, so `failedAt` is rounded down:
+      // compare against the end of that second, or a failure in the same
+      // second as the stamp would be dropped.
+      .or(
+        `last_payment_attempt_at.is.null,last_payment_attempt_at.lte."${endOfSecond(failedAt)}"`,
+      )
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+}
+
+/** The last millisecond of the second `iso` falls in. */
+function endOfSecond(iso: string): string {
+  const ms = Date.parse(iso);
+  return new Date(Math.floor(ms / 1000) * 1000 + 999).toISOString();
 }

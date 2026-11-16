@@ -36,6 +36,7 @@ const KIND_LABELS: Partial<Record<ChatMessageKind, string>> = {
   // Its `content` is the answer's words, which quote well, but the label
   // says whose they are when the body is empty.
   ask_answer: "Answer from Frapp",
+  role_picker: "Role picker",
 };
 
 /**

@@ -13,7 +13,11 @@ import {
   useUpdateRoleTier,
 } from "@repo/hooks";
 import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
-import { isEveryoneRole, roleColorOrNull } from "@repo/validation";
+import {
+  isEveryoneRole,
+  roleColorOrNull,
+  selfAssignableSectionCaption,
+} from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FOCUS_RING } from "@/components/ui/focus";
@@ -477,9 +481,7 @@ function TierList({
               Non-chapter business
             </h3>
             <p className="text-caption text-muted-foreground">
-              Members add and remove these themselves, like intramurals or a
-              study group. Each opens its channels, and any event that lists it
-              counts them in. Turn it on from a role outside the {words.plural}.
+              {selfAssignableSectionCaption(words.plural)}
             </p>
           </div>
           <RoleList

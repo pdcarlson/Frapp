@@ -97,12 +97,16 @@ const sheets = vi.hoisted(() => ({
       proofKind: string;
       sentBack: boolean;
       sentBackReason: string | null;
+      sentBackAt?: string | null;
     };
+    keptDraft?: string;
     initialProblem: string | null;
     onComplete: (proof: Record<string, unknown>) => Promise<void>;
   },
   sendBack: null as null | {
     proofKind: string;
+    keptDraft?: string;
+    submittedAt?: string | null;
     onSubmit: (input: Record<string, unknown>) => Promise<void>;
   },
 }));
@@ -342,7 +346,11 @@ describe("TaskCard — actions", () => {
 
   it("offers a tasks:manage holder Confirm and Send back on a completion", async () => {
     state.permissions = ["tasks:manage"];
-    state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
+    state.live = liveTask({
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      completed_at: "2026-11-05T09:00:00.000Z",
+    });
     const tree = render("admin-2");
     expect(actions(tree)).toEqual(["Confirm", "Send back"]);
     await press(tree, "Confirm");
@@ -351,6 +359,9 @@ describe("TaskCard — actions", () => {
     await press(tree, "Send back");
     expect(rejectTask).not.toHaveBeenCalled();
     expect(sheets.sendBack?.proofKind).toBe("none");
+    // Kept per task, for the submission under review (#5041).
+    expect(sheets.sendBack?.keptDraft).toBe("send-back:task-1");
+    expect(sheets.sendBack?.submittedAt).toBe("2026-11-05T09:00:00.000Z");
     await act(() =>
       sheets.sendBack!.onSubmit({
         comment: "Floor is still sticky",
@@ -399,7 +410,10 @@ describe("TaskCard — actions", () => {
     expect(sheets.markDone?.task).toMatchObject({
       sentBack: true,
       sentBackReason: "Floor is still sticky",
+      sentBackAt: "2026-11-05T10:00:00.000Z",
     });
+    // The same name as the Tasks screen's Mark done (#5041).
+    expect(sheets.markDone?.keptDraft).toBe("mark-done:task-1");
   });
 
   it("opens Mark done's sheet when the server asks for proof the card didn't know of", async () => {

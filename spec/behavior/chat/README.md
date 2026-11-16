@@ -205,7 +205,7 @@ Added 2026-11-06, owner request ([#2252](https://github.com/pdcarlson/Frapp/issu
 - **A channel can have its own display**, per device like the default: the channel's menu (web: the header's ⋯ → Display; mobile: long-press the channel → Display) offers "Your default (…)", then Cozy, Compact or Bubbles "here".
   Unset, the channel follows the default.
   Kept as one map of channel id to density under its own key in `@repo/chat-core/density`, so the default's key is unchanged.
-- **A new member picks their display while setting up** (added 2026-11-10, Winston's decision on [#3787](https://github.com/pdcarlson/Frapp/issues/3787#issuecomment-6760395975)): the web tutorial and mobile s03 each carry a `Pick your chat display` step with the same three cards as Profile and Settings, and a founder, who sees neither, gets the same step in chapter setup on both surfaces (#4056) ([`onboarding.md`](../onboarding.md)).
+- **A new member picks their display while setting up** (added 2026-11-10, Winston's decision on [#3787](https://github.com/pdcarlson/Frapp/issues/3787#issuecomment-6760395975)): the web first-run tour (as one segmented control over the real messages, #5080) and mobile s03 (the same three cards as Profile and Settings) each carry a `Pick your chat display` step, and a founder, who sees neither, gets the same step in chapter setup on both surfaces (#4056) ([`onboarding.md`](../onboarding.md)).
   The device's current display is preselected (Cozy on a device that never picked one), so moving on without a tap keeps it.
   The pick is device state like any other.
 
@@ -1896,7 +1896,7 @@ The list opens only on text the member typed: text put in the box for them (an e
 Web's inline editor offers the same list as its composer and, like this one, opens it only once the member changes the text (`components.md` §11 § Editing (web)).
 
 **Opening a member's profile.**
-On both clients, clicking or tapping a message author's name or photo, an `@` chip that names one member, or a row of the channel's member list opens that member's profile: the same sheet the Directory opens, read by `users.id` through `GET /v1/members/by-user/{userId}` (mobile 2026-11-07, web [#3726](https://github.com/pdcarlson/Frapp/issues/3726)).
+On both clients, clicking or tapping a message author's name or photo, an `@` chip that names one member, or a row of the channel's member list opens that member's profile, read by `users.id` through `GET /v1/members/by-user/{userId}` (mobile 2026-11-07, web [#3726](https://github.com/pdcarlson/Frapp/issues/3726)). On mobile that is the same sheet the Directory opens. On web it is a small profile popout beside what was clicked, with that sheet behind its View profile (below).
 Which member, if any, is the shared answer in `packages/chat-core/src/profile-targets.ts`:
 
 - **An author** opens unless the row has no member behind it: Frapp's own posts (`SYSTEM_SENDER_ID`), an imported author nobody has linked (`sender_id` null), and a sender the roster no longer lists, whose profile read would only 404 (`authorProfileUserId`).
@@ -1904,6 +1904,12 @@ Which member, if any, is the shared answer in `packages/chat-core/src/profile-ta
   A role mention (`@Brothers`) expands to its holders, none of whom is named after the role, so it opens nothing and stays plain.
 - On web the name and the chip are buttons, reached by Tab and pressed by Enter or Space; the photo is a pointer target beside the name and not a second Tab stop.
   What the sheet holds is [`members.md` § Profiles](../members.md#profiles) and, for web's sheet, [`web-dashboard/README.md` § Directory](../../ui/web-dashboard/README.md#directory).
+
+**The web profile popout** (2026-11-15, [#4593](https://github.com/pdcarlson/Frapp/issues/4593), item 8 there; Discord's user popout and Slack's profile card are the comparables).
+A name, photo, chip or member-list row opens a 288px card beside it instead of the full sheet over the page: to the right of a name in the timeline, to the left of a member-list row, flipping when there is no room.
+It shows the photo, the name in its role color, the class-year line and up to four role chips (then "+N"), with Message (absent on the viewer's own) and View profile, which opens the full sheet.
+It follows its name as the timeline scrolls. Escape or a click away closes it and puts focus back on what opened it; a popout opened from the Members list closes back to the list.
+Implementation: `apps/web/components/chat/member-popout.tsx`.
 
 **A message that mentions you is highlighted** (2026-11-06).
 The message read carries `mentions` to both clients (`ChatMessage.mentions` in `@repo/chat-core/types`, an empty list when the server sent none or masked it), and a row whose list includes the viewer wears the chapter accent ([components.md](../../ui/design-system/components.md) §11, "A row that mentions you").
@@ -2423,6 +2429,7 @@ A member fixes that by **linking the Discord account they used**, and from then 
 | `poll`         | Poll (inline vote)                                                                                                                                                                                                |
 | `signup`       | Sign-up sheet: named slots with a limit, and who holds which, on web and mobile ([integrations.md § Sign-up sheet cards](./integrations.md#sign-up-sheet-cards), #3926)                                           |
 | `form`         | Form: a questionnaire that opens a full page; each member's answers are private to them and the form's creator ([integrations.md § Form cards](./integrations.md#form-cards), #3926 step 3). On web and the phone |
+| `role_picker`  | Role picker: an officer's card listing Non-chapter business roles, with a Join or Leave button beside each for every member, on web and the phone ([integrations.md § Role picker cards](./integrations.md#role-picker-cards), #4958) |
 | `dues`         | Dues reminder card — in the enum, but still renders the placeholder `ComingSoonCard`                                                                                                                              |
 | `points`       | Points grant or deduction notification (`/points`)                                                                                                                                                                |
 | `hours`        | Service hours log confirmation (created by `/hours log`)                                                                                                                                                          |

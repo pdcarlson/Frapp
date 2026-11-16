@@ -8,7 +8,6 @@ import {
 import { FolderGlyph } from "@/components/documents/resources-glyphs";
 import { ScheduleGlyph } from "@/components/events/chapter-ops-glyphs";
 import { InviteGlyph } from "@/components/members/directory-glyphs";
-import { ProfileGlyph } from "@/components/profile/profile-glyphs";
 import type { DuotoneGlyphComponent } from "@/components/ui/duotone";
 import {
   ActivityGlyph,
@@ -57,7 +56,6 @@ const SHAPES: ReadonlyArray<[string, DuotoneGlyphComponent, NavGlyphName]> = [
   ["Folder", FolderGlyph, "folder"],
   ["Schedule", ScheduleGlyph, "schedule"],
   ["Invite", InviteGlyph, "invite"],
-  ["Profile", ProfileGlyph, "profile"],
 ];
 
 function paths(Glyph: DuotoneGlyphComponent, active?: boolean) {

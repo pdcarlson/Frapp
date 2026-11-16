@@ -24,6 +24,7 @@ export const PLUS_MENU_COMMANDS = [
   "task",
   "hours",
   "points",
+  "roles",
 ] as const;
 export type PlusMenuCommand = (typeof PLUS_MENU_COMMANDS)[number];
 
@@ -39,6 +40,7 @@ const PLUS_MENU_ROW_COPY: Record<
   task: { label: "Task", noun: "tasks" },
   hours: { label: "Service hours", noun: "service hours" },
   points: { label: "Points", noun: "points" },
+  roles: { label: "Role picker", noun: "role pickers" },
 };
 
 /**
@@ -55,6 +57,10 @@ const PLUS_MENU_ROW_COPY: Record<
  *
  * A sign-up sheet (#3926) needs nothing: anyone who can post in the channel
  * can post one, as they can a message. So does a form (#3926 step 3).
+ *
+ * A role picker (#4958) needs `roles:manage`, which the send route checks for
+ * that kind (`ChatController.sendMessage`): it hands out roles, so it is an
+ * officer's post, like marking a role Non-chapter business.
  */
 export const PLUS_MENU_PERMISSIONS: Record<PlusMenuCommand, readonly string[]> =
   {
@@ -65,6 +71,7 @@ export const PLUS_MENU_PERMISSIONS: Record<PlusMenuCommand, readonly string[]> =
     task: ["tasks:manage", "members:view"],
     hours: ["service:log"],
     points: ["points:adjust", "members:view"],
+    roles: ["roles:manage"],
   };
 
 /**
@@ -88,6 +95,7 @@ const QUEUED_COMMANDS: ReadonlySet<PlusMenuCommand> = new Set([
   "poll",
   "signup",
   "form",
+  "roles",
 ]);
 
 /**

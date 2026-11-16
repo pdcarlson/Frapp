@@ -84,6 +84,15 @@ export interface AttemptResult {
   inputTokens: number;
   outputTokens: number;
   costUsd: number;
+  /**
+   * What came back, for reading a miss: the answer as the member would read
+   * it, the tools that ran in order, and how many cards came with it. The
+   * chapter is synthetic, so nothing here is anyone's words. Null and empty
+   * when the answer never arrived.
+   */
+  answer: string | null;
+  tools: string[];
+  cards: number;
 }
 
 export interface ArmResult {
@@ -214,10 +223,14 @@ export async function runRealQuestions(
 
         let violations: EvalViolation[];
         let text: string | null = null;
+        let tools: string[] = [];
+        let cards = 0;
         let errored = false;
         try {
           const answer = await agent.ask(evalCase.invocation);
           text = answer.text;
+          tools = (answer.toolCalls ?? []).map((call) => call.toolName);
+          cards = answer.proposals?.length ?? 0;
           violations = gradeRealQuestion(question, answer, evalCase);
         } catch (error) {
           if (!(error instanceof LanguageModelError)) throw error;
@@ -274,6 +287,9 @@ export async function runRealQuestions(
           seconds,
           ...tokens,
           costUsd: costUsd(price, tokens),
+          answer: text,
+          tools,
+          cards,
         });
       }
     }

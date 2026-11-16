@@ -95,6 +95,7 @@ import {
   postForm,
   postPoll,
   postSignup,
+  postRolePicker,
   postTask,
   retryPointsDispatch,
   trackEventCard,
@@ -110,6 +111,7 @@ import type { SlashCommand } from "@repo/chat-core/integrations";
 import type { PollPayload } from "@repo/chat-core/polls";
 import type { SignupPayload } from "@repo/chat-core/signups";
 import type { FormPayload } from "@repo/chat-core/forms";
+import type { RolePickerPayload } from "@repo/chat-core/role-pickers";
 import * as Sentry from "@sentry/nextjs";
 import { createDexieOutboxStore } from "./offline-queue";
 import { useChatOutboundScope } from "./chat-scope";
@@ -263,10 +265,22 @@ export interface UseChatChannelResult {
     targetChannelId: string,
     form: { content: string; payload: FormPayload },
   ) => ReturnType<typeof postForm>;
+  /**
+   * The + card's Role picker form (#4958): queues a `kind: "role_picker"`
+   * card in `targetChannelId` through the outbox, as `sendSignup` does a
+   * sign-up. Never rejects; the outcomes are `postSignup`'s.
+   */
+  sendRolePicker: (
+    targetChannelId: string,
+    picker: { content: string; payload: RolePickerPayload },
+  ) => ReturnType<typeof postSignup>;
   /** The event form's card bookkeeping in a channel (#3773, `trackEventCard`). */
   trackEventCard: (channelId: string, name: string) => EventCardTrack;
   /** The + card's Event form (#3983): the write `/event` makes, into `targetChannelId`. */
-  postEvent: (targetChannelId: string, input: EventInput) => Promise<DispatchResult>;
+  postEvent: (
+    targetChannelId: string,
+    input: EventInput,
+  ) => Promise<DispatchResult>;
   /**
    * The + menu's Task, Service hours and Points forms (#3865): the same
    * writes `/task`, `/hours log` and `/points` make, posting the card into
@@ -274,8 +288,14 @@ export interface UseChatChannelResult {
    * points) unconfirmed-retry bookkeeping. Never reject; read the result as
    * `notifyDispatchOutcome` does.
    */
-  postTask: (targetChannelId: string, input: TaskInput) => Promise<DispatchResult>;
-  postHours: (targetChannelId: string, input: HoursInput) => Promise<DispatchResult>;
+  postTask: (
+    targetChannelId: string,
+    input: TaskInput,
+  ) => Promise<DispatchResult>;
+  postHours: (
+    targetChannelId: string,
+    input: HoursInput,
+  ) => Promise<DispatchResult>;
   postPointsAdjustment: (
     targetChannelId: string,
     input: PointsAdjustmentInput,
@@ -839,8 +859,27 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [ctx],
   );
 
+  const sendRolePicker = useCallback(
+    (
+      targetChannelId: string,
+      picker: { content: string; payload: RolePickerPayload },
+    ) =>
+      postRolePicker(ctx, targetChannelId, picker).then((result) => {
+        if (!result.ok && result.cause !== undefined) {
+          Sentry.captureException(result.cause, {
+            tags: { chat_send: "role_picker_form" },
+          });
+        }
+        return result;
+      }),
+    [ctx],
+  );
+
   const sendForm = useCallback(
-    (targetChannelId: string, form: { content: string; payload: FormPayload }) =>
+    (
+      targetChannelId: string,
+      form: { content: string; payload: FormPayload },
+    ) =>
       postForm(ctx, targetChannelId, form).then((result) => {
         if (!result.ok && result.cause !== undefined) {
           Sentry.captureException(result.cause, {
@@ -932,6 +971,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     dispatchSlash,
     sendPoll,
     sendSignup,
+    sendRolePicker,
     sendForm,
     trackEventCard: trackEventCardCb,
     postEvent: postEventCb,

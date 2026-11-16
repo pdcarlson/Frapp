@@ -14,6 +14,7 @@ import { RushCard } from "./rush-card";
 import { LoadingCard } from "./loading-card";
 import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
+import { RolePickerCard } from "./role-picker-card";
 import { SignupCard } from "./signup-card";
 import { SystemAuditCard } from "./system-audit-card";
 import { TaskCard } from "./task-card";
@@ -122,6 +123,8 @@ export function MessageRenderer({
           onCloseCard={onCloseCard}
         />
       );
+    case "role_picker":
+      return <RolePickerCard message={message} isConfirmed={isConfirmed} />;
     case "form":
       return (
         <FormCard

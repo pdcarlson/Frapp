@@ -115,7 +115,12 @@ export function createEvalCorpus(
         candidate: {
           chunk_id: document.id,
           corpus_source_id: `source:${document.id}`,
-          source_type: document.sourceType,
+          // The product indexes documents, minutes and chat. A posted
+          // notice has no kind of its own there: it is found as a document.
+          source_type:
+            document.sourceType === 'announcement'
+              ? 'chapter_document'
+              : document.sourceType,
           source_id: document.id,
           title: document.title,
           heading: null,

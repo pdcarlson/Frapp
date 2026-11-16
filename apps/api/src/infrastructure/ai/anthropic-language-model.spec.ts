@@ -421,9 +421,14 @@ describe('AnthropicLanguageModel', () => {
                   ],
                   citations: { enabled: true },
                 },
-                { type: 'text', text: 'Showing 2 of 2.' },
               ],
               cache_control: { type: 'ephemeral' },
+            },
+            // A result is all sources or none (the API refuses a mix), so
+            // the note of a result with sources follows the results.
+            {
+              type: 'text',
+              text: "About search_messages's result: Showing 2 of 2.",
             },
           ],
         },
@@ -470,6 +475,34 @@ describe('AnthropicLanguageModel', () => {
           tool_use_id: 'toolu_1',
           content: [{ type: 'text', text: 'Nothing.' }],
           is_error: true,
+        },
+      ]);
+    });
+
+    it('keeps the note of a result with no sources inside that result', async () => {
+      const { create, model } = clientReturning(message({ content: [] }));
+      await model.generate({
+        ...agent,
+        cache: false,
+        rounds: [
+          {
+            replay: calling,
+            results: [
+              { callId: 'toolu_1', sources: [], note: 'No messages matched.' },
+            ],
+          },
+        ],
+      });
+      const [params] = create.mock.calls[0] as [
+        { messages: { content: unknown }[] },
+      ];
+      // Nothing follows the result: a note travels outside it only when the
+      // result is all sources.
+      expect(params.messages.at(-1)?.content).toEqual([
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_1',
+          content: [{ type: 'text', text: 'No messages matched.' }],
         },
       ]);
     });

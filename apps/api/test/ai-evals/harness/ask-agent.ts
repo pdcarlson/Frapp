@@ -201,7 +201,7 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
     async ask(invocation: AgentInvocation): Promise<AgentAnswer> {
       if (askAgentEnabled()) {
         throw new Error(
-          'Unset ASK_AGENT: these cases grade the one-shot Ask, and the tool loop has no tools here',
+          'Set ASK_AGENT=off: these cases grade the one-shot Ask, and the tool loop has no tools here',
         );
       }
       const { caller } = invocation;

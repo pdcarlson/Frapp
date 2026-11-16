@@ -29,6 +29,7 @@ import {
   askSourceChip,
   askStepLine,
   askUnavailableLine,
+  askUnavailableOffersRetry,
   type AiReportReason,
   type AskAnswer,
   type AskEntity,
@@ -136,7 +137,11 @@ export function AskTurn({
   /** The source whose document link is being fetched, so its chip says so. */
   openingSourceId?: string | null;
   onOpenSource: (source: AskSource) => void;
-  /** Asks the same question again, after a failure that may not repeat. */
+  /**
+   * Asks the same question again in this turn's place: after a failure that
+   * may not repeat, and on an answer Frapp couldn't give for a reason on its
+   * side (`askUnavailableOffersRetry`).
+   */
   onRetry: () => void;
   /**
    * Asks the same question again in this turn's place with more effort
@@ -253,6 +258,7 @@ export function AskReply({
             onOpenSource={onOpenSource}
             busy={busy}
             onAnswerConsent={onAnswerConsent}
+            onRetry={onRetry}
             onOpenChannel={onOpenChannel}
           />
         ) : null}
@@ -588,6 +594,7 @@ function AnswerBody({
   onOpenSource,
   busy,
   onAnswerConsent,
+  onRetry,
   onOpenChannel,
 }: {
   answer: AskAnswer;
@@ -598,6 +605,8 @@ function AnswerBody({
   onOpenSource: (source: AskSource) => void;
   busy: boolean;
   onAnswerConsent: () => void;
+  /** Asks the same question again in this turn's place. */
+  onRetry: () => void;
   onOpenChannel?: (channelId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
@@ -611,6 +620,16 @@ function AnswerBody({
           <CardAction
             label={ASK_COPY.consent_action}
             onPress={onAnswerConsent}
+            disabled={busy}
+          />
+        ) : null}
+        {/* A problem on Frapp's side, or a reason this build does not
+            know: asking again is all a member can do (#5082). The other
+            reasons say what to do or when. */}
+        {askUnavailableOffersRetry(answer.reason) ? (
+          <CardAction
+            label={ASK_COPY.try_again}
+            onPress={onRetry}
             disabled={busy}
           />
         ) : null}

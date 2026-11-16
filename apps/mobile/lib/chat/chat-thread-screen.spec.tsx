@@ -249,6 +249,23 @@ vi.mock("@/components/chat/composer-plus-sheet", async () => {
 });
 
 const presentTaskSheet = vi.fn();
+const presentRolePickerSheet = vi.fn();
+vi.mock("@/components/chat/new-role-picker-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    NewRolePickerSheet: forwardRef(function NewRolePickerSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentRolePickerSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("NewRolePickerSheet", props);
+    }),
+  };
+});
 vi.mock("@/components/tasks/new-task-sheet", async () => {
   const { createElement, forwardRef, useImperativeHandle } =
     await import("react");
@@ -373,6 +390,7 @@ function channelState(
     sendPoll: vi.fn(async () => ({ ok: true as const })),
     sendGif: vi.fn(async () => ({ ok: true as const })),
     sendSignup: vi.fn(async () => ({ ok: true as const })),
+    sendRolePicker: vi.fn(async () => ({ ok: true as const })),
     sendForm: vi.fn(async () => ({ ok: true as const })),
     postTask: vi.fn(async () => ({ ok: true })),
     postHours: vi.fn(async () => ({ ok: true })),
@@ -2557,7 +2575,7 @@ describe("chat thread + sheet (#3865)", () => {
     // offered.
     expect(rowsOf(tree).map((row) => row.command)).toEqual(["signup", "form"]);
     expect(footerOf(tree)).toEqual([
-      "Your role can't create polls, events, tasks or service hours.",
+      "Your role can't create polls, events, tasks, service hours or role pickers.",
     ]);
     act(() => tree.unmount());
   });
@@ -2572,6 +2590,7 @@ describe("chat thread + sheet (#3865)", () => {
       "event",
       "task",
       "hours",
+      "roles",
     ]);
     act(() => tree.unmount());
   });
@@ -2688,6 +2707,29 @@ describe("chat thread + sheet (#3865)", () => {
     const task = tree.root.findByType("NewTaskSheet" as never);
     expect(task.props.postToChannel).toBe(channel.postTask);
     expect(presentTaskSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("mounts the New role picker on first use and posts through sendRolePicker (#4958)", async () => {
+    permissionList = ["*"];
+    presentRolePickerSheet.mockClear();
+    const tree = render();
+    expect(tree.root.findAllByType("NewRolePickerSheet" as never)).toHaveLength(
+      0,
+    );
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("roles"));
+    expect(presentRolePickerSheet).toHaveBeenCalledTimes(1);
+    const onPost = tree.root.findByType("NewRolePickerSheet" as never).props
+      .onPost as (picker: unknown) => Promise<unknown>;
+    const picker = {
+      content: "Pick your roles",
+      payload: { title: "Pick your roles", role_ids: ["r1"] },
+    };
+    await act(async () => {
+      await onPost(picker);
+    });
+    expect(channel.sendRolePicker).toHaveBeenCalledWith(picker);
     act(() => tree.unmount());
   });
 

@@ -32,11 +32,10 @@ it has a tool for the question:
 - The GitHub MCP is the only sanctioned write path for issues, PRs, and comments.
 
 The `curl`, `gh`, and CLI recipes below are for laptops and Actions. These also work from a session:
-the GitHub REST reads, Infisical (which has no MCP), the local-stack Supabase commands, and the
-staging `/health` check when live-staging egress is on
-([`live-verification`](../live-verification/SKILL.md)). `gh` isn't installed in cloud sandboxes. On
-a laptop, run `export GH_TOKEN="$GITHUB_PAT"` first, because `gh` doesn't read `GITHUB_PAT` (node
-scripts do).
+`gh api` reads through the agent proxy, Infisical (which has no MCP), the local-stack Supabase
+commands, and the staging `/health` check when live-staging egress is on
+([`live-verification`](../live-verification/SKILL.md)). Sessions carry no GitHub token of their own
+(`GITHUB_PAT` was removed 2026-11-15); the `gh` they have authenticates through the proxy.
 
 ## GitHub
 
@@ -52,63 +51,43 @@ scripts do).
 From a cloud sandbox:
 
 - **Read GitHub through the MCP** (the table above).
-- **For a settings read the MCP has no tool for** (branch protection, environments, rulesets,
-  vulnerability alerts), use the direct route with `GITHUB_PAT`: node's built-in `fetch`, which
-  ignores `HTTPS_PROXY` (`/root/.ccr/README.md`), or `curl --noproxy '*'`. Recipes below.
-- **Don't treat a proxy-route result as evidence about permissions.** Anything that honours
-  `HTTPS_PROXY` (plain `curl`, `gh`) takes the proxy route, and what passes there varies by
-  session and path. A 403 on it says nothing about the PAT, so don't regenerate the PAT with
-  broader scopes, and don't set `NODE_USE_ENV_PROXY=1` for these scripts: it puts node back on
-  the proxy route.
+- **For a settings read the MCP has no tool for**, use `gh api`, which goes through the agent proxy
+  with the proxy's own credential. Measured 2026-11-15: `branches/main/protection`, `rulesets` and
+  `rules/branches/main` return 200; `environments` and `vulnerability-alerts` return the proxy's
+  403. What passes has changed between sessions, so re-measure rather than trust that list.
+- **A refused read says nothing about the setting.** A 403 through the proxy is its path policy
+  or GitHub refusing the proxy's credential. Judge the setting by behaviour instead (a production
+  deploy waiting for approval, queued checks on `gh-readonly-queue/main/...`), or ask Paul.
+- **Don't send node `fetch` or `curl --noproxy '*'` direct.** The `GITHUB_TOKEN` / `GH_TOKEN` a
+  session sees are the proxy's placeholders, so GitHub answers 401 "Bad credentials".
 
-Measurements and the canonical statement:
+Canonical statement:
 [`agent-infra.md` → The `api.github.com` route rule](../../../docs/ci-cd/agent-infra.md#the-apigithubcom-route-rule).
 
-### Repo settings the MCP has no tool for (direct REST read)
+### Repo settings the MCP has no tool for (REST read)
 
-Use direct REST only to read settings that no MCP tool exposes: branch protection, environments and
-their protection rules, rulesets, repo visibility, and `vulnerability-alerts`.
+Use REST only to read settings that no MCP tool exposes: branch protection, rulesets, environments
+and their protection rules, repo visibility, and `vulnerability-alerts`.
 
 - It isn't a write fallback. Issue and PR writes still go through the MCP.
-- Applying branch protection is a human step with an admin PAT. That's policy. Access isn't the
-  reason.
-
-The probe below prints the status for each path. Add `await r.json()` if you need a body:
+- Applying branch protection is a human step with a person's own admin token. That's policy.
+  Access isn't the reason.
 
 ```bash
-node -e '(async () => {
-  const h = { Authorization: `Bearer ${process.env.GITHUB_PAT}`, Accept: "application/vnd.github+json" };
-  for (const p of [
-    "/repos/pdcarlson/Frapp/branches/main/protection",
-    "/repos/pdcarlson/Frapp/environments",
-    "/repos/pdcarlson/Frapp/environments/production",
-    "/repos/pdcarlson/Frapp/rulesets",
-    "/repos/pdcarlson/Frapp/vulnerability-alerts",
-  ]) {
-    const r = await fetch(`https://api.github.com${p}`, { headers: h });
-    // node's fetch ignores HTTPS_PROXY, so this is the direct route and a 403 is GitHub's
-    // verdict on the PAT. (On the proxy route GitHub headers prove nothing about the PAT.)
-    console.log(r.status, r.headers.get("x-github-request-id") ? "github" : "no-github-headers", p);
-  }
-})()'
-```
-
-With curl, keep `--noproxy '*'`. Without it, you're on the proxy route, and its 403 can be
-mistaken for an auth failure:
-
-```bash
-curl -sS --noproxy '*' -H "Authorization: Bearer $GITHUB_PAT" \
-  -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/pdcarlson/Frapp/environments/production" | python3 -m json.tool
+for p in branches/main/protection rulesets rules/branches/main environments vulnerability-alerts; do
+  printf '%s ' "$p"; gh api -i "repos/frapplive/Frapp/$p" 2>&1 | head -1
+done
+gh api repos/frapplive/Frapp/rules/branches/main --jq '.[].type'   # merge_queue present = queue on
 ```
 
 How to read the results:
 
-- **`vulnerability-alerts` returns 404 `"disabled"`.** Dependabot alerts are off
-  ([#921](https://github.com/pdcarlson/Frapp/issues/921)). The request wasn't blocked.
+- **`vulnerability-alerts` returns 404 `"disabled"`** (on a laptop, or wherever the proxy lets it
+  through). Dependabot alerts are off ([#921](https://github.com/pdcarlson/Frapp/issues/921)).
 - **`branches/production` returns 404.** That's expected. The branch was retired in #1340.
 - **Required reviewers for production.** Read them from the protection rules on
-  `environments/production`. Don't infer them from approval timing.
+  `environments/production` where that read passes (a laptop with an admin token). From a session
+  it doesn't, so say the reviewers are unverified rather than inferring them from approval timing.
 - **Required contexts.** The list is `ALL_REQUIRED_CHECKS` in `scripts/ci/lib/required-checks.mjs`.
   Don't trust a count quoted in a doc.
 
