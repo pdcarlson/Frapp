@@ -26,7 +26,7 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  useGuardedSheetRef,
 } from "@/components/sheet-scaffold";
 import { ListRow, ListSection } from "@/components/list-section";
 import { Toggle } from "@/components/toggle";
@@ -66,8 +66,11 @@ export const NewRolePickerSheet = forwardRef<
   const styles = createStyles(tokens, brand);
   const backgroundStyle = useSheetBackgroundStyle();
   const closeSheet = useSheetClose(ref);
-  const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-    useSheetVisit(ref);
+  // Its hosts (the composer among them) dismiss it on a blur or a channel
+  // switch, up or not (#5059): the ref they hold only reaches a sheet that
+  // is up.
+  const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+    useGuardedSheetRef(ref);
 
   const rolesQuery = useRoles();
   const roles = useMemo(
@@ -193,7 +196,7 @@ export const NewRolePickerSheet = forwardRef<
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       enableDynamicSizing
       keyboardBehavior="interactive"

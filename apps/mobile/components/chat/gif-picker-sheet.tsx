@@ -11,6 +11,7 @@ import {
   SHEET_STACK_BEHAVIOR,
   sheetFieldStyles,
   useSheetBackgroundStyle,
+  useGuardedSheetRef,
   useSheetClose,
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
@@ -59,6 +60,9 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
     const backgroundStyle = useSheetBackgroundStyle();
     const tallSheet = useTallSheetProps();
     const close = useSheetClose(ref);
+    // The composer dismisses it on every blur, up or not (#5059): the ref it
+    // holds only reaches a sheet that is up.
+    const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
     const search = useGifSearch(query, open);
@@ -151,7 +155,7 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
 
     return (
       <BottomSheetModal
-        ref={ref}
+        ref={modalRef}
         {...tallSheet}
         stackBehavior={SHEET_STACK_BEHAVIOR}
         keyboardBehavior="interactive"
@@ -159,7 +163,9 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
         onChange={(index) => setOpen(index >= 0)}
+        onAnimate={onAnimate}
         onDismiss={() => {
+          markClosed();
           setOpen(false);
           setQuery("");
         }}

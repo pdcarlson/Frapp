@@ -22,6 +22,7 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { NewPollSheet, type NewPollSheetProps } from "./new-poll-sheet";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 const NOW = new Date("2026-11-09T12:00:00.000Z");
 
@@ -383,5 +384,20 @@ describe("New poll sheet row moves (#3701)", () => {
     expect(field(tree, "Option 1").props.value).toBe("Not me!");
     expect(field(tree, "Option 2").props.value).toBe("Me");
     act(() => tree.unmount());
+  });
+});
+
+describe("NewPollSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <NewPollSheet
+          ref={ref}
+          onPost={vi.fn()}
+          canCloseEarly={false}
+          now={() => NOW}
+        />
+      </FrappThemeProvider>
+    ));
   });
 });

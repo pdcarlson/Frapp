@@ -49,7 +49,7 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  useGuardedSheetRef,
 } from "@/components/sheet-scaffold";
 import { IconButton } from "@/components/icon-button";
 import { Toggle } from "@/components/toggle";
@@ -90,8 +90,11 @@ export const NewFormSheet = forwardRef<BottomSheetModal, NewFormSheetProps>(
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const closeSheet = useSheetClose(ref);
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
 
     const [draft, setDraft] = useState<FormDraft>(emptyFormDraft);
     const [focused, setFocused] = useState<Focus>(null);
@@ -184,7 +187,7 @@ export const NewFormSheet = forwardRef<BottomSheetModal, NewFormSheetProps>(
 
     return (
       <BottomSheetModal
-        ref={ref}
+        ref={modalRef}
         stackBehavior={SHEET_STACK_BEHAVIOR}
         enableDynamicSizing
         keyboardBehavior="interactive"

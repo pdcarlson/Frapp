@@ -109,6 +109,7 @@ import { NewEventSheet, WhenRow } from "./new-event-sheet";
 import { emptyEventDraft } from "@/lib/events/create-event";
 import type { EventEditTarget } from "@/lib/events/edit-event";
 import type { EventDetail } from "@/lib/events/select";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 /** A Thursday afternoon, local time. */
 const NOW = new Date(2026, 10, 5, 14, 0);
@@ -1040,5 +1041,15 @@ describe("opened on a template (This time last year, #3930)", () => {
       expect.objectContaining({ id: "evt-new", name: "Winter Formal 2026" }),
     );
     act(() => tree.unmount());
+  });
+});
+
+describe("NewEventSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <NewEventSheet ref={ref} now={NOW} onCreated={vi.fn()} />
+      </FrappThemeProvider>
+    ));
   });
 });

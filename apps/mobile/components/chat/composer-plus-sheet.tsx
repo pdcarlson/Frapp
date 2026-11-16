@@ -12,6 +12,7 @@ import {
   SheetScrim,
   SHEET_STACK_BEHAVIOR,
   useSheetBackgroundStyle,
+  useGuardedSheetRef,
   useSheetClose,
 } from "@/components/sheet-scaffold";
 import {
@@ -86,6 +87,9 @@ export const ComposerPlusSheet = forwardRef<
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const closeSheet = useSheetClose(ref);
+  // The composer dismisses it on every blur and channel switch, up or not
+  // (#5059): the ref it holds only reaches a sheet that is up.
+  const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
   // The chosen row's action, run on dismiss (see the header).
   const chosen = useRef<(() => void) | null>(null);
 
@@ -97,22 +101,24 @@ export const ComposerPlusSheet = forwardRef<
     [closeSheet],
   );
   const dismissed = useCallback(() => {
+    markClosed();
     const run = chosen.current;
     chosen.current = null;
     run?.();
-  }, []);
+  }, [markClosed]);
 
   const photoReason = photoDisabledReason ?? model.attachDisabledReason;
   const muted = tokens.color.text.mutedForeground;
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       enableDynamicSizing
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
+      onAnimate={onAnimate}
       onDismiss={dismissed}
     >
       <SheetBackToClose onClose={closeSheet} />

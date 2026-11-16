@@ -21,6 +21,7 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { NewFormSheet, type NewFormSheetProps } from "./new-form-sheet";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 function render(onPost: NewFormSheetProps["onPost"]): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -148,5 +149,15 @@ describe("New form sheet (#3926 step 3)", () => {
     act(() => header.props.onCancel());
     expect(field(tree, "Title").props.value).toBe("");
     act(() => tree.unmount());
+  });
+});
+
+describe("NewFormSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <NewFormSheet ref={ref} onPost={vi.fn()} />
+      </FrappThemeProvider>
+    ));
   });
 });
