@@ -700,11 +700,27 @@ describe("Host check-in on the real code request", () => {
     error,
     response: new Response(null, { status: 502 }),
   });
-  /** Lets the request in flight answer, and the screen draw it. */
-  const settle = () =>
+  const tick = () =>
     act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 10));
     });
+  /**
+   * Lets the request in flight answer, and the screen draw it: a turn, then
+   * turns until no query is fetching, then one more. React Query draws a
+   * settled query on a timer of its own (its notifyManager batch), set when
+   * the request answers, so a single fixed wait can fire first when the
+   * answer takes longer than the wait to land. On a loaded merge queue runner
+   * it did (2026-11-16): the query read `error` while the screen still showed
+   * the header alone. The last turn's timer is set after that batch's, so it
+   * runs after the draw.
+   */
+  const settle = async () => {
+    await tick();
+    for (let turn = 0; turn < 100 && queryClient.isFetching() > 0; turn++) {
+      await tick();
+    }
+    await tick();
+  };
 
   it("keeps the code on screen when a refetch gets an empty-bodied 5xx", async () => {
     for (const error of [undefined, ""] as const) {
