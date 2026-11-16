@@ -134,6 +134,7 @@ import {
   rememberLocalPhotos,
 } from "./local-photos";
 import { useFrappClient, withChatRecordRefresh } from "@repo/hooks";
+import { dismissDeletedMessagePushes } from "@/lib/notifications/push";
 
 import { getSupabaseClient } from "@/lib/supabase";
 import { CHANNEL_MESSAGES_GC_TIME, takeReadAhead } from "./prefetch-channel";
@@ -1510,6 +1511,24 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   }, [connection, ctx]);
 
   const messages = useMemo(() => selectMessages(query.data), [query.data]);
+
+  // A deleted message in the conversation just loaded takes its push out of
+  // the tray (#4470): the delete the inbox can't have reported, made while
+  // the app was closed. Keyed on the set of deleted ids, so a page of
+  // messages doesn't re-read the tray unless a delete is new to it.
+  const deletedKey = useMemo(
+    () =>
+      messages
+        .filter((m) => m.is_deleted)
+        .map((m) => m.id)
+        .sort()
+        .join(","),
+    [messages],
+  );
+  useEffect(() => {
+    if (!deletedKey) return;
+    void dismissDeletedMessagePushes(new Set(deletedKey.split(",")));
+  }, [deletedKey]);
 
   return {
     messages,

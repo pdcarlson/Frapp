@@ -238,6 +238,27 @@ describe("createChatActivityHandler (#3698)", () => {
     expect(invalidate).toHaveBeenCalledTimes(2);
   });
 
+  test("an edit or delete re-reads the latest lines and counts, and stamps nothing, even in the thread being viewed (#4442)", async () => {
+    viewing = "c1";
+    const { handle } = handler();
+    handle({
+      type: "changed",
+      channelId: "c1",
+      messageId: "m1",
+      deleted: true,
+    });
+    await vi.advanceTimersByTimeAsync(CHAT_ACTIVITY_COALESCE_MS);
+    expect(markRead).not.toHaveBeenCalled();
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+      exact: true,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+      exact: true,
+    });
+  });
+
   test("dispose drops pending work and ignores what comes after", async () => {
     viewing = "c1";
     const { handle, dispose } = handler();
@@ -311,8 +332,9 @@ describe("createChatActivityHandler: the inbox's first join (#4961)", () => {
   };
 
   const badge = () =>
-    queryClient.getQueryData<ChannelUnreadCount[]>(CHANNEL_UNREAD_COUNTS_KEY)?.[0]
-      ?.unread_count;
+    queryClient.getQueryData<ChannelUnreadCount[]>(
+      CHANNEL_UNREAD_COUNTS_KEY,
+    )?.[0]?.unread_count;
 
   test("a message between the counts' read and the join lights the badge", async () => {
     await mountBadge();

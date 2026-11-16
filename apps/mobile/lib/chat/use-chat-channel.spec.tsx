@@ -177,6 +177,9 @@ vi.mock("@/lib/supabase", () => ({
   }),
 }));
 
+const dismissDeletedMessagePushes = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/notifications/push", () => ({ dismissDeletedMessagePushes }));
+
 vi.mock("./use-chat-runtime", () => ({
   useChatRuntime: () => mocks.runtime,
   bootChatAdapters: mocks.bootChatAdapters,
@@ -856,6 +859,43 @@ describe("initial queryFn", () => {
     // And the reaction actually landed on the message, not just fetched.
     const message = result.current.messages.find((m) => m.id === "server-1");
     expect(message?.reactions["reaction:+1"]).toEqual(["user-9"]);
+  });
+});
+
+describe("a deleted message in a loaded conversation (#4470)", () => {
+  it("takes that message's push out of the tray, and nothing for a conversation without one", async () => {
+    const client = createClient(
+      vi.fn(async () => ({
+        data: [
+          rawRow("kept", "2026-08-27T00:00:00.000Z"),
+          {
+            ...rawRow("gone", "2026-08-27T00:00:01.000Z"),
+            is_deleted: true,
+          },
+        ],
+        error: null,
+      })),
+    );
+    const { result } = renderChannel(client);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() =>
+      expect(dismissDeletedMessagePushes).toHaveBeenCalledWith(
+        new Set(["gone"]),
+      ),
+    );
+    expect(dismissDeletedMessagePushes).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads nothing when no message is deleted", async () => {
+    const client = createClient(
+      vi.fn(async () => ({
+        data: [rawRow("kept", "2026-08-27T00:00:00.000Z")],
+        error: null,
+      })),
+    );
+    const { result } = renderChannel(client);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(dismissDeletedMessagePushes).not.toHaveBeenCalled();
   });
 });
 
