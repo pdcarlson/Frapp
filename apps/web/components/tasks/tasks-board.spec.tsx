@@ -1175,11 +1175,9 @@ describe("TasksBoard add row", () => {
     render(<TasksBoard />);
 
     expect(screen.queryByRole("button", { name: /^add a task$/i })).toBeNull();
-    expect(
-      within(screen.getByRole("region", { name: "To do" })).queryByText(
-        "No tasks",
-      ),
-    ).toBeNull();
+    // A member sees My tasks, which has no To do lane to head.
+    expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Today" })).toBeInTheDocument();
   });
 
   async function openRowWithEverything() {
@@ -1252,7 +1250,7 @@ describe("TasksBoard member with nothing assigned", () => {
     tasksRef.current = TASKS.slice(0, 2);
     render(<TasksBoard />);
 
-    expect(screen.getByRole("region", { name: "To do" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Today" })).toBeInTheDocument();
     expect(screen.queryByText(/nothing on your plate/i)).toBeNull();
     expect(eventsEnabled.every((enabled) => !enabled)).toBe(true);
   });
@@ -1576,5 +1574,239 @@ describe("TasksBoard proof and send back (#4635)", () => {
     expect(screen.getByText("Done")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^confirm/i })).toBeNull();
     expect(sendBackButton()).toBeEnabled();
+  });
+});
+
+describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
+  /** A local `YYYY-MM-DD` this many days from today. */
+  const dayFromToday = (days: number) => {
+    const at = new Date();
+    at.setDate(at.getDate() + days);
+    const mm = String(at.getMonth() + 1).padStart(2, "0");
+    const dd = String(at.getDate()).padStart(2, "0");
+    return `${at.getFullYear()}-${mm}-${dd}`;
+  };
+  const task = (
+    id: string,
+    title: string,
+    assignee: string,
+    days: number,
+    status: "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE" = "TODO",
+    extra: Record<string, unknown> = {},
+  ) => ({
+    ...TASKS[0]!,
+    id,
+    title,
+    assignee_id: assignee,
+    due_date: dayFromToday(days),
+    status,
+    ...extra,
+  });
+  const ROWS = [
+    task("late", "Return the projector", ME, -2, "OVERDUE"),
+    task("today", "Sweep the chapter room", ME, 0),
+    task("week", "Draft the rush calendar", ME, 3, "IN_PROGRESS"),
+    task("later", "Plan formal", ME, 20),
+    task("waiting", "Book the venue", ME, 1, "COMPLETED", {
+      completed_at: "2026-08-10T00:00:00Z",
+    }),
+    task("cole", "Order shirts", "u-other", 2),
+  ];
+  const region = (name: string) => screen.getByRole("region", { name });
+  const titlesIn = (name: string) =>
+    within(region(name))
+      .queryAllByRole("listitem")
+      .map((item) => item.querySelector("p")?.textContent);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+    currentUserRef.current = { id: ME };
+    tasksRef.current = ROWS;
+  });
+
+  it("groups a member's tasks as Today, This week and Later, then what waits on an officer", () => {
+    permissionsRef.current = ["members:view"];
+    // A member's read holds only their own rows.
+    tasksRef.current = ROWS.filter((row) => row.assignee_id === ME);
+    render(<TasksBoard />);
+
+    expect(titlesIn("Today")).toEqual([
+      "Return the projector",
+      "Sweep the chapter room",
+    ]);
+    expect(titlesIn("This week")).toEqual(["Draft the rush calendar"]);
+    expect(titlesIn("Later")).toEqual(["Plan formal"]);
+    expect(titlesIn("Waiting on an officer")).toEqual(["Book the venue"]);
+    // The heading says it; the tile doesn't repeat it.
+    expect(
+      within(region("Waiting on an officer")).getAllByText(
+        "Waiting on an officer",
+      ),
+    ).toHaveLength(1);
+    // No status lane says it, so the tile does.
+    expect(within(region("This week")).getByText("In progress")).toBeVisible();
+    // A member has nothing to switch or filter.
+    expect(screen.queryByRole("radiogroup", { name: "Whose tasks" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Assignee" })).toBeNull();
+  });
+
+  it("opens an officer on the chapter's board, and My tasks keeps only theirs", async () => {
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+    expect(region("To do")).toBeInTheDocument();
+    expect(screen.getByText("Order shirts")).toBeInTheDocument();
+
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Whose tasks" })).getByRole(
+        "radio",
+        { name: "My tasks" },
+      ),
+    );
+    expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
+    expect(titlesIn("This week")).toEqual(["Draft the rush calendar"]);
+    expect(screen.queryByText("Order shirts")).toBeNull();
+    // The add row heads the page when no To do lane is drawn.
+    expect(
+      screen.getByRole("button", { name: /^add a task$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("filters the chapter's board by assignee, status and due date, and clears them", async () => {
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+
+    await user.click(screen.getByRole("button", { name: "Assignee" }));
+    await user.click(screen.getByRole("menuitem", { name: "Cole Martin" }));
+    expect(titlesIn("To do")).toEqual(["Order shirts"]);
+    expect(screen.queryByText("Sweep the chapter room")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByText("Sweep the chapter room")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Status" }));
+    await user.click(screen.getByRole("menuitem", { name: "In progress" }));
+    // A status keeps its own lane alone.
+    expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
+    expect(titlesIn("In progress")).toEqual(["Draft the rush calendar"]);
+
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    await user.click(screen.getByRole("button", { name: "Due" }));
+    await user.click(screen.getByRole("menuitem", { name: "Due today" }));
+    expect(titlesIn("To do")).toEqual(["Sweep the chapter room"]);
+    expect(titlesIn("Overdue")).toEqual([]);
+  });
+
+  it("offers only values some task has", async () => {
+    const user = userEvent.setup();
+    tasksRef.current = [ROWS[1]!];
+    render(<TasksBoard />);
+    await user.click(screen.getByRole("button", { name: "Status" }));
+    expect(screen.queryByRole("menuitem", { name: "Overdue" })).toBeNull();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "Due" }));
+    expect(screen.queryByRole("menuitem", { name: "Due later" })).toBeNull();
+  });
+
+  it("says when no task matches", async () => {
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+    await user.click(screen.getByRole("button", { name: "Assignee" }));
+    await user.click(screen.getByRole("menuitem", { name: "Cole Martin" }));
+    await user.click(screen.getByRole("button", { name: "Due" }));
+    await user.click(screen.getByRole("menuitem", { name: "Overdue" }));
+    expect(
+      screen.getByText("No tasks match these filters."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
+    // With no To do lane to head, the add row heads the page.
+    expect(
+      screen.getByRole("button", { name: /^add a task$/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps a picked value named after its last task leaves", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<TasksBoard />);
+    await user.click(screen.getByRole("button", { name: "Status" }));
+    await user.click(screen.getByRole("menuitem", { name: "Overdue" }));
+    tasksRef.current = ROWS.filter((row) => row.status !== "OVERDUE");
+    rerender(<TasksBoard />);
+    expect(
+      screen.getByRole("button", { name: "Status: Overdue" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("No tasks match these filters."),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps My tasks to the viewer's own when the read holds others' (View as a role)", () => {
+    // A previewed role without tasks:manage, while the read is still the
+    // officer's whole chapter.
+    permissionsRef.current = ["members:view"];
+    render(<TasksBoard />);
+    expect(screen.queryByText("Order shirts")).toBeNull();
+    expect(titlesIn("This week")).toEqual(["Draft the rush calendar"]);
+  });
+
+  it("says My tasks is loading while an officer's account is unknown", async () => {
+    const user = userEvent.setup();
+    currentUserRef.current = undefined;
+    render(<TasksBoard />);
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Whose tasks" })).getByRole(
+        "radio",
+        { name: "My tasks" },
+      ),
+    );
+    expect(screen.getByText("Loading your tasks…")).toBeInTheDocument();
+  });
+
+  it("lists a confirmed task once, under Confirmed, not under Waiting on an officer", () => {
+    permissionsRef.current = ["members:view"];
+    tasksRef.current = [
+      ...ROWS.filter((row) => row.assignee_id === ME),
+      task("done", "Fold the flyers", ME, -1, "COMPLETED", {
+        points_awarded: true,
+        completed_at: "2026-08-10T00:00:00Z",
+        confirmed_at: "2026-08-11T00:00:00Z",
+      }),
+    ];
+    render(<TasksBoard />);
+    expect(titlesIn("Waiting on an officer")).toEqual(["Book the venue"]);
+    expect(screen.getAllByText("Fold the flyers")).toHaveLength(1);
+  });
+
+  it("groups the chapter's board by person, with each tile's status", async () => {
+    const user = userEvent.setup();
+    render(<TasksBoard />);
+    await user.click(
+      within(screen.getByRole("radiogroup", { name: "Group tasks" })).getByRole(
+        "radio",
+        { name: "By person" },
+      ),
+    );
+
+    expect(titlesIn("Cole Martin")).toEqual(["Order shirts"]);
+    // By name, whatever order the read listed them in.
+    const labels = screen
+      .getAllByRole("region")
+      .map((section) => section.getAttribute("aria-labelledby"))
+      .filter((id): id is string => id?.startsWith("tasks-column-person-") ?? false)
+      .map((id) => document.getElementById(id)?.textContent ?? "");
+    expect(labels.map((label) => label.replace(/\d+$/, "").trim())).toEqual([
+      "Cole Martin",
+      "Paul Carlson (you)",
+    ]);
+    expect(titlesIn("Paul Carlson (you)")).toEqual([
+      "Return the projector",
+      "Sweep the chapter room",
+      "Book the venue",
+      "Draft the rush calendar",
+      "Plan formal",
+    ]);
+    const mine = region("Paul Carlson (you)");
+    expect(within(mine).getByText("Waiting on an officer")).toBeVisible();
+    expect(within(mine).getByText("In progress")).toBeVisible();
   });
 });

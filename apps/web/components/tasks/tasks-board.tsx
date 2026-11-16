@@ -25,6 +25,15 @@ import {
   useChapterScope,
   useTasks,
   useUpdateTaskStatus,
+  MY_TASKS_GROUPS,
+  MY_TASKS_GROUP_EMPTY,
+  MY_TASKS_GROUP_LABELS,
+  TASK_DUE_BUCKET_LABELS,
+  TASK_DUE_FILTERS,
+  compareTasksByDue,
+  myTasksGroup,
+  taskDueBucket,
+  type TaskDueBucket,
 } from "@repo/hooks";
 import type { LiveTaskPhoto, TaskStatus, TaskSubtask } from "@repo/hooks";
 import { memberFallbackLabel, memberLabel } from "@repo/hooks/display-names";
@@ -83,6 +92,8 @@ import { AddTaskRow, type TaskDraft } from "./add-task-row";
 import { TasksPageSkeleton } from "@/components/tasks/tasks-skeleton";
 import { SuggestedTasks } from "@/components/ai/suggested-tasks";
 import { ListLayoutToggle } from "@/components/shared/list-layout-toggle";
+import { FilterChip, type FilterOption } from "@/components/shared/filter-chip";
+import { SegmentedChoice } from "@/components/ui/segmented";
 import { useListLayout, type ListLayout } from "@/lib/list-layout";
 
 type Task = {
@@ -156,6 +167,62 @@ const COLUMNS: {
     empty: "Nothing overdue",
   },
 ];
+
+/**
+ * One group the page draws: a status lane, a My tasks day range, or a
+ * person. `id` names its label element (`tasks-column-<id>`).
+ */
+type TaskGroup = {
+  id: string;
+  label: string;
+  empty: string;
+  tasks: Task[];
+};
+
+/**
+ * Whose tasks the page shows (#4295 step 5). A member's read holds only their
+ * own, so they always see My tasks; an officer switches between their own and
+ * the chapter's board, which stays where they land, as before.
+ */
+type TasksView = "mine" | "all";
+/** How the chapter's board groups: its status lanes, or one group a person. */
+type TasksGroupBy = "status" | "person";
+/** The Status filter: a lane's status, or the Confirmed list. */
+type StatusFilter = TaskStatus | "CONFIRMED";
+type DueFilter = Exclude<TaskDueBucket, "earlier">;
+
+const VIEW_OPTIONS = [
+  { value: "mine", label: "My tasks" },
+  { value: "all", label: "All tasks" },
+] as const;
+
+const GROUP_BY_OPTIONS = [
+  { value: "status", label: "By status" },
+  { value: "person", label: "By person" },
+] as const;
+
+const STATUS_FILTER_ORDER: StatusFilter[] = [
+  "TODO",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "OVERDUE",
+  "CONFIRMED",
+];
+
+function statusFilterLabel(value: StatusFilter): string {
+  return value === "CONFIRMED"
+    ? TASK_CONFIRMED_LABEL
+    : TASK_STATUS_LABELS[value];
+}
+
+/** Finished and confirmed: it leaves the lanes for the Confirmed list. */
+function isConfirmedRow(task: Task): boolean {
+  return task.status === "COMPLETED" && task.points_awarded;
+}
+
+function statusOf(task: Task): StatusFilter {
+  return isConfirmedRow(task) ? "CONFIRMED" : task.status;
+}
 
 /**
  * Confirmed tasks the Confirmed list shows before "Show all". Every one stays
@@ -255,34 +322,184 @@ export function TasksBoard() {
   const [layout] = useListLayout("tasks");
   const isGrid = layout === "grid";
 
-  const { columns, confirmed } = useMemo(() => {
-    const grouped = new Map<TaskStatus, Task[]>();
-    for (const column of COLUMNS) {
-      grouped.set(column.status, []);
-    }
-    const recent: Task[] = [];
+  // Read here, ahead of the early returns, because My tasks needs it to pick
+  // an officer's own rows out of the chapter's board.
+  const myUserId = (currentUser.data as { id?: string } | undefined)?.id ?? "";
+
+  const [officerView, setOfficerView] = useState<TasksView>("all");
+  // While permissions are unknown (the read failed) the page can't tell an
+  // officer from a member, so it keeps the status board it always drew,
+  // with no switch or chips, and the add row says why it isn't there.
+  const view: TasksView = canManage
+    ? officerView
+    : permissionsKnown
+      ? "mine"
+      : "all";
+  const [groupBy, setGroupBy] = useState<TasksGroupBy>("status");
+  const [assigneeFilter, setAssigneeFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter | null>(null);
+  const [dueFilter, setDueFilter] = useState<DueFilter | null>(null);
+  // The filters belong to the chapter's board; My tasks ignores them.
+  const filtering =
+    view === "all" &&
+    (assigneeFilter !== null || statusFilter !== null || dueFilter !== null);
+  function clearFilters() {
+    setAssigneeFilter(null);
+    setStatusFilter(null);
+    setDueFilter(null);
+  }
+
+  // The filter chips list only values some task on the board has (the
+  // filter chip's rule, `components.md` § 4).
+  const filterOptions = useMemo(() => {
+    const now = new Date(nowTick);
+    const assignees = new Set<string>();
+    const statuses = new Set<StatusFilter>();
+    const dues = new Set<TaskDueBucket>();
     for (const task of tasks) {
-      if (task.status === "COMPLETED" && task.points_awarded) {
-        recent.push(task);
-        continue;
-      }
-      const bucket = grouped.get(task.status);
-      if (bucket) bucket.push(task);
+      assignees.add(task.assignee_id);
+      statuses.add(statusOf(task));
+      dues.add(taskDueBucket(task, now));
     }
+    // A value already picked stays listed, and named, after its last task
+    // leaves (marked done, deleted, or past midnight), so the chip never
+    // falls back to the raw value and the member can see what to clear.
+    if (assigneeFilter !== null) assignees.add(assigneeFilter);
+    if (statusFilter !== null) statuses.add(statusFilter);
+    if (dueFilter !== null) dues.add(dueFilter);
+    const assignee: FilterOption[] = [...assignees]
+      .map((id) => ({
+        value: id,
+        label:
+          id === myUserId
+            ? "You"
+            : (membersByUserId.get(id) ?? memberFallbackLabel(id)),
+      }))
+      .sort((a, b) =>
+        a.value === myUserId
+          ? -1
+          : b.value === myUserId
+            ? 1
+            : a.label.localeCompare(b.label),
+      );
+    const status: FilterOption[] = STATUS_FILTER_ORDER.filter((value) =>
+      statuses.has(value),
+    ).map((value) => ({ value, label: statusFilterLabel(value) }));
+    const due: FilterOption[] = TASK_DUE_FILTERS.filter((value) =>
+      dues.has(value),
+    ).map((value) => ({
+      value,
+      label:
+        value === "overdue"
+          ? TASK_DUE_BUCKET_LABELS.overdue
+          : `Due ${TASK_DUE_BUCKET_LABELS[value].toLowerCase()}`,
+    }));
+    return { assignee, status, due };
+  }, [
+    tasks,
+    membersByUserId,
+    myUserId,
+    nowTick,
+    assigneeFilter,
+    statusFilter,
+    dueFilter,
+  ]);
+
+  const { groups, confirmed, shown } = useMemo(() => {
+    const now = new Date(nowTick);
+    const nameOf = (id: string) =>
+      membersByUserId.get(id) ?? memberFallbackLabel(id);
+    let pool: Task[];
+    if (view === "mine") {
+      // Only the viewer's own, whatever the read holds: an officer's is the
+      // chapter's, and so is one previewing a role without `tasks:manage`
+      // (View as a role keeps the officer's reads). Until the account is
+      // known an officer gets none (the page says why) and a member gets the
+      // read, which the server already keeps to their own.
+      pool =
+        myUserId !== ""
+          ? tasks.filter((task) => task.assignee_id === myUserId)
+          : canManage
+            ? []
+            : tasks;
+    } else {
+      pool = tasks.filter(
+        (task) =>
+          (assigneeFilter === null || task.assignee_id === assigneeFilter) &&
+          (statusFilter === null || statusOf(task) === statusFilter) &&
+          (dueFilter === null || taskDueBucket(task, now) === dueFilter),
+      );
+    }
+
+    const recent = pool.filter(isConfirmedRow);
     recent.sort((a, b) => confirmedAt(b) - confirmedAt(a));
-    for (const [, list] of grouped) {
-      list.sort((a, b) => {
-        // By day, then by time within the day, a task with no time last
-        // (it is due by the end of the day).
-        const byDay = a.due_date.localeCompare(b.due_date);
-        if (byDay !== 0) return byDay;
-        const aMs = a.due_at ? Date.parse(a.due_at) : Number.POSITIVE_INFINITY;
-        const bMs = b.due_at ? Date.parse(b.due_at) : Number.POSITIVE_INFINITY;
-        return aMs === bMs ? 0 : aMs < bMs ? -1 : 1;
+    const live = pool.filter((task) => !isConfirmedRow(task));
+
+    let drawn: TaskGroup[];
+    if (view === "mine") {
+      // Today (overdue first), This week and Later hold what is still to
+      // do; what waits on an officer is done from the member's side, so it
+      // follows them, as Asana's My tasks moves finished work out of the
+      // day lists.
+      drawn = MY_TASKS_GROUPS.map((group) => ({
+        id: group,
+        label: MY_TASKS_GROUP_LABELS[group],
+        empty: MY_TASKS_GROUP_EMPTY[group],
+        tasks: live.filter(
+          (task) =>
+            task.status !== "COMPLETED" && myTasksGroup(task, now) === group,
+        ),
+      }));
+      drawn.push({
+        id: "waiting",
+        label: TASK_STATUS_LABELS.COMPLETED,
+        empty: "Nothing waiting",
+        tasks: live.filter((task) => task.status === "COMPLETED"),
       });
+    } else if (groupBy === "person") {
+      // One group a person who has an unconfirmed task, by name, as Linear
+      // groups a board by assignee. Nobody with nothing open gets an empty
+      // group: in a chapter of sixty that would be most of the page.
+      const byPerson = new Map<string, Task[]>();
+      for (const task of live) {
+        const list = byPerson.get(task.assignee_id) ?? [];
+        list.push(task);
+        byPerson.set(task.assignee_id, list);
+      }
+      drawn = [...byPerson.entries()]
+        .map(([id, list]) => ({
+          id: `person-${id}`,
+          label: id === myUserId ? `${nameOf(id)} (you)` : nameOf(id),
+          empty: "No tasks",
+          tasks: list,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    } else {
+      // The four status lanes. A Status filter keeps its own lane alone (or
+      // none, for Confirmed, which lives under the lanes).
+      drawn = COLUMNS.filter(
+        (column) => statusFilter === null || column.status === statusFilter,
+      ).map((column) => ({
+        id: column.status.toLowerCase(),
+        label: column.label,
+        empty: column.empty,
+        tasks: live.filter((task) => task.status === column.status),
+      }));
     }
-    return { columns: grouped, confirmed: recent };
-  }, [tasks]);
+    for (const group of drawn) group.tasks.sort(compareTasksByDue);
+    return { groups: drawn, confirmed: recent, shown: pool.length };
+  }, [
+    tasks,
+    view,
+    groupBy,
+    assigneeFilter,
+    statusFilter,
+    dueFilter,
+    canManage,
+    myUserId,
+    membersByUserId,
+    nowTick,
+  ]);
 
   // Resolves whether the task was created, so the add row knows to clear.
   async function createFromDraft(draft: TaskDraft): Promise<boolean> {
@@ -494,7 +711,25 @@ export function TasksBoard() {
     );
   }
 
-  const myUserId = (currentUser.data as { id?: string } | undefined)?.id ?? "";
+  // The status lanes say which status a task is in; any other grouping puts
+  // the status on the tile.
+  const statusGrouped = view === "all" && groupBy === "status";
+  // A board nothing matches draws no lanes, so the add row heads the page.
+  const addRowInTodo =
+    statusGrouped &&
+    (statusFilter === null || statusFilter === "TODO") &&
+    !(filtering && shown === 0);
+  const addRow =
+    canManage || !permissionsKnown ? (
+      <Can permission="tasks:manage">
+        <AddTaskRow
+          members={members}
+          gate={gate}
+          pending={createTask.isPending}
+          onCreate={createFromDraft}
+        />
+      </Can>
+    ) : null;
   // Two reads the board renders without, so neither blanks it (#1346, #1209).
   // Each says so instead, above a board that keeps working, and only when it
   // has nothing cached (a failed refetch over a good answer changes nothing
@@ -566,82 +801,144 @@ export function TasksBoard() {
         */
         <>
           {/*
-            The List / Grid switch at the trailing edge, over the groups it
-            lays out (Linear's and Asana's List / Board sit there too).
+            One toolbar row over the groups. An officer's view switch leads
+            it (Asana's My tasks beside a project, Linear's My issues beside
+            the team's); the chapter's board adds its grouping and filter
+            chips (Linear's Display and Filter, as the Directory's chips
+            draw them). The List / Grid switch keeps the trailing edge,
+            where Linear's and Asana's List / Board sit.
           */}
-          <div className="flex justify-end">
-            <ListLayoutToggle screen="tasks" />
+          <div className="flex flex-wrap items-center gap-2">
+            {canManage ? (
+              <SegmentedChoice
+                label="Whose tasks"
+                options={VIEW_OPTIONS}
+                value={view}
+                onChange={setOfficerView}
+              />
+            ) : null}
+            {view === "all" && canManage ? (
+              <>
+                <SegmentedChoice
+                  label="Group tasks"
+                  options={GROUP_BY_OPTIONS}
+                  value={groupBy}
+                  onChange={setGroupBy}
+                />
+                <FilterChip
+                  label="Assignee"
+                  anyLabel="Anyone"
+                  options={filterOptions.assignee}
+                  value={assigneeFilter}
+                  onChange={setAssigneeFilter}
+                />
+                <FilterChip
+                  label="Status"
+                  anyLabel="Any status"
+                  options={filterOptions.status}
+                  value={statusFilter}
+                  onChange={(next) =>
+                    setStatusFilter(next as StatusFilter | null)
+                  }
+                />
+                <FilterChip
+                  label="Due"
+                  anyLabel="Any time"
+                  options={filterOptions.due}
+                  value={dueFilter}
+                  onChange={(next) => setDueFilter(next as DueFilter | null)}
+                />
+                {filtering ? (
+                  <Button
+                    type="button"
+                    size="toolbar"
+                    variant="ghost"
+                    onClick={clearFilters}
+                  >
+                    Clear filters
+                  </Button>
+                ) : null}
+              </>
+            ) : null}
+            <div className="ml-auto">
+              <ListLayoutToggle screen="tasks" />
+            </div>
           </div>
-          <div
-            className={
-              isGrid
-                ? "grid gap-x-6 gap-y-8 @2xl:grid-cols-2 @4xl:grid-cols-4"
-                : "space-y-8"
-            }
-          >
-            {COLUMNS.map((column) => {
-              const list = columns.get(column.status) ?? [];
-              const labelId = `tasks-column-${column.status.toLowerCase()}`;
-              return (
-                <section
-                  key={column.status}
-                  aria-labelledby={labelId}
-                  className="min-w-0 space-y-3"
-                >
-                  <SectionLabel id={labelId} count={list.length}>
-                    {column.label}
-                  </SectionLabel>
-                  {/*
-                    Rule 2: the first action sits where the first item goes.
-                    The add row is the board's only way to create a task, so
-                    it stays at the top of To do once the column fills up.
-                  */}
-                  {column.status === "TODO" &&
-                  (canManage || !permissionsKnown) ? (
-                    <Can permission="tasks:manage">
-                      <AddTaskRow
-                        members={members}
-                        gate={gate}
-                        pending={createTask.isPending}
-                        onCreate={createFromDraft}
-                      />
-                    </Can>
-                  ) : null}
-                  {list.length === 0 ? (
-                    column.status === "TODO" && canManage ? null : (
-                      <p className="text-sm text-muted-foreground">
-                        {column.empty}
-                      </p>
-                    )
-                  ) : (
-                    <ul className={taskListClassName(layout)}>
-                      {list.map((task) => (
-                        <TaskCard
-                          key={task.id}
-                          layout={layout}
-                          task={task}
-                          assigneeName={
-                            membersByUserId.get(task.assignee_id) ??
-                            memberFallbackLabel(task.assignee_id)
-                          }
-                          myUserId={myUserId}
-                          canManage={canManage}
-                          gate={gate}
-                          lifecycleWritePending={lifecycleWritePending}
-                          onChangeStatus={(next, proof) =>
-                            changeStatus(task, next, proof)
-                          }
-                          onConfirm={() => void confirmCompletion(task)}
-                          onReject={() => void rejectCompletion(task)}
-                          onDelete={() => void removeTask(task)}
-                        />
-                      ))}
-                    </ul>
-                  )}
-                </section>
-              );
-            })}
-          </div>
+          {/*
+            Rule 2: the first action sits where the first item goes. On the
+            status board that is the head of To do, as it always was; any
+            other grouping has no To do, so the add row heads the page.
+          */}
+          {canManage && !addRowInTodo ? addRow : null}
+          {filtering && shown === 0 ? (
+            <InlineNote>No tasks match these filters.</InlineNote>
+          ) : view === "mine" && canManage && myUserId === "" ? (
+            // The failed read says so above the board; until it answers,
+            // say what's coming rather than draw an empty page.
+            viewerUnreadable ? null : (
+              <InlineNote>Loading your tasks…</InlineNote>
+            )
+          ) : (
+            <div
+              className={
+                isGrid
+                  ? "grid gap-x-6 gap-y-8 @2xl:grid-cols-2 @4xl:grid-cols-4"
+                  : "space-y-8"
+              }
+            >
+              {groups.map((group) => {
+                const labelId = `tasks-column-${group.id}`;
+                const headsTodo = group.id === "todo" && addRowInTodo;
+                return (
+                  <section
+                    key={group.id}
+                    aria-labelledby={labelId}
+                    className="min-w-0 space-y-3"
+                  >
+                    <SectionLabel id={labelId} count={group.tasks.length}>
+                      {group.label}
+                    </SectionLabel>
+                    {headsTodo ? addRow : null}
+                    {group.tasks.length === 0 ? (
+                      headsTodo && canManage ? null : (
+                        <p className="text-sm text-muted-foreground">
+                          {group.empty}
+                        </p>
+                      )
+                    ) : (
+                      <ul className={taskListClassName(layout)}>
+                        {group.tasks.map((task) => (
+                          <TaskCard
+                            key={task.id}
+                            layout={layout}
+                            task={task}
+                            // Not under a heading that already says it.
+                            showStatus={
+                              !statusGrouped && group.id !== "waiting"
+                            }
+                            assigneeName={
+                              membersByUserId.get(task.assignee_id) ??
+                              memberFallbackLabel(task.assignee_id)
+                            }
+                            myUserId={myUserId}
+                            canManage={canManage}
+                            gate={gate}
+                            lifecycleWritePending={lifecycleWritePending}
+                            onChangeStatus={(next, proof) =>
+                              changeStatus(task, next, proof)
+                            }
+                            onConfirm={() => void confirmCompletion(task)}
+                            onReject={() => void rejectCompletion(task)}
+                            onDelete={() => void removeTask(task)}
+                          />
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+          )}
         </>
       )}
 
@@ -730,6 +1027,7 @@ function taskListClassName(layout: ListLayout): string {
 function TaskCard({
   layout,
   task,
+  showStatus = false,
   assigneeName,
   myUserId,
   canManage,
@@ -742,6 +1040,12 @@ function TaskCard({
 }: {
   layout: ListLayout;
   task: Task;
+  /**
+   * Say where the task stands on the tile: in My tasks and By person no
+   * status lane says it. To do needs no word (its Start says it), and
+   * Overdue is already the due line in the warning hue.
+   */
+  showStatus?: boolean;
   assigneeName: string;
   myUserId: string;
   /** Holds `tasks:manage`: may check off and edit anyone's subtasks. */
@@ -870,6 +1174,16 @@ function TaskCard({
               <Link2 className="h-3 w-3" aria-hidden="true" />
             )}
             {task.proof_kind === "photo" ? "Photo required" : "Link required"}
+          </Badge>
+        ) : null}
+        {showStatus && !sentBack && status === "IN_PROGRESS" ? (
+          <Badge variant="outline" className="ml-1">
+            {TASK_STATUS_LABELS.IN_PROGRESS}
+          </Badge>
+        ) : null}
+        {showStatus && status === "COMPLETED" && !task.points_awarded ? (
+          <Badge variant="outline" className="ml-1">
+            {TASK_STATUS_LABELS.COMPLETED}
           </Badge>
         ) : null}
         {sentBack ? (

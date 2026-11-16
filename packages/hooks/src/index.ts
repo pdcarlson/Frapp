@@ -43,6 +43,7 @@ export * from "./service-entry-card";
 export * from "./setup-checklist";
 export * from "./task-card";
 export * from "./task-review";
+export * from "./task-views";
 export * from "./unset-features";
 export * from "./use-act";
 export * from "./use-activity";
