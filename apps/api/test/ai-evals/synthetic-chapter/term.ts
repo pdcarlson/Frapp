@@ -928,11 +928,6 @@ export const TERM_CORPUS: readonly CorpusDocument[] = [
 // --------------------------------------------------------------- the chapter
 
 /**
- * The chapter as records, for an agent whose tools take arguments: the loop
- * (#4899) backs its tools' services with this instead of a database. The
- * one-shot Ask reads the same records through `harness/term-reads.ts`.
- */
-/**
  * The backwork library's catalog (#5209): what Ask's `find_backwork` reads.
  * Never a file: the catalog is all a model may see.
  */
@@ -1042,6 +1037,11 @@ export const TERM_BACKWORK = {
   ] satisfies TermBackworkFile[],
 } as const;
 
+/**
+ * The chapter as records, for an agent whose tools take arguments: the loop
+ * (#4899) backs its tools' services with this instead of a database. The
+ * one-shot Ask reads the same records through `harness/term-reads.ts`.
+ */
 export interface TermChapter {
   chapterId: string;
   members: readonly SyntheticMember[];

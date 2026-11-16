@@ -155,6 +155,46 @@ describe('find_backwork', () => {
     ).toHaveLength(1);
   });
 
+  it('narrows the search by department and year too', async () => {
+    const { tool } = build([
+      resource(),
+      resource({ id: 'bw-math', department_id: 'dept-math' }),
+      resource({ id: 'bw-2024', year: 2024 }),
+    ]);
+    const result = await tool.run(
+      tool.input.parse({ query: 'midterm', department: 'CSCI', year: '2025' }),
+      context,
+    );
+    expect(result.sources.flatMap((s) => (s.target ? [s.id] : []))).toEqual([
+      'backwork:bw-1',
+    ]);
+  });
+
+  it('never says "none" when a cut search left nothing after its filters', async () => {
+    const full = Array.from({ length: 50 }, (_, i) =>
+      resource({ id: `bw-${i}`, assignment_type: 'Midterm' }),
+    );
+    const { tool } = build(full);
+    const result = await tool.run(
+      tool.input.parse({ query: 'CSCI 1200', type: 'Quiz' }),
+      context,
+    );
+    expect(result.sources).toEqual([]);
+    expect(result.note).toContain('There may still be some');
+    expect(result.note).not.toContain('No backwork file');
+  });
+
+  it('says "at least" when the library list filled its row cap', async () => {
+    const many = Array.from({ length: 1000 }, (_, i) =>
+      resource({ id: `bw-${i}` }),
+    );
+    const { tool } = build([], many);
+    const result = await tool.run(tool.input.parse({}), context);
+    expect(result.sources.find((s) => !s.target)!.text).toContain(
+      'At least 1000 backwork files match.',
+    );
+  });
+
   it('counts a department with the library list, not the capped search', async () => {
     const many = Array.from({ length: 30 }, (_, i) =>
       resource({ id: `bw-${i}`, assignment_type: i % 3 ? 'Homework' : 'Exam' }),

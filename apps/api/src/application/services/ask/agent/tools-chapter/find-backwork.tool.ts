@@ -4,6 +4,9 @@ import {
   ASSIGNMENT_TYPES,
   DOCUMENT_VARIANTS,
   SEMESTERS,
+  backworkCourseCode,
+  backworkFileTitle,
+  backworkTerm,
   findDepartmentByCode,
 } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
@@ -34,6 +37,12 @@ import {
 export const BACKWORK_FILES_SHOWN = 12;
 /** The most the search function ranks in one call (`search_backwork_resources`). */
 const SEARCH_CAP = 50;
+/**
+ * The most rows one list read returns: PostgREST's `max_rows`
+ * (`supabase/config.toml`). A read that fills it may have been cut, so a
+ * count from it is "at least".
+ */
+const LIST_CAP = 1000;
 /** Departments named when the one asked for is not in the library. */
 const DEPARTMENTS_NAMED = 20;
 
@@ -86,35 +95,7 @@ function courseCode(resource: BackworkResource, catalog: Catalog) {
   const department = resource.department_id
     ? catalog.departments.get(resource.department_id)
     : undefined;
-  return (
-    [department?.code, resource.course_number?.trim()]
-      .filter(Boolean)
-      .join(' ') || null
-  );
-}
-
-/** "Fall 2025", "Fall", "2025", or null. */
-function term(resource: BackworkResource): string | null {
-  return [resource.semester, resource.year].filter(Boolean).join(' ') || null;
-}
-
-/**
- * What the chip calls the file: the title it was uploaded with, else what the
- * library row falls back to ("Midterm 2 · CSCI 1200",
- * `apps/web/components/backwork/backwork-library.ts`).
- */
-export function backworkFileName(
-  resource: BackworkResource,
-  code: string | null,
-): string {
-  const fallback = [
-    resource.assignment_type ?? 'Resource',
-    resource.assignment_number,
-    code ? `· ${code}` : null,
-  ]
-    .filter((part) => part !== null && part !== undefined && part !== '')
-    .join(' ');
-  return resource.title?.trim() || fallback || 'Untitled';
+  return backworkCourseCode(department?.code, resource.course_number);
 }
 
 /**
@@ -137,8 +118,8 @@ function fileSource(resource: BackworkResource, catalog: Catalog): AgentSource {
   const professor = resource.professor_id
     ? catalog.professors.get(resource.professor_id)
     : undefined;
-  const when = term(resource);
-  const name = backworkFileName(resource, code);
+  const when = backworkTerm(resource);
+  const name = backworkFileTitle(resource, code);
   const kind = [resource.assignment_type, resource.assignment_number]
     .filter((part) => part !== null && part !== undefined)
     .join(' ');
@@ -251,21 +232,28 @@ export class FindBackworkAgentTool implements AgentReadTool<Args> {
         SEARCH_CAP,
       );
       capped = hits.length >= SEARCH_CAP;
+      // The search ranks words only; the fields narrow its closest 50. When
+      // it was cut there may be more past them, so nothing here is not none.
       matched = hits.filter(fits);
     } else {
-      matched = (
-        await this.backwork.findByChapter(chapterId, {
-          department_id: departmentId ?? undefined,
-          assignment_type: args.type || undefined,
-          semester: args.semester || undefined,
-          year: year ?? undefined,
-          document_variant: args.copy || undefined,
-        })
-      ).filter(fits);
+      const listed = await this.backwork.findByChapter(chapterId, {
+        department_id: departmentId ?? undefined,
+        assignment_type: args.type || undefined,
+        semester: args.semester || undefined,
+        year: year ?? undefined,
+        document_variant: args.copy || undefined,
+      });
+      capped = listed.length >= LIST_CAP;
+      matched = listed.filter(fits);
     }
 
     if (matched.length === 0) {
-      return nothing(context, 'No backwork file in the library matches.');
+      return nothing(
+        context,
+        capped
+          ? `More than ${SEARCH_CAP} files match those words, and none of the closest ${SEARCH_CAP} have the other details asked for. There may still be some: do not say the library has none. Search again with fewer, more exact words, such as the course alone with the type.`
+          : 'No backwork file in the library matches.',
+      );
     }
 
     const shown = matched.slice(0, BACKWORK_FILES_SHOWN);
