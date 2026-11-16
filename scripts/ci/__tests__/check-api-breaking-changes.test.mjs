@@ -422,8 +422,9 @@ test("ci.yml runs the shipped check as a blocking step of the required contract 
 
   const job = workflowJobs(ciPath).find((j) => j.jobId === "api-contract-check");
   // Ungated, apart from the push the merge queue already passed (#5084), whose
-  // queue run ran this same step on the same commit.
-  assert.equal(job.if, "${{ needs.changes.outputs.queue_tested != 'true' }}");
+  // queue run ran this same step on the same commit, and a docs-only change
+  // (#5141), which can't move the contract.
+  assert.equal(job.if, "${{ needs.changes.outputs.skip_suite != 'true' }}");
   assert.doesNotMatch(String(job.keys.get("continue-on-error") ?? ""), /true/);
 });
 
