@@ -309,30 +309,42 @@ function findTime(
 export function parseTimeEntry(raw: string, anchor = "19:00"): string | null {
   const text = raw.trim().toLowerCase().replace(/\s+/g, " ");
   if (!text) return null;
-  const found = findTime(text);
-  if (found)
-    return found.rest ? null : `${pad(found.hours)}:${pad(found.minutes)}`;
+  // No AM or PM: `7`, `730`, `7:30`, `19:30`, `07:30`. Read before
+  // `findTime`, which takes `7:30` for the morning.
   const bare = /^(\d{1,2})(?::?(\d{2}))?$/.exec(text);
-  if (!bare) return null;
-  let hours = Number(bare[1]);
-  const minutes = bare[2] ? Number(bare[2]) : 0;
-  if (minutes > 59 || hours > 23) return null;
-  if (hours >= 1 && hours <= 12) {
-    if (hours === 12) {
-      hours = 12;
-    } else {
+  if (bare) {
+    let hours = Number(bare[1]);
+    const minutes = bare[2] ? Number(bare[2]) : 0;
+    if (minutes > 59 || hours > 23) return null;
+    // A leading zero (`07`, `0730`) is already the 24-hour clock.
+    const padded = bare[1]!.length === 2 && bare[1]!.startsWith("0");
+    if (!padded && hours >= 1 && hours <= 11) {
       const [ah = 19, am = 0] = anchor.split(":").map(Number);
       const at = ah * 60 + am;
       const morning = hours * 60 + minutes;
-      const evening = morning + 12 * 60;
       const gap = (value: number) => {
         const d = Math.abs(value - at);
         return Math.min(d, 24 * 60 - d);
       };
-      if (gap(evening) <= gap(morning)) hours += 12;
+      if (gap(morning + 12 * 60) <= gap(morning)) hours += 12;
     }
+    return `${pad(hours)}:${pad(minutes)}`;
   }
-  return `${pad(hours)}:${pad(minutes)}`;
+  const found = findTime(text);
+  if (found && !found.rest) return `${pad(found.hours)}:${pad(found.minutes)}`;
+  return null;
+}
+
+/**
+ * Minutes from `from` to `to` (both `HH:MM`), running past midnight when
+ * `to` is the earlier clock time: 9 PM to 12:30 AM is 210. Zero when equal.
+ */
+export function timeSpanMinutes(from: string, to: string): number {
+  const of = (time: string) => {
+    const [h = 0, m = 0] = time.split(":").map(Number);
+    return h * 60 + m;
+  };
+  return (((of(to) - of(from)) % 1440) + 1440) % 1440;
 }
 
 /** `HH:MM` plus `minutes`, wrapping past midnight. */

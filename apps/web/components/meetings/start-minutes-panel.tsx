@@ -16,6 +16,7 @@ import {
   MEETING_TYPE_LABELS,
   STANDARDS_MEETING_NOTE,
   can,
+  checkInWindowBounds,
   type MeetingType,
 } from "@repo/validation";
 import {
@@ -69,6 +70,7 @@ type EventRow = {
   name: string;
   start_time: string;
   end_time?: string | null;
+  check_in_opens_minutes?: number | null;
 };
 type Source = { kind: "event"; id: string } | { kind: "new" };
 
@@ -114,10 +116,19 @@ export function likelyMeeting(
   now: number,
 ): EventRow | null {
   const open = events.filter((event) => !withMinutes.has(event.id));
+  // "On" is its check-in window, as the live-meeting card reads it.
   const on = open.find((event) => {
-    const start = Date.parse(event.start_time);
-    const end = Date.parse(event.end_time ?? "") || start + 3_600_000;
-    return start - 15 * 60_000 <= now && now <= end + 15 * 60_000;
+    const start = new Date(event.start_time);
+    const end = new Date(event.end_time ?? "");
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return false;
+    }
+    const { opensAt, closesAt } = checkInWindowBounds(
+      start,
+      end,
+      event.check_in_opens_minutes,
+    );
+    return opensAt.getTime() <= now && now <= closesAt.getTime();
   });
   if (on) return on;
   return (
@@ -129,7 +140,7 @@ export function likelyMeeting(
 }
 
 /**
- * Start minutes (`spec/behavior/meetings.md` § Writing minutes): pick the
+ * Start minutes (`spec/behavior/meetings.md` § Writing minutes by hand): pick the
  * meeting from the calendar, the way Granola and Otter attach a note to the
  * calendar event it was taken in, or name one that never made it onto the
  * calendar. One question at a time (#5219): the likely meeting comes picked,
@@ -242,16 +253,27 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     opens straight on the meeting's name. The officer's own pick wins, and
     the panel's pick isn't kept as a draft: an untouched form keeps nothing.
   */
+  // Events the server said already have minutes this viewer can't see (an
+  // officer's unposted draft): the panel's pick moves past them.
+  const [taken, setTaken] = useState<string[]>([]);
   const autoSource = useMemo<Source | null>(() => {
+    // Without the minutes list it can't tell which meetings have them.
     if (eventsQuery.isPending || meetingsQuery.isPending) return null;
-    const likely = likelyMeeting(recent, new Set(started.keys()), now);
+    if (meetingsQuery.isError) return null;
+    const likely = likelyMeeting(
+      recent,
+      new Set([...started.keys(), ...taken]),
+      now,
+    );
     if (likely) return { kind: "event", id: likely.id };
     return recent.length === 0 && canCreateEvents ? { kind: "new" } : null;
   }, [
     eventsQuery.isPending,
     meetingsQuery.isPending,
+    meetingsQuery.isError,
     recent,
     started,
+    taken,
     now,
     canCreateEvents,
   ]);
@@ -348,6 +370,11 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
         // Someone started them while this panel was open. The list refetches
         // with them in it when the viewer may read them.
         void meetingsQuery.refetch();
+        if (source.kind === "event") {
+          const id = source.id;
+          setTaken((before) => [...before, id]);
+          if (chosen?.kind === "event") setChosen(null);
+        }
         toast({
           title: "These minutes are already started",
           description:

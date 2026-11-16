@@ -1,7 +1,12 @@
 "use client";
 
 import { useId, useState } from "react";
-import { addMinutesToTime, localClock, localIsoDate } from "@repo/formatting";
+import {
+  addMinutesToTime,
+  localClock,
+  localIsoDate,
+  timeSpanMinutes,
+} from "@repo/formatting";
 import { FieldError } from "@/components/shared/short-form";
 import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
@@ -33,6 +38,8 @@ export const DEFAULT_MEETING_NAME = "Chapter meeting";
 const EVENING_START = "19:00";
 /** How long a meeting with no end typed runs. */
 const DEFAULT_LENGTH_MINUTES = 60;
+/** The longest a meeting runs; the end field lists no further (`TimeField`). */
+export const MAX_LENGTH_MINUTES = 12 * 60;
 
 type EventTimes = { name: string; start_time: string };
 
@@ -50,12 +57,17 @@ export function localIso(date: string, time: string): string | null {
  * window, which only matters while the meeting is on. With no start typed, a
  * meeting today starts now (so members can check in while it runs), and an
  * earlier day takes the time the chapter's last event of the same name
- * started, or 7 PM. With no end, it runs an hour.
+ * started, or 7 PM. With no end, it runs an hour. An end earlier on the
+ * clock than the start ran past midnight, up to {@link MAX_LENGTH_MINUTES}.
+ *
+ * `live: false` is for minutes already written (Link an event): their
+ * meeting is over, so today is read like any other day, not as starting now.
  */
 export function offCalendarSpan(
   meeting: Pick<OffCalendarMeeting, "name" | "date" | "startTime" | "endTime">,
   events: EventTimes[],
   now: Date,
+  { live = true }: { live?: boolean } = {},
 ):
   | { start_time: string; end_time: string }
   | { problem: string; field: "date" | "time" } {
@@ -73,7 +85,7 @@ export function offCalendarSpan(
   }
   const start =
     meeting.startTime ||
-    (meeting.date === localIsoDate(now)
+    (live && meeting.date === localIsoDate(now)
       ? floorToFive(localClock(now))
       : (lastStartOf(meeting.name, events) ?? EVENING_START));
   const startIso = localIso(meeting.date, start);
@@ -85,16 +97,9 @@ export function offCalendarSpan(
   }
   let length = DEFAULT_LENGTH_MINUTES;
   if (meeting.endTime) {
-    length = minutesOf(meeting.endTime) - minutesOf(start);
-    // An evening meeting that ran past midnight: 9 PM to 12:30 AM.
-    if (
-      length < 0 &&
-      minutesOf(start) >= 18 * 60 &&
-      minutesOf(meeting.endTime) <= 6 * 60
-    ) {
-      length += 24 * 60;
-    }
-    if (length <= 0) {
+    // 9 PM to 12:30 AM ran past midnight.
+    length = timeSpanMinutes(start, meeting.endTime);
+    if (length <= 0 || length > MAX_LENGTH_MINUTES) {
       return { problem: "It has to end after it starts.", field: "time" };
     }
   }
@@ -102,13 +107,8 @@ export function offCalendarSpan(
   return { start_time: startIso, end_time: end };
 }
 
-function minutesOf(time: string): number {
-  const [h = 0, m = 0] = time.split(":").map(Number);
-  return h * 60 + m;
-}
-
 function floorToFive(time: string): string {
-  const total = minutesOf(time);
+  const total = timeSpanMinutes("00:00", time);
   return addMinutesToTime("00:00", total - (total % 5));
 }
 
@@ -196,7 +196,7 @@ export function OffCalendarMeetingFields({
                 // calendar's does; a first start fills an hour's end.
                 const length =
                   value.startTime && value.endTime
-                    ? minutesOf(value.endTime) - minutesOf(value.startTime)
+                    ? timeSpanMinutes(value.startTime, value.endTime)
                     : DEFAULT_LENGTH_MINUTES;
                 set({
                   startTime,
@@ -215,6 +215,7 @@ export function OffCalendarMeetingFields({
               value={value.endTime}
               anchor={value.startTime || undefined}
               from={value.startTime || undefined}
+              span={MAX_LENGTH_MINUTES}
               placeholder="8 PM"
               aria-invalid={problems.time ? true : undefined}
               onChange={(endTime) => set({ endTime })}

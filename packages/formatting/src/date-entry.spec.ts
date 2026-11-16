@@ -7,6 +7,7 @@ import {
   parseDateEntryWithTime,
   parseTimeEntry,
   addMinutesToTime,
+  timeSpanMinutes,
 } from "./date-entry";
 
 // Monday, 9 November 2026, mid-afternoon local.
@@ -265,6 +266,16 @@ describe("parseTimeEntry (#5219)", () => {
     expect(parseTimeEntry("10", "09:00")).toBe("10:00");
     expect(parseTimeEntry("12")).toBe("12:00");
     expect(parseTimeEntry("0")).toBe("00:00");
+    expect(parseTimeEntry("7:30")).toBe("19:30");
+    expect(parseTimeEntry("8:30", "19:00")).toBe("20:30");
+    expect(parseTimeEntry("10:30", "09:00")).toBe("10:30");
+    expect(parseTimeEntry("12:30")).toBe("12:30");
+  });
+
+  it("keeps a leading zero on the 24-hour clock", () => {
+    expect(parseTimeEntry("0730")).toBe("07:30");
+    expect(parseTimeEntry("07:30")).toBe("07:30");
+    expect(parseTimeEntry("09")).toBe("09:00");
   });
 
   it("reads nothing else", () => {
@@ -280,5 +291,13 @@ describe("addMinutesToTime", () => {
   it("adds and wraps past midnight", () => {
     expect(addMinutesToTime("19:00", 60)).toBe("20:00");
     expect(addMinutesToTime("23:30", 60)).toBe("00:30");
+  });
+});
+
+describe("timeSpanMinutes", () => {
+  it("runs past midnight", () => {
+    expect(timeSpanMinutes("19:00", "20:30")).toBe(90);
+    expect(timeSpanMinutes("21:00", "00:30")).toBe(210);
+    expect(timeSpanMinutes("14:00", "14:00")).toBe(0);
   });
 });

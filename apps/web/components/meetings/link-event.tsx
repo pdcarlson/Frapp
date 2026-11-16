@@ -91,6 +91,9 @@ export function LinkEventPanel({
       meeting,
       asArray<EventRow>(eventsQuery.data),
       new Date(),
+      // These minutes are written: their meeting is over, so today doesn't
+      // mean starting now.
+      { live: false },
     );
     if ("problem" in span) {
       setProblem(span.problem);

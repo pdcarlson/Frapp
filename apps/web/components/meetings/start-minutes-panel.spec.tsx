@@ -345,4 +345,102 @@ describe("StartMinutesPanel picks the meeting", () => {
       screen.getByRole("button", { name: /Meeting 7/ }),
     ).toBeInTheDocument();
   });
+
+  it("prefers the meeting about to start over the newest past one", () => {
+    const now = Date.now();
+    mocks.events.current = [
+      {
+        id: "e-past",
+        name: "Exec meeting",
+        start_time: new Date(now - 24 * hour).toISOString(),
+        end_time: new Date(now - 23 * hour).toISOString(),
+        check_in_opens_minutes: 10,
+      },
+      {
+        id: "e-soon",
+        name: "Chapter meeting",
+        start_time: new Date(now + 5 * 60_000).toISOString(),
+        end_time: new Date(now + hour).toISOString(),
+        check_in_opens_minutes: 10,
+      },
+    ];
+    mocks.meetings.current = [];
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(
+      screen.getByRole("button", { name: /Chapter meeting/, pressed: true }),
+    ).toBeInTheDocument();
+  });
+
+  it("reaches back 120 days, five rows at a time", () => {
+    const now = Date.now();
+    const day = 24 * hour;
+    mocks.events.current = [1, 2, 3, 4, 5, 100, 130].map((ago) => ({
+      id: `e-${ago}`,
+      name: `Meeting ${ago}`,
+      start_time: new Date(now - ago * day).toISOString(),
+      end_time: new Date(now - ago * day + hour).toISOString(),
+    }));
+    mocks.meetings.current = [];
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(
+      screen.getByRole("button", { name: /Meeting 5\D/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Meeting 100/ })).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show older meetings" }),
+    );
+    expect(
+      screen.getByRole("button", { name: /Meeting 100/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Meeting 130/ })).toBeNull();
+  });
+
+  it("states the type in one line, and shows the Standards note only on Change", () => {
+    const now = Date.now();
+    mocks.events.current = [
+      {
+        id: "e-1",
+        name: "Chapter meeting",
+        start_time: new Date(now - 24 * hour).toISOString(),
+        end_time: new Date(now - 23 * hour).toISOString(),
+      },
+    ];
+    mocks.meetings.current = [];
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.queryByText(/Standards/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(screen.getByText(/Standards/)).toBeInTheDocument();
+  });
+
+  it("moves its pick past a meeting someone else already started", async () => {
+    const now = Date.now();
+    mocks.events.current = [
+      {
+        id: "e-new",
+        name: "Chapter meeting",
+        start_time: new Date(now - 24 * hour).toISOString(),
+        end_time: new Date(now - 23 * hour).toISOString(),
+      },
+      {
+        id: "e-old",
+        name: "Exec meeting",
+        start_time: new Date(now - 48 * hour).toISOString(),
+        end_time: new Date(now - 47 * hour).toISOString(),
+      },
+    ];
+    mocks.meetings.current = [];
+    mocks.start
+      .mockReset()
+      .mockRejectedValue(
+        Object.assign(new Error("taken"), { code: "meeting.already_started" }),
+      );
+    render(<StartMinutesPanel open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Start minutes" }));
+    await vi.waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Exec meeting/, pressed: true }),
+      ).toBeInTheDocument(),
+    );
+  });
 });

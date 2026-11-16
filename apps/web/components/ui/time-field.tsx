@@ -1,7 +1,11 @@
 "use client";
 
 import { forwardRef, useEffect, useId, useRef, useState } from "react";
-import { formatDueTimeLabel, parseTimeEntry } from "@repo/formatting";
+import {
+  formatDueTimeLabel,
+  parseTimeEntry,
+  timeSpanMinutes,
+} from "@repo/formatting";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
@@ -37,6 +41,8 @@ type TimeFieldProps = Omit<
    * long the meeting would run, `8 PM (1 hr)`, as Google Calendar's does.
    */
   from?: string;
+  /** With `from`: how many minutes after it the list reaches. */
+  span?: number;
 };
 
 /**
@@ -55,6 +61,7 @@ export const TimeField = forwardRef<HTMLInputElement, TimeFieldProps>(
       onChange,
       anchor = "19:00",
       from,
+      span = 24 * 60,
       onBlur,
       onKeyDown,
       onPointerDown,
@@ -80,8 +87,11 @@ export const TimeField = forwardRef<HTMLInputElement, TimeFieldProps>(
       }
     }
 
-    const options = from ? rotateFrom(from) : TIMES;
-    const near = value || nearestStep(anchor);
+    const options = from ? rotateFrom(from, span) : TIMES;
+    // The row to highlight: the held time's step, so a time off the quarter
+    // hours (7:05) still lands on a row.
+    const step0 = nearestStep(value || anchor);
+    const near = options.includes(step0) ? step0 : (options[0] ?? step0);
     const [active, setActive] = useState<string | null>(null);
     const highlighted = active ?? near;
     const unreadable = text.trim() !== "" && !value;
@@ -234,8 +244,7 @@ export const TimeField = forwardRef<HTMLInputElement, TimeFieldProps>(
 );
 
 function toMinutes(time: string): number {
-  const [h = 0, m = 0] = time.split(":").map(Number);
-  return h * 60 + m;
+  return timeSpanMinutes("00:00", time);
 }
 
 /** The list step at or just after `time`. */
@@ -244,16 +253,21 @@ function nearestStep(time: string): string {
   return TIMES.find((step) => toMinutes(step) >= at) ?? TIMES[0] ?? "00:00";
 }
 
-/** The list starting a step after `from`, for an end field. */
-function rotateFrom(from: string): string[] {
+/** The list from a step after `from` to `span` minutes after it, for an end field. */
+function rotateFrom(from: string, span: number): string[] {
   const start = TIMES.indexOf(nearestStep(from));
   const index = start < 0 ? 0 : start;
-  return [...TIMES.slice(index + 1), ...TIMES.slice(0, index + 1)];
+  return [...TIMES.slice(index + 1), ...TIMES.slice(0, index + 1)].filter(
+    (time) => {
+      const minutes = timeSpanMinutes(from, time);
+      return minutes > 0 && minutes <= span;
+    },
+  );
 }
 
 /** `30 min`, `1 hr`, `1.5 hrs`: how long from `from` to `to`, past midnight too. */
 export function durationLabel(from: string, to: string): string {
-  const minutes = (toMinutes(to) - toMinutes(from) + 1440) % 1440;
+  const minutes = timeSpanMinutes(from, to);
   if (minutes < 60) return `${minutes} min`;
   const hours = minutes / 60;
   const shown = Number.isInteger(hours)
