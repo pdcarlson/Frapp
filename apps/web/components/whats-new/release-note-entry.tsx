@@ -1,3 +1,5 @@
+"use client";
+
 import {
   FRESH_RELEASE_NOTE_CAPTION,
   formatReleaseNoteDate,

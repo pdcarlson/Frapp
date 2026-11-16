@@ -412,12 +412,20 @@ describe("nextReleaseNoteSnapshot", () => {
 
   it("refreshes the lines after a reword without marking it", () => {
     const stored = { date: "2026-11-16", lines: ["a", "b"], fresh: ["b"] };
-    const reworded = [day("2026-11-16", ["a", "b, said better"])];
+    const reworded = [day("2026-11-16", ["a, said better", "b"])];
     expect(nextReleaseNoteSnapshot(reworded, stored)).toEqual({
       date: "2026-11-16",
-      lines: ["a", "b, said better"],
+      lines: ["a, said better", "b"],
       fresh: ["b"],
     });
+  });
+
+  it("keeps a fresh line marked under its new words", () => {
+    const stored = { date: "2026-11-16", lines: ["a", "b"], fresh: ["b"] };
+    const reworded = [day("2026-11-16", ["a", "b, said better"])];
+    expect(nextReleaseNoteSnapshot(reworded, stored)?.fresh).toEqual([
+      "b, said better",
+    ]);
   });
 
   it("changes nothing for an older bundle, so a newer one isn't marked twice", () => {

@@ -675,7 +675,9 @@ function releaseNoteLines(note: ReleaseNote): string[] {
  * {@link isNewerReleaseNoteVersion} sets new fresh lines: every line of an
  * entry dated after the stored one, and the stored day's lines it didn't
  * have. A bundle with the same count on the same day (a reword) refreshes the
- * remembered lines and keeps the fresh ones; anything older (a rollback, or a
+ * remembered lines and keeps the fresh ones, under their new words; an
+ * update that rewords a line and adds others can't tell the reword from an
+ * addition, so it marks the reworded line too; anything older (a rollback, or a
  * tab still on an earlier deploy) changes nothing, so going forward again
  * doesn't mark lines twice. A device with no snapshot marks nothing: it
  * can't know what its last update had.
@@ -701,7 +703,20 @@ export function nextReleaseNoteSnapshot(
     return { date: newest.date, lines, fresh };
   }
   if (current.date === seen.date && current.lines === seen.lines) {
-    return { ...stored, lines };
+    // A reword: a fresh line keeps its mark under its new words. The
+    // reworded lines are paired in order, which a reword of one line (the
+    // usual case) always gets right.
+    const now = new Set(lines);
+    const had = new Set(stored.lines);
+    const removed = stored.lines.filter((line) => !now.has(line));
+    const added = lines.filter((line) => !had.has(line));
+    const wasFresh = new Set(stored.fresh);
+    const fresh = stored.fresh.filter((line) => now.has(line));
+    removed.forEach((line, i) => {
+      const reworded = added[i];
+      if (wasFresh.has(line) && reworded !== undefined) fresh.push(reworded);
+    });
+    return { ...stored, lines, fresh };
   }
   return stored;
 }
