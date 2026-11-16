@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { anyReadUncached, pausedRead } from "@/components/shared/async-states";
 
 /**
  * The predicate behind every `isOffline && …` gate on the dashboard (#1621).
@@ -67,5 +67,36 @@ describe("anyReadUncached", () => {
     // a page that has a correct empty state to show.
     expect(anyReadUncached({ data: [] })).toBe(false);
     expect(anyReadUncached({ data: null })).toBe(false);
+  });
+});
+
+/**
+ * The paused-read rule (#1782): pending *and* paused. Each half rules out a
+ * state the other admits, so deleting either conjunct turns one of these red:
+ * without `isPending`, a cached read whose refetch paused reads as paused;
+ * without the `fetchStatus` test, a read that is merely loading, or was never
+ * started, does.
+ */
+describe("pausedRead", () => {
+  it("is true for a pending read whose fetch paused", () => {
+    expect(pausedRead({ isPending: true, fetchStatus: "paused" })).toBe(true);
+  });
+
+  it("is false for a pending read that is still fetching", () => {
+    expect(pausedRead({ isPending: true, fetchStatus: "fetching" })).toBe(
+      false,
+    );
+  });
+
+  it("is false for a pending read that was never started", () => {
+    // `isPending && !isFetching` would say true here, conflating "we could
+    // not ask" with "we did not ask".
+    expect(pausedRead({ isPending: true, fetchStatus: "idle" })).toBe(false);
+  });
+
+  it("is false for a cached read whose refetch paused", () => {
+    expect(pausedRead({ isPending: false, fetchStatus: "paused" })).toBe(
+      false,
+    );
   });
 });

@@ -35,6 +35,7 @@ import {
   type SearchPickerOption,
   type SearchTokenKind,
 } from "./chat-search-filters";
+import { MessageRowBody, messageRowButtonClass } from "./message-list-row";
 import { replyPreviewText } from "./reply-quote";
 
 export type { SearchPickerOption } from "./chat-search-filters";
@@ -700,11 +701,7 @@ function ChatSearchResults({
               <button
                 type="button"
                 onClick={() => onPick(hit)}
-                className={cn(
-                  "block w-full px-3 py-3 text-left text-caption transition-colors",
-                  "hover:bg-card-hover hover:text-foreground",
-                  FOCUS_RING,
-                )}
+                className={messageRowButtonClass()}
               >
                 <span className="flex items-baseline justify-between gap-2">
                   <span className="truncate font-semibold text-foreground">
@@ -726,10 +723,7 @@ function ChatSearchResults({
                     in {channelName ?? "another channel"}
                   </span>
                 ) : null}
-                {/* foundations §7: message prose is body text, never below 16. */}
-                <span className="mt-1 line-clamp-3 block whitespace-pre-wrap text-base text-muted-foreground">
-                  {replyPreviewText(hit.message)}
-                </span>
+                <MessageRowBody>{replyPreviewText(hit.message)}</MessageRowBody>
               </button>
             </li>
           );

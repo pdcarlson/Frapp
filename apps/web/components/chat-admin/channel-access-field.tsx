@@ -19,6 +19,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { FOCUS_RING } from "@/components/ui/focus";
+import { pausedRead } from "@/components/shared/async-states";
 
 import {
   channelAccessKindHeading,
@@ -35,6 +36,28 @@ export {
   type ChannelAccessOption,
   type ChannelAccessQuestion,
 } from "@repo/hooks/channel-access";
+
+/** Whether a field's options have loaded, as `ChannelAccessField` reads it. */
+export type ChannelAccessOptionsState = "ready" | "loading" | "error";
+
+/**
+ * The options read's state for `ChannelAccessField`, so the channel page and
+ * the create sheet answer it the same way. A paused read is `"error"`, not
+ * `"loading"`: nothing settles it until reconnect, so a spinner would hold
+ * for the whole outage.
+ */
+export function channelAccessOptionsState(query: {
+  data: unknown;
+  isError: boolean;
+  isPending: boolean;
+  fetchStatus: string;
+}): ChannelAccessOptionsState {
+  return query.data !== undefined
+    ? "ready"
+    : query.isError || pausedRead(query)
+      ? "error"
+      : "loading";
+}
 
 const EVERYONE = "everyone";
 const CHOSEN = "chosen";
@@ -94,7 +117,7 @@ export function ChannelAccessField({
   onChange: (next: string[] | null) => void;
   options: readonly ChannelAccessOption[];
   /** Whether the options have loaded; the field still shows what it holds. */
-  optionsState: "ready" | "loading" | "error";
+  optionsState: ChannelAccessOptionsState;
   disabled?: boolean;
 }) {
   const mode = value === null ? EVERYONE : CHOSEN;
@@ -237,7 +260,7 @@ function AddEntry({
 }: {
   label: string;
   options: readonly ChannelAccessOption[];
-  optionsState: "ready" | "loading" | "error";
+  optionsState: ChannelAccessOptionsState;
   onAdd: (entry: string) => void;
 }) {
   const [open, setOpen] = useState(false);
