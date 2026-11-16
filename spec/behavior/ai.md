@@ -14,6 +14,7 @@ Chat in chapter channels is also a source, announcements included, for members w
 > This file used to say the chapter chat is not part of the AI corpus in v1, trading cross-conversation synthesis for confidence in every answer.
 > Paul reversed that: chat carries much of a chapter's context, so it is in, with a per-member choice.
 > The confidence concern is kept by the rules in [Chat as a source](#chat-as-a-source): chat ranks below official sources, is cited as chat, and can never trigger an action.
+> _(2026-11-16, #5179: chat no longer ranks below official sources; it is labelled as chat and the model weighs it.)_
 
 How the pieces are meant to fit is [`spec/architecture/README.md`](../architecture/README.md) §13 and ADR-28.
 
@@ -48,7 +49,7 @@ Prose, embedded once and re-embedded when its source is edited:
 | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Meeting minutes and transcripts                     | Stored with `meeting_type` metadata so the summarizer can vary tone (see [`meetings.md`](meetings.md)). |
 | Uploaded chapter documents                          | Bylaws, policies, calendars from Chapter Docs ([`chapter-docs.md`](chapter-docs.md)).  |
-| Channel messages                                    | Messages in chapter channels, from members who agreed, announcements included. Ranked below the two rows above. Rules: [Chat as a source](#chat-as-a-source). |
+| Channel messages                                    | Messages in chapter channels, from members who agreed, announcements included. Ranked by how well they match, like the rows above (#5179). Rules: [Chat as a source](#chat-as-a-source). |
 
 ### Live structured data (tool-called, never embedded)
 
@@ -93,7 +94,8 @@ That is the model's judgment, given the context, not a ranking rule.
   A private or role-gated channel never leaks through an answer.
 - **A block holds.**
   An answer never quotes or cites a member the asker has blocked, as the timeline, search and reply quotes already don't ([`chat/README.md` § What a block does and does not hide](chat/README.md#what-a-block-does-and-does-not-hide)).
-- **Chat ranks below documents and minutes and is cited as chat.**
+- **Chat is labelled and cited as chat.**
+  It is ranked by how well it matches, like any other source: its score used to be halved and the record always put first, and Paul removed both on 2026-11-16 ([#5179](https://github.com/pdcarlson/Frapp/issues/5179)), since each line now says what it is and the model weighs it.
   Each line says who wrote it and how: posted as an announcement, a reply in a thread, or imported from Discord. Through Ask's tools it also says when, and the roles the author holds.
   The citation names the channel, the date and the author, and links to the message.
   When chat disagrees with a bylaw, minutes or an announcement, the answer shows both, as [Citation requirement](#citation-requirement) says for any conflict.
@@ -300,7 +302,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   The server checks every quote against its source ([Citation requirement](#citation-requirement)).
   An answer left with no checked citation is not shown: the member reads "I couldn't find that in your chapter's documents, minutes or records."
   Through the tool loop, one exception (changed by Paul, 2026-11-16): some right answers rest on no source, such as "hi" back, what Frapp can do, "I don't give out phone numbers" or "which Jordan do you mean?".
-  Frapp answers those at once without reading, and one short sentence with no citation is shown, marked as Frapp's own words (`own_words`), when no quote was tried and dropped and the whole reply is one line of at most 400 characters (the sentence itself at most 240).
+  Frapp answers those at once without reading, and one short sentence with no citation is shown, marked as Frapp's own words (`own_words`), when no quote was tried and dropped and the whole reply is at most 400 characters: shown whole up to 240, otherwise its first sentence. It may run to several lines or a short list (Paul, 2026-11-16, [#5179](https://github.com/pdcarlson/Frapp/issues/5179): "which Jordan?" with the names below it used to become "couldn't find that").
   Anything longer with no checked citation is still "couldn't find that". An answer in Frapp's own words cannot be posted to a channel.
   When some quotes were dropped and others stood, the answer says part of it could not be matched.
 - **What streams is a preview.**

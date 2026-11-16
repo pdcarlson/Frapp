@@ -5,8 +5,8 @@
  * What is the product's here, and so is what a case grades:
  *
  * - `CorpusRetrievalService`: which chapter is searched, the per-source
- *   access check, the passage-level consent check, chat after official
- *   sources, the left-out count.
+ *   access check, the passage-level consent check, the ranking (chat no
+ *   longer after official sources, #5179), the left-out count.
  * - `ChatMessageCorpusSource` (#4314): a chat passage is readable only in a
  *   channel the asker can open, and only while every author in it says yes.
  * - `buildChatWindowChunks`: how a channel's messages become passages, and

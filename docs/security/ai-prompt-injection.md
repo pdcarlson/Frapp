@@ -275,8 +275,17 @@ index (#4314) and on Ask (#450). They are the security-bearing subset of
 what it is (a chat line also says who wrote it, the author's roles through the tools, and whether it
 was an announcement), and the prompt asks the model to weigh that. The conflict rule above still
 holds, with an announcement read as the chat it now is: both sides are shown, a record or an
-announcement before what members said, and chat is named as chat. The ranking in code (chat's score halved, official passages placed first) is unchanged;
-whether to keep it is on the list for Paul in #5170.
+announcement before what members said, and chat is named as chat.
+
+> **C8 "ranks below official sources", changed in #5187 by pdcarlson, 2026-11-16 (decided by Paul
+> in #5179).** Before: retrieval halved a chat passage's score and put every official passage ahead
+> of chat whatever the scores, so chat could only reach a model after the record. Now chat is ranked
+> by how well it matches. What holds instead: every chat source is still labelled as chat, with its
+> author, roles and kind; the prompts still ask for both sides of a conflict, the record or
+> announcement first; consent, channel access and blocks are unchanged; and nothing in chat can cause
+> an action (C3, C5). What this gives up: a planted message that matches a question well can now be
+> the first source a model reads. C1 (a source is never an instruction) and C6 (a claim stands only
+> on a quote found word for word) are what contain that.
 
 (Added 2026-11-12, #3946.) Catch me up reads chat directly, not through the index, and keeps the
 same rules: `ChatCatchUpService` checks the reader's channel access and each author's yes before the
@@ -337,8 +346,9 @@ or writes. `AgentLoopService` holds every rule below in code.
 > sentence").** The first run against a real model showed that a correct decline ("I don't give out
 > phone numbers") or a question back ("which Jordan?") has no source, so all of them reached the
 > member as "couldn't find that"; so did "testing" and "what can you do?". Now, through the loop
-> only, a turn with no citation that stood and none that was dropped shows the first sentence of
-> what the model wrote when the whole of it is one line of at most 400 characters
+> only, a turn with no citation that stood and none that was dropped shows what the model wrote
+> when the whole of it is at most 400 characters (whole up to 240, else its first sentence; since
+> #5179, 2026-11-16, it may run to several lines or a short list, so "which Jordan?" can name them)
 > (`agent/own-words.ts`), marked as Frapp's own words (`AskAnswer.own_words`) and never postable to
 > a channel. What this gives up: that sentence is the model's, unchecked, so a planted message or a
 > wrong guess can put one sentence of the model's choosing in front of the asker, labelled as not
@@ -565,8 +575,8 @@ the chapter's hourly limit and its anomaly flag.
 implementation. The suite grades the corpus, the enforcement logic, and (since 2026-11-12, #4306)
 every behavioural case against the AI gateway with a scripted model. That run has no model's
 judgment in it, and of the rules it exercises only the gateway's quote check is product code: the
-chapter filter, the chat filters and ordering of C8 (consent, channel access, chat after official
-sources) and the refusal on silence are in the suite's test agent, and the tool cases pass
+chapter filter, the chat filters of C8 (consent, channel access; chat is no longer ordered after
+official sources, #5179) and the refusal on silence are in the suite's test agent, and the tool cases pass
 because that agent has no tools (the suite's README has the table). CI sets `AI_EVALS_REQUIRE_AGENT=1`, so a build with no
 agent registered fails.
 
@@ -600,7 +610,7 @@ Mapping of control to enforcement:
 | C5 mutating tools opt-in          | `forbidsMutation` / `allowedTools`; `ask-agent.eval-spec.ts`; `act-agent.eval-spec.ts`; `ask-conversation.service.spec.ts` (which lane ends a turn, and what each is shown)                       | yes, behind `AI_ENABLED`: the call that answers has no mutating tool and refuses to run one. Since #4699 a request is typed in the same field and read by a separate call that sees only the member's own messages, for a member with `ai:act`; the result is a proposal the asker confirms. `/v1/ai/act` (#718) stays for shipped app builds. Through the tool loop (`ASK_AGENT=on`, off) the reading model may itself prepare a card, which changes nothing until the asker confirms (§ The tool loop, C5 as changed in #4899; `agent-loop.service.spec.ts`, `act-agent-tools.spec.ts`, `ask.service.spec.ts` "cards from inside the loop"); no eval case covers a planted request there yet (#4903). The prompts (`ask.plan@v3`, `ask.answer@v3` since #4890) have not been graded against a real provider yet (#4707) |
 | C6 structural, grounded citations | `mustCite` + `citation-grounding`                                                                                                                                                                 | yes, behind `AI_ENABLED` (the gateway)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | C7 refusal on silence             | `mustRefuse`, `mustSurfaceConflict`, `mustNotMention`                                                                                                                                             | yes, behind `AI_ENABLED` (`AskService`: no kept citation, no answer)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| C8 chat rules                     | `chat-consent` and `channel-access` (universal), `mustReportLeftOut`, `mustNotReportLeftOutAbove`, `mustCiteFirst`; `ask-agent.eval-spec.ts` for chat after official sources and labelled as chat | yes, behind `AI_ENABLED`: corpus retrieval (#4314) and Ask (#450)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| C8 chat rules                     | `chat-consent` and `channel-access` (universal), `mustReportLeftOut`, `mustNotReportLeftOutAbove`, `mustCiteFirst`; `ask-agent.eval-spec.ts` for chat labelled as chat | yes, behind `AI_ENABLED`: corpus retrieval (#4314) and Ask (#450)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 "Rule tested" means a mutation that disables the rule turns the suite red — verified by deleting each
 rule in turn. It does **not** mean an agent has been graded against it. (Corrected 2026-11-12: the

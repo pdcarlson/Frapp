@@ -307,16 +307,17 @@ describe('CorpusRetrievalService — chat (#4314)', () => {
     return { retrieve, chatAdapter };
   }
 
-  it('hands back a chat passage with its channel, first message and authors, ranked below a document at the same rank', async () => {
+  it('hands back a chat passage with its channel, first message and authors, ranked by how well it matched (#5179)', async () => {
     const { retrieve } = chatSetup([
       chat({ chunk_id: 'chat', dense_rank: 1, sparse_rank: 1 }),
       candidate({ chunk_id: 'doc', dense_rank: 2, sparse_rank: 2 }),
     ]);
     const result = await retrieve();
     if (result.status !== 'ok') throw new Error('expected passages');
-    // The chat passage matched better, and still comes after the document.
-    expect(result.passages.map((p) => p.id)).toEqual(['doc', 'chat']);
-    expect(result.passages[1]).toMatchObject({
+    // The chat passage matched better, so it comes first: chat is no longer
+    // held behind the record (Paul, 2026-11-16).
+    expect(result.passages.map((p) => p.id)).toEqual(['chat', 'doc']);
+    expect(result.passages[0]).toMatchObject({
       sourceType: 'chat_message',
       sourceId: 'window-1',
       title: '#general',
@@ -326,17 +327,19 @@ describe('CorpusRetrievalService — chat (#4314)', () => {
       messageCount: 2,
       sourceAt: '2026-11-09T22:00:00.000Z',
     });
-    expect(result.passages[1].score).toBeLessThan(result.passages[0].score);
+    expect(result.passages[0].score).toBeGreaterThan(result.passages[1].score);
   });
 
-  it('weights chat down, so a document wins a place at the limit over chat that matched as well', async () => {
+  it('scores chat and a document that matched as well alike, with no weight for being chat (#5179)', async () => {
     const { retrieve } = chatSetup([
       chat({ chunk_id: 'chat', dense_rank: 1, source_at: NOW.toISOString() }),
       candidate({ chunk_id: 'doc', dense_rank: 1 }),
     ]);
     const result = await retrieve();
     if (result.status !== 'ok') throw new Error('expected passages');
-    expect(result.passages[0].id).toBe('doc');
+    const score = (id: string) =>
+      result.passages.find((p) => p.id === id)?.score;
+    expect(score('chat')).toBe(score('doc'));
   });
 
   it('drops a passage the source refuses to admit, and counts the withheld messages with what indexing left out of that window', async () => {
