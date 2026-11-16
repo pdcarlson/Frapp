@@ -19,6 +19,7 @@ import { RequestReadsInterceptor } from './interface/interceptors/request-reads.
 import { VALIDATION_PIPE_OPTIONS } from './interface/pipes/validation-pipe.options';
 import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
 import { RequestContextLogger } from './infrastructure/observability/request-context-logger';
+import { runsOnCloudRun } from './config/runtime-platform';
 
 /**
  * Everything that shapes a request or a response, in one place.
@@ -220,9 +221,12 @@ export function configureApp(
   app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
 
   // Same ConsoleLogger format as Nest's default, with requestId on the
-  // context. Lives here so e2e and production share it — a copy in `main.ts`
-  // would leave the suite asserting a logger production does not use.
-  app.useLogger(new RequestContextLogger());
+  // context; on Cloud Run, one JSON record per line for Cloud Logging. Lives
+  // here so e2e and production share it — a copy in `main.ts` would leave the
+  // suite asserting a logger production does not use.
+  app.useLogger(
+    new RequestContextLogger({ json: runsOnCloudRun(process.env) }),
+  );
 
   // Before the Nest pipeline, so guard rejections carry a request id too — see
   // the middleware's own note on why this cannot be an interceptor.

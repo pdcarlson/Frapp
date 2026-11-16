@@ -87,6 +87,17 @@ The org-policy service has to be on in the project a call is billed to, which Cl
 
 **Images.** Each registry keeps its 50 newest images and deletes older ones after 90 days. Deploy production copies a commit's image from staging's registry, so a commit whose image was cleaned up has to be built again before production can take it.
 
+## Observability
+
+Paul asked on 2026-11-16 for full observability from the first day. Sentry (errors, traces) and PostHog (product events) stay as they are ([`spec/behavior/observability.md`](../../../spec/behavior/observability.md)); Google adds the rest, and the privacy rules there still hold (no email, IP, token or body in the API's own logs).
+
+- **API logs.** Cloud Run sends stdout and stderr to Cloud Logging (**Logging → Logs Explorer**, resource *Cloud Run Revision*). The API writes one JSON record per line there, with a `severity`, so a query can filter by level or by a request-log field, for example `jsonPayload.data.statusCode>=500` or `jsonPayload.requestId="req_…"` ([§ Structured Logging](../../../spec/behavior/observability.md#structured-logging)).
+- **Google's request log.** Cloud Run also logs every request it serves (`run.googleapis.com/requests`), with status, latency and size. That log holds the caller's IP address, and Google offers no way to drop only that field; Paul was told on 2026-11-16 and it is kept unless he says otherwise.
+- **Audit logs.** Every deploy, traffic move and permission change is in the project's audit log (**Logging → Logs Explorer**, log name `cloudaudit.googleapis.com/activity`), on by default.
+- **Retention and cost.** Logs stay 30 days in the `_Default` bucket. Ingestion is free up to 50 GiB a month per project, far above the API's volume.
+
+Built with the deploy step, because each needs the service to exist: an uptime check on `/health/ready` every minute, email alerts to Paul for it, for a 5xx spike, for crashes and restarts, for memory near the limit and for an error-log spike, and Secret Manager's data-access audit log, so every secret read is recorded. Email is the pager ([`alert-routing.md`](../alert-routing.md)).
+
 ## Not built yet
 
 These land in [#5228](https://github.com/frapplive/Frapp/issues/5228)'s later steps, and each one updates this page when it ships.

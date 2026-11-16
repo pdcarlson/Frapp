@@ -376,7 +376,7 @@ Reads these directly (no prefix needed):
 
 #### Platform-provided, not from Infisical
 
-`RENDER_GIT_COMMIT`, which `/health` and Sentry's `release` read ([`deployed-commit.ts`](../../../apps/api/src/infrastructure/observability/deployed-commit.ts)), is not an Infisical value. Render sets it on a git-backed service; an image the deploy job builds on GitHub has it baked in at build time, which is how Cloud Run gets it ([`cloud-run.md`](../../ops/deployment/cloud-run.md)). Cloud Run also sets `PORT` and `K_SERVICE` itself, and the API reads `K_SERVICE` only to know it runs there (`GOOGLE_VERTEX_CREDENTIALS_JSON` above).
+`RENDER_GIT_COMMIT`, which `/health` and Sentry's `release` read ([`deployed-commit.ts`](../../../apps/api/src/infrastructure/observability/deployed-commit.ts)), is not an Infisical value. Render sets it on a git-backed service; an image the deploy job builds on GitHub has it baked in at build time, which is how Cloud Run gets it ([`cloud-run.md`](../../ops/deployment/cloud-run.md)). Cloud Run also sets `PORT` and `K_SERVICE` itself. The API reads `K_SERVICE` only to know it runs there ([`runtime-platform.ts`](../../../apps/api/src/config/runtime-platform.ts)): Vertex AI then needs no key file (`GOOGLE_VERTEX_CREDENTIALS_JSON` above), and logs go out as one JSON record per line ([`observability.md` § Structured Logging](../../../spec/behavior/observability.md#structured-logging)).
 
 ### apps/web (Next.js — Vercel)
 

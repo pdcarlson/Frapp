@@ -1,5 +1,6 @@
 import { isProductionSupabaseUrl } from '@repo/validation';
 import { isAiEnabled } from '#domain/utils/ai-enabled';
+import { runsOnCloudRun } from './runtime-platform';
 
 type Env = Record<string, unknown>;
 
@@ -75,15 +76,6 @@ export function parseServiceAccount(
     // Reported by validateAiEnv; never echoed, since it is a secret.
   }
   return null;
-}
-
-/**
- * Whether this process runs on Cloud Run, which sets `K_SERVICE` on every
- * instance. There the service's own identity can call Google, so no key
- * file is needed.
- */
-function runsOnCloudRun(env: Env): boolean {
-  return envSetting(env, 'K_SERVICE') !== null;
 }
 
 export function googleVertexSettings(
