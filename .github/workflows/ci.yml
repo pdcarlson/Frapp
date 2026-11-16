@@ -7,11 +7,12 @@ on:
     branches: [main]
   # The merge queue (#4795): every job that emits a required check must report
   # on the queue's test commit, or a queued PR waits out the queue's timeout and
-  # drops out. A queue run is treated like a push: path-gated jobs run in full,
-  # because it is the last check before the commit lands on main, and the diff
-  # checks measure against `merge_group.base_sha` where a PR uses its base. The
-  # one exception is a docs-only entry, which skips the suite as a PR does
-  # (#5141, `skip_suite` below).
+  # drops out. A queue entry is gated by its own changes, as its PR is (#5195):
+  # its commit sits on the entry ahead of it (or main), so `merge_group.base_sha`
+  # isolates that one PR, and a job its paths don't touch was already run by
+  # whichever entry did touch them, on the tree this one builds on. The diff
+  # checks measure against that base where a PR uses its own. A docs-only entry
+  # skips the suite as a PR does (#5141, `skip_suite` below).
   # Pinned by merge-queue-triggers.test.mjs.
   merge_group:
     types: [checks_requested]
@@ -36,8 +37,8 @@ concurrency:
 # ---------------------------------------------------------------------------
 # `packages-build` runs first. web-tests, web-responsive-floor, landing-fold,
 # pglite-migrations, api-tests, mobile-validate and mobile-tests-tokyo are
-# path-gated on PRs by `changes` and run in full in the merge queue and on a push
-# the queue did not already test (below).
+# path-gated on PRs and in the merge queue by `changes` (#5195), and run in full
+# on a push the queue did not already test (below).
 # They are still required checks, because a job skipped by a job-level `if:` reports
 # Success (ADR-15 amendment 2026-08-19). `clean-checkout-typecheck` and
 # `web-production-build` deliberately prebuild nothing.
@@ -45,10 +46,11 @@ concurrency:
 # Every job but `changes` and `packages-build` also skips on a push to main whose
 # commit the merge queue already passed (#5084): `changes` sets `queue_tested`
 # when a successful `merge_group` run of this workflow exists for the same SHA,
-# which the queue fast-forwarded main to, so the push run would repeat it job for
-# job. The skips report Success, so the run stays green and Deploy staging still
-# fires on it; validate-deploy-sha.mjs judges a production deploy on the queue
-# run's check runs, which sit on the same commit. `packages-build` still runs so
+# which the queue fast-forwarded main to, so the push run would repeat it. The
+# skips report Success, so the run stays green and Deploy staging still fires on
+# it; validate-deploy-sha.mjs judges a production deploy on the queue run's check
+# runs, which sit on the same commit (a gated job the entry's own files didn't
+# reach is `skipped` there too, #5195). `packages-build` still runs so
 # main keeps seeding the node_modules and turbo caches every PR restores, and
 # `main-caches` runs in the suite's place to seed the tool caches the skipped
 # jobs used to write. A commit that reached main without the queue, and any
@@ -69,10 +71,9 @@ concurrency:
 
 jobs:
   # Path filter for the gated jobs, and required because they need it
-  # (required-checks.mjs). It filters on pull_request and merge_group; the gated
-  # jobs read its path outputs only on a PR, and run in full on their
-  # `github.event_name != 'pull_request'` arm elsewhere, unless `skip_suite` skips
-  # them. In the queue the filters feed only the docs-only test. It answers
+  # (required-checks.mjs). It filters on pull_request and merge_group, where the
+  # gated jobs read its path outputs; on a push they run in full on their
+  # `github.event_name == 'push'` arm, unless `skip_suite` skips them. It answers
   # `queue_tested` and `skip_suite` (header), which every job but packages-build
   # reads, so they all need it; `changes` itself must never skip.
   changes:
@@ -95,14 +96,19 @@ jobs:
       # A failed or skipped filter step leaves its output empty, never 'false',
       # so it can only ever run the suite.
       skip_suite: ${{ steps.queue.outputs.tested == 'true' || (steps.apps.outputs.outside_docs == 'false' && steps.filter.outputs.docs_reads == 'false' && !(github.event.pull_request.changed_files > 3000)) }}
-      web: ${{ steps.filter.outputs.web }}
-      landing: ${{ steps.filter.outputs.landing }}
-      pglite: ${{ steps.filter.outputs.pglite }}
+      # The path outputs. A filter step that failed in the merge queue (its
+      # `continue-on-error`) answers 'true', so the job runs rather than skips;
+      # on a PR the failure fails `changes` instead, and on a push the steps skip
+      # and the jobs' push arm runs them anyway.
+      pglite: ${{ steps.filter.outputs.pglite == 'true' || steps.filter.outcome == 'failure' }}
       # Either an area the job reads changed, or one of the few files it reads
       # from an area it otherwise skips (`apps` below), or the PR is past the
-      # 3000 files GitHub's file list returns, so the filter saw only part of it.
-      mobile: ${{ steps.apps.outputs.mobile == 'true' || steps.filter.outputs.mobile_reads == 'true' || github.event.pull_request.changed_files > 3000 }}
-      api: ${{ steps.apps.outputs.api == 'true' || steps.filter.outputs.api_reads == 'true' || github.event.pull_request.changed_files > 3000 }}
+      # 3000 files GitHub's file list returns, so the filter saw only part of it
+      # (a queue entry is diffed with git, which has no such cap).
+      web: ${{ steps.apps.outputs.web == 'true' || steps.filter.outputs.web_reads == 'true' || github.event.pull_request.changed_files > 3000 || steps.apps.outcome == 'failure' || steps.filter.outcome == 'failure' }}
+      landing: ${{ steps.apps.outputs.landing == 'true' || github.event.pull_request.changed_files > 3000 || steps.apps.outcome == 'failure' }}
+      mobile: ${{ steps.apps.outputs.mobile == 'true' || steps.filter.outputs.mobile_reads == 'true' || github.event.pull_request.changed_files > 3000 || steps.apps.outcome == 'failure' || steps.filter.outcome == 'failure' }}
+      api: ${{ steps.apps.outputs.api == 'true' || steps.filter.outputs.api_reads == 'true' || github.event.pull_request.changed_files > 3000 || steps.apps.outcome == 'failure' || steps.filter.outcome == 'failure' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -126,9 +132,9 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci/queue-tested.mjs
       # On a PR and in the merge queue, where paths-filter diffs the entry from
-      # `merge_group.base_sha` with git. In the queue only `skip_suite` reads
-      # them (the gated jobs run in full there), so a failure there falls back
-      # to the full suite instead of failing `changes`; on a PR it fails it.
+      # `merge_group.base_sha` with git. In the queue a failure falls back to
+      # running the jobs (the outputs above) instead of failing `changes`, which
+      # would skip every job that needs it; on a PR it fails `changes`.
       - name: Detect changed paths
         id: filter
         if: github.event_name != 'push'
@@ -136,23 +142,6 @@ jobs:
         uses: dorny/paths-filter@v4
         with:
           filters: |
-            web:
-              - 'apps/web/**'
-              - 'packages/**'
-              - 'package-lock.json'
-              - 'turbo.json'
-              # Gated jobs build through local actions, and a skipped required job reports Success.
-              - '.github/actions/**'
-            landing:
-              - 'apps/landing/**'
-              - 'packages/**'
-              - 'package-lock.json'
-              - 'turbo.json'
-              # Same reason as `web`.
-              - '.github/actions/**'
-              # Not in `web:`: the landing webServer runs `npm run build`, which runs repo
-              # scripts (sync-brand-assets, next-build, brand-pixels). apps/web runs `npm run dev`.
-              - 'scripts/**'
             pglite:
               - 'supabase/migrations/**'
               - 'scripts/pglite/**'
@@ -196,6 +185,9 @@ jobs:
             api_reads:
               - 'apps/mobile/app.json'
               - 'spec/behavior/observability.md'
+            # What a web spec reads from spec/, which `web` skips.
+            web_reads:
+              - 'spec/ui/design-system/writing.md'
             # The docs a job that skips on a docs-only change reads (#5141;
             # pinned by docs-only-skip.test.mjs). Changing one runs the suite.
             docs_reads:
@@ -206,11 +198,14 @@ jobs:
       # The other way round from `filter`: these skip a PR only when EVERY file it
       # changes is in an area the job never reads, so a file nobody listed (a new
       # root config, a script) runs the job rather than slipping past a required
-      # check. mobile-validate and api-tests were the slowest jobs every PR ran.
+      # check. mobile-validate and api-tests were the slowest jobs every PR ran;
+      # web and landing moved here from `filter`'s allowlists (#5195) once the
+      # queue stopped running them in full behind those lists' gaps (their own
+      # job steps in ci.yml, root scripts, a spec they read).
       #
       # `outside_docs` is the docs-only test: 'false' when every file is under
       # docs/ or spec/. Same queue fallback as `filter`.
-      - name: Detect changes the mobile and API jobs read
+      - name: Detect changes the app jobs read
         id: apps
         if: github.event_name != 'push'
         continue-on-error: ${{ github.event_name == 'merge_group' }}
@@ -222,6 +217,25 @@ jobs:
               - '**'
               - '!apps/web/**'
               - '!apps/landing/**'
+              - '!apps/api/**'
+              - '!apps/desktop/**'
+              - '!docs/**'
+              - '!spec/**'
+              - '!supabase/**'
+            # web-tests and web-responsive-floor. Not `!supabase/**`: a web
+            # spec reads the migrations directory (change-topics.spec.ts).
+            web:
+              - '**'
+              - '!apps/landing/**'
+              - '!apps/mobile/**'
+              - '!apps/api/**'
+              - '!apps/desktop/**'
+              - '!docs/**'
+              - '!spec/**'
+            landing:
+              - '**'
+              - '!apps/web/**'
+              - '!apps/mobile/**'
               - '!apps/api/**'
               - '!apps/desktop/**'
               - '!docs/**'
@@ -518,7 +532,7 @@ jobs:
   # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.api == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name == 'push' || needs.changes.outputs.api == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -550,7 +564,7 @@ jobs:
   # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
   web-tests:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name == 'push' || needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -866,7 +880,7 @@ jobs:
   # ── Mobile app validation ───────────────────────────────────────────────
   mobile-validate:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name == 'push' || needs.changes.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -949,7 +963,7 @@ jobs:
   # no time to a run.
   mobile-tests-tokyo:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name == 'push' || needs.changes.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -1061,7 +1075,7 @@ jobs:
   # § RLS enforcement.
   pglite-migrations:
     needs: changes
-    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.pglite == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name == 'push' || needs.changes.outputs.pglite == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -1115,7 +1129,7 @@ jobs:
   # the guards against a zero-test run: docs/ci-cd/quality-gates.md.
   web-responsive-floor:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name == 'push' || needs.changes.outputs.web == 'true') }}
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -1167,7 +1181,7 @@ jobs:
   # No `continue-on-error`.
   landing-fold:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.landing == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name == 'push' || needs.changes.outputs.landing == 'true') }}
     permissions:
       contents: read
     runs-on: ubuntu-latest

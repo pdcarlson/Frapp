@@ -34,6 +34,7 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import {
+  ChooseMeetingDraftVersionDto,
   MeetingDraftDto,
   RequestMeetingDraftDto,
   UseMeetingDraftDto,
@@ -78,7 +79,7 @@ export class MeetingDraftController {
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary:
-      'Draft the minutes from notes, as a background AI run. Replaces an earlier request. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent',
+      'Draft the minutes from every note-taker’s notes and the recording’s transcript, as a background AI run, saving the caller’s `notes` first when sent. Replaces an earlier request. 400 when there is nothing to draft from. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent',
   })
   @ApiAcceptedResponse({ type: MeetingDraftDto })
   @FeatureEvent('meeting-draft-requested')
@@ -107,11 +108,27 @@ export class MeetingDraftController {
     return this.drafts.use(chapterId, id, userId, dto.expected_updated_at);
   }
 
+  @Post('choose')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Put another version of a disagreement between note-takers into the minutes, or settle a tie (#4935). 409 `meeting.stale` when the minutes moved, 409 `meeting.draft_not_waiting` when the disagreement is gone',
+  })
+  @ApiOkResponse({ type: MeetingDraftDto })
+  async choose(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChooseMeetingDraftVersionDto,
+  ): Promise<MeetingDraftDto> {
+    return this.drafts.choose(chapterId, id, userId, dto);
+  }
+
   @Delete()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
     summary:
-      'Clear the notes and the draft, and stop a draft still being written. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed',
+      'Clear the caller’s own notes and the draft, and stop a draft still being written. Other note-takers’ notes stay. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed',
   })
   @ApiQuery({ name: 'keep_notes', required: false, type: Boolean })
   @ApiNoContentResponse()

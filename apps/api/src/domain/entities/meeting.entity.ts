@@ -88,6 +88,41 @@ export interface MeetingDraft {
   result: Record<string, unknown> | null;
   requested_at: string;
   finished_at: string | null;
+  /**
+   * Who uploaded the recording the meeting had when this draft was asked
+   * for. Set by a trigger, never by the API (#4504).
+   */
+  recording_uploaded_by?: string | null;
+  /**
+   * The members whose notes this draft was written from (#4935). The draft
+   * goes with any of their accounts.
+   */
+  source_user_ids: string[];
+  /**
+   * What the draft was written from: each source's text and how it ranks
+   * (`MinutesSource`), read through a check, never trusted as typed. Empty
+   * on a draft from before several note-takers, whose `notes` is the one
+   * source.
+   */
+  sources: unknown[];
+}
+
+/**
+ * One note-taker's own notes for one meeting's unposted minutes
+ * (`meeting_notes`, #4935, `spec/behavior/meetings.md` § Several
+ * note-takers). A row is what makes a member a note-taker. Kept only while
+ * the minutes are a draft, and never more than 30 days.
+ */
+export interface MeetingNote {
+  meeting_id: string;
+  chapter_id: string;
+  user_id: string;
+  /** As typed. Never logged. Empty while an added member has written nothing. */
+  notes: string;
+  /** Who added them; null when they joined themselves or are the author. */
+  added_by: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export const MEETING_RECORDING_ROW_STATUSES = [

@@ -23,6 +23,16 @@
 // `POST /v1/services/{id}/deploys` takes a `commitId`, which makes the deployed
 // artifact an input rather than a race.
 //
+// ── An image-backed service takes the image instead (#2506) ────────────────
+// With `RENDER_DEPLOY_SOURCE=image` the deploy job has already built this
+// commit's image on GitHub, pushed it to `API_IMAGE` (the repository
+// `.github/environments.json` names) tagged with the commit, and handed on its
+// digest as `API_IMAGE_REF`. The POST then sends that `imageUrl` and Render
+// pulls it, spending no build minutes; the repository must match the one the
+// service is configured with, which Render checks too. By digest, not tag,
+// because anyone who can write the package could push the tag again between
+// the build and Render's pull. Polling and verdicts are the same for both.
+//
 // ── Why it polls by deploy id, not by commit ───────────────────────────────
 // Scanning the deploy list for the first entry matching a SHA is ambiguous:
 // re-running the same SHA produces two deploys with the same commit, and the
@@ -92,16 +102,49 @@ export function classifyRenderStatus(status) {
 }
 
 /**
- * Ask Render to build `sha` on `serviceId`. Returns the created deploy's id.
+ * `<repository>@sha256:<digest>`, the only image reference this script
+ * deploys: a tag can be pushed again after the build, a digest is one image.
+ */
+export const API_IMAGE_REF_PATTERN = /^(ghcr\.io\/[a-z0-9-]+\/[a-z0-9-]+)@sha256:[0-9a-f]{64}$/;
+
+/**
+ * The image to deploy, or null for a commit deploy. Throws when the
+ * environment says image and the reference is missing, malformed, not a
+ * digest, or in a repository other than `apiImage`. That it is this commit's
+ * build is the deploy job's: the same job built it from the commit.
+ */
+export function resolveImageUrl({ deploySource = "commit", imageRef = "", apiImage = "" }) {
+  if (deploySource === "commit") return null;
+  if (deploySource !== "image") {
+    throw new Error(`RENDER_DEPLOY_SOURCE must be commit or image; got '${deploySource}'.`);
+  }
+  const match = API_IMAGE_REF_PATTERN.exec(imageRef);
+  if (!match) {
+    throw new Error(
+      `RENDER_DEPLOY_SOURCE is image, so API_IMAGE_REF must be ghcr.io/<owner>/<name>@sha256:<digest>; ` +
+        `got '${imageRef}'. The image build step did not hand one over.`,
+    );
+  }
+  if (match[1] !== apiImage) {
+    throw new Error(`API_IMAGE_REF is in ${match[1]}, not the configured apiImage '${apiImage}'.`);
+  }
+  return imageRef;
+}
+
+/**
+ * Ask Render to deploy `sha` on `serviceId`: build the commit, or, given
+ * `imageUrl`, pull that image. Returns the created deploy's id.
  *
- * A non-2xx here is fatal and says so with the response body: the two ways this
- * realistically fails are a revoked API key and a commit Render's git
- * integration cannot see, and those want different fixes.
+ * A non-2xx here is fatal and says so with the response body: the ways this
+ * realistically fails are a revoked API key, a commit Render's git integration
+ * cannot see, and an image whose repository isn't the service's, and those
+ * want different fixes.
  */
 export async function createRenderDeploy({
   apiKey,
   serviceId,
   sha,
+  imageUrl = null,
   clearCache = "do_not_clear",
   fetchImpl = resilientFetch,
 }) {
@@ -112,13 +155,13 @@ export async function createRenderDeploy({
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    body: JSON.stringify({ commitId: sha, clearCache }),
+    body: JSON.stringify(imageUrl ? { imageUrl } : { commitId: sha, clearCache }),
   });
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
     throw new Error(
-      `Render refused to create a deploy for ${sha} on ${serviceId} ` +
+      `Render refused to create a deploy for ${imageUrl ?? sha} on ${serviceId} ` +
         `(HTTP ${response.status})${detail ? `: ${detail.slice(0, 400)}` : ""}`,
     );
   }
@@ -225,6 +268,7 @@ export async function deployRenderCommit({
   apiKey,
   serviceId,
   sha,
+  imageUrl = null,
   label = serviceId,
   clock = createClock(),
   fetchImpl = resilientFetch,
@@ -234,12 +278,12 @@ export async function deployRenderCommit({
 }) {
   let created;
   try {
-    created = await createRenderDeploy({ apiKey, serviceId, sha, fetchImpl });
+    created = await createRenderDeploy({ apiKey, serviceId, sha, imageUrl, fetchImpl });
   } catch (error) {
     return { status: "failure", message: error.message, deployId: null };
   }
 
-  logger.log?.(`[${label}] Created Render deploy ${created.deployId} for ${sha}.`);
+  logger.log?.(`[${label}] Created Render deploy ${created.deployId} for ${imageUrl ?? sha}.`);
   const result = await pollRenderDeploy({
     apiKey,
     serviceId,
@@ -258,10 +302,23 @@ export async function deployRenderCommit({
 
 async function main() {
   const serviceId = requireEnv("RENDER_SERVICE_ID");
+  const sha = requireEnv("DEPLOY_SHA");
+  let imageUrl;
+  try {
+    imageUrl = resolveImageUrl({
+      deploySource: process.env.RENDER_DEPLOY_SOURCE || "commit",
+      imageRef: process.env.API_IMAGE_REF ?? "",
+      apiImage: process.env.API_IMAGE ?? "",
+    });
+  } catch (error) {
+    console.error(`::error::${error.message}`);
+    process.exit(1);
+  }
   const result = await deployRenderCommit({
     apiKey: requireEnv("RENDER_API_KEY"),
     serviceId,
-    sha: requireEnv("DEPLOY_SHA"),
+    sha,
+    imageUrl,
     label: process.env.SERVICE_LABEL ?? serviceId,
   });
 

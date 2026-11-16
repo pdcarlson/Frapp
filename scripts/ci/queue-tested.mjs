@@ -3,10 +3,12 @@
 // Did the merge queue already pass CI on this exact commit? (#5084)
 //
 // The merge queue (#4795) builds a test commit from `main` plus the PRs ahead
-// of it, runs every CI job on it in full, and then fast-forwards `main` to
-// that same commit. The `push` run CI then starts on `main` tests a tree the
-// queue has already passed, so it is the third full run of 22 jobs for one
-// merge, all of them competing for the account's concurrent-job cap. On
+// of it, runs CI on it, and then fast-forwards `main` to that same commit. The
+// `push` run CI then starts on `main` tests a tree the queue has already
+// passed, so it was the third full run of 22 jobs for one merge, all of them
+// competing for the account's concurrent-job cap. (Since #5195 the queue
+// path-gates its entries as a PR does, so a gated job an entry skipped was last
+// run by the entry or `main` commit that touched what it reads.) On
 // 2026-11-15 that cap kept jobs waiting 1 to 15 minutes for a runner and
 // stretched queue entries to 15 to 24 minutes.
 //

@@ -6,6 +6,7 @@ export const MEETING_REPOSITORY = 'MEETING_REPOSITORY';
 export type MeetingWrite = Partial<
   Pick<
     Meeting,
+    | 'event_id'
     | 'event_name'
     | 'event_start_time'
     | 'meeting_type'

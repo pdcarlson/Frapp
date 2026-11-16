@@ -2,7 +2,7 @@
 
 A single search bar accessible from the top of the mobile and web app:
 
-> **Where it is today** (#4904, 2026-11-13). On web it is the top bar's find field and the Find dialog it opens. On the phone it is the field of the Ask Frapp sheet, opened from the bar above the tab bar, so only a member with Ask has it; a search for everyone on the phone is not built. Neither is at the top of the phone app.
+> **Where it is today** (#5139, 2026-11-16). On web it is the top bar's find field and the Find dialog it opens. On the phone it is the Search screen, opened from the Search round in Chat home's title row, so every member has it ([`../ui/mobile/navigation.md` § Search](../ui/mobile/navigation.md#search)). From #4904 (2026-11-13) until #5139 the phone's only search was the field of the Ask Frapp sheet, so only a member with Ask had it.
 
 - Searches across: Backwork resources (title, department, course, professor, tags), chat messages (content), events (name, description), and members (name).
 - Results are grouped by domain (Backwork, Chat, Events, Members).

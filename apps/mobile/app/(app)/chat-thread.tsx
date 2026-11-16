@@ -208,6 +208,7 @@ import {
   useJumpToImportant,
   type JumpMissReason,
 } from "@/lib/chat/use-jump-to-important";
+import { useFocusOnOpen } from "@/lib/chat/use-focus-on-open";
 
 /** A jump the member asked for by name couldn't reach its message (#3723). */
 function alertJumpMiss(reason: JumpMissReason) {
@@ -796,14 +797,14 @@ function ChannelThreadScreen() {
   // Activity's sign-up and form rows (#3926), whose card is answered here.
   // Once per message, after the first rows are in, paging older history for
   // it as the Important strip's jump does.
-  const focusMessageId = firstParam(params.focusMessageId);
-  const focusedOn = useRef<string | null>(null);
-  useEffect(() => {
-    if (!focusMessageId || focusedOn.current === focusMessageId) return;
-    if (inverted.length === 0) return;
-    focusedOn.current = focusMessageId;
-    jumpToImportant(focusMessageId, { onMiss: alertJumpMiss });
-  }, [focusMessageId, inverted.length, jumpToImportant]);
+  // A push about one message lands here too (#4977), often before the
+  // channel's catch-up read: `useFocusOnOpen` retries once when it lands.
+  useFocusOnOpen({
+    focusMessageId: firstParam(params.focusMessageId) ?? null,
+    rowCount: inverted.length,
+    jump: jumpToImportant,
+    onMiss: alertJumpMiss,
+  });
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it (`useAiSurfaces`), and
   // only on a channel a summary may read: never a DM, a group DM or the

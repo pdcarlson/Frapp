@@ -24,7 +24,7 @@
     "@repo/eslint-config": "*",
     "@repo/theme": "*",
     "@repo/typescript-config": "*",
-    "electron": "45.3.1",
+    "electron": "45.3.2",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^4.1.10"
   }

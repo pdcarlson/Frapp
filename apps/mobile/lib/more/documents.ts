@@ -8,6 +8,7 @@
  */
 import { formatDay } from "@repo/formatting";
 import {
+  isDriveCopy,
   uploadedLine,
   type LibraryDocument,
 } from "@repo/hooks/document-library";
@@ -30,6 +31,11 @@ export interface MobileDocument {
   storage_path: string | null;
   /** When an officer pinned it for the whole chapter, or null (#3934). */
   pinned_at: string | null;
+  /**
+   * The Google Drive file this is a copy of, or null for an upload (#5157).
+   * Drive owns a copy: the row says so and offers no Delete.
+   */
+  drive_file_id: string | null;
 }
 
 export interface DocumentFolder {
@@ -61,6 +67,7 @@ export function selectDocuments(data: unknown): MobileDocument[] {
         content_type: str(row, "content_type"),
         storage_path: str(row, "storage_path"),
         pinned_at: str(row, "pinned_at"),
+        drive_file_id: str(row, "drive_file_id"),
       };
     })
     .filter((row): row is MobileDocument => !!row);
@@ -78,7 +85,11 @@ export function documentMeta(
   now: Date = new Date(),
 ): string | null {
   return metaLine([
-    uploadedLine(formatDay(row.doc.created_at || null, now), row.uploader),
+    uploadedLine(
+      formatDay(row.doc.created_at || null, now),
+      row.uploader,
+      isDriveCopy(row.doc),
+    ),
     row.doc.folder,
     row.doc.document_type,
   ]);

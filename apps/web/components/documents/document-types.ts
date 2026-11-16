@@ -13,6 +13,13 @@ export type ChapterDocument = {
   effective_date: string | null;
   /** When an officer pinned it for the whole chapter (#3934). */
   pinned_at?: string | null;
+  /**
+   * The Google Drive file this is a copy of, or null for an upload (#5157).
+   * Drive owns a copy: it has no Delete here.
+   */
+  drive_file_id?: string | null;
+  /** The file's page in Google Drive. */
+  drive_url?: string | null;
 };
 
 export type ChapterDocumentFolder = {

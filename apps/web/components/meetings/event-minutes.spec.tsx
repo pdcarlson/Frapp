@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     current: { isPending: false, isError: false, data: [] as unknown[] },
   },
   permissions: { current: [] as string[] },
+  taking: { current: { isPending: false, data: [] as unknown[] } },
   start: vi.fn(),
   push: vi.fn(),
   toast: vi.fn(),
@@ -18,6 +19,7 @@ vi.mock("@repo/hooks", () => ({
     data: { permissions: mocks.permissions.current },
   }),
   useStartMeeting: () => ({ mutateAsync: mocks.start, isPending: false }),
+  useMeetingNoteTaking: () => mocks.taking.current,
 }));
 
 vi.mock("@/lib/hooks/use-chapter-module-gate", () => ({
@@ -42,12 +44,33 @@ beforeEach(() => {
   mocks.moduleOn.current = true;
   mocks.meetings.current = { isPending: false, isError: false, data: [] };
   mocks.permissions.current = [];
+  mocks.taking.current = { isPending: false, data: [] };
   mocks.start.mockReset();
   mocks.push.mockReset();
   mocks.toast.mockReset();
 });
 
 describe("EventMinutes", () => {
+  it("offers Take notes on someone else's draft, to a member they added (#4935)", () => {
+    mocks.taking.current = {
+      isPending: false,
+      data: [
+        {
+          meeting_id: "m-9",
+          event_id: "e-1",
+          author_name: "Eli Sorensen",
+          joined: true,
+          added: true,
+        },
+      ],
+    };
+    render(<EventMinutes eventId="e-1" eventName="Chapter" />);
+    expect(screen.getByText(/Minutes by Eli Sorensen/)).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Taking notes" }).getAttribute("href"),
+    ).toBe("/meetings/m-9/notes");
+  });
+
   it("draws nothing while the meetings module is off", () => {
     mocks.moduleOn.current = false;
     mocks.permissions.current = ["meetings:record"];

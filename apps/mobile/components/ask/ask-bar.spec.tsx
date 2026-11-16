@@ -3,7 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
-import { ASK_COPY, ASK_FIND_PLACEHOLDER } from "@repo/validation";
+import { ASK_COPY } from "@repo/validation";
 import { FrappCrest } from "@/components/frapp-crest";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
@@ -39,8 +39,8 @@ const press = (tree: ReactTestRenderer) =>
   tree.root.findAll((node) => (node.type as unknown) === "Pressable")[0];
 
 describe("AskBar", () => {
-  it("reads as the field it opens: search or ask (#4904), and nothing else", () => {
-    expect(screenText(render())).toBe(ASK_FIND_PLACEHOLDER);
+  it("reads as the field it opens, which only asks (#5139), and nothing else", () => {
+    expect(screenText(render())).toBe(ASK_COPY.placeholder);
   });
 
   it("is one button named Ask Frapp, which says what it is for", () => {

@@ -2444,6 +2444,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meetings/{id}/event": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes */
+        post: operations["MeetingController_linkEvent_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/{eventId}/attendance/check-in": {
         parameters: {
             query?: never;
@@ -5544,9 +5561,9 @@ export interface paths {
         /** Where the draft from notes stands: none, drafting, ready, applied or failed, with the notes and what to check the draft against */
         get: operations["MeetingDraftController_get_v1"];
         put?: never;
-        /** Draft the minutes from notes, as a background AI run. Replaces an earlier request. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent */
+        /** Draft the minutes from every note-taker’s notes and the recording’s transcript, as a background AI run, saving the caller’s `notes` first when sent. Replaces an earlier request. 400 when there is nothing to draft from. 400 `meeting.standards_refused`, 403 `ai.chapter_off` or `ai.consent.required`, 409 `meeting.stale` or `meeting.draft_posted`, each before any text is stored or sent */
         post: operations["MeetingDraftController_request_v1"];
-        /** Clear the notes and the draft, and stop a draft still being written. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed */
+        /** Clear the caller’s own notes and the draft, and stop a draft still being written. Other note-takers’ notes stay. With `keep_notes=true`, only stop it: the notes stay and the request ends as `stopped`. The minutes themselves are not changed */
         delete: operations["MeetingDraftController_discard_v1"];
         options?: never;
         head?: never;
@@ -5565,6 +5582,92 @@ export interface paths {
         /** Put a draft that waited (`ready`) into the minutes at the version the editor has. 409 `meeting.stale` when they moved again, 409 `meeting.draft_not_waiting` when no draft waits */
         post: operations["MeetingDraftController_use_v1"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/draft/choose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Put another version of a disagreement between note-takers into the minutes, or settle a tie (#4935). 409 `meeting.stale` when the minutes moved, 409 `meeting.draft_not_waiting` when the disagreement is gone */
+        post: operations["MeetingDraftController_choose_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meeting-notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unposted minutes the caller may take notes on and doesn’t edit: an officer’s to join, or ones they were added to */
+        get: operations["MeetingNotesController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller’s own notes on these minutes and who else takes notes; the author and editors read everyone’s */
+        get: operations["MeetingNotesController_get_v1"];
+        /** Save the caller’s own notes, joining as a note-taker if they weren’t. Empty notes clear them, with any draft written from them. 409 `meeting.draft_posted`, 400 `meeting.standards_refused` */
+        put: operations["MeetingNotesController_save_v1"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/note-takers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add a member the meeting’s event invites as a note-taker, for the author or an editor. They are told once. 400 `meeting.not_in_audience` */
+        post: operations["MeetingNotesController_add_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meetings/{id}/note-takers/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a note-taker with their notes and any draft written from them: the author or an editor removes anyone, a note-taker themselves */
+        delete: operations["MeetingNotesController_remove_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5673,6 +5776,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/google-drive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether Google Drive is offered here, and the chapter's connected folder. */
+        get: operations["GoogleDriveController_status_v1"];
+        /** Connect a Google Drive folder shared with Frapp; its files are copied into Documents and kept in sync. */
+        put: operations["GoogleDriveController_connect_v1"];
+        post?: never;
+        /** Disconnect the folder. Its copies leave Documents; the files in Drive are untouched. */
+        delete: operations["GoogleDriveController_disconnect_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync the connected folder now. */
+        post: operations["GoogleDriveController_syncNow_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{id}/recording": {
         parameters: {
             query?: never;
@@ -5770,7 +5909,7 @@ export interface components {
             /** @description Process uptime in seconds */
             uptime: number;
             /**
-             * @description Deployed git SHA when Render set RENDER_GIT_COMMIT. Omitted when unset so local and CI do not invent a SHA.
+             * @description Deployed git SHA from RENDER_GIT_COMMIT: Render sets it on a git-backed service, and the image build stamps it on an image-backed one. Omitted when unset so local and CI do not invent a SHA.
              * @example 0ca478e9105105ff7013834615eee81499813d0e
              */
             commit?: string;
@@ -8035,6 +8174,15 @@ export interface components {
             /** Format: date-time */
             expected_updated_at: string;
         };
+        LinkMeetingEventDto: {
+            /**
+             * Format: uuid
+             * @description An event with no minutes of its own. Send this or new_event.
+             */
+            event_id?: string;
+            /** @description Make an event for the minutes after the fact: nobody required, no points, and no new-event push. */
+            new_event?: components["schemas"]["NewMeetingEventDto"];
+        };
         CheckInDto: {
             /** @description Rotating token read from the host QR code (s22). Valid for its 30s window and the one immediately before it. */
             token?: string;
@@ -9246,6 +9394,12 @@ export interface components {
             effective_date: string | null;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+            /** @description The Google Drive file this is a copy of, or null for an upload. Drive owns a copy: it cannot be deleted in Frapp (#5157) */
+            drive_file_id: string | null;
+            /** @description The Drive file's modified time when it was last copied */
+            drive_modified_at: string | null;
+            /** @description The file's page in Google Drive */
+            drive_url: string | null;
         };
         DocumentConfirmResultDto: {
             /** @description The storage path this result is for */
@@ -10868,6 +11022,30 @@ export interface components {
             text: string;
             /** @description The line of the notes it came from, word for word. */
             quote: string;
+            /** @description Whose line it is: a note-taker’s name, or "Recording". Absent on a draft from before several note-takers. */
+            from?: string;
+        };
+        MeetingDraftVersionDto: {
+            /** @description A note-taker’s name, or "Recording". */
+            from: string;
+            quote: string;
+            text: string;
+            vote: components["schemas"]["MeetingVoteDto"] | null;
+            /** Format: uuid */
+            owner_user_id: string | null;
+            /** @example 2026-11-20 */
+            due_date: string | null;
+        };
+        MeetingDraftConflictDto: {
+            /** @enum {string} */
+            kind: "decision" | "action_item";
+            /** @description What the sources disagree about. */
+            about: string;
+            versions: components["schemas"]["MeetingDraftVersionDto"][];
+            /** @description The version in the minutes, or null when nothing settled it and the author must pick. */
+            chosen: number | null;
+            /** @enum {string|null} */
+            settled_by: "recording" | "authority" | "author" | null;
         };
         MeetingDraftReviewDto: {
             /** @description What the notes leave unsaid, for the officer to fill in. */
@@ -10875,6 +11053,8 @@ export interface components {
             sources: components["schemas"]["MeetingDraftSourceDto"][];
             /** @description Drafted lines left out because the line they named is not in the notes. */
             left_out: number;
+            /** @description Where note-takers’ notes or the recording disagreed, and how each was settled (#4935). */
+            conflicts: components["schemas"]["MeetingDraftConflictDto"][];
         };
         MeetingDraftDto: {
             /** @enum {string} */
@@ -10896,8 +11076,8 @@ export interface components {
             blocked: "chapter_off" | "consent_required" | null;
         };
         RequestMeetingDraftDto: {
-            /** @description The officer’s notes, as typed or pasted. Sent to the AI provider the catalog names for the task, and stored only while the minutes are a draft. */
-            notes: string;
+            /** @description The officer’s own notes, saved as theirs before the draft is asked for. Optional since several note-takers (#4935): the draft reads every note-taker’s saved notes and the recording’s transcript, sent to the AI provider the catalog names for the task, and kept only while the minutes are a draft. */
+            notes?: string;
             /**
              * Format: date-time
              * @description The minutes’ `updated_at` the editor has. The draft is put into the minutes only while they are still at this version.
@@ -10915,6 +11095,93 @@ export interface components {
              * @description The minutes’ `updated_at` the editor has. The waiting draft is put in only while they are still at this version.
              */
             expected_updated_at: string;
+        };
+        ChooseMeetingDraftVersionDto: {
+            /** @description The disagreement, by its place in the list. */
+            conflict: number;
+            /** @description The version to put in, by its place. */
+            version: number;
+            /** Format: date-time */
+            expected_updated_at: string;
+        };
+        MeetingNoteTakingDto: {
+            /** Format: uuid */
+            meeting_id: string;
+            /** Format: uuid */
+            event_id: string;
+            event_name: string;
+            /** Format: date-time */
+            event_start_time: string;
+            /** @enum {string} */
+            meeting_type: "chapter" | "exec" | "committee" | "other";
+            author_name: string;
+            /** @description The caller already takes notes here. */
+            joined: boolean;
+            /** @description The author or an editor added the caller. */
+            added: boolean;
+        };
+        MeetingNotesMeetingDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string | null;
+            event_name: string;
+            /** Format: date-time */
+            event_start_time: string;
+            /** @enum {string} */
+            meeting_type: "chapter" | "exec" | "committee" | "other";
+            author_name: string;
+        };
+        MeetingOwnNotesDto: {
+            notes: string;
+            /** Format: date-time */
+            updated_at: string | null;
+            /**
+             * @description Why these notes would be left out of a draft now: their writer has not turned Frapp AI on.
+             * @enum {string|null}
+             */
+            held: "consent_required" | null;
+        };
+        MeetingNoteTakerDto: {
+            notes: string;
+            /** Format: date-time */
+            updated_at: string | null;
+            /**
+             * @description Why these notes would be left out of a draft now: their writer has not turned Frapp AI on.
+             * @enum {string|null}
+             */
+            held: "consent_required" | null;
+            /** Format: uuid */
+            user_id: string;
+            display_name: string;
+            is_author: boolean;
+            /** @description Added by the author or an editor, not joined by themselves. */
+            added: boolean;
+        };
+        MeetingNotesDto: {
+            meeting: components["schemas"]["MeetingNotesMeetingDto"];
+            /**
+             * @description `editor`: the minutes’ author or someone who can edit any minutes, who reads every note-taker’s notes and asks for the draft.
+             * @enum {string}
+             */
+            role: "editor" | "note_taker";
+            mine: components["schemas"]["MeetingOwnNotesDto"];
+            /** @description Everyone else taking notes, for an editor; empty otherwise. */
+            takers: components["schemas"]["MeetingNoteTakerDto"][];
+            others_count: number;
+            can_add: boolean;
+            joined: boolean;
+        };
+        SaveMeetingNotesDto: {
+            /** @description The caller’s own notes, as typed. Empty clears them. Kept only while the minutes are a draft, and 30 days at most. */
+            notes: string;
+        };
+        AddMeetingNoteTakerDto: {
+            /**
+             * Format: uuid
+             * @description A member the meeting’s event invites.
+             */
+            user_id: string;
         };
         CalendarFeedLinkDto: {
             /**
@@ -10970,6 +11237,43 @@ export interface components {
             state: string;
             /** @description The `gcal_code` the sign-in returned with. */
             code: string;
+        };
+        GoogleDriveConnectionDto: {
+            folder_id: string;
+            /** @description The folder's name in Drive */
+            folder_name: string;
+            /** @description The folder's page in Google Drive */
+            folder_url: string;
+            /**
+             * @description `no_access` once Google answered that Frapp can no longer see the folder (unshared or deleted); copies stay as they were until it is shared again
+             * @enum {string}
+             */
+            status: "active" | "no_access";
+            /**
+             * Format: date-time
+             * @description When the last sync finished. Null before the first.
+             */
+            last_synced_at: string | null;
+            /** @description Files the last sync left in Documents */
+            synced_count: number;
+            /** @description Files the last sync left out: a type Documents does not take, over 25 MB, or past 500 files */
+            skipped_count: number;
+            /** @description Whether a sync is due or running now */
+            syncing: boolean;
+        };
+        GoogleDriveStatusDto: {
+            /** @description Whether this server offers Google Drive. False until its service account is set; clients then hide the option. */
+            available: boolean;
+            /** @description The address a chapter shares its folder with */
+            service_account_email: string | null;
+            connection: components["schemas"]["GoogleDriveConnectionDto"] | null;
+        };
+        ConnectGoogleDriveDto: {
+            /**
+             * @description The Drive folder link (or its id)
+             * @example https://drive.google.com/drive/folders/1AbC...
+             */
+            folder_link: string;
         };
         MeetingRecordingUploadDto: {
             /** Format: uuid */
@@ -16712,6 +17016,40 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PostMeetingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingController_linkEvent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LinkMeetingEventDto"];
             };
         };
         responses: {
@@ -23840,6 +24178,198 @@ export interface operations {
             };
         };
     };
+    MeetingDraftController_choose_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChooseMeetingDraftVersionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingDraftDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNotesController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Only this event. */
+                event_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNoteTakingDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNotesController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNotesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNotesController_save_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveMeetingNotesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNotesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNotesController_add_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddMeetingNoteTakerDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingNotesDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingNotesController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     CalendarFeedController_ensure_v1: {
         parameters: {
             query?: never;
@@ -24030,6 +24560,120 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoogleCalendarStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_connect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectGoogleDriveDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_disconnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_syncNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
                 };
             };
             /** @description Error */

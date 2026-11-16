@@ -54,7 +54,11 @@ RUN npm run build --workspace=apps/api
 # second inject would mint debug IDs that never execute).
 #
 # ARG, not ENV: do not bake `SENTRY_AUTH_TOKEN` into later layers. Render
-# passes service env vars matching these ARG names at build time. Unset (CI,
+# passes service env vars matching these ARG names at build time. The image the
+# deploy job builds on GitHub for an image-backed service (#2506) passes the
+# token as the BuildKit secret `sentry_auth_token` instead, which the script
+# reads from /run/secrets when the ARG is unset; a secret never enters the
+# build metadata, and an absent one mounts nothing. Unset either way (CI,
 # laptops, or a Render service whose Infisical environment does not carry
 # it; docs/internal/environment/ENV_REFERENCE.md § apps/api says which do)
 # → the script skips sentry-cli and still strips `*.map` so the runner does
@@ -73,7 +77,7 @@ RUN npm run build --workspace=apps/api
 # the `@sentry/cli-linux-x64` binary npm installs here is static-pie.
 ARG SENTRY_AUTH_TOKEN
 ARG RENDER_GIT_COMMIT
-RUN node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js
+RUN --mount=type=secret,id=sentry_auth_token node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js
 
 # Stage 3: Production-only dependencies (clean install, no dev deps)
 FROM node:24-alpine AS prod-deps
@@ -134,10 +138,21 @@ COPY --from=builder --chown=frapp:frapp /app/packages/observability/dist/ ./pack
 COPY --from=builder --chown=frapp:frapp /app/packages/observability/package.json ./packages/observability/
 COPY --from=prod-deps --chown=frapp:frapp /app/packages/observability/node_modules/ ./packages/observability/node_modules/
 
+# The commit this image was built from, for `/health`'s `commit` and Sentry's
+# `release` (deployed-commit.ts). Render sets RENDER_GIT_COMMIT itself on a
+# git-backed service, to the same value it passes here; an image-backed
+# service has no commit of its own, so the deploy job passes it as a build
+# arg (#2506). Unset (CI, laptops) it stays empty, which reads as "no commit".
+ARG RENDER_GIT_COMMIT
+ENV RENDER_GIT_COMMIT=${RENDER_GIT_COMMIT}
+
 USER frapp
 WORKDIR /app/apps/api
 ENV NODE_ENV=production
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD wget -qO- http://localhost:3001/health || exit 1
-CMD ["node", "dist/main.js"]
+# boot.js reads the config from Infisical when the service holds an Infisical
+# machine identity (an image-backed service), then loads main.js; without one
+# it loads main.js straight away (infisical-boot-secrets.ts).
+CMD ["node", "dist/boot.js"]

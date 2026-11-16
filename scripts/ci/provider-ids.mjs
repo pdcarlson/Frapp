@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
 // Write one environment's provider ids to `$GITHUB_OUTPUT`, for the workflow
-// steps that deploy to or assert against Render and Vercel (#2806).
+// steps that deploy to or assert against Render and Vercel (#2806), with how
+// its API ships (`render_deploy_source`, and the image repository `api_image`;
+// #2506).
 //
 // The ids live in `.github/environments.json`, next to the Supabase project
 // refs, and nowhere else: workflows used to carry them as literals in several
@@ -29,6 +31,8 @@ import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 /** Step output name for each id, in the order they are written. */
 export const PROVIDER_ID_OUTPUTS = [
   ["renderServiceId", "render_service_id"],
+  ["renderDeploySource", "render_deploy_source"],
+  ["apiImage", "api_image"],
   ["vercelTeamId", "vercel_team_id"],
   ["vercelWebProjectId", "vercel_web_project_id"],
   ["vercelLandingProjectId", "vercel_landing_project_id"],

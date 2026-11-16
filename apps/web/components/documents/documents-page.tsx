@@ -52,6 +52,7 @@ import {
   useFolderManagement,
 } from "@/components/documents/folder-management";
 import { FolderImportPanel } from "@/components/documents/folder-import-panel";
+import { DriveFolderPanel } from "@/components/documents/drive-folder-panel";
 import { FolderRail } from "@/components/documents/folder-rail";
 import { MarkedStrip } from "@/components/documents/marked-strip";
 import { useDocumentMarks } from "@/components/documents/use-document-marks";
@@ -403,6 +404,9 @@ function ChapterDocumentsPage() {
             upload={upload}
             activeFolder={activeFolder}
           />
+        </Can>
+        <Can permission="chapter_docs:manage">
+          <DriveFolderPanel gate={gate} />
         </Can>
       </PageActions>
       {/*

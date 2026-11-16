@@ -23,6 +23,7 @@ import {
   SORT_OPTIONS,
   deleteDocumentTitle,
   isActiveDateFilter,
+  isDriveCopy,
   markedItems,
   NO_MARK_FILTER,
   tierByMarks,
@@ -360,6 +361,7 @@ export default function DocumentsScreen() {
     id: string;
     title: string;
     pinned_at: string | null;
+    drive_file_id?: string | null;
   }) {
     return {
       kind: "document" as const,
@@ -367,6 +369,7 @@ export default function DocumentsScreen() {
       name: doc.title,
       pinned: !!doc.pinned_at,
       starred: starredDocuments.has(doc.id),
+      fromDrive: isDriveCopy(doc),
     };
   }
 

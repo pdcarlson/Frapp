@@ -4,6 +4,10 @@ import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { codeOf } from "@repo/api-sdk";
 import {
   useDiscardMeetingDraft,
+  useChooseMeetingDraftVersion,
+  useCurrentUser,
+  useMeetingNotes,
+  useMemberDisplayNames,
   useRemoveMeetingRecording,
   useRequestMeetingDraft,
   useUseMeetingDraft,
@@ -17,7 +21,7 @@ import {
   MEETING_DRAFT_FAILURE_COPY,
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
-  MEETING_RECORDER_COPY,
+  MEETING_NOTE_TAKERS_COPY,
   STANDARDS_MEETING_NOTE,
   meetingLocalDay,
 } from "@repo/validation";
@@ -196,42 +200,46 @@ export const NotesDraftSheet = forwardRef<
     if (was === "drafting" || state.status === "applied") settled.current();
   }, [state.status]);
 
-  // Put in once per recording, so a box emptied by hand stays emptied.
-  const transcript =
-    recording?.status === "ready" ? (recording.transcript ?? null) : null;
-  const uploadId = recording?.upload_id ?? null;
-  const delivered = useRef<string | null>(null);
-  const notesNow = useRef(notes);
-  const clearKept = useRef(kept.clear);
-  useEffect(() => {
-    notesNow.current = notes;
-    clearKept.current = kept.clear;
-  });
-  useEffect(() => {
-    if (!transcript || delivered.current === uploadId) return;
-    delivered.current = uploadId;
-    if (notesNow.current.trim() !== "") return;
-    // The server's transcript, not something typed: nothing to keep yet.
-    clearKept.current();
-    setNotes(transcript);
-  }, [transcript, uploadId]);
-  const transcriptWaiting =
-    transcript !== null && !notes.includes(transcript.slice(0, 200));
+  // Since #4935 the recording's transcript is a source of its own, read by
+  // the draft beside everyone's notes, and is never put into this box.
+  const notesState = useMeetingNotes(meetingId).data ?? null;
+  const transcriptReady =
+    recording?.status === "ready" && !!recording.transcript;
+  const otherWriters = (notesState?.takers ?? []).filter(
+    (taker) => taker.notes.trim() !== "" && taker.held === null,
+  );
+  const othersWrote = otherWriters.length > 0 || transcriptReady;
+  const alsoReads = [
+    ...otherWriters.map((taker) => `${taker.display_name}'s notes`),
+    ...(transcriptReady ? [MEETING_NOTE_TAKERS_COPY.recordingSource] : []),
+  ];
+  const choose = useChooseMeetingDraftVersion();
+  const viewer = useCurrentUser().data as { id?: string } | undefined;
+  const myName = useMemberDisplayNames().nameFor(viewer?.id ?? "");
+  const isMine = (from: string) => !!myName && from === myName;
 
-  function handleAddTranscript() {
-    if (!transcript) return;
-    setNotes((current) =>
-      current.trim() === ""
-        ? transcript
-        : `${current.trimEnd()}\n\n${transcript}`,
-    );
-    if (problem) setProblem(null);
+  async function handleChoose(conflict: number, version: number) {
+    const expected = await getVersion();
+    if (!expected) {
+      setProblem(MEETING_NOTE_TAKERS_COPY.chooseFailed);
+      return;
+    }
+    try {
+      await choose.mutateAsync({
+        id: meetingId,
+        body: { conflict, version, expected_updated_at: expected },
+      });
+      settled.current();
+    } catch (error) {
+      if (codeOf(error) === "meeting.stale") settled.current();
+      setProblem(errorCopy(error, MEETING_NOTE_TAKERS_COPY.chooseFailed));
+    }
   }
 
   async function handleDraft() {
     if (kept.sendingElsewhere) return;
     const text = notes.trim();
-    if (!text) {
+    if (!text && !othersWrote) {
       setProblem(MEETING_NOTES_COPY.empty);
       return;
     }
@@ -272,7 +280,7 @@ export const NotesDraftSheet = forwardRef<
       await request.mutateAsync({
         id: meetingId,
         body: {
-          notes: text,
+          ...(text ? { notes: text } : {}),
           expected_updated_at: expected,
           meeting_date: meetingLocalDay(eventStart),
         },
@@ -321,8 +329,9 @@ export const NotesDraftSheet = forwardRef<
     });
     if (!yes) return;
     try {
-      if (state.status !== "none") await discard.mutateAsync({ id: meetingId });
-      // A transcript is notes too: clearing them removes it and its recording.
+      // The officer's own notes and the draft; other note-takers' stay theirs.
+      await discard.mutateAsync({ id: meetingId });
+      // The recording is the officer's upload: Clear notes removes it too.
       if (hasRecording) await removeRecording.mutateAsync({ id: meetingId });
       kept.clear();
       setNotes("");
@@ -359,7 +368,12 @@ export const NotesDraftSheet = forwardRef<
   const status: { problem: boolean; text: string } = problem
     ? { problem: true, text: problem }
     : drafting
-      ? { problem: false, text: MEETING_NOTES_COPY.drafting }
+      ? {
+          problem: false,
+          text: othersWrote
+            ? MEETING_NOTE_TAKERS_COPY.draftingAll
+            : MEETING_NOTES_COPY.drafting,
+        }
       : needsConsent
         ? { problem: false, text: MEETING_DRAFT_FAILURE_COPY.consent_required }
         : state.status === "failed"
@@ -370,11 +384,18 @@ export const NotesDraftSheet = forwardRef<
           : waiting
             ? { problem: false, text: MEETING_NOTES_COPY.waiting }
             : state.status === "applied"
-              ? { problem: false, text: MEETING_NOTES_COPY.applied }
+              ? {
+                  problem: false,
+                  text: othersWrote
+                    ? MEETING_NOTE_TAKERS_COPY.appliedAll
+                    : MEETING_NOTES_COPY.applied,
+                }
               : { problem: false, text: MEETING_NOTES_COPY.idle };
 
   const reviewed = state.status === "applied" || state.status === "ready";
   const { gaps, left_out: leftOut } = state.review;
+  // An API from before several note-takers sends no disagreements.
+  const conflicts = state.review.conflicts ?? [];
   const canClear = !drafting && (notes !== "" || state.status !== "none");
   const clearing = discard.isPending || removeRecording.isPending;
   // A draft the AI wrote can be reported, like an Ask answer. Each draft is
@@ -432,6 +453,11 @@ export const NotesDraftSheet = forwardRef<
               focused ? styles.fieldFocused : null,
             ]}
           />
+          {alsoReads.length > 0 ? (
+            <Text style={styles.hint}>
+              {MEETING_NOTE_TAKERS_COPY.alsoReads(alsoReads)}
+            </Text>
+          ) : null}
           <Text
             accessibilityLiveRegion="polite"
             style={[styles.status, status.problem ? styles.problem : null]}
@@ -463,7 +489,9 @@ export const NotesDraftSheet = forwardRef<
               label={
                 reviewed
                   ? MEETING_NOTES_COPY.draftAgain
-                  : MEETING_NOTES_COPY.draft
+                  : othersWrote
+                    ? MEETING_NOTE_TAKERS_COPY.draftAll
+                    : MEETING_NOTES_COPY.draft
               }
               onPress={() => void handleDraft()}
               accent={accent}
@@ -475,13 +503,6 @@ export const NotesDraftSheet = forwardRef<
               fill
               label={MEETING_NOTES_COPY.draftAgain}
               onPress={() => void handleDraft()}
-            />
-          ) : null}
-          {transcriptWaiting && !drafting ? (
-            <OnboardingSecondaryButton
-              fill
-              label={MEETING_RECORDER_COPY.addTranscript}
-              onPress={handleAddTranscript}
             />
           ) : null}
           {canClear ? (
@@ -508,6 +529,54 @@ export const NotesDraftSheet = forwardRef<
                   {MEETING_NOTES_COPY.leftOut(leftOut)}
                 </Text>
               ) : null}
+            </View>
+          ) : null}
+
+          {reviewed && !drafting && conflicts.length > 0 ? (
+            <View style={styles.review}>
+              <Text accessibilityRole="header" style={styles.reviewHead}>
+                {MEETING_NOTE_TAKERS_COPY.disagreed}
+              </Text>
+              {conflicts.map((conflict, index) => (
+                <View key={index} style={styles.conflict}>
+                  <Text style={styles.settled}>
+                    {conflict.settled_by
+                      ? MEETING_NOTE_TAKERS_COPY.settledBy[conflict.settled_by]
+                      : MEETING_NOTE_TAKERS_COPY.youDecide}
+                  </Text>
+                  <Text style={styles.gap}>{conflict.about}</Text>
+                  {conflict.versions.map((version, at) => (
+                    <View key={at} style={styles.version}>
+                      <Text style={styles.gap}>{version.text}</Text>
+                      <Text style={styles.hint}>
+                        {`${MEETING_NOTE_TAKERS_COPY.from(version.from, isMine(version.from))}: “${version.quote}”`}
+                      </Text>
+                      {conflict.chosen === at ? (
+                        <Text style={styles.hint}>
+                          {MEETING_NOTE_TAKERS_COPY.inMinutes}
+                        </Text>
+                      ) : state.status === "applied" ? (
+                        <OnboardingSecondaryButton
+                          fill
+                          label={
+                            conflict.chosen === null
+                              ? MEETING_NOTE_TAKERS_COPY.pickVersion(
+                                  version.from,
+                                  isMine(version.from),
+                                )
+                              : MEETING_NOTE_TAKERS_COPY.takeVersion(
+                                  version.from,
+                                  isMine(version.from),
+                                )
+                          }
+                          disabled={choose.isPending}
+                          onPress={() => void handleChoose(index, at)}
+                        />
+                      ) : null}
+                    </View>
+                  ))}
+                </View>
+              ))}
             </View>
           ) : null}
 
@@ -586,6 +655,18 @@ function createStyles(tokens: SignetTokens, accent: string) {
     gap: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
+    },
+    conflict: {
+      gap: tokens.spacing.xs,
+      paddingVertical: tokens.spacing.sm,
+    },
+    settled: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.warning,
+    },
+    version: {
+      gap: tokens.spacing.xs,
+      paddingLeft: tokens.spacing.sm,
     },
     report: {
       alignSelf: "center",

@@ -13,6 +13,20 @@ export function useMeetingsOn(): boolean {
   return !!chapter && isModuleEnabled(chapter.enabled_modules, "meetings");
 }
 
+/**
+ * What an event's `notes` are called (#4934): Notes while the meetings module
+ * keeps the minutes as their own record, Meeting minutes while it is off, as
+ * web's sheet names them (`spec/behavior/meetings.md` § Where minutes live).
+ * Notes until the chapter has loaded, or if it can't: unlike a minutes row,
+ * a label has to say something, and minutes are on by default.
+ */
+export function useNotesLabel(): "Notes" | "Meeting minutes" {
+  const chapter = useCurrentChapter().data;
+  return !chapter || isModuleEnabled(chapter.enabled_modules, "meetings")
+    ? "Notes"
+    : "Meeting minutes";
+}
+
 /** A yes/no question as the platform's own alert; resolves `true` on yes. */
 export function confirmAlert({
   title,

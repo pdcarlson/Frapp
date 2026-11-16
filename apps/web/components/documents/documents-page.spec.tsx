@@ -136,6 +136,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRequestDocumentUploadUrls: () => ({ mutateAsync: vi.fn() }),
   useConfirmDocumentUploads: () => ({ mutateAsync: vi.fn() }),
   useInvalidateDocuments: () => vi.fn(),
+  // The Google Drive folder (#5157); `drive-folder-panel.spec.tsx` covers it.
+  useGoogleDriveStatus: () => ({ data: undefined }),
   useSemesters: () => ({ data: [{ end_date: "2026-07-31" }] }),
   useMemberDisplayNames: () => ({ byId: roster.names }),
   useDocumentDownloadUrl: () => ({ mutateAsync: mockSignedLinks }),

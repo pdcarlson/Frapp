@@ -183,6 +183,7 @@ What No means for that member:
 | Documents they posted as an officer | Still read. They are the chapter's records, under the president's switch. |
 | Their roster fields | Still appear in an officer's tool results. A question like "who is behind on dues" needs every member, and the fields carry no contact details. |
 | Minutes that name them | Still drafted. Notes an officer writes about a meeting are the officer's text, and minutes have always named who said and owes what. |
+| Notes they take on a meeting | Left out of the draft. Several members can take notes on one meeting, and a note-taker's own notes go to a provider only with their own yes; the minutes' author is told whose notes wait on it ([`meetings.md` § Several note-takers](meetings.md#several-note-takers)). Added 2026-11-13 (#4935). |
 | A recorded meeting | Having Frapp AI on does not stop a recording. The [recording notice](meetings.md#recording-notice) does: anyone present can object, whatever they answered, and the officer then doesn't record. |
 
 How the first two gates are kept (#4308, #4790):
@@ -270,7 +271,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   On web the top bar's find field, which reads "Search or ask Frapp", asks from any page and opens the conversation as a dialog where Find opens (changed in #4904 by pdcarlson, 2026-11-13, Paul's pick;
   until then a button in the chat composer opened it over the thread;
   [`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) § Top bar);
-  on the phone the Ask Frapp bar above the tab bar, on all four tabs, opens it as a full-height sheet whose field also lists places that match what is typed (#4904;
+  on the phone the Ask Frapp bar above the tab bar, on all four tabs, opens it as a full-height sheet whose field only asks, and the Search screen's last row opens it with the searched words (changed in #5139 by pdcarlson, 2026-11-16; from #4904 the field also listed places that matched what was typed;
   [`../ui/mobile/navigation.md`](../ui/mobile/navigation.md) § Global entries).
   With Ask off for the chapter, for a member without `ai:use`, or on a server with no AI, there is no entry anywhere.
   Changed in #4702 by pdcarlson, 2026-11-13 (Paul): until then web had a pill in the top bar that opened a panel on the right edge, and the phone had a bar inside the + panel.
@@ -1073,6 +1074,9 @@ Frapp does not keep the text of prompts or answers, with two exceptions.
 - Neither store holds meeting audio or Standards material.
 - An officer's notes for drafted minutes are the officer's own input to a feature, not a stored prompt: they are kept beside the unposted minutes so the officer can ask again, with what the officer checks the draft against (what the notes leave out, and each drafted decision and action item beside its line), and are deleted when the minutes are posted ([`meetings.md` § Drafting from notes](meetings.md#drafting-from-notes)).
   Added 2026-11-12 (#4312, the drafting session's, Paul's to change).
+  Since #4935 (Paul, 2026-11-13) each note-taker's notes are kept the same way, each under its own writer: deleted when the minutes are posted or deleted, when the note-taker clears them, is removed or deletes their account, and 30 days after they were started.
+  A draft keeps what it was written from (every note-taker's notes and the transcript) until it goes, and goes with any of those note-takers' accounts.
+  A report of such a draft quotes every note-taker it read ([`meetings.md` § Several note-takers](meetings.md#several-note-takers)).
 - A stored exchange is deleted when the member who asked or reported deletes their account.
   It is also deleted early when a member it quotes deletes their account or turns their choice off.
   (2026-11-12: the diagnostics window quotes no member, because it keeps no answer that had chat in front of the model, so its only early deletions are the asker's.)

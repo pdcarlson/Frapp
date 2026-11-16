@@ -194,7 +194,7 @@ describe("resolveNotificationTarget, thread replies (#4054)", () => {
   });
 });
 
-describe("resolveNotificationTarget, message reminders (#4957)", () => {
+describe("resolveNotificationTarget, opening at a message (#4957, #4977)", () => {
   it("opens chat at the message a reminder push is about", () => {
     expect(
       resolveNotificationTarget(
@@ -236,11 +236,39 @@ describe("resolveNotificationTarget, message reminders (#4957)", () => {
     });
   });
 
-  it("leaves every other chat push on the conversation", () => {
+  it("opens any single-message chat push at its message, as Slack and Discord do (#4977)", () => {
     expect(
       resolveNotificationTarget(
-        payload({ screen: "chat", channelId: "c1" }, { messageId: "m9" }),
+        payload(
+          { screen: "chat", channelId: "c1" },
+          { messageId: "m9", mentioned: true },
+        ),
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m9" },
+    });
+  });
+
+  it("opens an in-app chat row at its message from the row's column (#4977)", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "chat", channelId: "c1" }),
         "m9",
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m9" },
+    });
+  });
+
+  it("leaves a bundle, which quotes no one message, on the conversation", () => {
+    expect(
+      resolveNotificationTarget(
+        payload(
+          { screen: "chat", channelId: "c1" },
+          { bundled: true, count: 3 },
+        ),
       ),
     ).toEqual({ pathname: "/chat-thread", params: { channelId: "c1" } });
   });

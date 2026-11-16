@@ -756,7 +756,7 @@ The #489 decision above, that a reply lands in the timeline, still holds for Rep
   A message from a member the viewer blocked reads as the tombstone, unnamed.
   `GET /v1/threads` serves it: the API reads which chapter channels hold the member's follows, authorizes them before the limit applies, and masks the parents for blocks.
   On the web it is a Threads button in the chat header, beside Members, with a dot while any thread has new replies; tapping a row switches to the thread's channel and opens the thread there, waiting for the channel list when the channel is new to the tab.
-  On the phone it is a Threads button in Chat home's title row ([`../../ui/mobile/navigation.md`](../../ui/mobile/navigation.md)), badged in house gold with how many threads have new replies, opening a sheet of the same rows; a row pushes the thread over its channel.
+  On the phone it is the Threads row, the first row of Chat home's channel list and always drawn ([`../../ui/mobile/navigation.md`](../../ui/mobile/navigation.md)), badged in house gold with how many threads have new replies, opening a sheet of the same rows; a row pushes the thread over its channel. (It was a button in Chat home's title row until #5139, 2026-11-16, when Search took that place.)
   The list is re-read when it opens, once a minute behind the button, and right after the member reads a thread.
 - **No auto-archive.**
   A thread stays open as long as its parent exists.

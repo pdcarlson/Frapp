@@ -4,7 +4,11 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRouter } from "expo-router";
-import { MEETING_COPY, MEETING_ENTRY_COPY } from "@repo/validation";
+import {
+  MEETING_COPY,
+  MEETING_ENTRY_COPY,
+  MEETING_NOTE_TAKERS_COPY,
+} from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
@@ -22,6 +26,7 @@ const state = vi.hoisted(() => ({
   start: vi.fn(),
   refetch: vi.fn(),
   enabled: undefined as boolean | undefined,
+  taking: [] as { meeting_id: string; author_name: string; joined: boolean }[],
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -35,6 +40,13 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   },
   usePermissionList: () => state.permissions,
   useStartMeeting: () => ({ mutateAsync: state.start, isPending: false }),
+  useMeetingNoteTaking: () => ({
+    data: state.taking ?? [],
+    isPending: false,
+  }),
+}));
+vi.mock("@/components/minutes/note-taker-sheet", () => ({
+  NoteTakerSheet: () => null,
 }));
 vi.mock("@/lib/minutes/meetings-on", () => ({
   useMeetingsOn: () => state.on,
@@ -72,6 +84,7 @@ beforeEach(() => {
   state.isSuccess = true;
   state.permissions = ["meetings:record"];
   state.canDraft = true;
+  state.taking = [];
 });
 
 describe("EventMinutesRow", () => {
@@ -101,6 +114,18 @@ describe("EventMinutesRow", () => {
       pathname: "/minutes-details",
       params: { id: "m1" },
     });
+  });
+
+  it("offers Take notes on someone else's draft, to a member they added (#4935)", () => {
+    state.permissions = [];
+    state.taking = [
+      { meeting_id: "m9", author_name: "Eli Sorensen", joined: false },
+    ];
+    const tree = render();
+    expect(screenText(tree)).toContain(MEETING_NOTE_TAKERS_COPY.takeNotes);
+    expect(screenText(tree)).toContain(
+      MEETING_NOTE_TAKERS_COPY.listItem("Eli Sorensen"),
+    );
   });
 
   it("offers nothing to a member when there are no minutes", () => {

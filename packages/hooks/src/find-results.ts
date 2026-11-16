@@ -4,8 +4,8 @@ import { memberLabel } from "./display-names";
 /**
  * What Find lists, built from the channel list and one `/v1/search` payload:
  * web's Find dialog (`apps/web/components/layout/find-dialog.tsx`) and the
- * rows the phone's Ask field offers while a member types
- * (`apps/mobile/components/ask/ask-find.tsx`, #4904). Pure, so the ranking,
+ * phone's Search screen (`apps/mobile/components/search/search-screen.tsx`,
+ * #5139; inside the Ask field from #4904 until then). Pure, so the ranking,
  * the per-group caps and every date hint are testable without rendering
  * either. Each result names what it is (`target`); where that opens is the
  * client's own routing.
@@ -146,11 +146,6 @@ export type FindInput = {
   departments?: unknown;
   /** Groups the chapter has switched off (a module gate), never listed. */
   hiddenGroups?: ReadonlySet<FindGroup>;
-  /**
-   * Rows per group, in place of the dialog's caps: the phone's list sits
-   * between a thread and a keyboard and shows fewer.
-   */
-  groupLimit?: number;
   now?: Date;
 };
 
@@ -161,13 +156,11 @@ export function buildFindResults({
   payload,
   departments,
   hiddenGroups,
-  groupLimit,
   now = new Date(),
 }: FindInput): FindResult[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
-  const limit =
-    groupLimit ?? (filter === "All" ? ALL_GROUP_LIMIT : SINGLE_GROUP_LIMIT);
+  const limit = filter === "All" ? ALL_GROUP_LIMIT : SINGLE_GROUP_LIMIT;
   const wants = (group: FindGroup) =>
     !hiddenGroups?.has(group) && (filter === "All" || filter === group);
 

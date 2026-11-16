@@ -350,12 +350,19 @@ export function toLibraryDocuments<D extends LibrarySourceDocument>(
 
 /**
  * "Uploaded Sep 26 by Ryan Castellano", dropping whichever half is unknown:
- * the lead of each app's row meta line.
+ * the lead of each app's row meta line. A copy of a file in the chapter's
+ * Google Drive folder (#5157) says where it came from instead of who filed
+ * it, since the officer who connected the folder didn't pick each file:
+ * "From Google Drive, added Sep 26".
  */
 export function uploadedLine(
   day: string | null,
   uploader: string | null,
+  fromDrive = false,
 ): string | null {
+  if (fromDrive) {
+    return day ? `From Google Drive, added ${day}` : "From Google Drive";
+  }
   if (!day && !uploader) return null;
   return ["Uploaded", day, uploader ? `by ${uploader}` : null]
     .filter(Boolean)
@@ -692,4 +699,9 @@ export function tierRows<
     (row) => starredDocuments.has(row.doc.id),
   );
   return [...tiers.pinned, ...tiers.starred, ...tiers.rest];
+}
+
+/** Whether a document is a copy of a file in the chapter's Drive folder (#5157). */
+export function isDriveCopy(doc: { drive_file_id?: string | null }): boolean {
+  return typeof doc.drive_file_id === "string" && doc.drive_file_id !== "";
 }

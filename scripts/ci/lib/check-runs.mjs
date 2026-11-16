@@ -55,7 +55,9 @@ export function latestRunsByName(checkRuns) {
  *
  * A check with only skipped runs is still judged `skipped`, which
  * `ACCEPTED_CONCLUSIONS` accepts as before: the path-gated jobs report it on a
- * PR, and a commit's own required job can legitimately skip.
+ * PR and, since #5195, on a merge queue entry whose own files don't reach
+ * them, so it is the usual evidence for a gated job on a queued commit. A
+ * commit's own required job can legitimately skip.
  */
 export function deployEvidenceByName(checkRuns) {
   const all = Array.isArray(checkRuns) ? checkRuns : [];

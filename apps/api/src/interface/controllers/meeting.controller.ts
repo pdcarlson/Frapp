@@ -48,6 +48,7 @@ import {
   PostMeetingDto,
   StartMeetingDto,
   UpdateMeetingDto,
+  LinkMeetingEventDto,
 } from '../dtos/meeting.dto';
 
 function summaryOf(meeting: Meeting): MeetingSummaryDto {
@@ -208,6 +209,23 @@ export class MeetingController {
     return dtoOf(
       await this.meetings.post(chapterId, id, userId, dto.expected_updated_at),
     );
+  }
+
+  @Post(':id/event')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions(SystemPermissions.MEETINGS_EDIT)
+  @ApiOperation({
+    summary:
+      'Link minutes whose event was deleted to an event, or make one after the fact (new_event). 409 `meeting.event_linked` when they have one, `meeting.already_started` when that event has minutes',
+  })
+  @ApiOkResponse({ type: MeetingDto })
+  async linkEvent(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: LinkMeetingEventDto,
+  ): Promise<MeetingDto> {
+    return dtoOf(await this.meetings.linkEvent(chapterId, id, userId, dto));
   }
 
   @Delete(':id')

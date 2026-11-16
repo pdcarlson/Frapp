@@ -62,6 +62,7 @@ import {
   selectSeriesCadence,
   selectSeriesName,
   selectSeriesOccurrences,
+  withoutMeetingLists,
   type EventDetail,
 } from "@/lib/events/select";
 import { PressableRow } from "@/components/list-section";
@@ -71,6 +72,8 @@ import { eyebrowStyle } from "@/components/eyebrow";
 import { pageSurfaces } from "@/lib/surfaces";
 import { InlineNote } from "@/components/inline-note";
 import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
+import { EventMeetingLists } from "@/components/events/event-agenda";
+import { useNotesLabel } from "@/lib/minutes/meetings-on";
 
 /**
  * s07 — Event detail (`canvas-screens.dc.html:246`).
@@ -178,19 +181,26 @@ export default function EventDetailsScreen() {
   }, [event, parent, seriesListQuery.data]);
   // The sheet's draft is seeded from the event when it mounts, so a save
   // (or anyone else's) remounts it with what the server now holds.
+  // Not on the agenda or attachments: those save in place on this screen
+  // (#4934), and a check-off must not close an open Edit sheet under the
+  // officer. The sheet edits neither.
   const editSheetKey = editTarget
-    ? JSON.stringify([eventQuery.data, parentQuery.data ?? null])
+    ? JSON.stringify([
+        withoutMeetingLists(eventQuery.data),
+        parentQuery.data ?? null,
+      ])
     : "";
 
   // An edit kept past this screen (#4872) goes with its event: one deleted
   // since has no sheet to open it in.
   const editDraftName = eventId ? `event-edit:${eventId}` : null;
-  useDropKeptSheetDraft(
-    editDraftName,
+  // The event was deleted: its read now 404s, though a refetch keeps the
+  // event it loaded before on screen.
+  const eventGone =
     !eventQuery.isPending &&
-      eventQuery.isError &&
-      statusOf(eventQuery.error) === 404,
-  );
+    eventQuery.isError &&
+    statusOf(eventQuery.error) === 404;
+  useDropKeptSheetDraft(editDraftName, eventGone);
 
   /*
     A ticking clock, not one frozen at mount: this screen is often opened
@@ -205,6 +215,7 @@ export default function EventDetailsScreen() {
     server enforces the real window regardless — this is UX only.
   */
   const now = useNowDate();
+  const notesLabel = useNotesLabel();
 
   if (!eventId) {
     return (
@@ -312,9 +323,23 @@ export default function EventDetailsScreen() {
           />
         ) : null}
 
+        {/* Keyed by meeting: a half-typed item, or a change still waiting
+            to save, must not carry over to another occurrence opened from
+            the series list (the old one's is sent as it goes). */}
+        <EventMeetingLists
+          key={`lists-${event.id}`}
+          eventId={event.id}
+          lists={{ agenda: event.agenda, attachments: event.attachments }}
+          // A real events:update answer, and an event still there: every
+          // write to one deleted since would 404.
+          canEdit={canDecideExcuses && !eventGone}
+        />
+
         {event.notes ? (
+          // Every member the event invites reads these, so never "internal"
+          // (#4934); labeled as web's sheet labels them.
           <DetailSection
-            label="INTERNAL NOTES"
+            label={notesLabel.toUpperCase()}
             body={event.notes}
             styles={styles}
           />
@@ -547,7 +572,7 @@ function CheckInCard({
 /**
  * The screen's loading state, on the loaded screen's own styles: the check-in
  * card's frame and header line (components.md §10). The badge row and the
- * DETAILS and INTERNAL NOTES sections are left out: each draws only when the
+ * DETAILS and NOTES sections are left out: each draws only when the
  * event carries one, and a placeholder for one would leave a gap when it
  * doesn't land.
  *
@@ -660,7 +685,7 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
   );
 }
 
-/** DETAILS and INTERNAL NOTES share this shape; only the label and body differ. */
+/** DETAILS and NOTES share this shape; only the label and body differ. */
 function DetailSection({
   label,
   body,

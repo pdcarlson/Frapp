@@ -46,7 +46,7 @@ import {
 
 import { ChapterDocumentTypeService } from './chapter-document-type.service';
 
-const DOCUMENTS_BUCKET = 'documents';
+export const DOCUMENTS_BUCKET = 'documents';
 
 /** Ids one `GET /documents/previews` may sign (#4647). */
 export const MAX_PREVIEW_IDS = 100;
@@ -379,6 +379,13 @@ export class ChapterDocumentService {
     if (!document) {
       throw new NotFoundException('Document not found');
     }
+    // Drive owns a copy: deleting it here would only bring it back on the
+    // next sync (`spec/behavior/chapter-docs.md` § Google Drive folder).
+    if (document.drive_file_id !== null) {
+      throw new ConflictException(
+        "This file comes from the chapter's Google Drive folder. Remove it in Google Drive.",
+      );
+    }
 
     await this.storageProvider.deleteFile(
       DOCUMENTS_BUCKET,
@@ -634,7 +641,8 @@ export class ChapterDocumentService {
     }
   }
 
-  private async ensureFolder(
+  /** The chapter's folder named `name`, made if it is missing. */
+  async ensureFolder(
     name: string,
     chapterId: string,
   ): Promise<ChapterDocumentFolder> {

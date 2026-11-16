@@ -30,6 +30,7 @@ import type {
   ChapterDocumentFolder,
   ChapterDocumentStar,
   ChapterDocumentType,
+  ChapterDriveConnection,
   ChapterDuesConfig,
   ChapterGoalRow,
   ChapterGroup,
@@ -81,6 +82,7 @@ import type {
   Invite,
   Meeting,
   MeetingDraft,
+  MeetingNote,
   MeetingRecording,
   MeetingTemplate,
   Member,
@@ -189,6 +191,7 @@ export interface Database {
       chapter_document_stars: TableDefinition<ChapterDocumentStar>;
       chapter_document_types: TableDefinition<ChapterDocumentType>;
       chapter_documents: TableDefinition<ChapterDocument>;
+      chapter_drive_connections: TableDefinition<ChapterDriveConnection>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
       chapter_goals: TableDefinition<ChapterGoalRow>;
       chapter_group_members: TableDefinition<ChapterGroupMember>;
@@ -237,6 +240,7 @@ export interface Database {
       google_calendar_oauth_states: TableDefinition<GoogleCalendarOAuthState>;
       invites: TableDefinition<Invite>;
       meeting_drafts: TableDefinition<MeetingDraft>;
+      meeting_notes: TableDefinition<MeetingNote>;
       meeting_recordings: TableDefinition<MeetingRecording>;
       meeting_templates: TableDefinition<MeetingTemplate>;
       meetings: TableDefinition<Meeting>;
@@ -415,6 +419,14 @@ export interface Database {
           p_kinds: string[];
         };
         Returns: AiRun[];
+      };
+      /**
+       * `20261116164304` (#5157) — Google Drive folders to sync or clean up
+       * next, each leased; `returns setof chapter_drive_connections`.
+       */
+      claim_chapter_drive_syncs: {
+        Args: { p_now: string; p_limit: number; p_lease_seconds: number };
+        Returns: ChapterDriveConnection[];
       };
       /**
        * `20261112165050` (#720) — sources that need indexing, each with its

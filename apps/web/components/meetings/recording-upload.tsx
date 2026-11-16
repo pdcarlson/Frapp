@@ -96,8 +96,8 @@ async function inspect(
  * Uploading a meeting's recording (`spec/behavior/meetings.md` § Uploading a
  * recording, #712), inside the notes box it feeds. The secretary picks the
  * file their phone recorded, confirms the room was told, and leaves: the
- * transcript arrives in a few minutes and goes into "Your notes", where
- * drafting takes over. Otter's "Import" and Rev's upload work the same way:
+ * transcript arrives in a few minutes, and the draft reads it beside every
+ * note-taker's notes (#4935; it used to go into "Your notes"). Otter's "Import" and Rev's upload work the same way:
  * choose a file, watch one line of progress, come back to text.
  *
  * One row, one height, in every state (principles P4): what the recording is
@@ -109,18 +109,12 @@ export function RecordingUpload({
   meetingId,
   state,
   disabled,
-  notes,
-  onTranscript,
   ensureConsent,
   confirm,
 }: {
   meetingId: string;
   state: MeetingRecordingState;
   disabled: boolean;
-  /** What is in the notes box now. */
-  notes: string;
-  /** Put the transcript into the notes box. */
-  onTranscript: (transcript: string) => void;
   ensureConsent: () => Promise<boolean>;
   confirm: (request: ConfirmRequest) => Promise<ConfirmResult | null>;
 }) {
@@ -145,26 +139,6 @@ export function RecordingUpload({
   const fileInput = useRef<HTMLInputElement>(null);
 
   const limits = { maxBytes: state.max_bytes, maxSeconds: state.max_seconds };
-
-  // A transcript that arrives while the notes box is empty goes straight in:
-  // that is what the officer uploaded it for. Notes they already typed are
-  // theirs, so then it waits behind a button.
-  // The same on coming back to the page: the transcript is on the server,
-  // the notes box starts empty, and the officer should find it filled. It is
-  // put in once per upload, so emptying the box by hand stays emptied.
-  const delivered = useRef<string | null>(null);
-  const put = useRef(onTranscript);
-  const notesNow = useRef(notes);
-  useEffect(() => {
-    put.current = onTranscript;
-    notesNow.current = notes;
-  });
-  useEffect(() => {
-    if (state.status !== "ready" || !state.transcript) return;
-    if (delivered.current === state.upload_id) return;
-    delivered.current = state.upload_id;
-    if (notesNow.current.trim() === "") put.current(state.transcript);
-  }, [state.status, state.transcript, state.upload_id]);
 
   // Leaving mid-upload loses it, so the browser asks first.
   useEffect(() => {
@@ -222,7 +196,7 @@ export function RecordingUpload({
         title: "Replace the recording?",
         description:
           state.status === "ready"
-            ? "The earlier transcript is removed. What is already in your notes stays."
+            ? "The earlier transcript is removed, and the next draft reads the new one."
             : "The recording being transcribed now is stopped and removed.",
         confirmLabel: "Replace it",
         tone: "default",
@@ -328,13 +302,9 @@ export function RecordingUpload({
     }
   }
 
-  function run(does: "upload" | "cancel" | "stop" | "insert") {
+  function run(does: "upload" | "cancel" | "stop") {
     if (does === "upload") return void handleOpen();
     if (does === "cancel") return void handleRemove(null);
-    if (does === "insert") {
-      if (state.transcript) onTranscript(state.transcript);
-      return;
-    }
     void handleRemove({
       title: "Stop transcribing?",
       description: "The recording is removed. You can upload it again later.",
@@ -343,10 +313,6 @@ export function RecordingUpload({
     });
   }
 
-  const inNotes =
-    state.status === "ready" &&
-    !!state.transcript &&
-    notes.includes(state.transcript.slice(0, 200));
   // The server says an upload is under way, and this tab isn't sending it:
   // the page was reloaded or closed mid-upload.
   const interrupted = state.status === "uploading" && !sending;
@@ -357,10 +323,9 @@ export function RecordingUpload({
   // refs, which render must not.
   type RowAction = {
     label: string;
-    does: "upload" | "cancel" | "stop" | "insert";
+    does: "upload" | "cancel" | "stop";
   };
   let action: RowAction | null = null;
-  let second: RowAction | null = null;
   const uploadAction: RowAction = { label: "Upload a recording", does: "upload" };
   if (sending) {
     const percent =
@@ -388,17 +353,9 @@ export function RecordingUpload({
   } else if (state.status === "ready") {
     line = {
       tone: "quiet",
-      text: inNotes
-        ? `The transcript is in your notes (${lengthInWords(state.duration_seconds ?? 0)}${speakersLabel(state.speaker_count)}). Speakers are numbered, not named, and the recording has been deleted.`
-        : `The transcript is ready (${lengthInWords(state.duration_seconds ?? 0)}${speakersLabel(state.speaker_count)}), and the recording has been deleted.`,
+      text: `The transcript is ready (${lengthInWords(state.duration_seconds ?? 0)}${speakersLabel(state.speaker_count)}), and the draft reads it with everyone's notes. Speakers are numbered, not named, and the recording has been deleted.`,
     };
-    if (!inNotes && state.transcript) {
-      action = {
-        label: notes.trim() === "" ? "Put it in your notes" : "Add to your notes",
-        does: "insert",
-      };
-    }
-    second = { label: "Upload another", does: "upload" };
+    action = { label: "Upload another", does: "upload" };
   } else if (state.status === "failed") {
     line = {
       tone: "problem",
@@ -434,16 +391,6 @@ export function RecordingUpload({
           {line.text}
         </p>
         <div className="flex shrink-0 items-center gap-2">
-          {second ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={disabled || busy}
-              onClick={() => run(second.does)}
-            >
-              {second.label}
-            </Button>
-          ) : null}
           {action ? (
             <Button
               variant="secondary"

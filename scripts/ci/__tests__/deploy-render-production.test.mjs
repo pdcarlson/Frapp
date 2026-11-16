@@ -5,6 +5,7 @@ import {
   classifyRenderStatus,
   createRenderDeploy,
   deployRenderCommit,
+  resolveImageUrl,
   pollRenderDeploy,
   RENDER_MAX_CONSECUTIVE_READ_ERRORS,
 } from "../deploy-render-production.mjs";
@@ -86,6 +87,40 @@ describe("createRenderDeploy", () => {
       () => createRenderDeploy({ apiKey: API_KEY, serviceId: SERVICE_ID, sha: SHA, fetchImpl }),
       /returned no deploy id/,
     );
+  });
+});
+
+describe("an image-backed service (#2506)", () => {
+  const API_IMAGE = "ghcr.io/frapplive/frapp-api";
+  const DIGEST = `sha256:${"0123456789abcdef".repeat(4)}`;
+  const IMAGE = `${API_IMAGE}@${DIGEST}`;
+
+  it("sends the image, not the commit", async () => {
+    const { fetchImpl, calls } = makeFetchStub([okJson({ id: "dep-img" })]);
+    const result = await createRenderDeploy({ apiKey: API_KEY, serviceId: SERVICE_ID, sha: SHA, imageUrl: IMAGE, fetchImpl });
+    assert.equal(result.deployId, "dep-img");
+    assert.deepEqual(JSON.parse(calls[0].options.body), { imageUrl: IMAGE });
+  });
+
+  it("deploys by commit unless the environment says image", () => {
+    assert.equal(resolveImageUrl({}), null);
+    assert.equal(resolveImageUrl({ deploySource: "commit", imageRef: IMAGE, apiImage: API_IMAGE }), null);
+    assert.equal(resolveImageUrl({ deploySource: "image", imageRef: IMAGE, apiImage: API_IMAGE }), IMAGE);
+  });
+
+  it("refuses a missing or malformed reference, a tag, and another repository", () => {
+    for (const [label, imageRef, pattern] of [
+      ["missing", "", /did not hand one over/],
+      ["a commit tag, which can be pushed again", `${API_IMAGE}:${SHA}`, /@sha256:<digest>/],
+      ["a moving tag", `${API_IMAGE}:latest`, /@sha256:<digest>/],
+      ["a short digest", `${API_IMAGE}@sha256:abc`, /@sha256:<digest>/],
+      ["another registry", `docker.io/frapplive/frapp-api@${DIGEST}`, /@sha256:<digest>/],
+      ["another repository", `ghcr.io/frapplive/other@${DIGEST}`, /not the configured apiImage/],
+    ]) {
+      assert.throws(() => resolveImageUrl({ deploySource: "image", imageRef, apiImage: API_IMAGE }), pattern, label);
+    }
+    assert.throws(() => resolveImageUrl({ deploySource: "image", imageRef: IMAGE }), /not the configured apiImage ''/);
+    assert.throws(() => resolveImageUrl({ deploySource: "docker" }), /commit or image/);
   });
 });
 

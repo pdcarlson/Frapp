@@ -120,6 +120,16 @@ const MEMBERSHIP_ONLY_ROUTES: Record<string, string> = {
     "The caller's own Google Calendar connection; connecting needs members:view.",
   'GoogleCalendarController.disconnect':
     "Ends the caller's own Google Calendar connection, so losing members:view never traps one.",
+  'MeetingNotesController.list':
+    'Minutes the caller may take notes on (#4935); the service lists only drafts whose event shows itself to them, to officers with meetings:record or members the author added.',
+  'MeetingNotesController.get':
+    'The caller’s own notes (#4935); a member the author added may hold no meetings permission, so the service decides and answers 404 otherwise.',
+  'MeetingNotesController.save':
+    'The caller’s own notes (#4935), by the same rule as reading them.',
+  'MeetingNotesController.add':
+    'Adding a note-taker (#4935); the service lets only the minutes’ author or a meetings:edit holder.',
+  'MeetingNotesController.remove':
+    'Removing a note-taker (#4935): the author or a meetings:edit holder, or the note-taker themselves, checked in the service.',
   'AttendanceController.checkIn':
     'Any member checks themselves in; the check-in token and window are verified in the service.',
   'UserController.getMyPermissions':

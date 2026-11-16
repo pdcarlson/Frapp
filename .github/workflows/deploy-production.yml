@@ -352,6 +352,12 @@ jobs:
     name: Migrate, then ship Render + Vercel
     needs: validate
     uses: ./.github/workflows/_deploy.yml
+    # `_deploy.yml`'s job asks for `packages: write` to push the API image
+    # (#2506), and a called job may not ask for more than its caller grants.
+    # Production builds no image yet, so it goes unused here until it does.
+    permissions:
+      contents: read
+      packages: write
     secrets: inherit
     with:
       environment: production

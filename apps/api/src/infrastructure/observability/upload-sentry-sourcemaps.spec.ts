@@ -27,8 +27,10 @@ import {
   runSentrySourcemapUpload,
   SENTRY_CLI_INJECT_TIMEOUT_MS,
   SENTRY_CLI_UPLOAD_TIMEOUT_MS,
+  SENTRY_TOKEN_SECRET_FILE,
   sentryCliBin,
   stripSourceMapFiles,
+  withMountedSentryToken,
 } from './upload-sentry-sourcemaps';
 
 const MAIN_JS = 'console.log(1);\n';
@@ -930,6 +932,41 @@ describe('defaultRunSentryCli', () => {
       expect(stripSourceMapFiles(distDir)).toEqual([]);
     });
 
+    posixIt(
+      'hands sentry-cli the token read from the secret file, which process.env never holds',
+      () => {
+        // The image build's path: no build ARG, the token only in the mounted
+        // secret. Each run of the fake records the token its env carries.
+        const seen = join(
+          mkdtempSync(join(tmpdir(), 'frapp-fake-cli-env-')),
+          'tokens',
+        );
+        process.env.SENTRY_BINARY_PATH = fakeBinary(
+          `printf '%s\\n' "\${SENTRY_AUTH_TOKEN:-unset}" >> '${seen}'`,
+        );
+        const savedToken = process.env.SENTRY_AUTH_TOKEN;
+        delete process.env.SENTRY_AUTH_TOKEN;
+        try {
+          const env = withMountedSentryToken(
+            { RENDER_GIT_COMMIT: 'a'.repeat(40) },
+            () => 'sntrys_from_secret\n',
+          );
+          runSentrySourcemapUpload({
+            env,
+            distDir: fixtureDist(),
+            log: jest.fn(),
+          });
+        } finally {
+          if (savedToken !== undefined)
+            process.env.SENTRY_AUTH_TOKEN = savedToken;
+        }
+        // Inject, then upload, each with the token.
+        expect(readFileSync(seen, 'utf8')).toBe(
+          'sntrys_from_secret\nsntrys_from_secret\n',
+        );
+      },
+    );
+
     posixIt('restores a module that a killed inject left truncated', () => {
       // $3 is the dist directory: `sourcemaps inject <distDir>`.
       process.env.SENTRY_BINARY_PATH = fakeBinary(
@@ -1109,7 +1146,37 @@ function stageCopies(dockerfile: string, stage: string): StageCopy[] {
 }
 
 const DOCKER_UPLOAD_RUN =
-  'RUN node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js';
+  'RUN --mount=type=secret,id=sentry_auth_token node apps/api/dist/infrastructure/observability/upload-sentry-sourcemaps.js';
+
+describe('withMountedSentryToken', () => {
+  it('keeps a token the build ARG already set', () => {
+    const env = { SENTRY_AUTH_TOKEN: 'from-arg' };
+    const readFile = jest.fn(() => 'from-secret');
+    expect(withMountedSentryToken(env, readFile)).toBe(env);
+    expect(readFile).not.toHaveBeenCalled();
+  });
+
+  it('reads the mounted BuildKit secret when the ARG is unset', () => {
+    const readFile = jest.fn(() => 'from-secret\n');
+    expect(
+      withMountedSentryToken({ RENDER_GIT_COMMIT: 'abc' }, readFile),
+    ).toEqual({
+      RENDER_GIT_COMMIT: 'abc',
+      SENTRY_AUTH_TOKEN: 'from-secret',
+    });
+    expect(readFile).toHaveBeenCalledWith(SENTRY_TOKEN_SECRET_FILE);
+  });
+
+  it('leaves the env alone when no secret is mounted, or it is empty', () => {
+    const env = { SENTRY_AUTH_TOKEN: '' };
+    expect(
+      withMountedSentryToken(env, () => {
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      }),
+    ).toBe(env);
+    expect(withMountedSentryToken(env, () => '  \n')).toBe(env);
+  });
+});
 
 // Nothing else runs the module as a program, so without these a regression in
 // `isDirectCli()` or `process.exitCode = main()` would pass every test above.
@@ -1155,7 +1222,9 @@ describe('the built entry, run by node as the Docker step runs it', () => {
 
   it('is emitted at the path the Dockerfile runs', () => {
     const { entry } = builtTree();
-    expect(`RUN node apps/api/${entry}`).toBe(DOCKER_UPLOAD_RUN);
+    expect(
+      `RUN --mount=type=secret,id=sentry_auth_token node apps/api/${entry}`,
+    ).toBe(DOCKER_UPLOAD_RUN);
     const tsconfigBuild = readFileSync(
       join(process.cwd(), 'tsconfig.build.json'),
       'utf8',

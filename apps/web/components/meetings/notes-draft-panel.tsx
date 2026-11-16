@@ -3,17 +3,22 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { codeOf } from "@repo/api-sdk";
 import {
+  useChooseMeetingDraftVersion,
+  useCurrentUser,
+  useMemberDisplayNames,
   useDiscardMeetingDraft,
   useRequestMeetingDraft,
   useUseMeetingDraft,
   useRemoveMeetingRecording,
   type MeetingDraftState,
+  type MeetingNotesState,
   type MeetingRecordingState,
 } from "@repo/hooks";
 import {
   MEETING_DRAFT_FAILURE_COPY,
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
+  MEETING_NOTE_TAKERS_COPY,
   STANDARDS_MEETING_NOTE,
   meetingLocalDay,
 } from "@repo/validation";
@@ -26,6 +31,11 @@ import type {
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { ReportAiButton } from "@/components/ai/report-ai";
 import { RecordingUpload } from "@/components/meetings/recording-upload";
+import {
+  NoteTakersList,
+  saveStatusLine,
+  useNotesAutosave,
+} from "@/components/meetings/note-takers";
 import { getErrorMessage } from "@/lib/utils";
 
 /**
@@ -37,11 +47,16 @@ import { getErrorMessage } from "@/lib/utils";
  *
  * One status line sits beside the buttons and keeps its height in every
  * state, so nothing below moves while a draft is written (principles P4).
+ *
+ * Since #4935 the notes save as they are typed, other members can take notes
+ * too, and the draft reads all of them and the recording's transcript
+ * (`meetings.md` § Several note-takers), listed under the box.
  */
 export function NotesDraftPanel({
   meetingId,
   eventStart,
   state,
+  notesState,
   recording,
   hasContent,
   disabled,
@@ -53,6 +68,8 @@ export function NotesDraftPanel({
   meetingId: string;
   eventStart: string;
   state: MeetingDraftState;
+  /** The caller's notes and the other note-takers', or null while unknown. */
+  notesState: MeetingNotesState | null;
   /**
    * Where the meeting's uploaded recording stands, or null when this server
    * transcribes nothing: the notes box is then all there is.
@@ -78,16 +95,30 @@ export function NotesDraftPanel({
   const request = useRequestMeetingDraft();
   const discard = useDiscardMeetingDraft();
   const use = useUseMeetingDraft();
+  const choose = useChooseMeetingDraftVersion();
+  // A version is named by its writer; the viewer's own reads as "yours".
+  const me = (useCurrentUser().data as { id?: string } | undefined)?.id;
+  const myName = useMemberDisplayNames().nameFor(me ?? "");
+  const isMine = (from: string) => !!myName && from === myName;
   const removeRecording = useRemoveMeetingRecording();
   // The AI sheet opens here, where the officer first reaches for the draft.
   const { ensureConsent, consentDialog } = useAiConsentGate();
-  const [notes, setNotes] = useState(state.notes);
+  const autosave = useNotesAutosave(
+    meetingId,
+    notesState?.mine.notes ?? state.notes,
+  );
+  const notes = autosave.text;
   const [problem, setProblem] = useState<string | null>(null);
 
   const drafting =
     state.status === "drafting" || request.isPending || use.isPending;
   const needsConsent = state.blocked === "consent_required";
-  const unsent = notes.trim() !== state.notes.trim() && notes.trim() !== "";
+  const transcriptReady =
+    recording?.status === "ready" && !!recording.transcript;
+  const othersWrote =
+    (notesState?.takers ?? []).some(
+      (taker) => taker.notes.trim() && taker.held === null,
+    ) || transcriptReady;
 
   // The draft landing is the server's doing, so the page learns of it here.
   // Whenever one stops being written (put in, waiting, stopped, failed, or
@@ -104,17 +135,9 @@ export function NotesDraftPanel({
     if (was === "drafting" || state.status === "applied") settled.current();
   }, [state.status]);
 
-  // Notes are stored when a draft is asked for, so until then leaving asks.
-  useEffect(() => {
-    if (!unsent) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [unsent]);
-
   async function handleDraft() {
     const text = notes.trim();
-    if (!text) {
+    if (!text && !othersWrote) {
       setProblem(MEETING_NOTES_COPY.empty);
       return;
     }
@@ -143,13 +166,19 @@ export function NotesDraftPanel({
       });
       if (!answer) return;
     }
+    // A save still waiting goes first: otherwise the draft would read the
+    // notes as they were, and the late save of an emptied box would then
+    // delete the draft just asked for.
+    if (!(await autosave.flush())) return;
     const expected = await prepare();
     if (!expected) return;
     try {
+      // The officer's notes go with the request too, so the draft reads
+      // exactly what is in the box.
       await request.mutateAsync({
         id: meetingId,
         body: {
-          notes: text,
+          ...(text ? { notes: text } : {}),
           expected_updated_at: expected,
           meeting_date: meetingLocalDay(eventStart),
         },
@@ -163,10 +192,7 @@ export function NotesDraftPanel({
         setProblem(MEETING_DRAFT_FAILURE_COPY.consent_required);
       else if (code === "ai.chapter_off")
         setProblem(MEETING_DRAFT_FAILURE_COPY.chapter_off);
-      else
-        setProblem(
-          getErrorMessage(error, MEETING_NOTES_COPY.startFailed),
-        );
+      else setProblem(getErrorMessage(error, MEETING_NOTES_COPY.startFailed));
     }
   }
 
@@ -191,15 +217,35 @@ export function NotesDraftPanel({
     });
     if (!answer) return;
     try {
-      if (state.status !== "none") await discard.mutateAsync({ id: meetingId });
-      // A transcript is notes too: clearing them removes it and its recording.
+      // Clears the officer's own notes and the draft; other note-takers'
+      // notes stay theirs.
+      await discard.mutateAsync({ id: meetingId });
+      // The recording is the officer's upload: Clear notes removes it too.
       if (recording && recording.status !== "none") {
         await removeRecording.mutateAsync({ id: meetingId });
       }
-      setNotes("");
+      autosave.reset("");
       setProblem(null);
     } catch (error) {
       setProblem(getErrorMessage(error, MEETING_NOTES_COPY.clearFailed));
+    }
+  }
+
+  async function handleChoose(conflict: number, version: number) {
+    const expected = await prepare();
+    if (!expected) return;
+    try {
+      await choose.mutateAsync({
+        id: meetingId,
+        body: { conflict, version, expected_updated_at: expected },
+      });
+      onSettled();
+    } catch (error) {
+      if (codeOf(error) === "meeting.stale") onStale();
+      else
+        setProblem(
+          getErrorMessage(error, MEETING_NOTE_TAKERS_COPY.chooseFailed),
+        );
     }
   }
 
@@ -221,46 +267,58 @@ export function NotesDraftPanel({
       await use.mutateAsync({ id: meetingId, expectedUpdatedAt: expected });
     } catch (error) {
       if (codeOf(error) === "meeting.stale") onStale();
-      else
-        setProblem(getErrorMessage(error, MEETING_NOTES_COPY.useFailed));
+      else setProblem(getErrorMessage(error, MEETING_NOTES_COPY.useFailed));
     }
   }
 
   const waiting = state.status === "ready";
+  const saving = saveStatusLine(autosave.status);
   const status = problem
     ? { tone: "problem" as const, text: problem }
-    : drafting
-      ? { tone: "quiet" as const, text: MEETING_NOTES_COPY.drafting }
-      : needsConsent
+    : autosave.status === "failed" && saving
+      ? { tone: "problem" as const, text: saving }
+      : drafting
         ? {
             tone: "quiet" as const,
-            text: MEETING_DRAFT_FAILURE_COPY.consent_required,
+            text: othersWrote
+              ? MEETING_NOTE_TAKERS_COPY.draftingAll
+              : MEETING_NOTES_COPY.drafting,
           }
-        : state.status === "failed"
+        : needsConsent
           ? {
-              tone:
-                state.failure === "stopped"
-                  ? ("quiet" as const)
-                  : ("problem" as const),
-              text: state.failure_message ?? MEETING_DRAFT_FAILURE_COPY.failed,
+              tone: "quiet" as const,
+              text: MEETING_DRAFT_FAILURE_COPY.consent_required,
             }
-          : waiting
+          : state.status === "failed"
             ? {
-                tone: "quiet" as const,
-                text: MEETING_NOTES_COPY.waiting,
+                tone:
+                  state.failure === "stopped"
+                    ? ("quiet" as const)
+                    : ("problem" as const),
+                text:
+                  state.failure_message ?? MEETING_DRAFT_FAILURE_COPY.failed,
               }
-            : state.status === "applied"
+            : waiting
               ? {
                   tone: "quiet" as const,
-                  text: MEETING_NOTES_COPY.applied,
+                  text: MEETING_NOTES_COPY.waiting,
                 }
-              : {
-                  tone: "quiet" as const,
-                  text: MEETING_NOTES_COPY.idle,
-                };
+              : state.status === "applied"
+                ? {
+                    tone: "quiet" as const,
+                    text: othersWrote
+                      ? MEETING_NOTE_TAKERS_COPY.appliedAll
+                      : MEETING_NOTES_COPY.applied,
+                  }
+                : {
+                    tone: "quiet" as const,
+                    text: MEETING_NOTES_COPY.idle,
+                  };
 
   const reviewed = state.status === "applied" || state.status === "ready";
   const { gaps, left_out: leftOut } = state.review;
+  // An API from before several note-takers sends no disagreements.
+  const conflicts = state.review.conflicts ?? [];
 
   return (
     <section
@@ -280,15 +338,6 @@ export function NotesDraftPanel({
           meetingId={meetingId}
           state={recording}
           disabled={drafting || disabled}
-          notes={notes}
-          onTranscript={(transcript) => {
-            setNotes((current) =>
-              current.trim() === ""
-                ? transcript
-                : `${current.trimEnd()}\n\n${transcript}`,
-            );
-            setProblem(null);
-          }}
           ensureConsent={ensureConsent}
           confirm={confirm}
         />
@@ -302,10 +351,25 @@ export function NotesDraftPanel({
         value={notes}
         disabled={drafting || disabled}
         onChange={(event) => {
-          setNotes(event.target.value);
+          autosave.change(event.target.value);
           if (problem) setProblem(null);
         }}
       />
+      {saving && autosave.status !== "failed" ? (
+        <p className="text-caption text-muted-foreground">{saving}</p>
+      ) : null}
+      {notesState &&
+      (notesState.takers.length > 0 ||
+        transcriptReady ||
+        notesState.can_add) ? (
+        <NoteTakersList
+          meetingId={meetingId}
+          state={notesState}
+          recording={recording}
+          disabled={drafting || disabled}
+          confirm={confirm}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         {drafting ? (
           <Button
@@ -321,7 +385,11 @@ export function NotesDraftPanel({
             disabled={disabled}
             onClick={() => void handleDraft()}
           >
-            {reviewed ? MEETING_NOTES_COPY.draftAgain : MEETING_NOTES_COPY.draft}
+            {reviewed
+              ? MEETING_NOTES_COPY.draftAgain
+              : othersWrote
+                ? MEETING_NOTE_TAKERS_COPY.draftAll
+                : MEETING_NOTES_COPY.draft}
           </Button>
         )}
         {waiting ? (
@@ -382,6 +450,74 @@ export function NotesDraftPanel({
               {MEETING_NOTES_COPY.leftOut(leftOut)}
             </p>
           ) : null}
+        </div>
+      ) : null}
+      {reviewed && !drafting && conflicts.length > 0 ? (
+        <div className="space-y-2 border-t border-border pt-3">
+          <h4 className="text-sm font-semibold">
+            {MEETING_NOTE_TAKERS_COPY.disagreed}
+          </h4>
+          <ul role="list" className="space-y-3">
+            {conflicts.map((conflict, index) => (
+              <li
+                key={index}
+                className="space-y-2 rounded-lg border border-warning/30 p-3"
+              >
+                <p className="text-caption font-semibold text-warning-text">
+                  {conflict.settled_by
+                    ? MEETING_NOTE_TAKERS_COPY.settledBy[conflict.settled_by]
+                    : MEETING_NOTE_TAKERS_COPY.youDecide}
+                </p>
+                <p className="text-sm font-semibold">{conflict.about}</p>
+                {conflict.chosen === null ? (
+                  <p className="text-sm text-muted-foreground">
+                    {MEETING_NOTE_TAKERS_COPY.tieBody}
+                  </p>
+                ) : null}
+                <ul role="list" className="space-y-2">
+                  {conflict.versions.map((version, at) => (
+                    <li
+                      key={at}
+                      className="flex flex-wrap items-start gap-2 text-sm"
+                    >
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <p className="break-words">{version.text}</p>
+                        <p className="break-words text-caption text-muted-foreground">
+                          {MEETING_NOTE_TAKERS_COPY.from(
+                            version.from,
+                            isMine(version.from),
+                          )}
+                          : “{version.quote}”
+                        </p>
+                      </div>
+                      {conflict.chosen === at ? (
+                        <span className="text-caption text-muted-foreground">
+                          {MEETING_NOTE_TAKERS_COPY.inMinutes}
+                        </span>
+                      ) : state.status === "applied" ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={disabled || choose.isPending}
+                          onClick={() => void handleChoose(index, at)}
+                        >
+                          {conflict.chosen === null
+                            ? MEETING_NOTE_TAKERS_COPY.pickVersion(
+                                version.from,
+                                isMine(version.from),
+                              )
+                            : MEETING_NOTE_TAKERS_COPY.takeVersion(
+                                version.from,
+                                isMine(version.from),
+                              )}
+                        </Button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
       {consentDialog}
