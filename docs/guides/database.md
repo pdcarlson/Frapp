@@ -118,8 +118,8 @@ Three things about it are load-bearing:
 
   > The job is listed in `scripts/ci/lib/required-checks.mjs`, but listing it is
   > not the same as enforcing it: required checks only change when an admin runs
-  > `npm run configure:branch-protection` (a human step; an agent session runs
-  > `npm run configure:branch-protection:verify`, which writes nothing). Whether the
+  > `npm run configure:branch-protection` (a human step; its read-only
+  > `npm run configure:branch-protection:verify` is a laptop step too). Whether the
   > live ruleset requires it yet is a provider question, not something this guide records.
 
 The CSV is a placeholder subset, not the full dataset; growing it is tracked in #232.

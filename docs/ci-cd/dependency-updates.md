@@ -481,9 +481,10 @@ file. **The read half is answered as of 2026-09-02: alerts are DISABLED on this 
 `GET /repos/pdcarlson/Frapp/vulnerability-alerts` returns **404 `"disabled"`** when called direct
 (node `fetch`) — not the `403` this paragraph used to record, which was the agent proxy's
 GitHub-credential layer answering rather than GitHub, and therefore said nothing about the toggle
-either way (see [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)). A session can now read this
-setting; it still cannot flip it — the GitHub MCP exposes no repo-security-settings tool and the
-REST route above is a read channel. So #921 stays open as `[human]`, now scoped to the write half:
+either way (see [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)). Sessions could read this
+setting until they lost `GITHUB_PAT` on 2026-11-15; since then it is a laptop read (corrected
+2026-11-16, [`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)). Nobody
+flips it from a session — the GitHub MCP exposes no repo-security-settings tool. So #921 stays open as `[human]`, now scoped to the write half:
 turning alerts (and security updates) on in repo Settings. The alerts toggle is the half that was
 read directly; the security-updates toggle follows from it (alerts are a prerequisite) but was not
 itself read. Read that alongside § *The ignore list is a runtime constraint, not a preference*

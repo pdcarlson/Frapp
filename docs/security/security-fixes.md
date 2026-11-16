@@ -134,7 +134,7 @@ Two gotchas worth not re-learning:
 - Current allowlist: read `scripts/npm-audit-allowlist.json`. Each entry carries its own reason, tracking issue and expiry; a copy of the roster here goes stale the first time one is added or cleared, silently.
 - The threshold is effectively `--audit-level=high` (the level the #618 escalation asked for), made landable by the sweep above; anything newly disclosed at high/critical goes red on the next PR or push that isn't docs-only, and in the next daily run on `main` if no PR or push comes first.
 - Unit tests: `scripts/ci/__tests__/check-npm-audit.test.mjs` (runs in `ci-scripts-tests`).
-- **Blocking status:** `dependency-audit` is listed in `CI_CHECKS` in `scripts/ci/lib/required-checks.mjs`, which is the intended required set. Whether it is live on a given branch depends on when an admin last ran `npm run configure:branch-protection` (a human step — an agent session runs `npm run configure:branch-protection:verify`, which writes nothing); read live state per [`github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md#required-status-checks) rather than from this page.
+- **Blocking status:** `dependency-audit` is listed in `CI_CHECKS` in `scripts/ci/lib/required-checks.mjs`, which is the intended required set. Whether it is live on a given branch depends on when an admin last ran `npm run configure:branch-protection` (a human step; its read-only `npm run configure:branch-protection:verify` is a laptop step too); read live state per [`github-branch-protection-runbook.md`](../ops/github-branch-protection-runbook.md#required-status-checks) rather than from this page.
 
 ### Prevention
 
