@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { AskSheet } from "@/components/ask/ask-sheet";
 import { useAiSurfaces } from "@/lib/ai/availability";
@@ -11,6 +11,12 @@ import { useAiSurfaces } from "@/lib/ai/availability";
  * tab bar (`ask-bar.tsx`; `spec/ui/mobile/navigation.md` § Global entries).
  * This route hosts no UI of its own: it exists so a `frapp://ask` link lands
  * somewhere real, and presents the same `AskSheet`.
+ *
+ * ## `draft`: words to open with
+ *
+ * The Search screen's last row, "Ask Frapp about …" (#5139), pushes this
+ * route with what was typed as `draft`. It lands in the field for the member
+ * to send or change, never sent on its own (`AskSheet`'s `initialDraft`).
  *
  * ## A member without Ask goes to Chat home
  *
@@ -34,11 +40,17 @@ export default function AskScreen() {
   // A source's screen is pushed over this one when the member opens it; going
   // to Chat home then would pop that screen straight back off. Coming back
   // from the source lands here, which presents the sheet and its answer again.
+  //
+  // Opened from Search's "Ask Frapp about …" row (#5139), closing goes back
+  // to Search, the screen it came from; a link opened cold has only the tabs
+  // under it, so the same pop lands on Chat home.
   const onClosed = useCallback(
     (leftForSource: boolean) => {
-      if (!leftForSource) toChatHome();
+      if (leftForSource) return;
+      if (router.canGoBack()) router.back();
+      else toChatHome();
     },
-    [toChatHome],
+    [router, toChatHome],
   );
 
   return ask ? <AskRoute onClosed={onClosed} /> : null;
@@ -53,6 +65,15 @@ function AskRoute({
   const present = useCallback(() => sheetRef.current?.present(), []);
   // On every arrival: `present()` is a no-op on a sheet already up.
   useFocusEffect(present);
+  const { draft } = useLocalSearchParams<{ draft?: string }>();
 
-  return <AskSheet ref={sheetRef} onClosed={onClosed} />;
+  return (
+    <AskSheet
+      // The sheet reads its first words once, when it mounts.
+      key={draft ?? ""}
+      ref={sheetRef}
+      onClosed={onClosed}
+      initialDraft={draft}
+    />
+  );
 }

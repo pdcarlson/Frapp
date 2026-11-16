@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import type { SignetTokens } from "@repo/theme/signet";
-import { ASK_COPY, ASK_FIND_PLACEHOLDER } from "@repo/validation";
+import { ASK_COPY } from "@repo/validation";
 import { FrappCrest } from "@/components/frapp-crest";
 import { GlassSurface } from "@/components/glass-surface";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -13,9 +13,8 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * Ask Frapp's front door on the phone (#4702): a glass bar above the tab bar
  * on the four tab screens, with the crest in the chapter's colour and the
- * field's own words, "Search or ask Frapp" (#4904, Paul's pick of
- * 2026-11-13: the one field searches and asks; it read "Ask Frapp
- * anything").
+ * field's own words, "Ask Frapp anything" ("Search or ask Frapp" from #4904
+ * until #5139 gave search its own screen, Paul's pick of 2026-11-16).
  *
  * Paul, 2026-11-13: it should "show up with the logo", have "a little bit
  * more character" than the words alone, and sit "in a bar above the normal
@@ -38,7 +37,7 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * The tab bar draws it (`glass-tab-bar.tsx`), only for a member who has Ask.
  */
 /** What the bar opens, for a screen reader. */
-export const ASK_BAR_HINT = "Search your chapter or ask a question about it";
+export const ASK_BAR_HINT = "Ask a question about your chapter";
 
 export function AskBar({ onPress }: { onPress: () => void }) {
   const { tokens } = useFrappTheme();
@@ -60,7 +59,7 @@ export function AskBar({ onPress }: { onPress: () => void }) {
       >
         <FrappCrest height={22} color={accent} />
         <Text style={styles.words} numberOfLines={1}>
-          {ASK_FIND_PLACEHOLDER}
+          {ASK_COPY.placeholder}
         </Text>
         <View style={[styles.arrow, { backgroundColor: tint(accent) }]}>
           {/* The conversation's own send arrow (`ask-sheet.tsx`). */}

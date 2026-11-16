@@ -27,7 +27,12 @@ import {
   SEARCH_MIN_QUERY_LENGTH,
   SEARCH_COMPLETED_EVENT,
 } from "@repo/hooks";
-import { ASK_COPY, ASK_FIND_PLACEHOLDER, canAny } from "@repo/validation";
+import {
+  ASK_COPY,
+  ASK_FIND_PLACEHOLDER,
+  canAny,
+  FIND_PLACEHOLDER,
+} from "@repo/validation";
 import { useAskEntry } from "@/components/ask/ask-host";
 import { FrappCrest } from "@/components/ask/frapp-crest";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
@@ -79,7 +84,7 @@ import {
  * `aria-activedescendant` listbox, as the field's dropdown was.
  */
 
-export const FIND_PLACEHOLDER = "Find channels, members, messages and more";
+export { FIND_PLACEHOLDER };
 /** The field's words for a member who can also ask Frapp from it. */
 export const FIND_ASK_PLACEHOLDER = ASK_FIND_PLACEHOLDER;
 

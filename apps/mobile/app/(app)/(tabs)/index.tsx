@@ -71,10 +71,11 @@ import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { selectFromChapterLevel } from "@/components/chat/notification-level-control";
 import {
   MessagesButton,
-  ThreadsButton,
   NotificationsButton,
+  SearchButton,
 } from "@/components/chat/home-header";
 import { AllThreadsSheet } from "@/components/chat/all-threads-sheet";
+import { ThreadsRow } from "@/components/chat/threads-row";
 import { DisclosureGlyph, PlusGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
 import { selectChannelAccessOptions } from "@repo/hooks/channel-access";
@@ -139,8 +140,9 @@ import { usePrefetchUnreadChannels } from "@/lib/chat/prefetch-channel";
  * s04 — Chat home. Chat is home, so this is the tab bar's `index` route.
  *
  * Two surfaces, top to bottom: the UP NEXT pulse strip, then the channel
- * list with unread and mention badges. (Ask opens from the tab bar's +:
- * `navigation.md` § Global entries.)
+ * list with unread and mention badges, led by the Threads row. (Search is
+ * the first round in the title row, #5139; Ask opens from the bar above the
+ * tab bar: `navigation.md` § Global entries.)
  *
  * `ScreenShell` is the right host here even though it wraps its children in a
  * `ScrollView`: a chapter's channel list is tens of rows, not thousands, so
@@ -739,11 +741,10 @@ export default function ChatHomeScreen() {
       }}
       headerAction={
         <View style={styles.headerActions}>
-          {/* The Messages door, then the inbox's bell (#3362). The
-              member's avatar is the You tab since #3839. */}
-          <ThreadsButton
-            onPress={() => threadsSheetRef.current?.present?.()}
-          />
+          {/* Search (#5139, where Threads was), the Messages door, then
+              the inbox's bell (#3362). The member's avatar is the You tab
+              since #3839. */}
+          <SearchButton />
           <MessagesButton unreadConversations={unreadConversations} />
           <NotificationsButton />
         </View>
@@ -844,6 +845,9 @@ export default function ChatHomeScreen() {
         )
       ) : (
         <>
+          {/* All threads leads the list (#5139; a round in the title row
+              from #4960 until Search took its place). */}
+          <ThreadsRow onPress={() => threadsSheetRef.current?.present?.()} />
           {/*
             The list (2026-11-06 redesign): the member's sections, each row
             with its latest message and time. The filters sit behind the

@@ -1,23 +1,19 @@
 import { View } from "react-native";
 import { useRouter } from "expo-router";
-import {
-  unreadThreadCount,
-  useMemberThreads,
-  useNotifications,
-} from "@repo/hooks";
+import { useNotifications } from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { HeaderButton } from "@/components/header-button";
 import { NotificationsGlyph } from "@/components/more/more-glyphs";
-import { ThreadsGlyph } from "@/components/control-glyphs";
+import { SearchGlyph } from "@/components/control-glyphs";
 import { NavGlyph } from "@/components/nav-glyph";
 import { useTourAnchor } from "@/components/onboarding/tour";
 import { selectUnreadNonChatCount } from "@/lib/more/notifications";
 import { useFrappTheme } from "@/lib/theme";
 
 /**
- * Chat home's top-right pair: a door to Messages, the member's direct
- * messages on their own screen (owner, 2026-11-07), then the notification
- * bell (#3839).
+ * Chat home's title-row controls: Search (#5139), a door to Messages, the
+ * member's direct messages on their own screen (owner, 2026-11-07), then the
+ * notification bell (#3839).
  *
  * Until #3839 the second control was the member's own avatar, which opened a
  * menu of Status, Profile, Notifications and Settings. The avatar is the You
@@ -122,23 +118,22 @@ export function NotificationsButton() {
 }
 
 /**
- * All threads (#4960): the member's threads across channels, in a sheet over
- * Chat home (`AllThreadsSheet`). Slack puts Threads at the top of its home,
- * and Discord a threads icon in the channel header. Its badge counts threads
- * with new replies, in house gold like the bell's: not direct address.
+ * The door to Search (#5139, Paul's pick of option A, 2026-11-16): a round
+ * at the head of Chat home's title row, where Threads was, pushing the Search
+ * screen (`app/(app)/search.tsx`). Slack keeps search on its Home's header and
+ * Discord on its server header; the phone had no search of its own until
+ * then, only the list inside Ask Frapp, so a member without Ask had none.
  */
-export function ThreadsButton({ onPress }: { onPress: () => void }) {
+export function SearchButton() {
   const { tokens } = useFrappTheme();
-  const unread = unreadThreadCount(useMemberThreads().data);
+  const router = useRouter();
   return (
     <HeaderButton
-      label="Threads"
-      hint="Opens the threads you're part of."
-      value={unread > 0 ? `${unread} with new replies` : undefined}
-      onPress={onPress}
-      badge={{ count: unread, tone: "inbox", testID: "threads-badge" }}
+      label="Search"
+      hint="Finds channels, members, messages and events."
+      onPress={() => router.push("/search")}
     >
-      <ThreadsGlyph color={tokens.color.text.foreground} size={GLYPH} />
+      <SearchGlyph color={tokens.color.text.foreground} size={GLYPH} />
     </HeaderButton>
   );
 }

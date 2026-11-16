@@ -333,6 +333,8 @@ export function SearchField({
   keyboardType = "default",
   searchGlyph = false,
   inputRef,
+  returnKeyType,
+  onSubmitEditing,
 }: {
   value: string;
   onChangeText: (next: string) => void;
@@ -349,6 +351,9 @@ export function SearchField({
   /** For a screen that focuses the field from elsewhere, as Messages' pencil
    * does (#4668). */
   inputRef?: Ref<TextInput>;
+  /** "search" on the Search screen, whose Search key keeps the words (#5139). */
+  returnKeyType?: "search" | "done";
+  onSubmitEditing?: () => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -364,6 +369,8 @@ export function SearchField({
       autoCapitalize={autoCapitalize}
       autoCorrect={false}
       keyboardType={keyboardType}
+      returnKeyType={returnKeyType}
+      onSubmitEditing={onSubmitEditing}
       style={[styles.search, searchGlyph ? styles.searchWithGlyph : null]}
     />
   );

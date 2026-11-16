@@ -128,6 +128,7 @@ export default function AppLayout() {
       {/* Presents the Ask sheet for a `frapp://ask` link, or pops to Chat
           home for a member without Ask. */}
       <Stack.Screen name="ask" options={{ title: "Ask" }} />
+      <Stack.Screen name="search" options={{ title: SCREEN_TITLES.search }} />
       {/* A message's link, `app.frapp.live/chat?channel=…&message=…`
           (#3723): hands off to the thread and draws nothing itself. */}
       <Stack.Screen name="chat" options={{ title: "Chat" }} />

@@ -37,6 +37,7 @@ export const SCREEN_TITLES = {
   "event-details": "Event",
   notifications: "Notifications",
   messages: "Messages",
+  search: "Search",
   preferences: "Settings",
   "service-hours": "Service hours",
   study: "Study hours",

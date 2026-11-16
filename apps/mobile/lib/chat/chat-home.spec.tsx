@@ -2616,7 +2616,7 @@ describe("Chat home: the swipe to Messages", () => {
   });
 });
 
-describe("Chat home's Threads door (#4960)", () => {
+describe("Chat home's Threads row (#4960; a row since #5139)", () => {
   const byTestId = (tree: ReactTestRenderer, testID: string) =>
     tree.root.findAllByProps({ testID });
   it("counts threads with new replies on its badge", () => {
@@ -2635,6 +2635,26 @@ describe("Chat home's Threads door (#4960)", () => {
     }
   });
 
+  it("leads the list, before the first section heading", () => {
+    const tree = render();
+    // Host nodes in screen order: the Threads row, then the headings.
+    const order = tree.root
+      .findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          (node.props.accessibilityLabel === "Threads" ||
+            // A section heading folds, so it is labelled; the screen's
+            // title above the list is not.
+            (node.props.accessibilityRole === "header" &&
+              typeof node.props.accessibilityLabel === "string")),
+      )
+      .map((node) =>
+        node.props.accessibilityLabel === "Threads" ? "threads" : "heading",
+      );
+    expect(order[0]).toBe("threads");
+    expect(order).toContain("heading");
+  });
+
   it("opens a tapped thread over its channel", () => {
     render();
     act(() => allThreads.onOpen?.({ channelId: "c-general", rootId: "root-1" }));
@@ -2645,3 +2665,11 @@ describe("Chat home's Threads door (#4960)", () => {
   });
 });
 
+
+describe("Chat home's Search round (#5139)", () => {
+  it("comes first in the title row, where Threads was, and pushes Search", () => {
+    const tree = render();
+    act(() => pressableLabelled(tree, "Search").props.onPress());
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/search");
+  });
+});

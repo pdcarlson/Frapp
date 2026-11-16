@@ -2,9 +2,10 @@ import type { FindTarget } from "@repo/hooks";
 import type { NotificationTarget } from "@/lib/notifications/targets";
 
 /**
- * Where a row of the Ask field's search opens on the phone (#4904), or
+ * Where a row of the Search screen opens on the phone (#5139; the Ask
+ * field's list from #4904 until then), or
  * `null` when this build has no screen for it, in which case the row is not
- * listed (`components/ask/ask-find.tsx`).
+ * listed (`components/search/search-results.tsx`).
  *
  * - A channel opens the channel; a message opens its channel at that message
  *   (`focusMessageId`, the route's own jump).

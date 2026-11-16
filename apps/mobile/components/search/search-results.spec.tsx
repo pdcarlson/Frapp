@@ -7,8 +7,8 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
 
 /**
- * The places listed above Ask Frapp's field while a member types (#4904):
- * what is listed, when, and where a row goes. The list itself (ranking,
+ * The Search screen's rows (#5139; above Ask Frapp's field from #4904 until
+ * then): what is listed, when, and where a row goes. The list itself (ranking,
  * caps, hints) is `@repo/hooks` `find-results.spec.ts`.
  */
 
@@ -18,6 +18,7 @@ const hooks = vi.hoisted(() => ({
   fetching: false,
   channels: [] as unknown[],
   modules: {} as Record<string, boolean>,
+  failed: false,
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -25,8 +26,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     hooks.searched.push(query);
     return {
       data: hooks.payload ? { payload: hooks.payload } : undefined,
-      isPending: !hooks.payload,
+      isPending: !hooks.payload && !hooks.failed,
       isFetching: hooks.fetching,
+      isError: hooks.failed,
     };
   },
   useChannels: () => ({ data: hooks.channels }),
@@ -38,7 +40,12 @@ vi.mock("@repo/hooks/use-debounced-value", () => ({
 }));
 vi.mock("@/lib/haptics", () => ({ selectionHaptic: vi.fn() }));
 
-import { AskFind } from "./ask-find";
+import type { FindFilter } from "@repo/hooks";
+import {
+  noSearchMatches,
+  SEARCH_FAILED,
+  SearchResults,
+} from "./search-results";
 
 const PAYLOAD = {
   members: [{ user_id: "u1", display_name: "Rush Chair Ana", email: "a@x.io" }],
@@ -61,11 +68,11 @@ const CHANNELS = [
   { id: "d1", name: "rush-dm", type: "DM" },
 ];
 
-function render(query: string, onOpen = vi.fn()) {
+function render(query: string, onOpen = vi.fn(), filter: FindFilter = "All") {
   let tree!: ReactTestRenderer;
   const element = (q: string) => (
     <FrappThemeProvider>
-      <AskFind query={q} onOpen={onOpen} />
+      <SearchResults query={q} filter={filter} onOpen={onOpen} />
     </FrappThemeProvider>
   );
   act(() => {
@@ -86,9 +93,10 @@ beforeEach(() => {
   hooks.fetching = false;
   hooks.channels = CHANNELS;
   hooks.modules = {};
+  hooks.failed = false;
 });
 
-describe("AskFind", () => {
+describe("SearchResults", () => {
   it("lists the channels, members, messages and events that match, under their group, and never backwork or a DM", () => {
     const { tree } = render("rush");
     const text = screenText(tree);
@@ -111,7 +119,7 @@ describe("AskFind", () => {
     )!;
     expect(message.props.accessibilityRole).toBe("button");
     act(() => message.props.onPress());
-    expect(onOpen).toHaveBeenCalledWith({
+    expect(onOpen.mock.calls[0]![0].route).toEqual({
       pathname: "/chat-thread",
       params: { channelId: "c1", focusMessageId: "m9" },
     });
@@ -123,11 +131,22 @@ describe("AskFind", () => {
     expect(screenText(tree)).not.toContain("Rush kickoff");
   });
 
-  it("draws nothing when nothing matches: asking is still right there", () => {
+  it("says so when nothing matches, and when the search failed", () => {
     hooks.payload = { members: [], messages: [], events: [], backwork: [] };
     hooks.channels = [];
-    const { tree } = render("zzzz");
-    expect(tree.toJSON()).toBeNull();
+    expect(screenText(render("zzzz").tree)).toBe(noSearchMatches("zzzz"));
+    hooks.payload = null;
+    hooks.failed = true;
+    expect(screenText(render("zzzz").tree)).toBe(SEARCH_FAILED);
+  });
+
+  it("narrows to the group a chip picked", () => {
+    const { tree } = render("rush", vi.fn(), "Members");
+    const text = screenText(tree);
+    expect(text).toContain("Rush Chair Ana");
+    expect(text).not.toContain("#rush");
+    expect(text).not.toContain("Rush kickoff");
+    expect(rows(tree)).toHaveLength(1);
   });
 
   it("keeps the last settled list while the next search is out, and clears it under three characters", () => {

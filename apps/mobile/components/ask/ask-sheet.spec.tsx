@@ -10,7 +10,6 @@ import {
   ACT_COPY,
   AI_REPORT_COPY,
   ASK_COPY,
-  ASK_FIND_PLACEHOLDER,
   askSavedLine,
   askUnavailableLine,
   type AskAnswer,
@@ -94,19 +93,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentUser: () => ({ data: { id: "me" } }),
 }));
 
-// The list of places has its own spec (`ask-find.spec.tsx`); here it is a
-// row the sheet's own wiring can be pressed through.
-const find = vi.hoisted(() => ({ queries: [] as string[] }));
-vi.mock("@/components/ask/ask-find", () => ({
-  AskFind: (props: {
-    query: string;
-    onOpen: (route: { pathname: string; params?: object }) => void;
-  }) => {
-    find.queries.push(props.query);
-    return React.createElement("AskFind", props);
-  },
-}));
-
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
 vi.mock("@/components/ai/meet-frapp-ai", () => ({
   useAiConsentGate: () => ({
@@ -144,12 +130,19 @@ import { AskSheet } from "./ask-sheet";
 
 const modal = { present: vi.fn(), dismiss: vi.fn() };
 
-function render(onClosed?: () => void): ReactTestRenderer {
+function render(
+  onClosed?: () => void,
+  initialDraft?: string,
+): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <AskSheet ref={React.createRef<never>()} onClosed={onClosed} />
+        <AskSheet
+          ref={React.createRef<never>()}
+          onClosed={onClosed}
+          initialDraft={initialDraft}
+        />
       </FrappThemeProvider>,
       {
         createNodeMock: (element) =>
@@ -290,7 +283,6 @@ beforeEach(() => {
   hooks.mayAct = false;
   hooks.suggestions = [EVENT];
   hooks.suggestionsEnabled = [];
-  find.queries = [];
   reporting.offered = true;
   reporting.reported = false;
   gate.ensureConsent.mockResolvedValue(true);
@@ -315,7 +307,7 @@ describe("AskSheet", () => {
     );
     expect(list).toHaveLength(1);
     expect(list[0].props.entering).toMatchObject({ animation: "FadeIn" });
-    expect(field(tree).props.placeholder).toBe(ASK_FIND_PLACEHOLDER);
+    expect(field(tree).props.placeholder).toBe(ASK_COPY.placeholder);
     // Nothing to clear yet.
     expect(byLabel(tree, ASK_COPY.new_conversation)).toHaveLength(0);
   });
@@ -477,67 +469,20 @@ describe("AskSheet", () => {
     );
   });
 
-  it("lists places only once three characters are typed, and never before the sheet is open", () => {
-    const tree = render();
-    const found = () =>
-      tree.root.findAll((node) => (node.type as unknown) === "AskFind");
-    act(() => field(tree).props.onChangeText("rush"));
-    // Typed into a sheet that has not finished opening: nothing is read.
-    expect(found()).toHaveLength(0);
-    open(tree);
-    expect(found()).toHaveLength(1);
-    expect(found()[0].props.query).toBe("rush");
-    act(() => field(tree).props.onChangeText("ru"));
-    expect(found()).toHaveLength(0);
-  });
-
-  // #5082: hung from the composer over the thread, the list ran on under
-  // the field on an iPhone with the keyboard up. It is the sheet's own row
-  // now, between the thread and the composer, never inside the composer.
-  it("lists places in the sheet's column, between the thread and the field", () => {
+  // #5139: search is its own screen; the field only asks. Typing lists
+  // nothing, and Send is the one thing it does.
+  it("lists nothing while the member types: the field only asks", () => {
     const tree = render();
     open(tree);
-    act(() => field(tree).props.onChangeText("rush"));
-    const found = tree.root.find(
-      (node) => (node.type as unknown) === "AskFind",
-    );
-    const typed = field(tree);
-    // The nearest box holding both the list and the field.
-    const holders = new Set<unknown>();
-    for (let node = typed.parent; node; node = node.parent) holders.add(node);
-    let shared = found.parent;
-    while (shared && !holders.has(shared)) shared = shared.parent;
-    // It is the sheet's column, which holds the header too; the composer
-    // alone (where the list used to hang from) does not.
-    expect(
-      shared!.findAll(
-        (node) =>
-          typeof node.type === "string" &&
-          node.props.accessibilityRole === "header",
-      ).length,
-    ).toBeGreaterThan(0);
+    const before = screenText(tree);
+    act(() => field(tree).props.onChangeText("rush week"));
+    expect(screenText(tree)).toBe(before);
+    expect(field(tree).props.accessibilityLabel).toBe(ASK_COPY.placeholder);
   });
 
-  it("closes for a place found while typing, opens it, and drops what was typed", () => {
-    const onClosed = vi.fn();
-    const tree = render(onClosed);
-    open(tree);
-    act(() => field(tree).props.onChangeText("rush"));
-    const row = tree.root.findAll(
-      (node) => (node.type as unknown) === "AskFind",
-    )[0];
-    act(() =>
-      row.props.onOpen({
-        pathname: "/chat-thread",
-        params: { channelId: "c1", focusMessageId: "m9" },
-      }),
-    );
-    expect(modal.dismiss).toHaveBeenCalled();
-    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
-      "/chat-thread?channelId=c1&focusMessageId=m9",
-    );
-    expect(field(tree).props.value).toBe("");
-    // A search, not a question: nothing was asked.
+  it("opens with the words it was handed in its field, unsent", () => {
+    const tree = render(undefined, "rush week");
+    expect(field(tree).props.value).toBe("rush week");
     expect(hooks.ask).not.toHaveBeenCalled();
   });
 
