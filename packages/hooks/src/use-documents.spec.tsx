@@ -1,6 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import {
   useConfirmDocumentUpload,
   useCreateDocumentFolder,
@@ -13,34 +13,10 @@ import {
   useSetDocumentStar,
   withStar,
 } from "./use-documents";
-import { FrappClientProvider } from "./use-frapp-client";
-import React from "react";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
-function createTestQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-    },
-  });
-}
-
-function createWrapper(queryClient: QueryClient, mockClient: unknown) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
-}
+const createWrapper = (queryClient: QueryClient, mockClient: unknown) =>
+  createHookWrapper({ queryClient, client: mockClient });
 
 describe("useDocuments", () => {
   let queryClient: QueryClient;
@@ -259,24 +235,13 @@ describe("document folder mutations", () => {
 
   // The page test mocks these three hooks away, so this file is the only place
   // the request shape and the invalidation key are actually observed.
-  function chapterWrapper(mockClient: unknown, chapterId = "chap-1") {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        chapterId={chapterId}
-        client={
-          mockClient as unknown as ReturnType<
-            typeof import("@repo/api-sdk").createFrappClient
-          >
-        }
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "ChapterWrapper";
-    return Wrapper;
-  }
+  const chapterWrapper = (mockClient: unknown, chapterId = "chap-1") =>
+    createHookWrapper({
+      client: mockClient,
+      queryClient,
+      chapterId,
+      displayName: "ChapterWrapper",
+    });
 
   it("creates a folder through POST /v1/documents/folders", async () => {
     const mockPost = vi.fn().mockResolvedValue({ data: {}, error: null });

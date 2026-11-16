@@ -1,9 +1,7 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createFrappClient } from "@repo/api-sdk";
 import {
   CHECK_IN_CODES_UNCONFIGURED_MESSAGE,
   CHECK_IN_TOKEN_FALLBACK_POLL_MS,
@@ -21,7 +19,7 @@ import {
   useUpdateAttendanceStatus,
   selectOwnAttendance,
 } from "./use-attendance";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 /** A 2xx, as openapi-fetch resolves it. */
 const answered = (data: unknown, status = 200) => ({
@@ -53,27 +51,15 @@ describe("useAttendance", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
+    queryClient = createTestQueryClient();
   });
 
-  const createWrapper = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={mockClient as ReturnType<typeof createFrappClient>}
-      >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </FrappClientProvider>
-    );
-
-    Wrapper.displayName = "AttendanceHookWrapper";
-    return Wrapper;
-  };
+  const createWrapper = (mockClient: unknown) =>
+    createHookWrapper({
+      client: mockClient,
+      queryClient,
+      displayName: "AttendanceHookWrapper",
+    });
 
   it("fetches attendance data for the provided event id", async () => {
     const mockAttendance = [
@@ -231,23 +217,15 @@ describe("useMintCheckInToken", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
-  const createWrapper = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={mockClient as ReturnType<typeof createFrappClient>}
-      >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </FrappClientProvider>
-    );
-
-    Wrapper.displayName = "MintCheckInTokenWrapper";
-    return Wrapper;
-  };
+  const createWrapper = (mockClient: unknown) =>
+    createHookWrapper({
+      client: mockClient,
+      queryClient,
+      displayName: "MintCheckInTokenWrapper",
+    });
 
   const MINTED = {
     token: "signed",
@@ -639,27 +617,15 @@ describe("useCheckIn", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
+    queryClient = createTestQueryClient();
   });
 
-  const createWrapper = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={mockClient as ReturnType<typeof createFrappClient>}
-      >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </FrappClientProvider>
-    );
-
-    Wrapper.displayName = "CheckInHookWrapper";
-    return Wrapper;
-  };
+  const createWrapper = (mockClient: unknown) =>
+    createHookWrapper({
+      client: mockClient,
+      queryClient,
+      displayName: "CheckInHookWrapper",
+    });
 
   it("calls the check-in endpoint and invalidates attendance query on success", async () => {
     const mockPost = vi
@@ -809,20 +775,12 @@ describe("the officer's attendance writes", () => {
     queryClient = new QueryClient();
   });
 
-  const createWrapper = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={mockClient as ReturnType<typeof createFrappClient>}
-      >
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-
-    Wrapper.displayName = "AttendanceWritesWrapper";
-    return Wrapper;
-  };
+  const createWrapper = (mockClient: unknown) =>
+    createHookWrapper({
+      client: mockClient,
+      queryClient,
+      displayName: "AttendanceWritesWrapper",
+    });
 
   it("keys every attendance write under `attendance`, so a failure reports by feature (#3393, #3905)", async () => {
     // The Sentry reporter groups a failed mutation by its key's root; with no
@@ -932,20 +890,11 @@ describe("selectOwnAttendance", () => {
 });
 
 describe("useMyAttendance", () => {
-  const wrapperFor = (mockClient: unknown) => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
+  const wrapperFor = (mockClient: unknown) =>
+    createHookWrapper({
+      client: mockClient,
+      displayName: "MyAttendanceHookWrapper",
     });
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={mockClient as ReturnType<typeof createFrappClient>}
-      >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "MyAttendanceHookWrapper";
-    return Wrapper;
-  };
 
   it("reads the member's own row", async () => {
     const row = { id: "a-1", status: "PRESENT", check_in_time: "2026-11-07T00:52:00Z" };
