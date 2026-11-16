@@ -8,7 +8,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * mobile's "Add to calendar" menus hand to Apple Calendar, Google Calendar or
  * Outlook. Behavior: `spec/behavior/events.md` § Calendar subscription.
  */
-export const calendarFeedKeys = createChapterQueryKeys("calendar-feed");
+const calendarFeedKeys = createChapterQueryKeys("calendar-feed");
 
 export interface CalendarFeedLink {
   /** https: Google Calendar and Outlook subscribe by URL; Copy link. */

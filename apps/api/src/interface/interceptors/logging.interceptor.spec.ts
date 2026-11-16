@@ -1,6 +1,7 @@
 import { CallHandler, ExecutionContext, Logger } from '@nestjs/common';
 import { of, throwError } from 'rxjs';
-import { forwardedShape, LoggingInterceptor } from './logging.interceptor';
+import { forwardedShape } from '../utils/http-request-log';
+import { LoggingInterceptor } from './logging.interceptor';
 import { enqueueSanitizedLog } from '../../infrastructure/analytics/posthog-runtime';
 
 jest.mock('../../infrastructure/analytics/posthog-runtime', () => ({

@@ -273,7 +273,7 @@ function SheetCard({
 }
 
 /** Said where a reminder's message can't be opened any more. */
-export const REMINDER_UNAVAILABLE_NOTE =
+const REMINDER_UNAVAILABLE_NOTE =
   "You can't see this conversation any more, so the message can't be opened.";
 
 /**

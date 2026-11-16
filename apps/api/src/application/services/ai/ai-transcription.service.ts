@@ -37,7 +37,7 @@ import { AiTelemetryService, type IAiTelemetry } from './ai-telemetry.service';
 import type { AiUnavailable } from './ai-gateway.service';
 
 /** The recording is more than the task's vendor takes in one request. */
-export interface AiTranscriptionUnsupported {
+interface AiTranscriptionUnsupported {
   status: 'unsupported';
   reason: 'too_long' | 'too_large';
   limits: TranscriberLimits;

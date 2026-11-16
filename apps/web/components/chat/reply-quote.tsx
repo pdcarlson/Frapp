@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 export {
   UNAVAILABLE_QUOTE,
   replyPreviewText,
-  type MessagePreviewSource,
 } from "@repo/chat-core/reply-preview";
 
 interface QuotedMessageProps {

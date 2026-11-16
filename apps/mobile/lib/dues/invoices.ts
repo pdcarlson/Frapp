@@ -16,7 +16,7 @@
 import { parseBareDateLocalNoon, parseInstant } from "@repo/formatting";
 import { num, records, str } from "../more/narrow";
 
-export type InvoiceStatus = "DRAFT" | "OPEN" | "PAID" | "VOID";
+type InvoiceStatus = "DRAFT" | "OPEN" | "PAID" | "VOID";
 
 export interface InvoiceRow {
   id: string;

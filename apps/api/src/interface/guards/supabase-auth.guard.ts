@@ -62,7 +62,7 @@ const sessionLookups = new InFlightLookups<
  * `getClaims` would ask Auth instead, so such a token takes the `getUser` path
  * and is never accepted on its claims.
  */
-export const LOCALLY_VERIFIABLE_ALGS = JWKS_VERIFIED_ALGS;
+const LOCALLY_VERIFIABLE_ALGS = JWKS_VERIFIED_ALGS;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -114,7 +114,7 @@ function tokenAlg(token: string): string | undefined {
 }
 
 /** The key `sessionLookups` shares a token's session check under. */
-export function sessionLookupKey(token: string): string {
+function sessionLookupKey(token: string): string {
   return createHash('sha256').update(token).digest('base64url');
 }
 

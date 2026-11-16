@@ -14,7 +14,7 @@ import { chatPushPreview } from './chat-push-preview';
 import { displayNamesById } from './display-names';
 
 /** How far ahead a reminder may be set. */
-export const REMINDER_MAX_AHEAD_DAYS = 365;
+const REMINDER_MAX_AHEAD_DAYS = 365;
 /**
  * Rows the Reminders section carries of each kind: up to 50 due, newest
  * first, then up to 50 still waiting, soonest first.

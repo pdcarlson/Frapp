@@ -46,7 +46,7 @@ import { AiRunService } from './ai-run.service';
 const MINUTES_DRAFT_TASK = 'minutes.draft';
 
 /** Notes older than this are deleted, posted or not (§ Retention). */
-export const MEETING_NOTES_RETENTION_DAYS = 30;
+const MEETING_NOTES_RETENTION_DAYS = 30;
 
 /**
  * Ranks a note-taker's notes for settling a disagreement: lower wins. The
@@ -64,7 +64,7 @@ const AUTHOR_RANK = 2 * EDITOR_OFFSET;
 /** Why a member's notes are left out of the next draft, if they are. */
 export type MeetingNoteHeld = 'consent_required' | null;
 
-export interface MeetingNoteTaker {
+interface MeetingNoteTaker {
   user_id: string;
   display_name: string;
   is_author: boolean;

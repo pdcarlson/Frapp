@@ -30,7 +30,7 @@ import {
 import { toReportableError } from '../../../infrastructure/observability/reportable-error';
 
 /** Folder levels read: the folder itself and two below it. */
-export const DRIVE_MAX_DEPTH = 3;
+const DRIVE_MAX_DEPTH = 3;
 /** Files a folder brings into Documents at most; the rest are skipped. */
 export const DRIVE_MAX_FILES = 500;
 /** Files copied (new or changed) per pass; a bigger change takes a few passes. */

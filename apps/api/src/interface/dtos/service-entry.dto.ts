@@ -15,6 +15,7 @@ import {
   SERVICE_DESCRIPTION_MAX_LENGTH,
 } from '@repo/validation';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
+import type { AssertNever } from './drift-guard';
 
 export class CreateServiceEntryDto {
   @ApiProperty({ description: 'Date of service (YYYY-MM-DD)' })
@@ -74,7 +75,7 @@ export class CreateServiceEntryDto {
  * puts `awarded_points` (#3868) in the contract where they can see it.
  *
  * Drift between this class and the service-entry row is caught by
- * `implements ServiceEntry` for type drift, and the `Assert<Exclude<…>>`
+ * `implements ServiceEntry` for type drift, and the `AssertNever<Exclude<…>>`
  * aliases below for key drift.
  */
 export class ServiceEntryResponseDto implements ServiceEntry {
@@ -273,18 +274,22 @@ export class ReviewServiceEntryDto {
 /**
  * Compile-time key-drift guards between {@link ServiceEntryResponseDto} and
  * the service-entry row it publishes. Each resolves to `never` while the two
- * agree; when they diverge the alias stops satisfying `Assert`'s constraint
+ * agree; when they diverge the alias stops satisfying `AssertNever`'s constraint
  * and the build fails naming the field.
  */
-type Assert<T extends never> = T;
-
-/** Entry fields {@link ServiceEntryResponseDto} forgot to declare. Must be `never`. */
-export type ServiceEntryResponseDtoMissingFields = Assert<
+/**
+ * Entry fields {@link ServiceEntryResponseDto} forgot to declare. Must be `never`.
+ * @driftguard
+ */
+export type ServiceEntryResponseDtoMissingFields = AssertNever<
   Exclude<keyof ServiceEntry, keyof ServiceEntryResponseDto>
 >;
 
-/** Fields {@link ServiceEntryResponseDto} declares that the entry row does not carry. Must be `never`. */
-export type ServiceEntryResponseDtoExtraFields = Assert<
+/**
+ * Fields {@link ServiceEntryResponseDto} declares that the entry row does not carry. Must be `never`.
+ * @driftguard
+ */
+export type ServiceEntryResponseDtoExtraFields = AssertNever<
   Exclude<keyof ServiceEntryResponseDto, keyof ServiceEntry>
 >;
 
@@ -292,8 +297,9 @@ export type ServiceEntryResponseDtoExtraFields = Assert<
  * Fields {@link CreateServiceEntryResponseDto} adds beyond the entry. Must be
  * `never`: `card_posted` is this route's own outcome flag, the one deliberate
  * addition.
+ * @driftguard
  */
-export type CreateServiceEntryResponseDtoExtraFields = Assert<
+export type CreateServiceEntryResponseDtoExtraFields = AssertNever<
   Exclude<
     keyof CreateServiceEntryResponseDto,
     keyof ServiceEntry | 'card_posted'

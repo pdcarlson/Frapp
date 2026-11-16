@@ -123,7 +123,7 @@ export type CliResult = {
   stderr: string;
 };
 
-export type SentryCliRunner = (
+type SentryCliRunner = (
   args: string[],
   options: { timeoutMs: number },
 ) => CliResult;

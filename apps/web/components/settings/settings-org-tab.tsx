@@ -44,7 +44,7 @@ type Branding = {
 };
 
 /** Everything the Chapter mark card needs beyond the branding (#2876). */
-export type ChapterMarkProps = {
+type ChapterMarkProps = {
   logoUrl: string | null;
   onUploadLogo: (upload: ChapterLogoUpload) => Promise<void>;
   onRemoveLogo: () => Promise<void>;

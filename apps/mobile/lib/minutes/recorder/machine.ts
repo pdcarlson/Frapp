@@ -30,7 +30,7 @@ export interface RecordingSubject {
   maxSeconds: number;
 }
 
-export type PauseReason =
+type PauseReason =
   /** The officer tapped Pause. */
   | "user"
   /** Something took the microphone: a call, another app. */
@@ -64,7 +64,7 @@ export type RecorderProblem =
   | "too_short"
   | "lost";
 
-export interface RecorderRefusal {
+interface RecorderRefusal {
   kind: RecorderProblem;
   meetingId: string;
   /** For `low_storage`: the free space recording needs. */

@@ -94,7 +94,7 @@ import type { ChatDraftScope, ChatScope } from "./chat-scope";
 /** The IndexedDB database holding drafts and the outbox, and only those. */
 export const CHAT_OUTBOUND_DB_NAME = "frapp-chat";
 
-export interface DraftRow {
+interface DraftRow {
   userId: string;
   channelId: string;
   body: string;

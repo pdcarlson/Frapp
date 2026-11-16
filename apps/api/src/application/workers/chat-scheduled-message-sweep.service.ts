@@ -12,9 +12,9 @@ import {
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /** Due messages read at a time, across every chapter. */
-export const SCHEDULED_MESSAGE_BATCH = 50;
+const SCHEDULED_MESSAGE_BATCH = 50;
 /** How long one tick keeps sending before it leaves the rest to the next. */
-export const SWEEP_BUDGET_MS = 45 * 1000;
+const SWEEP_BUDGET_MS = 45 * 1000;
 
 /**
  * Posts scheduled chat messages when they are due (#4956). Every minute it

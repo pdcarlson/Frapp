@@ -129,7 +129,7 @@ export const NO_TYPING_USERS: readonly string[] = Object.freeze([]);
 export const BACKFILL_PAGE_LIMIT = 100;
 
 /** One backfill read: after `since` when there is a cursor, else the newest page. */
-export type BackfillQuery = Pick<HistoryPageQuery, "since" | "limit">;
+type BackfillQuery = Pick<HistoryPageQuery, "since" | "limit">;
 
 /**
  * Message rows only. Throws `SinceCursorNotFoundError` when the server holds
@@ -147,7 +147,7 @@ export function createBackfillFetcher(
   return (channelId, query) => readMessageRows(apiClient, channelId, query);
 }
 
-export interface ManagerContext {
+interface ManagerContext {
   queryClient: QueryClient;
   supabase: SupabaseClient;
   backfill: BackfillFetcher;
@@ -331,7 +331,7 @@ interface ThreadTypingState {
 }
 
 /** A thread reply's realtime row, handed to `onThreadReply` listeners. */
-export type ThreadReplyListener = (
+type ThreadReplyListener = (
   row: RawChatMessage,
   event: "INSERT" | "UPDATE",
 ) => void;

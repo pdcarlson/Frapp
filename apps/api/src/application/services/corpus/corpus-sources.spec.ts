@@ -208,7 +208,7 @@ describe('ChapterDocumentCorpusSource', () => {
       status: 'ok',
       content: {
         title: 'Bylaws',
-        sourceAt: '2026-08-15T00:00:00.000Z',
+        sourceAt: '2026-08-15T12:00:00.000Z',
         decays: false,
         sections: [{ heading: null, page: 1, text: 'Dues are $225.' }],
       },

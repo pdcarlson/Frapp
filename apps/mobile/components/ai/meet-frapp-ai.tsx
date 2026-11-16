@@ -373,7 +373,7 @@ export function useAiConsentGate(): {
  * low-opacity fill of its own hue, as the bell is drawn
  * (`spec/ui/design-system/iconography.md` §1).
  */
-export function SparkGlyph({
+function SparkGlyph({
   color,
   size = 22,
 }: {
