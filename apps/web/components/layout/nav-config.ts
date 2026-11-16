@@ -90,7 +90,7 @@ import {
  * `protected-nav-item.tsx`), so a heading never announces an empty group.
  */
 
-export type NavPermissionRule =
+type NavPermissionRule =
   | { requirePermission?: undefined; requireAnyOf?: undefined }
   | { requirePermission: string; requireAnyOf?: undefined }
   | { requirePermission?: undefined; requireAnyOf: readonly string[] };

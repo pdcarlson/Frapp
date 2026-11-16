@@ -56,7 +56,7 @@ export function guardScrollHandler<H extends Handler | undefined>(
   return wrapped as unknown as H;
 }
 
-export const useGuardedScrollEventsHandlers: ScrollEventsHandlersHookType = (
+const useGuardedScrollEventsHandlers: ScrollEventsHandlersHookType = (
   ref,
   contentOffsetY,
 ) => {

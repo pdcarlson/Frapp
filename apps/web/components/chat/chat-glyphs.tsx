@@ -37,7 +37,6 @@ export {
   PointsGlyph,
   PollsGlyph,
   RolesGlyph,
-  SearchGlyph,
   ServiceGlyph,
   TasksGlyph,
 } from "@/components/layout/nav-glyphs";
@@ -91,7 +90,7 @@ export function BookmarkGlyph({ className, active }: ChatGlyphProps) {
 /**
  * Attach a file.
  *
- * Stroke-only, like the shell's `MenuGlyph`: a paperclip is an
+ * Stroke-only: a paperclip is an
  * open curve with no silhouette, and SVG closes an open path implicitly when it
  * fills one — an earlier cut spread `fillProps` over `detail` here and painted a
  * lens-shaped wedge across the clip.

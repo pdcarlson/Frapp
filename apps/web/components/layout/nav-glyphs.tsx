@@ -168,13 +168,3 @@ export function NotificationsGlyph({ className, active }: NavGlyphProps) {
     </Svg>
   );
 }
-
-export function MenuGlyph({ className }: NavGlyphProps) {
-  // A hamburger has no silhouette to fill; its three rules are all detail
-  // strokes, so this one is legitimately stroke-only under the recipe.
-  return (
-    <Svg className={className}>
-      <path d="M4 7h16M4 12h16M4 17h16" {...detail} />
-    </Svg>
-  );
-}

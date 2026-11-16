@@ -190,12 +190,12 @@ export const FIRST_CHUNK_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
  */
 export type FirstChunkScope = ChatScope;
 
-export interface CachedChannelListRow extends FirstChunkScope {
+interface CachedChannelListRow extends FirstChunkScope {
   channels: ChatChannel[];
   cachedAt: number;
 }
 
-export interface CachedChannelTailRow extends FirstChunkScope {
+interface CachedChannelTailRow extends FirstChunkScope {
   channelId: string;
   rows: RawChatMessage[];
   cachedAt: number;
@@ -268,7 +268,7 @@ export const TAIL_ROW_FORMAT = 2;
  * nothing stops it. It costs the pre-#2688 behavior until this bundle's next
  * ready read writes the floor again, and ends when that tab closes.
  */
-export interface CachedBlockFloor {
+interface CachedBlockFloor {
   ids: string[];
   /** The ready read's `dataUpdatedAt`. Recorded, never used to expire the floor. */
   readAt: number;

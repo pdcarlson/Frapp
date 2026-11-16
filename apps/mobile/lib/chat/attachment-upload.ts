@@ -303,7 +303,7 @@ function pickedAsAllowlisted(asset: {
  * - The original is kept when the re-encode is no smaller and the original was
  *   already an allowlisted, single-frame image within the bound.
  */
-export async function encodeAvatar(
+async function encodeAvatar(
   asset: {
     uri: string;
     fileName?: string | null;

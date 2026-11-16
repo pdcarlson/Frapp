@@ -64,7 +64,7 @@ function StoredTaskPhoto({
  * The full-screen viewer over a set of photos: a horizontal paging list, one
  * photo per screen width, swiped between, with "Photo 2 of 4" and a close.
  */
-export function TaskPhotoViewer({
+function TaskPhotoViewer({
   taskId,
   photos,
   index,
@@ -157,7 +157,7 @@ export function TaskPhotoViewer({
  * A row of a task's photos as thumbnails under a caption, each opening the
  * viewer on itself. Nothing when there are none.
  */
-export function TaskPhotoStrip({
+function TaskPhotoStrip({
   taskId,
   photos,
   label,
@@ -202,7 +202,7 @@ export function TaskPhotoStrip({
 }
 
 /** A proof link as a chip showing its domain; opens in the in-app browser. */
-export function ProofLinkChip({ link }: { link: string }) {
+function ProofLinkChip({ link }: { link: string }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const domain = proofLinkDomain(link);

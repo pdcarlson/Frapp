@@ -2,7 +2,7 @@ import { seriesRuleOf, type EventEditTarget } from "@repo/validation";
 
 type EventRecord = Record<string, unknown>;
 
-export const textOf = (value: unknown): string | null =>
+const textOf = (value: unknown): string | null =>
   typeof value === "string" ? value : null;
 
 /**

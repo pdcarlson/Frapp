@@ -20,7 +20,7 @@ export type BrowserFix =
   | { kind: "unavailable" };
 
 /** The options the check-in asks the browser with: one fresh, precise fix. */
-export const CHECK_IN_GEOLOCATION_OPTIONS: PositionOptions = {
+const CHECK_IN_GEOLOCATION_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
   timeout: 15_000,
   maximumAge: 60_000,
@@ -112,7 +112,7 @@ export function checkInFailure(
  * Where to turn location back on for this site, in the browser this phone
  * most likely runs: Safari on an iPhone, Chrome everywhere else.
  */
-export function allowLocationSteps(platform: NativePlatform | null): string {
+function allowLocationSteps(platform: NativePlatform | null): string {
   if (platform === "ios") {
     return "In Safari, tap aA in the address bar, then Website Settings, and set Location to Allow.";
   }

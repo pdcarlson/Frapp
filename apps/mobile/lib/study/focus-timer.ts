@@ -17,7 +17,7 @@
  * window.
  */
 
-export const FOCUS_MINUTES = 25;
+const FOCUS_MINUTES = 25;
 const BREAK_MINUTES_MAX = 5;
 
 /** The break for a zone: five minutes, or a minute under its grace window. */
@@ -25,7 +25,7 @@ export function breakMinutesFor(pauseGraceMinutes: number): number {
   return Math.max(1, Math.min(BREAK_MINUTES_MAX, pauseGraceMinutes - 1));
 }
 
-export type FocusPhase = "focus" | "break";
+type FocusPhase = "focus" | "break";
 
 export interface FocusTimerReading {
   phase: FocusPhase;

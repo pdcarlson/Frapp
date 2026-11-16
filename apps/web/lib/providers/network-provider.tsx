@@ -20,8 +20,6 @@ import {
 /** Re-exported for the specs; the rule and its reasons live in `@repo/validation`. */
 export { CONFIRM_RETRY_MS };
 
-export type { ConnectionState };
-
 interface NetworkContextValue {
   state: ConnectionState;
   isOnline: boolean;

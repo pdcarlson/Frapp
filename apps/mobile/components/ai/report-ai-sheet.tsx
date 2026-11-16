@@ -95,7 +95,7 @@ function failureLine(error: unknown, subject: AiReportSubject): string {
   return AI_REPORT_COPY.failed;
 }
 
-export interface ReportAiSheetProps {
+interface ReportAiSheetProps {
   /** What the sheet reports; null before anything has been picked. */
   target: AiReportTarget | null;
   /** The server has the report, new or already there. */
