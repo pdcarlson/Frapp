@@ -32,10 +32,10 @@ it has a tool for the question:
 - The GitHub MCP is the only sanctioned write path for issues, PRs, and comments.
 
 The `curl`, `gh`, and CLI recipes below are for laptops and Actions. These also work from a session:
-`gh api` reads through the agent proxy, Infisical (which has no MCP), the local-stack Supabase
-commands, and the staging `/health` check when live-staging egress is on
-([`live-verification`](../live-verification/SKILL.md)). Sessions carry no GitHub token of their own
-(`GITHUB_PAT` was removed 2026-11-15); the `gh` they have authenticates through the proxy.
+Infisical (which has no MCP), the local-stack Supabase commands, and the staging `/health` check
+when live-staging egress is on ([`live-verification`](../live-verification/SKILL.md)). GitHub is the
+MCP only: sessions carry no GitHub token, and `gh` fails from one
+([`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy)).
 
 ## GitHub
 
@@ -46,32 +46,16 @@ commands, and the staging `/health` check when live-staging egress is on
 | PR status, checks, reviews | `pull_request_read` | `gh pr view <number>`, `gh pr checks <number>` |
 | Recent PRs touching a path | `search_pull_requests` / `list_pull_requests` | `gh pr list --search "supabase/migrations" --state merged --limit 5` |
 
-### The `api.github.com` route rule
+### Repo settings the MCP has no tool for
 
-From a cloud sandbox:
+Branch protection, rulesets, environments and their required reviewers, repo visibility and
+`vulnerability-alerts` have no MCP tool, and a session doesn't read them over `gh` or REST. From a
+session, judge them by behaviour or ask Paul; the canonical list of signals, and why `gh` fails, is
+[`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy).
+Applying branch protection is a human step with a person's own admin token by policy, whatever the
+access.
 
-- **Read GitHub through the MCP** (the table above).
-- **For a settings read the MCP has no tool for**, use `gh api`, which goes through the agent proxy
-  with the proxy's own credential. Measured 2026-11-15: `branches/main/protection`, `rulesets` and
-  `rules/branches/main` return 200; `environments` and `vulnerability-alerts` return the proxy's
-  403. What passes has changed between sessions, so re-measure rather than trust that list.
-- **A refused read says nothing about the setting.** A 403 through the proxy is its path policy
-  or GitHub refusing the proxy's credential. Judge the setting by behaviour instead (a production
-  deploy waiting for approval, queued checks on `gh-readonly-queue/main/...`), or ask Paul.
-- **Don't send node `fetch` or `curl --noproxy '*'` direct.** The `GITHUB_TOKEN` / `GH_TOKEN` a
-  session sees are the proxy's placeholders, so GitHub answers 401 "Bad credentials".
-
-Canonical statement:
-[`agent-infra.md` → The `api.github.com` route rule](../../../docs/ci-cd/agent-infra.md#the-apigithubcom-route-rule).
-
-### Repo settings the MCP has no tool for (REST read)
-
-Use REST only to read settings that no MCP tool exposes: branch protection, rulesets, environments
-and their protection rules, repo visibility, and `vulnerability-alerts`.
-
-- It isn't a write fallback. Issue and PR writes still go through the MCP.
-- Applying branch protection is a human step with a person's own admin token. That's policy.
-  Access isn't the reason.
+On a laptop with a token that can read them:
 
 ```bash
 for p in branches/main/protection rulesets rules/branches/main environments vulnerability-alerts; do
@@ -82,12 +66,12 @@ gh api repos/frapplive/Frapp/rules/branches/main --jq '.[].type'   # merge_queue
 
 How to read the results:
 
-- **`vulnerability-alerts` returns 404 `"disabled"`** (on a laptop, or wherever the proxy lets it
-  through). Dependabot alerts are off ([#921](https://github.com/pdcarlson/Frapp/issues/921)).
+- **`vulnerability-alerts` returns 404 `"disabled"`**.
+  Dependabot alerts are off ([#921](https://github.com/pdcarlson/Frapp/issues/921)).
 - **`branches/production` returns 404.** That's expected. The branch was retired in #1340.
 - **Required reviewers for production.** Read them from the protection rules on
-  `environments/production` where that read passes (a laptop with an admin token). From a session
-  it doesn't, so say the reviewers are unverified rather than inferring them from approval timing.
+  `environments/production` on a laptop with an admin token. From a session, say the reviewers are
+  unverified rather than inferring them from approval timing.
 - **Required contexts.** The list is `ALL_REQUIRED_CHECKS` in `scripts/ci/lib/required-checks.mjs`.
   Don't trust a count quoted in a doc.
 
@@ -98,8 +82,9 @@ npm run configure:branch-protection:verify           # reads live and diffs; wri
 npm run configure:branch-protection -- --dry-run     # same read, prints the diff; the `--` is mandatory
 ```
 
-From an agent session, run only `npm run configure:branch-protection:verify`. The other forms can
-write:
+Both are laptop steps; a session runs neither
+([`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy)).
+Prefer `:verify`, because the other forms can write:
 
 - Bare `npm run configure:branch-protection` prints `Mode: LIVE` and `PUT`s the whole protection
   payload.
@@ -107,9 +92,7 @@ write:
   flag, so the script sees no arguments, and `assertKnownArgs` never sees the flag to refuse it.
 - `:verify` sets its own flag and takes no others, so a typo can't turn it into a write.
 
-`:verify` reads through node's `fetch` (`ghRequest` in `scripts/ci/lib/github.mjs`), so it works
-from a cloud sandbox. Its coverage has limits, so a green `:verify` doesn't mean every live field
-matches:
+Its coverage has limits, so a green `:verify` doesn't mean every live field matches:
 
 - It covers only the fields `buildProtectionPayload` manages on `main`.
 - It skips `allow_fork_syncing` while `lock_branch` is false.

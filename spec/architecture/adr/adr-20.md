@@ -115,7 +115,8 @@ the ones a later reader would otherwise re-litigate.
   carrying all 21 roster contexts, with `migration-order` and `web-production-build` present and
   the demoted `migration-drift` absent — which, if it still holds when you read this, would mean
   step 4 of #1378's rollout had already happened. **Re-read it rather than citing this paragraph**
-  (`npm run configure:branch-protection:verify`, or the `gh api` call in the runbook); an admin can
+  (`npm run configure:branch-protection:verify`, or the `gh api` call in the runbook, both laptop
+  steps since sessions lost their GitHub token, corrected 2026-11-16); an admin can
   change any of it in the UI without touching this repo.
 
   The same read surfaced `allow_fork_syncing` live `false` against the roster's `true`. That one is

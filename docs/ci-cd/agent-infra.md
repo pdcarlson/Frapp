@@ -11,7 +11,7 @@ When relevant credentials exist in the environment, prefer gathering **runtime t
 3. Align proposals to observed reality; avoid stale assumptions.
 4. **Never print secret values** — only names and presence/absence.
 
-**CLI recipes** (GitHub `gh`, Supabase, curl examples for Render/Vercel/Infisical): see [`.claude/skills/infrastructure-research/SKILL.md`](../../.claude/skills/infrastructure-research/SKILL.md).
+**Recipes** (the GitHub MCP from a session, `gh` on a laptop, Supabase, curl examples for Render/Vercel/Infisical): see [`.claude/skills/infrastructure-research/SKILL.md`](../../.claude/skills/infrastructure-research/SKILL.md).
 
 ## Optional environment credentials
 
@@ -19,23 +19,31 @@ Provider/research credentials and cloud-sandbox runtime vars that may appear in 
 
 ## GitHub access policy
 
-**Sessions carry no GitHub token of their own (2026-11-15).** The hosted-session `GITHUB_PAT` was
-deleted from the Claude Code environment when the repository moved to `frapplive/Frapp`, and
-nothing a session does needs it back. A session reaches GitHub three ways, all through the agent
-proxy's own credential:
+**A session reaches GitHub through the GitHub MCP only (Paul, 2026-11-16).** Sessions carry no
+GitHub token of their own: the hosted-session `GITHUB_PAT` was deleted on 2026-11-15, when the
+repository moved to `frapplive/Frapp`. The `GH_TOKEN` and `GITHUB_TOKEN` a session sees are the agent
+proxy's placeholders, so `gh auth status` reports "The token in GH_TOKEN is invalid". That is
+expected, not a fault to fix. Every other doc, skill and command links here rather than restating it.
 
-- **The GitHub MCP** (`mcp__github__*`) for issues, PRs, comments, labels, CI runs and job logs. It
-  is the only sanctioned write path.
-- **`gh api` reads** for settings the MCP has no tool for. Measured 2026-11-15:
-  `branches/main/protection`, `rulesets` and `rules/branches/main` return 200;
-  `environments`, `environments/production` and `vulnerability-alerts` return the proxy's 403.
-- **`npm run configure:branch-protection:verify`**, which runs node with `--use-env-proxy` so it
-  takes the same proxy route and exits 0 or names the drift (below).
-
-Where a read is refused, judge the setting by its behaviour instead of reading it: a production
-deploy that waits for approval shows the environment's required reviewers; a PR whose checks run on
-a `gh-readonly-queue/main/...` ref shows the merge queue is on; `pull_request_read` shows which
-checks a PR is waiting on. When only the setting itself will do, ask Paul to read it.
+- **Issues, PRs, comments, labels, reviews, CI runs, job logs and file contents** go through the
+  GitHub MCP (`mcp__github__*`), reads and writes alike. If it is unavailable, GitHub work stops and
+  reports: `gh`, `curl` and node `fetch` are not a fallback.
+- **Search.** Use the MCP's `search_*` tools where the session offers them. Where it doesn't, the
+  Claude Code harness's own instructions name `gh api -X GET search/...` as their one exception;
+  nothing in this repo prescribes any other `gh` call. Measured 2026-11-16: the query must name
+  `repo:frapplive/Frapp` (the old name answers 0 results from `search/code` and a 422 from
+  `search/issues`), and `search/issues` also needs `is:issue` or `is:pull-request` (a 422
+  otherwise).
+- **Repo settings the MCP has no tool for** (branch protection, rulesets, environments and their
+  required reviewers, vulnerability alerts): a session doesn't read them. Judge the setting by its
+  behaviour instead: a production deploy that waits for approval shows the environment's required
+  reviewers; a PR whose checks run on a `gh-readonly-queue/main/...` ref shows the merge queue is on;
+  `pull_request_read` (`get_check_runs`) shows which checks a PR reports, against the roster in
+  `scripts/ci/lib/required-checks.mjs`. When only the setting itself will do, ask Paul to read it, or
+  file it for him per [`file-follow-up`](../../.claude/skills/file-follow-up/SKILL.md).
+- **`npm run configure:branch-protection:verify` is laptop- and Actions-only**, run with a token
+  that can read branch protection. In a session it can't read live protection, and it fails rather
+  than reporting a match, so its failure there says nothing about the settings.
 
 A session **must not**: merge without explicit approval, delete branches without approval, broaden
 repo settings (branch protection, rulesets and environment protection rules included), create or
@@ -51,25 +59,34 @@ never a session credential.
 
 ### The `api.github.com` route rule
 
-**Rewritten 2026-11-15, when sessions stopped carrying a PAT.** From a cloud sandbox there are two
-routes to `api.github.com`:
+**Rewritten 2026-11-16, when `gh` stopped working from sessions.** This is why a session's `gh`,
+`curl` or script call to `api.github.com` fails, so an error is read for what it is. None of it is a
+route to use: the policy above is MCP only. Measured 2026-11-16 from a session started on the old
+repository URL:
 
-- **The proxy route.** Anything that honours `HTTPS_PROXY` (`gh`, plain `curl`, node with
-  `--use-env-proxy` or `NODE_USE_ENV_PROXY=1`). The agent proxy substitutes its own credential
-  for whatever `Authorization` header is sent, and what it lets through varies by path and has
-  varied by session (2026-09-02 it refused every repo path; 2026-09-22 it passed `/rulesets` but
-  not `/environments`; 2026-11-15, the list above). A 403 with no `server: github.com` header is
-  the proxy's path policy; a 403 with GitHub's headers is GitHub refusing the proxy's credential.
-  **Neither says anything about the repository's settings or about any token you hold.**
-- **The direct route.** node's built-in `fetch` without the proxy switch, or `curl --noproxy '*'`.
-  It reaches GitHub, but the `GITHUB_TOKEN` and `GH_TOKEN` a session sees are the proxy's
-  placeholders, so GitHub answers **401 "Bad credentials"**. That 401 is about the route, not the
-  repo: rerun on the proxy route.
+- **`repos/pdcarlson/Frapp/...`**: GitHub answers the old name with a redirect to
+  `repositories/<id>/...`, and the agent proxy refuses that: "Numeric-ID repository paths
+  (repositories/{id}/...) are not supported through this proxy". This is the move's doing, and it
+  is what `npm run configure:branch-protection:verify` hits, because it takes its slug from the
+  clone's `origin` remote.
+- **`repos/frapplive/Frapp/...`**: refused with "GitHub access to this repository is not enabled
+  for this session". The proxy scopes a session to the repository it was started from, and a
+  session started from `https://github.com/pdcarlson/Frapp` is scoped to the old name. On 2026-11-15
+  a session reached `branches/main/protection` and `rulesets` this way; what passes depends on how
+  the session was started, which is why no doc relies on it.
+- **`gh pr`, `gh issue`, `gh run` and the other porcelain commands** use GraphQL, which the proxy
+  refuses for every session.
+- **Sent direct** (node `fetch` without `--use-env-proxy`, `curl --noproxy '*'`), the placeholder
+  token gets 401 "Bad credentials".
 
-Until 2026-11-15 the direct route carried `GITHUB_PAT` and was the one to use for settings reads;
-the measurements behind that rule are in ADR-20's amendment of 2026-09-02, (b), and its 2026-09-22
-correction.
+A 403 through the proxy, or a 401 direct, is about the route and never a verdict on the
+repository's settings. Until 2026-11-15 sessions carried `GITHUB_PAT` and read settings over the
+direct route; the measurements behind that are in ADR-20's amendment of 2026-09-02, (b), and its
+2026-09-22 correction.
 
+Start sessions from `https://github.com/frapplive/Frapp`, the repository's current URL
+([`coordinator`](../../.claude/skills/coordinator/SKILL.md) does); the old URL still clones through
+GitHub's redirect.
 
 ## CI/CD summary
 

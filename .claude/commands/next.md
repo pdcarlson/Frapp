@@ -3,7 +3,7 @@ description: Claim the next viable unit of tracker work — one GitHub issue, or
 argument-hint: "[123 ...] [--plan-only N]"
 ---
 
-Claim one unit of work (usually one GitHub issue on `pdcarlson/Frapp`, sometimes a small coherent
+Claim one unit of work (usually one GitHub issue on `frapplive/Frapp`, sometimes a small coherent
 batch), ship it as one PR, and leave the tracker cleaner than you found it. Several sessions run
 this at once. The Phase 0 claim protocol keeps them off each other's work, so it runs before
 anything expensive.
@@ -23,10 +23,8 @@ is demanded, the §1.2 verification comment on the issue is the plan. Plan mode 
 §1.3 veto.
 
 **The GitHub MCP is the only tracker path.** If any `mcp__github__*` tracker call fails, stop and
-report: no unclaimed work, no `gh`, REST, other tracker, or scratch file, no deferred writes. REST's
-narrow carve-outs
-([`github-pm.md` → How agents reach the tracker](../../docs/ci-cd/github-pm.md#how-agents-reach-the-tracker))
-never cover listing, searching, filing, labeling, closing, or commenting. Load schemas first:
+report: no unclaimed work, no `gh`, REST, other tracker, or scratch file, no deferred writes
+([`agent-infra.md` § GitHub access policy](../../docs/ci-cd/agent-infra.md#github-access-policy)). Load schemas first:
 `ToolSearch("select:mcp__github__get_me,mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__search_pull_requests")`.
 

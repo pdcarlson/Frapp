@@ -67,9 +67,9 @@ GitHub Issues (canonical: planning, status, Triage intake)
 
 | Actor | Reaches GitHub Issues via | Notes |
 | --- | --- | --- |
-| **Claude Code** (web) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only sanctioned path for tracker work — reads and writes alike.** The MCP is auditable, and writes through it are lossless. Shell access to `api.github.com` goes through the agent proxy with `gh api`; sessions carry no token of their own (rule: [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)). **That REST route is never a substitute for the MCP.** If the MCP is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. REST is sanctioned only *alongside* a working MCP: a verification read of an issue's raw `body` when you need to see what the MCP's read mangled, plus the provider-*settings* paths the MCP exposes no tool for. Never to create, edit, label, close or comment. Procedure and measurements: [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body). No fallback tracker. |
+| **Claude Code** (web) | **GitHub MCP** (`mcp__github__issue_write` / `issue_read` / `list_issues` / `search_issues` / `add_issue_comment` / `sub_issue_write`) | **The only path for tracker work — reads and writes alike, and the only way a session reaches GitHub at all** ([`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)). The MCP is auditable, and writes through it are lossless. If it is unavailable, tracker work **stops and reports** — no `gh`, no REST, no scratch file. No fallback tracker. |
 | **Claude scheduled tasks** (scheduled, live) | The **same GitHub MCP** — routine sessions run in the same web environment | If the MCP is unavailable at fire time, the routine stops and reports (Weekly Upkeep excepted — it writes a PR, not issues, and push the branch and report its name when the MCP is down). See [`routines.md`](routines.md). |
-| **CI / scripts** | `GITHUB_TOKEN` (or a person's own token on a laptop) — tracker writes inside GitHub Actions only | Sessions carry no `GITHUB_PAT` since 2026-11-15, and their `gh api` reads through the agent proxy are a read channel, not a licence to do tracker work outside the MCP. **Branch protection, from an agent session: run `npm run configure:branch-protection:verify` (read-only) and nothing else.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. *Applying* stays a human step with a person's own admin token — policy, not lack of capability. Access policy: [`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy). |
+| **CI / scripts** | `GITHUB_TOKEN` (or a person's own token on a laptop) — tracker writes inside GitHub Actions only | **Branch protection is never applied from an agent session.** Never the bare `npm run configure:branch-protection` — with no flags it is a **LIVE `PUT`** of the whole protection payload (`scripts/configure-branch-protection.mjs` prints `Mode: LIVE`). Never `npm run configure:branch-protection --dry-run` **without the `--` separator** — npm swallows the flag (reproduced on npm 10.9.7), the script sees zero args, and it **applies**. `:verify` is laptop-only, and *applying* stays a human step with a person's own admin token. Access policy: [`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy). |
 
 ---
 
@@ -282,7 +282,7 @@ than "the MCP is fine". An unmeasured path is unknown, not clean.
 | `issue_read method:get` | ✅ intact | ✅ intact | ✅ literal | **Yes**, as of 2026-09-05 |
 | `list_issues fields:["body"]` | ✅ intact | ✅ intact | ✅ literal | **Yes**, as of 2026-09-05 |
 | `search_issues fields:["number","title","body"]` | ✅ intact | ✅ intact | ✅ literal | **Yes**, as of 2026-09-05 |
-| direct REST `body` (ground truth) | ✅ intact | ✅ intact | ✅ literal | **Yes**, always |
+| direct REST `body` (ground truth; laptop only) | ✅ intact | ✅ intact | ✅ literal | **Yes**, always |
 
 Measured by round-tripping fixture **#1736**, which was written for this purpose and carries all
 three vectors including the historical discriminator (five `<Tabs.Screen …/>` lines inside a
@@ -361,13 +361,15 @@ That is a conditional permission, not a standing one — this defect has flipped
   preference is about keeping issues readable, and it survives whatever the read is doing.
 - **Author-your-own-text is always safe.** A body you composed this run never round-trips through a
   read, so it needs no probe and no escape hatch. This is unchanged.
-- **Use the raw REST body when the stakes are high** — a `[human]` item, an epic, anything long or
-  quote-heavy. [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body) is ground
-  truth by construction rather than by measurement, so it is correct even mid-regression. That call
-  is a verification read, **not** a tracker path: it does not license tracker work over REST, and it
-  is not an MCP fallback (if the MCP is down, stop and report).
+- **When the stakes are high** — a `[human]` item, an epic, anything long or quote-heavy — run
+  [the probe](#re-verifying-this-the-probe) first even for one issue, and prefer a comment. A
+  session has no raw read to check against
+  ([`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)); [the direct REST
+  read](#the-direct-rest-read-ground-truth-for-a-raw-body) is ground truth by construction, but it
+  is a laptop step, so a rewrite that needs it is asked of Paul.
 - **If the probe is red, fall back to the old rule:** never source a rewrite from a read; append a
-  comment instead; and if you must rewrite, take the body from REST, confirm it holds **no HTML
+  comment instead; and if a rewrite can't wait, ask Paul to take the body from the raw REST read on a
+  laptop, confirm it holds **no HTML
   comment and no tags anywhere including inside code fences**, and un-escape vector 3
   (`&#39;`→`'`, `&#34;`→`"`, `&quot;`→`"`, `&amp;`→`&`, `&gt;`→`>`, `&lt;`→`<`) before writing back. **All six** — an earlier version of this list named four, and three of the nine damaged bodies below carry `&lt;` and nothing else, so a four-substitution pass would have declared them repaired while leaving them broken. Deleted content cannot be
   un-deleted; only escaping is reversible — which is exactly how the nine damaged bodies above
@@ -445,7 +447,7 @@ silently stopped being runnable — a rotted probe that still *looked* like a co
 | 1 | `issue_read` `method:"get"` on **#1736** | All three vectors intact — HTML comment, five `<Tabs.Screen …/>` lines inside the `tsx` fence, literal `'` `"` `&` `>` | ✅ all three |
 | 2 | `list_issues` `state:OPEN labels:["routine-state"] fields:["number","title","body"]` | Same, for #1736's entry | ✅ all three |
 | 3 | `search_issues` `"MCP read-fidelity probe control fixture"`, `fields:["number","title","body"]` | Same | ✅ all three |
-| 4 | [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body) of #1736 | Ground truth — steps 1-3 must agree with it | ✅ byte-identical to all three |
+| 4 | [The direct REST read](#the-direct-rest-read-ground-truth-for-a-raw-body) of #1736 (laptop only; a session checks steps 1-3 against the answer key #1736's body states instead) | Ground truth — steps 1-3 must agree with it | ✅ byte-identical to all three |
 | 5 | `issue_read get_comments` on #1736 | Two comment controls: one carrying all three vectors, one extending vector 3 to **bare `<`** and re-testing vector 2 for a *lowercase* unknown tag (`<not a tag>`, `<name>`) | ✅ all vectors on both |
 | 6 | `search_issues` a real `fp=` and a fabricated one | 1 precise hit / 0 hits | ✅ both correct — lookup healthy |
 
@@ -453,7 +455,9 @@ silently stopped being runnable — a rotted probe that still *looked* like a co
 is what let the 2026-08-11 round pass while a `tsx` fence was still being eaten — vector 2 is the
 one that decides the answer, because it is the only vector whose failure destroys content
 irrecoverably. Steps 1-3 disagreeing with step 4 means the read is lossy; steps 1-3 *agreeing* with
-step 4 means it is faithful, whatever this document's table says.
+step 4 means it is faithful, whatever this document's table says. A session, which can't run step 4,
+compares steps 1-3 with the expected values #1736's body states; a read lossy enough to damage those
+shows as a mismatch all the same.
 
 **Run step 5, not only steps 1-3.** The fixture's *body* contains no bare `<` outside a tag, so the
 body alone cannot discriminate `&lt;`-escaping — and that is not a hypothetical gap: three of the
@@ -479,24 +483,18 @@ legacy-marker audit in #697 is ever run.
 
 ### The direct REST read (ground truth for a raw body)
 
-**`api.github.com` REST is the better ground-truth read.** Since 2026-11-15 sessions carry no
-GitHub token of their own, so the read goes through the agent proxy with `gh api`, which
-authenticates with the proxy's credential. Sent direct (node `fetch`, `curl --noproxy '*'`), a
-session's placeholder token gets a 401; a 403 through the proxy is its path policy, not a verdict on
-the repo. Rule: [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule).
+**`api.github.com` REST is the better ground-truth read, and it is a laptop step.** A session
+can't make it: sessions reach GitHub through the MCP only, and `gh` and node `fetch` fail from one
+([`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)). What a session does
+instead is in [The operative rule](#the-operative-rule) and [the probe](#re-verifying-this-the-probe).
 
-**Scope, before the recipe.** This is a **verification read** and nothing more. It is not a tracker
-path and not an MCP fallback: **if the GitHub MCP is unavailable, tracker work stops and reports —
-no `gh`, no REST, no scratch file.** REST is never a substitute for the MCP on tracker work, read
-*or* write. Its two sanctioned uses both assume a working MCP: reading an issue's raw text to see
-what the MCP's read mangled, and the provider-*settings* paths the MCP exposes no tool for (branch
-protection, environments, rulesets, repo visibility, vulnerability alerts). Never to create, edit,
-label or close an issue or PR, and never to post a comment — those go through `mcp__github__*` or
-they do not happen.
+**Scope, before the recipe.** On a laptop this is a **verification read** and nothing more: reading
+an issue's raw text to see what the MCP's read mangled. It is not a tracker path, and it never
+creates, edits, labels or closes an issue or PR, or posts a comment — those go through
+`mcp__github__*` or they do not happen.
 
 **The read.** `GET /repos/frapplive/Frapp/issues/<n>` returns the raw `body` field — the string
-GitHub stores, before the MCP's sanitizer touches it (passed through the proxy, measured
-2026-11-15):
+GitHub stores, before the MCP's sanitizer touches it:
 
 ```bash
 gh api repos/frapplive/Frapp/issues/697 --jq .body

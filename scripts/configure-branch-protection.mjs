@@ -606,12 +606,11 @@ async function main() {
             "An unreadable answer is not a passing one, so this fails rather than reporting a " +
             "match. node's fetch goes direct unless NODE_USE_ENV_PROXY=1 or --use-env-proxy " +
             "(on the command line or in NODE_OPTIONS) routes it through a proxy. On a laptop, direct, " +
-            "a 401 or 403 is GitHub's answer to the token sent. In a cloud session, which carries " +
-            "no token of its own, go through the agent proxy: `npm run " +
-            "configure:branch-protection:verify` already does; a 401 \"Bad credentials\" means the " +
-            "request went direct with the proxy's placeholder token, and a 403 through the proxy is " +
-            "its path policy, not a verdict on the settings. Route rule: docs/ci-cd/agent-infra.md, " +
-            "The api.github.com route rule.",
+            "a 401 or 403 is GitHub's answer to the token sent. A cloud session can't make this read: " +
+            "it carries no GitHub token and reaches GitHub through the GitHub MCP only, so its 401 " +
+            "or 403 is about the route, not a verdict on the settings. From a session, judge " +
+            "protection by behaviour or ask Paul. Policy: docs/ci-cd/agent-infra.md, GitHub access " +
+            "policy.",
         );
       }
     } else {
