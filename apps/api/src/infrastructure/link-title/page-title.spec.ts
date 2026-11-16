@@ -107,6 +107,13 @@ describe('page titles (#4187)', () => {
       const long = 'Rush BBQ '.repeat(64 * 1024);
       expect(cleanPageTitle(`${long}access denied`)).toBe(cleanPageTitle(long));
       expect(cleanPageTitle(`${long}access denied`)).not.toBeNull();
+      // Pinned at the cap itself, so raising it (and the quadratic cost with
+      // it) turns this red: the only words sit just past the first 2,000
+      // characters, so the title reads as empty.
+      expect(cleanPageTitle(`${' '.repeat(2_000)}Formal RSVP`)).toBeNull();
+      expect(cleanPageTitle(`${' '.repeat(1_989)}Formal RSVP`)).toBe(
+        'Formal RSVP',
+      );
     });
 
     it('never lets a tag match run past the next `<`', () => {

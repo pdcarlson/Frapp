@@ -450,11 +450,13 @@ describe('AiRunWorkerService', () => {
     await w.drain(T0);
     // Renewals fail while the lease still holds: the try keeps going. Wait
     // for a second beat rather than a fixed time, which a loaded runner can
-    // outlast: by then the first failure has been handled.
-    while (renew.mock.calls.length < 2) {
+    // outlast: by then the first failure has been handled. Bounded, so a
+    // heartbeat that stops after one failure fails here rather than spinning
+    // to the suite timeout with its timers left running.
+    for (let beat = 0; renew.mock.calls.length < 2 && beat < 400; beat += 1) {
       await new Promise((resolve) => setTimeout(resolve, w.heartbeatMs));
     }
-    expect(renew).toHaveBeenCalled();
+    expect(renew.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(signal?.aborted).toBe(false);
     // AI off so the freed slot is not refilled: the run is claimable again
     // at this instant, and this spec is about the stop, not the next claim.

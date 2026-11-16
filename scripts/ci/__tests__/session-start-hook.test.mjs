@@ -411,20 +411,17 @@ test("the lock decision waits for the guard another session start holds", async 
   // happen not to interleave, which is most runs. This pins the flock itself: hold the
   // guard from outside and the hook must wait for it before deciding.
   const s = scratch(t);
-  // Its own group, so the teardown takes its `sleep` too, not only flock.
-  const holder = spawn("flock", [`${s.lock}.guard`, "sleep", "1.5"], { detached: true, stdio: "ignore" });
-  t.after(() => {
-    try {
-      process.kill(-holder.pid, "SIGKILL");
-    } catch {
-      // already gone
-    }
-  });
+  // The holder keeps the guard until a release file appears, and that file is written
+  // a second after `started`, never sooner: a hold timed from when the holder took the
+  // lock could end before `started` plus a second on a loaded runner.
+  const release = `${s.lock}.release`;
+  liveProcess(t, "flock", [`${s.lock}.guard`, "sh", "-c", `while [ ! -e '${release}' ]; do sleep 0.05; done`]);
   assert.ok(
     await eventually(() => spawnSync("flock", ["-n", `${s.lock}.guard`, "true"]).status !== 0, 3000),
     "precondition: the guard is held",
   );
   const started = Date.now();
+  liveProcess(t, "sh", ["-c", `sleep 1; touch '${release}'`]);
   runHook(s, { boot: "boot-B" });
   assert.ok(Date.now() - started >= 1000, `the hook decided without waiting (${Date.now() - started}ms)`);
 });

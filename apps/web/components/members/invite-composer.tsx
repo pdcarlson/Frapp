@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Check, Link2, Loader2 } from "lucide-react";
 import { useCreateInvite, useEmailInvites } from "@repo/hooks";
 import { MAX_INVITE_EMAILS, splitAddresses } from "@repo/validation";
@@ -116,6 +116,12 @@ export function InviteComposer({
   const setDraft = (next: string) => change({ draft: next });
   const [tooMany, setTooMany] = useState(false);
   const [copied, setCopied] = useState(false);
+  // "Copied" reverts after COPIED_MS; the timer is cleared on unmount so it
+  // never sets state on a composer that has gone (or on a torn-down test DOM).
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
 
   const controlProps = (busy: boolean) =>
     gate ? gate.controlProps(disabled || busy) : { disabled: disabled || busy };
@@ -188,7 +194,8 @@ export function InviteComposer({
     try {
       await copyWhenReady(link);
       setCopied(true);
-      setTimeout(() => setCopied(false), COPIED_MS);
+      clearTimeout(copiedTimer.current);
+      copiedTimer.current = setTimeout(() => setCopied(false), COPIED_MS);
       onInvited?.("link", 1);
     } catch (error) {
       // Tell a failed mint from a clipboard the browser refused.
