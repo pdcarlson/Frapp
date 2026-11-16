@@ -1,5 +1,10 @@
+import { ASK_SOURCE_KINDS, type AskSourceKind } from '@repo/validation';
 import { AI_MODEL_CATALOG } from './ai-model-catalog';
-import { AI_CONSENT_SHEET, AI_FAMILY_SWITCH } from './ai-consent-sheet';
+import {
+  AI_CONSENT_SHEET,
+  AI_FAMILY_SWITCH,
+  type AiConsentSheetDataKind,
+} from './ai-consent-sheet';
 
 /**
  * What each sheet version covered: its providers and its kinds of data, by
@@ -44,6 +49,31 @@ describe('AI_CONSENT_SHEET', () => {
     const data = AI_CONSENT_SHEET.data.map((d) => d.key);
     expect(new Set(providers).size).toBe(providers.length);
     expect(new Set(data).size).toBe(data.length);
+  });
+});
+
+/**
+ * Which row of the sheet covers each kind of source Ask can put in front of
+ * the model (#4787). A new kind fails to compile here until it is mapped, and
+ * a kind no row covers is a new version of the sheet, not a mapping.
+ */
+const ASK_SOURCE_ROW: Record<AskSourceKind, AiConsentSheetDataKind['key']> = {
+  document: 'chapter_records',
+  minutes: 'meetings',
+  chat: 'channel_messages',
+  roster: 'roster',
+  events: 'chapter_records',
+  points: 'roster',
+  dues: 'roster',
+  tasks: 'chapter_records',
+};
+
+describe('Ask sources', () => {
+  it('each map to a row the sheet names', () => {
+    const rows = new Set<string>(AI_CONSENT_SHEET.data.map((d) => d.key));
+    for (const kind of ASK_SOURCE_KINDS) {
+      expect(rows).toContain(ASK_SOURCE_ROW[kind]);
+    }
   });
 });
 

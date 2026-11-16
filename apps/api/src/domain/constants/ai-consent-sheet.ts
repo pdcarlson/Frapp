@@ -62,7 +62,11 @@ export const AI_CONSENT_SHEET = {
     { key: 'questions', label: 'Questions you ask' },
     {
       key: 'chapter_records',
-      label: 'Chapter documents and announcements',
+      // Events and tasks named 2026-11-16 (#4787): Ask's `events` and
+      // `my_tasks` tools send them, and the privacy policy's Frapp AI section
+      // already named both. A label change, not a new kind, so not a new
+      // version. `ai-consent-sheet.spec.ts` maps every Ask source to a row.
+      label: 'Chapter documents, announcements, events and tasks',
     },
     {
       key: 'roster',

@@ -1038,6 +1038,7 @@ Frapp does not keep the text of prompts or answers, with two exceptions.
   The Frapp team reads them; nobody in the chapter does.
   The same numbers go to analytics under the member's pseudonym, like every server event ([`observability.md` § AI answer events](observability.md#ai-answer-events)).
   How the team reads them: [`docs/ops/ask-answer-quality.md`](../../docs/ops/ask-answer-quality.md).
+  The privacy page names it (#4914, 2026-11-16).
   Only a turn answered through the tool loop writes one, so nothing is written on a server without `ASK_AGENT=on` (2026-11-13).
 - No prompt or answer text goes to any outside service: not to error tracking, not to analytics, not to a provider's own request logs.
   That rule has no exception ([`observability.md`](observability.md)).
