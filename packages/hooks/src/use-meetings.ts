@@ -418,7 +418,6 @@ export function useChooseMeetingDraftVersion() {
 
 /** The caller's own notes on one meeting, and who else takes notes. */
 export type MeetingNotesState = components["schemas"]["MeetingNotesDto"];
-export type MeetingNoteTaker = components["schemas"]["MeetingNoteTakerDto"];
 /** Unposted minutes the caller may take notes on and doesn't edit. */
 export type MeetingNoteTaking = components["schemas"]["MeetingNoteTakingDto"];
 

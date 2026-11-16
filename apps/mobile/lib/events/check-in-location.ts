@@ -50,7 +50,7 @@ export type CheckInLocation =
 /** How long the GPS fix gets before the fallbacks. */
 export const CHECK_IN_GPS_TIMEOUT_MS = 15_000;
 /** How long the coarse network fix gets, after the GPS one. */
-export const CHECK_IN_COARSE_TIMEOUT_MS = 8_000;
+const CHECK_IN_COARSE_TIMEOUT_MS = 8_000;
 /**
  * How old the phone's last known position may be. A member walks into the
  * meeting with the phone in their pocket; a position from two minutes ago is
@@ -58,7 +58,7 @@ export const CHECK_IN_COARSE_TIMEOUT_MS = 8_000;
  */
 export const LAST_KNOWN_MAX_AGE_MS = 120_000;
 /** A last known position less sure than this is no better than none. */
-export const LAST_KNOWN_MAX_ACCURACY_M = 200;
+const LAST_KNOWN_MAX_ACCURACY_M = 200;
 
 /**
  * Whether Location Services are on, after asking Android to turn them on when

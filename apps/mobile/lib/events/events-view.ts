@@ -52,7 +52,7 @@ export type CalendarRange = "month" | "3day" | "day";
 
 export const CALENDAR_RANGE_STORAGE_KEY = "frapp.events.calendar-range";
 
-export function parseCalendarRange(raw: unknown): CalendarRange {
+function parseCalendarRange(raw: unknown): CalendarRange {
   return raw === "3day" || raw === "day" ? raw : "month";
 }
 

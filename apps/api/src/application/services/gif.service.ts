@@ -42,7 +42,7 @@ export interface MessageGifInput {
 }
 
 /** A result as a client gets it: signed, so a send can prove where it came from. */
-export interface SignedGifResult extends GifResult {
+interface SignedGifResult extends GifResult {
   token: string;
 }
 

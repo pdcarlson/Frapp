@@ -17,7 +17,7 @@ const REMINDER_COLUMNS =
  * row draws the same author, time and preview and opens the same way, plus
  * `metadata`, which a message with no text needs for its preview.
  */
-export const REMINDER_MESSAGE_COLUMNS = `${BOOKMARK_MESSAGE_COLUMNS}, metadata`;
+const REMINDER_MESSAGE_COLUMNS = `${BOOKMARK_MESSAGE_COLUMNS}, metadata`;
 
 const REMINDER_WITH_MESSAGE_SELECT = `${REMINDER_COLUMNS}, message:chat_messages!inner(${REMINDER_MESSAGE_COLUMNS})`;
 

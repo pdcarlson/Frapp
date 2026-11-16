@@ -42,7 +42,7 @@ import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { IsRepeatRule } from '../decorators/is-repeat-rule.decorator';
 
 /** The scopes of a repeating task's edit and delete (#5119). */
-export const TASK_EDIT_SCOPES = ['instance', 'series'] as const;
+const TASK_EDIT_SCOPES = ['instance', 'series'] as const;
 export type TaskEditScope = (typeof TASK_EDIT_SCOPES)[number];
 
 const TASK_RECURRENCE_RULE_DESCRIPTION =
@@ -57,6 +57,7 @@ import {
   LIST_QUERY_LIMIT_MAX,
   LIST_QUERY_LIMIT_MIN,
 } from '#domain/constants/list-query-limits';
+import type { AssertNever } from './drift-guard';
 
 /**
  * `GET /v1/tasks` (#4037). Every parameter is optional, and a request with
@@ -206,7 +207,7 @@ export class CreateTaskDto {
  *
  * Drift between this class and the task row is caught the same way as
  * `AdjustPointsResponseDto`: `implements Task` for type drift, and the
- * `Assert<Exclude<…>>` aliases below for key drift. `card_posted` is the one
+ * `AssertNever<Exclude<…>>` aliases below for key drift. `card_posted` is the one
  * deliberate extra field.
  */
 export class CreateTaskResponseDto implements Task {
@@ -617,13 +618,14 @@ export class RejectTaskCompletionDto {
 /**
  * Compile-time key-drift guards between {@link CreateTaskResponseDto} and the
  * task row it publishes. Each resolves to `never` while the two agree; when
- * they diverge the alias stops satisfying `Assert`'s constraint and the build
+ * they diverge the alias stops satisfying `AssertNever`'s constraint and the build
  * fails naming the field.
  */
-type Assert<T extends never> = T;
-
-/** Task fields {@link CreateTaskResponseDto} forgot to declare. Must be `never`. */
-export type CreateTaskResponseDtoMissingFields = Assert<
+/**
+ * Task fields {@link CreateTaskResponseDto} forgot to declare. Must be `never`.
+ * @driftguard
+ */
+export type CreateTaskResponseDtoMissingFields = AssertNever<
   Exclude<keyof Task, keyof CreateTaskResponseDto>
 >;
 
@@ -631,7 +633,8 @@ export type CreateTaskResponseDtoMissingFields = Assert<
  * Fields {@link CreateTaskResponseDto} declares that the task row does not
  * carry. Must be `never`. `card_posted` is excluded because it is this route's
  * own outcome flag, not a column — the one deliberate addition.
+ * @driftguard
  */
-export type CreateTaskResponseDtoExtraFields = Assert<
+export type CreateTaskResponseDtoExtraFields = AssertNever<
   Exclude<keyof CreateTaskResponseDto, keyof Task | 'card_posted' | 'photos'>
 >;

@@ -60,7 +60,7 @@ export function isSessionOver(result: {
  * a local session existed before the call. Its report names the code, which
  * the error itself doesn't carry.
  */
-export function sessionVerdict(
+function sessionVerdict(
   result: { data: { user: unknown }; error: unknown },
   hadLocalSession: boolean,
 ): { over: boolean; code?: string } {

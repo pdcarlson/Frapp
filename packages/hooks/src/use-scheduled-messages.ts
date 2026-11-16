@@ -10,8 +10,7 @@ export type ScheduledMessage = components["schemas"]["ScheduledMessageDto"];
  * The member's own scheduled messages (#4956), per chapter, since a list read
  * in one chapter must never answer in another.
  */
-export const scheduledMessageKeys =
-  createChapterQueryKeys("scheduled-messages");
+const scheduledMessageKeys = createChapterQueryKeys("scheduled-messages");
 
 /**
  * How often an open list re-reads, so a message the sweep just posted leaves
@@ -66,8 +65,7 @@ function useInvalidateScheduled() {
 }
 
 /** A staged file as the schedule takes it (`MessageAttachmentDto`). */
-export type ScheduledAttachmentInput =
-  components["schemas"]["MessageAttachmentDto"];
+type ScheduledAttachmentInput = components["schemas"]["MessageAttachmentDto"];
 
 export interface ScheduleMessageVariables {
   channelId: string;

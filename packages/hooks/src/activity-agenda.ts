@@ -18,7 +18,7 @@ import { isSentBack } from "./task-card";
  * The member's week (`GET /v1/activity`'s `week`,
  * `spec/behavior/activity.md` § Week). Absent from an API built before it.
  */
-export type ActivityWeek = NonNullable<Activity["week"]>;
+type ActivityWeek = NonNullable<Activity["week"]>;
 
 /** What the To do list can be narrowed to: one line of the week card. */
 export type ActivityAgendaFilter = "all" | "events" | "tasks" | "answers";

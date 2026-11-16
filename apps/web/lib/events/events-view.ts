@@ -48,7 +48,7 @@ export function writeEventsView(
 }
 
 /** Where a calendar-made event starts when the month's day number made it. */
-export const CALENDAR_DEFAULT_START_HOUR = 18;
+const CALENDAR_DEFAULT_START_HOUR = 18;
 
 /**
  * The start a calendar press hands the editor: the day at `startHour`, which

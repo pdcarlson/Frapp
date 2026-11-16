@@ -153,7 +153,7 @@ const REQUEST_ID_RE = /^req_[A-Za-z0-9-]{1,64}$/;
 /** The root an event names when the key has none worth naming. */
 const UNKEYED_ROOT = "unkeyed";
 
-export type QueryErrorKind = "query" | "mutation";
+type QueryErrorKind = "query" | "mutation";
 
 /** What each app's Sentry binding passes to `captureException`. */
 export interface QueryErrorReport {
@@ -180,14 +180,14 @@ export interface QueryErrorReporterOptions {
 }
 
 /** The part of TanStack's `Query` read here. */
-export interface ReportedQuery {
+interface ReportedQuery {
   readonly queryKey: readonly unknown[];
   /** Read only to remove it from a TanStack error's message, never sent. */
   readonly queryHash?: string;
 }
 
 /** The part of TanStack's `Mutation` read here. */
-export interface ReportedMutation {
+interface ReportedMutation {
   readonly options: { readonly mutationKey?: readonly unknown[] | undefined };
 }
 

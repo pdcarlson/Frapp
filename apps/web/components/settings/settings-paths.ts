@@ -25,7 +25,7 @@ export const CHAT_REPORTS_ANCHOR = "reported-messages";
 export const CHAT_REPORTS_SETTINGS_PATH = `${CHAT_SETTINGS_PATH}#${CHAT_REPORTS_ANCHOR}`;
 
 /** `?tool=` value that opens Discord import in place of the Chat page. */
-export const DISCORD_IMPORT_TOOL = "discord-import";
+const DISCORD_IMPORT_TOOL = "discord-import";
 
 /** Discord import, opened in place of the Chat page. */
 export const DISCORD_IMPORT_SETTINGS_PATH = `${CHAT_SETTINGS_PATH}&tool=${DISCORD_IMPORT_TOOL}`;

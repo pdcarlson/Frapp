@@ -35,7 +35,7 @@ export interface NetworkState {
   subscribe(onChange: (online: boolean) => void): () => void;
 }
 
-export type OutboxStatus = "queued" | "failed";
+type OutboxStatus = "queued" | "failed";
 
 /** An uploaded file waiting to be attached to a queued message. */
 export interface OutboxAttachment {

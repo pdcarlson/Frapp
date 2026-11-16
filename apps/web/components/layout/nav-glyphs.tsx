@@ -169,6 +169,11 @@ export function NotificationsGlyph({ className, active }: NavGlyphProps) {
   );
 }
 
+/**
+ * @public `spec/ui/design-system/iconography.md` § 6.2 names it for the top
+ * bar's mobile nav trigger, which still draws lucide's `Menu`; whether to wire
+ * it or drop it from the spec is #4571.
+ */
 export function MenuGlyph({ className }: NavGlyphProps) {
   // A hamburger has no silhouette to fill; its three rules are all detail
   // strokes, so this one is legitimately stroke-only under the recipe.

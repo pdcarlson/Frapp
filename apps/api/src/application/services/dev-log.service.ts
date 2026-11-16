@@ -60,14 +60,14 @@ export const DEV_LOG_EVENTS = [
 ] as const;
 export type DevLogEvent = (typeof DEV_LOG_EVENTS)[number];
 
-export interface DevLogItem {
+interface DevLogItem {
   number: number;
   title: string;
   actor?: string;
   areas?: string[];
 }
 
-export interface DevLogMergeCount {
+interface DevLogMergeCount {
   actor: string;
   count: number;
 }

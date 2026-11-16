@@ -48,7 +48,7 @@ const POINT_GLYPHS: Record<FrappAiPoint["key"], ReactNode> = {
 };
 
 /** The screen's body: the three lines, and the one that names the companies. */
-export function MeetFrappAiBody({
+function MeetFrappAiBody({
   providers,
   forChapter,
   error,

@@ -646,9 +646,6 @@ export function useRequestTaskPhotoUploadUrl() {
   });
 }
 
-/** Which of a task's photos (#4635): the officer's or the assignee's. */
-export type TaskPhotoKind = "reference" | "proof";
-
 /**
  * A short-lived link to one of a task's photos (#4635), for its assignee or a
  * `tasks:manage` holder. Keyed on the photo's id, which a replaced photo never

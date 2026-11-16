@@ -147,7 +147,7 @@ const DRAFT_SAVE_DEBOUNCE_MS = 400;
 const PHOTO_UPLOAD_CONCURRENCY = 3;
 
 /** A photo just picked, with the upload that turns it into a claim. */
-export interface NewStagedPhoto {
+interface NewStagedPhoto {
   previewUri: string;
   width: number | null;
   height: number | null;

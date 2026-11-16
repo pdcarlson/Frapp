@@ -29,8 +29,8 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
  * morning window as the daily task reminders (#4788), on the first day of
  * the member's week, when Activity's "Last week" card starts showing.
  */
-export const RECAP_PUSH_FROM_HOUR = 9;
-export const RECAP_PUSH_UNTIL_HOUR = 12;
+const RECAP_PUSH_FROM_HOUR = 9;
+const RECAP_PUSH_UNTIL_HOUR = 12;
 
 /**
  * The preference category the push is sent under: the "Weekly recap" switch

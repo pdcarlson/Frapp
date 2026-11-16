@@ -64,7 +64,7 @@ export type BackworkCourse = {
 };
 
 /** One way to say a course (its name, or one nickname), ready to score. */
-export type CoursePhrase = {
+type CoursePhrase = {
   text: string;
   isNickname: boolean;
   /** Normalised words, as written. */

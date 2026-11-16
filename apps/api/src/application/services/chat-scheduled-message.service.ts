@@ -38,12 +38,12 @@ import { NotificationService } from './notification.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 /** How far ahead a message may be scheduled. Slack's limit is 120 days too. */
-export const SCHEDULE_MAX_AHEAD_MS = 120 * 24 * 60 * 60 * 1000;
+const SCHEDULE_MAX_AHEAD_MS = 120 * 24 * 60 * 60 * 1000;
 /**
  * How far in the past a requested time may be and still count as "now": a
  * preset picked a few seconds before the request lands. Earlier is refused.
  */
-export const SCHEDULE_PAST_GRACE_MS = 60 * 1000;
+const SCHEDULE_PAST_GRACE_MS = 60 * 1000;
 /** Pending messages one member may hold in one chapter. */
 export const SCHEDULE_MAX_PENDING = 50;
 /** How long one send holds a row before another replica may take it. */

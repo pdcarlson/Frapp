@@ -33,14 +33,14 @@ import { asArray } from "@/lib/utils";
  * channel list has loaded a row's kind is unknown, and it is read as a
  * channel, so a DM lights Chat for that moment rather than nothing at all.
  */
-export type ChatUnread = {
+type ChatUnread = {
   channels: boolean;
   directConversations: number;
 };
 
 const NOTHING_UNREAD: ChatUnread = { channels: false, directConversations: 0 };
 
-export function useChatUnread(): ChatUnread {
+function useChatUnread(): ChatUnread {
   const unreadQuery = useChannelUnreadCounts();
   const prefsQuery = useChannelNotificationPreferences();
   const channelsQuery = useChannels();

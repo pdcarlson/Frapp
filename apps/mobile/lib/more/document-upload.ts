@@ -126,7 +126,7 @@ export const DOCUMENT_FILE_TYPE_REFUSAL =
   "Documents can be PDF, Word, Excel, PowerPoint, text, CSV or photo files. Export a Pages, Numbers or Keynote file as PDF first.";
 
 /** A failed PUT of a file, in words that don't call a PDF a photo. */
-export const DOCUMENT_UPLOAD_FAILED =
+const DOCUMENT_UPLOAD_FAILED =
   "Couldn't upload that file. Try again in a moment.";
 
 /** A photo from Files that wouldn't decode or re-encode. */

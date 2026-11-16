@@ -48,7 +48,7 @@ export interface ChannelMemberRow {
   line: string | null;
 }
 
-export type ChannelMemberGroup = ChannelMemberRoleGroup<ChannelMemberRow>;
+type ChannelMemberGroup = ChannelMemberRoleGroup<ChannelMemberRow>;
 
 /**
  * Who can read the open channel, Discord-style (#3536): grouped under each
