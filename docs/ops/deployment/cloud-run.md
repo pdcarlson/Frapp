@@ -14,7 +14,7 @@ The API is moving from Render to Google Cloud Run ([#5228](https://github.com/fr
 | Instances | instance-based billing, min 0, max 1 | instance-based billing, min 1, max 1 |
 | Image | built once on GitHub, pushed to `us-east4-docker.pkg.dev/<nonprod>/frapp/api` | the same digest, copied to `us-east5-docker.pkg.dev/<prod>/frapp/api` |
 | Secrets | Infisical `staging`, synced to this project's Secret Manager | Infisical `prod`, synced to this project's Secret Manager |
-| Address | the staging API host, through Cloudflare | `api.frapp.live`, through Cloudflare |
+| Address | `api-staging.frapp.live`, through a Google load balancer | `api.frapp.live`, through a Google load balancer |
 
 **Why two regions.** The API makes several database calls per request, so each environment runs next to its Supabase project. `frapp-staging` is in AWS `us-east-1` (Virginia) and `frapp-prod` is in `us-east-2` (Ohio), both read through the Supabase API on 2026-11-16. Ashburn and Columbus are the Google regions in those metros. Render ran both environments in Ohio, so on Render staging always paid the trip to Virginia.
 
@@ -114,14 +114,25 @@ Staging deploys here from the staging deploy job ([`_deploy.yml`](../../../.gith
 
 **Rolling back.** In the console, **Cloud Run → frapp-api → Revisions**, pick the previous revision and **Manage traffic** to send it 100%. The next deploy moves traffic to its own new revision again.
 
-**The staging host.** Paul chose on 2026-11-16 to point the staging API host at Cloud Run with a Cloud Run custom domain (a mapping in the project plus a record at Squarespace) rather than wait for Cloudflare. Until that record changes, the staging host still reaches the old Render service.
+## Address
+
+Each API host reaches its service through a global external Application Load Balancer in the same project, set up by [`scripts/gcp/load-balancer.sh`](../../../scripts/gcp/load-balancer.sh) after the first deploy has created the service. Paul chose this on 2026-11-16 over a Cloud Run domain mapping, which Google calls a preview that isn't production-ready and doesn't offer in `us-east5`. The balancer is also where Cloud Armor, a second region or a CDN would attach. It costs about $18 a month per environment.
+
+The script makes a static address, a serverless backend pointing at `frapp-api` that logs every request, a Google-managed certificate held in Certificate Manager, HTTPS on port 443, and a 308 redirect to HTTPS on port 80 (calendar apps fetch a `webcal://` feed over plain HTTP). It is safe to run again, and each run prints where the certificate is.
+
+The certificate is proved by a DNS record rather than by traffic, so it is issued while the host still points at Render, and the host moves with no gap. Two records at Squarespace, in this order:
+
+1. The `_acme-challenge` CNAME the script prints. Adding it changes nothing else.
+2. Once a rerun says `certificateState: ACTIVE`, the host's A record pointing at the balancer's address, in place of its Render CNAME. This is the cutover. Moving it back is the rollback.
+
+The service's own `run.app` address stays open, because the deploy checks its candidate and its traffic move there.
 
 ## Not built yet
 
 These land in [#5228](https://github.com/frapplive/Frapp/issues/5228)'s later steps, and each one updates this page when it ships.
 
 - **Observability** ([§ Observability](#observability)): the uptime check, the email alerts and Secret Manager's data-access audit log. They need the service, which the first staging deploy creates.
-- **`TRUST_PROXY_HOPS` for Cloud Run.** `apps/api/src/bootstrap.ts` trusts 3 proxy hops on staging, measured for Cloudflare in front of Render. Google's front end adds fewer, so on Cloud Run a client could set its own address with an `X-Forwarded-For` header and get round the per-address request limits. Measure the chain once the staging host points at Cloud Run, and set staging's count to it.
+- **`TRUST_PROXY_HOPS` for Cloud Run.** `apps/api/src/bootstrap.ts` trusts 3 proxy hops on staging, measured for Cloudflare in front of Render. Google's front end adds fewer, so on Cloud Run a client could set its own address with an `X-Forwarded-For` header and get round the per-address request limits. Measure the chain once the staging host points at the balancer, and set staging's count to it.
 - **Production's deploy.** It copies the digest staging ran into production's registry and deploys it the same way, and records a GitHub Deployment.
-- **Cloudflare in front of both API hosts.** This means re-measuring `TRUST_PROXY_HOPS` and reading the client address that Cloudflare forwards.
+- **Production's address.** The same script, run for production, then the same two records for `api.frapp.live`.
 - **Removing Render.**
