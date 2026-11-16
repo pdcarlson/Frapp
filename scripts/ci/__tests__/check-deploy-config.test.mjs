@@ -605,7 +605,9 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
     const staging = step(CHECKS[0]);
     assert.equal(staging.if, "inputs.environment == 'staging'");
     assert.equal(staging.env.get("CHECK_API_BOOT"), "${{ steps.plan.outputs.deploy }}");
-    assert.equal(step("Deploy the commit to Render (staging)").if, "steps.plan.outputs.deploy == 'true'");
+    // Render or Cloud Run, whichever the environment's apiHost names (#5228).
+    assert.equal(step("Deploy the commit to Render (staging)").if, "steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'render'");
+    assert.match(step("Deploy the API to Cloud Run (staging)").if, /steps\.plan\.outputs\.deploy == 'true' && steps\.ids\.outputs\.api_host == 'cloud-run'/);
     assert.equal(staging.env.get("DEPLOYS_FUNCTIONS"), "${{ steps.plan.outputs.plan != 'stale' }}");
     assert.match(step("Deploy the Edge Functions (staging)").if, /steps\.plan\.outputs\.plan != 'stale'/);
     assert.equal(staging.env.get("VERIFIES_API"), "${{ steps.plan.outputs.verify_sha != '' }}");

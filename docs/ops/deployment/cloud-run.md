@@ -2,7 +2,7 @@
 
 The API is moving from Render to Google Cloud Run ([#5228](https://github.com/frapplive/Frapp/issues/5228)). Paul decided this on 2026-11-16, which changes [ADR-24](../../../spec/architecture/adr/adr-24.md) decision 1. This page is the runbook for the Google side. Until the cutover finishes, [`render.md`](render.md) still describes what serves traffic.
 
-**State (2026-11-16):** both projects have run the setup script (staging's project number is `211663803311`, production's is `930610426605`). Both have Infisical's sync account, and Infisical syncs each environment into its project ([`SECRETS_MANAGEMENT.md` § Cloud Run API](../../internal/environment/SECRETS_MANAGEMENT.md#cloud-run-api-synced-to-secret-manager)). Both ran the script before it turned on Vertex AI and gave `frapp-api-runtime` access to it, so both need one more run of the current script before the API can drop its Vertex key file. Nothing on Google serves traffic.
+**State (2026-11-16):** both projects have run the setup script (staging's project number is `211663803311`, production's is `930610426605`). Both have Infisical's sync account, and Infisical syncs each environment into its project ([`SECRETS_MANAGEMENT.md` § Cloud Run API](../../internal/environment/SECRETS_MANAGEMENT.md#cloud-run-api-synced-to-secret-manager)). Both ran the current script again on 2026-11-16, so `frapp-api-runtime` can call Vertex AI in each project without a key file. Staging deploys to Cloud Run ([§ Deploys](#deploys)); production still serves from Render.
 
 ## Shape
 
@@ -99,10 +99,27 @@ Paul asked on 2026-11-16 for full observability from the first day. Sentry (erro
 
 Built with the deploy step, because each needs the service to exist: an uptime check on `/health/ready` every minute, email alerts to Paul for it, for a 5xx spike, for crashes and restarts, for memory near the limit and for an error-log spike, and Secret Manager's data-access audit log, so every secret read is recorded. Email is the pager ([`alert-routing.md`](../alert-routing.md)).
 
+## Deploys
+
+Staging deploys here from the staging deploy job ([`_deploy.yml`](../../../.github/workflows/_deploy.yml), step "Deploy the API to Cloud Run (staging)"), because [`.github/environments.json`](../../../.github/environments.json) gives staging `apiHost: cloud-run`. That replaces staging's Render step; production still deploys to Render until #5228's production step. The run:
+
+1. Builds the commit's image once, as before, and pushes it to GitHub's registry and then to the project's own registry (`<region>-docker.pkg.dev/<project>/frapp/api`), tagged with the commit. Cloud Run takes it by digest.
+2. Signs in as the project's `frapp-deployer` with GitHub's OIDC token, so no Google key is stored anywhere ([`scripts/ci/lib/gcp.mjs`](../../../scripts/ci/lib/gcp.mjs)). Google accepts the token only from this repository's `staging` environment.
+3. Pins every secret in the project's Secret Manager to its current version, leaving out `PORT` and any secret with no enabled version (the log names each one left out).
+4. Writes the whole service with a new revision named `frapp-api-<commit>-<suffix>`. The previous revision keeps all traffic; the new one gets the `candidate` tag, a URL of its own.
+5. Polls the candidate URL's `/health/ready` until it reports the commit. If it never does, the run fails and the previous revision is still serving.
+6. Moves all traffic to the new revision and checks the service's own URL the same way. The run's served-commit and client checks then run against the service URL too, because the staging API host may still point at Render.
+
+[`deploy-cloud-run.mjs`](../../../scripts/ci/deploy-cloud-run.mjs) does steps 2 to 6. The deploy owns the service's settings (instances, CPU, memory, account, port, secrets), so a setting changed by hand in the console is put back by the next deploy. Change it in `environments.json` or the script instead.
+
+**Rolling back.** In the console, **Cloud Run → frapp-api → Revisions**, pick the previous revision and **Manage traffic** to send it 100%. The next deploy moves traffic to its own new revision again.
+
+**The staging host.** Paul chose on 2026-11-16 to point the staging API host at Cloud Run with a Cloud Run custom domain (a mapping in the project plus a record at Squarespace) rather than wait for Cloudflare. Until that record changes, the staging host still reaches the old Render service.
+
 ## Not built yet
 
 These land in [#5228](https://github.com/frapplive/Frapp/issues/5228)'s later steps, and each one updates this page when it ships.
 
-- **The deploy path.** It starts a revision with no traffic, checks that the revision's tagged URL reports the deployed commit, then moves traffic and records a GitHub Deployment. Rollback moves traffic back to the previous revision.
+- **Production's deploy.** It copies the digest staging ran into production's registry and deploys it the same way, and records a GitHub Deployment.
 - **Cloudflare in front of both API hosts.** This means re-measuring `TRUST_PROXY_HOPS` and reading the client address that Cloudflare forwards.
 - **Removing Render.**

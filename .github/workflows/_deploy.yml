@@ -60,12 +60,15 @@ jobs:
     # The caller's environment: its secrets, its main-only rule, its reviewers.
     environment: ${{ inputs.environment }}
     # `packages: write` pushes the API image to GitHub's container registry
-    # (#2506). A called job gets no more than its caller grants, so both callers
-    # grant it too.
+    # (#2506). `id-token: write` lets the job sign in to Google Cloud as the
+    # environment's deployer, with no key (#5228, scripts/ci/lib/gcp.mjs). A
+    # called job gets no more than its caller grants, so both callers grant
+    # them too.
     permissions:
       contents: read
       packages: write
-    # The steps' own ceilings (staging's API image 30, Render 20, served commit
+      id-token: write
+    # The steps' own ceilings (staging's API image 30, Render or Cloud Run 20, served commit
     # 5, client checks under 5, Vercel READY 30, source maps under 3: 93) plus
     # the installs, builds and production's rehearsal, which took about 5 of the
     # job's 9 minutes on run 36873240684 (2026-10-01, before the API build).
@@ -439,6 +442,7 @@ jobs:
           DEPLOY_SHA: ${{ inputs.sha }}
           API_IMAGE: ${{ steps.ids.outputs.api_image }}
           RENDER_DEPLOY_SOURCE: ${{ steps.ids.outputs.render_deploy_source }}
+          API_HOST: ${{ steps.ids.outputs.api_host }}
           GHCR_TOKEN: ${{ github.token }}
           GHCR_USER: ${{ github.actor }}
         run: |
@@ -455,7 +459,7 @@ jobs:
             docker tag "mirror.gcr.io/library/$BASE" "$BASE"
 
             secret=()
-            if [ "$RENDER_DEPLOY_SOURCE" != image ]; then
+            if [ "$RENDER_DEPLOY_SOURCE" != image ] && [ "$API_HOST" != cloud-run ]; then
               echo "Staging's service is git-backed, so this image is built without SENTRY_AUTH_TOKEN and uploads no source maps; Render's build of the commit does."
             elif [ -n "${SENTRY_AUTH_TOKEN:-}" ]; then
               secret=(--secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN)
@@ -492,7 +496,7 @@ jobs:
           status=$?
           set -e
           if [ "$status" -ne 0 ]; then
-            if [ "$RENDER_DEPLOY_SOURCE" = image ]; then
+            if [ "$RENDER_DEPLOY_SOURCE" = image ] || [ "$API_HOST" = cloud-run ]; then
               exit "$status"
             fi
             echo "::warning::The API image was not built or pushed (exit $status). Staging's service is still git-backed, so the deploy goes on without it (#2506)."
@@ -621,7 +625,7 @@ jobs:
       # By commit through the Render API (#2505), or, for an image-backed service,
       # by the image built above (#2506). A deploy hook builds `main`'s tip.
       - name: Deploy the commit to Render (staging)
-        if: steps.plan.outputs.deploy == 'true'
+        if: steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'render'
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
@@ -631,6 +635,52 @@ jobs:
           SERVICE_LABEL: frapp-api-staging
           DEPLOY_SHA: ${{ inputs.sha }}
         run: node scripts/ci/deploy-render-production.mjs
+
+      # Staging on Cloud Run (#5228): the image built above, copied to the
+      # project's own registry, deployed as a new revision that takes traffic
+      # only once its own URL serves this commit (deploy-cloud-run.mjs). The
+      # job signs in to Google as the project's deployer with GitHub's OIDC
+      # token, no key; the access token goes to a file the step deletes.
+      - name: Deploy the API to Cloud Run (staging)
+        id: cloud-run
+        if: inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'cloud-run'
+        # Usually under 5: the push, the new revision, its check and the
+        # traffic move. Each write's own bound is 10 and each check's 5, but
+        # one that slow means something is wrong, so this stops it first.
+        timeout-minutes: 20
+        env:
+          DEPLOY_SHA: ${{ inputs.sha }}
+          API_IMAGE: ${{ steps.ids.outputs.api_image }}
+          GCP_PROJECT_ID: ${{ steps.ids.outputs.gcp_project_id }}
+          GCP_REGION: ${{ steps.ids.outputs.gcp_region }}
+          CLOUD_RUN_SERVICE: ${{ steps.ids.outputs.cloud_run_service }}
+          CLOUD_RUN_IMAGE: ${{ steps.ids.outputs.cloud_run_image }}
+          CLOUD_RUN_DEPLOYER: ${{ steps.ids.outputs.cloud_run_deployer }}
+          CLOUD_RUN_RUNTIME: ${{ steps.ids.outputs.cloud_run_runtime }}
+          CLOUD_RUN_PROVIDER: ${{ steps.ids.outputs.cloud_run_provider }}
+          CLOUD_RUN_MIN_INSTANCES: ${{ steps.ids.outputs.cloud_run_min_instances }}
+          CLOUD_RUN_MAX_INSTANCES: ${{ steps.ids.outputs.cloud_run_max_instances }}
+          SERVICE_LABEL: frapp-api-staging (Cloud Run)
+        run: |
+          set -euo pipefail
+          REGISTRY_HOST="${CLOUD_RUN_IMAGE%%/*}"
+          TOKEN_FILE="$(mktemp)"
+          trap 'rm -f "$TOKEN_FILE"; docker logout "$REGISTRY_HOST" >/dev/null 2>&1 || true' EXIT
+          TOKEN_FILE="$TOKEN_FILE" node scripts/ci/gcp-access-token.mjs
+          docker login --username oauth2accesstoken --password-stdin "$REGISTRY_HOST" < "$TOKEN_FILE"
+          rm -f "$TOKEN_FILE"
+
+          TAG="$CLOUD_RUN_IMAGE:$DEPLOY_SHA"
+          docker tag "$API_IMAGE:$DEPLOY_SHA" "$TAG"
+          timeout 5m docker push --quiet "$TAG"
+          IMAGE_REF="$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$TAG" \
+            | grep -m1 -xE "${CLOUD_RUN_IMAGE//./\\.}@sha256:[0-9a-f]{64}" || true)"
+          if [ -z "$IMAGE_REF" ]; then
+            echo "::error::Pushed $TAG, but docker reports no $CLOUD_RUN_IMAGE digest for it."
+            exit 1
+          fi
+          echo "Pushed $TAG as $IMAGE_REF."
+          IMAGE_REF="$IMAGE_REF" node scripts/ci/deploy-cloud-run.mjs
 
       - name: Deploy the commit to Render (production)
         id: render
@@ -651,13 +701,19 @@ jobs:
 
       # Render's `live` can still be the old instance, so poll /health/ready for the
       # commit, whenever anything ships and before any frontend: docs/ops/deployment/ci-cd.md § Deploy verification.
+      # On Cloud Run, the service's own URL: the staging API host can still
+      # point at Render until its DNS moves (#5228, cloud-run.md).
       - name: Verify staging serves the commit
         if: steps.plan.outputs.verify_sha != ''
         env:
           SERVICE_LABEL: frapp-api-staging
           DEPLOY_SHA: ${{ steps.plan.outputs.verify_sha }}
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
-        run: node "$TRUSTED_CI/verify-served-commit.mjs"
+          CLOUD_RUN_URL: ${{ steps.cloud-run.outputs.url }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CLOUD_RUN_URL" ]; then export API_HEALTHCHECK_URL="$CLOUD_RUN_URL/health"; fi
+          node "$TRUSTED_CI/verify-served-commit.mjs"
 
       # What the API's clients ask (#3113, #2990), judged against the trusted ref:
       # docs/ops/deployment/ci-cd.md § Deploy verification.
@@ -668,7 +724,11 @@ jobs:
           SERVICE_LABEL: frapp-api-staging
           TRUSTED_SHA: ${{ github.sha }}
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
-        run: node "$TRUSTED_CI/smoke-deployed-api.mjs"
+          CLOUD_RUN_URL: ${{ steps.cloud-run.outputs.url }}
+        run: |
+          set -euo pipefail
+          if [ -n "$CLOUD_RUN_URL" ]; then export API_HEALTHCHECK_URL="$CLOUD_RUN_URL/health"; fi
+          node "$TRUSTED_CI/smoke-deployed-api.mjs"
 
       # Not scope-gated: a migrations-only run moved the schema under the running
       # API, so check that the commit production already serves is still ready.
