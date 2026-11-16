@@ -67,14 +67,14 @@
     "jsdom": "^31.0.1",
     "knip": "^6.45.1",
     "pg": "^8.23.1",
-    "prettier": "^3.9.10",
+    "prettier": "^3.10.1",
     "sharp": "0.35.5",
     "squawk-cli": "2.72.0",
-    "turbo": "^2.11.10",
+    "turbo": "^2.11.11",
     "typescript": "npm:@typescript/typescript6@6.0.2"
   },
   "optionalDependencies": {
-    "@infisical/cli": "0.45.5"
+    "@infisical/cli": "0.45.7"
   },
   "overrides": {
     "react": "19.2.3",
