@@ -197,15 +197,13 @@ export function resolveNotificationTarget(
     params: { [route.as ?? route.param]: value },
   };
 
-  // A message reminder (#4957) opens chat at the message it is about, as a
-  // reminder does in Slack. Its push carries the message as `messageId`
-  // (`NotificationService`); the in-app row as its `chat_message_id`, which
-  // the inbox passes in. Other chat pushes keep opening the conversation as
-  // they always have.
+  // A chat push or row that quotes one message opens chat at it, as Slack and
+  // Discord open a mention or reply (#4977; a reminder since #4957). The push
+  // carries the message as `messageId` (§ Deep Linking); the in-app row as its
+  // `chat_message_id`, which the inbox passes in. A bundle quotes none and
+  // opens the conversation at its newest messages.
   const focusMessageId =
-    screen === "chat" && data.reminder === true
-      ? (str(data, "messageId") ?? chatMessageId)
-      : null;
+    screen === "chat" ? (str(data, "messageId") ?? chatMessageId) : null;
 
   // A thread reply's push names its root too (`spec/behavior/chat/README.md`
   // § Message threads → Notifications). The thread is the channel's route

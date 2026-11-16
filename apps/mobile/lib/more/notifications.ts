@@ -99,8 +99,8 @@ function toRow(
     title,
     body: str(row, "body"),
     data: row.data,
-    // A reminder's row opens chat at its message (#4957), which the row
-    // names in `chat_message_id` rather than in its `data`.
+    // A chat row tied to one message opens chat at it (#4977; a reminder
+    // since #4957). A single-message row names it only in `chat_message_id`.
     target: resolveNotificationTarget(row.data, str(row, "chat_message_id")),
     time: when.time,
     createdAt,

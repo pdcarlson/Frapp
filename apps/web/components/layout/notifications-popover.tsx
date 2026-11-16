@@ -126,6 +126,22 @@ type Notification = {
 };
 
 /**
+ * The message a chat row opens at: the one it is tied to, or for a thread
+ * reply its thread's first message, which the channel's timeline holds. A row
+ * tied to none (a bundle, a row written before rows carried the id) opens the
+ * channel at its newest messages, a thread bundle included.
+ */
+function messageAt(
+  notification: Notification,
+  threadRootId: string | undefined,
+): string | null {
+  const tied =
+    notification.data?.messageId ?? notification.chat_message_id ?? null;
+  if (!tied) return null;
+  return threadRootId ?? tied;
+}
+
+/**
  * Map a notification target payload to an in-app dashboard path.
  *
  * The mobile app uses the same payload shape (see spec/behavior §7) but
@@ -134,12 +150,12 @@ type Notification = {
  * links never dead-end.
  *
  * A chat notification's `target` never carries a `messageId` (a chat push
- * carries one beside `target` for the phone's tray, and the in-app row keeps
- * it in a column, `spec/behavior/notifications.md` § Deep Linking). Only a
- * reminder (#4957) forwards it (its `data.messageId`, or the column on a
- * row written before that field), so it opens on the message the
- * member asked about: its thread's first message for a reply, which is what
- * the channel's timeline holds. Any other chat row opens the channel.
+ * carries one beside `target`, and the in-app row keeps it in a column,
+ * `spec/behavior/notifications.md` § Deep Linking). A row tied to one
+ * message opens on it (#4977; a reminder since #4957, from its
+ * `data.messageId` or the column): its thread's first message for a reply,
+ * which is what the channel's timeline holds. A bundle quotes none and
+ * opens the channel.
  */
 export function deepLinkFor(notification: Notification): string {
   const target = notification.data?.target;
@@ -148,11 +164,7 @@ export function deepLinkFor(notification: Notification): string {
     case "chat":
       return chatDeepLink({
         channelId: target.channelId,
-        messageId: notification.data?.reminder
-          ? (target.threadRootId ??
-            notification.data?.messageId ??
-            notification.chat_message_id)
-          : null,
+        messageId: messageAt(notification, target.threadRootId),
       });
     case "events":
       return target.meetingId ? `/meetings/${target.meetingId}` : "/events";
