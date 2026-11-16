@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { TASK_ACTION_LABELS, useRequestTaskPhotoUploadUrl } from "@repo/hooks";
 import {
@@ -45,6 +41,7 @@ import {
   taskStatusGateRefusal,
 } from "@/lib/tasks/status-refusal";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /** What Mark done sends besides the status (#4635). */
 export interface CompletionProof {

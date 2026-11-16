@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   useBlockedUserIds,
@@ -89,6 +89,7 @@ import {
   START_DM_FAILED_BODY,
   startDmFailedTitle,
 } from "@/lib/directory/start-dm";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * A member's profile — a sheet, not a route, per s13's own scope

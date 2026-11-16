@@ -8,7 +8,6 @@ import {
 } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
-  BottomSheetFlatList,
   BottomSheetModal,
   BottomSheetTextInput,
   useBottomSheetInternal,
@@ -72,6 +71,7 @@ import { proposedEventTemplate } from "@/lib/ask/proposed-event-template";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /**
  * A proposal in the Ask conversation on the phone (#718,

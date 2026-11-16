@@ -9,14 +9,10 @@ import {
 import { StyleSheet, Text, View } from "react-native";
 import Svg, { Path } from "react-native-svg";
 import * as WebBrowser from "expo-web-browser";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { errorCopy, shouldMeetFrappAi, useFrappAiChoice } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import {
-  FRAPP_AI_COPY,
-  joinNames,
-  type FrappAiPoint,
-} from "@repo/validation";
+import { FRAPP_AI_COPY, joinNames, type FrappAiPoint } from "@repo/validation";
 import { ChatGlyph, TasksGlyph } from "@/components/tab-glyphs";
 import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
@@ -32,6 +28,7 @@ import {
 import { PRIVACY_LINK } from "@/lib/more/legal";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Meet Frapp AI on the phone (#4790, Paul 2026-11-13): the one screen where

@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { buildPollMessage, type PollPayload } from "@repo/chat-core/polls";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -51,6 +47,7 @@ import {
   type PollCloseChoice,
   type PollDraft,
 } from "@repo/chat-core/poll-draft";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * s05's New poll sheet (#3701): an officer on their phone in the group chat
@@ -158,12 +155,10 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
       // `sendPoll` never rejects, but the lock is released whatever happens:
       // a rejection would otherwise hold the sheet at "Posting…" for good.
       void onPost(poll)
-        .catch(
-          (): { ok: false; error: string } => ({
-            ok: false,
-            error: "Couldn't post that poll. Try again.",
-          }),
-        )
+        .catch((): { ok: false; error: string } => ({
+          ok: false,
+          error: "Couldn't post that poll. Try again.",
+        }))
         .then((result) => {
           sending.current = false;
           setPosting(false);
@@ -260,7 +255,9 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
               }
               onFocus={() => setFocused(option.key)}
               onBlur={() =>
-                setFocused((current) => (current === option.key ? null : current))
+                setFocused((current) =>
+                  current === option.key ? null : current,
+                )
               }
               onMove={(step) =>
                 edit((current) => movePollOption(current, option.key, step))
@@ -386,7 +383,11 @@ function OptionRow({
   return (
     <View style={styles.optionRow}>
       <View
-        style={[styles.ring, styles.optionField, focused ? styles.ringActive : null]}
+        style={[
+          styles.ring,
+          styles.optionField,
+          focused ? styles.ringActive : null,
+        ]}
       >
         <BottomSheetTextInput
           value={value}

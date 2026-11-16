@@ -7,11 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { codeOf } from "@repo/api-sdk";
 import { useAiReportPolicy, useMyPermissions, useReportAi } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -38,6 +34,7 @@ import {
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * "Report this" on the phone, for anything the AI made: an Ask answer, a
@@ -172,7 +169,16 @@ const ReportAiSheet = forwardRef<BottomSheetModal, ReportAiSheetProps>(
           setFailure(failureLine(error, target.subject));
         }
       }
-    }, [isSameVisit, keepsText, note, onReported, reason, report, target, visit]);
+    }, [
+      isSameVisit,
+      keepsText,
+      note,
+      onReported,
+      reason,
+      report,
+      target,
+      visit,
+    ]);
 
     return (
       <BottomSheetModal
