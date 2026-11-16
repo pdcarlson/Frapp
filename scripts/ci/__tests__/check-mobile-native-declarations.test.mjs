@@ -95,6 +95,7 @@ function pod(packageName, categories = {}, hasManifest = false) {
 function currentScan() {
   return [
     pod("@stripe/stripe-react-native", { [UD]: ["ios/StripeSdkImpl.swift"] }),
+    pod("expo-document-picker", { [FT]: ["ios/DocumentPickerModule.swift"] }),
     pod("expo-eas-client", { [UD]: ["EASClient/EASClientID.swift"] }),
     pod("expo-sharing", { [UD]: ["SharingModule.swift"] }),
     pod("expo-updates", { [UD]: ["EXUpdates/UpdatesConfigOverride.swift"] }),
