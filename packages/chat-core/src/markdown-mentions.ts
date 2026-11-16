@@ -103,7 +103,7 @@ interface MentionChipNode extends MdastNode {
 }
 
 /** Attributes every chip element carries, besides its `data-mention`. */
-export type MentionChipProperties = Record<string, string>;
+type MentionChipProperties = Record<string, string>;
 
 function mentionChip(
   raw: string,

@@ -79,13 +79,13 @@ export function bootstrapSectionFor(
 }
 
 /** How long a batch waits for more reads after its first. */
-export const FIRST_SCREEN_BATCH_WINDOW_MS = 12;
+const FIRST_SCREEN_BATCH_WINDOW_MS = 12;
 
 /**
  * A batch needs this many different sections to be worth one bootstrap call;
  * a lone read goes out on its own route as before.
  */
-export const FIRST_SCREEN_BATCH_MIN_SECTIONS = 2;
+const FIRST_SCREEN_BATCH_MIN_SECTIONS = 2;
 
 interface Waiter {
   section: BootstrapSection;

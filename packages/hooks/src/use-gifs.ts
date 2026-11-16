@@ -13,9 +13,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * provider key and the PG-13 ceiling; these hooks only page through
  * `/v1/gifs/*`. Behavior: `spec/behavior/chat/README.md` § GIFs.
  */
-export const gifKeys = createChapterQueryKeys("gifs");
-
-export type GifRendition = components["schemas"]["GifRenditionDto"];
+const gifKeys = createChapterQueryKeys("gifs");
 
 /** One picker result. Send its `token` with the GIF: the API refuses one without. */
 export type GifResult = components["schemas"]["GifResultDto"];
@@ -49,7 +47,7 @@ export function gifToSend(gif: GifResult, provider: string): GifToSend {
 }
 
 /** How long a typed search waits for the member to stop typing. */
-export const GIF_SEARCH_DEBOUNCE_MS = 300;
+const GIF_SEARCH_DEBOUNCE_MS = 300;
 
 /**
  * Whether this server has GIF search set up. The composer hides its GIF

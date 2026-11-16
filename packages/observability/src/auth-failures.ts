@@ -63,7 +63,7 @@ export const AUTH_FAILURE_REPORT_INTERVAL_MS = 60_000;
 const MAX_REMEMBERED_FINGERPRINTS = 200;
 
 /** Every signed-out flow that can fail. */
-export type AuthFailureFlow =
+type AuthFailureFlow =
   /** Email and password. */
   | "password_sign_in"
   /** Web's sign-up form. Mobile has none: its first sign-in creates the account. */
@@ -127,7 +127,7 @@ const EXPECTED_AUTH_ERROR_CODES: ReadonlySet<string> = new Set([
   "user_not_found",
 ]);
 
-export type AuthFailureKind = "refusal" | "server" | "network" | "unknown";
+type AuthFailureKind = "refusal" | "server" | "network" | "unknown";
 
 export interface AuthFailureInput {
   readonly flow: AuthFailureFlow;

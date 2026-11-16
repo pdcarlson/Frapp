@@ -38,24 +38,12 @@ export {
   parseTracesSampleRate,
   formatSampleRateWarning,
 } from "./sample-rate";
-export type {
-  SampleRateParseReason,
-  SampleRateParseResult,
-} from "./sample-rate";
 
 export {
   REQUEST_ID_HEADER,
   SENTRY_TRACE_HEADER,
   BAGGAGE_HEADER,
   isPseudonymHex,
-} from "./correlation";
-export type {
-  RequestId,
-  SentryTraceId,
-  SentryEventId,
-  PostHogDistinctId,
-  PostHogChapterGroupId,
-  AnalyticsIdentity,
 } from "./correlation";
 
 export {
@@ -84,7 +72,6 @@ export {
   CLIENT_CONTRACT_ERROR_CODES,
   MEMBER_CAUSED_ERROR_CODES,
 } from "./api-error-codes";
-export type { ClientContractErrorCode } from "./api-error-codes";
 export {
   createQueryErrorReporter,
 } from "./query-errors";
@@ -93,19 +80,4 @@ export {
   buildAuthFailureReport,
   createAuthFailureReporter,
 } from "./auth-failures";
-export type {
-  AuthFailureFlow,
-  AuthFailureInput,
-  AuthFailureKind,
-  AuthFailureReport,
-  AuthFailureReporter,
-  AuthFailureReporterOptions,
-} from "./auth-failures";
-export type {
-  QueryErrorKind,
-  QueryErrorReport,
-  QueryErrorReporter,
-  QueryErrorReporterOptions,
-  ReportedMutation,
-  ReportedQuery,
-} from "./query-errors";
+export type { AuthFailureInput } from "./auth-failures";

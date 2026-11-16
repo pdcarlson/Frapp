@@ -21,16 +21,10 @@ export {
   buildAnonymousServerSentryOptions,
   sentryEnvelopeScrubIntegration,
 } from "./sentry-options";
-export type { AnonymousNextSentryRuntime } from "./sentry-options";
 
 export {
   attachAnonymousPostHogCorrelation,
   withAnonymousPostHogSentryCorrelation,
-} from "./sentry-correlation";
-export type {
-  AnonymousBeforeSend,
-  AnonymousPostHogCorrelationSource,
-  AnonymousSentryEvent,
 } from "./sentry-correlation";
 
 export {

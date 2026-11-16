@@ -68,7 +68,7 @@ export const DEFAULT_POLL_CLOSE: PollCloseChoice = "1d";
  * it) along: a key by position would leave the caret in the slot the text
  * just left, and the next keystrokes would land in another option.
  */
-export interface PollOptionRow {
+interface PollOptionRow {
   key: string;
   text: string;
 }

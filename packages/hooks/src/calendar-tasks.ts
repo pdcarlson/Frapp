@@ -111,7 +111,7 @@ function knownLayers(values: unknown[]): CalendarLayer[] {
   );
 }
 
-export interface CalendarTaskAssignee {
+interface CalendarTaskAssignee {
   taskId: string;
   userId: string;
   state: CalendarTaskState;
@@ -129,7 +129,7 @@ interface CalendarTaskBase {
 }
 
 /** A task assigned to the viewer. */
-export interface CalendarOwnTask extends CalendarTaskBase {
+interface CalendarOwnTask extends CalendarTaskBase {
   kind: "mine";
   taskId: string;
   /** The shared task word for its status. */

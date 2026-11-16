@@ -1,6 +1,11 @@
 export {
   formatClock,
+  /**
+   * @public Unconsumed since 2026-11-05 (`spec/architecture/README.md`);
+   * retiring it is #3420. `apps/web/lib/date-call-sites.spec.ts` names it.
+   */
   formatLocaleDate,
+  /** @public See `formatLocaleDate`. */
   formatLocaleDateTime,
   formatTimeOfDay,
   formatTimeOfDayShort,
@@ -8,6 +13,7 @@ export {
 export { formatPaddedStopwatch, formatTimer } from "./stopwatch";
 export { parseInstant } from "./instant";
 export {
+  /** @public See `formatLocaleDate`. */
   formatBareDate,
   formatBareDateMedium,
   parseBareDateLocalMidnight,
@@ -16,12 +22,7 @@ export {
 } from "./bare-date";
 export { dayDelta, monthGrid, startOfMonth } from "./calendar-days";
 export { formatMinutesExact, formatMinutesRounded } from "./minutes";
-export {
-  recapFigures,
-  type RecapCounts,
-  type RecapFigure,
-  type RecapFigureId,
-} from "./recap-figures";
+export { recapFigures, type RecapFigure } from "./recap-figures";
 export { formatBytes } from "./bytes";
 export { localClock, localIsoDate } from "./local-date";
 export {
@@ -69,7 +70,6 @@ export {
   toCsvCell,
 } from "./spreadsheet-cell";
 export {
-  type DueDayAndTime,
   dueTimePassed,
   formatDueTimeLabel,
   splitDueEntry,
