@@ -120,6 +120,19 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-16",
+    title: "New in this update",
+    changes: [
+      "Excuses on an event now sit on one tidy line each, and you can edit yours after sending it.",
+    ],
+    web: [
+      "Tasks now groups your own tasks as Today, This week and Later, and officers can switch between My tasks and All tasks, group the chapter's tasks by person, and filter them by assignee, status and due date.",
+    ],
+    phone: [
+      "The Calendar has its own + at the top for adding an event from any view, and on the Calendar it starts on the day you've picked, today or later.",
+    ],
+  },
+  {
     date: "2026-11-15",
     title: "New in this update",
     changes: [
