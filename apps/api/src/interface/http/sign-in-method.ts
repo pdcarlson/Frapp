@@ -10,7 +10,7 @@ export const SIGN_IN_METHODS = ['apple', 'google', 'email', 'other'] as const;
 export type SignInMethod = (typeof SIGN_IN_METHODS)[number];
 
 export function signInMethodOf(
-  user: Pick<SupabaseAuthUser, 'app_metadata'> | undefined,
+  user: Partial<Pick<SupabaseAuthUser, 'app_metadata'>> | undefined,
 ): SignInMethod | null {
   if (!user) return null;
   const provider: unknown = user.app_metadata?.provider;

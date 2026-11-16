@@ -1,15 +1,40 @@
 # AI Features
 
 Frapp's AI features (Q&A, summarization, drafting, suggestions) answer from the chapter's own sources and cite every answer.
-Official sources rank first: minutes, chapter documents and announcements.
-Chat in chapter channels is also a source, for members who agreed to it.
+The chapter's records come first: minutes and chapter documents.
+Chat in chapter channels is also a source, announcements included, for members who agreed to it.
+
+> **Changed 2026-11-16 (Paul, [#4915](https://github.com/pdcarlson/Frapp/issues/4915)).**
+> This file called a top-level `#announcements` post an official source, ranked with documents and minutes and read without its author's yes.
+> The code never did that: it indexed announcements as chat, under chat consent.
+> Paul decided the code's way is right. An announcement is chat, and the model is told it was posted as an announcement, by whom and when, so it can weigh it ([Context over rules](#context-over-rules)).
+> In his words: "the AI should take into consideration the context in which a message exists … context is king, right? we shouldn't need to hardcode scenarios such as this."
 
 > **Changed 2026-11-11 (Paul, [ADR-28](../architecture/adr/adr-28.md) decision 5).**
 > This file used to say the chapter chat is not part of the AI corpus in v1, trading cross-conversation synthesis for confidence in every answer.
 > Paul reversed that: chat carries much of a chapter's context, so it is in, with a per-member choice.
 > The confidence concern is kept by the rules in [Chat as a source](#chat-as-a-source): chat ranks below official sources, is cited as chat, and can never trigger an action.
+> _(2026-11-16, #5179: chat no longer ranks below official sources; it is labelled as chat and the model weighs it.)_
 
 How the pieces are meant to fit is [`spec/architecture/README.md`](../architecture/README.md) §13 and ADR-28.
+
+## Context over rules
+
+Ask's job is judgment, and the pipeline's job is to give the model rich, faithful context and the member's real permissions (Paul, 2026-11-16, [#5170](https://github.com/pdcarlson/Frapp/issues/5170)).
+A source tells the model what it is: a document's title and date, a meeting's minutes, a live record read just now, or a channel message with its author, the roles they hold, when it was sent, and whether it was posted as an announcement, is a reply in a thread, or was imported from Discord.
+The prompt then says in a sentence or two how to weigh sources.
+Code doesn't decide that in advance with ranking weights, canned replies, or special cases for one kind of content.
+
+A hard rule in code or in a prompt needs one of four reasons, named where the rule is written:
+
+- **Access:** what the asker may read ([Whose access an AI run uses](#whose-access-an-ai-run-uses)).
+- **Consent:** whose words may reach a provider ([Consent](#consent)).
+- **Prompt-injection defence:** [`ai-prompt-injection.md`](../../docs/security/ai-prompt-injection.md) C1 to C8.
+- **Cost and latency budgets:** the loop's rounds, calls, read time and result size, and the spend caps.
+
+Anything else is context plus a short instruction.
+A reviewer can point a new rule at this section.
+Paul's audit of the rules that existed when this was written, with a verdict for each, is linked from #5170.
 
 ## Corpus scope
 
@@ -24,8 +49,7 @@ Prose, embedded once and re-embedded when its source is edited:
 | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Meeting minutes and transcripts                     | Stored with `meeting_type` metadata so the summarizer can vary tone (see [`meetings.md`](meetings.md)). |
 | Uploaded chapter documents                          | Bylaws, policies, calendars from Chapter Docs ([`chapter-docs.md`](chapter-docs.md)).  |
-| Formal announcements                                | Top-level posts in `#announcements` (officer-posted, all-read, see [`chat/README.md`](chat/README.md#announcements)). A member's reply in an announcement's thread is a channel message, the row below. |
-| Channel messages                                    | Messages in chapter channels, from members who agreed. Ranked below the three rows above. Rules: [Chat as a source](#chat-as-a-source). |
+| Channel messages                                    | Messages in chapter channels, from members who agreed, announcements included. Ranked by how well they match, like the rows above (#5179). Rules: [Chat as a source](#chat-as-a-source). |
 
 ### Live structured data (tool-called, never embedded)
 
@@ -51,8 +75,10 @@ It also follows directly from the non-goal below: structured data already *is* c
 ## Chat as a source
 
 Messages in chapter channels are part of the corpus: general, committee, role-gated and topic channels alike.
-`#announcements` was already a source and stays an official one for its top-level posts.
-A reply in an announcement's thread, which any reader of the channel can write, is an ordinary channel message under the rules below.
+An announcement is a channel message like any other, under the rules below (Paul, 2026-11-16, [#4915](https://github.com/pdcarlson/Frapp/issues/4915)).
+It is indexed with the conversation around it, ranked as chat, and read only when its author said yes.
+Its line tells the model it was posted as an announcement and by whom, so the model can weigh an officer's notice over the talk about it.
+That is the model's judgment, given the context, not a ranking rule.
 
 - **Only from members who said yes.**
   A message is indexed, and sent to a model, only when its author accepted the member sheet in [Consent](#consent).
@@ -68,7 +94,9 @@ A reply in an announcement's thread, which any reader of the channel can write, 
   A private or role-gated channel never leaks through an answer.
 - **A block holds.**
   An answer never quotes or cites a member the asker has blocked, as the timeline, search and reply quotes already don't ([`chat/README.md` § What a block does and does not hide](chat/README.md#what-a-block-does-and-does-not-hide)).
-- **Chat ranks below official sources and is cited as chat.**
+- **Chat is labelled and cited as chat.**
+  It is ranked by how well it matches, like any other source: its score used to be halved and the record always put first, and Paul removed both on 2026-11-16 ([#5179](https://github.com/pdcarlson/Frapp/issues/5179)), since each line now says what it is and the model weighs it.
+  Each line says who wrote it and how: posted as an announcement, a reply in a thread, or imported from Discord. Through Ask's tools it also says when, and the roles the author holds.
   The citation names the channel, the date and the author, and links to the message.
   When chat disagrees with a bylaw, minutes or an announcement, the answer shows both, as [Citation requirement](#citation-requirement) says for any conflict.
 - **Chat never triggers an action.**
@@ -129,7 +157,8 @@ Each governs a different thing.
 1. **The chapter turned the feature on.**
    The president switches on each family separately: Ask, meeting notes, and chat as a source.
    Each is off until then.
-   This gate governs the chapter's records, which are the chapter's to share: documents, announcements, minutes and roster fields, whoever uploaded or posted them.
+   This gate governs the chapter's records, which are the chapter's to share: documents, minutes and roster fields, whoever uploaded or posted them.
+   An announcement is chat, so it also needs its author's yes ([Chat as a source](#chat-as-a-source)).
 2. **The member turned Frapp AI on, once, on Meet Frapp AI.**
    This gate governs what is the member's to share: their own use of AI, and their own messages.
    Since #4790 (Paul, 2026-11-13: "make it one of those screens", "it's not forced... it should be encouraged during the signup process") the member answers on one onboarding screen, not on a separate sheet at the first AI feature.
@@ -150,8 +179,8 @@ What No means for that member:
 | Area | Effect |
 | --- | --- |
 | Ask and summaries | They can't use them. |
-| Their chat messages | Left out, as [Chat as a source](#chat-as-a-source) says. That includes their replies under an announcement. |
-| Announcements and documents they posted as an officer | Still read. They are the chapter's records, under the president's switch. |
+| Their chat messages | Left out, as [Chat as a source](#chat-as-a-source) says. That includes announcements they posted and their replies under one (#4915, 2026-11-16: this row used to keep an officer's announcements in). |
+| Documents they posted as an officer | Still read. They are the chapter's records, under the president's switch. |
 | Their roster fields | Still appear in an officer's tool results. A question like "who is behind on dues" needs every member, and the fields carry no contact details. |
 | Minutes that name them | Still drafted. Notes an officer writes about a meeting are the officer's text, and minutes have always named who said and owes what. |
 | Notes they take on a meeting | Left out of the draft. Several members can take notes on one meeting, and a note-taker's own notes go to a provider only with their own yes; the minutes' author is told whose notes wait on it ([`meetings.md` § Several note-takers](meetings.md#several-note-takers)). Added 2026-11-13 (#4935). |
@@ -274,7 +303,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   The server checks every quote against its source ([Citation requirement](#citation-requirement)).
   An answer left with no checked citation is not shown: the member reads "I couldn't find that in your chapter's documents, minutes or records."
   Through the tool loop, one exception (changed by Paul, 2026-11-16): some right answers rest on no source, such as "hi" back, what Frapp can do, "I don't give out phone numbers" or "which Jordan do you mean?".
-  Frapp answers those at once without reading, and one short sentence with no citation is shown, marked as Frapp's own words (`own_words`), when no quote was tried and dropped and the whole reply is one line of at most 400 characters (the sentence itself at most 240).
+  Frapp answers those at once without reading, and one short sentence with no citation is shown, marked as Frapp's own words (`own_words`), when no quote was tried and dropped and the whole reply is at most 400 characters: shown whole up to 240, otherwise its first sentence. It may run to several lines or a short list (Paul, 2026-11-16, [#5179](https://github.com/pdcarlson/Frapp/issues/5179): "which Jordan?" with the names below it used to become "couldn't find that").
   Anything longer with no checked citation is still "couldn't find that". An answer in Frapp's own words cannot be posted to a channel.
   When some quotes were dropped and others stood, the answer says part of it could not be matched.
 - **What streams is a preview.**
@@ -376,6 +405,7 @@ Decided 2026-11-13 by Paul (no Ask and Do tabs, and "all proposed cards show up 
   A card is not replaced by the next thing asked: each stays live until it is confirmed or cancelled, and then reads as one line saying what happened.
   A card that stopped waiting some other way (a day passed, or it was decided on another device) still shows its buttons until Confirm or Cancel is pressed; that press finds it gone and the card becomes one line, "This is no longer waiting.
   Ask again.".
+  *(Changed in #5148 by pdcarlson, 2026-11-16: Cancel is Dismiss in the card's ··· menu; a decided card stays drawn, greyed, under its one line; and the gone line reads "No longer waiting. Ask again to redo it." See [How a card reads](#asking-frapp-to-do-something).)*
 - **A follow-up leans on what came before.**
   "And for elections?" after a question about quorum is answered as a question about quorum for elections.
   The turns before a question are sent with it, at most the last six: what the member typed, and Frapp's answer to it.
@@ -720,8 +750,9 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   Two things differ, both because of the size of the screen.
   A member is added to a points change from the chapter's roster in a tall sheet with a search field, which is how the phone picks a member everywhere else.
   A task's who and when are changed in the ordinary New task form opened on the proposal, where web changes them on the card; Confirm on a task missing either opens that form.
-  A finished task or event links to Tasks or Events; a finished points change links nowhere, because the phone has no points page.
+  A finished task links to Tasks and a finished event to that event; a finished points change links nowhere, because the phone has no points page.
 - **Every card has Edit beside Cancel and Confirm** (Paul, 2026-11-15, #5117).
+  *(Changed in #5148 by pdcarlson, 2026-11-16: Cancel is now Dismiss in the card's ··· menu, and Confirm is named for the action; see How a card reads below.)*
   An event's Edit opens the ordinary New event form filled in from the card, with More options open (who's coming by role, the end, notes, the repeat), and Create in that form is the confirm: the event is made through the event route and the proposal records it, without making a second.
   The event is made either way, and the card says it was added.
   If the form's answer carries no event id, or the proposal can no longer record it, the proposal is taken down instead, so it is never drawn again with a Confirm that would make the event a second time.
@@ -729,11 +760,25 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   A points card's Edit turns its amount and reason into fields on the card, on both; Confirm then sends only what changed.
   The forms keep what was typed when closed, as every form does (#4593).
   Comparable: Google Calendar's "Add to calendar" on an event found in mail opens its full editor; Siri's suggested reminders and Linear's issue-from-text hand the draft to the ordinary form.
+- **How a card reads** (Paul, 2026-11-16, #5148).
+  A card opens with a small mark and what it makes ("New event", "New task", "Give points"), and a ··· menu holding Dismiss and Report this.
+  Its details are rows, each with a small mark in place of an all-caps label; an event's date sits in a tile beside its written-out day and times.
+  Its buttons are Edit and one named action ("Create event", "Create task", "Give 5 points"); Dismiss is in the menu, because a card is far more often confirmed than dropped.
+  Once decided, the card stays where it was, greyed, under a line that says what happened ("Event created", or struck through with "Dismissed. Nothing was changed."), and an event's links straight to that event.
+  *(Changed in #5148 by pdcarlson, 2026-11-16: until then the buttons were Cancel, Edit and Confirm, the details sat under all-caps labels, and a decided card shrank to its one line.)*
+  Comparable: Google Calendar's event chip in Gmail, Apple Mail's Siri-found events, Slack's approval messages and ChatGPT's tool approvals all name the action on the button and keep the item visible once handled.
+- **An event's points are never guessed** (Paul, 2026-11-16, #5148).
+  Points the member said are used.
+  Otherwise they are copied from the chapter's event type the name fits (the type of that name, or the one type whose name the event's words all begin: "Chapter" fits "Chapter meeting", but "Chapter retreat" fits no "Chapter" type; none when two fit), then from the latest event of the same name the member can see from the last 180 days, and the card says which ("From your Chapter meeting event type", "Same as your last Study hours"); a matching type also sets whether the event is required, and is the event's type.
+  With nothing to copy, the points field is empty and outlined, and the action waits until a number is entered (0 for none); the server refuses a proposal still missing them.
+  Edit carries the points typed on the card and the matched type into the event form; a card with no points opens the form on its own visible default, for the officer to change there.
+  A member without `events:update` cannot set points or make an event required ([events.md](events.md)), so their card proposes none, optional, and asks nothing.
+  *(Changed in #5148 by pdcarlson, 2026-11-16: until then the card said "The chapter's usual amount" and the event was made with 10.)*
 - **What it can do** (three actions; each needs the permission and the module of the route it stands in for, and one the member lacks is not offered):
   - **Give or take away points** (`points:adjust`), for members named, for everyone who holds a role, or for everyone who came to an event.
   - **Create a task** for one member (`tasks:manage`).
   - **Put one event, or a repeating series, on the calendar** (`events:create`), open to the whole chapter.
-    A series is weekly, every other week or monthly, on the first meeting's weekday or day of the month, as long as the event form's own default (13 meetings weekly or every other week, 7 monthly), and the card says so ("Repeats: Every Sunday, 13 times, the last on Sunday, February 7, 2027").
+    A series is weekly, every other week or monthly, on the first meeting's weekday or day of the month, as long as the event form's own default (13 meetings weekly or every other week, 7 monthly), and the card says so ("Every Sunday until February 7, 2027", with "13 times" under it).
     Who is invited by role, a longer or shorter series and anything else the card does not show are set through the card's Edit (and a check-in zone on web, whose event form is the only one with it).
     *(Changed in #5117 by pdcarlson, 2026-11-15: until then a proposal was always one event, and "every Sunday at 6:48 PM" came back as one hour-long event with the repeat silently dropped.)*
 - **Through the tool loop, a card can rest on what Frapp read** (changed in #4899 by pdcarlson, 2026-11-13, approved by Paul the same day; off with the loop, `ASK_AGENT=on`).
@@ -748,10 +793,11 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   What this changes about a planted message is in [`ai-prompt-injection.md` § The tool loop](../../docs/security/ai-prompt-injection.md#the-tool-loop-added-2026-11-13-epic-4898).
 - **Both clients draw the cards an answer comes with** (added in #4904 by pdcarlson, 2026-11-14, the building session's, Paul's to change; off with the loop).
   Web and the phone send `answer_cards` whenever they ask for a card.
-  The cards sit under the answer's words and sources, in the order the server named them, each with its own Cancel, Edit and Confirm; deciding one leaves the others waiting.
+  The cards sit under the answer's words and sources, in the order the server named them, each with its own ··· menu, Edit and named action (#5148); deciding one leaves the others waiting.
   A card that ended becomes one line in its place saying what happened, as a turn's single card does, and still says what it was about.
-  The cards are read from the asker's own waiting requests; one that is no longer among them (decided on another device, or its day passed) reads "This is no longer waiting.
-  Ask again." in the card's place.
+  *(Changed in #5148 by pdcarlson, 2026-11-16: an ended card now stays drawn, greyed, under that line.)*
+  The cards are read from the asker's own waiting requests; one that is no longer among them (decided on another device, or its day passed) reads "No longer waiting.
+  Ask again to redo it." in the card's place.
   An answer that is cards and nothing else draws the cards with no words above them.
   When the list of waiting requests cannot be read, the card's place says "Couldn't load this.
   It may still be waiting." and the card is drawn once the list is read; a card is called gone only after a read that worked.
@@ -779,7 +825,7 @@ Built 2026-11-12 on web (#718) and on the phone (#718, the mobile half, 2026-11-
   A points change reads "Give 5 points to 42 members", with "210 points in all, in 42 separate changes" under it, the reason, and the members listed.
   The officer can take a member off or add one before confirming.
   A task card lets them pick who and when.
-  An event card shows the name, the time written out in full, how a series repeats, the place, whether it is required, and the points.
+  An event card shows the name, the day in a date tile beside the written-out date and times, how a series repeats, the place, whether it is required, and the points.
 - **An officer cannot change their own points,** so they are left off a points change that would include them, and the card says so.
 - **A waiting card is a [suggestion](#suggestions)** only the officer who asked can open.
   It is not in the Suggested list, sends no push, and is gone after one day.

@@ -87,6 +87,24 @@ describe('AiSuggestionController (#4309)', () => {
     );
   });
 
+  it('passes points typed on an event card on to Confirm (#5148)', async () => {
+    const accept = jest.fn(async () => ({ suggestion: row(), outcome: null }));
+    const controller = new AiSuggestionController({ accept } as never);
+    await controller
+      .accept(CHAPTER, USER, null, row().id, {
+        new_event: { point_value: 5 },
+      })
+      .catch(() => undefined);
+    expect(accept).toHaveBeenCalledWith(
+      CHAPTER,
+      USER,
+      row().id,
+      expect.objectContaining({
+        edits: { kind: 'new_event', fields: { point_value: 5 } },
+      }),
+    );
+  });
+
   it('wants source_type and source_id together', async () => {
     const listForUser = jest.fn(async () => ({ items: [], has_more: false }));
     const controller = new AiSuggestionController({ listForUser } as never);

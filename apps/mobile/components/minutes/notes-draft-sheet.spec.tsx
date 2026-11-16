@@ -500,7 +500,24 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
     leave(second);
   });
 
-  it("holds them out while the ask is in flight, and keeps them when it fails", async () => {
+  it("reopens mid-ask on the notes it sent, held until the ask settles (#5086)", async () => {
+    hooks.request.mockReturnValueOnce(new Promise(() => {}));
+    const first = render(draftState());
+    type(first, "Budget passed.");
+    await press(first, MEETING_NOTES_COPY.draft);
+    leave(first);
+    const calls = hooks.request.mock.calls.length;
+
+    const during = render(draftState());
+    expect(field(during).props.value).toBe("Budget passed.");
+    expect(field(during).props.editable).toBe(false);
+    // Nothing offers the same ask again while the first is out.
+    expect(screenText(during)).not.toContain(MEETING_NOTES_COPY.draft);
+    expect(hooks.request.mock.calls.length).toBe(calls);
+    leave(during);
+  });
+
+  it("keeps what a reopened sheet shows when the ask fails, through an edit (#5086)", async () => {
     let fail: (error: unknown) => void = () => {};
     hooks.request.mockReturnValueOnce(
       new Promise((_resolve, reject) => {
@@ -512,12 +529,59 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
     await press(first, MEETING_NOTES_COPY.draft);
     leave(first);
     const during = render(draftState());
-    expect(field(during).props.value).toBe("");
+
+    await act(async () => fail(new Error("offline")));
+    expect(field(during).props.editable).toBe(true);
+    expect(field(during).props.value).toBe("Budget passed.");
+    type(during, "Budget passed. Dues next.");
     leave(during);
+
+    const after = render(draftState());
+    expect(field(after).props.value).toBe("Budget passed. Dues next.");
+    leave(after);
+  });
+
+  it("keeps them when the ask fails with no sheet open", async () => {
+    let fail: (error: unknown) => void = () => {};
+    hooks.request.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        fail = reject;
+      }),
+    );
+    const first = render(draftState());
+    type(first, "Budget passed.");
+    await press(first, MEETING_NOTES_COPY.draft);
+    leave(first);
 
     await act(async () => fail(new Error("offline")));
     const after = render(draftState());
     expect(field(after).props.value).toBe("Budget passed.");
+    leave(after);
+  });
+
+  it("keeps nothing once the ask a reopened sheet waited on lands (#5086)", async () => {
+    let land: () => void = () => {};
+    hooks.request.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        land = resolve;
+      }),
+    );
+    const first = render(draftState());
+    // A trailing newline, as a multiline box often has: the server stores
+    // the notes trimmed.
+    type(first, "Budget passed.\n");
+    await press(first, MEETING_NOTES_COPY.draft);
+    leave(first);
+    const during = render(draftState());
+
+    await act(async () => land());
+    expect(field(during).props.editable).toBe(true);
+    // What is typed after the landing is over the notes the server holds.
+    type(during, "Budget passed. Dues next.");
+    leave(during);
+
+    const after = render(draftState({ notes: "Budget passed." }));
+    expect(field(after).props.value).toBe("Budget passed. Dues next.");
     leave(after);
   });
 

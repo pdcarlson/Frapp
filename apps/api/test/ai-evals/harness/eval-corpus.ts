@@ -5,8 +5,8 @@
  * What is the product's here, and so is what a case grades:
  *
  * - `CorpusRetrievalService`: which chapter is searched, the per-source
- *   access check, the passage-level consent check, chat after official
- *   sources, the left-out count.
+ *   access check, the passage-level consent check, the ranking (chat no
+ *   longer after official sources, #5179), the left-out count.
  * - `ChatMessageCorpusSource` (#4314): a chat passage is readable only in a
  *   channel the asker can open, and only while every author in it says yes.
  * - `buildChatWindowChunks`: how a channel's messages become passages, and
@@ -25,7 +25,10 @@
  * - Documents, minutes and announcements are one passage each and readable
  *   by every member of their chapter: the fixtures have no private document.
  *   Their access rules are covered by the adapters' own specs. Announcements
- *   count as official here, which the product does not do yet (#4381).
+ *   count as official here, which the product does not do: Paul decided on
+ *   2026-11-16 (#4915) that an announcement is chat, under chat consent,
+ *   with its line saying it was posted as an announcement. Moving these
+ *   fixtures into chat windows is #5182.
  * - A window is one channel's whole conversation, not one day of it.
  */
 import type { CorpusCandidate } from '#domain/entities/corpus.entity';

@@ -6,7 +6,16 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  ActionSheetIOS,
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import {
   BottomSheetModal,
   BottomSheetTextInput,
@@ -37,18 +46,25 @@ import {
   actActionLabel,
   actAttendanceLine,
   actConfirmRefusalLine,
+  actEventPointsInput,
+  actEventPointsLine,
   actMissingLine,
+  actPointsAction,
+  actPointsFromLine,
+  actRepeatParts,
+  actWhenParts,
   actNoteLine,
   actPointsDoneLine,
   actPointsEdits,
   actPointsHeadline,
-  actRepeatLine,
   actPointsTotalLine,
   actWhenLine,
   meetingDueLabel,
 } from "@repo/validation";
 import type { useAiReport } from "@/components/ai/report-ai-sheet";
 import { CloseGlyph } from "@/components/control-glyphs";
+import { OverflowGlyph } from "@/components/chat/overflow-glyph";
+import { AskCardGlyph, type AskCardGlyphName } from "./ask-card-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
 import {
   SHEET_STACK_BEHAVIOR,
@@ -122,7 +138,7 @@ import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
  */
 
 /** Where a finished change can be seen. */
-export type ActLink = { href: "/tasks" | "/events"; label: string };
+export type ActLink = { href: string; label: string };
 
 /**
  * Where a confirmed change can be seen, by the page the card named. The
@@ -169,7 +185,7 @@ export function AskProposal({
 
   if (resolution) {
     return (
-      <CardReceipt
+      <FinishedCard
         headline={
           proposal.suggestion ? cardHeadline(proposal.suggestion) : null
         }
@@ -211,9 +227,11 @@ export function AskProposal({
         onKeep={onKeep}
         report={report}
         onPickEvent={(eventId) => void pickEvent(eventId)}
-        onDone={(line, page) => onResolved({ kind: "done", line, page })}
-        onCancelled={() => onResolved({ kind: "cancelled" })}
-        onGone={() => onResolved({ kind: "gone" })}
+        onDone={(line, page, made) =>
+          onResolved({ kind: "done", line, page, ...made })
+        }
+        onCancelled={(shown) => onResolved({ kind: "cancelled", shown })}
+        onGone={(shown) => onResolved({ kind: "gone", shown })}
         styles={styles}
       />
       {problem ? (
@@ -234,8 +252,26 @@ function cardHeadline(suggestion: AiSuggestion): string | null {
 
 type Styles = ReturnType<typeof createStyles>;
 
-/** A card that ended: what happened, in the frame the card had. */
-function CardReceipt({
+/** Where a finished change can be opened: the event itself, else its tab. */
+function resultLink(resolution: AskProposalResolution): ActLink | null {
+  if (resolution.kind !== "done") return null;
+  if (resolution.page === "events" && resolution.id) {
+    return {
+      href: `/event-details?id=${encodeURIComponent(resolution.id)}`,
+      label: ACT_COPY.open_event,
+    };
+  }
+  return RESULT_LINKS[resolution.page ?? ""] ?? null;
+}
+
+/**
+ * A card that ended (Paul, 2026-11-16, #5148: "we should still see it and
+ * just grey it out"). Web's twin, `FinishedCard` in
+ * `apps/web/components/ask/ask-proposal.tsx`, has the reasoning: the card
+ * keeps its details as they stood, faded and with no controls, under one
+ * line that says how it ended. Without the card as it stood, its name.
+ */
+function FinishedCard({
   headline,
   resolution,
   onOpen,
@@ -246,22 +282,221 @@ function CardReceipt({
   onOpen: (link: ActLink) => void;
   styles: Styles;
 }) {
-  const link =
-    resolution.kind === "done"
-      ? (RESULT_LINKS[resolution.page ?? ""] ?? null)
-      : null;
+  const { tokens } = useFrappTheme();
+  const link = resultLink(resolution);
+  const shown = resolution.shown ?? null;
+  const title = shown ? cardHeadline(shown) : headline;
+  const done = resolution.kind === "done";
+  const tone = done ? tokens.color.semantic.success : tokens.color.text.muted;
   return (
-    <View style={styles.card}>
-      {headline ? <Text style={styles.headline}>{headline}</Text> : null}
-      <Text style={styles.muted}>{resolutionLine(resolution)}</Text>
-      {link ? (
-        <QuietButton
-          label={link.label}
-          onPress={() => onOpen(link)}
-          styles={styles}
+    <View style={[styles.card, styles.cardFinished]} testID="ask-card-finished">
+      <View style={styles.headRow}>
+        <AskCardGlyph
+          name={
+            done ? "done" : resolution.kind === "gone" ? "clock" : "dismissed"
+          }
+          color={tone}
         />
-      ) : null}
+        <Text style={[styles.headText, { color: tone }]}>
+          {resolutionLine(resolution)}
+        </Text>
+        {link ? (
+          <Pressable
+            accessibilityRole="link"
+            accessibilityLabel={link.label}
+            hitSlop={12}
+            onPress={() => onOpen(link)}
+            style={({ pressed }) => (pressed ? styles.pressed : null)}
+          >
+            <Text style={styles.headLink}>{link.label}</Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <View style={styles.faded}>
+        {title ? (
+          <Text
+            style={[
+              styles.headline,
+              resolution.kind === "cancelled" ? styles.struck : null,
+            ]}
+          >
+            {title}
+          </Text>
+        ) : null}
+        {shown ? <CardDetails suggestion={shown} styles={styles} /> : null}
+      </View>
     </View>
+  );
+}
+
+/** What a finished card still shows under its name, as words. */
+function CardDetails({
+  suggestion,
+  styles,
+}: {
+  suggestion: AiSuggestion;
+  styles: Styles;
+}) {
+  const { points, task, new_event: event } = suggestion;
+  if (event) return <EventFacts event={event} styles={styles} />;
+  if (task) {
+    return (
+      <>
+        {task.description ? (
+          <Text style={styles.muted}>{task.description}</Text>
+        ) : null}
+        {task.due_date ? (
+          <Fact glyph="clock" styles={styles}>
+            {dueLine(task)}
+          </Fact>
+        ) : null}
+      </>
+    );
+  }
+  if (points) {
+    return (
+      <>
+        <Fact glyph="reason" styles={styles}>
+          {points.reason}
+        </Fact>
+        {points.event_name ? (
+          <Fact glyph="people" styles={styles}>
+            {actAttendanceLine(points.event_name, points.event_start_time)}
+          </Fact>
+        ) : null}
+      </>
+    );
+  }
+  return null;
+}
+
+/** One detail on a card: its mark, then the words, with a quieter line under. */
+function Fact({
+  glyph,
+  under,
+  children,
+  styles,
+}: {
+  glyph: AskCardGlyphName;
+  under?: string;
+  children: ReactNode;
+  styles: Styles;
+}) {
+  const { tokens } = useFrappTheme();
+  return (
+    <View style={styles.fact}>
+      <View style={styles.factGlyph}>
+        <AskCardGlyph name={glyph} color={tokens.color.text.mutedForeground} />
+      </View>
+      <View style={styles.factWords}>
+        <Text style={styles.factText}>{children}</Text>
+        {under ? <Text style={styles.caption}>{under}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+type ProposedEvent = NonNullable<AiSuggestion["new_event"]>;
+
+/**
+ * A proposed event's details, the way a calendar invite opens: a small tile
+ * with the weekday and the day, the whole date over the times, then each
+ * detail on its own line with its mark.
+ */
+function EventFacts({
+  event,
+  pointsField,
+  styles,
+}: {
+  event: ProposedEvent;
+  /** The empty points field, in place of the points line, while it waits. */
+  pointsField?: ReactNode;
+  styles: Styles;
+}) {
+  const { accentPrimary } = useChapterBranding();
+  const when = actWhenParts(event.start_time, event.end_time);
+  const repeat = actRepeatParts(event.recurrence_rule, event.start_time);
+  return (
+    <>
+      {when ? (
+        <View style={styles.when}>
+          <View
+            style={styles.tile}
+            importantForAccessibility="no-hide-descendants"
+          >
+            <Text style={[styles.tileDay, { color: accentPrimary }]}>
+              {when.weekday}
+            </Text>
+            <Text style={styles.tileDate}>{when.day}</Text>
+          </View>
+          <View style={styles.factWords}>
+            <Text style={styles.whenDate}>{when.date}</Text>
+            <Text style={styles.muted}>
+              {when.times}
+              {event.location ? ` · ${event.location}` : ""}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+      {repeat ? (
+        <Fact glyph="repeat" under={repeat.count || undefined} styles={styles}>
+          {repeat.line}
+        </Fact>
+      ) : null}
+      <Fact glyph="people" styles={styles}>
+        {event.is_mandatory
+          ? ACT_COPY.everyone_required
+          : ACT_COPY.everyone_optional}
+      </Fact>
+      {pointsField ??
+        (event.point_value === null ? null : (
+          <Fact
+            glyph="points"
+            under={actPointsFromLine(event.points_from) || undefined}
+            styles={styles}
+          >
+            {actEventPointsLine(event.point_value, !!event.recurrence_rule)}
+          </Fact>
+        ))}
+      {event.description ? (
+        <Text style={styles.muted}>{event.description}</Text>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The ··· in a card's corner (Paul, 2026-11-16, #5148: Cancel goes into the
+ * menu): Dismiss, and Report this when it is offered. The iOS action sheet,
+ * or Android's dialog, as the member sheet's menu (`member-menu.ts`).
+ */
+function openCardMenu(
+  title: string,
+  reportable: boolean,
+  onDismiss: () => void,
+  onReport: () => void,
+) {
+  const options = [
+    { label: ACT_COPY.dismiss, run: onDismiss },
+    ...(reportable ? [{ label: AI_REPORT_COPY.action, run: onReport }] : []),
+  ];
+  if (Platform.OS === "ios") {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title,
+        options: [...options.map((option) => option.label), ACT_COPY.cancel],
+        cancelButtonIndex: options.length,
+        userInterfaceStyle: "dark",
+      },
+      (index) => options[index]?.run(),
+    );
+    return;
+  }
+  Alert.alert(
+    title,
+    undefined,
+    options.map((option) => ({ text: option.label, onPress: option.run })),
+    { cancelable: true },
   );
 }
 
@@ -304,7 +539,7 @@ export function AskAnswerCards({
         const end = ended[id];
         if (end) {
           return (
-            <CardReceipt
+            <FinishedCard
               key={id}
               headline={end.headline}
               resolution={end.resolution}
@@ -324,17 +559,20 @@ export function AskAnswerCards({
               kept={kept[id] ?? null}
               onKeep={onKeep}
               report={report}
-              onDone={(line, page) =>
+              onDone={(line, page, made) =>
                 onEnded(id, {
-                  resolution: { kind: "done", line, page },
+                  resolution: { kind: "done", line, page, ...made },
                   headline,
                 })
               }
-              onCancelled={() =>
-                onEnded(id, { resolution: { kind: "cancelled" }, headline })
+              onCancelled={(shown) =>
+                onEnded(id, {
+                  resolution: { kind: "cancelled", shown },
+                  headline,
+                })
               }
-              onGone={() =>
-                onEnded(id, { resolution: { kind: "gone" }, headline })
+              onGone={(shown) =>
+                onEnded(id, { resolution: { kind: "gone", shown }, headline })
               }
               styles={styles}
             />
@@ -358,7 +596,7 @@ export function AskAnswerCards({
           );
         }
         return (
-          <CardReceipt
+          <FinishedCard
             key={id}
             headline={null}
             resolution={{ kind: "gone" }}
@@ -421,10 +659,10 @@ function ActAnswer({
   onKeep: (suggestionId: string, targets: string[]) => void;
   report: Reporting;
   onPickEvent: (eventId: string) => void;
-  onDone: (line: string, page: string) => void;
-  onCancelled: () => void;
+  onDone: CardDone;
+  onCancelled: (shown: AiSuggestion) => void;
   /** The proposal stopped waiting before the member decided. */
-  onGone: () => void;
+  onGone: (shown: AiSuggestion) => void;
   styles: Styles;
 }) {
   if (response.status === "proposed" && response.suggestion) {
@@ -511,7 +749,14 @@ function isGone(error: unknown): boolean {
   ].includes(codeOf(error) ?? "");
 }
 
-/** What a card that ended says in its place. */
+/** What a card reports once it was carried out. */
+type CardDone = (
+  line: string,
+  page: string,
+  made: { id?: string | null; shown?: AiSuggestion | null },
+) => void;
+
+/** What a card that ended says in its top line. */
 function resolutionLine(resolution: AskProposalResolution): string {
   if (resolution.kind === "done") return resolution.line;
   return resolution.kind === "gone" ? ACT_COPY.gone : ACT_COPY.cancelled;
@@ -522,23 +767,6 @@ function refusalLine(error: unknown): string {
   return (
     actConfirmRefusalLine(codeOf(error) ?? null) ??
     errorCopy(error, ACT_COPY.failed)
-  );
-}
-
-function CardRow({
-  label,
-  children,
-  styles,
-}: {
-  label: string;
-  children: ReactNode;
-  styles: Styles;
-}) {
-  return (
-    <View style={styles.cardRow}>
-      <Text style={styles.eyebrow}>{label}</Text>
-      <Text style={styles.body}>{children}</Text>
-    </View>
   );
 }
 
@@ -591,6 +819,35 @@ function CardField({
   );
 }
 
+/** The empty points field on an event card (#5148), in the row it fills. */
+function PointsInput({
+  value,
+  onChangeText,
+  disabled,
+  styles,
+}: {
+  value: string;
+  onChangeText: (text: string) => void;
+  disabled: boolean;
+  styles: Styles;
+}) {
+  const { tokens } = useFrappTheme();
+  const inSheet = useBottomSheetInternal(true) != null;
+  const Field = inSheet ? BottomSheetTextInput : TextInput;
+  return (
+    <Field
+      value={value}
+      onChangeText={onChangeText}
+      accessibilityLabel={ACT_COPY.points_label}
+      accessibilityHint={ACT_COPY.points_missing}
+      editable={!disabled}
+      keyboardType="number-pad"
+      placeholderTextColor={tokens.color.text.muted}
+      style={[styles.pickerField, styles.pointsInput]}
+    />
+  );
+}
+
 /** A task's due day written out, with its time when it has one. */
 function dueLine(task: { due_date: string | null; due_at: string | null }) {
   const day = meetingDueLabel(task.due_date);
@@ -620,10 +877,11 @@ function ActCard({
   kept: readonly string[] | null;
   onKeep: (suggestionId: string, targets: string[]) => void;
   report: Reporting;
-  onDone: (line: string, page: string) => void;
-  onCancelled: () => void;
+  onDone: CardDone;
+  /** Dismissed: the card as it stood, to stay in place greyed. */
+  onCancelled: (shown: AiSuggestion) => void;
   /** The proposal stopped waiting before the member decided. */
-  onGone: () => void;
+  onGone: (shown: AiSuggestion) => void;
   styles: Styles;
 }) {
   const { tokens } = useFrappTheme();
@@ -677,9 +935,13 @@ function ActCard({
   );
   const [reasonInput, setReasonInput] = useState(points?.reason ?? "");
   const [fieldProblem, setFieldProblem] = useState<{
-    field: "amount" | "reason";
+    field: "amount" | "reason" | "eventPoints";
     error: string;
   } | null>(null);
+  // An event's points when nobody said them and nothing matched (#5148).
+  const [eventPoints, setEventPoints] = useState("");
+  const typedEventPoints = actEventPointsInput(eventPoints);
+  const needsPoints = !!event && event.point_value === null;
   const shownAmount = useMemo(() => {
     if (!points || !editingPoints) return points?.amount ?? 0;
     // The amount alone: a reason not yet written says nothing about it.
@@ -707,7 +969,7 @@ function ActCard({
 
   async function confirm() {
     setProblem(null);
-    let edits: { points?: PointsSuggestionEdits } = {};
+    let edits: { points?: PointsSuggestionEdits; newEventPoints?: number } = {};
     if (points) {
       if (targets.length === 0) {
         setFlagged(true);
@@ -733,12 +995,35 @@ function ActCard({
       setFormOpen(true);
       return;
     }
+    if (needsPoints) {
+      const read = actEventPointsInput(eventPoints);
+      if (!read.ok) {
+        setFieldProblem({ field: "eventPoints", error: read.error });
+        return;
+      }
+      edits = { newEventPoints: read.value };
+    }
     setDeciding(true);
     try {
       const decision = await accept.mutateAsync({
         id: suggestion.id,
         ...edits,
       });
+      const shown: AiSuggestion = {
+        ...suggestion,
+        points: points
+          ? {
+              ...points,
+              target_user_ids: targets,
+              amount: edits.points?.amount ?? points.amount,
+              reason: edits.points?.reason ?? points.reason,
+            }
+          : points,
+        new_event:
+          event && edits.newEventPoints !== undefined
+            ? { ...event, point_value: edits.newEventPoints, points_from: null }
+            : event,
+      };
       if (points) {
         const outcome = decision.result?.outcome;
         onDone(
@@ -748,15 +1033,19 @@ function ActCard({
             outcome?.skipped ?? 0,
           ),
           "points",
+          { shown },
         );
       } else if (task) {
-        onDone(ACT_COPY.done_task, "tasks");
+        onDone(ACT_COPY.done_task, "tasks", { shown });
       } else {
-        onDone(ACT_COPY.done_event, "events");
+        onDone(ACT_COPY.done_event, "events", {
+          id: decision.result?.id ?? null,
+          shown,
+        });
       }
     } catch (error) {
       // A card that stopped waiting says so in its place, with no buttons.
-      if (isGone(error)) onGone();
+      if (isGone(error)) onGone(suggestion);
       else setProblem(refusalLine(error));
     } finally {
       setDeciding(false);
@@ -772,7 +1061,7 @@ function ActCard({
       // Already decided elsewhere: it may have been confirmed, so the card
       // does not say cancelled.
       if (codeOf(error) === "ai.suggestion.decided") {
-        onGone();
+        onGone(suggestion);
         return;
       }
       // Already gone is what Cancel wanted.
@@ -783,7 +1072,7 @@ function ActCard({
     } finally {
       setDeciding(false);
     }
-    onCancelled();
+    onCancelled(suggestion);
   }
 
   /** Edit: the form the officer already uses, or a points card's fields. */
@@ -801,12 +1090,13 @@ function ActCard({
 
   // Create in the event form is the confirm: the form made the event through
   // its own route, and the proposal records it (or is taken down). The event
-  // is made either way, so the card says so either way.
+  // is made either way, so the card says so either way. What the form made
+  // is the form's, so the finished card keeps only its name.
   async function recordMadeEvent(eventId: string | null) {
     setDeciding(true);
     await settleProposedEvent({ accept, dismiss }, suggestion.id, eventId);
     setDeciding(false);
-    onDone(ACT_COPY.done_event, "events");
+    onDone(ACT_COPY.done_event, "events", { id: eventId });
   }
 
   const addable = roster.filter(
@@ -814,13 +1104,19 @@ function ActCard({
   );
 
   let title: string = ACT_COPY.card_event_title;
+  let glyph: AskCardGlyphName = "event";
+  let action: string = ACT_COPY.create_event;
   if (points) {
     title =
       shownAmount < 0
         ? ACT_COPY.card_points_title_take
         : ACT_COPY.card_points_title_give;
+    glyph = "points";
+    action = actPointsAction(shownAmount);
   } else if (task) {
     title = ACT_COPY.card_task_title;
+    glyph = "task";
+    action = ACT_COPY.create_task;
   }
 
   // Above the controls it points at ("Add them below").
@@ -859,35 +1155,71 @@ function ActCard({
           } finally {
             setDeciding(false);
           }
-          onDone(ACT_COPY.done_task, "tasks");
+          // Who and when are the form's; the card keeps its name.
+          onDone(ACT_COPY.done_task, "tasks", {});
         },
       }
     : undefined;
 
+  const pointsMissing = fieldProblem?.field === "eventPoints";
+  const eventPointsField = needsPoints ? (
+    <View style={[styles.ask, pointsMissing ? styles.askProblem : null]}>
+      <View style={styles.fact}>
+        <View style={styles.factGlyph}>
+          <AskCardGlyph
+            name="points"
+            color={tokens.color.text.mutedForeground}
+          />
+        </View>
+        <Text style={[styles.factText, styles.factWords]}>
+          {ACT_COPY.points_label}
+        </Text>
+        <PointsInput
+          value={eventPoints}
+          onChangeText={(text) => {
+            setEventPoints(text);
+            if (pointsMissing) setFieldProblem(null);
+          }}
+          disabled={busy}
+          styles={styles}
+        />
+      </View>
+      <Text
+        accessibilityRole={pointsMissing ? "alert" : undefined}
+        style={pointsMissing ? styles.problem : styles.askHint}
+      >
+        {pointsMissing ? fieldProblem.error : ACT_COPY.points_missing}
+      </Text>
+    </View>
+  ) : null;
+
   return (
     <View accessibilityLabel={title} style={styles.card}>
-      <View style={styles.cardHead}>
-        <Text style={styles.eyebrow}>{title}</Text>
-        {/* Report this (#4315): what the agent proposed, for the Frapp team. */}
-        {report.offered ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              reported
-                ? AI_REPORT_COPY.reported
-                : `${AI_REPORT_COPY.action}: ${title}`
-            }
-            accessibilityState={reported ? { disabled: true } : undefined}
-            disabled={reported}
-            hitSlop={12}
-            onPress={() => report.report(reportTarget)}
-            style={({ pressed }) => (pressed ? styles.pressed : null)}
-          >
-            <Text style={styles.caption}>
-              {reported ? AI_REPORT_COPY.reported : AI_REPORT_COPY.action}
-            </Text>
-          </Pressable>
-        ) : null}
+      <View style={styles.headRow}>
+        <AskCardGlyph name={glyph} color={tokens.color.text.mutedForeground} />
+        <Text style={styles.headText}>{title}</Text>
+        {/* Dismiss, and Report this (#4315) for the Frapp team (#5148). */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${ACT_COPY.more}: ${title}`}
+          accessibilityState={{ disabled: busy }}
+          disabled={busy}
+          hitSlop={10}
+          onPress={() =>
+            openCardMenu(
+              title,
+              report.offered && !reported,
+              () => void cancel(),
+              () => report.report(reportTarget),
+            )
+          }
+          style={({ pressed }) => [
+            styles.more,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <OverflowGlyph color={tokens.color.text.mutedForeground} size={20} />
+        </Pressable>
       </View>
 
       {points ? (
@@ -934,14 +1266,14 @@ function ActCard({
               />
             </>
           ) : (
-            <CardRow label={ACT_COPY.field_reason} styles={styles}>
+            <Fact glyph="reason" styles={styles}>
               {points.reason}
-            </CardRow>
+            </Fact>
           )}
           {points.event_name ? (
-            <CardRow label={ACT_COPY.field_attendance} styles={styles}>
+            <Fact glyph="people" styles={styles}>
               {actAttendanceLine(points.event_name, points.event_start_time)}
-            </CardRow>
+            </Fact>
           ) : null}
           {notesStrip}
           {targets.length > 0 ? (
@@ -1042,17 +1374,29 @@ function ActCard({
               pressed ? styles.pressed : null,
             ]}
           >
-            <View style={styles.cardRow}>
-              <Text style={styles.eyebrow}>{ACT_COPY.field_for}</Text>
-              <Text style={task.assignee_id ? styles.body : styles.missing}>
+            <View
+              style={[styles.chipRow, task.assignee_id ? null : styles.ask]}
+            >
+              <View style={styles.factGlyph}>
+                <AskCardGlyph
+                  name="person"
+                  color={tokens.color.text.mutedForeground}
+                />
+              </View>
+              <Text style={task.assignee_id ? styles.factText : styles.missing}>
                 {task.assignee_id
                   ? nameOf(task.assignee_id)
                   : ACT_COPY.pick_member}
               </Text>
             </View>
-            <View style={styles.cardRow}>
-              <Text style={styles.eyebrow}>{ACT_COPY.field_due}</Text>
-              <Text style={task.due_date ? styles.body : styles.missing}>
+            <View style={[styles.chipRow, task.due_date ? null : styles.ask]}>
+              <View style={styles.factGlyph}>
+                <AskCardGlyph
+                  name="clock"
+                  color={tokens.color.text.mutedForeground}
+                />
+              </View>
+              <Text style={task.due_date ? styles.factText : styles.missing}>
                 {task.due_date ? dueLine(task) : ACT_COPY.pick_due}
               </Text>
             </View>
@@ -1063,40 +1407,21 @@ function ActCard({
       {event ? (
         <>
           <Text style={styles.headline}>{event.name}</Text>
-          <CardRow label={ACT_COPY.field_when} styles={styles}>
-            {actWhenLine(event.start_time, event.end_time)}
-          </CardRow>
-          {event.recurrence_rule ? (
-            <CardRow label={ACT_COPY.field_repeats} styles={styles}>
-              {actRepeatLine(event.recurrence_rule, event.start_time)}
-            </CardRow>
-          ) : null}
-          {event.location ? (
-            <CardRow label={ACT_COPY.field_where} styles={styles}>
-              {event.location}
-            </CardRow>
-          ) : null}
-          <CardRow label={ACT_COPY.field_attendance} styles={styles}>
-            {event.is_mandatory ? ACT_COPY.required : ACT_COPY.optional}
-          </CardRow>
-          <CardRow label={ACT_COPY.field_points} styles={styles}>
-            {event.point_value === null
-              ? ACT_COPY.default_points
-              : String(event.point_value)}
-          </CardRow>
-          {event.description ? (
-            <Text style={styles.muted}>{event.description}</Text>
-          ) : null}
+          <EventFacts
+            event={event}
+            pointsField={eventPointsField}
+            styles={styles}
+          />
         </>
       ) : null}
 
       <Text style={styles.caption}>
+        {ACT_COPY.mine_only}{" "}
         {points
           ? ACT_COPY.points_push
           : task
             ? ACT_COPY.task_push
-            : ACT_COPY.event_push}{" "}
-        {ACT_COPY.mine_only}
+            : ACT_COPY.event_push}
       </Text>
 
       {problem ? (
@@ -1106,12 +1431,6 @@ function ActCard({
       ) : null}
 
       <View style={styles.actions}>
-        <QuietButton
-          label={ACT_COPY.cancel}
-          disabled={busy}
-          onPress={() => void cancel()}
-          styles={styles}
-        />
         {editingPoints ? null : (
           <QuietButton
             label={ACT_COPY.edit}
@@ -1122,7 +1441,7 @@ function ActCard({
         )}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={ACT_COPY.confirm}
+          accessibilityLabel={action}
           accessibilityState={{ disabled: busy, busy: accept.isPending }}
           disabled={busy}
           hitSlop={4}
@@ -1136,7 +1455,7 @@ function ActCard({
         >
           {/* The same word while it saves, so the button keeps its width. */}
           <Text style={[styles.confirmText, { color: accentOnPrimary }]}>
-            {ACT_COPY.confirm}
+            {action}
           </Text>
         </Pressable>
       </View>
@@ -1157,7 +1476,13 @@ function ActCard({
       {event && eventFormMounted ? (
         <NewEventSheet
           ref={eventFormRef}
-          template={proposedEventTemplate(event)}
+          template={proposedEventTemplate({
+            ...event,
+            // Points typed on the card go with it into the form (#5148).
+            point_value:
+              event.point_value ??
+              (typedEventPoints.ok ? typedEventPoints.value : null),
+          })}
           onCreated={(created) => void recordMadeEvent(created.id)}
         />
       ) : null}
@@ -1457,6 +1782,117 @@ function createStyles(tokens: SignetTokens) {
     },
     fieldProblem: {
       borderColor: tokens.color.semantic.destructive,
+    },
+    // The card's top line: its kind's mark, its kind, and the ··· (#5148).
+    headRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      minHeight: 24,
+    },
+    headText: {
+      ...typeRole(tokens.typography.role.label),
+      fontFamily: fontFamilyFor(600),
+      color: tokens.color.text.mutedForeground,
+      flex: 1,
+    },
+    headLink: {
+      ...typeRole(tokens.typography.role.label),
+      fontFamily: fontFamilyFor(600),
+      color: tokens.color.text.foreground,
+    },
+    more: {
+      width: 32,
+      height: 24,
+      alignItems: "flex-end",
+      justifyContent: "center",
+    },
+    fact: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: tokens.spacing.sm,
+    },
+    factGlyph: {
+      paddingTop: 2,
+    },
+    factWords: {
+      flex: 1,
+      minWidth: 0,
+    },
+    factText: {
+      ...typeRole(tokens.typography.role.label),
+      fontFamily: fontFamilyFor(400),
+      color: tokens.color.text.foreground,
+    },
+    when: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+    },
+    tile: {
+      width: 44,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
+      alignItems: "center",
+      paddingVertical: 4,
+    },
+    tileDay: {
+      ...caption,
+      fontSize: 10.5,
+      lineHeight: 13,
+      fontFamily: fontFamilyFor(700),
+      letterSpacing: 0.6,
+    },
+    tileDate: {
+      ...typeRole(tokens.typography.role.title),
+      lineHeight: 22,
+      color: tokens.color.text.foreground,
+    },
+    whenDate: {
+      ...typeRole(tokens.typography.role.label),
+      fontFamily: fontFamilyFor(600),
+      color: tokens.color.text.foreground,
+    },
+    // What the card still needs from the member: outlined, never guessed.
+    ask: {
+      borderRadius: 10,
+      borderWidth: 1.5,
+      borderColor: tokens.color.semantic.warning,
+      backgroundColor: "rgba(229,160,0,0.07)",
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.xs,
+      gap: tokens.spacing.xs,
+    },
+    askProblem: {
+      borderColor: tokens.color.semantic.destructive,
+    },
+    askHint: {
+      ...caption,
+      color: gold.askText,
+    },
+    pointsInput: {
+      width: 72,
+      height: 32,
+      paddingVertical: 0,
+      textAlign: "right",
+    },
+    chipRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+      minHeight: 32,
+    },
+    cardFinished: {
+      backgroundColor: tokens.color.surface.background,
+    },
+    faded: {
+      opacity: 0.5,
+      gap: tokens.spacing.md,
+    },
+    struck: {
+      textDecorationLine: "line-through",
     },
     pressed: { opacity: 0.7 },
     dimmed: { opacity: 0.5 },

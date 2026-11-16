@@ -9,6 +9,7 @@ import {
   type ReactTestRenderer,
 } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as WebBrowser from "expo-web-browser";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import { HeaderButton } from "@/components/header-button";
@@ -80,6 +81,21 @@ let excuseList: unknown[] = [];
 const sendExcuse = vi.fn(async () => ({}));
 const decideExcuse = vi.fn(async () => ({}));
 
+// The chapter (#4934): a module it names `false` is off; `null` while it loads.
+let enabledModules: Record<string, boolean> | null = {};
+// Whether the event read keeps the event it loaded when it fails, as React
+// Query does when a refetch 404s.
+let eventDataKept = false;
+// Signing a Chapter Files document's link.
+const signDocument = vi.fn<(id: string) => Promise<unknown>>(async () => ({
+  downloadUrl: "https://files.example/bylaws.pdf",
+}));
+// The agenda editor's writes, spied rather than sent (its own spec is
+// `packages/hooks/src/use-event-agenda.spec.tsx`).
+const listsChange = vi.fn();
+// Whether a write would be lost (offline, a lapsed chapter).
+let writeBlockedReason: string | null = null;
+
 const { eventAttendanceFor } = await vi.hoisted(
   async () => await import("@repo/validation"),
 );
@@ -116,13 +132,34 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useWithdrawEventExcuse: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useEditEventExcuse: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDecideEventExcuse: () => ({ mutateAsync: decideExcuse, isPending: false }),
+  useCurrentChapter: () => ({
+    data:
+      enabledModules === null
+        ? undefined
+        : { id: "chapter-1", enabled_modules: enabledModules },
+  }),
+  useEventListsEditor: (
+    _id: string,
+    server: { agenda: unknown[]; attachments: unknown[] },
+  ) => ({ ...server, saving: false, change: listsChange, flush: vi.fn() }),
+  useDocuments: () => ({ data: [], isPending: false, isError: false }),
+  useDocumentDownloadUrl: () => ({ mutateAsync: signDocument }),
   useEvent: () => ({
     isPending: eventPending,
     isError: eventError !== null,
     error: eventError,
     isFetching: false,
-    data: eventError === null ? event : undefined,
+    data: eventError === null || eventDataKept ? event : undefined,
     refetch: vi.fn(),
+  }),
+}));
+
+vi.mock("@/lib/connection/use-connection", () => ({
+  useConnection: () => ({
+    state: "ONLINE",
+    isOffline: false,
+    isDegraded: false,
+    writeBlockedReason,
   }),
 }));
 
@@ -927,5 +964,261 @@ describe("Event details excuses (#3735)", () => {
       { ...excuse("PENDING"), user_id: "user-sam", display_name: "Sam" },
     ];
     expect(screenText(render())).not.toContain("to decide");
+  });
+});
+
+describe("Event details agenda and attachments (#4934)", () => {
+  afterEach(() => {
+    act(() => {
+      for (const tree of mounted.splice(0)) tree.unmount();
+    });
+    permissions = ["members:view"];
+    event = EVENT;
+    enabledModules = {};
+    writeBlockedReason = null;
+    listsChange.mockReset();
+    vi.mocked(WebBrowser.openBrowserAsync).mockClear();
+    signDocument.mockClear();
+  });
+
+  const WITH_LISTS = {
+    ...EVENT,
+    agenda: [
+      { id: "a1", text: "Treasurer's report", done: true },
+      { id: "a2", text: "Formal date", done: false },
+    ],
+    attachments: [
+      {
+        id: "t1",
+        kind: "link",
+        url: "https://example.com/budget",
+        title: "Budget",
+      },
+      { id: "t2", kind: "document", document_id: "doc-1", title: "Bylaws" },
+    ],
+    notes: "Bring dues",
+  };
+
+  function labelled(tree: ReactTestRenderer, label: string) {
+    return tree.root.findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props.accessibilityLabel === label,
+    );
+  }
+
+  it("shows a member the agenda in order and the attachments, read only", () => {
+    event = WITH_LISTS;
+    const tree = render();
+    const text = screenText(tree);
+    expect(text).toContain("AGENDA");
+    expect(text).toContain("Treasurer's report");
+    expect(text).toContain("Formal date");
+    expect(text).toContain("ATTACHMENTS");
+    expect(text).toContain("Budget");
+    expect(text).toContain("example.com");
+    expect(text).toContain("Bylaws");
+    expect(text).toContain("Chapter Files");
+    // No editor controls for a member.
+    expect(text).not.toContain("Add a link");
+    expect(labelled(tree, "Add an agenda item")).toHaveLength(0);
+    expect(labelled(tree, `Remove "Formal date"`)).toHaveLength(0);
+    // A checked-off item says so to a screen reader.
+    expect(labelled(tree, "Done: Treasurer's report")).toHaveLength(1);
+  });
+
+  it("leaves both sections out for a member when the event has none", () => {
+    const text = screenText(render());
+    expect(text).not.toContain("AGENDA");
+    expect(text).not.toContain("ATTACHMENTS");
+  });
+
+  it("labels the notes NOTES, never internal, while minutes are their own record", () => {
+    event = WITH_LISTS;
+    const text = screenText(render());
+    expect(text).toContain("NOTES");
+    expect(text).not.toContain("INTERNAL");
+    expect(text).toContain("Bring dues");
+  });
+
+  it("labels the notes MEETING MINUTES with the meetings module off", () => {
+    event = WITH_LISTS;
+    enabledModules = { meetings: false };
+    expect(screenText(render())).toContain("MEETING MINUTES");
+  });
+
+  it("lets an events:update holder check an item off in place", () => {
+    event = WITH_LISTS;
+    permissions = ["members:view", "events:update"];
+    const tree = render();
+    const box = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "checkbox" &&
+        node.props.accessibilityLabel === "Formal date" &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => box.props.onPress());
+    expect(listsChange).toHaveBeenCalledTimes(1);
+    const [field, update] = listsChange.mock.calls[0] as [
+      string,
+      (current: unknown) => unknown,
+    ];
+    expect(field).toBe("agenda");
+    expect(update(WITH_LISTS.agenda)).toEqual([
+      WITH_LISTS.agenda[0],
+      { id: "a2", text: "Formal date", done: true },
+    ]);
+    expect(screenText(tree)).toContain("Attach from Chapter Files");
+  });
+
+  it("adds an item from the field under the list", () => {
+    permissions = ["members:view", "events:update"];
+    const tree = render();
+    // An editor sees the empty agenda, to start it.
+    expect(screenText(tree)).toContain("AGENDA");
+    const field = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === "Add an agenda item" &&
+        typeof node.props.onSubmitEditing === "function",
+    );
+    act(() => field.props.onChangeText("  Rush   plans "));
+    act(() => {
+      tree.root
+        .find(
+          (node) =>
+            node.props.accessibilityLabel === "Add an agenda item" &&
+            typeof node.props.onSubmitEditing === "function",
+        )
+        .props.onSubmitEditing();
+    });
+    const [field0, update] = listsChange.mock.calls[0] as [
+      string,
+      (current: unknown[]) => { text: string; done: boolean }[],
+    ];
+    expect(field0).toBe("agenda");
+    const next = update([]);
+    expect(next).toHaveLength(1);
+    expect(next[0]).toMatchObject({ text: "Rush plans", done: false });
+  });
+
+  it("offers no Chapter Files picker while that module is off", () => {
+    permissions = ["members:view", "events:update"];
+    enabledModules = { documents: false };
+    const text = screenText(render());
+    expect(text).toContain("Add a link");
+    expect(text).not.toContain("Attach from Chapter Files");
+  });
+
+  it("offers no controls while writes are blocked, and still reads the lists", () => {
+    event = WITH_LISTS;
+    permissions = ["members:view", "events:update"];
+    writeBlockedReason = "You're offline.";
+    const tree = render();
+    expect(screenText(tree)).toContain("Formal date");
+    expect(screenText(tree)).not.toContain("Add a link");
+    expect(labelled(tree, `Remove "Formal date"`)).toHaveLength(0);
+  });
+
+  it("offers no controls on an event deleted since it loaded", () => {
+    event = WITH_LISTS;
+    permissions = ["members:view", "events:update"];
+    // The refetch 404s, and the screen still holds the event it loaded.
+    eventError = { statusCode: 404, message: "Event not found" };
+    eventDataKept = true;
+    const tree = render();
+    expect(screenText(tree)).toContain("Formal date");
+    expect(screenText(tree)).not.toContain("Add a link");
+    expect(labelled(tree, `Remove "Formal date"`)).toHaveLength(0);
+    eventError = null;
+    eventDataKept = false;
+  });
+
+  it("shows the agenda in its order, numbered for a member", () => {
+    event = WITH_LISTS;
+    const text = screenText(render());
+    expect(text.indexOf("Treasurer's report")).toBeLessThan(
+      text.indexOf("Formal date"),
+    );
+    expect(text).toContain("2.");
+  });
+
+  it("moves an item up from its control", () => {
+    event = WITH_LISTS;
+    permissions = ["members:view", "events:update"];
+    const tree = render();
+    const up = tree.root.find(
+      (node) =>
+        node.props.accessibilityLabel === `Move "Formal date" up` &&
+        typeof node.props.onPress === "function",
+    );
+    act(() => up.props.onPress());
+    const [, update] = listsChange.mock.calls[0] as [
+      string,
+      (current: unknown) => { id: string }[],
+    ];
+    expect(update(WITH_LISTS.agenda).map((item) => item.id)).toEqual([
+      "a2",
+      "a1",
+    ]);
+  });
+
+  it("offers no Chapter Files picker until the chapter says the module is on, and calls the notes Notes meanwhile", () => {
+    permissions = ["members:view", "events:update"];
+    event = WITH_LISTS;
+    enabledModules = null;
+    const text = screenText(render());
+    expect(text).toContain("Add a link");
+    expect(text).not.toContain("Attach from Chapter Files");
+    expect(text).toContain("NOTES");
+    expect(text).not.toContain("MEETING MINUTES");
+  });
+
+  function attachmentRow(tree: ReactTestRenderer, prefix: string) {
+    return tree.root.find(
+      (node) =>
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith(prefix) &&
+        typeof node.props.onPress === "function",
+    );
+  }
+
+  it("opens a link in the in-app browser", async () => {
+    event = WITH_LISTS;
+    const tree = render();
+    await act(async () => attachmentRow(tree, "Budget,").props.onPress());
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+      "https://example.com/budget",
+    );
+  });
+
+  it("says when a link won't open", async () => {
+    event = WITH_LISTS;
+    vi.mocked(WebBrowser.openBrowserAsync).mockRejectedValueOnce(
+      new Error("Another web browser is already open"),
+    );
+    const tree = render();
+    await act(async () => attachmentRow(tree, "Budget,").props.onPress());
+    expect(screenText(tree)).toContain("Couldn't open that link");
+  });
+
+  it("opens a document through its signed link", async () => {
+    event = WITH_LISTS;
+    const tree = render();
+    await act(async () => attachmentRow(tree, "Bylaws,").props.onPress());
+    expect(signDocument).toHaveBeenCalledWith("doc-1");
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+      "https://files.example/bylaws.pdf",
+    );
+  });
+
+  it("says a document deleted since it was attached is gone", async () => {
+    event = WITH_LISTS;
+    signDocument.mockRejectedValueOnce({
+      statusCode: 404,
+      message: "Not found",
+    });
+    const tree = render();
+    await act(async () => attachmentRow(tree, "Bylaws,").props.onPress());
+    expect(screenText(tree)).toContain("That file is gone from Chapter Files");
   });
 });

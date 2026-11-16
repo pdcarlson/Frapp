@@ -189,13 +189,26 @@ export class EventSuggestionAcceptDto {
  * through its own route, and the accept records it instead of making one.
  */
 export class NewEventSuggestionAcceptDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     format: 'uuid',
     description:
-      'The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller.',
+      'The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller. When set, nothing else is read.',
   })
+  @IsOptional()
   @IsUUID()
-  event_id: string;
+  event_id?: string;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: POINTS_ADJUSTMENT_MAX,
+    description:
+      'Points for coming, typed on the card: needed when the proposal has none.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(POINTS_ADJUSTMENT_MAX)
+  point_value?: number;
 }
 
 /** Why a suggestion was dismissed, for the analytics event only. Never stored. */
@@ -364,6 +377,18 @@ export class PointsSuggestionDto {
   event_start_time: string | null;
 }
 
+export class NewEventPointsFromDto {
+  @ApiProperty({
+    enum: ['type', 'event'],
+    description:
+      '`type`: the chapter event type of that name. `event`: its latest event of that name.',
+  })
+  kind: 'type' | 'event';
+
+  @ApiProperty()
+  name: string;
+}
+
 /** An event the acting agent proposes to create (#718). */
 export class NewEventSuggestionDto {
   @ApiProperty()
@@ -384,9 +409,27 @@ export class NewEventSuggestionDto {
   @ApiProperty({
     type: Number,
     nullable: true,
-    description: 'Null leaves the chapter’s usual amount.',
+    description:
+      'Points for coming. Null when the caller did not say and nothing could be copied: accepting then needs `new_event.point_value`.',
   })
   point_value: number | null;
+
+  @ApiProperty({
+    type: NewEventPointsFromDto,
+    nullable: true,
+    description:
+      'Where points the caller did not say were copied from. Null when they were said, typed, or are missing.',
+  })
+  points_from: NewEventPointsFromDto | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The chapter event type the event is one of, when one matched.',
+  })
+  event_type_id: string | null;
 
   @ApiProperty()
   is_mandatory: boolean;

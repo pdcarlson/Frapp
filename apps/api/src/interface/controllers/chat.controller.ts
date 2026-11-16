@@ -93,6 +93,7 @@ import type {
   ChatChannel,
   ChatMessage,
 } from '#domain/entities/chat.entity';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /** What `POST :id/messages` answers with. */
 type SentMessage = Awaited<ReturnType<ChatService['sendMessage']>>;
@@ -127,6 +128,7 @@ export class ChatController {
   // ── Channels ─────────────────────────────────────────────────────────
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'List chapter channels' })
   async listChannels(
     @CurrentChapterId() chapterId: string,
@@ -140,6 +142,7 @@ export class ChatController {
   // `getChannel('unread')` and answering 404 for a route that exists.
   // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('unread')
+  @VerifySessionLocally()
   @ApiOperation({
     summary: 'Unread and mention counts for every channel the caller can read',
   })
@@ -154,6 +157,7 @@ export class ChatController {
   // MUST stay above `@Get(':id')`, for the same reason as `unread` above.
   // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('latest')
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       'The latest message in every channel the caller can read, for the channel list previews',
@@ -186,6 +190,7 @@ export class ChatController {
   // above: `:id` would resolve this as `getChannel('mention-roles')`.
   // Enforced by `test/route-declaration-order.e2e-spec.ts` (#990).
   @Get('mention-roles')
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       'The chapter roles, tiers and groups the caller’s @-mention picker offers, with whether the caller may ping each',
@@ -308,6 +313,7 @@ export class ChatController {
   }
 
   @Get(':id')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'Get channel by ID' })
   async getChannel(
     @CurrentChapterId() chapterId: string,
@@ -466,6 +472,7 @@ export class ChatController {
    * another chapter 404, from the same check every channel read goes through.
    */
   @Get(':id/members')
+  @VerifySessionLocally()
   @ApiOperation({
     summary: 'Everyone who can read a channel, with their top role rank',
   })
@@ -520,6 +527,7 @@ export class ChatController {
   // ── Categories ───────────────────────────────────────────────────────
 
   @Get('categories/list')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'List channel categories' })
   async listCategories(@CurrentChapterId() chapterId: string) {
     return this.categories.getCategories(chapterId);
@@ -573,6 +581,7 @@ export class ChatController {
    * of `spec/behavior/chat/README.md` § The masking contract unreachable.
    */
   @Get(':id/messages')
+  @VerifySessionLocally()
   @ApiOperation({
     summary: 'Get channel message history (supports since= reconnect replay)',
   })
@@ -848,6 +857,7 @@ export class ChatController {
   // ── Pins ─────────────────────────────────────────────────────────────
 
   @Get(':id/pins')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'Get pinned messages in a channel' })
   // Masked exactly like `GET :id/messages`, so it owes the same declared
   // schema — a pin is channel content that stays in front of the blocker
@@ -1027,6 +1037,7 @@ export class ChatController {
   }
 
   @Get('messages/:messageId/reactions')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'Get reactions for a message' })
   async getReactions(
     @Param('messageId') messageId: string,

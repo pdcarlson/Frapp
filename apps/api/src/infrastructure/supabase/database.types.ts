@@ -30,6 +30,7 @@ import type {
   ChapterDocumentFolder,
   ChapterDocumentStar,
   ChapterDocumentType,
+  ChapterDriveConnection,
   ChapterDuesConfig,
   ChapterGoalRow,
   ChapterGroup,
@@ -96,6 +97,10 @@ import type {
   PledgeClassAssignment,
   PointTransaction,
   PollVote,
+  PredictionAnswer,
+  PredictionMarket,
+  PredictionQuestion,
+  PredictionStake,
   PushToken,
   Role,
   RoleTier,
@@ -186,6 +191,7 @@ export interface Database {
       chapter_document_stars: TableDefinition<ChapterDocumentStar>;
       chapter_document_types: TableDefinition<ChapterDocumentType>;
       chapter_documents: TableDefinition<ChapterDocument>;
+      chapter_drive_connections: TableDefinition<ChapterDriveConnection>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
       chapter_goals: TableDefinition<ChapterGoalRow>;
       chapter_group_members: TableDefinition<ChapterGroupMember>;
@@ -247,6 +253,10 @@ export interface Database {
       notifications: TableDefinition<Notification>;
       point_transactions: TableDefinition<PointTransaction>;
       poll_votes: TableDefinition<PollVote>;
+      prediction_answers: TableDefinition<PredictionAnswer>;
+      prediction_markets: TableDefinition<PredictionMarket>;
+      prediction_questions: TableDefinition<PredictionQuestion>;
+      prediction_stakes: TableDefinition<PredictionStake>;
       push_tokens: TableDefinition<PushToken>;
       role_tiers: TableDefinition<RoleTier>;
       roles: TableDefinition<Role>;
@@ -409,6 +419,14 @@ export interface Database {
           p_kinds: string[];
         };
         Returns: AiRun[];
+      };
+      /**
+       * `20261116164304` (#5157) — Google Drive folders to sync or clean up
+       * next, each leased; `returns setof chapter_drive_connections`.
+       */
+      claim_chapter_drive_syncs: {
+        Args: { p_now: string; p_limit: number; p_lease_seconds: number };
+        Returns: ChapterDriveConnection[];
       };
       /**
        * `20261112165050` (#720) — sources that need indexing, each with its
@@ -906,8 +924,32 @@ export interface Database {
         };
         Returns: Task[];
       };
+      /** `20261116135639` (#5133) — pays a settled market, or re-pays a paid one whose winner changed. */
+      pay_prediction_market: {
+        Args: {
+          p_chapter_id: string;
+          p_market_id: string;
+          p_answer_id: string | null;
+          p_unquestioned_only?: boolean;
+        };
+        Returns: PredictionMarket;
+      };
+      /** `20261116135639` (#5133) — one stake, locked on the staker then the market. */
+      place_prediction_stake: {
+        Args: {
+          p_chapter_id: string;
+          p_market_id: string;
+          p_answer_id: string;
+          p_user_id: string;
+          p_amount: number;
+          p_client_message_id: string;
+          p_since: string | null;
+          p_max_stake: number;
+        };
+        Returns: PredictionStake;
+      };
       /**
-       * `20261112170000` (#4314) — a chat window's readable messages, oldest
+       * `20261112170000` (#4314), `kind` since `20261116143425` — a chat window's readable messages, oldest
        * conversation first; one row with a null `message_id` when it holds
        * none, no row when it is gone or its channel is a DM.
        */
@@ -924,6 +966,8 @@ export interface Database {
           created_at: string | null;
           thread_root_id: string | null;
           conversation_at: string | null;
+          /** `20261116143425` (#4915): the message's `chat_messages.kind`. */
+          kind: string | null;
         }[];
       };
       /**
@@ -1274,6 +1318,16 @@ export interface Database {
       unlink_discord_author: {
         Args: { p_chapter_id: string; p_user_id: string };
         Returns: number | null;
+      };
+      /** `20261116135639` (#5133) — refunds every stake; a paid market's payouts are reversed first. */
+      void_prediction_market: {
+        Args: {
+          p_chapter_id: string;
+          p_market_id: string;
+          p_by: string | null;
+          p_before_payout_only?: boolean;
+        };
+        Returns: PredictionMarket;
       };
       /**
        * `20261113040003` (#3735) — delete a PENDING or APPROVED excuse, and an

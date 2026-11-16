@@ -52,7 +52,9 @@ export function envSetting(env: Env, name: string): string | null {
     : null;
 }
 
-function parseServiceAccount(json: string): Record<string, unknown> | null {
+export function parseServiceAccount(
+  json: string,
+): Record<string, unknown> | null {
   try {
     const parsed: unknown = JSON.parse(json);
     if (

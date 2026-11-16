@@ -30,6 +30,7 @@ import {
 } from "@/lib/sentry/options";
 import { readMobileSentryReleaseExtras } from "@/lib/sentry/release.runtime";
 import { startWhatsNewBootRead } from "@/lib/whats-new";
+import { startWhatsNewFresh } from "@/lib/whats-new-fresh";
 
 /**
  * Error reporting for the mobile app (issue #1299), reporting to the
@@ -60,6 +61,13 @@ initMobilePostHog();
  * like an old install's.
  */
 void startWhatsNewBootRead();
+
+/**
+ * Which What's new lines this update brought, worked out once per process
+ * so an update counts even when the notes are never opened on it
+ * (`lib/whats-new-fresh.ts`).
+ */
+void startWhatsNewFresh();
 
 const sentryDsn = mobileSentryDsn();
 if (sentryDsn) {

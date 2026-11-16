@@ -27,6 +27,7 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { ChatSidebarDto, UpdateChatSidebarDto } from '../dtos/chat-sidebar.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * A member's own chat sidebar arrangement (#2877): pins, folded sections,
@@ -55,6 +56,7 @@ export class ChatSidebarController {
   constructor(private readonly sidebarService: ChatSidebarService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({ summary: "The caller's own chat sidebar arrangement" })
   @ApiOkResponse({ type: ChatSidebarDto })
   async getSidebar(

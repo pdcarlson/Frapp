@@ -107,6 +107,28 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+// The agenda and attachments have their own spec (`event-agenda.spec.tsx`);
+// here, what the sheet hands them (#4934).
+vi.mock("@/components/events/event-agenda", () => ({
+  EventMeetingLists: ({
+    lists,
+    canEdit,
+    documentsOn,
+  }: {
+    lists: { agenda: { text: string }[]; attachments: { title: string }[] };
+    canEdit: boolean;
+    documentsOn: boolean | null;
+  }) => (
+    <div
+      data-testid="event-lists"
+      data-can-edit={String(canEdit)}
+      data-documents={String(documentsOn)}
+      data-agenda={lists.agenda.map((item) => item.text).join("|")}
+      data-attachments={lists.attachments.map((item) => item.title).join("|")}
+    />
+  ),
+}));
+
 // The minutes entry has its own spec (`event-minutes.spec.tsx`).
 vi.mock("@/components/meetings/event-minutes", () => ({
   EventMinutes: () => null,
@@ -869,6 +891,37 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     expect(
       screen.getByRole("button", { name: "Delete event" }),
     ).toBeInTheDocument();
+  });
+
+  it("hands the meeting's agenda and attachments to their sections, editable only by an officer with a real answer (#4934)", () => {
+    const withLists = {
+      ...baseEvent,
+      agenda: [{ id: "a1", text: "Treasurer report", done: false }, "junk"],
+      attachments: [
+        { id: "x1", kind: "link", url: "https://a.example", title: "Budget" },
+        { id: "x2", kind: "link", url: "javascript:alert(1)", title: "Bad" },
+      ],
+    };
+    eventQueryState.data = withLists;
+    permissionsState.value = ["members:view"];
+    const { unmount } = renderLive(withLists);
+    const lists = () => screen.getByTestId("event-lists");
+    expect(lists()).toHaveAttribute("data-agenda", "Treasurer report");
+    // A link that isn't http or https is never handed on to be drawn.
+    expect(lists()).toHaveAttribute("data-attachments", "Budget");
+    expect(lists()).toHaveAttribute("data-can-edit", "false");
+    unmount();
+
+    permissionsState.value = ["members:view", "events:update"];
+    const officer = renderLive(withLists);
+    expect(lists()).toHaveAttribute("data-can-edit", "true");
+    officer.unmount();
+
+    // Unanswerable permissions keep the Edit icon, but not these writes.
+    permissionsState.value = undefined;
+    permissionsState.fetchStatus = "paused";
+    renderLive(withLists);
+    expect(lists()).toHaveAttribute("data-can-edit", "false");
   });
 
   it("splits Edit from Delete by their own permissions", () => {

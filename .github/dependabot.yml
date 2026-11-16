@@ -265,6 +265,7 @@ updates:
       - dependency-name: "expo-constants"
       - dependency-name: "expo-crypto"
       - dependency-name: "expo-device"
+      - dependency-name: "expo-document-picker"
       - dependency-name: "expo-file-system"
       - dependency-name: "expo-font"
       - dependency-name: "expo-glass-effect"

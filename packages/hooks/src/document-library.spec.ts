@@ -359,6 +359,8 @@ describe("file type (#3938)", () => {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       kind: "spreadsheet",
       label: "Excel spreadsheet",
+      groupType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
     expect(
       classifyFile({
@@ -369,6 +371,7 @@ describe("file type (#3938)", () => {
       type: "image/jpeg",
       kind: "image",
       label: "Photo",
+      groupType: "image/jpeg",
     });
     expect(
       classifyFile({
@@ -382,6 +385,7 @@ describe("file type (#3938)", () => {
       type: null,
       kind: "other",
       label: "File",
+      groupType: null,
     });
     expect(
       classifyFile({
@@ -401,13 +405,14 @@ describe("file type (#3938)", () => {
       type: "application/x-csv",
       kind: "spreadsheet",
       label: "CSV file",
+      groupType: "text/csv",
     });
     expect(
       classifyFile({
         content_type: "text/plain",
         storage_path: "c/d/1/budget.csv",
-      }).kind,
-    ).toBe("spreadsheet");
+      }),
+    ).toMatchObject({ kind: "spreadsheet", groupType: "text/csv" });
   });
 
   it("names images the viewer can't draw by their type, and legacy formats by theirs", () => {
@@ -425,6 +430,7 @@ describe("file type (#3938)", () => {
       type: "application/vnd.oasis.opendocument.text",
       kind: "word",
       label: "OpenDocument text file",
+      groupType: "application/vnd.oasis.opendocument.text",
     });
     // Every extension the upload allowlist binds is known here too.
     expect(

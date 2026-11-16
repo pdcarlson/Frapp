@@ -142,7 +142,9 @@ export const NotesDraftSheet = forwardRef<
   const { ensureConsent, consentSheet } = useAiConsentGate();
   const reporting = useAiReport();
   const keptName = `meeting-notes:${meetingId}`;
-  const stored = useKeptSheetOpening<KeptNotes>(keptName);
+  const stored = useKeptSheetOpening<KeptNotes>(keptName, {
+    waitsOnSend: true,
+  });
   const fits = stored !== undefined && stored.base === state.notes;
   const opening = fits ? stored : undefined;
   // Typed over notes the server no longer holds: it goes.
@@ -159,8 +161,22 @@ export const NotesDraftSheet = forwardRef<
   const [problem, setProblem] = useState<string | null>(null);
   const [focused, setFocused] = useState(false);
 
+  // Opened while an earlier visit's ask is still out (#5086): it shows what
+  // that visit sent, held as the asking sheet holds it until the ask settles.
   const drafting =
-    state.status === "drafting" || request.isPending || use.isPending;
+    state.status === "drafting" ||
+    request.isPending ||
+    use.isPending ||
+    kept.sendingElsewhere;
+  // That ask landed: the server holds what this sheet shows, as it does after
+  // a send from this visit.
+  const [heardLanding, setHeardLanding] = useState(false);
+  if (kept.landedElsewhere && !heardLanding) {
+    setHeardLanding(true);
+    // What was sent, as the sending visit takes it: the server stores it
+    // trimmed.
+    setBase(notes.trim());
+  }
   // The draft read's `blocked` is as old as that read. What the member just
   // answered on the sheet, or what the server just refused, is newer.
   const [consentNow, setConsentNow] = useState<"agreed" | "required" | null>(
@@ -221,6 +237,7 @@ export const NotesDraftSheet = forwardRef<
   }
 
   async function handleDraft() {
+    if (kept.sendingElsewhere) return;
     const text = notes.trim();
     if (!text && !othersWrote) {
       setProblem(MEETING_NOTES_COPY.empty);
@@ -453,7 +470,9 @@ export const NotesDraftSheet = forwardRef<
               fill
               label={MEETING_NOTES_COPY.stop}
               busy={discard.isPending}
-              disabled={discard.isPending || request.isPending}
+              disabled={
+                discard.isPending || request.isPending || kept.sendingElsewhere
+              }
               onPress={() => void handleStop()}
             />
           ) : waiting ? (

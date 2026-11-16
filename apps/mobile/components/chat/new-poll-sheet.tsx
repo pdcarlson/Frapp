@@ -23,7 +23,7 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  useGuardedSheetRef,
 } from "@/components/sheet-scaffold";
 import { FilterChips } from "@/components/filter-chips";
 import { MoreOptionsRow } from "@/components/more-options-row";
@@ -99,8 +99,11 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const closeSheet = useSheetClose(ref);
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
 
     const [draft, setDraft] = useState<PollDraft>(emptyPollDraft);
     const [showMore, setShowMore] = useState(false);
@@ -188,7 +191,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
 
     return (
       <BottomSheetModal
-        ref={ref}
+        ref={modalRef}
         stackBehavior={SHEET_STACK_BEHAVIOR}
         enableDynamicSizing
         keyboardBehavior="interactive"

@@ -536,7 +536,7 @@ function excuseHue(tokens: SignetTokens, status: string): string {
   }
 }
 
-function TextAction({
+export function TextAction({
   label,
   onPress,
   color,

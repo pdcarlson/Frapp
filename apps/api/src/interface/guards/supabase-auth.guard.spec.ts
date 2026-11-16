@@ -77,6 +77,7 @@ describe('SupabaseAuthGuard', () => {
       const chain: Record<string, unknown> = {};
       chain.select = () => chain;
       chain.eq = () => chain;
+      chain.is = () => chain;
       chain.in = () => chain;
       chain.maybeSingle = () => new Promise(() => undefined);
       return chain;
@@ -504,6 +505,7 @@ describe('SupabaseAuthGuard', () => {
           }
           return chain;
         };
+        chain.is = () => chain;
         chain.maybeSingle = () => usersAnswer();
         return chain;
       });

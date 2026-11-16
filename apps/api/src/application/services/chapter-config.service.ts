@@ -5,6 +5,7 @@ import {
 } from '#domain/repositories/chat.repository.interface';
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -31,6 +32,19 @@ import {
   ROLE_REPOSITORY,
   type IRoleRepository,
 } from '#domain/repositories/role.repository.interface';
+import {
+  MEMBER_REPOSITORY,
+  type IMemberRepository,
+} from '#domain/repositories/member.repository.interface';
+import {
+  ROLE_TIER_REPOSITORY,
+  type IRoleTierRepository,
+} from '#domain/repositories/role-tier.repository.interface';
+import { rankContextFrom } from '#domain/utils/rank-context';
+import {
+  INVITE_PRESIDENT_REFUSAL,
+  inviteRefusal,
+} from '#domain/utils/invite-reach';
 import {
   CHAPTER_CONFIG_REPOSITORY,
   type ChapterWorkflowUpsert,
@@ -251,6 +265,9 @@ export class ChapterConfigService {
     @Inject(CHAPTER_CONFIG_REPOSITORY)
     private readonly configRepo: IChapterConfigRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    @Inject(ROLE_TIER_REPOSITORY)
+    private readonly tierRepo: IRoleTierRepository,
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
     private readonly activation: ActivationService,
@@ -426,6 +443,52 @@ export class ChapterConfigService {
   }
 
   /**
+   * #1830 (Paul, 2026-11-16). The chapter's default invite role follows the
+   * invite rule (`inviteRefusal`) for whoever sets it: never the President's
+   * role or any role carrying `*`, and otherwise only a role ranked below the
+   * setter whose permissions they hold. Invites check it again when they are
+   * made and redeemed, so this keeps the setting from promising what no
+   * invite can deliver.
+   */
+  private async assertDefaultInviteRole(
+    chapterId: string,
+    actorUserId: string,
+    roleId: string,
+  ): Promise<void> {
+    await this.assertRoleBelongsToChapter(chapterId, roleId);
+    const [member, roles, tiers] = await this.callOrThrow(
+      'Failed to read roles for the default invite role',
+      () =>
+        Promise.all([
+          this.memberRepo.findByUserAndChapter(actorUserId, chapterId),
+          this.roleRepo.findByChapter(chapterId),
+          this.tierRepo.findByChapter(chapterId),
+        ]),
+    );
+    const context = rankContextFrom(chapterId, member, roles, tiers);
+    // Case-blind like the uuid lookup above, which `@IsUUID()` lets an
+    // upper-case id through to; an exact match would miss and refuse nothing.
+    const wanted = roleId.toLowerCase();
+    const role = context.roles.find(
+      (candidate) => candidate.id.toLowerCase() === wanted,
+    );
+    const refusal = inviteRefusal(context, role);
+    if (refusal === INVITE_PRESIDENT_REFUSAL) {
+      throw new BadRequestException({
+        code: 'chapter.config.default_invite_role_president',
+        message:
+          'The default invite role cannot be the President role; presidency moves only through Transfer presidency.',
+      });
+    }
+    if (refusal) {
+      throw new ForbiddenException({
+        code: 'chapter.config.default_invite_role_out_of_reach',
+        message: refusal,
+      });
+    }
+  }
+
+  /**
    * #4959. The channel is caller-supplied, so it must be one of this
    * chapter's own, read chapter-first: another chapter's id comes back as not
    * found. It must be a public channel that isn't archived or the audit
@@ -490,8 +553,9 @@ export class ChapterConfigService {
       dto.default_invite_role_id !== existing.default_invite_role_id
     ) {
       if (dto.default_invite_role_id !== null) {
-        await this.assertRoleBelongsToChapter(
+        await this.assertDefaultInviteRole(
           chapterId,
+          actorUserId,
           dto.default_invite_role_id,
         );
       }

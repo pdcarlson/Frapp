@@ -88,7 +88,13 @@ export function useLeaderboard(
 export function usePointsTransactions(options?: {
   userId?: string;
   category?:
-    "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+    | "ATTENDANCE"
+    | "ACADEMIC"
+    | "SERVICE"
+    | "FINE"
+    | "MANUAL"
+    | "STUDY"
+    | "PREDICTION";
   flagged?: boolean;
   before?: string;
   limit?: number;

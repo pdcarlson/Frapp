@@ -49,6 +49,9 @@ describe('ChapterDocumentService', () => {
     document_type: 'Bylaws',
     effective_date: '2026-01-01',
     pinned_at: null,
+    drive_file_id: null,
+    drive_modified_at: null,
+    drive_url: null,
   };
 
   const baseFolder: ChapterDocumentFolder = {
@@ -68,6 +71,8 @@ describe('ChapterDocumentService', () => {
       findByStoragePath: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       delete: jest.fn(),
+      findDriveCopies: jest.fn().mockResolvedValue([]),
+      updateDriveCopy: jest.fn(),
       setPinnedAt: jest.fn(),
       moveToRoot: jest.fn(),
       renameFolder: jest.fn(),
@@ -859,7 +864,7 @@ describe('ChapterDocumentService', () => {
       const result = await service.findById('doc-1', 'ch-1');
 
       expect(result.id).toBe('doc-1');
-      // Inline, as before: the viewer and mobile's in-app browser read it.
+      // Inline, as before: the web viewer reads it.
       expect(result.downloadUrl).toBe(
         'https://storage.supabase.co/signed?token=t',
       );
@@ -906,6 +911,19 @@ describe('ChapterDocumentService', () => {
       await expect(service.delete('doc-x', 'ch-1')).rejects.toThrow(
         NotFoundException,
       );
+    });
+
+    it('refuses a copy of a Google Drive file, which Drive owns (#5157)', async () => {
+      mockDocumentRepo.findById.mockResolvedValue({
+        ...baseDocument,
+        drive_file_id: 'drive-1',
+      });
+
+      await expect(service.delete('doc-1', 'ch-1')).rejects.toThrow(
+        'Remove it in Google Drive',
+      );
+      expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
+      expect(mockDocumentRepo.delete).not.toHaveBeenCalled();
     });
   });
 

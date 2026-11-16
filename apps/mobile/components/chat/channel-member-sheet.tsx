@@ -35,6 +35,7 @@ import {
   SheetScrim,
   TallSheetHeader,
   useSheetBackgroundStyle,
+  useGuardedSheetRef,
   useSheetClose,
   useTallSheetProps,
   SHEET_STACK_BEHAVIOR,
@@ -76,6 +77,9 @@ export const ChannelMemberSheet = forwardRef<
   ChannelMemberSheetProps
 >(function ChannelMemberSheet({ channelId, onOpenProfile }, ref) {
   const closeSheet = useSheetClose(ref);
+  // The thread dismisses it on every blur and channel switch, up or not
+  // (#4229): the ref it holds only reaches a sheet that is up.
+  const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
@@ -83,12 +87,14 @@ export const ChannelMemberSheet = forwardRef<
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       {...tallSheet}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
+      onAnimate={onAnimate}
+      onDismiss={markClosed}
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView

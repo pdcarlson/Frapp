@@ -181,8 +181,9 @@ on:
         type: choice
         options: [auto, patch, minor, major]
       mobile_build:
-        # A choice, not a box: each platform's build spends EAS build quota, so
-        # build only what you mean to ship. Android uploads with the Play
+        # A choice, not a box: each platform's build is another store upload
+        # (and, on iOS, another App Review cycle once released), so build only
+        # what you mean to ship. Android uploads with the Play
         # service-account key EAS has held since 2026-11-05 (#2556) and builds
         # with GOOGLE_SERVICES_JSON (#1826). `auto` lets `mobile-plan` choose
         # per platform: an OTA update when the shipped commit's native inputs
@@ -483,7 +484,8 @@ jobs:
           DEPLOYED_DIR: ${{ github.workspace }}
         run: node trusted/scripts/ci/plan-mobile-release.mjs
 
-  # The store builds: build the SHA that just went live on EAS, upload it to
+  # The store builds: build the SHA that just went live, on GitHub's runners
+  # with `eas build --local` (#5162), upload it to
   # TestFlight and the Play internal track without releasing it, and open the
   # `shipped-builds.json` PR, for the platforms `mobile-plan` names.
   # `_mobile-build.yml`'s header has the rules it enforces and how it fails.
@@ -497,8 +499,8 @@ jobs:
     uses: ./.github/workflows/_mobile-build.yml
     # A called job gets at most what its caller grants. `actions: write` is
     # for the called `snapshot` job alone, which dispatches the migration
-    # snapshot publish; `build`, `record` and `confirm` each grant themselves
-    # `contents: read` only.
+    # snapshot publish; `ios`, `android`, `record`, `confirm` and
+    # `merge-record` each grant themselves `contents: read` only.
     permissions:
       contents: read
       actions: write

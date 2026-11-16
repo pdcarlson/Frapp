@@ -102,7 +102,9 @@ export function SendBackSheet({
   const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
     useSheetVisit(ref);
   const keptName = keptDraft ?? null;
-  const stored = useKeptSheetOpening<SendBackDraft>(keptName);
+  const stored = useKeptSheetOpening<SendBackDraft>(keptName, {
+    waitsOnSend: true,
+  });
   const fits = stored !== undefined && stored.round === submittedAt;
   const opening = fits ? stored : undefined;
   // Kept for an earlier submission: it goes.
@@ -117,6 +119,12 @@ export function SendBackSheet({
   );
   const [problem, setProblem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Opened while an earlier visit's send is still out (#5086): it shows what
+  // that visit sent, locked until the send settles, and closes if it lands.
+  const locked = busy || kept.sendingElsewhere;
+  useEffect(() => {
+    if (kept.landedElsewhere) dismiss();
+  }, [kept.landedElsewhere, dismiss]);
   const [focused, setFocused] = useState(false);
   const sending = useRef(false);
 
@@ -125,7 +133,7 @@ export function SendBackSheet({
   }, []);
 
   const submit = async () => {
-    if (sending.current) return;
+    if (sending.current || kept.sendingElsewhere) return;
     const refused = sendBackProblem(reason);
     if (refused) {
       setProblem(refused);
@@ -183,11 +191,11 @@ export function SendBackSheet({
           onCancel={() => {
             // Held while a send runs: Cancel can't call the write back, and
             // giving the draft up here would lose it if the write fails.
-            if (sending.current) return;
+            if (sending.current || kept.sendingElsewhere) return;
             kept.clear();
             dismiss();
           }}
-          cancelDisabled={busy}
+          cancelDisabled={locked}
         />
         <Text style={styles.subtitle}>
           {title} goes back to its assignee with your reason.
@@ -201,7 +209,7 @@ export function SendBackSheet({
               onChangeText={setReason}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
-              editable={!busy}
+              editable={!locked}
               autoFocus
               placeholder="The floor is still sticky"
               placeholderTextColor={tokens.color.text.muted}
@@ -224,7 +232,7 @@ export function SendBackSheet({
               value={askPhoto}
               onValueChange={setAskPhoto}
               accessibilityLabel="Ask for a photo next time"
-              disabled={busy}
+              disabled={locked}
             />
           </View>
         ) : null}
@@ -238,8 +246,8 @@ export function SendBackSheet({
         <SheetPrimaryButton
           label={TASK_ACTION_LABELS.reject}
           onPress={() => void submit()}
-          disabled={busy}
-          busy={busy}
+          disabled={locked}
+          busy={locked}
           accent={accent}
           onAccent={tokens.color.gold.onHouse}
         />

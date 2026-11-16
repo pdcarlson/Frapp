@@ -24,6 +24,11 @@ export interface ChatWindowMessage {
   threadRootId: string | null;
   /** When its conversation started: its root's time for a reply, else its own. */
   conversationAt: string;
+  /**
+   * The message's `chat_messages.kind`: `text`, `announcement` or
+   * `imported` (#4915). Missing reads as `text`.
+   */
+  kind?: string;
 }
 
 export interface ChatWindowInput {
@@ -86,14 +91,44 @@ export function chatSourceTitle(channelName: string): string {
 /**
  * One message as a line of a passage. The author's name is part of the text
  * so a passage reads as the conversation did ("Sam: who has the van keys?",
- * "Lee: I do"); a reply says it is one.
+ * "Lee: I do"), and the line says what kind of message it was, so the model
+ * can weigh it (#4915, #5170): an announcement an officer posted, a reply in
+ * a thread, a message imported from Discord. Paul's rule: give the model the
+ * context, and let it weigh an announcement over the talk around it, rather
+ * than rank it in code.
  */
 function lineOf(message: ChatWindowMessage): string {
-  const name = message.senderName.trim() || UNNAMED_AUTHOR;
-  const text = normalizeCorpusText(message.content).replace(/\n{2,}/g, '\n');
-  return message.threadRootId
-    ? `${name}, replying in a thread: ${text}`
-    : `${name}: ${text}`;
+  // One message is one line, and the part before the first ": " is the
+  // indexer's words: the name loses the characters that separate a name
+  // from its fact, and the message its line breaks, so no member can write
+  // a line that reads as another author's, or as an announcement they did
+  // not post (#4915). The same rule as the live tools' lines
+  // (`conversation-lines.ts` `messageSource`).
+  const name =
+    message.senderName
+      .replace(/[:;.,|()[\]]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() || UNNAMED_AUTHOR;
+  const text = normalizeCorpusText(message.content).replace(/\s+/g, ' ').trim();
+  const how = chatLineKind(message.kind, message.threadRootId !== null);
+  return how ? `${name}, ${how}: ${text}` : `${name}: ${text}`;
+}
+
+/**
+ * What a chat line says about how a message was written, or null for an
+ * ordinary message. Shared by the index and the live chat tools, so a
+ * message reads the same whichever way the model meets it.
+ */
+export function chatLineKind(
+  kind: string | null | undefined,
+  inThread: boolean,
+): string | null {
+  const parts = [
+    kind === 'announcement' ? 'posting an announcement' : null,
+    kind === 'imported' ? 'in history imported from Discord' : null,
+    inThread ? 'replying in a thread' : null,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(', ') : null;
 }
 
 /**

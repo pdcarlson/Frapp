@@ -60,6 +60,14 @@ class FakeChapterGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<RequestContext>();
     req.appUser = { id: USER_ID };
     req.chapterId = CHAPTER_ID;
+    // As a read verified locally leaves it (#5043): claims, no Auth user.
+    if (req.headers['x-test-local-session']) {
+      req.locallyVerifiedAuthId = 'auth-1';
+      req.jwtClaims = {
+        sub: 'auth-1',
+        app_metadata: { provider: 'apple' },
+      } as RequestContext['jwtClaims'];
+    }
     return true;
   }
 }
@@ -145,6 +153,15 @@ class FeatureEventTestController {
   })
   ownChapter() {
     return { chapter_id: OTHER_CHAPTER_ID };
+  }
+
+  @Post('sign-in-method')
+  @UseGuards(FakeChapterGuard)
+  @FeatureEvent('chapter-onboarded', ({ signInMethod }: FeatureEventInput) => ({
+    sign_in_method: signInMethod ?? null,
+  }))
+  signInMethod() {
+    return {};
   }
 
   @Post('describer-throws')
@@ -236,6 +253,21 @@ describe('FeatureEventInterceptor (#593)', () => {
       properties: { feature: 'tasks', posted_to_chat: true },
       app: 'web',
     });
+  });
+
+  it("reads the sign-in method from the token's claims on a session verified locally (#5043)", async () => {
+    await request(server())
+      .post('/v1/fe/sign-in-method')
+      .set('x-test-local-session', '1')
+      .expect(201);
+
+    expect(track).toHaveBeenCalledWith(
+      'chapter-onboarded',
+      USER_ID,
+      expect.objectContaining({
+        properties: expect.objectContaining({ sign_in_method: 'apple' }),
+      }),
+    );
   });
 
   it('labels a native build mobile', async () => {

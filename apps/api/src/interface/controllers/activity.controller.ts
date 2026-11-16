@@ -55,6 +55,7 @@ import {
   SetActivityLinkStateDto,
   SnoozeActivityItemDto,
 } from '../dtos/activity.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * The week a client named for the standing, refused when it names anything
@@ -88,6 +89,7 @@ export class ActivityController {
   ) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({
     summary: 'Get what needs the caller and what they made',
     description:

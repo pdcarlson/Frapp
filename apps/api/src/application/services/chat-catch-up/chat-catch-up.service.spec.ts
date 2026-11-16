@@ -915,6 +915,23 @@ describe('ChatCatchUpService', () => {
       expect(read.chatOff).toBe(false);
     });
 
+    it('keeps what kind each message is, so a line can name an announcement (#4915)', async () => {
+      const { service } = build({ yes: ['sam'] });
+      const read = await service.readableAmong(
+        { chapterId: CHAPTER, userId: READER },
+        [
+          row('sam', 'Dues are due November 20.', { kind: 'announcement' }),
+          row('sam', 'old server days', { kind: 'imported' }),
+          row('sam', 'Bus leaves at six.'),
+        ],
+      );
+      expect(read.messages.map((message) => message.kind)).toEqual([
+        'announcement',
+        'imported',
+        undefined,
+      ]);
+    });
+
     it('reads nothing for no rows', async () => {
       const { service, consent } = build({});
       expect(

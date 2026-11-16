@@ -10,6 +10,7 @@ describe("pointCategoryLabel", () => {
       "Service",
       "Fine",
       "Manual",
+      "Predictions",
     ]);
   });
 

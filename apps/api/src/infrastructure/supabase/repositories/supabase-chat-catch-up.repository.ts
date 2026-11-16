@@ -19,7 +19,7 @@ import { SupabaseQueryError } from '../supabase-query-error';
  * filters below is not returned.
  */
 const COLUMNS =
-  'id, sender_id, content, created_at, thread_root_id, mentions, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id, type, is_audit_log)';
+  'id, sender_id, content, created_at, thread_root_id, mentions, kind, chat_channels!chat_messages_channel_id_fkey!inner(chapter_id, type, is_audit_log)';
 
 const WRITTEN_KINDS = WRITTEN_MESSAGE_KINDS;
 
@@ -35,6 +35,7 @@ function toMessage(row: Row): CatchUpMessageRow {
     created_at: row.created_at,
     thread_root_id: row.thread_root_id,
     mentions: row.mentions,
+    kind: row.kind,
   };
 }
 
@@ -209,7 +210,7 @@ export class SupabaseChatCatchUpRepository implements IChatCatchUpRepository {
     // message deleted since.
     const root = await this.supabase
       .from('chat_messages')
-      .select(`${COLUMNS}, kind, is_deleted`)
+      .select(`${COLUMNS}, is_deleted`)
       .eq('channel_id', input.channelId)
       .eq('chat_channels.chapter_id', input.chapterId)
       .in('chat_channels.type', CHAPTER_CHANNEL_TYPES)

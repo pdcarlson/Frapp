@@ -29,7 +29,7 @@ const PIN = { version: "24.8.0", before: "2026-10-01" };
 
 // ── One version, read from CI's install (#3124) ─────────────────────────────
 
-test("reads the version and cutoff from CI's one eas-cli install line", () => {
+test("reads the version and cutoff from CI's eas-cli install line", () => {
   assert.deepEqual(parseEasCliPin(step(CI_LINE)), PIN);
   const real = readEasCliPin();
   assert.match(real.version, /^\d+\.\d+\.\d+$/, "the real workflow parses");
@@ -37,14 +37,27 @@ test("reads the version and cutoff from CI's one eas-cli install line", () => {
 });
 
 // An unparsed install must stop the script: falling back would install `latest`.
-test("refuses a missing, non-exact, unfrozen or duplicated install rather than guessing", () => {
-  assert.throws(() => parseEasCliPin("jobs: {}\n"), /found 0/);
-  assert.throws(() => parseEasCliPin(step(CI_LINE.replace("24.8.0", "latest"))), /found 0/);
-  assert.throws(() => parseEasCliPin(step(CI_LINE.replace("24.8.0", "^24.8.0"))), /found 0/);
-  assert.throws(() => parseEasCliPin(step(CI_LINE.replace(" --before=2026-10-01", ""))), /found 0/);
-  assert.throws(() => parseEasCliPin(`${step(CI_LINE)}\n${step(CI_LINE)}`), /found 2/);
+test("refuses a missing, non-exact or unfrozen install rather than guessing", () => {
+  assert.throws(() => parseEasCliPin("jobs: {}\n"), /found none/);
+  assert.throws(() => parseEasCliPin(step(CI_LINE.replace("24.8.0", "latest"))), /found none/);
+  assert.throws(() => parseEasCliPin(step(CI_LINE.replace("24.8.0", "^24.8.0"))), /found none/);
+  assert.throws(() => parseEasCliPin(step(CI_LINE.replace(" --before=2026-10-01", ""))), /found none/);
   // A comment naming the command is not the install.
-  assert.throws(() => parseEasCliPin(`      # run: ${CI_LINE}\n`), /found 0/);
+  assert.throws(() => parseEasCliPin(`      # run: ${CI_LINE}\n`), /found none/);
+});
+
+// Each store build job installs eas-cli itself (#5162): the same line twice is
+// one pin, and two that differ would split the jobs across versions.
+test("takes the same line in each build job as one pin, and refuses two that differ", () => {
+  assert.deepEqual(parseEasCliPin(`${step(CI_LINE)}\n${step(CI_LINE)}`), PIN);
+  assert.throws(
+    () => parseEasCliPin(`${step(CI_LINE)}\n${step(CI_LINE.replace("24.8.0", "24.9.0"))}`),
+    /installs eas-cli 2 times, not all the same/,
+  );
+  assert.throws(
+    () => parseEasCliPin(`${step(CI_LINE)}\n${step(CI_LINE.replace("2026-10-01", "2026-10-02"))}`),
+    /not all the same/,
+  );
 });
 
 test("installs with CI's flags into the pin's own gitignored directory, never globally", () => {

@@ -27,6 +27,7 @@ import {
   sheetFieldStyles,
   TallSheetHeader,
   useSheetBackgroundStyle,
+  useGuardedSheetRef,
   useSheetClose,
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
@@ -56,6 +57,8 @@ export const ScheduledMessagesSheet = forwardRef<
   { channelId: string | null; threadRootId?: string | null }
 >(function ScheduledMessagesSheet({ channelId, threadRootId = null }, ref) {
   const closeSheet = useSheetClose(ref);
+  // Its host dismisses it on every blur, up or not (#5059): the ref it holds only reaches a sheet that is up.
+  const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens, useChapterBranding().accent);
   const backgroundStyle = useSheetBackgroundStyle();
@@ -63,7 +66,9 @@ export const ScheduledMessagesSheet = forwardRef<
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
+      onAnimate={onAnimate}
+      onDismiss={markClosed}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       {...tallSheet}
       backgroundStyle={backgroundStyle}

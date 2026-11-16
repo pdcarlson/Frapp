@@ -53,6 +53,13 @@ export const SystemPermissions = {
   POLLS_CREATE: 'polls:create',
   POLLS_VIEW_ALL: 'polls:view_all',
 
+  // Predictions (#5133, `spec/behavior/predictions.md` § Module and
+  // permissions): any member asks; the exec board confirms, re-settles and
+  // voids. Migration `20261116135639_predictions.sql` gives existing
+  // chapters the same.
+  PREDICTIONS_CREATE: 'predictions:create',
+  PREDICTIONS_MANAGE: 'predictions:manage',
+
   TASKS_MANAGE: 'tasks:manage',
 
   // Meeting minutes (#4312, `spec/behavior/meetings.md` § Permissions).
@@ -187,6 +194,7 @@ const MEMBER_DEFAULT_PERMISSIONS = [
   SystemPermissions.BACKWORK_UPLOAD,
   SystemPermissions.SERVICE_LOG,
   SystemPermissions.POLLS_CREATE,
+  SystemPermissions.PREDICTIONS_CREATE,
   // What any member could do in recruitment before it had permissions
   // (#4070); a chapter tightens it from here.
   ...RUSH_MEMBER_PERMISSIONS,
@@ -233,6 +241,7 @@ export const STARTING_ROLE_TIERS = [
       SystemPermissions.ROLES_MANAGE,
       SystemPermissions.CHAPTER_CONFIG_VIEW,
       SystemPermissions.CHAPTER_CONFIG_MANAGE,
+      SystemPermissions.PREDICTIONS_MANAGE,
       SystemPermissions.AI_USE,
       // The exec board writes minutes (`meetings.md` § Permissions); migration
       // `20261112165010_meetings.sql` gives existing chapters' top tier the same.

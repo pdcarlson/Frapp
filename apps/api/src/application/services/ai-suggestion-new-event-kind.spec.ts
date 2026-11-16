@@ -1,5 +1,6 @@
 import { NewEventSuggestionKind } from './ai-suggestion-new-event-kind';
 import type { EventService } from './event.service';
+import type { EventTypeService } from './event-type.service';
 
 const CHAPTER = '11111111-1111-4111-8111-111111111111';
 const OFFICER = '22222222-2222-4222-8222-222222222222';
@@ -7,7 +8,12 @@ const OFFICER = '22222222-2222-4222-8222-222222222222';
 const MADE = '33333333-3333-4333-8333-333333333333';
 const SERIES = 'FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;COUNT=13;TZID=America/New_York';
 
-function build(made: { id: string; created_by: string } | null = null) {
+const TYPE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9';
+
+function build(
+  made: { id: string; created_by: string } | null = null,
+  typeIds: string[] = [TYPE],
+) {
   const events = {
     create: jest.fn(async () => ({ id: 'event-1' })),
     findById: jest.fn(async () => {
@@ -15,8 +21,14 @@ function build(made: { id: string; created_by: string } | null = null) {
       return made;
     }),
   };
+  const eventTypes = {
+    list: jest.fn(async () => typeIds.map((id) => ({ id }))),
+  };
   return {
-    kind: new NewEventSuggestionKind(events as unknown as EventService),
+    kind: new NewEventSuggestionKind(
+      events as unknown as EventService,
+      eventTypes as unknown as EventTypeService,
+    ),
     events,
   };
 }
@@ -28,6 +40,8 @@ const proposal = (extra: Record<string, unknown> = {}) => ({
   start_time: '2026-11-18T00:00:00.000Z',
   end_time: '2026-11-18T01:00:00.000Z',
   point_value: null,
+  points_from: null,
+  event_type_id: null,
   is_mandatory: false,
   recurrence_rule: null,
   ...extra,
@@ -168,15 +182,78 @@ describe('NewEventSuggestionKind', () => {
     });
   });
 
-  it("passes a points value only when one was said, leaving the service's default otherwise", async () => {
+  it('passes the points and the matched event type to the service', async () => {
     const { kind, events } = build();
+    const type = TYPE;
     await kind.commit({
       chapterId: CHAPTER,
       userId: OFFICER,
-      payload: proposal({ point_value: 20 }),
+      payload: proposal({ point_value: 20, event_type_id: type }),
     });
     expect(events.create).toHaveBeenCalledWith(
-      expect.objectContaining({ point_value: 20 }),
+      expect.objectContaining({ point_value: 20, event_type_id: type }),
     );
+  });
+
+  it('makes the event without a type deleted since it was proposed', async () => {
+    const { kind, events } = build(null, []);
+    await kind.commit({
+      chapterId: CHAPTER,
+      userId: OFFICER,
+      payload: proposal({ point_value: 20, event_type_id: TYPE }),
+    });
+    expect(events.create).toHaveBeenCalledWith(
+      expect.not.objectContaining({ event_type_id: expect.anything() }),
+    );
+  });
+
+  describe('points nobody chose (Paul, 2026-11-16)', () => {
+    it('will not be accepted without points', () => {
+      const { kind } = build();
+      expect(() => kind.assertAcceptable(proposal())).toThrow(
+        expect.objectContaining({
+          response: expect.objectContaining({
+            code: 'ai.suggestion.incomplete',
+          }),
+        }),
+      );
+      expect(() =>
+        kind.assertAcceptable(proposal({ point_value: 0 })),
+      ).not.toThrow();
+    });
+
+    it('takes points typed on the card, and drops where copied points came from', () => {
+      const { kind } = build();
+      const copied = proposal({
+        point_value: 10,
+        points_from: { kind: 'type', name: 'Chapter meeting' },
+      });
+      expect(kind.applyEdits(copied, { point_value: 10 })).toMatchObject({
+        point_value: 10,
+        points_from: { kind: 'type', name: 'Chapter meeting' },
+      });
+      expect(kind.applyEdits(copied, { point_value: 0 })).toMatchObject({
+        point_value: 0,
+        points_from: null,
+      });
+      expect(() => kind.applyEdits(copied, { point_value: -1 })).toThrow();
+    });
+
+    it('keeps where copied points came from, and drops a malformed one', () => {
+      const { kind } = build();
+      expect(
+        kind.normalizeProposal(
+          proposal({ points_from: { kind: 'type', name: 'Social' } }),
+        ),
+      ).toMatchObject({ points_from: { kind: 'type', name: 'Social' } });
+      expect(
+        kind.normalizeProposal(
+          proposal({
+            points_from: { kind: 'guess', name: 'x' },
+            event_type_id: 'nope',
+          }),
+        ),
+      ).toMatchObject({ points_from: null, event_type_id: null });
+    });
   });
 });

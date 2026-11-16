@@ -14,7 +14,7 @@ before you pick up a phone.
 
 - **The builds.** Run it on the **0.13.0** store builds (TestFlight and the Play internal track),
   which come from the first **Deploy production** run with a mobile build after #4763 merged.
-  `app.json` moved to 0.13.0 with #4763 (2026-11-13), so the 0.12.0 builds (iOS 21, Android 13)
+  `app.json` moved to 0.13.0 with #4763 (2026-11-13), so the 0.12.0 builds (iOS 22 to 24, Android 13 to 16; iOS 21 never reached TestFlight, #4673)
   stop receiving over-the-air updates then and miss everything merged after it. Before that,
   `app.json` moved to 0.12.0 when #4472 merged (2026-11-12 16:21Z), which is why 0.11.0 builds
   miss rows 13 (#4516), 16 (#4519) and 19 (#4526).

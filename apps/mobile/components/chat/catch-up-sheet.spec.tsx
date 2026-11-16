@@ -101,7 +101,9 @@ function render(): ReactTestRenderer {
   return tree;
 }
 const sheet = (tree: ReactTestRenderer) =>
-  tree.root.findAll((node) => (node.type as unknown) === "BottomSheetModal")[0]!;
+  tree.root.findAll(
+    (node) => (node.type as unknown) === "BottomSheetModal",
+  )[0]!;
 const byLabel = (tree: ReactTestRenderer, label: string) =>
   tree.root.findAll(
     (node) =>
@@ -136,7 +138,12 @@ function summary(over: Partial<ChatCatchUp> = {}): ChatCatchUp {
     reason: null,
     points: [
       POINT,
-      { ...POINT, kind: "decision", text: "Formal is April 12.", message_id: "m8" },
+      {
+        ...POINT,
+        kind: "decision",
+        text: "Formal is April 12.",
+        message_id: "m8",
+      },
     ],
     messages_read: 60,
     messages_total: 60,
@@ -157,6 +164,8 @@ const done = (over?: Partial<ChatCatchUp>) => ({
 });
 async function start(tree: ReactTestRenderer, scope: CatchUpScope) {
   await act(async () => catchUp.start(scope));
+  // What gorhom reports as `present()` starts bringing the sheet up.
+  act(() => sheet(tree).props.onAnimate(-1, 0));
   return tree;
 }
 function show(tree: ReactTestRenderer, current: unknown) {
@@ -243,7 +252,12 @@ describe("Catch me up", () => {
 
   it("holds its place while it works", async () => {
     const tree = await start(render(), CHANNEL);
-    show(tree, { channelId: "c1", phase: "working", summary: null, failure: null });
+    show(tree, {
+      channelId: "c1",
+      phase: "working",
+      summary: null,
+      failure: null,
+    });
     expect(screenText(tree)).toContain(CHAT_CATCH_UP_COPY.working);
   });
 
@@ -308,6 +322,23 @@ describe("Catch me up", () => {
     expect(hooks.reset).toHaveBeenCalledTimes(1);
     expect(catchUp.active).toBe(false);
     void tree;
+  });
+
+  it("leaves the sheet alone on a channel switch when it was never opened (#5059)", async () => {
+    const tree = render();
+    act(() => tree.update(screen("c2")));
+    expect(modal.dismiss).not.toHaveBeenCalled();
+    // gorhom would have wedged on that dismiss, and the next present drawn
+    // nothing: the next Catch me up still opens.
+    await act(async () => catchUp.start({ ...CHANNEL, channelId: "c2" }));
+    expect(modal.present).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a sheet swiped away alone on the next channel switch (#5059)", async () => {
+    const tree = await start(render(), CHANNEL);
+    act(() => sheet(tree).props.onDismiss());
+    act(() => tree.update(screen("c2")));
+    expect(modal.dismiss).not.toHaveBeenCalled();
   });
 
   it("drops the summary, and any request, when the channel changes under it", async () => {

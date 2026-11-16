@@ -35,7 +35,7 @@ import type {
  * behaviour.
  */
 const ROLE_DESCRIPTION =
-  "Role name to assign. Omit to use the chapter's configured default invite role.";
+  "Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role.";
 
 export class CreateInviteDto {
   @ApiPropertyOptional({ description: ROLE_DESCRIPTION })

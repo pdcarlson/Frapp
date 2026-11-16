@@ -30,6 +30,8 @@ const EVENT: EventDetail = {
   },
   description: null,
   notes: null,
+  agenda: [],
+  attachments: [],
   check_in_zone_name: null,
   event_type_id: null,
   created_by: null,

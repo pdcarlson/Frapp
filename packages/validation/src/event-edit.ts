@@ -264,7 +264,7 @@ export interface EventEditStored {
 
 /**
  * The form's values, already checked. A key a form leaves out is a field it
- * doesn't edit (the phone has no notes or zone fields; web has no check-in
+ * doesn't edit (the phone has no zone field; web has no check-in
  * window), and is never sent.
  */
 export interface EventEditValues {

@@ -147,6 +147,7 @@ export function useAcceptAiSuggestion() {
       points,
       eventId,
       newEventId,
+      newEventPoints,
     }: {
       id: string;
       task?: TaskSuggestionEdits;
@@ -162,10 +163,17 @@ export function useAcceptAiSuggestion() {
        * makes nothing.
        */
       newEventId?: string;
+      /**
+       * For an event Ask proposed with no points (#5148): the points typed
+       * into the card's empty field.
+       */
+      newEventPoints?: number;
     }): Promise<AiSuggestionDecision> => {
       let body;
       if (newEventId) body = { new_event: { event_id: newEventId } };
-      else if (eventId) body = { event: { event_id: eventId } };
+      else if (newEventPoints !== undefined) {
+        body = { new_event: { point_value: newEventPoints } };
+      } else if (eventId) body = { event: { event_id: eventId } };
       else body = { ...(task ? { task } : {}), ...(points ? { points } : {}) };
       const result = await client.POST("/v1/ai/suggestions/{id}/accept", {
         params: { path: { id } },

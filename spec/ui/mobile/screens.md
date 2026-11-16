@@ -327,7 +327,7 @@ A viewer who can create events (`events:create`, plus the `members:view` the eve
 The + opens the New event sheet (`components/events/new-event-sheet.tsx`, no Canvas screen; owner ask 2026-11-06): name, Starts and Ends as one grouped field the way Calendar sets them (day and time from the platform's own pickers, `@react-native-community/datetimepicker`: the compact pickers on iOS, the system date and time dialogs on Android), and a place, as `/event` creates events.
 A hand-drawn grid was tried first and dropped the same day at the owner's word.
 Moving the start moves the end with it.
-Who's coming by role, points, how many minutes early check-in opens (default 10, #3703), Repeat and a description sit behind More options; only the check-in zone stays on the web editor.
+Who's coming by role, points, how many minutes early check-in opens (default 10, #3703), Repeat, a description and notes (#4934) sit behind More options; only the check-in zone stays on the web editor.
 Checks run on Create, not per keystroke, and refuse a start that has passed While "This time last year" has events waiting for this officer, one row at the foot of the screen (`components/events/suggested-events-entry.tsx`, "2 events from this time last year") opens the Suggested list (2026-11-12, #3930).
 
 ### s07 Event detail
@@ -337,7 +337,7 @@ Route: `(app)/event-details.tsx`.
 Live — reads an `id` param; **filename contract, never rename**.
 No RSVP control: no RSVP model exists server-side ([`../../behavior/events.md`](../../behavior/events.md)), so the drawn row is omitted.
 It used to render disabled; removed under Guideline 2.1 (#2300), and returns with the endpoint (#1035).
-An INTERNAL NOTES section renders below DETAILS when the event carries meeting minutes (#1159), matching web's `event-detail-sheet.tsx` label — same terms as DETAILS, no extra client-side gate (neither field is actually role-scoped server-side despite the spec's claim — #1463).
+AGENDA and ATTACHMENTS sit below DETAILS, then the event's notes, labeled NOTES (MEETING MINUTES while the meetings module is off), as web's sheet labels them; every member the event invites reads all three, so none is called internal (#4934, [`events.md` § Agenda and attachments](../../behavior/events.md#agenda-and-attachments)). An `events:update` holder edits the agenda and attachments in place on this screen; the New event and Edit event sheets carry a Notes field under More options.
 An occurrence of a repeating series lists the series' other upcoming dates under its cadence ("EVERY SUNDAY"), each opening that occurrence (#3707), since the list draws a series once; an occurrence renamed on its own carries its name there.
 **Editing:** a viewer with `events:update` (plus `members:view`) gets a pencil in the back row for any event, not only their own; it opens the New event sheet as "Edit event", filled in, with Delete event at its foot for `events:delete`.
 A repeating event asks on save, in the platform alert, "This event only" or "All upcoming events" (a Repeat change is always the series; an event already under way edits and deletes only itself, since a series write never reaches a started event; an occurrence whose parent can't be read edits only itself but still asks on delete, which needs no parent; an "All upcoming events" save the server refuses says what to do instead and keeps Save);
@@ -394,8 +394,8 @@ The drawn payment-plan link, payment-method sub-labels and receipts line are omi
 Route: `(app)/documents.tsx`.
 
 Live — real folders and documents; web's search, Uploaded by, Date added, File type, Pinned and Starred filters and sort, run by the same shared code over the whole library ([`chapter-docs.md` § Search](../../behavior/chapter-docs.md#search), #3938), behind a "Sort & filter" chip that opens a panel of chip rows;
-rows read "Uploaded Aug 12 by … · folder · type"; PINNED and STARRED cards above the list on All, folder chips ordered pinned, starred, then the rest, and a long press on a chip, card or row opening a sheet with Star, Pin for the chapter (`chapter_docs:manage`) and, on a file, Delete document after a confirm (`chapter_docs:manage`) ([`chapter-docs.md` § Pinned and starred](../../behavior/chapter-docs.md#pinned-and-starred), #3934);
-opens the signed `downloadUrl` in the system browser.
+rows read "Uploaded Aug 12 by … · folder · type"; PINNED and STARRED cards above the list on All, folder chips ordered pinned, starred, then the rest, and a long press on a chip, card or row opening a sheet with Star, Pin for the chapter (`chapter_docs:manage`) and, on a file, Delete document after a confirm (`chapter_docs:manage`) ([`chapter-docs.md` § Pinned and starred](../../behavior/chapter-docs.md#pinned-and-starred), #3934); a copy of a file in the chapter's Google Drive folder reads "From Google Drive, added Aug 12 · …" and has no Delete document, since Drive owns it ([`chapter-docs.md` § Google Drive folder](../../behavior/chapter-docs.md#google-drive-folder), #5157; connecting the folder is web only);
+a tap downloads the file and presents the system share sheet, to save it to Files or open it in an app that reads it, never opening it as a page ([`chapter-docs.md` § Two links](../../behavior/chapter-docs.md#two-links-inline-and-saved), #4409).
 A List / Grid switch at the title row's trailing end ([`components.md` § Segmented control](../design-system/components.md), #4175) lays the files out two to a line as tiles, each a panel naming the file's type over its title and the row's meta line, wearing its pin and star, with the row's tap and long press; an upload in flight stays a row above them.
 The floating create button (Upload document) opens s21, drawn only for a viewer holding `chapter_docs:upload`.
 Upload closes s21 at once: the upload heads the list as a row with its title and a gray "Uploading…" until the filed document arrives in the list's order (Name A–Z by default, so not necessarily the same slot, since #3938), or "Didn't upload.
@@ -488,6 +488,9 @@ A device that would open the notes asks first, waiting a few seconds at most; wh
 Versions are compared, not a yes or no, because web deploys at once and the phone updates later.
 Showing the notes, or opening the What's new screen, tells the account.
 Offline or with no answer, the device goes by its own marker as before, so nothing ever opens twice on one device; the no-show cases above record without a dot.
+**The latest update's lines stand out** (Paul, 2026-11-16: on a big day of changes, see what is new since your last update): in the sheet and on the screen, the lines this update brought that the update before it didn't have are semibold in the foreground color, and a caption under the entry's title says "Lines in bold came with your latest update."
+Each phone remembers the newest entry as its last update had it (`lib/whats-new-fresh.ts`, worked out once per launch; the rule is `nextReleaseNoteSnapshot` in `@repo/validation`, shared with the web), so the marks are per device and last until the next update with news, however often the notes are opened.
+An entry whose every line is new marks none, since its date already says it is new; a phone with nothing remembered yet (a fresh install, or the first launch with this) marks nothing; a reword alone isn't marked (one shipped with new lines is, since nothing tells the two apart), and a marked line keeps its mark when reworded.
 Web opens it by itself too, by the same rule (2026-11-09, [#3943](https://github.com/pdcarlson/Frapp/issues/3943); this line said web didn't, for want of a "you updated" moment, until Paul asked for it there: the moment is a newer entry in the list): [web dashboard § What's new](../web-dashboard/README.md#whats-new).
 Deploy production warns when a release ships something members could notice without telling them ([`ci-cd.md` § How Deployments Are Gated](../../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated)); how to write an entry, and why a same-day entry only grows, is the header of `packages/validation/src/release-notes.ts`.
 The push row is the drawn switch, showing the device's notification settings: on only when the OS will show a push (on Android 13+ a granted permission with the app's notifications blocked reads off, and on any Android so does its push channel, "Chapter notifications", switched off), re-read on every foreground.
@@ -522,11 +525,11 @@ Nothing sits under the field; while the beta diagnostics window is on, one capti
 Whether a member has Ask is the server's answer (`lib/ai/availability.ts`); without it nothing is drawn and `ask.tsx` goes to Chat home ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).
 Web's twin is the Ask card over the chat (the Ask panel until #4702), and both read `ASK_COPY`.
 Draws no Cancel word: its header's X and the grabber are the dismissal (the grabber and the scrim were, as drawn, until #4702 made it a tall sheet).
-**A request** (2026-11-12, #718, [`../../behavior/ai.md` § Asking Frapp to do something](../../behavior/ai.md#asking-frapp-to-do-something)) typed in the same field comes back as a card in the thread (`components/ask/ask-proposal.tsx`) saying exactly what would happen and to whom, with Cancel, Edit and Confirm; every card in the thread stays live.
-Edit (#5117) opens New event (filled in from the card, More options open) on an event card, the New task sheet on a task card, and turns a points card's amount and reason into fields; a series adds a "Repeats" row written out in full.
+**A request** (2026-11-12, #718, [`../../behavior/ai.md` § Asking Frapp to do something](../../behavior/ai.md#asking-frapp-to-do-something)) typed in the same field comes back as a card in the thread (`components/ask/ask-proposal.tsx`) saying exactly what would happen and to whom, with a ··· menu (Dismiss, Report this) in its top line and Edit beside one named action ("Create event", "Give 5 points"); every card in the thread stays live (changed in #5148 by pdcarlson, 2026-11-16: until then Cancel, Edit and Confirm). Details are rows led by small marks, an event's day sits in a date tile, and an event whose points could not be filled shows an outlined points field the action waits on.
+Edit (#5117) opens New event (filled in from the card, More options open) on an event card, the New task sheet on a task card, and turns a points card's amount and reason into fields; a series adds a repeat row ("Every Sunday until February 7, 2027", "13 times" under it).
 A points card lists its members (folded behind Show when more than five), each with a remove control, and Add a member opens the roster in a tall sheet with a search field; "Which event?" is a list of the recent events to pick from.
 A task card's who and when open the New task sheet (s19) on the proposal, and Confirm opens it when either is missing.
-After Confirm or Cancel the card becomes a receipt in the same frame: what it was about, one line saying what was done (with how many were skipped when only some went through), and a link to Tasks or Events.
+After the action or Dismiss the card stays in the same frame, greyed (struck through when dismissed), under one line saying what was done (with how many were skipped when only some went through), and a link to Tasks or to the event itself (#5148).
 The members an officer left on a points card are kept through a close and reopen.
 
 ### Minutes
@@ -591,21 +594,23 @@ The drawn "Add photo proof" row, photos only (`lib/more/service-proof.ts`, on th
 One uploaded for a create that then failed is kept for the retry; given up after that, it stays in the bucket until an orphan sweep exists ([#2197](https://github.com/pdcarlson/Frapp/issues/2197)).
 A held path the API turns down is dropped, so the next Submit uploads again, and the host mounts a fresh sheet per chapter.
 The row reads "optional" until the API refuses an entry for want of proof (`wf_hours_receipt`, which a member can't read beforehand; the sheet matches the refusal's `service_entry.receipt_required` code), then "required" for the visit, with Submit held until a photo is attached.
-A PDF waits for `expo-document-picker` in a store build
+A PDF waits for a decision: the picker is in 0.13.0 for s21, and whether proof takes a PDF from Files is [#5149](https://github.com/frapplive/Frapp/issues/5149)
 
 ### s21 Upload document sheet
 
 Route: *sheet* on `documents.tsx`, or from the tab bar's quick actions with no folder picked ([`navigation.md` § Quick actions](navigation.md#quick-actions)).
 
-Sheet — photos only ([#3399](https://github.com/pdcarlson/Frapp/issues/3399)): the picked photo's card with Change, a title (blank files it under the file name, as web does), folder chips, Upload.
+Sheet ([#3399](https://github.com/pdcarlson/Frapp/issues/3399), [#3401](https://github.com/frapplive/Frapp/issues/3401)): with nothing picked, two rows, Choose a file (PDF, Word, Excel, PowerPoint or text, up to 25 MB) and Choose a photo, as Slack's and Google Drive's upload menus put them; then the picked file's card ("1.2 MB · from Files" or "· from Photos") with Change, which shows the two rows again with a Keep row for the file already picked (the pick, and any retry held for it, stay until a new pick lands, so backing out of a picker loses nothing); a title (blank files it under the file name, as web does), folder chips, Upload.
+Choose a file opens the system picker: on iOS, Files, which lists iCloud Drive and any installed cloud app with a Files extension (Google Drive, OneDrive, Dropbox); on Android, the document picker, which lists Drive too. It offers only the `document` allowlist (plus HEIC, turned into JPEG on the pick, as a photo is), so a Pages, Numbers or Keynote file is greyed out, and one that slips through reads "Export a Pages, Numbers or Keynote file as PDF first." A file over 25 MB is turned down before anything is sent.
+A store build from before #3401 has no file picker, so its sheet draws the photo card alone, as before.
 Mint, PUT and confirm all run on Upload, so a sheet cancelled before Upload leaves no object behind.
 Upload closes the sheet at once and the upload carries on behind it, shown by s12's pending row or the quick-action capsule; a failure keeps its reason here for the visit that row reopens (2026-11-07).
-A photo larger than 2560 px is shrunk before it is sent ([`navigation.md`](navigation.md), the `expo-image-picker` note), and a retry after a failed confirm files the bytes already sent rather than uploading a second copy, with the title and folder they were sent with (unless that folder is gone, below), which hold still until a new photo is picked.
+A photo larger than 2560 px, from Photos or from Files, is shrunk before it is sent ([`navigation.md`](navigation.md), the `expo-image-picker` note), and a retry after a failed confirm files the bytes already sent rather than uploading a second copy, with the title and folder they were sent with (unless that folder is gone, below), which hold still until a new file or photo is picked.
 The draft (photo, title and folder) outlives a close, not a Cancel ([`patterns.md` § Bottom sheets](patterns.md#bottom-sheets)): Cancel is held while an upload runs, in a visit reopened mid-upload too, and comes back when the upload settles, whether it filed the document or failed; Cancel or an upload that files it gives the draft up.
-A close keeps any held retry with the draft, and a new photo gives that up; s12 mounts a fresh sheet per chapter, since the held path was minted under it.
+A close keeps any held retry with the draft, and a new pick gives that up; s12 mounts a fresh sheet per chapter, since the held path was minted under it.
 A kept folder an officer has since deleted or renamed falls back to s12's filter when that folder still exists and to None otherwise, as an s12 filter naming a deleted folder does, and a held retry's folder that is gone falls back to None, where a deleted folder's documents go, so Upload never files into a folder no chip shows as selected (the API would create it again).
 No "Officers only" toggle: `chapter_documents` has no visibility column.
-A PDF or Office file needs `expo-document-picker`, a native module, so "from Files" waits for a store build ([#3401](https://github.com/pdcarlson/Frapp/issues/3401))
+_Changed 2026-11-16 (#3401):_ "from Files" is in 0.13.0 with `expo-document-picker`, and reaches members with that version's store build (none yet on 2026-11-16); until then this line said it waited for one.
 
 ### s22 Host check-in (admin)
 

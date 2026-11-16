@@ -836,7 +836,7 @@ export interface paths {
         };
         /**
          * List chapter invites, newest first
-         * @description Only invites granting a role the caller could invite someone into now (#4546): ranked at or below them, carrying only permissions they hold. The rest are left out, and still work. A `*` holder gets every invite.
+         * @description Only invites granting a role the caller could invite someone into now (#4546): ranked below them, carrying only permissions they hold. The rest are left out. A `*` holder gets every invite.
          */
         get: operations["InviteController_list_v1"];
         put?: never;
@@ -942,7 +942,7 @@ export interface paths {
         };
         /**
          * The roles the caller may invite someone into
-         * @description Roles ranked at or below the caller whose permissions they hold, never one carrying `*` (#4071, #4546). The invite dialog offers only these; POST /v1/invites refuses the rest.
+         * @description Roles ranked below the caller whose permissions they hold, never one carrying `*` (#4071, #4546, #1830). The Everyone role is always among them for a caller who may invite. The invite dialog offers only these; POST /v1/invites refuses the rest.
          */
         get: operations["InviteController_listInvitableRoles_v1"];
         put?: never;
@@ -4263,6 +4263,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/predictions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List predictions the caller can see */
+        get: operations["PredictionController_list_v1"];
+        put?: never;
+        /** Ask a prediction in a channel */
+        post: operations["PredictionController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One prediction with its pools and stakers */
+        get: operations["PredictionController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/stakes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stake points on an answer */
+        post: operations["PredictionController_stake_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The member a prediction names agrees to it, or declines and it is removed */
+        post: operations["PredictionController_consent_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/settle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The settler (or predictions:manage with nothing staked) names the winning answer; it pays after 24 hours */
+        post: operations["PredictionController_settle_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A staker questions the result within its 24-hour window */
+        post: operations["PredictionController_question_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pay a settled result now, or settle it again on another answer (reverses a paid round) */
+        post: operations["PredictionController_confirm_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Void a prediction and refund every stake (its settler before payout, predictions:manage any time) */
+        post: operations["PredictionController_void_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chapters/current/rollover": {
         parameters: {
             query?: never;
@@ -5639,6 +5776,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/google-drive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether Google Drive is offered here, and the chapter's connected folder. */
+        get: operations["GoogleDriveController_status_v1"];
+        /** Connect a Google Drive folder shared with Frapp; its files are copied into Documents and kept in sync. */
+        put: operations["GoogleDriveController_connect_v1"];
+        post?: never;
+        /** Disconnect the folder. Its copies leave Documents; the files in Drive are untouched. */
+        delete: operations["GoogleDriveController_disconnect_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync the connected folder now. */
+        post: operations["GoogleDriveController_syncNow_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{id}/recording": {
         parameters: {
             query?: never;
@@ -6028,6 +6201,11 @@ export interface components {
              * @example 100
              */
             anomaly_threshold?: number;
+            /**
+             * @description Most one member may stake in total on one prediction (default 25). Must be between 1 and 100000.
+             * @example 25
+             */
+            prediction_max_stake?: number;
         };
         WorkflowConfigDto: {
             /** @description Workflow key from the chapter catalog */
@@ -6358,7 +6536,7 @@ export interface components {
             module_key: "dues" | "events" | "tasks" | "points" | "setup-checklist";
         };
         CreateInviteDto: {
-            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
             role?: string;
         };
         /**
@@ -6383,13 +6561,13 @@ export interface components {
             created_at: string;
         };
         BatchCreateInvitesDto: {
-            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
             role?: string;
             /** @description Number of invites to generate */
             count: number;
         };
         BulkEmailInviteDto: {
-            /** @description Role name to assign. Omit to use the chapter's configured default invite role. */
+            /** @description Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role. */
             role?: string;
             /** @description Email addresses to invite, one invite token per address */
             emails: string[];
@@ -8662,6 +8840,14 @@ export interface components {
              */
             event_start_time: string | null;
         };
+        NewEventPointsFromDto: {
+            /**
+             * @description `type`: the chapter event type of that name. `event`: its latest event of that name.
+             * @enum {string}
+             */
+            kind: "type" | "event";
+            name: string;
+        };
         NewEventSuggestionDto: {
             name: string;
             description: string | null;
@@ -8670,8 +8856,15 @@ export interface components {
             start_time: string;
             /** Format: date-time */
             end_time: string;
-            /** @description Null leaves the chapter’s usual amount. */
+            /** @description Points for coming. Null when the caller did not say and nothing could be copied: accepting then needs `new_event.point_value`. */
             point_value: number | null;
+            /** @description Where points the caller did not say were copied from. Null when they were said, typed, or are missing. */
+            points_from: components["schemas"]["NewEventPointsFromDto"] | null;
+            /**
+             * Format: uuid
+             * @description The chapter event type the event is one of, when one matched.
+             */
+            event_type_id: string | null;
             is_mandatory: boolean;
             /** @description The repeat the series is made with (the `recurrence_rule` format of `POST /v1/events`), or null for one event. */
             recurrence_rule: string | null;
@@ -8750,9 +8943,11 @@ export interface components {
         NewEventSuggestionAcceptDto: {
             /**
              * Format: uuid
-             * @description The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller.
+             * @description The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller. When set, nothing else is read.
              */
-            event_id: string;
+            event_id?: string;
+            /** @description Points for coming, typed on the card: needed when the proposal has none. */
+            point_value?: number;
         };
         AcceptAiSuggestionDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */
@@ -9199,6 +9394,12 @@ export interface components {
             effective_date: string | null;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+            /** @description The Google Drive file this is a copy of, or null for an upload. Drive owns a copy: it cannot be deleted in Frapp (#5157) */
+            drive_file_id: string | null;
+            /** @description The Drive file's modified time when it was last copied */
+            drive_modified_at: string | null;
+            /** @description The file's page in Google Drive */
+            drive_url: string | null;
         };
         DocumentConfirmResultDto: {
             /** @description The storage path this result is for */
@@ -9290,6 +9491,150 @@ export interface components {
              *     ]
              */
             option_indexes: number[];
+        };
+        PredictionMarketDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /** Format: uuid */
+            message_id: string | null;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: uuid */
+            settler_id: string;
+            /** Format: uuid */
+            named_member_id: string | null;
+            question: string;
+            settle_rule: string;
+            closes_at: string;
+            /** @enum {string} */
+            status: "awaiting_consent" | "open" | "settled" | "questioned" | "paid" | "voided";
+            /** Format: uuid */
+            winning_answer_id: string | null;
+            known_at: string | null;
+            settle_note: string | null;
+            /** Format: uuid */
+            settled_by: string | null;
+            settled_at: string | null;
+            question_window_ends_at: string | null;
+            payout_round: number;
+            paid_at: string | null;
+            /** Format: uuid */
+            voided_by: string | null;
+            voided_at: string | null;
+            /** Format: uuid */
+            client_message_id: string | null;
+            created_at: string;
+            updated_at: string;
+        };
+        PredictionAnswerViewDto: {
+            /** Format: uuid */
+            id: string;
+            label: string;
+            /** @description Points staked on this answer */
+            pool: number;
+            /** @description Whole-percent share of all points staked; null before any */
+            chance: number | null;
+        };
+        PredictionStakerViewDto: {
+            /** Format: uuid */
+            user_id: string;
+            /** Format: uuid */
+            answer_id: string;
+            amount: number;
+        };
+        PredictionQuestionViewDto: {
+            /** Format: uuid */
+            user_id: string;
+            note: string;
+            created_at: string;
+        };
+        PredictionMarketViewDto: {
+            market: components["schemas"]["PredictionMarketDto"];
+            answers: components["schemas"]["PredictionAnswerViewDto"][];
+            total_staked: number;
+            stakers: components["schemas"]["PredictionStakerViewDto"][];
+            my_stakes: components["schemas"]["PredictionStakerViewDto"][];
+            /** @description Why the viewer can't stake right now; null when they can */
+            stake_blocked_reason: string | null;
+            /** @description Unresolved questions about the result */
+            open_questions: components["schemas"]["PredictionQuestionViewDto"][];
+        };
+        CreatePredictionDto: {
+            /**
+             * Format: uuid
+             * @description The channel its card goes in
+             */
+            channel_id: string;
+            question: string;
+            /** @description How the answer will be decided, shown on the card */
+            settle_rule: string;
+            /**
+             * @description Answers (2-10), in order
+             * @example [
+             *       "Yes",
+             *       "No"
+             *     ]
+             */
+            answers: string[];
+            /** @description When staking stops (ISO 8601 with a zone) */
+            closes_at: string;
+            /**
+             * Format: uuid
+             * @description Who settles it; the creator when omitted
+             */
+            settler_id?: string;
+            /**
+             * Format: uuid
+             * @description A member the question is about; it waits for their OK before it opens
+             */
+            named_member_id?: string;
+            /**
+             * Format: uuid
+             * @description Replay key: a retry with the same key returns the same question
+             */
+            client_message_id?: string;
+        };
+        PlacePredictionStakeDto: {
+            /** Format: uuid */
+            answer_id: string;
+            amount: number;
+            /**
+             * Format: uuid
+             * @description Replay key: a retry with the same key places nothing more and returns the same result
+             */
+            client_message_id: string;
+        };
+        PredictionConsentDto: {
+            /** @description true opens the question; false withdraws it */
+            agree: boolean;
+        };
+        PredictionConsentResultDto: {
+            /** @description The opened question, or null once a decline removed it */
+            prediction: components["schemas"]["PredictionMarketViewDto"] | null;
+        };
+        SettlePredictionDto: {
+            /**
+             * Format: uuid
+             * @description The answer that won
+             */
+            answer_id: string;
+            note?: string;
+            /** @description When the answer became known, if before now; stakes after it are refunded */
+            known_at?: string;
+        };
+        QuestionPredictionDto: {
+            note: string;
+        };
+        ConfirmPredictionDto: {
+            /**
+             * Format: uuid
+             * @description Settle on this answer instead; omitted confirms the result as settled
+             */
+            answer_id?: string;
         };
         RolloverDto: {
             /** @description Semester label (e.g. "Fall 2025") */
@@ -10892,6 +11237,43 @@ export interface components {
             state: string;
             /** @description The `gcal_code` the sign-in returned with. */
             code: string;
+        };
+        GoogleDriveConnectionDto: {
+            folder_id: string;
+            /** @description The folder's name in Drive */
+            folder_name: string;
+            /** @description The folder's page in Google Drive */
+            folder_url: string;
+            /**
+             * @description `no_access` once Google answered that Frapp can no longer see the folder (unshared or deleted); copies stay as they were until it is shared again
+             * @enum {string}
+             */
+            status: "active" | "no_access";
+            /**
+             * Format: date-time
+             * @description When the last sync finished. Null before the first.
+             */
+            last_synced_at: string | null;
+            /** @description Files the last sync left in Documents */
+            synced_count: number;
+            /** @description Files the last sync left out: a type Documents does not take, over 25 MB, or past 500 files */
+            skipped_count: number;
+            /** @description Whether a sync is due or running now */
+            syncing: boolean;
+        };
+        GoogleDriveStatusDto: {
+            /** @description Whether this server offers Google Drive. False until its service account is set; clients then hide the option. */
+            available: boolean;
+            /** @description The address a chapter shares its folder with */
+            service_account_email: string | null;
+            connection: components["schemas"]["GoogleDriveConnectionDto"] | null;
+        };
+        ConnectGoogleDriveDto: {
+            /**
+             * @description The Drive folder link (or its id)
+             * @example https://drive.google.com/drive/folders/1AbC...
+             */
+            folder_link: string;
         };
         MeetingRecordingUploadDto: {
             /** Format: uuid */
@@ -17161,7 +17543,7 @@ export interface operations {
             query?: {
                 /** @description Filter to a single member */
                 user_id?: string;
-                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY" | "PREDICTION";
                 /** @description Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`. */
                 flagged?: "true" | "false" | "1" | "0";
                 /** @description ISO8601 cursor — return transactions created before this timestamp */
@@ -20882,6 +21264,298 @@ export interface operations {
             };
         };
     };
+    PredictionController_list_v1: {
+        parameters: {
+            query?: {
+                filter?: "open" | "mine" | "settled" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_stake_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlacePredictionStakeDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_consent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PredictionConsentDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionConsentResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_settle_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettlePredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_question_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionPredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_confirm_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmPredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_void_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     SemesterRolloverController_rollover_v1: {
         parameters: {
             query?: never;
@@ -23886,6 +24560,120 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoogleCalendarStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_connect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectGoogleDriveDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_disconnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_syncNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
                 };
             };
             /** @description Error */

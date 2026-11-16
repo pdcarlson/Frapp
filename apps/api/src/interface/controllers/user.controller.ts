@@ -44,6 +44,7 @@ import {
   WhatsNewSeenDto,
   RecordWhatsNewSeenDto,
 } from '../dtos/user.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -66,6 +67,7 @@ export class UserController {
   }
 
   @Get('me/permissions')
+  @VerifySessionLocally()
   @UseGuards(ChapterGuard)
   @ApiOperation({
     summary: 'Get effective permissions for the active chapter',
