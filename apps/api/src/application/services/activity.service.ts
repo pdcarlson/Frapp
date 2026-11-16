@@ -1406,10 +1406,7 @@ export class ActivityService {
       ),
     ]);
     const unavailable: ArchiveSection[] = [];
-    const valueOf = <T>(
-      section: ArchiveSection,
-      result: Settled<T[]>,
-    ): T[] => {
+    const valueOf = <T>(section: ArchiveSection, result: Settled<T[]>): T[] => {
       if (result.ok) return result.value;
       unavailable.push(section);
       return [];
@@ -1467,7 +1464,9 @@ export class ActivityService {
       userId,
       kept.map(({ event }) => event.id),
     );
-    const statusOf = new Map(attendance.map((row) => [row.event_id, row.status]));
+    const statusOf = new Map(
+      attendance.map((row) => [row.event_id, row.status]),
+    );
     return kept.map(({ event, answer }) => {
       const status = statusOf.get(event.id);
       return activityEventRow(event, {
@@ -1578,9 +1577,7 @@ export class ActivityService {
           CARD_VOTE_ACTION_TYPE,
         )
       )
-        .filter(
-          (row) => cardVoteSelection(row.payload ?? undefined).length > 0,
-        )
+        .filter((row) => cardVoteSelection(row.payload ?? undefined).length > 0)
         .map((row) => row.message_id),
     );
     return pollRowsOf(

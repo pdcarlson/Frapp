@@ -2958,7 +2958,7 @@ describe('ActivityService', () => {
           is_mandatory: false,
           optional_role_ids: ['role-other'],
           others_invited: false,
-        } as Partial<Event>),
+        }),
       ]);
       attendanceRepo.findByUserForEvents.mockResolvedValue([
         { event_id: 'newer', user_id: ME, status: 'PRESENT' },
@@ -3140,5 +3140,4 @@ describe('ActivityService', () => {
       });
     });
   });
-
 });

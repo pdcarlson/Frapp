@@ -1162,7 +1162,9 @@ describe("reminders (#4957)", () => {
 
 describe("activityArchiveGroups (#5127)", () => {
   const NOW = new Date("2026-11-16T18:00:00.000Z");
-  const archive = (overrides: Partial<Record<keyof ActivityArchive, unknown>> = {}) =>
+  const archive = (
+    overrides: Partial<Record<keyof ActivityArchive, unknown>> = {},
+  ) =>
     ({
       events: [],
       tasks: [],
@@ -1261,8 +1263,6 @@ describe("activityArchiveGroups (#5127)", () => {
   it("keeps a section that couldn't load, to say so", () => {
     expect(
       activityArchiveGroups(archive({ unavailable: ["tasks"] }), "me", NOW),
-    ).toEqual([
-      { id: "tasks", label: "Tasks", rows: [], unavailable: true },
-    ]);
+    ).toEqual([{ id: "tasks", label: "Tasks", rows: [], unavailable: true }]);
   });
 });
