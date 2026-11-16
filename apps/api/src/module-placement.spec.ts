@@ -6,7 +6,7 @@ import * as path from 'node:path';
  * § 1); `app.module.ts` is the one root exception. A `@Module(` declared in
  * `infrastructure/`, `application/` or anywhere else fails here (#4153).
  */
-const SRC = path.resolve(__dirname, '..');
+const SRC = __dirname;
 const MODULES = path.join(SRC, 'modules');
 const ROOT_MODULE = path.join(SRC, 'app.module.ts');
 
