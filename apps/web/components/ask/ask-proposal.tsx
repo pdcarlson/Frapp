@@ -630,7 +630,7 @@ function EventWhen({ event }: { event: ProposedEvent }) {
         aria-hidden="true"
         className="w-11 shrink-0 rounded-[10px] border border-border bg-surface-1 py-1 text-center"
       >
-        <span className="block text-[10.5px] font-bold tracking-[0.06em] text-primary">
+        <span className="block text-caption font-bold tracking-[0.06em] text-primary">
           {when.weekday}
         </span>
         <span className="block text-lg font-semibold leading-tight text-foreground">
