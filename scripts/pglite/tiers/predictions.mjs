@@ -12,7 +12,8 @@ console.log("\n=== Functional: predictions stake, pay and void (#5133) ===");
   const YES = "a5133000-0000-4000-8000-0000000000b1";
   const NO = "a5133000-0000-4000-8000-0000000000b2";
   const U = (n) => `a5133000-0000-4000-8000-0000000000a${n}`;
-  const KEY = (n) => `a5133000-0000-4000-8000-00000000${String(n).padStart(4, "0")}`;
+  const KEY = (n) =>
+    `a5133000-0000-4000-8000-00000000${String(n).padStart(4, "0")}`;
   const [A, B, C, D, E, CREATOR] = [1, 2, 3, 4, 5, 6].map(U);
 
   const results = [];
@@ -66,8 +67,7 @@ console.log("\n=== Functional: predictions stake, pay and void (#5133) ===");
     const replay = await stake(A, YES, 10, KEY(1));
     check(
       "a replayed stake returns the original row and writes nothing more",
-      first.rows[0]?.id === replay.rows[0]?.id &&
-        (await net())[A] === -10,
+      first.rows[0]?.id === replay.rows[0]?.id && (await net())[A] === -10,
       { first: first.rows[0]?.id, replay: replay.rows[0]?.id },
     );
     check(
@@ -80,7 +80,9 @@ console.log("\n=== Functional: predictions stake, pay and void (#5133) ===");
     );
     check(
       "a stake larger than the member's balance is refused",
-      /insufficient_points/.test((await error(() => stake(E, YES, 5, KEY(3)))) ?? ""),
+      /insufficient_points/.test(
+        (await error(() => stake(E, YES, 5, KEY(3)))) ?? "",
+      ),
     );
 
     await stake(B, YES, 5, KEY(4));
@@ -95,7 +97,28 @@ console.log("\n=== Functional: predictions stake, pay and void (#5133) ===");
       /not_open/.test((await error(() => stake(D, NO, 1, KEY(7)))) ?? ""),
     );
 
-    await db.query(`select * from pay_prediction_market($1, $2, null)`, [CHAPTER, MARKET]);
+    await db.exec(
+      `update prediction_markets set status = 'questioned' where id = '${MARKET}'`,
+    );
+    check(
+      "the payout sweep leaves a questioned market for an officer",
+      /prediction.market.questioned/.test(
+        (await error(() =>
+          db.query(`select * from pay_prediction_market($1, $2, null, true)`, [
+            CHAPTER,
+            MARKET,
+          ]),
+        )) ?? "",
+      ),
+    );
+    await db.exec(
+      `update prediction_markets set status = 'settled' where id = '${MARKET}'`,
+    );
+
+    await db.query(`select * from pay_prediction_market($1, $2, null)`, [
+      CHAPTER,
+      MARKET,
+    ]);
     let n = await net();
     // Pool 25, Yes 15: A 10*25/15 = 16 r10, B 5*25/15 = 8 r5; the leftover
     // point goes to the larger remainder, A.
@@ -110,15 +133,27 @@ console.log("\n=== Functional: predictions stake, pay and void (#5133) ===");
       n,
     );
 
-    await db.query(`select * from pay_prediction_market($1, $2, $3)`, [CHAPTER, MARKET, NO]);
+    await db.query(`select * from pay_prediction_market($1, $2, $3)`, [
+      CHAPTER,
+      MARKET,
+      NO,
+    ]);
     n = await net();
     check(
       "re-settling a paid market reverses the old payouts and pays the new winners",
-      n[A] === -10 && n[B] === -5 && n[C] + n[D] === 15 && n[C] >= 10 && n[D] >= 4,
+      n[A] === -10 &&
+        n[B] === -5 &&
+        n[C] + n[D] === 15 &&
+        n[C] >= 10 &&
+        n[D] >= 4,
       n,
     );
 
-    await db.query(`select * from void_prediction_market($1, $2, $3)`, [CHAPTER, MARKET, CREATOR]);
+    await db.query(`select * from void_prediction_market($1, $2, $3)`, [
+      CHAPTER,
+      MARKET,
+      CREATOR,
+    ]);
     n = await net();
     check(
       "voiding a paid market leaves every staker exactly where they started",
@@ -129,12 +164,20 @@ console.log("\n=== Functional: predictions stake, pay and void (#5133) ===");
       "a voided market can't be voided twice",
       /prediction.market.voided/.test(
         (await error(() =>
-          db.query(`select * from void_prediction_market($1, $2, $3)`, [CHAPTER, MARKET, CREATOR]),
+          db.query(`select * from void_prediction_market($1, $2, $3)`, [
+            CHAPTER,
+            MARKET,
+            CREATOR,
+          ]),
         )) ?? "",
       ),
     );
   } catch (e) {
-    check("predictions scenario ran", false, String(e?.message ?? e).split("\n")[0]);
+    check(
+      "predictions scenario ran",
+      false,
+      String(e?.message ?? e).split("\n")[0],
+    );
   } finally {
     await db.exec("rollback;").catch(() => {});
   }

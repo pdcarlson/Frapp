@@ -1067,6 +1067,7 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
   const DEFAULTS = {
     adjustment_rate_limit_per_hour: 50,
     anomaly_threshold: 100,
+    prediction_max_stake: 25,
   };
 
   describe('getConfig', () => {
@@ -1094,6 +1095,7 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
       expect(config.points).toEqual({
         adjustment_rate_limit_per_hour: 10,
         anomaly_threshold: 250,
+        prediction_max_stake: 25,
       });
     });
   });
@@ -1111,11 +1113,16 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
       expect(repos.pointsUpsert).toHaveBeenCalledWith(CHAPTER_ID, {
         adjustment_rate_limit_per_hour: 10,
         anomaly_threshold: 250,
+        prediction_max_stake: 25,
       });
       const auditRow = mockAuditLog.record.mock.calls[0][0];
       expect((auditRow.diff as AuditDiff).points).toEqual({
         from: DEFAULTS,
-        to: { adjustment_rate_limit_per_hour: 10, anomaly_threshold: 250 },
+        to: {
+          adjustment_rate_limit_per_hour: 10,
+          anomaly_threshold: 250,
+          prediction_max_stake: 25,
+        },
       });
     });
 
@@ -1135,6 +1142,7 @@ describe('ChapterConfigService — points anti-fraud limits (#394)', () => {
       expect(repos.pointsUpsert).toHaveBeenCalledWith(CHAPTER_ID, {
         adjustment_rate_limit_per_hour: 10,
         anomaly_threshold: 500,
+        prediction_max_stake: 25,
       });
     });
 
@@ -1875,6 +1883,7 @@ describe('ChapterConfigService — trailing getConfig cannot fail a committed PA
     expect(result.points).toEqual({
       adjustment_rate_limit_per_hour: 20,
       anomaly_threshold: 250,
+      prediction_max_stake: 25,
     });
   });
 

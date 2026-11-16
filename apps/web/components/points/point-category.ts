@@ -3,7 +3,7 @@
  * words.
  *
  * `point_transactions.category` is an enum (`ATTENDANCE | ACADEMIC | SERVICE |
- * FINE | MANUAL | STUDY`, `packages/api-sdk/src/types.ts`). It is not a status,
+ * FINE | MANUAL | STUDY | PREDICTION`, `packages/api-sdk/src/types.ts`). It is not a status,
  * so `writing.md` §5's status label map doesn't hold it, and an ALL CAPS
  * token on screen read as a database column leaking through. The
  * leaderboard's transactions, the audit list, both category filters and the CSV
@@ -19,6 +19,7 @@ export const POINT_CATEGORIES = [
   "SERVICE",
   "FINE",
   "MANUAL",
+  "PREDICTION",
 ] as const;
 
 export type PointCategory = (typeof POINT_CATEGORIES)[number];
@@ -30,6 +31,7 @@ const LABELS: Record<PointCategory, string> = {
   SERVICE: "Service",
   FINE: "Fine",
   MANUAL: "Manual",
+  PREDICTION: "Predictions",
 };
 
 function isPointCategory(value: string): value is PointCategory {

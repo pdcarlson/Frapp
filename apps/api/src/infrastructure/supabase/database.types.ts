@@ -95,6 +95,10 @@ import type {
   PledgeClassAssignment,
   PointTransaction,
   PollVote,
+  PredictionAnswer,
+  PredictionMarket,
+  PredictionQuestion,
+  PredictionStake,
   PushToken,
   Role,
   RoleTier,
@@ -245,6 +249,10 @@ export interface Database {
       notifications: TableDefinition<Notification>;
       point_transactions: TableDefinition<PointTransaction>;
       poll_votes: TableDefinition<PollVote>;
+      prediction_answers: TableDefinition<PredictionAnswer>;
+      prediction_markets: TableDefinition<PredictionMarket>;
+      prediction_questions: TableDefinition<PredictionQuestion>;
+      prediction_stakes: TableDefinition<PredictionStake>;
       push_tokens: TableDefinition<PushToken>;
       role_tiers: TableDefinition<RoleTier>;
       roles: TableDefinition<Role>;
@@ -904,6 +912,30 @@ export interface Database {
         };
         Returns: Task[];
       };
+      /** `20261116135639` (#5133) — pays a settled market, or re-pays a paid one whose winner changed. */
+      pay_prediction_market: {
+        Args: {
+          p_chapter_id: string;
+          p_market_id: string;
+          p_answer_id: string | null;
+          p_unquestioned_only?: boolean;
+        };
+        Returns: PredictionMarket;
+      };
+      /** `20261116135639` (#5133) — one stake, locked on the staker then the market. */
+      place_prediction_stake: {
+        Args: {
+          p_chapter_id: string;
+          p_market_id: string;
+          p_answer_id: string;
+          p_user_id: string;
+          p_amount: number;
+          p_client_message_id: string;
+          p_since: string | null;
+          p_max_stake: number;
+        };
+        Returns: PredictionStake;
+      };
       /**
        * `20261112170000` (#4314) — a chat window's readable messages, oldest
        * conversation first; one row with a null `message_id` when it holds
@@ -1272,6 +1304,11 @@ export interface Database {
       unlink_discord_author: {
         Args: { p_chapter_id: string; p_user_id: string };
         Returns: number | null;
+      };
+      /** `20261116135639` (#5133) — refunds every stake; a paid market's payouts are reversed first. */
+      void_prediction_market: {
+        Args: { p_chapter_id: string; p_market_id: string; p_by: string };
+        Returns: PredictionMarket;
       };
       /**
        * `20261113040003` (#3735) — delete a PENDING or APPROVED excuse, and an

@@ -79,7 +79,7 @@ Every movement is a `point_transactions` row, under a new category `PREDICTION`,
 ## Edge cases
 
 - **Semester rollover with open markets:** stakes were taken from the old semester; payouts land when they land and count in the semester they are written. The settler is reminded before rollover.
-- **A member leaves the chapter with an open stake:** their open stakes are refunded as they are removed, while the ledger still accepts writes for them, so no stake in an open market belongs to a non-member. A correction after payout skips a winner who has since left: the points rules refuse a write to a non-member, so those points stay with them.
+- **A member leaves the chapter with an open stake:** the stake stays in the pool, and the payout, refund, correction or void reaches them like anyone else. The stake, pay and void functions write the ledger directly, and a ledger row does not need its member to still belong, so the market stays zero-sum. (Changed in the build, 2026-11-16: the first draft refunded open stakes at removal and skipped departed winners on a correction, which would have left the pool short.)
 - **Deleted card:** deleting the chat message voids the market first.
 - **Blocked creator:** in chat the card follows chat's block rule like any message from that member (a tombstone with Unblock). In the Predictions list the row keeps its chances and the viewer's own stake and loses its question text, so a member never loses track of points they staked.
 - **Module off before settle:** see Module above.

@@ -297,7 +297,10 @@ $$;
 create or replace function pay_prediction_market(
   p_chapter_id uuid,
   p_market_id  uuid,
-  p_answer_id  uuid
+  p_answer_id  uuid,
+  -- The payout sweep passes true: a market questioned after the sweep read
+  -- it waits for an officer instead of paying.
+  p_unquestioned_only boolean default false
 ) returns prediction_markets
 language plpgsql
 security invoker
@@ -314,6 +317,9 @@ begin
   end if;
   if v_market.status not in ('settled', 'questioned', 'paid') then
     raise exception 'prediction.market.not_settled';
+  end if;
+  if p_unquestioned_only and v_market.status = 'questioned' then
+    raise exception 'prediction.market.questioned';
   end if;
   if p_answer_id is not null then
     if not exists (select 1 from prediction_answers where id = p_answer_id and market_id = p_market_id) then
@@ -397,7 +403,7 @@ $$;
 revoke all on function place_prediction_stake(uuid, uuid, uuid, uuid, int, uuid, timestamptz, int) from public, anon, authenticated;
 revoke all on function prediction_write_payouts(prediction_markets) from public, anon, authenticated;
 revoke all on function prediction_reverse_round(prediction_markets) from public, anon, authenticated;
-revoke all on function pay_prediction_market(uuid, uuid, uuid) from public, anon, authenticated;
+revoke all on function pay_prediction_market(uuid, uuid, uuid, boolean) from public, anon, authenticated;
 revoke all on function void_prediction_market(uuid, uuid, uuid) from public, anon, authenticated;
 
 -- ── Permissions for existing chapters ───────────────────────────────────────

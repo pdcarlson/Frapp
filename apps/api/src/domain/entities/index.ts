@@ -47,6 +47,7 @@ export * from './notification.entity';
 export * from './pledge-class.entity';
 export * from './point-transaction.entity';
 export * from './poll-vote.entity';
+export * from './prediction.entity';
 export * from './role.entity';
 export * from './rush-candidate.entity';
 export * from './scheduled-notification-dispatch.entity';

@@ -35,6 +35,7 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { StudyModule } from './modules/study/study.module';
 import { ChapterDocumentModule } from './modules/chapter-document/chapter-document.module';
 import { PollModule } from './modules/poll/poll.module';
+import { PredictionModule } from './modules/prediction/prediction.module';
 import { SemesterRolloverModule } from './modules/semester-rollover/semester-rollover.module';
 import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
@@ -109,6 +110,7 @@ import { validateEnv } from './config/env.validation';
     StudyModule,
     ChapterDocumentModule,
     PollModule,
+    PredictionModule,
     SemesterRolloverModule,
     ReportModule,
     SearchModule,
