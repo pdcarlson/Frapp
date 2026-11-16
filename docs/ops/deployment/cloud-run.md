@@ -52,7 +52,17 @@ Cloud Run sets `PORT` itself and rejects it as a variable, so the deploy skips t
 These two still have to change in the next step of #5228:
 
 - The read-at-boot path from #2506 (`apps/api/src/boot.ts`, [`SECRETS_MANAGEMENT.md` § Image-backed API](../../internal/environment/SECRETS_MANAGEMENT.md#image-backed-api-read-at-boot-not-synced)). Paul dropped it on 2026-11-16 in favour of a sync, because Infisical's free plan can't stop a boot-time identity from reading every environment. The next step removes that path and updates `SECRETS_MANAGEMENT.md` to match.
-- Vertex AI. The API still signs in with the `GOOGLE_VERTEX_CREDENTIALS_JSON` key file, against the separate `frapp-ai-*` projects ([`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md)). Keep that key until the API can use its runtime identity: the next step adds Application Default Credentials, and `frapp-api-runtime` gets `roles/aiplatform.user` on the matching `frapp-ai-*` project.
+- Vertex AI. The API still signs in with the `GOOGLE_VERTEX_CREDENTIALS_JSON` key file ([`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md)). Staging's key and `GOOGLE_VERTEX_PROJECT` already point at the nonprod project itself (checked in Infisical on 2026-11-16); production's are listed there as not set yet. Keep the key until the API can use its runtime identity: the next step adds Application Default Credentials, and `frapp-api-runtime` gets `roles/aiplatform.user` on its own project.
+
+## Projects
+
+The frapp.live organization (`1033325313086`) holds these, read from the console on 2026-11-16. Billing is upgraded from the free trial, with a $100 monthly budget alert.
+
+| Project | Id | Used for |
+| --- | --- | --- |
+| nonprod | `cs-project-6vw9f5xp` | Staging API. Also holds staging's Vertex AI. |
+| prod | `cs-project-nyit2x59` | Production API. |
+| development, central-logging-monitoring | `cs-project-un3otdnn`, `cs-project-cob1stf1` | Created with the organization. Not used by the API. |
 
 ## Setup, once per project
 
@@ -60,8 +70,8 @@ Run these in Cloud Shell, signed in as an owner of the frapp.live organization. 
 
 ```bash
 git clone https://github.com/frapplive/Frapp && cd Frapp
-bash scripts/gcp/bootstrap.sh staging <nonprod-project-id>
-bash scripts/gcp/bootstrap.sh production <prod-project-id> --staging-project <nonprod-project-id>
+bash scripts/gcp/bootstrap.sh staging cs-project-6vw9f5xp
+bash scripts/gcp/bootstrap.sh production cs-project-nyit2x59 --staging-project cs-project-6vw9f5xp
 ```
 
 The script can be run again safely. It refuses a project that has no billing account. A first run can briefly hit "does not exist" while Google catches up on a new account. The script retries that for about a minute, and running it again finishes the job. At the end it prints the project number, region, registry, accounts and identity provider. None of these are secret, and the staging deploy step of #5228 records them in [`.github/environments.json`](../../../.github/environments.json).
