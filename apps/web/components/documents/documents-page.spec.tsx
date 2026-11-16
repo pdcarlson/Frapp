@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { localIsoDate } from "@repo/formatting";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 import { networkMock } from "@/tests/network";
 import { ConnectionPill } from "@/components/shared/connection-pill";
@@ -821,11 +822,6 @@ describe("DocumentsPage upload metadata", () => {
       "true",
     );
 
-    await userEvent.click(
-      within(dialog).getByRole("button", {
-        name: /add a description or effective date/i,
-      }),
-    );
     fireEvent.change(within(dialog).getByLabelText(/effective date/i), {
       target: { value: "2026-01-01" },
     });
@@ -846,12 +842,15 @@ describe("DocumentsPage upload metadata", () => {
     );
   });
 
-  it("omits document type and effective date when nothing points at one", async () => {
+  it("starts the effective date on Today and omits a type nothing points at", async () => {
     render(<DocumentsPage />);
     await userEvent.click(uploadTrigger());
 
     const dialog = screen.getByRole("dialog");
     pickFile(dialog, "scan_0042.pdf");
+    expect(within(dialog).getByLabelText(/effective date/i)).toHaveValue(
+      "Today",
+    );
 
     const submit = within(dialog).getByRole("button", { name: /^upload$/i });
     await waitFor(() => expect(submit).toBeEnabled());
@@ -862,8 +861,26 @@ describe("DocumentsPage upload metadata", () => {
       expect.objectContaining({
         title: "Scan 0042",
         document_type: undefined,
-        effective_date: undefined,
+        effective_date: localIsoDate(new Date()),
       }),
+    );
+  });
+
+  it("sends no effective date once the officer clears Today", async () => {
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    pickFile(dialog, "scan_0042.pdf");
+    await userEvent.clear(within(dialog).getByLabelText(/effective date/i));
+
+    const submit = within(dialog).getByRole("button", { name: /^upload$/i });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await userEvent.click(submit);
+
+    await waitFor(() => expect(mockConfirmUpload).toHaveBeenCalledTimes(1));
+    expect(mockConfirmUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ effective_date: undefined }),
     );
   });
 
