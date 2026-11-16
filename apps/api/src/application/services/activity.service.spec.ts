@@ -43,6 +43,8 @@ const task = (overrides: Partial<TaskView>): TaskView => ({
   proof_link: null,
   sent_back_reason: null,
   completion_note: null,
+  series_id: null,
+  occurrence_date: null,
   created_at: iso(-48 * HOUR),
   ...overrides,
 });

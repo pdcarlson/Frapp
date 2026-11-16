@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TaskService } from '../../application/services/task.service';
+import { TaskSeriesService } from '../../application/services/task-series.service';
 import { TaskController } from '../../interface/controllers/task.controller';
 import { SupabaseTaskRepository } from '../../infrastructure/supabase/repositories/supabase-task.repository';
 import { TASK_REPOSITORY } from '#domain/repositories/task.repository.interface';
@@ -19,12 +20,15 @@ import { SupabaseStorageService } from '../../infrastructure/storage/supabase-st
   controllers: [TaskController],
   providers: [
     TaskService,
+    // "All upcoming tasks" edits and deletes of a repeating task (#5119).
+    TaskSeriesService,
     { provide: TASK_REPOSITORY, useClass: SupabaseTaskRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
     // Task photos (#4565).
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
-  // ActivityModule reads tasks through the service (#3897).
+  // ActivityModule reads tasks through the service (#3897); the scheduled
+  // jobs push each new repeating-task copy through it (#5119).
   exports: [TaskService],
 })
 export class TaskModule {}

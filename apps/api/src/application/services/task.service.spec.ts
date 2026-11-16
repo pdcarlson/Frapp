@@ -70,6 +70,8 @@ describe('TaskService', () => {
     proof_link: null,
     sent_back_reason: null,
     completion_note: null,
+    series_id: null,
+    occurrence_date: null,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
@@ -109,6 +111,11 @@ describe('TaskService', () => {
       findPhotos: jest.fn().mockResolvedValue([]),
       createPhotos: jest.fn().mockResolvedValue([]),
       deletePhotos: jest.fn().mockResolvedValue([]),
+      createSeries: jest.fn(),
+      findSeries: jest.fn().mockResolvedValue([]),
+      findLatestSeriesCopy: jest.fn(),
+      updateSeriesIfNext: jest.fn(),
+      hasCheckedSubtask: jest.fn().mockResolvedValue(false),
     };
 
     mockMemberRepo = {
@@ -162,6 +169,130 @@ describe('TaskService', () => {
     }).compile();
 
     service = module.get(TaskService);
+  });
+
+  describe('repeating tasks (#5119)', () => {
+    const RULE = 'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York';
+    const create = (extra: Partial<CreateTaskInput> = {}) =>
+      service.create({
+        chapter_id: 'ch-1',
+        title: 'Kitchen duty',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2026-11-16',
+        // 9 PM New York.
+        due_at: '2026-11-17T02:00:00.000Z',
+        subtasks: ['Wipe', 'Mop'],
+        point_reward: 5,
+        recurrence_rule: RULE,
+        ...extra,
+      });
+
+    beforeEach(() => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.createSeries.mockResolvedValue({
+        ...baseTask,
+        series_id: 'series-1',
+        occurrence_date: '2026-11-16',
+      });
+    });
+
+    it('writes the series and its first copy, with its checklist, in one call', async () => {
+      const result = await create();
+
+      expect(mockTaskRepo.createSeries).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        created_by: 'admin-1',
+        title: 'Kitchen duty',
+        description: null,
+        assignee_id: 'user-1',
+        point_reward: 5,
+        proof_kind: 'none',
+        subtask_titles: ['Wipe', 'Mop'],
+        due_time: '21:00:00',
+        recurrence_rule: RULE,
+        first_due_date: '2026-11-16',
+        first_due_at: '2026-11-17T02:00:00.000Z',
+        latest_due_at: '2026-11-17T02:00:00.000Z',
+        next_due_date: '2026-11-23',
+      });
+      expect(mockTaskRepo.create).not.toHaveBeenCalled();
+      expect(mockTaskRepo.createSubtasks).not.toHaveBeenCalled();
+      expect(result.series_id).toBe('series-1');
+    });
+
+    it('keeps an untimed series due by the end of the day in its zone', async () => {
+      await create({ due_at: undefined });
+
+      expect(mockTaskRepo.createSeries).toHaveBeenCalledWith(
+        expect.objectContaining({
+          due_time: null,
+          first_due_at: null,
+          latest_due_at: '2026-11-17T05:00:00.000Z',
+        }),
+      );
+    });
+
+    it('refuses an UNTIL that leaves no copy after the first, writing nothing', async () => {
+      await expect(
+        create({
+          recurrence_rule:
+            'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;UNTIL=20261120;TZID=America/New_York',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockTaskRepo.createSeries).not.toHaveBeenCalled();
+    });
+
+    it('makes a plain task for a null rule', async () => {
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+
+      await create({ recurrence_rule: null });
+
+      expect(mockTaskRepo.create).toHaveBeenCalled();
+      expect(mockTaskRepo.createSeries).not.toHaveBeenCalled();
+    });
+
+    it('refuses a rule it cannot read, writing nothing', async () => {
+      await expect(create({ recurrence_rule: 'WEEKLY' })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockTaskRepo.createSeries).not.toHaveBeenCalled();
+    });
+
+    it('says how a copy repeats on reads', async () => {
+      mockTaskRepo.findById.mockResolvedValue({
+        ...baseTask,
+        series_id: 'series-1',
+      });
+      mockTaskRepo.findSeries.mockResolvedValue([
+        {
+          id: 'series-1',
+          recurrence_rule: RULE,
+          next_due_date: '2026-11-23',
+          ended_at: null,
+        } as never,
+      ]);
+
+      const task = await service.findById('task-1', 'ch-1');
+
+      expect(task.series).toEqual({
+        recurrence_rule: RULE,
+        next_due_date: '2026-11-23',
+        ended: false,
+      });
+      expect(mockTaskRepo.findSeries).toHaveBeenCalledWith('ch-1', [
+        'series-1',
+      ]);
+    });
+
+    it('reads no series for tasks that do not repeat', async () => {
+      mockTaskRepo.findById.mockResolvedValue(baseTask);
+
+      const task = await service.findById('task-1', 'ch-1');
+
+      expect(task.series).toBeNull();
+      expect(mockTaskRepo.findSeries).not.toHaveBeenCalled();
+    });
   });
 
   describe('create', () => {
@@ -1103,6 +1234,7 @@ describe('TaskService', () => {
         ...asView(baseTask),
         photos: [],
         subtasks: [],
+        series: null,
       });
     });
 
@@ -1119,6 +1251,7 @@ describe('TaskService', () => {
         ...asView(baseTask),
         photos: [],
         subtasks: [],
+        series: null,
       });
     });
 
@@ -1280,6 +1413,7 @@ describe('TaskService', () => {
         ...asView(baseTask),
         photos: [],
         subtasks: [],
+        series: null,
       });
     });
 

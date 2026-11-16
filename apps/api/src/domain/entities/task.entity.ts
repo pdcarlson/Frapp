@@ -49,7 +49,55 @@ export interface Task {
   sent_back_reason: string | null;
   /** The assignee's reply sent with Mark done, cleared with the completion. */
   completion_note: string | null;
+  /**
+   * The repeating series this task is a copy of (#5119), or null for a task
+   * that doesn't repeat. Kept when the series ends; cleared only if its row
+   * is deleted.
+   */
+  series_id: string | null;
+  /** A copy's day in its series' pattern (`YYYY-MM-DD`); null otherwise. */
+  occurrence_date: string | null;
   created_at: string;
+}
+
+/**
+ * A repeating task's series (#5119): the template each copy is made from and
+ * the rule it repeats on. Only the next upcoming copy exists; the 5-minute
+ * sweep makes the following one once the latest copy is due.
+ */
+export interface TaskSeries {
+  id: string;
+  chapter_id: string;
+  created_by: string;
+  title: string;
+  description: string | null;
+  assignee_id: string;
+  point_reward: number | null;
+  proof_kind: TaskProofKind;
+  /** The checklist each copy starts with, in order. */
+  subtask_titles: string[];
+  /** Copies' time of day on the rule's wall clock (`HH:MM:SS`), or null. */
+  due_time: string | null;
+  /** The rule, in the event rule format with an open end allowed. */
+  recurrence_rule: string;
+  /** The day the rule counts from: its first copy, or where it last changed. */
+  first_due_date: string;
+  /** The day of the next copy still to be made. */
+  next_due_date: string;
+  /** When the latest copy is due: the sweep makes the next one after it. */
+  latest_due_at: string;
+  made_count: number;
+  /** When the series stopped making copies; null while it is live. */
+  ended_at: string | null;
+  created_at: string;
+}
+
+/** What a task read says about its series (#5119). */
+export interface TaskSeriesSummary {
+  recurrence_rule: string;
+  /** The next copy's day; meaningless once `ended`. */
+  next_due_date: string;
+  ended: boolean;
 }
 
 /**
@@ -82,6 +130,11 @@ export interface TaskView extends Task {
    * order. Present on the list and detail reads and on status writes.
    */
   photos?: TaskPhoto[];
+  /**
+   * How the task repeats, on a copy of a series (#5119); null on a task that
+   * doesn't repeat. Present on the list and detail reads.
+   */
+  series?: TaskSeriesSummary | null;
 }
 
 /** Which of a task's photos: the officer's reference or the assignee's proof. */

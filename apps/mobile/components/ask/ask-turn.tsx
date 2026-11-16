@@ -220,89 +220,89 @@ export function AskReply({
   const styles = createStyles(tokens);
 
   return (
-      <View style={styles.reply} accessibilityLiveRegion="polite">
-        {exchange.phase === "working" ? (
-          <>
-            {exchange.preview ? (
-              <Text style={styles.answer}>{exchange.preview}</Text>
-            ) : null}
-            {exchange.step ? (
-              <Text style={styles.note}>
-                {askStepLine(exchange.step, exchange.stepDetail)}
-              </Text>
-            ) : null}
-          </>
-        ) : null}
+    <View style={styles.reply} accessibilityLiveRegion="polite">
+      {exchange.phase === "working" ? (
+        <>
+          {exchange.preview ? (
+            <Text style={styles.answer}>{exchange.preview}</Text>
+          ) : null}
+          {exchange.step ? (
+            <Text style={styles.note}>
+              {askStepLine(exchange.step, exchange.stepDetail)}
+            </Text>
+          ) : null}
+        </>
+      ) : null}
 
-        {exchange.phase === "failed" && exchange.failure ? (
-          <>
-            <Text style={styles.answer}>{exchange.failure.message}</Text>
-            {exchange.failure.retryable ? (
-              <CardAction
-                label={ASK_COPY.try_again}
-                onPress={onRetry}
-                disabled={busy}
-              />
-            ) : null}
-          </>
-        ) : null}
+      {exchange.phase === "failed" && exchange.failure ? (
+        <>
+          <Text style={styles.answer}>{exchange.failure.message}</Text>
+          {exchange.failure.retryable ? (
+            <CardAction
+              label={ASK_COPY.try_again}
+              onPress={onRetry}
+              disabled={busy}
+            />
+          ) : null}
+        </>
+      ) : null}
 
-        {exchange.phase === "done" && exchange.proposal ? proposal : null}
+      {exchange.phase === "done" && exchange.proposal ? proposal : null}
 
-        {exchange.phase === "done" && exchange.answer ? (
-          <AnswerBody
-            answer={exchange.answer}
-            readLine={askReadLine(exchange.read)}
-            canOpen={canOpen}
-            openingSourceId={openingSourceId ?? null}
-            onOpenSource={onOpenSource}
-            busy={busy}
-            onAnswerConsent={onAnswerConsent}
-            onRetry={onRetry}
-            onOpenChannel={onOpenChannel}
-          />
-        ) : null}
+      {exchange.phase === "done" && exchange.answer ? (
+        <AnswerBody
+          answer={exchange.answer}
+          readLine={askReadLine(exchange.read)}
+          canOpen={canOpen}
+          openingSourceId={openingSourceId ?? null}
+          onOpenSource={onOpenSource}
+          busy={busy}
+          onAnswerConsent={onAnswerConsent}
+          onRetry={onRetry}
+          onOpenChannel={onOpenChannel}
+        />
+      ) : null}
 
-        {exchange.phase === "done" && exchange.answer ? cards : null}
+      {exchange.phase === "done" && exchange.answer ? cards : null}
 
-        {/* Anything Ask wrote, or chose not to, can be reported; what it
+      {/* Anything Ask wrote, or chose not to, can be reported; what it
             wrote can be copied. An answer that was never attempted has
             nothing AI-made in it. Last in the turn, so Copy turning into
             Copied and Report into Reported move nothing. */}
-        {exchange.phase === "done" &&
-        exchange.answer &&
-        exchange.answer.status !== "unavailable" ? (
-          exchange.answer.ask_id ? (
-            <RatedAnswerActions
-              // A turn asked again is a new answer: its thumbs start empty.
-              key={exchange.answer.ask_id}
-              askId={exchange.answer.ask_id}
-              text={
-                exchange.answer.status === "answered"
-                  ? exchange.answer.text
-                  : null
-              }
-              report={exchange.askId ? (report ?? null) : null}
-              thinkHarder={
-                onThinkHarder &&
-                askOffersThinkHarder(exchange.answer, exchange.effort)
-                  ? { busy, onPress: onThinkHarder }
-                  : null
-              }
-            />
-          ) : (
-            <AnswerActions
-              thumbs={null}
-              text={
-                exchange.answer.status === "answered"
-                  ? exchange.answer.text
-                  : null
-              }
-              report={exchange.askId ? (report ?? null) : null}
-            />
-          )
-        ) : null}
-      </View>
+      {exchange.phase === "done" &&
+      exchange.answer &&
+      exchange.answer.status !== "unavailable" ? (
+        exchange.answer.ask_id ? (
+          <RatedAnswerActions
+            // A turn asked again is a new answer: its thumbs start empty.
+            key={exchange.answer.ask_id}
+            askId={exchange.answer.ask_id}
+            text={
+              exchange.answer.status === "answered"
+                ? exchange.answer.text
+                : null
+            }
+            report={exchange.askId ? (report ?? null) : null}
+            thinkHarder={
+              onThinkHarder &&
+              askOffersThinkHarder(exchange.answer, exchange.effort)
+                ? { busy, onPress: onThinkHarder }
+                : null
+            }
+          />
+        ) : (
+          <AnswerActions
+            thumbs={null}
+            text={
+              exchange.answer.status === "answered"
+                ? exchange.answer.text
+                : null
+            }
+            report={exchange.askId ? (report ?? null) : null}
+          />
+        )
+      ) : null}
+    </View>
   );
 }
 
@@ -695,6 +695,10 @@ function AnswerBody({
       ) : (
         words(() => false)
       )}
+      {/* A sentence that rests on no source says so, where a source would be. */}
+      {answer.own_words ? (
+        <Text style={styles.note}>{ASK_COPY.own_words}</Text>
+      ) : null}
       {/* Where the step line was while it worked, in the same tone. */}
       {readLine ? <Text style={styles.note}>{readLine}</Text> : null}
       <AnswerNotes answer={answer} />

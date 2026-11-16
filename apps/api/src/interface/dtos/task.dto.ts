@@ -18,6 +18,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  MAX_REPEAT_RULE_LENGTH,
   POINTS_ADJUSTMENT_MAX,
   TASK_COMPLETION_NOTE_MAX,
   TASK_PHOTOS_MAX,
@@ -32,11 +33,20 @@ import {
 import {
   TaskStatus,
   type Task,
+  type TaskSeriesSummary,
   type TaskSubtask,
   type TaskPhoto,
   type TaskPhotoKind,
 } from '#domain/entities/task.entity';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
+import { IsRepeatRule } from '../decorators/is-repeat-rule.decorator';
+
+/** The scopes of a repeating task's edit and delete (#5119). */
+export const TASK_EDIT_SCOPES = ['instance', 'series'] as const;
+export type TaskEditScope = (typeof TASK_EDIT_SCOPES)[number];
+
+const TASK_RECURRENCE_RULE_DESCRIPTION =
+  "Repeat on a schedule (#5119): the event rule format (`packages/validation/src/recurrence.ts`), `FREQ` DAILY, WEEKLY or MONTHLY, `INTERVAL` 1 to 30, `BYDAY` or `BYMONTHDAY`, a required `TZID` (the officer's zone), and `COUNT` (2 to 120), `UNTIL` (YYYYMMDD) or no end. Example: `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York`. The task is the first copy; the next is made once it is due, on the same time of day in that zone.";
 import {
   ISO_INSTANT_MESSAGE,
   ISO_INSTANT_PATTERN,
@@ -159,6 +169,16 @@ export class CreateTaskDto {
   proof_kind?: TaskProofKind;
 
   @ApiPropertyOptional({
+    description: TASK_RECURRENCE_RULE_DESCRIPTION,
+    maxLength: MAX_REPEAT_RULE_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_REPEAT_RULE_LENGTH)
+  @IsRepeatRule({ task: true })
+  recurrence_rule?: string;
+
+  @ApiPropertyOptional({
     description:
       'When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates.',
   })
@@ -268,6 +288,23 @@ export class CreateTaskResponseDto implements Task {
   })
   completion_note: string | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The repeating series this task is a copy of (#5119), or null for a task that doesn’t repeat.',
+  })
+  series_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    format: 'date',
+    nullable: true,
+    description: 'A copy’s day in its series’ pattern; null otherwise.',
+  })
+  occurrence_date: string | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 
@@ -283,6 +320,25 @@ export class CreateTaskResponseDto implements Task {
       'The reference photos added with the task, in order. Task reads and status writes carry `photos` too.',
   })
   photos: TaskPhotoDto[];
+}
+
+/** How a task repeats, on task reads (#5119). */
+export class TaskSeriesSummaryDto implements TaskSeriesSummary {
+  @ApiProperty({ description: 'The series’ rule, as on create.' })
+  recurrence_rule: string;
+
+  @ApiProperty({
+    format: 'date',
+    description:
+      'The day of the next copy still to be made: "Every Monday · next Nov 24". Meaningless once `ended`.',
+  })
+  next_due_date: string;
+
+  @ApiProperty({
+    description:
+      'Whether the series has stopped making copies: its rule ran out, an officer ended it, or its assignee left.',
+  })
+  ended: boolean;
 }
 
 export class TaskPhotoDto implements TaskPhoto {
@@ -418,6 +474,39 @@ export class UpdateTaskDto {
   @IsOptional()
   @IsIn(TASK_PROOF_KINDS)
   proof_kind?: TaskProofKind;
+
+  @ApiPropertyOptional({
+    enum: TASK_EDIT_SCOPES,
+    description:
+      'On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`).',
+  })
+  @IsOptional()
+  @IsIn(TASK_EDIT_SCOPES)
+  scope?: TaskEditScope;
+
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    maxLength: MAX_REPEAT_RULE_LENGTH,
+    description: `With \`scope: series\` only: a new rule, counted from the open copy, or null to stop repeating after it. ${TASK_RECURRENCE_RULE_DESCRIPTION}`,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(MAX_REPEAT_RULE_LENGTH)
+  @IsRepeatRule({ task: true })
+  recurrence_rule?: string | null;
+}
+
+/** `DELETE /v1/tasks/:id` (#5119). */
+export class DeleteTaskQueryDto {
+  @ApiPropertyOptional({
+    enum: TASK_EDIT_SCOPES,
+    description:
+      'On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay.',
+  })
+  @IsOptional()
+  @IsIn(TASK_EDIT_SCOPES)
+  scope?: TaskEditScope;
 }
 
 export class UpdateTaskSubtaskDto {
