@@ -65,9 +65,13 @@ export class ChapterDocumentCorpusSource implements CorpusSourceAdapter {
       status: 'ok',
       content: {
         title: document.title,
+        // A bare date read at noon UTC, not midnight: midnight UTC is the
+        // evening before in every zone west of UTC, so Ask dated a file a day
+        // early and a same-day `since` search missed it. Noon is the same day
+        // from UTC-11 to UTC+11. Uploads start on the upload day (#5207).
         sourceAt: document.effective_date
           ? new Date(
-              `${document.effective_date.slice(0, 10)}T00:00:00Z`,
+              `${document.effective_date.slice(0, 10)}T12:00:00Z`,
             ).toISOString()
           : document.created_at,
         decays: false,

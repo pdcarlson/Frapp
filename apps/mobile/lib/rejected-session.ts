@@ -46,7 +46,7 @@ export function isSessionOver(result: {
  * existed before the call. Its report names the code, which the error itself
  * doesn't carry. Web keeps the same rule.
  */
-export function sessionVerdict(
+function sessionVerdict(
   result: { data: { user: unknown }; error: unknown },
   hadLocalSession: boolean,
 ): { over: boolean; code?: string } {

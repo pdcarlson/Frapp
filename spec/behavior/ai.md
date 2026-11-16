@@ -67,6 +67,14 @@ Reading through tools makes structured answers correct at the moment they are gi
 
 It also follows directly from the non-goal below: structured data already *is* canon, so the AI should query canon rather than keep a stale copy of it.
 
+**The backwork catalog, never a backwork file** (Paul, 2026-11-16, [#5209](https://github.com/frapplive/Frapp/issues/5209)).
+Ask's `find_backwork` tool reads the [backwork](backwork.md) library's catalog: each file's title, course and the course's name, department, professor, type and number, semester and year, kind of copy, and whether names are blacked out.
+It answers "do we have old CSCI 1200 midterms?" and "how much do we have for CSCI?", and each file it finds is a source the member taps to download, through `GET /v1/backwork/:id`'s signed link fetched at that moment, so no link is ever in an answer or its trace.
+It never reads, indexes or quotes a file's contents, and no backwork file is in the [indexed corpus](#indexed-corpus-retrieved).
+It is offered only to a member who may browse the library (`backwork:upload` or `backwork:admin`) in a chapter with backwork on, like every `/v1/backwork` route.
+An answer built on it warns before it is posted to a channel, because not everyone there may open the library.
+The AI that reads redacted pages to fill in upload fields ([#3487](https://github.com/frapplive/Frapp/issues/3487) phase 4) is a separate system with its own rule, not this one.
+
 > **The mobile s17 mock that flattened this split is gone** (2026-11-12, #4415).
 > Until then `apps/mobile/lib/ask/corpus.ts` answered from one keyword table that mixed events and dues amounts in with indexed prose, behind a build flag (`EXPO_PUBLIC_ASK_ENABLED`), so the screen could be reviewed before any API existed.
 > This note said a real implementation MUST NOT copy that shape and that the table was to be deleted, not extended.
@@ -294,7 +302,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   Where the member asked from is read on a server that answers through the tool loop (#4899, 2026-11-13): the app may send the id of the channel, event or task they had open (no app build sends one yet;
   that is #4904's), the server looks it up as the asker and drops one they cannot open, and Frapp is told its name (and when an event or a task is), so "this channel", "here" and "this event" mean something.
   It is not a source: anything Frapp says about that channel, event or task it reads with a tool and cites.
-- **Live data is read through tools, never the index:** the roster (names and roles, no contact details), upcoming events, the asker's own points and the leaderboard, the asker's own dues, and the asker's own unfinished tasks (added in #4700 by pdcarlson, 2026-11-13: what is assigned to them, when each is due, and whether it is past due, sent back or waiting on an officer;
+- **Live data is read through tools, never the index:** the roster (names and roles, no contact details), upcoming events, the backwork catalog (never a file's contents, [Live structured data](#live-structured-data-tool-called-never-embedded); #5209, 2026-11-16), the asker's own points and the leaderboard, the asker's own dues, and the asker's own unfinished tasks (added in #4700 by pdcarlson, 2026-11-13: what is assigned to them, when each is due, and whether it is past due, sent back or waiting on an officer;
   an officer asking gets their own tasks, not the chapter's).
   Each tool mirrors a route, needs that route's permission and module, and only reads.
   A tool that would change something is never offered to the call that answers; a member who may have Frapp act gets a card to confirm instead, worked out apart from the answer ([Asking Frapp to do something](#asking-frapp-to-do-something)).

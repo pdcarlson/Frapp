@@ -28,7 +28,7 @@ type ReminderRow = Extract<ActivityRow, { kind: "reminder" }>;
  * row's "Open in chat" does. A message the member can no longer read (gone,
  * or its channel left) goes nowhere.
  */
-export function reminderChatHref(row: ReminderRow): string | null {
+function reminderChatHref(row: ReminderRow): string | null {
   const { reminder } = row;
   if (!reminder.message_available) return null;
   return chatDeepLink({

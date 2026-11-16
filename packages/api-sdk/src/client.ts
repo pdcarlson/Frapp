@@ -94,7 +94,7 @@ const TIMEOUT_BY_ROUTE: Readonly<Record<string, number>> = {
 };
 
 /** The limit {@link REQUEST_TIMEOUT_MS} sets for one request. */
-export const requestTimeoutMs = (method: string, schemaPath: string): number =>
+const requestTimeoutMs = (method: string, schemaPath: string): number =>
   TIMEOUT_BY_ROUTE[`${method.toUpperCase()} ${schemaPath}`] ??
   (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD"
     ? REQUEST_TIMEOUT_MS.read

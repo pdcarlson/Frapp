@@ -127,7 +127,7 @@ function normalizeTimeZone(value: unknown): string {
  * An alias rather than its own `Record<…>` so this screen and web's Profile
  * card name one type: the shape is the catalog's, not this hook's.
  */
-export type CategoryState = NotificationCategoryState;
+type CategoryState = NotificationCategoryState;
 
 /** A concrete quiet-hour window. Times are `HH:mm`; `tz` is an IANA zone name. */
 export type QuietHoursWindow = {
@@ -141,7 +141,7 @@ export type QuietHoursWindow = {
  * (the first read, or a new chapter's preferences): the screen must not call
  * that "Saving…" (#2938). `pending` is a write.
  */
-export type SyncIndicator = "synced" | "loading" | "pending" | "cached" | "retry";
+type SyncIndicator = "synced" | "loading" | "pending" | "cached" | "retry";
 
 /**
  * The quiet-hour fields of `GET /v1/settings`. Picked from the contract's type

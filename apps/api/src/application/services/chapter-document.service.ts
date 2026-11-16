@@ -49,7 +49,7 @@ import { ChapterDocumentTypeService } from './chapter-document-type.service';
 export const DOCUMENTS_BUCKET = 'documents';
 
 /** Ids one `GET /documents/previews` may sign (#4647). */
-export const MAX_PREVIEW_IDS = 100;
+const MAX_PREVIEW_IDS = 100;
 /** A preview link's life: an hour, as the viewer's links. */
 const PREVIEW_URL_TTL_SECONDS = 60 * 60;
 

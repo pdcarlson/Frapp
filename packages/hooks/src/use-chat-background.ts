@@ -17,7 +17,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 export const chatBackgroundKeys = createChapterQueryKeys("chat-backgrounds");
 
 /** A photo picked on the device, uploaded before the setting is saved. */
-export interface ChatBackgroundPhotoInput {
+interface ChatBackgroundPhotoInput {
   body: Blob;
   filename: string;
   contentType: string;

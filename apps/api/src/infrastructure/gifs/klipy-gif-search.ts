@@ -30,7 +30,7 @@ import {
  *   breadcrumb for `api.klipy.com` (`sentry-options.ts`).
  */
 const KLIPY_API = 'https://api.klipy.com/api/v1';
-export const KLIPY_MEDIA_HOST = 'klipy.com';
+const KLIPY_MEDIA_HOST = 'klipy.com';
 const KLIPY_TIMEOUT_MS = 4_000;
 const KLIPY_PER_PAGE = 24;
 /** The one customer id KLIPY ever sees from Frapp. */

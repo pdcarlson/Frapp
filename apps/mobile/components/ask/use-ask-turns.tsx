@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import {
   useDocumentDownloadUrl,
+  useFetchBackworkResource,
   type AskCardEnd,
   type AskConversation,
   type AskExchange,
@@ -180,6 +181,7 @@ export function useAskSourceOpener(leave?: () => void): {
 } {
   const router = useRouter();
   const openDocument = useDocumentDownloadUrl();
+  const fetchBackwork = useFetchBackworkResource();
   const [openingKey, setOpeningKey] = useState<string | null>(null);
   const [failedOwner, setFailedOwner] = useState<string | null>(null);
   const presenting = useRef(false);
@@ -200,7 +202,11 @@ export function useAskSourceOpener(leave?: () => void): {
       setOpeningKey(`${owner}:${source.id}`);
       try {
         const url = selectDownloadUrl(
-          await openDocument.mutateAsync(opening.documentId),
+          opening.kind === "backwork"
+            ? // A fresh signed link, fetched now, as the library's own
+              // Download does (#5209): the answer never carries one.
+              await fetchBackwork(opening.backworkId)
+            : await openDocument.mutateAsync(opening.documentId),
         );
         if (!url) {
           setFailedOwner(owner);
@@ -214,7 +220,7 @@ export function useAskSourceOpener(leave?: () => void): {
         setOpeningKey(null);
       }
     },
-    [leave, openDocument, router],
+    [leave, openDocument, fetchBackwork, router],
   );
   const clearNotice = useCallback(() => setFailedOwner(null), []);
   return { open, openingKey, failedOwner, clearNotice };

@@ -127,6 +127,12 @@ const CALLS = new Set([
   'service.findByChapterFiltered',
   'service.leaderboard',
   'standing.getStanding',
+  // `find_backwork` (#5209): the backwork catalog, never a file or a link.
+  'backwork.findByChapter',
+  'backwork.getCourses',
+  'backwork.getDepartments',
+  'backwork.getProfessors',
+  'search.searchBackwork',
   // The agent's conversation tools (#4900, `agent/tools-conversation/`):
   // reads of channels, messages, documents and minutes, as the asker.
   'catchUp.readStretch',

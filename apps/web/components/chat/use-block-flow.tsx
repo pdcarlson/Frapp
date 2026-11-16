@@ -14,7 +14,7 @@ import { useBlockMember } from "@repo/hooks";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useToast } from "@/lib/hooks/use-toast";
 
-export interface BlockRequest {
+interface BlockRequest {
   userId: string;
   /** Display name, or `null` when the roster cannot resolve one. */
   name: string | null;

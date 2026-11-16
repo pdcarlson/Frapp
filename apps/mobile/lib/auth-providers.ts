@@ -1,9 +1,8 @@
 import { describeOAuthError } from "@repo/hooks/auth-error-copy";
 
-export const OAUTH_PROVIDERS = ["apple", "google"] as const;
-export type OAuthProvider = (typeof OAUTH_PROVIDERS)[number];
+export type OAuthProvider = "apple" | "google";
 
-export const APPLE_PRIVATE_RELAY_HOST = "privaterelay.appleid.com";
+const APPLE_PRIVATE_RELAY_HOST = "privaterelay.appleid.com";
 
 // Mobile s01 keeps the password and magic-link form behind "Continue with
 // email" (#3349), so these name that button rather than controls that aren't

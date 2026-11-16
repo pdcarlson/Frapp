@@ -46,7 +46,7 @@ export const RELOAD_SETTLE_MS = 1_000;
 /** The least time between two checks a return to the foreground starts. */
 export const CHECK_EVERY_MS = 15 * 60_000;
 
-export type ResumeAppState = "active" | "background" | "inactive" | string;
+type ResumeAppState = "active" | "background" | "inactive" | string;
 
 export interface UpdatesPort {
   /**

@@ -199,9 +199,6 @@ export function useClaimPresidency() {
   });
 }
 
-/** A role as the caller's `@`-mention picker offers it. */
-export type ChatMentionRole = components["schemas"]["MentionRoleDto"];
-
 /**
  * The chapter roles the caller may `@`, for both composers' mention pickers
  * (2026-11-06, `GET /v1/channels/mention-roles`). Each says whether the caller

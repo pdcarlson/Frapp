@@ -18,21 +18,15 @@ export {
   layOutMessageBody,
   textOf,
   type HastNode,
-  type MessageBodyLayout,
 } from "./markdown-flow";
 import { exceedsParseBudget } from "./markdown-parse-budget";
-export {
-  remarkMentionChips,
-  type MentionChipOptions,
-  type MentionChipProperties,
-} from "./markdown-mentions";
+export { remarkMentionChips } from "./markdown-mentions";
 
 // Only the combined check is exported, not its two halves: a renderer that
 // asked one of them would pay the other's parse.
 export {
   MAX_MESSAGE_MARKDOWN_DEPTH,
   remarkDepthCap,
-  type DepthCapOptions,
 } from "./markdown-depth-cap";
 
 /**

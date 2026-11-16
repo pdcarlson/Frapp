@@ -4,12 +4,14 @@ import { CHAPTER_AGENT_TOOLS } from '../../application/services/ask/agent/tools-
 // that route calls.
 import { ActivityModule } from '../activity/activity.module';
 import { AttendanceModule } from '../attendance/attendance.module';
+import { BackworkModule } from '../backwork/backwork.module';
 import { ChapterGroupModule } from '../chapter-group/chapter-group.module';
 import { EventModule } from '../event/event.module';
 import { FinancialInvoiceModule } from '../financial-invoice/financial-invoice.module';
 import { MemberModule } from '../member/member.module';
 import { PointsModule } from '../points/points.module';
 import { RbacModule } from '../rbac/rbac.module';
+import { SearchModule } from '../search/search.module';
 import { ServiceEntryModule } from '../service-entry/service-entry.module';
 import { TaskModule } from '../task/task.module';
 
@@ -34,6 +36,8 @@ import { TaskModule } from '../task/task.module';
     ActivityModule,
     ServiceEntryModule,
     FinancialInvoiceModule,
+    BackworkModule,
+    SearchModule,
   ],
   providers: [...CHAPTER_AGENT_TOOLS],
   exports: [...CHAPTER_AGENT_TOOLS],

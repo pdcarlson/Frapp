@@ -47,7 +47,7 @@ export const CachedBlockFloorContext = createContext<ReadonlySet<string> | null>
  * into tombstones. A member this client confirmed unblocking is taken off the
  * floor, as a confirmed change applies in every list state.
  */
-export function blockIdsWithFloor(
+function blockIdsWithFloor(
   blockList: Pick<BlockedUserIds, "ids" | "unblocked" | "readAt">,
   floor: ReadonlySet<string> | null,
 ): ReadonlySet<string> {

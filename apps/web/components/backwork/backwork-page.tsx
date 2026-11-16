@@ -23,7 +23,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  selectDownloadUrl,
   useBackworkCourses,
   useBackworkResources,
   useDeleteBackworkResource,
@@ -64,6 +63,7 @@ import { DraftsWaitingNote } from "@/components/backwork/bulk/drafts-review";
 import type { CollectedFiles } from "@/lib/bulk-upload/collect-files";
 import { stageBulkUpload } from "@/lib/backwork-bulk/handoff";
 import { BackworkRowsSkeleton } from "@/components/backwork/backwork-skeleton";
+import { openBackworkFile } from "@/components/backwork/backwork-download";
 import {
   CopyLabel,
   Highlighted,
@@ -274,12 +274,7 @@ export function BackworkPage() {
     const id = row.resource.id;
     setDownloading((prev) => new Set(prev).add(id));
     try {
-      const url = selectDownloadUrl(await fetchResource(row.resource.id));
-      if (!url) throw new Error("No download URL returned.");
-      // A new tab, not this one: the link forces a download (#3867), but a
-      // server from before it signs an inline link, and a storage error
-      // answers with a page of its own. Either would replace the library.
-      window.open(url, "_blank", "noopener");
+      await openBackworkFile(fetchResource, row.resource.id);
     } catch (error) {
       toast({
         title: "Couldn't fetch download link",

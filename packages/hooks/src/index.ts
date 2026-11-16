@@ -75,7 +75,6 @@ export * from "./use-chat-safety";
 export {
   type SidebarFilterChange,
   type SidebarPreferences,
-  type SidebarWriteOptions,
   useSetChannelPinned,
   useSetSidebarFilter,
   useSetSidebarSectionCollapsed,

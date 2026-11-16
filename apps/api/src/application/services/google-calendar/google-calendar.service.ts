@@ -28,7 +28,7 @@ import { sealRefreshToken } from './google-calendar-token';
 import { GoogleCalendarSyncService } from './google-calendar-sync.service';
 
 /** Google's redirect back to the API. Registered on the OAuth client. */
-export const GOOGLE_CALENDAR_CALLBACK_PATH = '/v1/google-calendar/callback';
+const GOOGLE_CALENDAR_CALLBACK_PATH = '/v1/google-calendar/callback';
 /** Where the web app finishes a sign-in: the Events page holds the menu. */
 const WEB_RETURN_PATH = '/events';
 /** How long a started sign-in stays good. */

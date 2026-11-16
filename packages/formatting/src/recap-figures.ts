@@ -1,7 +1,7 @@
 import { formatMinutesRounded } from "./minutes";
 
 /** The parts of Activity's weekly recap, as the API names them. */
-export type RecapFigureId = "events" | "tasks" | "points" | "service" | "study";
+type RecapFigureId = "events" | "tasks" | "points" | "service" | "study";
 
 /** The recap's numbers: `GET /v1/activity/recap`, `null` for a part that's off. */
 export interface RecapCounts {

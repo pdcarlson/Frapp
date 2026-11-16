@@ -1,5 +1,11 @@
 import type { FilterOption } from "@/components/shared/filter-chip";
-import { ASSIGNMENT_TYPES, DOCUMENT_VARIANTS } from "@repo/validation";
+import {
+  ASSIGNMENT_TYPES,
+  DOCUMENT_VARIANTS,
+  backworkCourseCode,
+  backworkFileTitle,
+  backworkTerm,
+} from "@repo/validation";
 import {
   fuzzyMatchWords,
   isNumeralWord,
@@ -64,7 +70,7 @@ export type BackworkCourse = {
 };
 
 /** One way to say a course (its name, or one nickname), ready to score. */
-export type CoursePhrase = {
+type CoursePhrase = {
   text: string;
   isNickname: boolean;
   /** Normalised words, as written. */
@@ -151,13 +157,6 @@ const TERM_ORDER: Record<string, number> = {
   Fall: 3,
 };
 
-function joinNonEmpty(parts: readonly (string | number | null | undefined)[]): string | null {
-  const kept = parts.filter(
-    (part): part is string | number => part !== null && part !== undefined && part !== "",
-  );
-  return kept.length ? kept.join(" ") : null;
-}
-
 function courseKey(departmentId: string, courseNumber: string): string {
   return `${departmentId}:${courseNumber.trim().toLowerCase()}`;
 }
@@ -204,12 +203,7 @@ export function toLibraryRows(
       department && resource.course_number?.trim()
         ? (courseByKey.get(courseKey(department.id, resource.course_number)) ?? null)
         : null;
-    const course = joinNonEmpty([department?.code, resource.course_number?.trim()]);
-    const fallbackTitle = joinNonEmpty([
-      resource.assignment_type ?? "Resource",
-      resource.assignment_number,
-      course ? `· ${course}` : null,
-    ]);
+    const course = backworkCourseCode(department?.code, resource.course_number);
     const coursePhrases = phrasesFor(courseEntry);
     const row = {
       resource,
@@ -219,8 +213,8 @@ export function toLibraryRows(
       coursePhrases,
       course,
       courseLabel: courseEntry?.name ?? department?.name ?? null,
-      term: joinNonEmpty([resource.semester, resource.year]),
-      title: resource.title?.trim() || fallbackTitle || "Untitled",
+      term: backworkTerm(resource),
+      title: backworkFileTitle(resource, course),
       words: [] as readonly string[],
       courseWords: [...new Set(coursePhrases.flatMap((phrase) => phrase.textWords))],
     };
