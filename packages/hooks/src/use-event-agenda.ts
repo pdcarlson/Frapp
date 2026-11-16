@@ -50,16 +50,23 @@ export function useEventListsEditor(
   const [saving, setSaving] = useState(false);
   const editedRef = useRef<Partial<EventLists>>({});
   const serverRef = useRef(server);
-  serverRef.current = server;
   const dirty = useRef(new Set<EventListField>());
   const inFlight = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onFailed = useRef(options.onFailed);
-  onFailed.current = options.onFailed;
   const mounted = useRef(true);
-
   const keys = useRef({ chapterId, eventId });
-  keys.current = { chapterId, eventId };
+  // The latest render's values, for the handlers and timers that read them
+  // later. Written after the commit, not during render; nothing reads them
+  // before then, since every reader is a handler, a timer or a save.
+  useEffect(() => {
+    serverRef.current = server;
+    onFailed.current = options.onFailed;
+    keys.current = { chapterId, eventId };
+  });
+  // `flush` sends the next save itself when changes came in during one;
+  // through a ref, since a callback can't name itself in its own body.
+  const flushRef = useRef<() => Promise<void>>(async () => {});
 
   const flush = useCallback(async () => {
     if (timer.current) {
@@ -100,7 +107,7 @@ export function useEventListsEditor(
       inFlight.current = false;
     }
     if (dirty.current.size > 0) {
-      void flush();
+      void flushRef.current();
       return;
     }
     await Promise.all([
@@ -122,10 +129,16 @@ export function useEventListsEditor(
   }, [client, queryClient]);
 
   useEffect(() => {
+    flushRef.current = flush;
+  }, [flush]);
+
+  useEffect(() => {
     mounted.current = true;
+    // The same set for the editor's life: `dirty` is never reassigned.
+    const waiting = dirty.current;
     return () => {
       mounted.current = false;
-      if (dirty.current.size > 0) void flush();
+      if (waiting.size > 0) void flush();
     };
   }, [flush]);
 
