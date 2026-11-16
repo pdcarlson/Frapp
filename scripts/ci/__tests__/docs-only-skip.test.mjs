@@ -1,10 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
-import { WORKFLOW_DIR, workflowJobs, workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { CI, REPO, changesStep, filterList, relativeReads, sourceFiles } from "./helpers/source-reads.mjs";
+import { workflowJobs } from "./helpers/workflow-yaml.mjs";
 import { CI_CHECKS } from "../lib/required-checks.mjs";
 
 // A PR or merge queue entry that changes only docs/ and spec/ skips the CI
@@ -16,8 +16,9 @@ import { CI_CHECKS } from "../lib/required-checks.mjs";
 //    `queue_tested` alone;
 //  - a doc any other job reads is in `docs_reads`, and changing it runs the
 //    suite. The scan below finds those reads in apps/ and packages/ the way
-//    app-filter-coverage.test.mjs does: a quoted `../` path that resolves into
-//    docs/ or spec/, or a quoted literal starting `docs/` or `spec/`. Reads built
+//    app-filter-coverage.test.mjs does (helpers/source-reads.mjs): a quoted
+//    `../` path, `${__dirname}/../` included, that resolves into docs/ or
+//    spec/, or a quoted literal starting `docs/` or `spec/`. Reads built
 //    any other way are invisible to it. scripts/ is not scanned: its checks
 //    that read docs run in the three DOC_READERS jobs (ci-scripts-tests runs
 //    every test under scripts/ci/__tests__, migration-safety reads the
@@ -26,65 +27,19 @@ import { CI_CHECKS } from "../lib/required-checks.mjs";
 //    2026-11-16);
 //  - a filter that fails, or a PR past GitHub's 3000-file listing, never skips.
 
-const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const CI = join(WORKFLOW_DIR, "ci.yml");
-
 /** Jobs that read docs, and so run on a docs-only change. */
 const DOC_READERS = ["ci-scripts-tests", "secret-scan", "migration-safety"];
 /** Jobs that never read the gate (queue-tested.test.mjs pins why). */
 const NOT_GATED = ["changes", "packages-build", "main-caches"];
 
-const SKIP_DIRS = new Set(["node_modules", "dist", ".expo", ".next", ".turbo", "ios", "android", "coverage"]);
-const SOURCE = /\.(?:[cm]?[jt]sx?|json)$/;
-
 const jobs = workflowJobs(CI);
 const byId = new Map(jobs.map((job) => [job.jobId, job]));
-const changesSteps = workflowSteps(CI).filter((step) => step.jobId === "changes");
-
-function changesStep(id) {
-  const step = changesSteps.find((s) => new RegExp(`^\\s+id: ${id}$`, "m").test(s.body));
-  assert.ok(step, `ci.yml's changes job has no step with id ${id}`);
-  return step;
-}
-
-/** The patterns under `name:` in a paths-filter step's `filters: |` block. */
-function filterList(body, name) {
-  const lines = body.split("\n");
-  const at = lines.findIndex((l) => new RegExp(`^\\s+${name}:\\s*$`).test(l));
-  assert.notEqual(at, -1, `no ${name} filter`);
-  const indent = lines[at].match(/^\s*/)[0].length;
-  const out = [];
-  for (const line of lines.slice(at + 1)) {
-    if (!line.trim() || /^\s*#/.test(line)) continue;
-    if (line.match(/^\s*/)[0].length <= indent) break;
-    const m = line.match(/^\s*-\s*'([^']+)'\s*$/);
-    assert.ok(m, `${name}: unreadable entry ${JSON.stringify(line)}`);
-    out.push(m[1]);
-  }
-  return out;
-}
-
-function sourceFiles(dir) {
-  const out = [];
-  for (const entry of readdirSync(join(REPO, dir), { withFileTypes: true })) {
-    if (SKIP_DIRS.has(entry.name)) continue;
-    const path = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) out.push(...sourceFiles(path));
-    else if (SOURCE.test(entry.name)) out.push(path);
-  }
-  return out;
-}
 
 const IN_DOCS = /^(?:docs|spec)\//;
 
 /** Every docs/ or spec/ path a source file names as a file to read. */
 function docReadsOf(file, text) {
-  const from = dirname(join(REPO, file));
-  const out = [];
-  for (const m of text.matchAll(/["'`]((?:\.\.\/)+[^"'`\s$]*)["'`]/g)) {
-    const path = relative(REPO, resolve(from, m[1])).split(sep).join("/");
-    if (IN_DOCS.test(path)) out.push(path);
-  }
+  const out = relativeReads(file, text).filter((path) => IN_DOCS.test(path));
   // Only plain quotes: a backticked `spec/…` is how comments cite a doc.
   for (const m of text.matchAll(/["']((?:docs|spec)\/[^"'\s$]*)["']/g)) out.push(m[1]);
   return out;
@@ -104,12 +59,12 @@ describe("docs-only changes skip the CI suite (#5141)", () => {
   it("outside_docs matches any file outside docs/ and spec/", () => {
     const apps = changesStep("apps");
     // Every pattern must hold for a file to count, which only `every` gives.
-    assert.match(apps.body, /^\s+predicate-quantifier: every$/m);
-    assert.deepEqual(filterList(apps.body, "outside_docs"), ["**", "!docs/**", "!spec/**"]);
+    assert.match(apps, /^\s+predicate-quantifier: every$/m);
+    assert.deepEqual(filterList(apps, "outside_docs"), ["**", "!docs/**", "!spec/**"]);
   });
 
   it("docs_reads lists every doc that app and package sources read", () => {
-    const listed = filterList(changesStep("filter").body, "docs_reads");
+    const listed = filterList(changesStep("filter"), "docs_reads");
     const read = new Map();
     for (const file of [...sourceFiles("apps"), ...sourceFiles("packages")]) {
       for (const path of docReadsOf(file, readFileSync(join(REPO, file), "utf8"))) {
@@ -123,7 +78,7 @@ describe("docs-only changes skip the CI suite (#5141)", () => {
       assert.ok(existsSync(join(REPO, path)), `docs_reads lists ${path}, which is gone`);
     }
     // The scan has teeth: today's three readers are found.
-    assert.ok(read.size >= 3, `expected the scan to find the known readers, saw ${read.size}`);
+    assert.ok(read.size >= 4, `expected the scan to find the known readers, saw ${read.size}`);
   });
 
   it("the scan finds both ways a source names a doc, and ignores a comment's citation", () => {
@@ -131,13 +86,16 @@ describe("docs-only changes skip the CI suite (#5141)", () => {
     assert.deepEqual(docReadsOf(file, `join(__dirname, '../../../spec/behavior/observability.md')`), [
       "spec/behavior/observability.md",
     ]);
+    assert.deepEqual(docReadsOf(file, "readFileSync(`${__dirname}/../../../spec/ui/design-system/writing.md`)"), [
+      "spec/ui/design-system/writing.md",
+    ]);
     assert.deepEqual(docReadsOf(file, `join(repoRoot, "docs/guides/testing.md")`), ["docs/guides/testing.md"]);
     assert.deepEqual(docReadsOf(file, "// per `spec/ui/assets.md` §7"), []);
   });
 
   it("the filters run on PRs and in the queue, and only the queue's can fail open to the full suite", () => {
     for (const id of ["filter", "apps"]) {
-      const { body } = changesStep(id);
+      const body = changesStep(id);
       assert.match(body, /^\s*if:\s*github\.event_name != 'push'\s*$/m, `${id} runs on pull_request and merge_group`);
       // On a PR a failed filter must fail `changes`: its path outputs gate jobs
       // there, and an empty one would skip them. In the queue the gated jobs run

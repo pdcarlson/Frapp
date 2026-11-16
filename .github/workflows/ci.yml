@@ -202,6 +202,7 @@ jobs:
               - 'spec/behavior/observability.md'
               - 'spec/ui/design-system/README.md'
               - 'spec/ui/design-system/foundations.md'
+              - 'spec/ui/design-system/writing.md'
       # The other way round from `filter`: these skip a PR only when EVERY file it
       # changes is in an area the job never reads, so a file nobody listed (a new
       # root config, a script) runs the job rather than slipping past a required

@@ -1,10 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 
-import { workflowSteps } from "./helpers/workflow-yaml.mjs";
+import { CI, REPO, changesStep, filterList, relativeReads, sourceFiles } from "./helpers/source-reads.mjs";
 
 // `mobile-validate`, `mobile-tests-tokyo` and `api-tests` are required checks
 // that a PR skips when every file it changes is in an area the job never reads
@@ -13,16 +12,14 @@ import { workflowSteps } from "./helpers/workflow-yaml.mjs";
 // breaks it merge green, and the break would first show on `main`.
 //
 // Those reads are listed in the `filter` step's `mobile_reads` and `api_reads`,
-// and this test finds them: every quoted path in an app's sources that starts
-// with `../` is resolved from its file, and one that lands in an area the app's
-// filter skips must be listed. A spec that reads through a helper joining a
-// directory onto an argument (`apiSource("…")`) is named in VIA_HELPER, which
+// and this test finds them (helpers/source-reads.mjs): every quoted path in an
+// app's sources that starts with `../` (or `${__dirname}/../`) is resolved from
+// its file, and one that lands in an area the app's filter skips must be listed.
+// A spec that reads through a helper joining a directory onto an argument
+// (`apiSource("…")`) is named in VIA_HELPER, which
 // says which helper's literal arguments to read. Reads built any other way (a
 // `join(root, "spec", …)` from separate segments) are invisible here, which is
 // why the filter skips only whole areas, and runs the job on anything new.
-
-const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const CI = join(REPO, ".github", "workflows", "ci.yml");
 
 const APPS = {
   mobile: {
@@ -42,63 +39,10 @@ const VIA_HELPER = {
   },
 };
 
-const SKIP_DIRS = new Set([
-  "node_modules",
-  "dist",
-  ".expo",
-  ".next",
-  "ios",
-  "android",
-  "coverage",
-]);
-const SOURCE = /\.(?:[cm]?[jt]sx?|json)$/;
-
-function changesStep(id) {
-  const step = workflowSteps(CI).find(
-    (s) =>
-      s.jobId === "changes" && new RegExp(`^\\s+id: ${id}$`, "m").test(s.body),
-  );
-  assert.ok(step, `ci.yml's changes job has no step with id ${id}`);
-  return step.body;
-}
-
-/** The patterns under `name:` in a paths-filter step's `filters: |` block. */
-function filterList(body, name) {
-  const lines = body.split("\n");
-  const at = lines.findIndex((l) => new RegExp(`^\\s+${name}:\\s*$`).test(l));
-  assert.notEqual(at, -1, `no ${name} filter`);
-  const indent = lines[at].match(/^\s*/)[0].length;
-  const out = [];
-  for (const line of lines.slice(at + 1)) {
-    if (!line.trim() || /^\s*#/.test(line)) continue;
-    if (line.match(/^\s*/)[0].length <= indent) break;
-    const m = line.match(/^\s*-\s*'([^']+)'\s*$/);
-    assert.ok(m, `${name}: unreadable entry ${JSON.stringify(line)}`);
-    out.push(m[1]);
-  }
-  return out;
-}
-
-function sourceFiles(dir) {
-  const out = [];
-  for (const entry of readdirSync(join(REPO, dir), { withFileTypes: true })) {
-    if (SKIP_DIRS.has(entry.name)) continue;
-    const path = `${dir}/${entry.name}`;
-    if (entry.isDirectory()) out.push(...sourceFiles(path));
-    else if (SOURCE.test(entry.name)) out.push(path);
-  }
-  return out;
-}
-
-const toRepo = (abs) => relative(REPO, abs).split(sep).join("/");
-
 /** Every repo path a file names by a quoted `../` literal or through its helper. */
 function readsOf(file) {
   const text = readFileSync(join(REPO, file), "utf8");
-  const from = dirname(join(REPO, file));
-  const paths = [...text.matchAll(/["'`]((?:\.\.\/)+[^"'`\s$]*)["'`]/g)].map(
-    (m) => toRepo(resolve(from, m[1])),
-  );
+  const paths = relativeReads(file, text);
   const via = VIA_HELPER[file];
   if (via) {
     for (const m of text.matchAll(
