@@ -1,1 +1,0 @@
-Tasks now groups your own tasks as Today, This week and Later, and officers can switch between My tasks and All tasks, group the chapter's tasks by person, and filter them by assignee, status and due date.
