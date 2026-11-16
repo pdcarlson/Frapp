@@ -11,8 +11,8 @@ import { ALL_REQUIRED_CHECKS, MERGE_QUEUE } from "../lib/required-checks.mjs";
 // `merge_group` produces. A required check in a workflow without that trigger
 // never reports there: every queued PR then sits until the queue's timeout and
 // drops out, and nothing in a PR's own checks shows why. These pin the parts of
-// ci.yml and migration-drift-gate.yml that make a queue run behave like the
-// last check before `main` rather than a PR run with no PR in it.
+// ci.yml and migration-drift-gate.yml that make a queue run check what a PR
+// run checks, measured from the entry ahead instead of the PR's base.
 
 const files = workflowFiles().map((name) => ({ name, path: join(WORKFLOW_DIR, name) }));
 
@@ -61,15 +61,16 @@ describe("a queue run is not a pull_request run", () => {
     const text = readFileSync(file.path, "utf8");
 
     it(`${file.name}: no required job is skipped in the queue by a push-only arm`, () => {
-      // A job-level `if:` that skips reports Success, so a gated job written as
-      // `event_name == 'push' || <filter>` would pass in the queue unrun: the
-      // filter only runs on pull_request.
+      // A job-level `if:` that skips reports Success, so a job written as
+      // `event_name == 'push'` alone would pass in the queue unrun. The one
+      // allowed push arm is a gated job's, ORed with a path filter that runs
+      // in the queue (the exact form is pinned below).
       for (const job of workflowJobs(file.path)) {
         if (!ALL_REQUIRED_CHECKS.includes(job.jobId) || job.if === null) continue;
         assert.doesNotMatch(
-          job.if,
+          job.if.replace(/github\.event_name == 'push' \|\| needs\.changes\.outputs\.\w+ == 'true'/, ""),
           /event_name\s*==\s*'push'/,
-          `${job.jobId}: use \`github.event_name != 'pull_request' || …\` so the queue runs it`,
+          `${job.jobId}: a push-only arm skips it in the queue`,
         );
         assert.doesNotMatch(
           job.if,
@@ -92,11 +93,12 @@ describe("a queue run is not a pull_request run", () => {
   }
 });
 
-describe("queue runs take the full and diff arms", () => {
-  it("every path-gated job runs whenever the event is not a pull request", () => {
+describe("queue runs take the path and diff arms", () => {
+  it("every path-gated job runs on a push, and on a PR or queue entry its filter matches", () => {
     // Exact form, not a denylist: `github.ref == 'refs/heads/main' || <filter>`
-    // or `event_name == 'pull_request' && …` would also skip in the queue, where
-    // the filter's outputs are empty, and a skipped required job reports Success.
+    // would skip a push the queue didn't test, and `event_name == 'pull_request'
+    // && …` a queue entry. A queue entry's filter sees only its own PR (#5195):
+    // its base is the entry ahead.
     for (const file of emitting) {
       for (const job of workflowJobs(file.path)) {
         if (job.if === null || !/needs\.changes\.outputs\.(?!(?:queue_tested|skip_suite)\b)/.test(job.if)) continue;
@@ -105,7 +107,7 @@ describe("queue runs take the full and diff arms", () => {
         // inside its parentheses.
         assert.match(
           job.if,
-          /^\$\{\{ (needs\.changes\.outputs\.(?:queue_tested|skip_suite) != 'true' && \()?github\.event_name != 'pull_request' \|\| needs\.changes\.outputs\.\w+ == 'true'(\))? \}\}$/,
+          /^\$\{\{ (needs\.changes\.outputs\.(?:queue_tested|skip_suite) != 'true' && \()?github\.event_name == 'push' \|\| needs\.changes\.outputs\.\w+ == 'true'(\))? \}\}$/,
           `${file.name} ${job.jobId}`,
         );
         assert.equal(/queue_tested|skip_suite/.test(job.if), /\)\s*\}\}$/.test(job.if), `${file.name} ${job.jobId}: parenthesize the path arm`);
@@ -113,11 +115,34 @@ describe("queue runs take the full and diff arms", () => {
     }
   });
 
+  it("the path filters run in the queue, and a failed one runs the jobs", () => {
+    // The gated jobs read these outputs in the queue (above). The filter steps
+    // carry `continue-on-error` there, which leaves a failed step's outputs
+    // empty; each path output must then answer 'true', or every gated job
+    // would skip and report Success.
+    const ci = join(WORKFLOW_DIR, "ci.yml");
+    const changes = workflowJobs(ci).find((job) => job.jobId === "changes");
+    const outputs = changes.keys.get("outputs");
+    const gated = new Set();
+    for (const job of workflowJobs(ci)) {
+      for (const m of (job.if ?? "").matchAll(/needs\.changes\.outputs\.(\w+) == 'true'/g)) gated.add(m[1]);
+    }
+    assert.ok(gated.size >= 5, `expected the gated jobs' outputs, saw ${[...gated]}`);
+    for (const name of gated) {
+      const value = outputs.get(name);
+      for (const id of ["filter", "apps"]) {
+        if (!value.includes(`steps.${id}.outputs.`)) continue;
+        assert.ok(value.includes(`steps.${id}.outcome == 'failure'`), `${name} must run its jobs when ${id} fails`);
+      }
+    }
+    for (const step of workflowSteps(ci).filter((s) => s.jobId === "changes" && /^\s+id: (filter|apps)$/m.test(s.body))) {
+      assert.match(step.body, /^\s*if:\s*github\.event_name != 'push'\s*$/m, step.name);
+    }
+  });
+
   it("a job with a PR-only diff step also runs it in the queue", () => {
     // Otherwise both its PR step and its push step skip in the queue and the
-    // job reports green having checked nothing. The `changes` job's filters
-    // feed the gated jobs on a PR only: in the queue they run in full (above),
-    // and the filters there decide only the docs-only skip (#5141).
+    // job reports green having checked nothing.
     for (const file of emitting) {
       for (const step of workflowSteps(file.path)) {
         if (step.jobId === "changes") continue;

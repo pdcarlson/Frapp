@@ -108,7 +108,7 @@ describe("the mobile and API path filters list every file their specs read from 
       assert.match(
         text,
         new RegExp(
-          `^ {6}${name}: \\$\\{\\{ steps\\.apps\\.outputs\\.${name} == 'true' \\|\\| steps\\.filter\\.outputs\\.${app.reads} == 'true' \\|\\| github\\.event\\.pull_request\\.changed_files > 3000 \\}\\}$`,
+          `^ {6}${name}: \\$\\{\\{ steps\\.apps\\.outputs\\.${name} == 'true' \\|\\| steps\\.filter\\.outputs\\.${app.reads} == 'true' \\|\\| github\\.event\\.pull_request\\.changed_files > 3000 \\|\\| steps\\.apps\\.outcome == 'failure' \\|\\| steps\\.filter\\.outcome == 'failure' \\}\\}$`,
           "m",
         ),
       );
@@ -124,9 +124,9 @@ describe("the mobile and API path filters list every file their specs read from 
         assert.ok(
           head.includes(
             // Behind the skip gate every CI job carries (#5084, #5141).
-            `if: \${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.${name} == 'true') }}`,
+            `if: \${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name == 'push' || needs.changes.outputs.${name} == 'true') }}`,
           ),
-          `${job} runs on push, in the merge queue, and on a PR its filter matches`,
+          `${job} runs on push, and on a PR or queue entry its filter matches`,
         );
       }
     }
