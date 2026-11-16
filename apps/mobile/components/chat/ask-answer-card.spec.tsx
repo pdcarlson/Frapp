@@ -17,6 +17,7 @@ const hooks = vi.hoisted(() => ({ download: vi.fn() }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useDocumentDownloadUrl: () => ({ mutateAsync: hooks.download }),
+  useFetchBackworkResource: () => vi.fn(),
 }));
 
 import { AskAnswerCard } from "./ask-answer-card";

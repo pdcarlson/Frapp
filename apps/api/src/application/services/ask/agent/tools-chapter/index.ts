@@ -2,6 +2,7 @@ import { AttendanceSummaryAgentTool } from './attendance-summary.tool';
 import { ChapterTasksAgentTool } from './chapter-tasks.tool';
 import { EventAttendanceAgentTool } from './event-attendance.tool';
 import { EventsAgentTool } from './events.tool';
+import { FindBackworkAgentTool } from './find-backwork.tool';
 import { FindMemberAgentTool } from './find-member.tool';
 import { MyAttendanceAgentTool } from './my-attendance.tool';
 import { MyDuesAgentTool } from './my-dues.tool';
@@ -44,4 +45,5 @@ export const CHAPTER_AGENT_TOOLS = [
   MyHoursAgentTool,
   ServiceHoursAgentTool,
   MyDuesAgentTool,
+  FindBackworkAgentTool,
 ] as const;

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Check, Copy, Lightbulb } from "lucide-react";
+import { Check, Copy, Download, Lightbulb, LoaderCircle } from "lucide-react";
 import {
   useAskSignal,
   useAskThumbs,
@@ -41,9 +41,11 @@ import {
 } from "@/components/ask/ask-entity-text";
 import { AskAnswerCards, AskProposal } from "@/components/ask/ask-proposal";
 import {
+  askSourceBackworkId,
   askSourceHref,
   askSourceIsMessage,
 } from "@/components/ask/ask-source-link";
+import { useAskBackworkDownload } from "@/components/ask/use-ask-backwork-download";
 import { ReportAiButton } from "@/components/ai/report-ai";
 import {
   AskThumbButtons,
@@ -674,11 +676,25 @@ function CitationMarker({
   const opened = useContext(SourceOpened);
   if (!source) return null;
   const href = askSourceHref(source);
+  const backworkId = askSourceBackworkId(source);
   const { name } = askSourceChip(source);
   const label = `Source ${number}: ${name}`;
   // The words the server found in the source, on hover, so the member can
   // check the claim before opening anything.
   const title = quote ? `${name}: "${quote}"` : name;
+  if (backworkId) {
+    return (
+      <BackworkDownload
+        backworkId={backworkId}
+        onStart={opened}
+        className={cn(MARKER, "hover:bg-gold-ask-border/30", FOCUS_RING)}
+        label={`${label}. Download`}
+        title={title}
+      >
+        {() => number}
+      </BackworkDownload>
+    );
+  }
   if (!href) {
     return (
       <span className={MARKER} aria-label={label} title={title}>
@@ -718,12 +734,13 @@ function SourceChip({
 }) {
   const opened = useContext(SourceOpened);
   const href = askSourceHref(source);
+  const backworkId = askSourceBackworkId(source);
   // A quoted message says whose it is and when (`askSourceChip`, #4904).
   const { name: words, when, meta } = askSourceChip(source);
   const name = [`Source ${number}: ${words}`, meta].filter(Boolean).join(", ");
   const chip =
     "inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-border bg-surface-1 pl-2.5 pr-3 text-caption pointer-coarse:h-11";
-  const body = (
+  const body = (pending: boolean) => (
     <>
       <span
         aria-hidden="true"
@@ -737,11 +754,40 @@ function SourceChip({
       {when ? (
         <span className="shrink-0 text-muted-foreground">{when}</span>
       ) : null}
+      {backworkId ? (
+        // The file downloads (#5209). While its link is fetched the arrow
+        // turns to a spinner of the same size, so nothing in the row moves.
+        pending ? (
+          <LoaderCircle
+            aria-hidden="true"
+            className="size-3.5 shrink-0 animate-spin text-muted-foreground"
+          />
+        ) : (
+          <Download
+            aria-hidden="true"
+            className="size-3.5 shrink-0 text-muted-foreground"
+          />
+        )
+      ) : null}
     </>
   );
   return (
     <li className="min-w-0 max-w-full">
-      {href ? (
+      {backworkId ? (
+        <BackworkDownload
+          backworkId={backworkId}
+          onStart={opened}
+          className={cn(
+            chip,
+            "transition-colors hover:bg-card-hover",
+            FOCUS_RING,
+          )}
+          label={`${name}. Download`}
+          title={meta}
+        >
+          {body}
+        </BackworkDownload>
+      ) : href ? (
         <Link
           href={href}
           aria-label={name}
@@ -758,13 +804,54 @@ function SourceChip({
             FOCUS_RING,
           )}
         >
-          {body}
+          {body(false)}
         </Link>
       ) : (
         <span className={chip} aria-label={name} title={meta}>
-          {body}
+          {body(false)}
         </span>
       )}
     </li>
+  );
+}
+
+/**
+ * A backwork file Frapp found, as a button that downloads it (#5209): a
+ * chip or a marker. Its own component so the fetch it needs is only set up
+ * where a file is shown. `children` is drawn with whether the link is being
+ * fetched, for a pending state that keeps its size.
+ */
+function BackworkDownload({
+  backworkId,
+  onStart,
+  className,
+  label,
+  title,
+  children,
+}: {
+  backworkId: string;
+  onStart: (() => void) | null;
+  className: string;
+  label: string;
+  title: string;
+  children: (pending: boolean) => ReactNode;
+}) {
+  const { download, pendingId } = useAskBackworkDownload();
+  const pending = pendingId === backworkId;
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-label={label}
+      aria-busy={pending}
+      title={title}
+      onClick={() => {
+        if (pending) return;
+        onStart?.();
+        void download(backworkId);
+      }}
+    >
+      {children(pending)}
+    </button>
   );
 }

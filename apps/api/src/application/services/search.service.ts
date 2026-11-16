@@ -336,11 +336,16 @@ export class SearchService {
    * member without either permission (Alumni, or VP or Secretary alone) would
    * otherwise read file titles, courses and terms they cannot open. Same
    * any-of rule as `BackworkController`, wildcard included.
+   *
+   * Public for Ask's `find_backwork` (#5209), which reads the catalog through
+   * this gate and ranking rather than a second query. `limit` is capped at 50
+   * by `search_backwork_resources` itself.
    */
-  private async searchBackwork(
+  async searchBackwork(
     chapterId: string,
     userId: string,
     query: string,
+    limit = SEARCH_LIMIT,
   ): Promise<BackworkResource[]> {
     const mayBrowse = await this.rbacService.memberHasAnyPermission(
       chapterId,
@@ -348,7 +353,7 @@ export class SearchService {
       [SystemPermissions.BACKWORK_UPLOAD, SystemPermissions.BACKWORK_ADMIN],
     );
     if (!mayBrowse) return [];
-    return this.repo.searchBackwork(chapterId, query, SEARCH_LIMIT);
+    return this.repo.searchBackwork(chapterId, query, limit);
   }
 
   /** Event hits in the chapter, filtered to what the caller may see. */
