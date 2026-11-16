@@ -620,13 +620,10 @@ export class AskService {
     const passages = allowed.passages.map((passage) =>
       passageEntry(passage, input.timeZone),
     );
-    // Live data is canon, then the official record, then chat, each in the
-    // order retrieval ranked it.
-    const entries = [
-      ...toolEntries,
-      ...passages.filter((entry) => !entry.chat),
-      ...passages.filter((entry) => entry.chat),
-    ];
+    // Live data is read just now, so it goes first; then what was found, in
+    // the order retrieval ranked it. Chat is not held back behind the
+    // record (#5179): each source's title says what it is.
+    const entries = [...toolEntries, ...passages];
     const run: AskRun = {
       task: 'ask.answer',
       promptVersion: ASK_ANSWER_PROMPT_VERSION,

@@ -8,7 +8,8 @@
  * (`spec/behavior/ai.md` § Chat as a source; C3, C5 and C8 in
  * `docs/security/ai-prompt-injection.md`):
  *
- * - live data reaches the model first, then official sources, then chat;
+ * - live data reaches the model first, then what was found, chat labelled as
+ *   chat wherever it ranked (#5179);
  * - chat is labelled as chat, with its channel and day;
  * - the planner is shown the question and the tool list and nothing found;
  * - a tool that changes something is never offered, and never run even when
@@ -91,7 +92,9 @@ describe('the Ask agent under test', () => {
   });
 
   it.each(mixed.map((c) => [c.id, c] as const))(
-    '%s: hands the model official sources before chat, and chat labelled as chat',
+    // Chat is no longer placed after the record (#5179, Paul 2026-11-16):
+    // what holds is that it reaches the model, labelled as chat.
+    '%s: hands the model chat labelled as chat, beside the official sources',
     async (_id, evalCase) => {
       const { agent, requests } = recordingAgent();
       await agent.ask(evalCase.invocation);
@@ -100,9 +103,7 @@ describe('the Ask agent under test', () => {
 
       const kinds = answer.sources.map(kindOf);
       expect(kinds).toContain('chat');
-      expect(kinds.indexOf('chat')).toBeGreaterThan(
-        kinds.lastIndexOf('official'),
-      );
+      expect(kinds).toContain('official');
       for (const source of answer.sources.filter((s) => kindOf(s) === 'chat')) {
         // "Chat message in #general, Tuesday, October 20, 2026"
         expect(source.title).toMatch(

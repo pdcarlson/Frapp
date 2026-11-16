@@ -36,14 +36,29 @@ describe('ownWords', () => {
     ['nothing', ''],
     ['only space', '  \n '],
     ['a long uncited answer', 'Dues are due. '.repeat(40)],
-    ['more than one line', 'Hello!\nMore on a second line.'],
-    ['an answer under a lead-in', "Here's what I found:\n- Dues are $450"],
-    ['a list', '- Dues are $450\n- Formal is Friday'],
-    ['a numbered list', '1. Dues\n2. Formal'],
-    ['a heading', '# Dues'],
     ['an overlong sentence', `${'word '.repeat(60)}.`],
   ])('shows nothing for %s', (_what, text) => {
     expect(ownWords(text)).toBeNull();
+  });
+
+  it.each([
+    [
+      'a question back with the names on their own lines',
+      'Which Jordan do you mean?\n- @Jordan Lee\n- @Jordan Park',
+    ],
+    ['two short lines', 'Hello!\nAsk me anything about your chapter.'],
+    ['a short numbered list', '1. Dues\n2. Formal'],
+  ])(
+    'shows %s whole: line breaks and lists are allowed (#5179)',
+    (_what, text) => {
+      expect(ownWords(text)).toBe(text);
+    },
+  );
+
+  it('cuts a long reply on several lines to its first sentence', () => {
+    const text = `Which Jordan do you mean? ${'There are a few.'.repeat(5)}\n${'- @Jordan Lee\n'.repeat(12)}`;
+    expect(text.length).toBeLessThanOrEqual(OWN_WORDS_MAX_TEXT);
+    expect(ownWords(text)).toBe('Which Jordan do you mean?');
   });
 
   it('keeps its limits in order', () => {
