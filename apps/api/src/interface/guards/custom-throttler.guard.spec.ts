@@ -117,6 +117,15 @@ describe('CustomThrottlerGuard', () => {
       await expect(guard.track(req)).resolves.toBe('user:user-9');
     });
 
+    it('falls back to IP for a token whose header decodes to JSON null, instead of throwing', async () => {
+      const nullHeader = Buffer.from('null').toString('base64url');
+      const req = {
+        headers: { authorization: `Bearer ${nullHeader}.e30.x` },
+        ip: '203.0.113.9',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.9');
+    });
+
     it('falls back to IP for a forged (bad-signature) token — the bypass is closed', async () => {
       const req = {
         headers: {

@@ -5,6 +5,7 @@ import {
   Get,
   InternalServerErrorException,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -51,6 +52,9 @@ import {
   BackworkDownloadUrlsResponseDto,
   BackworkCourseDto,
   UpsertBackworkCourseDto,
+  UpdateBackworkDraftsDto,
+  PublishBackworkDraftsDto,
+  PublishBackworkDraftsResponseDto,
 } from '../dtos/backwork.dto';
 
 @ApiTags('Backwork')
@@ -156,6 +160,76 @@ export class BackworkController {
       document_variant: documentVariant,
       search,
     });
+  }
+
+  // Drafts (#5208). Every route here is the caller's own drafts only, so
+  // `backwork:upload` is the gate and ownership is checked in the query. MUST
+  // stay above `@Get(':id')`/`@Delete(':id')`, like `departments` below.
+  @Get('drafts')
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({ summary: "The caller's backwork drafts, in upload order" })
+  async listDrafts(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.backworkService.findDrafts(chapterId, userId);
+  }
+
+  @Patch('drafts')
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({
+    summary: "Set fields on several of the caller's drafts at once",
+  })
+  async updateDrafts(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateBackworkDraftsDto,
+  ) {
+    return this.backworkService.updateDrafts(
+      chapterId,
+      userId,
+      dto.ids,
+      dto.fields,
+    );
+  }
+
+  @Post('drafts/publish')
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({
+    summary: "File the caller's drafts; ones that can't be filed stay drafts",
+  })
+  @ApiCreatedResponse({ type: PublishBackworkDraftsResponseDto })
+  @FeatureEvent(
+    'backwork-drafts-published',
+    ({
+      result,
+    }: FeatureEventInput<
+      PublishBackworkDraftsDto,
+      PublishBackworkDraftsResponseDto
+    >) => ({
+      // Counted from the response: a draft that stayed a draft wasn't filed.
+      count: Array.isArray(result?.published) ? result.published.length : 0,
+      failed_count: Array.isArray(result?.failed) ? result.failed.length : 0,
+    }),
+  )
+  async publishDrafts(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: PublishBackworkDraftsDto,
+  ): Promise<PublishBackworkDraftsResponseDto> {
+    return this.backworkService.publishDrafts(chapterId, userId, dto.ids);
+  }
+
+  @Delete('drafts/:id')
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({ summary: "Delete one of the caller's drafts and its file" })
+  async deleteDraft(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    await this.backworkService.deleteDraft(id, chapterId, userId);
+    return { success: true };
   }
 
   // MUST stay above `@Get(':id')`, like `departments` below. A GET, not a
