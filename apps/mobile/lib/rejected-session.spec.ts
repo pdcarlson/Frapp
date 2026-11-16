@@ -4,7 +4,8 @@ import {
   AuthRetryableFetchError,
   AuthSessionMissingError,
 } from "@supabase/supabase-js";
-import { createRejectedSessionHandler, isSessionOver } from "./rejected-session";
+import { isSessionOver } from "@repo/hooks/auth-error-copy";
+import { createRejectedSessionHandler } from "./rejected-session";
 
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
 

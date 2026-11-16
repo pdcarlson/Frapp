@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import {
+  GOOGLE_CALENDAR_RETURN_COPY,
+  googleCalendarDisconnectCopy,
+  googleCalendarFootnote,
+} from "@repo/hooks";
 import { CalendarSubscribeMenu } from "./calendar-subscribe-menu";
 
 const LINK = {
@@ -221,11 +226,18 @@ describe("CalendarSubscribeMenu", () => {
       });
       expect(row).toHaveAttribute("href", "https://calendar.google.com/calendar/r");
       expect(screen.getByText(/connected as member@gmail.com/)).toBeInTheDocument();
+      // #4676: the footnote and the confirm are the shared copy, not a local one.
+      expect(
+        screen.getByText(googleCalendarFootnote(CONNECTED.data)),
+      ).toBeInTheDocument();
 
       await userEvent.click(
         screen.getByRole("menuitem", { name: "Disconnect Google Calendar" }),
       );
       expect(disconnectSpy).not.toHaveBeenCalled();
+      const copy = googleCalendarDisconnectCopy("member@gmail.com");
+      expect(await screen.findByText(copy.title)).toBeInTheDocument();
+      expect(screen.getByText(copy.description)).toBeInTheDocument();
       await userEvent.click(
         await screen.findByRole("button", { name: "Disconnect" }),
       );
@@ -284,6 +296,18 @@ describe("CalendarSubscribeMenu", () => {
       );
       expect(confirmSpy).not.toHaveBeenCalled();
       expect(window.location.search).toBe("");
+    });
+
+    it("says the sign-in expired in the shared words", async () => {
+      window.history.replaceState(null, "", "/events?gcal=expired");
+      render(<CalendarSubscribeMenu />);
+
+      await waitFor(() =>
+        expect(toastSpy).toHaveBeenCalledWith({
+          variant: "destructive",
+          description: GOOGLE_CALENDAR_RETURN_COPY.expired,
+        }),
+      );
     });
   });
 });

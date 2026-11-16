@@ -140,7 +140,7 @@ import {
   OTHER_ACCOUNT_ACTION,
   OTHER_ACCOUNT_PROMPT,
 } from "@repo/validation";
-import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
+import { OAUTH_MEMBERSHIP_HINT } from "@repo/hooks/auth-error-copy";
 import {
   consumeRememberedInviteToken,
   rememberInviteToken,

@@ -34,6 +34,7 @@ import {
   usePendingInvites,
   useRedeemInvite,
 } from "@repo/hooks";
+import { OAUTH_MEMBERSHIP_HINT } from "@repo/hooks/auth-error-copy";
 import { normalizeAccentInput } from "@repo/hooks/chapter-identity";
 import { chapterInitials } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
@@ -56,7 +57,6 @@ import {
   useOnboardingSignOut,
 } from "@/components/onboarding/signed-in-as";
 import { confirmDeleteAccount } from "@/lib/account/delete-account-prompt";
-import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import { useAuthSession } from "@/lib/auth-session";
 import {
   consumeRememberedInviteToken,

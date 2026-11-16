@@ -52,6 +52,50 @@ export function readGoogleCalendarReturn(
   return outcome ? { kind: "failed" } : null;
 }
 
+/**
+ * What the member reads when a sign-in comes back without connecting (#4676):
+ * one copy for the web menu's toast and the phone sheet's alert. The
+ * success line stays per client, because each names what it syncs.
+ */
+export const GOOGLE_CALENDAR_RETURN_COPY: Record<
+  Exclude<GoogleCalendarReturn["kind"], "confirm">,
+  string
+> = {
+  denied: "Google Calendar wasn't connected.",
+  expired: "That Google sign-in expired. Connect Google Calendar again.",
+  failed: "Google didn't finish the sign-in. Connect Google Calendar again.",
+};
+
+/**
+ * The line under the Subscribe menu or sheet: how fresh each calendar stays.
+ * `connection` is the status when Google is offered, null when it isn't.
+ */
+export function googleCalendarFootnote(
+  connection: Pick<GoogleCalendarStatus, "connected" | "google_email"> | null,
+): string {
+  if (connection?.connected && connection.google_email) {
+    return `Google Calendar is connected as ${connection.google_email} and updates within minutes. Other calendar apps check on their own schedule.`;
+  }
+  return connection
+    ? "Google Calendar updates within minutes once connected. Other calendar apps check on their own schedule."
+    : "Your calendar app checks for changes on its own schedule. Google Calendar can take several hours.";
+}
+
+/** The Disconnect confirm, naming the account when it's known. */
+export function googleCalendarDisconnectCopy(
+  account: string | null | undefined,
+): {
+  title: string;
+  description: string;
+} {
+  return {
+    title: "Disconnect Google Calendar?",
+    description: `Frapp's calendar is removed from ${
+      account ? `your Google account (${account})` : "your Google account"
+    }. Your other calendars aren't touched.`,
+  };
+}
+
 export function useGoogleCalendarStatus(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
