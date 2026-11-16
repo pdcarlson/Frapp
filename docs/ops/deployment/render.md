@@ -20,9 +20,6 @@ Create **two** Render Web Services: one for production, one for staging.
 
 ### 5.2 Environment Variables
 
-An image-backed service (§ 5.8) holds only an Infisical bootstrap and reads the rest when the API
-starts; this section is about the synced, git-backed services.
-
 As with Vercel ([environment variables](vercel.md#42-environment-variables-per-project)), these are **not entered by hand in the Render dashboard**. Infisical holds
 the canonical values and its syncs push them into `frapp-api-staging` and `frapp-api-prod`
 (`render-api-staging` and `render-api-production`); the dashboard is the destination. See

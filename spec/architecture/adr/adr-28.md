@@ -136,7 +136,7 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    in ADR-24.
    *(Corrected 2026-11-16: the `frapp-ai-*` projects were not used. Staging's calls run from the
    frapp.live organization's nonprod project since 2026-11-15, and Paul moved hosting to Cloud Run
-   the next day, so each environment's calls now run from the same project as its API
+   the next day, so once each environment's API runs there, its calls run from the same project as the API
    ([`cloud-run.md`](../../../docs/ops/deployment/cloud-run.md#secrets), #5228).)*
 10. **Frapp owns the state.** No provider-side store holds chapter content: no File Search, no Files
     API, no managed retrieval corpus. No agent framework owns the loop or its memory. The usage

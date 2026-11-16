@@ -2,7 +2,7 @@
 
 The API is moving from Render to Google Cloud Run ([#5228](https://github.com/frapplive/Frapp/issues/5228)). Paul decided this on 2026-11-16, which changes [ADR-24](../../../spec/architecture/adr/adr-24.md) decision 1. This page is the runbook for the Google side. Until the cutover finishes, [`render.md`](render.md) still describes what serves traffic.
 
-**State (2026-11-16):** both projects have run the setup script (staging's project number is `211663803311`, production's is `930610426605`). The Infisical sync account isn't set up yet. Nothing on Google serves traffic.
+**State (2026-11-16):** both projects have run the setup script (staging's project number is `211663803311`, production's is `930610426605`). The Infisical sync account isn't set up yet. Both ran the script before it turned on Vertex AI and gave `frapp-api-runtime` access to it, so both need one more run of the current script before the API can drop its Vertex key file. Nothing on Google serves traffic.
 
 ## Shape
 
@@ -28,7 +28,7 @@ The API is moving from Render to Google Cloud Run ([#5228](https://github.com/fr
 
 `scripts/gcp/bootstrap.sh` creates these in each project. None of them has a key.
 
-- **`frapp-api-runtime`** is the identity the API runs as. It can read its own project's Secret Manager values.
+- **`frapp-api-runtime`** is the identity the API runs as. It can read its own project's Secret Manager values and call Vertex AI in its own project.
 - **`frapp-deployer`** is the identity a GitHub Actions deploy acts as. It can manage Cloud Run, push to its project's registry, list secrets, and run revisions as `frapp-api-runtime`. It holds `run.admin` because the deploy also turns off Cloud Run's invoker check, which is what makes the API public. Try narrowing it to `run.developer` once the deploy path works. Production's deployer can also read staging's registry, to copy the image staging ran.
 - **GitHub sign-in** goes through the workload identity pool `github`, provider `frapplive-frapp`. It accepts a GitHub token only when all three of these hold:
   - the repository is `frapplive/Frapp`;

@@ -185,11 +185,11 @@ Planned, and not live yet (the sync account comes from
 | `gcp-api-staging` | Staging | `/` | Secret Manager in `cs-project-6vw9f5xp` (nonprod) |
 | `gcp-api-production` | Production | `/` | Secret Manager in `cs-project-nyit2x59` (prod) |
 
-**What changes compared with Render.** Cloud Run reads a secret when an instance starts, and the
-deploy pins each one to the version current at that moment, so a change in Infisical reaches the API
-at its next deploy, as on Render. `PORT` is reserved by Cloud Run and the deploy skips it.
-Each project's Secret Manager holds a copy of every value in its environment, as a Render service's
-environment did.
+A change in Infisical still reaches the API at its next deploy; how the deploy pins versions, and
+which names it skips, is [`cloud-run.md` § Secrets](../../ops/deployment/cloud-run.md#secrets). Each
+project's Secret Manager holds a copy of every value in its environment, as a Render service's
+environment did. Once no Render service is synced, delete Infisical's Render App Connection too: it
+holds a Render API key that can deploy any service (#5228's last step).
 
 **What was tried first, and why it was dropped.** The owner first asked to detach Render from
 Infisical so fewer places hold the values: the service would hold one read-only Infisical machine
