@@ -257,6 +257,18 @@ describe('InviteController', () => {
       expect(params).toEqual(['user-1', 'a@school.edu']);
     });
 
+    // `GET /v1/invites/mine` is a read, but it needs the Auth user, so it
+    // keeps `getUser` (#5043). Were it ever marked `@VerifySessionLocally()`,
+    // the decorator refuses rather than read "no verified email".
+    it('refuses a session verified locally instead of answering null', () => {
+      expect(() =>
+        resolveParams({
+          appUser: { id: 'user-1' },
+          locallyVerifiedAuthId: 'auth-1',
+        }),
+      ).toThrow(/remove @VerifySessionLocally\(\)/);
+    });
+
     it('reads no address while the account is unconfirmed', () => {
       const params = resolveParams({
         appUser: { id: 'user-1' },

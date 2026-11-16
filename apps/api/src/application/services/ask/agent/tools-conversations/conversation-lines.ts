@@ -1,4 +1,5 @@
 import type { CatchUpMessage } from '#domain/utils/chat-catch-up';
+import { chatLineKind } from '#domain/utils/corpus-chat';
 import { parseLocalDate, zonedTimeToUtc } from '#domain/utils/zoned-time';
 import {
   AGENT_RESULT_MAX_CHARS,
@@ -243,23 +244,36 @@ export function distinctEntities(entities: readonly AgentEntity[]) {
 /**
  * One channel message as a source: one message, one source, one line.
  *
- * The line is the tool's words up to the colon (who, where, when) and the
- * member's words after it, flattened, so nothing a member types can start a
- * second line or pass for the part before the colon. The author and the
- * channel are also in `entities`, by the names the line uses.
+ * The line is the tool's words up to the colon (who, where, when, how) and
+ * the member's words after it, flattened, so nothing a member types can
+ * start a second line or pass for the part before the colon. The author and
+ * the channel are also in `entities`, by the names the line uses.
+ *
+ * What comes before the colon is context for the model to weigh, not a
+ * ranking (#5170, #4915): the roles the author holds, whether the message
+ * was posted as an announcement or imported from Discord, and for a thread
+ * reply which message it answers, so the model can read the thread with
+ * `read_channel` (which takes a bare id). Role names are already made safe for a line (`roleNames`).
  */
 export function messageSource(
   message: CatchUpMessage,
   channel: { id: string; name: string },
   timeZone: string,
+  roles: ReadonlyMap<string, readonly string[]> = new Map(),
 ): { source: AgentSource; entities: AgentEntity[] } {
   const author = label(message.senderName, 'A member');
-  const channelName = label(channel.name, 'channel');
-  const where = `${author} in #${channelName} on ${longDateTime(message.createdAt, timeZone)}`;
+  const held = roles.get(message.senderId) ?? [];
+  const who = held.length > 0 ? `${author} (${held.join(', ')})` : author;
+  const where = `${who} in #${label(channel.name, 'channel')} on ${longDateTime(message.createdAt, timeZone)}`;
   const how = [
-    message.threadRootId ? 'replying in a thread' : null,
+    chatLineKind(message.kind, false),
+    message.threadRootId
+      ? // A bare id: a colon here would end the tool's part of the line.
+        `replying in the thread of message ${message.threadRootId}`
+      : null,
     message.mentionsReader ? 'mentioning you' : null,
   ].filter(Boolean);
+  const channelName = label(channel.name, 'channel');
   return {
     source: {
       id: `message:${message.id}`,
@@ -288,9 +302,10 @@ export function messageSources(
   messages: readonly CatchUpMessage[],
   channel: { id: string; name: string },
   timeZone: string,
+  roles: ReadonlyMap<string, readonly string[]> = new Map(),
 ): { sources: AgentSource[]; entities: AgentEntity[] } {
   const built = messages.map((message) =>
-    messageSource(message, channel, timeZone),
+    messageSource(message, channel, timeZone, roles),
   );
   return {
     sources: built.map((entry) => entry.source),

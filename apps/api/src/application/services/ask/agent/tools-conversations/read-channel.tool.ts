@@ -119,7 +119,16 @@ export class ReadChannelTool implements AgentReadTool<Args> {
     if (stretch.chatOff) return nothing(chapterId, CHAT_OFF_NOTE);
 
     const name = label(stretch.channel.name, 'channel');
-    const built = messageSources(stretch.messages, stretch.channel, timeZone);
+    const roles = await this.scope.authorRoles(
+      context,
+      stretch.messages.map((message) => message.senderId),
+    );
+    const built = messageSources(
+      stretch.messages,
+      stretch.channel,
+      timeZone,
+      roles,
+    );
     // A channel is read for its newest messages, so when the caps cut the
     // stretch it is the oldest that go. A thread and the conversation around
     // a message are read from their start, so there the end goes.

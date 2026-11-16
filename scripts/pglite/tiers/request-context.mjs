@@ -14,6 +14,9 @@ import { db, miss } from "../harness.mjs";
 //     guard's `.eq('chapter_id', …)` drops it;
 //   - a user with no membership in the chapter gets `member` null and no
 //     roles, and an unknown auth id gets `user` null too;
+//   - a deleted account's tombstone (`deleted_at` set) is no user: `user`,
+//     `member` and roles all come back empty (20261116143520, #5043), since
+//     a read verified locally takes the caller's row from this answer;
 //   - nobody but `service_role` may call it.
 //
 // The rows are deleted at the end.
@@ -95,6 +98,10 @@ try {
     )
   ).rows;
 
+  // Last, because it tombstones the member the cases above read.
+  await db.exec(`update users set deleted_at = now() where id = '${U.member}'`);
+  const tombstoned = await call(AUTH.member);
+
   const SCENARIOS = [
     {
       name: "a member gets their user id, the chapter's three columns and their whole membership row",
@@ -127,6 +134,15 @@ try {
         unknown?.chapter,
       ]),
       want: JSON.stringify([null, null, [], chapterRow]),
+    },
+    {
+      name: "a deleted account's tombstone gets no user, member or roles (#5043)",
+      got: JSON.stringify([
+        tombstoned?.user,
+        tombstoned?.member,
+        tombstoned?.roles,
+      ]),
+      want: JSON.stringify([null, null, []]),
     },
     {
       name: "only service_role may call it",

@@ -1,15 +1,40 @@
 # AI Features
 
 Frapp's AI features (Q&A, summarization, drafting, suggestions) answer from the chapter's own sources and cite every answer.
-Official sources rank first: minutes, chapter documents and announcements.
-Chat in chapter channels is also a source, for members who agreed to it.
+The chapter's records come first: minutes and chapter documents.
+Chat in chapter channels is also a source, announcements included, for members who agreed to it.
+
+> **Changed 2026-11-16 (Paul, [#4915](https://github.com/pdcarlson/Frapp/issues/4915)).**
+> This file called a top-level `#announcements` post an official source, ranked with documents and minutes and read without its author's yes.
+> The code never did that: it indexed announcements as chat, under chat consent.
+> Paul decided the code's way is right. An announcement is chat, and the model is told it was posted as an announcement, by whom and when, so it can weigh it ([Context over rules](#context-over-rules)).
+> In his words: "the AI should take into consideration the context in which a message exists … context is king, right? we shouldn't need to hardcode scenarios such as this."
 
 > **Changed 2026-11-11 (Paul, [ADR-28](../architecture/adr/adr-28.md) decision 5).**
 > This file used to say the chapter chat is not part of the AI corpus in v1, trading cross-conversation synthesis for confidence in every answer.
 > Paul reversed that: chat carries much of a chapter's context, so it is in, with a per-member choice.
 > The confidence concern is kept by the rules in [Chat as a source](#chat-as-a-source): chat ranks below official sources, is cited as chat, and can never trigger an action.
+> _(2026-11-16, #5179: chat no longer ranks below official sources; it is labelled as chat and the model weighs it.)_
 
 How the pieces are meant to fit is [`spec/architecture/README.md`](../architecture/README.md) §13 and ADR-28.
+
+## Context over rules
+
+Ask's job is judgment, and the pipeline's job is to give the model rich, faithful context and the member's real permissions (Paul, 2026-11-16, [#5170](https://github.com/pdcarlson/Frapp/issues/5170)).
+A source tells the model what it is: a document's title and date, a meeting's minutes, a live record read just now, or a channel message with its author, the roles they hold, when it was sent, and whether it was posted as an announcement, is a reply in a thread, or was imported from Discord.
+The prompt then says in a sentence or two how to weigh sources.
+Code doesn't decide that in advance with ranking weights, canned replies, or special cases for one kind of content.
+
+A hard rule in code or in a prompt needs one of four reasons, named where the rule is written:
+
+- **Access:** what the asker may read ([Whose access an AI run uses](#whose-access-an-ai-run-uses)).
+- **Consent:** whose words may reach a provider ([Consent](#consent)).
+- **Prompt-injection defence:** [`ai-prompt-injection.md`](../../docs/security/ai-prompt-injection.md) C1 to C8.
+- **Cost and latency budgets:** the loop's rounds, calls, read time and result size, and the spend caps.
+
+Anything else is context plus a short instruction.
+A reviewer can point a new rule at this section.
+Paul's audit of the rules that existed when this was written, with a verdict for each, is linked from #5170.
 
 ## Corpus scope
 
@@ -24,8 +49,7 @@ Prose, embedded once and re-embedded when its source is edited:
 | --------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Meeting minutes and transcripts                     | Stored with `meeting_type` metadata so the summarizer can vary tone (see [`meetings.md`](meetings.md)). |
 | Uploaded chapter documents                          | Bylaws, policies, calendars from Chapter Docs ([`chapter-docs.md`](chapter-docs.md)).  |
-| Formal announcements                                | Top-level posts in `#announcements` (officer-posted, all-read, see [`chat/README.md`](chat/README.md#announcements)). A member's reply in an announcement's thread is a channel message, the row below. |
-| Channel messages                                    | Messages in chapter channels, from members who agreed. Ranked below the three rows above. Rules: [Chat as a source](#chat-as-a-source). |
+| Channel messages                                    | Messages in chapter channels, from members who agreed, announcements included. Ranked by how well they match, like the rows above (#5179). Rules: [Chat as a source](#chat-as-a-source). |
 
 ### Live structured data (tool-called, never embedded)
 
@@ -51,8 +75,10 @@ It also follows directly from the non-goal below: structured data already *is* c
 ## Chat as a source
 
 Messages in chapter channels are part of the corpus: general, committee, role-gated and topic channels alike.
-`#announcements` was already a source and stays an official one for its top-level posts.
-A reply in an announcement's thread, which any reader of the channel can write, is an ordinary channel message under the rules below.
+An announcement is a channel message like any other, under the rules below (Paul, 2026-11-16, [#4915](https://github.com/pdcarlson/Frapp/issues/4915)).
+It is indexed with the conversation around it, ranked as chat, and read only when its author said yes.
+Its line tells the model it was posted as an announcement and by whom, so the model can weigh an officer's notice over the talk about it.
+That is the model's judgment, given the context, not a ranking rule.
 
 - **Only from members who said yes.**
   A message is indexed, and sent to a model, only when its author accepted the member sheet in [Consent](#consent).
@@ -68,7 +94,9 @@ A reply in an announcement's thread, which any reader of the channel can write, 
   A private or role-gated channel never leaks through an answer.
 - **A block holds.**
   An answer never quotes or cites a member the asker has blocked, as the timeline, search and reply quotes already don't ([`chat/README.md` § What a block does and does not hide](chat/README.md#what-a-block-does-and-does-not-hide)).
-- **Chat ranks below official sources and is cited as chat.**
+- **Chat is labelled and cited as chat.**
+  It is ranked by how well it matches, like any other source: its score used to be halved and the record always put first, and Paul removed both on 2026-11-16 ([#5179](https://github.com/pdcarlson/Frapp/issues/5179)), since each line now says what it is and the model weighs it.
+  Each line says who wrote it and how: posted as an announcement, a reply in a thread, or imported from Discord. Through Ask's tools it also says when, and the roles the author holds.
   The citation names the channel, the date and the author, and links to the message.
   When chat disagrees with a bylaw, minutes or an announcement, the answer shows both, as [Citation requirement](#citation-requirement) says for any conflict.
 - **Chat never triggers an action.**
@@ -129,7 +157,8 @@ Each governs a different thing.
 1. **The chapter turned the feature on.**
    The president switches on each family separately: Ask, meeting notes, and chat as a source.
    Each is off until then.
-   This gate governs the chapter's records, which are the chapter's to share: documents, announcements, minutes and roster fields, whoever uploaded or posted them.
+   This gate governs the chapter's records, which are the chapter's to share: documents, minutes and roster fields, whoever uploaded or posted them.
+   An announcement is chat, so it also needs its author's yes ([Chat as a source](#chat-as-a-source)).
 2. **The member turned Frapp AI on, once, on Meet Frapp AI.**
    This gate governs what is the member's to share: their own use of AI, and their own messages.
    Since #4790 (Paul, 2026-11-13: "make it one of those screens", "it's not forced... it should be encouraged during the signup process") the member answers on one onboarding screen, not on a separate sheet at the first AI feature.
@@ -150,8 +179,8 @@ What No means for that member:
 | Area | Effect |
 | --- | --- |
 | Ask and summaries | They can't use them. |
-| Their chat messages | Left out, as [Chat as a source](#chat-as-a-source) says. That includes their replies under an announcement. |
-| Announcements and documents they posted as an officer | Still read. They are the chapter's records, under the president's switch. |
+| Their chat messages | Left out, as [Chat as a source](#chat-as-a-source) says. That includes announcements they posted and their replies under one (#4915, 2026-11-16: this row used to keep an officer's announcements in). |
+| Documents they posted as an officer | Still read. They are the chapter's records, under the president's switch. |
 | Their roster fields | Still appear in an officer's tool results. A question like "who is behind on dues" needs every member, and the fields carry no contact details. |
 | Minutes that name them | Still drafted. Notes an officer writes about a meeting are the officer's text, and minutes have always named who said and owes what. |
 | A recorded meeting | Having Frapp AI on does not stop a recording. The [recording notice](meetings.md#recording-notice) does: anyone present can object, whatever they answered, and the officer then doesn't record. |
@@ -273,7 +302,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   The server checks every quote against its source ([Citation requirement](#citation-requirement)).
   An answer left with no checked citation is not shown: the member reads "I couldn't find that in your chapter's documents, minutes or records."
   Through the tool loop, one exception (changed by Paul, 2026-11-16): some right answers rest on no source, such as "hi" back, what Frapp can do, "I don't give out phone numbers" or "which Jordan do you mean?".
-  Frapp answers those at once without reading, and one short sentence with no citation is shown, marked as Frapp's own words (`own_words`), when no quote was tried and dropped and the whole reply is one line of at most 400 characters (the sentence itself at most 240).
+  Frapp answers those at once without reading, and one short sentence with no citation is shown, marked as Frapp's own words (`own_words`), when no quote was tried and dropped and the whole reply is at most 400 characters: shown whole up to 240, otherwise its first sentence. It may run to several lines or a short list (Paul, 2026-11-16, [#5179](https://github.com/pdcarlson/Frapp/issues/5179): "which Jordan?" with the names below it used to become "couldn't find that").
   Anything longer with no checked citation is still "couldn't find that". An answer in Frapp's own words cannot be posted to a channel.
   When some quotes were dropped and others stood, the answer says part of it could not be matched.
 - **What streams is a preview.**

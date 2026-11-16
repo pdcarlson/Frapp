@@ -91,6 +91,7 @@ describe('ChapterGuard', () => {
   }) => {
     let callCount = 0;
     const selectArgs: Record<string, string[]> = {};
+    const isArgs: Record<string, Array<[string, unknown]>> = {};
     mockFrom.mockImplementation((table: string) => {
       callCount++;
       const data =
@@ -111,7 +112,12 @@ describe('ChapterGuard', () => {
         );
       // chapters and users use one .eq; members uses either two .eq calls
       // (explicit chapter) or one .eq + .limit (auto-resolve).
-      eqMock.mockReturnValue({ eq: eqMock, maybeSingle, limit });
+      // users adds `.is('deleted_at', null)` before `.maybeSingle` (#5043).
+      const isMock = jest.fn((column: string, value: unknown) => {
+        (isArgs[table] ??= []).push([column, value]);
+        return { maybeSingle };
+      });
+      eqMock.mockReturnValue({ eq: eqMock, is: isMock, maybeSingle, limit });
       return {
         select: jest.fn().mockImplementation((columns: string) => {
           (selectArgs[table] ??= []).push(columns);
@@ -119,7 +125,7 @@ describe('ChapterGuard', () => {
         }),
       };
     });
-    return { callCount: () => callCount, selectArgs };
+    return { callCount: () => callCount, selectArgs, isArgs };
   };
 
   beforeEach(async () => {
@@ -371,6 +377,63 @@ describe('ChapterGuard', () => {
     mockSupabaseChain({ appUser: { id: 'user-1' }, member: null });
     const ctx = mockExecutionContext(buildRequest());
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+  });
+
+  // A read whose token `SupabaseAuthGuard` verified locally (#5043) carries
+  // `locallyVerifiedAuthId` and no Auth user. Paul's conditions 2 and 3: a
+  // deleted account and a removed member are still refused at once, because
+  // this guard re-reads both on every request.
+  describe('a session verified locally (#5043)', () => {
+    const locallyVerified = () =>
+      buildRequest({
+        supabaseUser: undefined,
+        locallyVerifiedAuthId: 'auth-123',
+      });
+
+    it('reads the users row for the verified sub, skipping a deleted one', async () => {
+      const chain = mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        chapter: { subscription_status: 'active' },
+      });
+      const request = locallyVerified();
+
+      await expect(
+        guard.canActivate(mockExecutionContext(request)),
+      ).resolves.toBe(true);
+      expect(request.appUser).toEqual({ id: 'user-1' });
+      expect(chain.isArgs.users).toEqual([['deleted_at', null]]);
+    });
+
+    it("refuses a deleted account's token at once", async () => {
+      // The `deleted_at is null` filter finds no row for a tombstone.
+      mockSupabaseChain({ appUser: null });
+
+      await expect(
+        guard.canActivate(mockExecutionContext(locallyVerified())),
+      ).rejects.toThrow(new ForbiddenException('User profile not found'));
+    });
+
+    it('refuses a removed member at once', async () => {
+      mockSupabaseChain({ appUser: { id: 'user-1' }, member: null });
+
+      await expect(
+        guard.canActivate(mockExecutionContext(locallyVerified())),
+      ).rejects.toMatchObject({
+        response: { code: 'chapter.context.invalid' },
+        status: 403,
+      });
+    });
+
+    it('refuses a request no session check accepted', async () => {
+      mockSupabaseChain({ appUser: { id: 'user-1' } });
+
+      await expect(
+        guard.canActivate(
+          mockExecutionContext(buildRequest({ supabaseUser: undefined })),
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 
   it('should throw ForbiddenException when chapter row missing', async () => {
@@ -1022,7 +1085,7 @@ describe('ChapterGuard', () => {
                 error: null,
               });
         const eq: jest.Mock = jest.fn();
-        eq.mockReturnValue({ eq, maybeSingle });
+        eq.mockReturnValue({ eq, is: () => ({ maybeSingle }), maybeSingle });
         return { select: jest.fn().mockReturnValue({ eq }) };
       });
 
@@ -1094,7 +1157,7 @@ describe('ChapterGuard', () => {
         });
         const eq: jest.Mock = jest.fn((column: string, value: string) => {
           filters[column] = value;
-          return { eq, maybeSingle };
+          return { eq, is: () => ({ maybeSingle }), maybeSingle };
         });
         return { select: jest.fn().mockReturnValue({ eq }) };
       });
@@ -1208,6 +1271,7 @@ describe('ChapterGuard', () => {
           return chain;
         };
         chain.in = () => chain;
+        chain.is = () => chain;
         chain.maybeSingle = answer;
         chain.then = (
           resolve: (value: unknown) => unknown,

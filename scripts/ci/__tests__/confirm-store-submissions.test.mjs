@@ -219,7 +219,12 @@ describe("nextStep and summary", () => {
     assert.match(errored, /while its commit is still the latest `v\*` tag/);
     const ios = nextStep({ store: "ios", id: IOS, build: BUILD, status: "CANCELED", error: null });
     assert.ok(ios.includes(`--id ${BUILD} --non-interactive --no-auto-testflight-setup\``), ios);
-    assert.match(nextStep({ store: "ios", id: IOS, build: "", status: "ERRORED", error: null }), /upload it again by hand/);
+    // A runner-built binary (#5162) has no EAS build id: once EAS won't retry, it can't be resent.
+    const gone = nextStep({ store: "ios", id: IOS, build: "", status: "ERRORED", error: null });
+    assert.match(gone, /this build can't be sent again/);
+    assert.match(gone, /drop its entry/);
+    assert.match(gone, /re-run that run's iOS job by itself/);
+    assert.doesNotMatch(gone, /keep the entry/);
     assert.match(nextStep({ store: "ios", id: IOS, status: "CANCELED" }), /^iOS's upload to TestFlight was cancelled\./);
     const queued = nextStep({ store: "ios", id: IOS, status: "IN_QUEUE", readError: null });
     assert.match(queued, /still `IN_QUEUE` when this job stopped waiting\. It may still finish: check https:\/\/expo\.dev\/accounts\/pdcarlson\/projects\/frapp\/submissions\//);

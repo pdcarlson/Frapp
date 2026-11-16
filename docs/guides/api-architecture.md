@@ -123,7 +123,9 @@ Interceptors:
   in flight and hands the interceptor the id (`request.appUserLookup`, #3583). Any other session waits
   on the sync. Parallel first requests can both miss the row and collide on
   `users_supabase_auth_id_key`; `AuthService.syncUser` treats that unique violation as
-  "the other request won" and returns the existing id (Sentry FRAPP-API-3). Not global:
+  "the other request won" and returns the existing id (Sentry FRAPP-API-3). On a read whose
+  session `SupabaseAuthGuard` verified locally (#5043) there is no Auth user to sync from, only
+  claims that can be an hour stale, so it syncs nothing and only records the time zone. Not global:
   applied per-controller/per-route via `@UseInterceptors` — see
   [`.claude/skills/api-development/SKILL.md`](../../.claude/skills/api-development/SKILL.md)
   § "Auth and guard chain" for where.
@@ -134,7 +136,7 @@ Interceptors:
 
 ### Rate limiting
 
-`CustomThrottlerGuard` is registered as the global `APP_GUARD`, so it runs **before** the chain above — that is why it reads the bearer token itself (verifying its signature: ES256/RS256 against the project JWKS through `getClaims`, HS256 against `SUPABASE_JWT_SECRET`) instead of using `request.supabaseUser`, which is not populated yet. It leaves the verified claims on `request.throttlerVerifiedClaims`, which `SupabaseAuthGuard` uses to start the chapter lookups while `getUser` runs (#3728); they authenticate nothing.
+`CustomThrottlerGuard` is registered as the global `APP_GUARD`, so it runs **before** the chain above — that is why it reads the bearer token itself (verifying its signature: ES256/RS256 against the project JWKS through `getClaims`, HS256 against `SUPABASE_JWT_SECRET`) instead of using `request.supabaseUser`, which is not populated yet. It leaves the verified claims on `request.throttlerVerifiedClaims`, which `SupabaseAuthGuard` uses to start the chapter lookups while `getUser` runs (#3728); they authenticate nothing. On a read marked `@VerifySessionLocally()` (#5043), their presence is one of the conditions for verifying locally, so a token whose `kid` the throttler would not send to the JWKS never reaches it from the auth guard either; the auth guard then verifies the token itself rather than trusting them ([`multi-tenancy.md`](../../spec/behavior/multi-tenancy.md) has the bound).
 
 Two named buckets are registered in `AppModule`: `read` at 100/min and `write` at 30/min. The guard's `handleRequest` gates them by method, so `read` applies to `GET`/`HEAD`/`OPTIONS` and `write` to everything else.
 

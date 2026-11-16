@@ -506,8 +506,8 @@ function spikeTags(context: AuthFailureContext): Record<string, string> {
  * A spike's reason mix as Sentry tags (#3907). `reason` is the one reason when
  * every failure in the window shared it, else `mixed`; `summary` lists each
  * with its count, largest first (`token_rejected:18,no_bearer:2`). The labels
- * are the guard's two reasons plus the detector's `other`, so the summary stays
- * short.
+ * are the guard's reasons (`AuthFailureReason`) plus the detector's `other`, so
+ * the summary stays short.
  */
 function describeReasons(labels: Readonly<Record<string, number>>): {
   reason: string;

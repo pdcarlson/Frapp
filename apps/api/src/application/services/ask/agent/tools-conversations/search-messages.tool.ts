@@ -189,13 +189,18 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
 
     // Exact matches first, newest first; then the conversations the meaning
     // search opened, best first, each in the order it was said.
+    const found = [...byWords.found, ...byMeaning.found];
+    const roles = await this.scope.authorRoles(
+      context,
+      found.map(({ message }) => message.senderId),
+    );
     const seen = new Set<string>();
     const sources: AgentSource[] = [];
     const entities: AgentEntity[] = [];
-    for (const { message, channel } of [...byWords.found, ...byMeaning.found]) {
+    for (const { message, channel } of found) {
       if (seen.has(message.id)) continue;
       seen.add(message.id);
-      const built = messageSource(message, channel, timeZone);
+      const built = messageSource(message, channel, timeZone, roles);
       sources.push(built.source);
       entities.push(...built.entities);
     }
@@ -276,6 +281,7 @@ export class SearchMessagesTool implements AgentReadTool<Args> {
         created_at: message.created_at,
         thread_root_id: null,
         mentions: message.mentions ?? null,
+        kind: message.kind ?? 'text',
       }));
     const readable = await this.catchUp.readableAmong(reader, rows);
     const channelIdOf = new Map(rows.map((row) => [row.id, row.channel_id]));

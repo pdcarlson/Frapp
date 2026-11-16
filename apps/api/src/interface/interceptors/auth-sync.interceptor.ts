@@ -121,6 +121,16 @@ export class AuthSyncInterceptor implements NestInterceptor {
       if (request.method !== 'DELETE') {
         this.timeZones.record(id, request.headers?.[TIME_ZONE_HEADER]);
       }
+    } else if (request.locallyVerifiedAuthId && request.appUser) {
+      // A read whose token was verified locally (#5043) carries no Auth user
+      // record, only claims that can be an hour stale, so it syncs nothing:
+      // the next request checked with Auth does. `ChapterGuard`, which every
+      // such route has, already resolved the row; the time zone is still
+      // recorded (a read, so never a DELETE).
+      this.timeZones.record(
+        request.appUser.id,
+        request.headers?.[TIME_ZONE_HEADER],
+      );
     }
 
     return next.handle().pipe(tap());

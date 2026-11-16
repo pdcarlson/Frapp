@@ -9,6 +9,8 @@ export interface CatchUpMessageRow {
   created_at: string;
   thread_root_id: string | null;
   mentions: string[] | null;
+  /** `text`, `announcement` or `imported` (#4915). Missing reads as `text`. */
+  kind?: string;
 }
 
 /** Where one written message sits (#4900): what a read around it needs. */

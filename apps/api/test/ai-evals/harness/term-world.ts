@@ -1054,7 +1054,11 @@ export function createTermWorld(
   };
 
   // ------------------------------------------------------------ the tools
-  const scope = new ConversationScope(channelReads as never, members as never);
+  const scope = new ConversationScope(
+    channelReads as never,
+    members as never,
+    rbac as never,
+  );
   const held: Record<string, unknown> = {
     MemberService: members,
     RbacService: rbac,

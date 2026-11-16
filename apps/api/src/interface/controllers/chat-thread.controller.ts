@@ -36,6 +36,7 @@ import {
   ThreadFollowStateDto,
   ThreadReadDto,
 } from '../dtos/chat.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * Message threads (#3785): a side conversation off one message. A reply is
@@ -56,6 +57,7 @@ export class ChatThreadController {
 
   // Two literal segments, so this never collides with `:id/threads/:rootId`.
   @Get(':id/threads/followed')
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       'The caller’s followed and muted threads in a channel, with new-reply counts',
@@ -70,6 +72,7 @@ export class ChatThreadController {
   }
 
   @Get(':id/threads/:rootId')
+  @VerifySessionLocally()
   @ApiOperation({
     summary: 'A thread’s parent message and the caller’s follow',
   })
@@ -84,6 +87,7 @@ export class ChatThreadController {
   }
 
   @Get(':id/threads/:rootId/messages')
+  @VerifySessionLocally()
   @ApiOperation({
     summary:
       'A thread’s replies, newest first, paged like the channel timeline (before= and since=)',

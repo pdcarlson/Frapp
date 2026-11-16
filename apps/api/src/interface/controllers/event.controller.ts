@@ -42,6 +42,7 @@ import {
 } from '../dtos/event.dto';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { TIME_ZONE_HEADER } from '#domain/constants/time-zone-header';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Events')
 @ApiBearerAuth()
@@ -53,6 +54,7 @@ export class EventController {
   constructor(private readonly eventService: EventService) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'List chapter events' })
   @ApiOkResponse({ type: [EventResponseDto] })
   async list(
@@ -63,6 +65,7 @@ export class EventController {
   }
 
   @Get(':id')
+  @VerifySessionLocally()
   @ApiOperation({ summary: 'Get event by id' })
   @ApiOkResponse({ type: EventDetailResponseDto })
   async getOne(
