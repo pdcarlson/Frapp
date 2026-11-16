@@ -178,6 +178,15 @@ export function parseProviderIds(text, name, { source = CONFIG_PATH } = {}) {
         `(got ${JSON.stringify(deploySource)}).`,
     );
   }
+  // Only staging's deploy builds an image so far. Production set to `image`
+  // would pass every check before the apply and fail at its Render step after
+  // its migrations ran; the deploy reads this before anything is applied.
+  if (name === "production" && deploySource === "image") {
+    throw new Error(
+      `${source}: "production".renderDeploySource is image, but the deploy builds an API image ` +
+        `for staging only so far (#2506). Build production's image first.`,
+    );
+  }
   // Required only once a service pulls it; when present, always well formed.
   const apiImage = parsed.apiImage ?? "";
   if (apiImage || deploySource === "image") check(apiImage, API_IMAGE_PATTERN, "apiImage");

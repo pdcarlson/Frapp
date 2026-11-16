@@ -87,12 +87,14 @@ function read(env: Env, name: string): string {
 export function planBootSecrets(env: Env): BootSecretsPlan {
   const clientId = read(env, INFISICAL_BOOT_ENV.clientId);
   const clientSecret = read(env, INFISICAL_BOOT_ENV.clientSecret);
-  if (!clientId && !clientSecret) return { kind: 'skip' };
+  const environment = read(env, INFISICAL_BOOT_ENV.environment);
+  // Any one of the three means the service was meant to read Infisical, so
+  // the rest missing (a misspelt name, say) is refused, never skipped.
+  if (!clientId && !clientSecret && !environment) return { kind: 'skip' };
 
   const missing: string[] = [];
   if (!clientId) missing.push(INFISICAL_BOOT_ENV.clientId);
   if (!clientSecret) missing.push(INFISICAL_BOOT_ENV.clientSecret);
-  const environment = read(env, INFISICAL_BOOT_ENV.environment);
   if (!environment) missing.push(INFISICAL_BOOT_ENV.environment);
   if (missing.length > 0) {
     throw new Error(

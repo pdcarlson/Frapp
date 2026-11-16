@@ -30,13 +30,15 @@ function json(status: number, body: unknown): Response {
 type Call = { url: string; init?: RequestInit };
 
 /** A fetch that answers login, then the secrets read, from the given queue. */
-function fakeInfisical(responses: Array<() => Response | Promise<Response>>) {
+function fakeInfisical(
+  responses: Array<(init?: RequestInit) => Response | Promise<Response>>,
+) {
   const calls: Call[] = [];
   const fetchImpl = (url: string, init?: RequestInit) => {
     calls.push({ url, init });
     const next = responses.shift();
     if (!next) throw new Error(`unexpected call to ${url}`);
-    return Promise.resolve(next());
+    return Promise.resolve(next(init));
   };
   return { calls, fetchImpl };
 }
@@ -59,9 +61,20 @@ describe('planBootSecrets', () => {
       planBootSecrets({
         [INFISICAL_BOOT_ENV.clientId]: ' ',
         [INFISICAL_BOOT_ENV.clientSecret]: '',
-        [INFISICAL_BOOT_ENV.environment]: 'staging',
+        [INFISICAL_BOOT_ENV.environment]: ' ',
+        // The sandbox's own Infisical names don't count.
+        INFISICAL_PROJECT_ID: 'project',
+        INFISICAL_MACHINE_IDENTITY_ID: 'id',
       }),
     ).toEqual({ kind: 'skip' });
+  });
+
+  it('refuses an environment set without the identity, rather than skipping', () => {
+    expect(() =>
+      planBootSecrets({ [INFISICAL_BOOT_ENV.environment]: 'staging' }),
+    ).toThrow(
+      /INFISICAL_UNIVERSAL_AUTH_CLIENT_ID, INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET not set/,
+    );
   });
 
   it('defaults the project and the Infisical host', () => {
@@ -192,6 +205,32 @@ describe('fetchBootSecrets', () => {
     });
     expect(secrets.get('A')).toBe('1');
     expect(waits).toEqual(BOOT_FETCH_RETRY_DELAYS_MS.slice(0, 3));
+  });
+
+  it('bounds each request with its timeout, and retries one that timed out', async () => {
+    // Settles only when the request's own signal fires.
+    const hang = (init?: RequestInit) =>
+      new Promise<Response>((_, reject) => {
+        const signal = init?.signal;
+        if (!signal) throw new Error('the request carries no timeout');
+        signal.addEventListener('abort', () => reject(signal.reason));
+      });
+    const { calls, fetchImpl } = fakeInfisical([
+      hang,
+      LOGIN_OK,
+      hang,
+      LOGIN_OK,
+      () => SECRETS_OK([['A', '1']]),
+    ]);
+    const secrets = await fetchBootSecrets(plan, {
+      fetchImpl,
+      sleep: noSleep,
+      timeoutMs: 20,
+    });
+    expect(secrets.get('A')).toBe('1');
+    expect(calls).toHaveLength(5);
+    for (const { init } of calls)
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('stops at once on a refused credential, without echoing the secret', async () => {

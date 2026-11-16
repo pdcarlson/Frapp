@@ -5770,7 +5770,7 @@ export interface components {
             /** @description Process uptime in seconds */
             uptime: number;
             /**
-             * @description Deployed git SHA when Render set RENDER_GIT_COMMIT. Omitted when unset so local and CI do not invent a SHA.
+             * @description Deployed git SHA from RENDER_GIT_COMMIT: Render sets it on a git-backed service, and the image build stamps it on an image-backed one. Omitted when unset so local and CI do not invent a SHA.
              * @example 0ca478e9105105ff7013834615eee81499813d0e
              */
             commit?: string;

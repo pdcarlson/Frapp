@@ -197,13 +197,16 @@ an audit trail. Narrowing it needs the API's keys in their own secret path, whic
 
 **What it adds.** The API can't start while Infisical is unreachable: it retries for about a minute,
 then exits, and Render keeps the previous deploy serving when a new one fails its health check. A
-running API is unaffected. See [§ Infisical Down](#infisical-down).
+running instance is unaffected, but every start reads Infisical again: a deploy, a restart, a crash,
+and on staging's Free instance type each wake from idle (Render spins a Free service down after
+about 15 minutes without traffic). So an outage longer than that can take an idle staging down until
+Infisical is back. See [§ Infisical Down](#infisical-down).
 
 **How it reads.** Universal Auth login, then path `/` of the environment with references resolved
 (`/api/v3/secrets/raw`), as the sync read it. An Infisical value replaces a platform one under the
 same name, as the sync's did (Render's own `PORT`, for one), except `INFISICAL_*` and `RENDER_*`,
-which are never taken from Infisical. It refuses a partial bootstrap, a slug other than `staging` or
-`prod`, a refused credential and an empty environment, and drops the client secret from the
+which are never taken from Infisical. It refuses a partial bootstrap (any one of the three names set
+without the others), a slug other than `staging` or `prod`, a refused credential and an empty environment, and drops the client secret from the
 process's env once used. It never logs a value. A change in Infisical reaches the API at its next
 deploy or restart, as a synced value did.
 

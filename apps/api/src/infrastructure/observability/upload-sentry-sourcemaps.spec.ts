@@ -932,6 +932,41 @@ describe('defaultRunSentryCli', () => {
       expect(stripSourceMapFiles(distDir)).toEqual([]);
     });
 
+    posixIt(
+      'hands sentry-cli the token read from the secret file, which process.env never holds',
+      () => {
+        // The image build's path: no build ARG, the token only in the mounted
+        // secret. Each run of the fake records the token its env carries.
+        const seen = join(
+          mkdtempSync(join(tmpdir(), 'frapp-fake-cli-env-')),
+          'tokens',
+        );
+        process.env.SENTRY_BINARY_PATH = fakeBinary(
+          `printf '%s\\n' "\${SENTRY_AUTH_TOKEN:-unset}" >> '${seen}'`,
+        );
+        const savedToken = process.env.SENTRY_AUTH_TOKEN;
+        delete process.env.SENTRY_AUTH_TOKEN;
+        try {
+          const env = withMountedSentryToken(
+            { RENDER_GIT_COMMIT: 'a'.repeat(40) },
+            () => 'sntrys_from_secret\n',
+          );
+          runSentrySourcemapUpload({
+            env,
+            distDir: fixtureDist(),
+            log: jest.fn(),
+          });
+        } finally {
+          if (savedToken !== undefined)
+            process.env.SENTRY_AUTH_TOKEN = savedToken;
+        }
+        // Inject, then upload, each with the token.
+        expect(readFileSync(seen, 'utf8')).toBe(
+          'sntrys_from_secret\nsntrys_from_secret\n',
+        );
+      },
+    );
+
     posixIt('restores a module that a killed inject left truncated', () => {
       // $3 is the dist directory: `sourcemaps inject <distDir>`.
       process.env.SENTRY_BINARY_PATH = fakeBinary(

@@ -25,12 +25,13 @@
 //
 // ── An image-backed service takes the image instead (#2506) ────────────────
 // With `RENDER_DEPLOY_SOURCE=image` the deploy job has already built this
-// commit's image on GitHub and pushed it as `API_IMAGE_REF`, the repository
-// `.github/environments.json` names tagged with the commit. The POST then
-// sends `imageUrl` and Render pulls it, spending no build minutes; the
-// repository must match the one the service is configured with, which Render
-// checks. The tag must be this commit, so the run can't ship another one's
-// image under its name. Polling and verdicts are the same for both.
+// commit's image on GitHub, pushed it to `API_IMAGE` (the repository
+// `.github/environments.json` names) tagged with the commit, and handed on its
+// digest as `API_IMAGE_REF`. The POST then sends that `imageUrl` and Render
+// pulls it, spending no build minutes; the repository must match the one the
+// service is configured with, which Render checks too. By digest, not tag,
+// because anyone who can write the package could push the tag again between
+// the build and Render's pull. Polling and verdicts are the same for both.
 //
 // ── Why it polls by deploy id, not by commit ───────────────────────────────
 // Scanning the deploy list for the first entry matching a SHA is ambiguous:
@@ -100,15 +101,19 @@ export function classifyRenderStatus(status) {
   return "pending";
 }
 
-/** `<repository>:<40-hex commit>`, the only image reference this script deploys. */
-export const API_IMAGE_REF_PATTERN = /^(ghcr\.io\/[a-z0-9-]+\/[a-z0-9-]+):([0-9a-f]{40})$/;
+/**
+ * `<repository>@sha256:<digest>`, the only image reference this script
+ * deploys: a tag can be pushed again after the build, a digest is one image.
+ */
+export const API_IMAGE_REF_PATTERN = /^(ghcr\.io\/[a-z0-9-]+\/[a-z0-9-]+)@sha256:[0-9a-f]{64}$/;
 
 /**
- * The image to deploy for `sha`, or null for a commit deploy. Throws when the
- * environment says image and the reference is missing, malformed, or another
- * commit's.
+ * The image to deploy, or null for a commit deploy. Throws when the
+ * environment says image and the reference is missing, malformed, not a
+ * digest, or in a repository other than `apiImage`. That it is this commit's
+ * build is the deploy job's: the same job built it from the commit.
  */
-export function resolveImageUrl({ deploySource = "commit", imageRef = "", sha }) {
+export function resolveImageUrl({ deploySource = "commit", imageRef = "", apiImage = "" }) {
   if (deploySource === "commit") return null;
   if (deploySource !== "image") {
     throw new Error(`RENDER_DEPLOY_SOURCE must be commit or image; got '${deploySource}'.`);
@@ -116,12 +121,12 @@ export function resolveImageUrl({ deploySource = "commit", imageRef = "", sha })
   const match = API_IMAGE_REF_PATTERN.exec(imageRef);
   if (!match) {
     throw new Error(
-      `RENDER_DEPLOY_SOURCE is image, so API_IMAGE_REF must be ghcr.io/<owner>/<name>:<40-hex commit>; ` +
+      `RENDER_DEPLOY_SOURCE is image, so API_IMAGE_REF must be ghcr.io/<owner>/<name>@sha256:<digest>; ` +
         `got '${imageRef}'. The image build step did not hand one over.`,
     );
   }
-  if (match[2] !== sha) {
-    throw new Error(`API_IMAGE_REF is tagged ${match[2]}, not the commit being deployed (${sha}).`);
+  if (match[1] !== apiImage) {
+    throw new Error(`API_IMAGE_REF is in ${match[1]}, not the configured apiImage '${apiImage}'.`);
   }
   return imageRef;
 }
@@ -303,7 +308,7 @@ async function main() {
     imageUrl = resolveImageUrl({
       deploySource: process.env.RENDER_DEPLOY_SOURCE || "commit",
       imageRef: process.env.API_IMAGE_REF ?? "",
-      sha,
+      apiImage: process.env.API_IMAGE ?? "",
     });
   } catch (error) {
     console.error(`::error::${error.message}`);

@@ -65,11 +65,12 @@ jobs:
     permissions:
       contents: read
       packages: write
-    # The steps' own ceilings (Render 20, served commit 5, client checks under 5,
-    # Vercel READY 30, source maps under 3: 63) plus the installs, builds and
-    # production's rehearsal, which took about 5 of the job's 9 minutes on run
-    # 36873240684 (2026-10-01, before the API build). 75 bounds them all.
-    timeout-minutes: 75
+    # The steps' own ceilings (staging's API image 30, Render 20, served commit
+    # 5, client checks under 5, Vercel READY 30, source maps under 3: 93) plus
+    # the installs, builds and production's rehearsal, which took about 5 of the
+    # job's 9 minutes on run 36873240684 (2026-10-01, before the API build).
+    # 105 bounds them all.
+    timeout-minutes: 105
     # The environment's migration lock, and a lock only while this job is the one
     # thing that migrates either database. Never cancel a running deploy: it can
     # leave a half-migrated database or hosts on different commits. Why, and what
@@ -407,12 +408,19 @@ jobs:
 
       # ── The API image, built on GitHub rather than by Render (#2506) ──────
       # Render's own builds spent the workspace's build minutes (500 a month on
-      # Hobby, used up on 2026-11-16). This builds the commit's image and pushes
-      # it to `api_image` tagged with the commit, and an image-backed service
-      # (`renderDeploySource: image`) pulls it below. While staging's service is
-      # still git-backed the push keeps an image ready for the move. Production
-      # keeps Render's build until the owner moves it. Built before anything is
-      # applied, so a failed build ships nothing.
+      # Hobby, used up on 2026-11-16). This builds the commit's image, pushes it
+      # to `api_image` tagged with the commit, and hands on its digest, which an
+      # image-backed service (`renderDeploySource: image`) is sent below: a tag
+      # can be pushed again, a digest is one image. Production keeps Render's
+      # build until the owner moves it. Built before anything is applied, so a
+      # failed build ships nothing.
+      #
+      # While staging's service is still git-backed nothing pulls the image, so
+      # the push only keeps one ready for the move: a failure then is a warning,
+      # not a failed deploy (handled in the script: no step in this job may
+      # `continue-on-error`), and the build gets no Sentry token, because only
+      # the build that serves may upload source maps
+      # (docs/ops/deployment/ci-cd.md, "Whose bundle counts").
       #
       # Plain docker rather than the docker/* actions: this runs after the
       # Infisical injection, so no third-party action sees the job's env, and the
@@ -423,44 +431,72 @@ jobs:
       - name: Build and push the API image (staging)
         id: api-image
         if: inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true'
+        # A cold build of the whole API, both npm installs included; the
+        # script's own bounds (20 and 5 minutes) fire first. Counted in the
+        # job's timeout above.
+        timeout-minutes: 30
         env:
           DEPLOY_SHA: ${{ inputs.sha }}
           API_IMAGE: ${{ steps.ids.outputs.api_image }}
+          RENDER_DEPLOY_SOURCE: ${{ steps.ids.outputs.render_deploy_source }}
           GHCR_TOKEN: ${{ github.token }}
           GHCR_USER: ${{ github.actor }}
         run: |
           set -euo pipefail
-          if [ -z "$API_IMAGE" ]; then
-            echo "::error::.github/environments.json names no apiImage to push to."
-            exit 1
+          build_and_push() {
+            if [ -z "$API_IMAGE" ]; then
+              echo "::error::.github/environments.json names no apiImage to push to."
+              return 1
+            fi
+            TAG="$API_IMAGE:$DEPLOY_SHA"
+
+            BASE="$(grep -m1 -oP '^FROM \K\S+(?= AS deps$)' apps/api/Dockerfile)"
+            docker pull --quiet "mirror.gcr.io/library/$BASE"
+            docker tag "mirror.gcr.io/library/$BASE" "$BASE"
+
+            secret=()
+            if [ "$RENDER_DEPLOY_SOURCE" != image ]; then
+              echo "Staging's service is git-backed, so this image is built without SENTRY_AUTH_TOKEN and uploads no source maps; Render's build of the commit does."
+            elif [ -n "${SENTRY_AUTH_TOKEN:-}" ]; then
+              secret=(--secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN)
+            else
+              echo "::warning::SENTRY_AUTH_TOKEN is not in Infisical staging, so this image uploads no source maps and frapp-api stack traces stay compiled JS."
+            fi
+
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+            printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
+            timeout 20m docker build \
+              --file apps/api/Dockerfile \
+              --build-arg RENDER_GIT_COMMIT="$DEPLOY_SHA" \
+              "${secret[@]}" \
+              --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$DEPLOY_SHA" \
+              --tag "$TAG" \
+              .
+            timeout 5m docker push --quiet "$TAG"
+            REF="$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$TAG" \
+              | grep -m1 -xE "${API_IMAGE//./\\.}@sha256:[0-9a-f]{64}" || true)"
+            if [ -z "$REF" ]; then
+              echo "::error::Pushed $TAG, but docker reports no $API_IMAGE digest for it."
+              return 1
+            fi
+            echo "ref=$REF" >> "$GITHUB_OUTPUT"
+            echo "Pushed $TAG as $REF."
+          }
+
+          # In its own subshell with errexit on, read afterwards: in an `if`
+          # bash would ignore `set -e` inside it, and a failed command would
+          # carry on.
+          set +e
+          (set -euo pipefail; build_and_push)
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            if [ "$RENDER_DEPLOY_SOURCE" = image ]; then
+              exit "$status"
+            fi
+            echo "::warning::The API image was not built or pushed (exit $status). Staging's service is still git-backed, so the deploy goes on without it (#2506)."
           fi
-          REF="$API_IMAGE:$DEPLOY_SHA"
-
-          BASE="$(grep -m1 -oP '^FROM \K\S+(?= AS deps$)' apps/api/Dockerfile)"
-          docker pull --quiet "mirror.gcr.io/library/$BASE"
-          docker tag "mirror.gcr.io/library/$BASE" "$BASE"
-
-          secret=()
-          if [ -n "${SENTRY_AUTH_TOKEN:-}" ]; then
-            secret=(--secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN)
-          else
-            echo "::warning::SENTRY_AUTH_TOKEN is not in Infisical staging, so this image uploads no source maps and frapp-api stack traces stay compiled JS."
-          fi
-
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin
-          docker build \
-            --file apps/api/Dockerfile \
-            --build-arg RENDER_GIT_COMMIT="$DEPLOY_SHA" \
-            "${secret[@]}" \
-            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --label "org.opencontainers.image.revision=$DEPLOY_SHA" \
-            --tag "$REF" \
-            .
-          docker push --quiet "$REF"
-          docker logout ghcr.io
-          DIGEST="$(docker inspect --format '{{index .RepoDigests 0}}' "$REF")"
-          echo "ref=$REF" >> "$GITHUB_OUTPUT"
-          echo "Pushed $REF ($DIGEST)."
 
       # Built before anything is applied, so a failed build ships nothing.
       - name: Build the Vercel preview bundles (web + landing)
@@ -590,6 +626,7 @@ jobs:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
           RENDER_DEPLOY_SOURCE: ${{ steps.ids.outputs.render_deploy_source }}
+          API_IMAGE: ${{ steps.ids.outputs.api_image }}
           API_IMAGE_REF: ${{ steps.api-image.outputs.ref }}
           SERVICE_LABEL: frapp-api-staging
           DEPLOY_SHA: ${{ inputs.sha }}
@@ -601,8 +638,8 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ steps.ids.outputs.render_service_id }}
-          # Production builds no image yet, so `image` here fails loudly rather
-          # than sending a commit to an image-backed service (#2506).
+          # Production builds no image yet: provider-ids.mjs refuses `image`
+          # for it before anything is applied, and this would too (#2506).
           RENDER_DEPLOY_SOURCE: ${{ steps.ids.outputs.render_deploy_source }}
           SERVICE_LABEL: frapp-api-prod
           DEPLOY_SHA: ${{ inputs.sha }}

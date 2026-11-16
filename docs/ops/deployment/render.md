@@ -182,8 +182,9 @@ minutes: 500 a month on Hobby, which staging's deploys used up on 2026-11-16, af
 staging deploy failed until the month reset. An **image-backed** service builds nothing. The deploy
 job builds the commit's image on a GitHub runner (free, the repo being public), pushes it to
 `apiImage` in [`.github/environments.json`](../../../.github/environments.json)
-(`ghcr.io/frapplive/frapp-api`) tagged with the commit, and asks Render to deploy that tag
-(`imageUrl`; [`deploy-render-production.mjs`](../../../scripts/ci/deploy-render-production.mjs)).
+(`ghcr.io/frapplive/frapp-api`) tagged with the commit, and asks Render to deploy it by digest
+(`imageUrl`; [`deploy-render-production.mjs`](../../../scripts/ci/deploy-render-production.mjs)),
+since a tag can be pushed again between the build and Render's pull.
 Which kind each environment's service is, is its `renderDeploySource` there: `commit` or `image`.
 
 Render can't turn one kind of service into the other, so moving an environment means a new service
@@ -194,7 +195,8 @@ Infisical machine identity and the API reads its config when it starts
 Render sets that only on a git-backed service.
 
 **State (2026-11-16):** staging's deploys build and push the image on every API deploy, while both
-services are still git-backed. Moving staging, in order:
+services are still git-backed; until staging moves, a failed build only warns. Production is refused
+as `image` until its deploy builds one. Moving staging, in order:
 
 1. Make the `frapp-api` package public (GitHub → the `frapplive` organization → Packages →
    `frapp-api` → Package settings → Change visibility), so Render pulls it with no registry
@@ -205,13 +207,17 @@ services are still git-backed. Moving staging, in order:
    deployed>`, in the same project as `frapp-api-staging`: region Ohio, instance type Free, health
    check path `/health`. Its environment holds only the three bootstrap names
    ([`ENV_REFERENCE.md` § Image-backed API bootstrap](../../internal/environment/ENV_REFERENCE.md#image-backed-api-bootstrap-render-only)),
-   with the identity's Client ID and secret.
+   with the identity's Client ID and secret. Once its `onrender.com` URL answers `/health` with the
+   commit, suspend it (**Settings → Suspend**): staging runs one API at a time (§ 5.6), and a second
+   one would miss every deploy until step 5 while migrations change the schema under it.
 4. A PR sets staging's `renderServiceId` to the new service and `renderDeploySource` to `image`, and
    moves the staging conformance check to the new service's settings.
-5. Move `api-staging.frapp.live` from the old service to the new one (§ 5.3), and update the DNS
-   record to the new service's `onrender.com` host.
-6. Delete the `render-api-staging` sync (§ 5 of the secrets guide), then suspend the old service and
-   delete it once staging has run on the new one for a while.
+5. As soon as that PR merges (its staging deploy waits for `main`'s CI, which leaves a few minutes):
+   resume the new service, move `api-staging.frapp.live` to it (§ 5.3) and point the DNS record at
+   its `onrender.com` host, then suspend the old service. The merge's deploy then lands on the new
+   one.
+6. Delete the `render-api-staging` sync (§ 5 of the secrets guide), and delete the old service once
+   staging has run on the new one for a while.
 
 Production follows the same steps with the owner's go, after its deploy promotes the image staging
 already runs rather than building its own.

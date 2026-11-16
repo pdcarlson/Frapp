@@ -106,6 +106,15 @@ describe("parseProviderIds", () => {
       assert.throws(() => parseProviderIds(text, name), Error, label);
     }
   });
+
+  it("refuses production as image-backed before anything is applied, since only staging builds one", () => {
+    const productionImage = config(
+      (c) => ((c.environments.production.renderDeploySource = "image"), (c.apiImage = "ghcr.io/frapplive/frapp-api"), c),
+    );
+    assert.throws(() => parseProviderIds(productionImage, "production"), /staging only so far/);
+    // Staging's own reads are unaffected by production's entry.
+    assert.equal(parseProviderIds(productionImage, "staging").renderDeploySource, "commit");
+  });
 });
 
 describe("provider-ids.mjs", () => {

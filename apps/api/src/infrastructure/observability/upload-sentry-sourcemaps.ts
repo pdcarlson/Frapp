@@ -288,15 +288,26 @@ function toCliError(error: unknown): { code?: string; message: string } {
 
 export function defaultRunSentryCli(
   args: string[],
-  options: { timeoutMs: number; cwd?: string },
+  options: {
+    timeoutMs: number;
+    cwd?: string;
+    env?: NodeJS.Dict<string | undefined>;
+  },
 ): CliResult {
   // Inject prints a line per modified file; the default 1 MiB buffer would
   // kill the child with ENOBUFS on a large dist. SIGKILL on timeout, because
   // spawnSync waits for the child to exit and a CLI stuck in a network call
-  // may not act on SIGTERM.
+  // may not act on SIGTERM. `env` is the one the upload was planned with:
+  // sentry-cli reads SENTRY_AUTH_TOKEN from its own environment, and a token
+  // read from the BuildKit secret file is in that env, not in process.env.
+  const env: NodeJS.Dict<string> = {};
+  for (const [name, value] of Object.entries(options.env ?? process.env)) {
+    if (value !== undefined) env[name] = value;
+  }
   const result = spawnSync(sentryCliBin(), args, {
     encoding: 'utf8',
     cwd: options.cwd ?? process.cwd(),
+    env,
     maxBuffer: 64 * 1024 * 1024,
     timeout: options.timeoutMs,
     killSignal: 'SIGKILL',
@@ -404,7 +415,7 @@ export function runSentrySourcemapUpload(
   const runCli: SentryCliRunner =
     options.runCli ??
     ((args, { timeoutMs }) =>
-      defaultRunSentryCli(args, { timeoutMs, cwd: options.cwd }));
+      defaultRunSentryCli(args, { timeoutMs, cwd: options.cwd, env }));
   const run = (step: SentryCliStep, args: string[]): CliResult => {
     try {
       return runCli(args, { timeoutMs: timeoutsMs[step] });
