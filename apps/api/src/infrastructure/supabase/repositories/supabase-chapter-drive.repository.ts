@@ -33,6 +33,16 @@ export class SupabaseChapterDriveRepository implements IChapterDriveRepository {
     return data;
   }
 
+  async findAny(chapterId: string): Promise<ChapterDriveConnection | null> {
+    const { data, error } = await this.supabase
+      .from('chapter_drive_connections')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
   async create(data: {
     chapter_id: string;
     folder_id: string;

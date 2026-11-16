@@ -17,6 +17,8 @@ export interface ChapterDriveSyncResult {
 export interface IChapterDriveRepository {
   /** The chapter's live (not disconnecting) connection. */
   findLive(chapterId: string): Promise<ChapterDriveConnection | null>;
+  /** The chapter's connection, a disconnecting one included. */
+  findAny(chapterId: string): Promise<ChapterDriveConnection | null>;
   create(data: {
     chapter_id: string;
     folder_id: string;

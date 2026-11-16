@@ -134,6 +134,7 @@ describe('GoogleDriveApiClient', () => {
       { error: { errors: [{ reason: 'exportSizeLimitExceeded' }] } },
       'too_large',
     ],
+    [403, { error: { errors: [{ reason: 'accessNotConfigured' }] } }, 'failed'],
     [500, {}, 'failed'],
   ])('maps a %i with %j to %s', async (status, body, kind) => {
     const client = new GoogleDriveApiClient(ACCOUNT);

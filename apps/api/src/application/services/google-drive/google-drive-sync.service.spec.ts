@@ -67,7 +67,8 @@ const copy = (over: Partial<ChapterDocument>): ChapterDocument => ({
   effective_date: null,
   pinned_at: null,
   drive_file_id: 'f1',
-  drive_modified_at: '2026-11-15T00:00:00.000Z',
+  // As PostgREST hands a timestamptz back, not as Drive wrote it.
+  drive_modified_at: '2026-11-15T00:00:00+00:00',
   drive_url: 'https://drive.google.com/file/d/f1/view',
   ...over,
 });
@@ -97,6 +98,7 @@ describe('GoogleDriveSyncService', () => {
     };
     connections = {
       findLive: jest.fn(),
+      findAny: jest.fn(),
       create: jest.fn(),
       markDue: jest.fn(),
       disconnect: jest.fn(),
@@ -246,6 +248,41 @@ describe('GoogleDriveSyncService', () => {
       folder: 'Minutes',
       drive_url: 'https://drive.google.com/file/d/f1/view',
     });
+    expect(documentService.ensureFolder).toHaveBeenCalledWith(
+      'Minutes',
+      'ch-1',
+    );
+  });
+
+  it('leaves an unchanged copy alone, whichever way the time is written', async () => {
+    tree[ROOT] = [item({})];
+    documents.findDriveCopies.mockResolvedValue([copy({})]);
+
+    await service.process(connection(), NOW);
+
+    expect(drive.download).not.toHaveBeenCalled();
+    expect(documents.updateDriveCopy).not.toHaveBeenCalled();
+    expect(storage.uploadFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps copies it could not reach when the tree is read only in part', async () => {
+    tree[ROOT] = [folder('gone', 'Old minutes')];
+    drive.listChildren.mockImplementation((id: string) =>
+      id === 'gone'
+        ? Promise.reject(new GoogleDriveApiError('not_found', 404, 'notFound'))
+        : Promise.resolve(tree[id] ?? []),
+    );
+    documents.findDriveCopies.mockResolvedValue([
+      copy({ folder: 'Old minutes' }),
+    ]);
+
+    await expect(service.process(connection(), NOW)).resolves.toBe('synced');
+
+    expect(documents.delete).not.toHaveBeenCalled();
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ status: 'active' }),
+    );
   });
 
   it('replaces a changed copy in place, keeping its row, and drops the old file', async () => {
@@ -291,6 +328,23 @@ describe('GoogleDriveSyncService', () => {
     expect(connections.finishSync).toHaveBeenCalledWith(
       'conn-1',
       expect.objectContaining({ sync_due_at: NOW.toISOString() }),
+    );
+  });
+
+  it('tries at most a budget of refused files a pass, without asking for another pass', async () => {
+    tree[ROOT] = Array.from({ length: DRIVE_COPY_BUDGET + 2 }, (_, i) =>
+      item({ id: `bad${i}`, name: `A ${i}.pdf` }),
+    );
+    drive.download.mockRejectedValue(
+      new GoogleDriveApiError('forbidden', 403, 'cannotDownloadFile'),
+    );
+
+    await expect(service.process(connection(), NOW)).resolves.toBe('synced');
+
+    expect(drive.download).toHaveBeenCalledTimes(DRIVE_COPY_BUDGET);
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ skipped_count: DRIVE_COPY_BUDGET + 2 }),
     );
   });
 
@@ -352,11 +406,24 @@ describe('GoogleDriveSyncService', () => {
     });
   });
 
-  it('releases the lease and rethrows when something else breaks', async () => {
+  it('tries again in five minutes and rethrows when something else breaks', async () => {
     documents.findDriveCopies.mockRejectedValue(new Error('db down'));
 
     await expect(service.process(connection(), NOW)).rejects.toThrow('db down');
+    expect(connections.finishSync).toHaveBeenCalledWith('conn-1', {
+      last_error: 'failed',
+      sync_due_at: '2026-11-16T15:05:00.000Z',
+    });
+  });
+
+  it('releases a disconnecting row whose cleanup broke, for the next tick', async () => {
+    documents.findDriveCopies.mockRejectedValue(new Error('db down'));
+
+    await expect(
+      service.process(connection({ status: 'disconnecting' }), NOW),
+    ).rejects.toThrow('db down');
     expect(connections.releaseLease).toHaveBeenCalledWith('conn-1');
+    expect(connections.delete).not.toHaveBeenCalled();
   });
 
   it('removes every copy, then the connection, once disconnected', async () => {

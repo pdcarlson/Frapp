@@ -3,7 +3,6 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -43,8 +42,6 @@ export interface GoogleDriveStatus {
  */
 @Injectable()
 export class GoogleDriveService {
-  private readonly logger = new Logger(GoogleDriveService.name);
-
   constructor(
     @Inject(GOOGLE_DRIVE_API) private readonly drive: IGoogleDriveApi,
     @Inject(CHAPTER_DRIVE_REPOSITORY)
@@ -81,11 +78,7 @@ export class GoogleDriveService {
         'That isn’t a Google Drive folder link. Open the folder in Drive and copy the link from the address bar.',
       );
     }
-    if (await this.connections.findLive(chapterId)) {
-      throw new ConflictException(
-        'A Drive folder is already connected. Disconnect it first.',
-      );
-    }
+    await this.refuseIfConnected(chapterId);
     let folder;
     try {
       folder = await this.drive.getItem(folderId);
@@ -98,13 +91,12 @@ export class GoogleDriveService {
           `Frapp can’t see that folder yet. In Google Drive, share it with ${email} as a Viewer, then connect again.`,
         );
       }
-      // A key Google refuses, the Drive API switched off, or an outage: the
-      // officer can only retry, so the reason goes to the logs.
-      this.logger.warn(
-        `Google Drive refused a connect check: ${toReportableError(error).message}`,
-      );
+      // A key Google refuses, the Drive API switched off (mapped to `failed`
+      // by the client), or an outage: the officer can only retry, so the
+      // reason goes to the logs.
       throw new ServiceUnavailableException(
         'Couldn’t reach Google Drive. Try again in a moment.',
+        { cause: toReportableError(error) },
       );
     }
     if (folder.mimeType !== GOOGLE_DRIVE_FOLDER_MIME) {
@@ -121,13 +113,25 @@ export class GoogleDriveService {
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
+        await this.refuseIfConnected(chapterId);
         throw new ConflictException(
-          'A Drive folder is already connected. Disconnect it first.',
+          'That folder is already connected to another chapter in Frapp.',
         );
       }
       throw error;
     }
     return this.status(chapterId);
+  }
+
+  /** One folder per chapter, and none while the last one is still leaving. */
+  private async refuseIfConnected(chapterId: string): Promise<void> {
+    const existing = await this.connections.findAny(chapterId);
+    if (!existing) return;
+    throw new ConflictException(
+      existing.status === 'disconnecting'
+        ? 'The last folder is still leaving Documents. Try again in a minute.'
+        : 'A Drive folder is already connected. Disconnect it first.',
+    );
   }
 
   /** Brings the next sync forward to the worker's next pass. */

@@ -24,6 +24,7 @@ const LIST_MAX_PAGES = 10;
 /** A token is renewed this long before Google says it expires. */
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 const ITEM_FIELDS = 'id,name,mimeType,modifiedTime,size,webViewLink';
+const CONFIG_REASONS = new Set(['accessNotConfigured', 'SERVICE_DISABLED']);
 const RATE_LIMIT_REASONS = new Set([
   'rateLimitExceeded',
   'userRateLimitExceeded',
@@ -299,6 +300,11 @@ async function apiError(response: Response): Promise<GoogleDriveApiError> {
   }
   if (reason === 'exportSizeLimitExceeded') {
     return new GoogleDriveApiError('too_large', status, reason);
+  }
+  // The Drive API switched off in the Google Cloud project is a setup fault,
+  // not a folder Frapp can't see: it goes to the logs, not to the officer.
+  if (CONFIG_REASONS.has(reason)) {
+    return new GoogleDriveApiError('failed', status, reason);
   }
   if (status === 403)
     return new GoogleDriveApiError('forbidden', status, reason);

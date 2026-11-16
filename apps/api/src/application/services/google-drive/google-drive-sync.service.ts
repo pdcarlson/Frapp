@@ -104,12 +104,12 @@ export class GoogleDriveSyncService {
     connection: ChapterDriveConnection,
     now: Date,
   ): Promise<DriveSyncOutcome> {
-    if (connection.status === 'disconnecting') {
-      await this.removeCopies(connection.chapter_id);
-      await this.connections.delete(connection.id);
-      return 'disconnected';
-    }
     try {
+      if (connection.status === 'disconnecting') {
+        await this.removeCopies(connection.chapter_id);
+        await this.connections.delete(connection.id);
+        return 'disconnected';
+      }
       return await this.sync(connection, now);
     } catch (error) {
       if (error instanceof GoogleDriveApiError) {
@@ -131,8 +131,17 @@ export class GoogleDriveSyncService {
           last_error: error.reason,
           sync_due_at: new Date(now.getTime() + 5 * 60 * 1000).toISOString(),
         });
-      } else {
+      } else if (connection.status === 'disconnecting') {
+        // Released, a disconnecting row is claimed again on the next tick.
         await this.connections.releaseLease(connection.id).catch(() => {});
+      } else {
+        await this.connections
+          .finishSync(connection.id, {
+            last_error: 'failed',
+            sync_due_at: new Date(now.getTime() + 5 * 60 * 1000).toISOString(),
+          })
+          .catch(() => this.connections.releaseLease(connection.id))
+          .catch(() => {});
       }
       throw error;
     }
@@ -148,7 +157,7 @@ export class GoogleDriveSyncService {
       throw new GoogleDriveApiError('not_found', null, 'not_a_folder');
     }
 
-    const { planned, skipped } = await this.plan(root.id);
+    const { planned, skipped, complete } = await this.plan(root.id);
     const existing = await this.documents.findDriveCopies(chapterId);
     const byFile = new Map(
       existing.map((doc) => [doc.drive_file_id as string, doc]),
@@ -156,32 +165,49 @@ export class GoogleDriveSyncService {
     const wanted = new Set(planned.map((file) => file.item.id));
 
     // Copies of files that left the folder (or turned unsupported) go first,
-    // so a file moved between subfolders is never filed twice.
-    const gone = existing.filter(
-      (doc) => !wanted.has(doc.drive_file_id as string),
-    );
+    // so a file moved between subfolders is never filed twice. A tree read
+    // only in part can't tell a file that left from one it didn't reach, so
+    // its copies stay until a full read.
+    const gone = complete
+      ? existing.filter((doc) => !wanted.has(doc.drive_file_id as string))
+      : [];
     await this.removeDocuments(chapterId, gone);
 
     let budget = DRIVE_COPY_BUDGET;
+    // Files Google won't hand over are tried again each pass, but only this
+    // many, so they can't take every pass's budget from readable files.
+    let failures = DRIVE_COPY_BUDGET;
     let more = false;
     let filed = 0;
     let unreadable = 0;
+    const toCopy: PlannedFile[] = [];
     for (const file of planned) {
       const copy = byFile.get(file.item.id);
-      if (copy && copy.drive_modified_at === file.item.modifiedTime) {
+      if (copy && sameInstant(copy.drive_modified_at, file.item.modifiedTime)) {
         await this.refile(chapterId, copy, file);
+        filed += 1;
+      } else {
+        toCopy.push(file);
+      }
+    }
+    // In a fresh order each pass, so files Google keeps refusing can't hold
+    // the same place ahead of readable ones pass after pass.
+    for (const file of shuffled(toCopy)) {
+      const copy = byFile.get(file.item.id);
+      if (budget === 0 || failures === 0) {
+        if (budget === 0) more = true;
+        if (copy) filed += 1;
+        else if (failures === 0) unreadable += 1;
+        continue;
+      }
+      const ok = await this.copy(connection, file, copy ?? null);
+      if (ok) {
+        budget -= 1;
         filed += 1;
         continue;
       }
-      if (budget === 0) {
-        more = true;
-        if (copy) filed += 1;
-        continue;
-      }
-      budget -= 1;
-      const ok = await this.copy(connection, file, copy ?? null);
-      if (ok) filed += 1;
-      else if (copy) {
+      failures -= 1;
+      if (copy) {
         // Unreadable now (too big after an edit, or Google refused it): the
         // stale copy goes rather than standing in for the current file.
         await this.removeDocuments(chapterId, [copy]);
@@ -206,9 +232,10 @@ export class GoogleDriveSyncService {
   /** The folder tree as files Documents should hold, and how many it can't. */
   private async plan(
     rootId: string,
-  ): Promise<{ planned: PlannedFile[]; skipped: number }> {
+  ): Promise<{ planned: PlannedFile[]; skipped: number; complete: boolean }> {
     const planned: PlannedFile[] = [];
     let skipped = 0;
+    let complete = true;
     let listed = 0;
     const queue: { id: string; path: string | null; depth: number }[] = [
       { id: rootId, path: null, depth: 0 },
@@ -216,9 +243,27 @@ export class GoogleDriveSyncService {
     const seen = new Set<string>([rootId]);
     while (queue.length > 0) {
       const next = queue.shift()!;
-      if (listed >= DRIVE_MAX_FOLDERS) break;
+      if (listed >= DRIVE_MAX_FOLDERS) {
+        complete = false;
+        break;
+      }
       listed += 1;
-      const children = await this.drive.listChildren(next.id);
+      let children: GoogleDriveItem[];
+      try {
+        children = await this.drive.listChildren(next.id);
+      } catch (error) {
+        // A subfolder deleted or unshared mid-read is left for the next
+        // pass; only the folder itself going says Frapp lost access.
+        if (
+          next.depth > 0 &&
+          error instanceof GoogleDriveApiError &&
+          (error.kind === 'not_found' || error.kind === 'forbidden')
+        ) {
+          complete = false;
+          continue;
+        }
+        throw error;
+      }
       for (const item of children) {
         if (item.mimeType === GOOGLE_DRIVE_FOLDER_MIME) {
           // Deeper levels, and a folder shared into itself, are left out.
@@ -244,7 +289,7 @@ export class GoogleDriveSyncService {
         planned.push(file);
       }
     }
-    return { planned, skipped };
+    return { planned, skipped, complete };
   }
 
   /** Brings a copy's name, folder and link up to date without re-copying it. */
@@ -408,6 +453,22 @@ export function planFile(
     contentType: item.mimeType,
     exportMime: null,
   };
+}
+
+function shuffled<T>(items: T[]): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/** Postgres hands back `+00:00` where Drive wrote `.000Z`: compare instants. */
+function sameInstant(stored: string | null, drive: string): boolean {
+  if (!stored || !drive) return false;
+  const a = Date.parse(stored);
+  return !Number.isNaN(a) && a === Date.parse(drive);
 }
 
 /** Drive allows names Frapp folders and titles don't: trim and cap them. */

@@ -48,8 +48,14 @@ create table if not exists public.chapter_drive_connections (
     check (status in ('active', 'no_access', 'disconnecting'))
 );
 
-create unique index if not exists chapter_drive_connections_one_live_per_chapter
-  on public.chapter_drive_connections (chapter_id)
+-- One row per chapter, a disconnecting one included: its cleanup removes
+-- every Drive copy in the chapter, so a new folder waits until it is done.
+create unique index if not exists chapter_drive_connections_one_per_chapter
+  on public.chapter_drive_connections (chapter_id);
+
+-- A folder feeds one chapter at a time.
+create unique index if not exists chapter_drive_connections_one_chapter_per_folder
+  on public.chapter_drive_connections (folder_id)
   where status <> 'disconnecting';
 
 create index if not exists chapter_drive_connections_due

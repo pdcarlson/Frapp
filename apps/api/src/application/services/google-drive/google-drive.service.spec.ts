@@ -58,6 +58,7 @@ describe('GoogleDriveService', () => {
     };
     repo = {
       findLive: jest.fn().mockResolvedValue(null),
+      findAny: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(live()),
       markDue: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn().mockResolvedValue(true),
@@ -137,10 +138,22 @@ describe('GoogleDriveService', () => {
     ).rejects.toThrow('isn’t a Google Drive folder link');
   });
 
-  it('refuses a second folder while one is connected', async () => {
-    repo.findLive.mockResolvedValue(live());
+  it('refuses a second folder while one is connected, or still leaving', async () => {
+    repo.findAny.mockResolvedValue(live());
     await expect(service.connect('ch-1', 'user-1', FOLDER_ID)).rejects.toThrow(
-      ConflictException,
+      'Disconnect it first',
+    );
+    repo.findAny.mockResolvedValue(live({ status: 'disconnecting' }));
+    await expect(service.connect('ch-1', 'user-1', FOLDER_ID)).rejects.toThrow(
+      'still leaving Documents',
+    );
+    expect(repo.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a folder another chapter has connected', async () => {
+    repo.create.mockRejectedValue({ code: '23505' });
+    await expect(service.connect('ch-1', 'user-1', FOLDER_ID)).rejects.toThrow(
+      'already connected to another chapter',
     );
   });
 

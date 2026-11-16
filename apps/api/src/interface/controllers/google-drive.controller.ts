@@ -37,15 +37,15 @@ import {
  * `spec/behavior/chapter-docs.md` § Google Drive folder). Its own path, not
  * under `/documents`, where `GET /documents/:id` would take `drive`.
  *
- * Reading takes the library's gate (`members:view`), so every member can see
- * where synced files come from. Connecting, Sync now and Disconnect take
- * Manage documents. Disconnect is `@SubscriptionExempt()`: an officer can
- * always stop Frapp reading the folder.
+ * Every route takes Manage documents, reading too: a member sees where a copy
+ * came from on its row, and the folder's id stays with the officers who
+ * manage it. Disconnect is `@SubscriptionExempt()`: an officer can always
+ * stop Frapp reading the folder.
  */
 @ApiTags('Documents')
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
 @RequireModule('documents')
 @Controller('google-drive')
 export class GoogleDriveController {
@@ -62,7 +62,6 @@ export class GoogleDriveController {
   }
 
   @Put()
-  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
   @ApiOperation({
     summary:
       'Connect a Google Drive folder shared with Frapp; its files are copied into Documents and kept in sync.',
@@ -78,7 +77,6 @@ export class GoogleDriveController {
 
   @Post('sync')
   @HttpCode(200)
-  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
   @ApiOperation({ summary: 'Sync the connected folder now.' })
   @ApiOkResponse({ type: GoogleDriveStatusDto })
   syncNow(
@@ -90,7 +88,6 @@ export class GoogleDriveController {
   @Delete()
   @HttpCode(204)
   @SubscriptionExempt()
-  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
   @ApiOperation({
     summary:
       'Disconnect the folder. Its copies leave Documents; the files in Drive are untouched.',
