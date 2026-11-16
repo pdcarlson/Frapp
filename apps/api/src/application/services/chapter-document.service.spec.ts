@@ -26,6 +26,10 @@ import type {
   ChapterDocument,
   ChapterDocumentFolder,
 } from '#domain/entities/chapter-document.entity';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { RbacService } from './rbac.service';
+import { ChannelAccessListService } from './channel-access-list.service';
+import type { ChannelAccessHolder } from '#domain/utils/channel-access';
 
 describe('ChapterDocumentService', () => {
   let service: ChapterDocumentService;
@@ -34,6 +38,22 @@ describe('ChapterDocumentService', () => {
   let mockTypeRepo: jest.Mocked<IChapterDocumentTypeRepository>;
   let mockStarRepo: jest.Mocked<IChapterDocumentStarRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
+  let mockRbac: {
+    getChannelAccessHolder: jest.Mock;
+    getRankContext: jest.Mock;
+    memberHasAnyPermission: jest.Mock;
+  };
+  let mockAccessLists: { normalize: jest.Mock; listOptions: jest.Mock };
+
+  /** What the caller holds for lists: nothing, unless a test says so. */
+  const holder = (
+    entries: string[] = [],
+    wildcard = false,
+  ): ChannelAccessHolder => ({
+    entries: new Set(entries),
+    wildcard,
+    alumniEntries: new Set(),
+  });
 
   const baseDocument: ChapterDocument = {
     id: 'doc-1',
@@ -52,6 +72,8 @@ describe('ChapterDocumentService', () => {
     drive_file_id: null,
     drive_modified_at: null,
     drive_url: null,
+    drive_held_folder_id: null,
+    who_can_see: null,
   };
 
   const baseFolder: ChapterDocumentFolder = {
@@ -61,6 +83,8 @@ describe('ChapterDocumentService', () => {
     sort_order: 0,
     created_at: '2026-01-01T00:00:00.000Z',
     pinned_at: null,
+    who_can_see: null,
+    drive_folder_id: null,
   };
 
   beforeEach(async () => {
@@ -74,8 +98,17 @@ describe('ChapterDocumentService', () => {
       findDriveCopies: jest.fn().mockResolvedValue([]),
       updateDriveCopy: jest.fn(),
       setPinnedAt: jest.fn(),
-      moveToRoot: jest.fn(),
-      renameFolder: jest.fn(),
+      setWhoCanSee: jest.fn(),
+    };
+
+    mockRbac = {
+      getChannelAccessHolder: jest.fn().mockResolvedValue(holder()),
+      getRankContext: jest.fn(),
+      memberHasAnyPermission: jest.fn().mockResolvedValue(false),
+    };
+    mockAccessLists = {
+      normalize: jest.fn(async (_chapterId, dto) => dto),
+      listOptions: jest.fn().mockResolvedValue([]),
     };
 
     mockTypeRepo = {
@@ -98,7 +131,8 @@ describe('ChapterDocumentService', () => {
       findByName: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(baseFolder),
       update: jest.fn(),
-      delete: jest.fn(),
+      rename: jest.fn(),
+      deleteMovingDocuments: jest.fn().mockResolvedValue(true),
       setPinnedAt: jest.fn(),
     };
 
@@ -137,6 +171,12 @@ describe('ChapterDocumentService', () => {
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         ChapterDocumentTypeService,
         { provide: CHAPTER_DOCUMENT_TYPE_REPOSITORY, useValue: mockTypeRepo },
+        {
+          provide: MEMBER_REPOSITORY,
+          useValue: { findByUserAndChapter: jest.fn().mockResolvedValue(null) },
+        },
+        { provide: RbacService, useValue: mockRbac },
+        { provide: ChannelAccessListService, useValue: mockAccessLists },
       ],
     }).compile();
 
@@ -744,7 +784,7 @@ describe('ChapterDocumentService', () => {
     it('should return documents with folder filter', async () => {
       mockDocumentRepo.findByChapter.mockResolvedValue([baseDocument]);
 
-      const result = await service.findByChapter('ch-1', {
+      const result = await service.findByChapter('ch-1', 'user-1', {
         folder: 'Governance',
       });
 
@@ -757,7 +797,7 @@ describe('ChapterDocumentService', () => {
     it('should return all documents without filter', async () => {
       mockDocumentRepo.findByChapter.mockResolvedValue([baseDocument]);
 
-      const result = await service.findByChapter('ch-1');
+      const result = await service.findByChapter('ch-1', 'user-1');
 
       expect(mockDocumentRepo.findByChapter).toHaveBeenCalledWith(
         'ch-1',
@@ -769,7 +809,7 @@ describe('ChapterDocumentService', () => {
     it('should pass a title search through to the repository', async () => {
       mockDocumentRepo.findByChapter.mockResolvedValue([baseDocument]);
 
-      await service.findByChapter('ch-1', { search: 'bylaws' });
+      await service.findByChapter('ch-1', 'user-1', { search: 'bylaws' });
 
       expect(mockDocumentRepo.findByChapter).toHaveBeenCalledWith('ch-1', {
         search: 'bylaws',
@@ -779,7 +819,7 @@ describe('ChapterDocumentService', () => {
     it('should support folder and search together', async () => {
       mockDocumentRepo.findByChapter.mockResolvedValue([baseDocument]);
 
-      await service.findByChapter('ch-1', {
+      await service.findByChapter('ch-1', 'user-1', {
         folder: 'Governance',
         search: 'bylaws',
       });
@@ -807,6 +847,7 @@ describe('ChapterDocumentService', () => {
       const result = await service.previewUrls(
         [baseDocument.id, 'doc-2', baseDocument.id, 'other-chapter-doc'],
         'ch-1',
+        'user-1',
       );
 
       expect(mockDocumentRepo.findByIds).toHaveBeenCalledWith(
@@ -833,19 +874,21 @@ describe('ChapterDocumentService', () => {
       mockDocumentRepo.findByIds.mockResolvedValue([baseDocument]);
       mockStorageProvider.getSignedDownloadUrls.mockResolvedValue({});
       await expect(
-        service.previewUrls([baseDocument.id], 'ch-1'),
+        service.previewUrls([baseDocument.id], 'ch-1', 'user-1'),
       ).resolves.toEqual([]);
     });
 
     it('asks storage for nothing when no id is in the chapter', async () => {
       mockDocumentRepo.findByIds.mockResolvedValue([]);
-      await expect(service.previewUrls(['x'], 'ch-1')).resolves.toEqual([]);
+      await expect(
+        service.previewUrls(['x'], 'ch-1', 'user-1'),
+      ).resolves.toEqual([]);
       expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
     });
 
     it('refuses more than 100 ids', async () => {
       const ids = Array.from({ length: 101 }, (_, i) => `doc-${i}`);
-      await expect(service.previewUrls(ids, 'ch-1')).rejects.toThrow(
+      await expect(service.previewUrls(ids, 'ch-1', 'user-1')).rejects.toThrow(
         'At most 100 documents per request',
       );
       expect(mockDocumentRepo.findByIds).not.toHaveBeenCalled();
@@ -861,7 +904,7 @@ describe('ChapterDocumentService', () => {
           'https://storage.supabase.co/signed?token=t&download=bylaws.pdf',
       });
 
-      const result = await service.findById('doc-1', 'ch-1');
+      const result = await service.findById('doc-1', 'ch-1', 'user-1');
 
       expect(result.id).toBe('doc-1');
       // Inline, as before: the web viewer reads it.
@@ -884,7 +927,7 @@ describe('ChapterDocumentService', () => {
     it('should throw NotFoundException when document not found', async () => {
       mockDocumentRepo.findById.mockResolvedValue(null);
 
-      await expect(service.findById('doc-x', 'ch-1')).rejects.toThrow(
+      await expect(service.findById('doc-x', 'ch-1', 'user-1')).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -896,7 +939,7 @@ describe('ChapterDocumentService', () => {
       mockStorageProvider.deleteFile.mockResolvedValue();
       mockDocumentRepo.delete.mockResolvedValue();
 
-      await service.delete('doc-1', 'ch-1');
+      await service.delete('doc-1', 'ch-1', 'user-1');
 
       expect(mockStorageProvider.deleteFile).toHaveBeenCalledWith(
         'documents',
@@ -908,7 +951,7 @@ describe('ChapterDocumentService', () => {
     it('should throw NotFoundException when document not found', async () => {
       mockDocumentRepo.findById.mockResolvedValue(null);
 
-      await expect(service.delete('doc-x', 'ch-1')).rejects.toThrow(
+      await expect(service.delete('doc-x', 'ch-1', 'user-1')).rejects.toThrow(
         NotFoundException,
       );
     });
@@ -919,7 +962,7 @@ describe('ChapterDocumentService', () => {
         drive_file_id: 'drive-1',
       });
 
-      await expect(service.delete('doc-1', 'ch-1')).rejects.toThrow(
+      await expect(service.delete('doc-1', 'ch-1', 'user-1')).rejects.toThrow(
         'Remove it in Google Drive',
       );
       expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
@@ -931,7 +974,7 @@ describe('ChapterDocumentService', () => {
     it('should return the chapter folders', async () => {
       mockFolderRepo.findByChapter.mockResolvedValue([baseFolder]);
 
-      const result = await service.listFolders('ch-1');
+      const result = await service.listFolders('ch-1', 'user-1');
 
       expect(mockFolderRepo.findByChapter).toHaveBeenCalledWith('ch-1');
       expect(result).toEqual([baseFolder]);
@@ -945,17 +988,18 @@ describe('ChapterDocumentService', () => {
         { ...baseFolder, id: 'folder-2', name: 'Minutes', sort_order: 4 },
       ]);
 
-      await service.createFolder('ch-1', 'Policies');
+      await service.createFolder('ch-1', 'Policies', undefined, 'user-1');
 
       expect(mockFolderRepo.create).toHaveBeenCalledWith({
         chapter_id: 'ch-1',
         name: 'Policies',
         sort_order: 5,
+        who_can_see: null,
       });
     });
 
     it('should honor an explicit sort order', async () => {
-      await service.createFolder('ch-1', 'Policies', 2);
+      await service.createFolder('ch-1', 'Policies', 2, 'user-1');
 
       expect(mockFolderRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ sort_order: 2 }),
@@ -965,7 +1009,7 @@ describe('ChapterDocumentService', () => {
     it('should start at sort order 0 for the first folder', async () => {
       mockFolderRepo.findByChapter.mockResolvedValue([]);
 
-      await service.createFolder('ch-1', 'Governance');
+      await service.createFolder('ch-1', 'Governance', undefined, 'user-1');
 
       expect(mockFolderRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ sort_order: 0 }),
@@ -973,7 +1017,7 @@ describe('ChapterDocumentService', () => {
     });
 
     it('should trim the folder name', async () => {
-      await service.createFolder('ch-1', '  Governance  ');
+      await service.createFolder('ch-1', '  Governance  ', undefined, 'user-1');
 
       expect(mockFolderRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'Governance' }),
@@ -983,18 +1027,18 @@ describe('ChapterDocumentService', () => {
     it('should throw ConflictException on a duplicate name', async () => {
       mockFolderRepo.findByName.mockResolvedValue(baseFolder);
 
-      await expect(service.createFolder('ch-1', 'Governance')).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.createFolder('ch-1', 'Governance', undefined, 'user-1'),
+      ).rejects.toThrow(ConflictException);
       expect(mockFolderRepo.create).not.toHaveBeenCalled();
     });
 
     it.each(['', '   '])(
       'should reject an empty folder name (%p)',
       async (name) => {
-        await expect(service.createFolder('ch-1', name)).rejects.toThrow(
-          BadRequestException,
-        );
+        await expect(
+          service.createFolder('ch-1', name, undefined, 'user-1'),
+        ).rejects.toThrow(BadRequestException);
         expect(mockFolderRepo.create).not.toHaveBeenCalled();
       },
     );
@@ -1005,9 +1049,9 @@ describe('ChapterDocumentService', () => {
       mockFolderRepo.findByName.mockResolvedValue(null);
       mockFolderRepo.create.mockRejectedValue({ code: '23505' });
 
-      await expect(service.createFolder('ch-1', 'Governance')).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.createFolder('ch-1', 'Governance', undefined, 'user-1'),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should not swallow unrelated repository errors', async () => {
@@ -1017,58 +1061,82 @@ describe('ChapterDocumentService', () => {
         message: 'connection failure',
       });
 
-      await expect(service.createFolder('ch-1', 'Governance')).rejects.toEqual(
-        expect.objectContaining({ code: '08006' }),
-      );
+      await expect(
+        service.createFolder('ch-1', 'Governance', undefined, 'user-1'),
+      ).rejects.toEqual(expect.objectContaining({ code: '08006' }));
     });
   });
 
   describe('updateFolder', () => {
-    it('should rename the folder and re-file its documents', async () => {
+    it('renames the folder and re-files its documents in one call', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
       mockFolderRepo.findByName.mockResolvedValue(null);
-      mockFolderRepo.update.mockResolvedValue({
+      mockFolderRepo.rename.mockResolvedValue({
         ...baseFolder,
         name: 'Bylaws',
       });
 
-      const result = await service.updateFolder('folder-1', 'ch-1', {
+      const result = await service.updateFolder('folder-1', 'ch-1', 'user-1', {
         name: 'Bylaws',
       });
 
-      expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
-        name: 'Bylaws',
-      });
-      expect(mockDocumentRepo.renameFolder).toHaveBeenCalledWith(
-        'Governance',
-        'Bylaws',
+      expect(mockFolderRepo.rename).toHaveBeenCalledWith(
+        'folder-1',
         'ch-1',
+        'Bylaws',
       );
+      expect(mockFolderRepo.update).not.toHaveBeenCalled();
       expect(result.name).toBe('Bylaws');
     });
 
-    it('should reorder without touching documents', async () => {
+    it('renames first, then applies the rest of the patch', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockFolderRepo.update.mockResolvedValue({
-        ...baseFolder,
+      const calls: string[] = [];
+      mockFolderRepo.rename.mockImplementation(async () => {
+        calls.push('rename');
+        return { ...baseFolder, name: 'Bylaws' };
+      });
+      mockFolderRepo.update.mockImplementation(async () => {
+        calls.push('update');
+        return { ...baseFolder, name: 'Bylaws', sort_order: 3 };
+      });
+
+      await service.updateFolder('folder-1', 'ch-1', 'user-1', {
+        name: 'Bylaws',
         sort_order: 3,
       });
 
-      await service.updateFolder('folder-1', 'ch-1', { sort_order: 3 });
+      expect(calls).toEqual(['rename', 'update']);
+      expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
+        sort_order: 3,
+      });
+    });
+
+    it('should reorder without renaming', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.update.mockResolvedValue({ ...baseFolder, sort_order: 3 });
+
+      await service.updateFolder('folder-1', 'ch-1', 'user-1', {
+        sort_order: 3,
+      });
 
       expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
         sort_order: 3,
       });
-      expect(mockDocumentRepo.renameFolder).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
     });
 
-    it('should not re-file documents when the name is unchanged', async () => {
+    it('should not rename when the name is unchanged', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockFolderRepo.update.mockResolvedValue(baseFolder);
 
-      await service.updateFolder('folder-1', 'ch-1', { name: 'Governance' });
+      await expect(
+        service.updateFolder('folder-1', 'ch-1', 'user-1', {
+          name: 'Governance',
+        }),
+      ).resolves.toEqual(baseFolder);
 
-      expect(mockDocumentRepo.renameFolder).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
+      expect(mockFolderRepo.update).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException when renaming onto an existing folder', async () => {
@@ -1080,28 +1148,48 @@ describe('ChapterDocumentService', () => {
       });
 
       await expect(
-        service.updateFolder('folder-1', 'ch-1', { name: 'Minutes' }),
+        service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Minutes' }),
       ).rejects.toThrow(ConflictException);
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
-      expect(mockDocumentRepo.renameFolder).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
+    });
+
+    it('reports a rename that lost a race to the unique index as a conflict', async () => {
+      // The pre-check is advisory; the transaction's unique index is the real
+      // arbiter, and it rolls the documents back with the row.
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.findByName.mockResolvedValue(null);
+      mockFolderRepo.rename.mockRejectedValue({ code: '23505' });
+
+      await expect(
+        service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Minutes' }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('answers 404 when the folder goes between the read and the rename', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.rename.mockResolvedValue(null);
+
+      await expect(
+        service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Bylaws' }),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw NotFoundException for a folder in another chapter', async () => {
       mockFolderRepo.findById.mockResolvedValue(null);
 
       await expect(
-        service.updateFolder('folder-1', 'ch-2', { name: 'Bylaws' }),
+        service.updateFolder('folder-1', 'ch-2', 'user-1', { name: 'Bylaws' }),
       ).rejects.toThrow(NotFoundException);
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
     });
 
     it('should reject an empty rename', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
 
       await expect(
-        service.updateFolder('folder-1', 'ch-1', { name: '   ' }),
+        service.updateFolder('folder-1', 'ch-1', 'user-1', { name: '   ' }),
       ).rejects.toThrow(BadRequestException);
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
     });
 
     it('should treat a no-op patch as a no-op, not an error', async () => {
@@ -1110,78 +1198,50 @@ describe('ChapterDocumentService', () => {
       // with PGRST116, which would surface as a 500.
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
 
-      const result = await service.updateFolder('folder-1', 'ch-1', {});
+      const result = await service.updateFolder(
+        'folder-1',
+        'ch-1',
+        'user-1',
+        {},
+      );
 
       expect(result).toEqual(baseFolder);
       expect(mockFolderRepo.update).not.toHaveBeenCalled();
-      expect(mockDocumentRepo.renameFolder).not.toHaveBeenCalled();
-    });
-
-    it('should re-file documents before renaming the folder row', async () => {
-      const calls: string[] = [];
-      mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockFolderRepo.findByName.mockResolvedValue(null);
-      mockDocumentRepo.renameFolder.mockImplementation(async () => {
-        calls.push('documents');
-      });
-      mockFolderRepo.update.mockImplementation(async () => {
-        calls.push('folder');
-        return { ...baseFolder, name: 'Bylaws' };
-      });
-
-      await service.updateFolder('folder-1', 'ch-1', { name: 'Bylaws' });
-
-      expect(calls).toEqual(['documents', 'folder']);
-    });
-
-    it('should leave the rename retryable when re-filing documents fails', async () => {
-      // The row keeps the old name, so a retry still sees a real rename and
-      // re-runs both steps. Renaming the row first would make the retry a
-      // no-op and strand the documents permanently.
-      mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockFolderRepo.findByName.mockResolvedValue(null);
-      mockDocumentRepo.renameFolder.mockRejectedValue(new Error('db down'));
-
-      await expect(
-        service.updateFolder('folder-1', 'ch-1', { name: 'Bylaws' }),
-      ).rejects.toThrow('db down');
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
     });
   });
 
   describe('deleteFolder', () => {
-    it('should move documents to root, then delete the folder', async () => {
+    it('moves the documents to the top level and deletes the folder in one call', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
 
-      await service.deleteFolder('folder-1', 'ch-1');
+      await service.deleteFolder('folder-1', 'ch-1', 'user-1');
 
-      expect(mockDocumentRepo.moveToRoot).toHaveBeenCalledWith(
-        'Governance',
+      expect(mockFolderRepo.deleteMovingDocuments).toHaveBeenCalledWith(
+        'folder-1',
         'ch-1',
       );
-      expect(mockFolderRepo.delete).toHaveBeenCalledWith('folder-1', 'ch-1');
       // Spec: no cascading delete of the files themselves.
       expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
       expect(mockDocumentRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('should not delete the folder row if moving documents fails', async () => {
+    it('answers 404 when the folder goes between the read and the delete', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockDocumentRepo.moveToRoot.mockRejectedValue(new Error('db down'));
+      mockFolderRepo.deleteMovingDocuments.mockResolvedValue(false);
 
-      await expect(service.deleteFolder('folder-1', 'ch-1')).rejects.toThrow(
-        'db down',
-      );
-      expect(mockFolderRepo.delete).not.toHaveBeenCalled();
+      await expect(
+        service.deleteFolder('folder-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw NotFoundException for a folder in another chapter', async () => {
       mockFolderRepo.findById.mockResolvedValue(null);
 
-      await expect(service.deleteFolder('folder-1', 'ch-2')).rejects.toThrow(
-        NotFoundException,
-      );
-      expect(mockDocumentRepo.moveToRoot).not.toHaveBeenCalled();
+      await expect(
+        service.deleteFolder('folder-1', 'ch-2', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockFolderRepo.deleteMovingDocuments).not.toHaveBeenCalled();
     });
   });
 
@@ -1191,7 +1251,12 @@ describe('ChapterDocumentService', () => {
       mockFolderRepo.setPinnedAt.mockImplementation(
         async (_id, _ch, pinnedAt) => ({ ...baseFolder, pinned_at: pinnedAt }),
       );
-      const result = await service.setFolderPinned('folder-1', 'ch-1', true);
+      const result = await service.setFolderPinned(
+        'folder-1',
+        'ch-1',
+        'user-1',
+        true,
+      );
       expect(mockFolderRepo.findById).toHaveBeenCalledWith('folder-1', 'ch-1');
       expect(mockFolderRepo.setPinnedAt).toHaveBeenCalledWith(
         'folder-1',
@@ -1205,7 +1270,7 @@ describe('ChapterDocumentService', () => {
       const pinned = { ...baseFolder, pinned_at: '2026-11-01T00:00:00.000Z' };
       mockFolderRepo.findById.mockResolvedValue(pinned);
       await expect(
-        service.setFolderPinned('folder-1', 'ch-1', true),
+        service.setFolderPinned('folder-1', 'ch-1', 'user-1', true),
       ).resolves.toBe(pinned);
       expect(mockFolderRepo.setPinnedAt).not.toHaveBeenCalled();
     });
@@ -1216,7 +1281,7 @@ describe('ChapterDocumentService', () => {
         pinned_at: '2026-11-01T00:00:00.000Z',
       });
       mockFolderRepo.setPinnedAt.mockResolvedValue(baseFolder);
-      await service.setFolderPinned('folder-1', 'ch-1', false);
+      await service.setFolderPinned('folder-1', 'ch-1', 'user-1', false);
       expect(mockFolderRepo.setPinnedAt).toHaveBeenCalledWith(
         'folder-1',
         'ch-1',
@@ -1227,7 +1292,7 @@ describe('ChapterDocumentService', () => {
     it("refuses to pin a folder outside the caller's chapter", async () => {
       mockFolderRepo.findById.mockResolvedValue(null);
       await expect(
-        service.setFolderPinned('folder-x', 'ch-1', true),
+        service.setFolderPinned('folder-x', 'ch-1', 'user-1', true),
       ).rejects.toThrow(NotFoundException);
       expect(mockFolderRepo.setPinnedAt).not.toHaveBeenCalled();
     });
@@ -1236,7 +1301,7 @@ describe('ChapterDocumentService', () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
       mockFolderRepo.setPinnedAt.mockResolvedValue(null);
       await expect(
-        service.setFolderPinned('folder-1', 'ch-1', true),
+        service.setFolderPinned('folder-1', 'ch-1', 'user-1', true),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -1244,7 +1309,7 @@ describe('ChapterDocumentService', () => {
       mockDocumentRepo.findById.mockResolvedValue(baseDocument);
       mockDocumentRepo.setPinnedAt.mockResolvedValue(null);
       await expect(
-        service.setDocumentPinned('doc-1', 'ch-1', true),
+        service.setDocumentPinned('doc-1', 'ch-1', 'user-1', true),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -1254,7 +1319,7 @@ describe('ChapterDocumentService', () => {
         ...baseDocument,
         pinned_at: '2026-11-11T00:00:00.000Z',
       });
-      await service.setDocumentPinned('doc-1', 'ch-1', true);
+      await service.setDocumentPinned('doc-1', 'ch-1', 'user-1', true);
       expect(mockDocumentRepo.setPinnedAt).toHaveBeenCalledWith(
         'doc-1',
         'ch-1',
@@ -1266,7 +1331,7 @@ describe('ChapterDocumentService', () => {
         ...baseDocument,
         pinned_at: '2026-11-11T00:00:00.000Z',
       });
-      await service.setDocumentPinned('doc-1', 'ch-1', false);
+      await service.setDocumentPinned('doc-1', 'ch-1', 'user-1', false);
       expect(mockDocumentRepo.setPinnedAt).toHaveBeenCalledWith(
         'doc-1',
         'ch-1',
@@ -1277,7 +1342,7 @@ describe('ChapterDocumentService', () => {
     it('leaves an unpinned document alone when asked to unpin it', async () => {
       mockDocumentRepo.findById.mockResolvedValue(baseDocument);
       await expect(
-        service.setDocumentPinned('doc-1', 'ch-1', false),
+        service.setDocumentPinned('doc-1', 'ch-1', 'user-1', false),
       ).resolves.toBe(baseDocument);
       expect(mockDocumentRepo.setPinnedAt).not.toHaveBeenCalled();
     });
@@ -1285,7 +1350,7 @@ describe('ChapterDocumentService', () => {
     it("refuses to pin a document outside the caller's chapter", async () => {
       mockDocumentRepo.findById.mockResolvedValue(null);
       await expect(
-        service.setDocumentPinned('doc-x', 'ch-1', true),
+        service.setDocumentPinned('doc-x', 'ch-1', 'user-1', true),
       ).rejects.toThrow(NotFoundException);
     });
   });
@@ -1310,6 +1375,8 @@ describe('ChapterDocumentService', () => {
           created_at: '2026-11-02T00:00:00.000Z',
         },
       ]);
+      mockFolderRepo.findByChapter.mockResolvedValue([baseFolder]);
+      mockDocumentRepo.findByIds.mockResolvedValue([baseDocument]);
       await expect(service.listStars('user-1', 'ch-1')).resolves.toEqual({
         folder_ids: ['folder-1'],
         document_ids: ['doc-1'],
@@ -1384,6 +1451,509 @@ describe('ChapterDocumentService', () => {
         service.setDocumentStarred('user-1', 'ch-1', 'doc-x', true),
       ).rejects.toThrow(NotFoundException);
       expect(mockStarRepo.add).not.toHaveBeenCalled();
+    });
+  });
+
+  // #3642 piece 1 (Paul 2026-11-16): who can see a folder or file.
+  describe('who can see', () => {
+    const execFolder: ChapterDocumentFolder = {
+      ...baseFolder,
+      id: 'folder-exec',
+      name: 'Exec',
+      who_can_see: ['tier:exec'],
+    };
+    const inExec: ChapterDocument = {
+      ...baseDocument,
+      id: 'doc-exec',
+      folder: 'Exec',
+      uploaded_by: 'user-9',
+    };
+    const treasurerOnly: ChapterDocument = {
+      ...baseDocument,
+      id: 'doc-budget',
+      folder: 'Governance',
+      uploaded_by: 'user-9',
+      who_can_see: ['role:treasurer'],
+    };
+
+    beforeEach(() => {
+      mockFolderRepo.findByChapter.mockResolvedValue([baseFolder, execFolder]);
+      mockDocumentRepo.findByChapter.mockResolvedValue([
+        baseDocument,
+        inExec,
+        treasurerOnly,
+      ]);
+    });
+
+    const ids = (docs: ChapterDocument[]) => docs.map((doc) => doc.id);
+
+    it("hides a file in a folder whose list the member isn't on, and one whose own list they aren't on", async () => {
+      mockRbac.getChannelAccessHolder.mockResolvedValue(
+        holder(['tier:member']),
+      );
+      await expect(
+        service.findByChapter('ch-1', 'user-1').then(ids),
+      ).resolves.toEqual(['doc-1']);
+    });
+
+    it('shows a file to a member on both its folder list and its own', async () => {
+      mockRbac.getChannelAccessHolder.mockResolvedValue(
+        holder(['tier:exec', 'role:treasurer']),
+      );
+      await expect(
+        service.findByChapter('ch-1', 'user-1').then(ids),
+      ).resolves.toEqual(['doc-1', 'doc-exec', 'doc-budget']);
+    });
+
+    it('shows its uploader a file whatever its lists say', async () => {
+      await expect(
+        service.findByChapter('ch-1', 'user-9').then(ids),
+      ).resolves.toEqual(['doc-1', 'doc-exec', 'doc-budget']);
+    });
+
+    it('lets * through every list', async () => {
+      mockRbac.getChannelAccessHolder.mockResolvedValue(holder([], true));
+      await expect(
+        service.findByChapter('ch-1', 'user-1').then(ids),
+      ).resolves.toHaveLength(3);
+    });
+
+    it('answers 404 for a single file the member cannot see', async () => {
+      mockDocumentRepo.findById.mockResolvedValue(inExec);
+      await expect(
+        service.findById('doc-exec', 'ch-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(
+        mockStorageProvider.getSignedInlineAndAttachmentUrls,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('signs no preview for a file the member cannot see', async () => {
+      mockDocumentRepo.findByIds.mockResolvedValue([inExec]);
+      await expect(
+        service.previewUrls(['doc-exec'], 'ch-1', 'user-1'),
+      ).resolves.toEqual([]);
+      expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
+    });
+
+    it("leaves out a folder whose list the member isn't on", async () => {
+      await expect(service.listFolders('ch-1', 'user-1')).resolves.toEqual([
+        baseFolder,
+      ]);
+    });
+
+    it("refuses an upload into a folder the uploader can't see", async () => {
+      mockFolderRepo.findByName.mockResolvedValue(execFolder);
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Minutes',
+          storage_path: 'chapters/ch-1/documents/doc-new/a.pdf',
+          uploaded_by: 'user-1',
+          folder: 'Exec',
+        }),
+      ).rejects.toThrow("You can't file into that folder");
+      expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("answers 404 for deleting a folder the member can't see, managers included", async () => {
+      mockFolderRepo.findById.mockResolvedValue(execFolder);
+      await expect(
+        service.deleteFolder('folder-exec', 'ch-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockFolderRepo.deleteMovingDocuments).not.toHaveBeenCalled();
+    });
+
+    it("answers 404 for deleting, pinning or starring a file the member can't see", async () => {
+      mockDocumentRepo.findById.mockResolvedValue(inExec);
+      await expect(
+        service.delete('doc-exec', 'ch-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.setDocumentPinned('doc-exec', 'ch-1', 'user-1', true),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.setDocumentStarred('user-1', 'ch-1', 'doc-exec', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockDocumentRepo.delete).not.toHaveBeenCalled();
+      expect(mockDocumentRepo.setPinnedAt).not.toHaveBeenCalled();
+      expect(mockStarRepo.add).not.toHaveBeenCalled();
+    });
+
+    it("answers 404 for pinning or starring a folder the member can't see", async () => {
+      mockFolderRepo.findById.mockResolvedValue(execFolder);
+      await expect(
+        service.setFolderPinned('folder-exec', 'ch-1', 'user-1', true),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.setFolderStarred('user-1', 'ch-1', 'folder-exec', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockFolderRepo.setPinnedAt).not.toHaveBeenCalled();
+      expect(mockStarRepo.add).not.toHaveBeenCalled();
+    });
+
+    it('leaves out stars on what the member can no longer see', async () => {
+      const star = (folder_id: string | null, document_id: string | null) => ({
+        id: `s-${folder_id ?? document_id}`,
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        folder_id,
+        document_id,
+        created_at: '2026-11-16T00:00:00.000Z',
+      });
+      mockStarRepo.findByUser.mockResolvedValue([
+        star('folder-1', null),
+        star('folder-exec', null),
+        star(null, 'doc-1'),
+        star(null, 'doc-exec'),
+      ]);
+      mockDocumentRepo.findByIds.mockResolvedValue([baseDocument, inExec]);
+      await expect(service.listStars('user-1', 'ch-1')).resolves.toEqual({
+        folder_ids: ['folder-1'],
+        document_ids: ['doc-1'],
+      });
+    });
+
+    it('files an upload with its checked list, from the single route and a batch', async () => {
+      mockRbac.getRankContext.mockResolvedValue({
+        reach: {
+          rank: 1,
+          wildcard: false,
+          permissions: new Set(),
+          memberId: 'm',
+        },
+        tiers: [
+          { id: 'president', position: 0 },
+          { id: 'exec', position: 1 },
+        ],
+        roles: [],
+        positions: new Map(),
+      });
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+      const input = {
+        chapter_id: 'ch-1',
+        title: 'Budget',
+        storage_path: 'chapters/ch-1/documents/doc-new/b.pdf',
+        uploaded_by: 'user-1',
+        who_can_see: ['role:treasurer'],
+      };
+      await service.confirmUpload(input);
+      await service.confirmUploads([
+        { ...input, storage_path: 'chapters/ch-1/documents/doc-2/c.pdf' },
+      ]);
+      expect(mockDocumentRepo.create).toHaveBeenCalledTimes(2);
+      for (const [row] of mockDocumentRepo.create.mock.calls) {
+        expect(row).toEqual(
+          expect.objectContaining({
+            who_can_see: ['role:treasurer', 'tier:exec', 'tier:president'],
+          }),
+        );
+      }
+    });
+
+    it('reads no viewer when nothing in the library has a list', async () => {
+      mockFolderRepo.findByChapter.mockResolvedValue([baseFolder]);
+      mockDocumentRepo.findByChapter.mockResolvedValue([baseDocument]);
+      await service.findByChapter('ch-1', 'user-1');
+      await service.listFolders('ch-1', 'user-1');
+      expect(mockRbac.getChannelAccessHolder).not.toHaveBeenCalled();
+    });
+
+    it('limits a folder synced from Google Drive like any other (#5220)', async () => {
+      mockRbac.getRankContext.mockResolvedValue({
+        reach: {
+          rank: 0,
+          wildcard: true,
+          permissions: new Set(),
+          memberId: 'm',
+        },
+        tiers: [],
+        roles: [],
+        positions: new Map(),
+      });
+      mockFolderRepo.findById.mockResolvedValue({
+        ...baseFolder,
+        drive_folder_id: 'drive-folder',
+      });
+      mockFolderRepo.update.mockResolvedValue({
+        ...baseFolder,
+        drive_folder_id: 'drive-folder',
+        who_can_see: ['role:treasurer'],
+      });
+      await service.updateFolder('folder-1', 'ch-1', 'user-1', {
+        who_can_see: ['role:treasurer'],
+      });
+      expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
+        who_can_see: ['role:treasurer'],
+      });
+    });
+
+    it('leaves renaming and deleting a synced folder to Google Drive (#5220)', async () => {
+      const synced = { ...baseFolder, drive_folder_id: 'drive-folder' };
+      mockFolderRepo.findById.mockResolvedValue(synced);
+      mockFolderRepo.findByName.mockResolvedValue(null);
+      await expect(
+        service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Exec' }),
+      ).rejects.toThrow('Rename or delete it in Drive');
+      await expect(
+        service.deleteFolder('folder-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('Rename or delete it in Drive');
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
+      expect(mockFolderRepo.deleteMovingDocuments).not.toHaveBeenCalled();
+    });
+
+    describe('openUpDriveCopy (#5220)', () => {
+      const held = {
+        ...baseDocument,
+        folder: 'Exec',
+        drive_file_id: 'drive-1',
+        drive_held_folder_id: 'folder-1',
+      };
+
+      it('moves a held copy into the folder Drive put it in', async () => {
+        mockRbac.getChannelAccessHolder.mockResolvedValue(
+          holder(['tier:exec']),
+        );
+        mockDocumentRepo.findById
+          .mockResolvedValueOnce(held)
+          .mockResolvedValueOnce({
+            ...held,
+            folder: 'Governance',
+            drive_held_folder_id: null,
+          });
+        mockFolderRepo.findById.mockResolvedValue(baseFolder);
+
+        const moved = await service.openUpDriveCopy('doc-1', 'ch-1', 'user-1');
+
+        expect(mockDocumentRepo.updateDriveCopy).toHaveBeenCalledWith(
+          'doc-1',
+          'ch-1',
+          { folder: 'Governance', drive_held_folder_id: null },
+        );
+        expect(moved.folder).toBe('Governance');
+      });
+
+      it('refuses a copy sync is not holding', async () => {
+        mockRbac.getChannelAccessHolder.mockResolvedValue(
+          holder(['tier:exec']),
+        );
+        mockDocumentRepo.findById.mockResolvedValue({
+          ...held,
+          drive_held_folder_id: null,
+        });
+        await expect(
+          service.openUpDriveCopy('doc-1', 'ch-1', 'user-1'),
+        ).rejects.toThrow(ConflictException);
+        expect(mockDocumentRepo.updateDriveCopy).not.toHaveBeenCalled();
+      });
+
+      it("hides which folder Drive put a held copy in from a reader who can't see that folder", async () => {
+        mockRbac.getChannelAccessHolder.mockResolvedValue(
+          holder(['tier:exec']),
+        );
+        mockFolderRepo.findByChapter.mockResolvedValue([
+          {
+            ...baseFolder,
+            id: 'exec',
+            name: 'Exec',
+            who_can_see: ['tier:exec'],
+          },
+          {
+            ...baseFolder,
+            id: 'folder-1',
+            name: 'Treasury',
+            who_can_see: ['role:treasurer'],
+          },
+          { ...baseFolder, id: 'open', name: 'Governance', who_can_see: null },
+        ]);
+
+        const [hidden] = await service.visibleTo('ch-1', 'user-1', [held]);
+        expect(hidden.drive_held_folder_id).toBeNull();
+
+        const [shown] = await service.visibleTo('ch-1', 'user-1', [
+          { ...held, drive_held_folder_id: 'open' },
+        ]);
+        expect(shown.drive_held_folder_id).toBe('open');
+      });
+
+      it("answers 404 when the manager can't see the folder Drive put it in", async () => {
+        mockRbac.getChannelAccessHolder.mockResolvedValue(
+          holder(['tier:exec']),
+        );
+        mockDocumentRepo.findById.mockResolvedValue(held);
+        mockFolderRepo.findById.mockResolvedValue({
+          ...baseFolder,
+          who_can_see: ['role:treasurer'],
+        });
+        await expect(
+          service.openUpDriveCopy('doc-1', 'ch-1', 'user-1'),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockDocumentRepo.updateDriveCopy).not.toHaveBeenCalled();
+      });
+    });
+
+    it("lets whoever connected Google Drive change no copy's list as its uploader", async () => {
+      mockRbac.getChannelAccessHolder.mockResolvedValue(holder(['tier:exec']));
+      mockDocumentRepo.findById.mockResolvedValue({
+        ...inExec,
+        uploaded_by: 'user-1',
+        drive_file_id: 'drive-1',
+      });
+      await expect(
+        service.setDocumentAccess('doc-exec', 'ch-1', 'user-1', null),
+      ).rejects.toThrow('Only whoever uploaded a file');
+    });
+
+    it("answers 404 for a folder the member can't see, so a manager can't change it", async () => {
+      mockFolderRepo.findById.mockResolvedValue(execFolder);
+      await expect(
+        service.updateFolder('folder-exec', 'ch-1', 'user-1', {
+          who_can_see: null,
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+    });
+
+    describe('setting a list', () => {
+      const tiers = [
+        { id: 'president', position: 0 },
+        { id: 'exec', position: 1 },
+        { id: 'member', position: 2 },
+      ];
+      const rankedAt = (rank: number, wildcard = false) =>
+        mockRbac.getRankContext.mockResolvedValue({
+          reach: { rank, wildcard, permissions: new Set(), memberId: 'm-1' },
+          tiers,
+          roles: [],
+          positions: new Map(),
+        });
+
+      beforeEach(() => {
+        mockDocumentRepo.findById.mockResolvedValue(baseDocument);
+        mockDocumentRepo.setWhoCanSee.mockImplementation(
+          async (_id, _chapter, list) => ({
+            ...baseDocument,
+            who_can_see: list,
+          }),
+        );
+      });
+
+      it("keeps the setter's tier and every tier above it on the list", async () => {
+        rankedAt(1);
+        const result = await service.setDocumentAccess(
+          'doc-1',
+          'ch-1',
+          'user-1',
+          ['role:treasurer'],
+        );
+        expect(result.who_can_see).toEqual([
+          'role:treasurer',
+          'tier:exec',
+          'tier:president',
+        ]);
+      });
+
+      it('adds no tier for *', async () => {
+        rankedAt(Infinity, true);
+        const result = await service.setDocumentAccess(
+          'doc-1',
+          'ch-1',
+          'user-1',
+          ['role:treasurer'],
+        );
+        expect(result.who_can_see).toEqual(['role:treasurer']);
+      });
+
+      it('refuses a list from a member outside every tier', async () => {
+        rankedAt(Infinity);
+        await expect(
+          service.setDocumentAccess('doc-1', 'ch-1', 'user-1', [
+            'role:treasurer',
+          ]),
+        ).rejects.toThrow("You can't limit who sees a file");
+        expect(mockDocumentRepo.setWhoCanSee).not.toHaveBeenCalled();
+      });
+
+      it("puts a file back to its folder's answer with null", async () => {
+        await service.setDocumentAccess('doc-1', 'ch-1', 'user-1', null);
+        expect(mockDocumentRepo.setWhoCanSee).toHaveBeenCalledWith(
+          'doc-1',
+          'ch-1',
+          null,
+        );
+        expect(mockRbac.getRankContext).not.toHaveBeenCalled();
+      });
+
+      it('refuses someone who neither uploaded the file nor manages documents', async () => {
+        mockDocumentRepo.findById.mockResolvedValue({
+          ...baseDocument,
+          uploaded_by: 'user-9',
+        });
+        await expect(
+          service.setDocumentAccess('doc-1', 'ch-1', 'user-1', null),
+        ).rejects.toThrow('Only whoever uploaded a file');
+        expect(mockRbac.memberHasAnyPermission).toHaveBeenCalledWith(
+          'ch-1',
+          'user-1',
+          ['chapter_docs:manage'],
+        );
+        expect(mockDocumentRepo.setWhoCanSee).not.toHaveBeenCalled();
+      });
+
+      it('lets a member who manages documents set it on a file they see', async () => {
+        mockDocumentRepo.findById.mockResolvedValue({
+          ...baseDocument,
+          uploaded_by: 'user-9',
+        });
+        mockRbac.memberHasAnyPermission.mockResolvedValue(true);
+        await service.setDocumentAccess('doc-1', 'ch-1', 'user-1', null);
+        expect(mockDocumentRepo.setWhoCanSee).toHaveBeenCalled();
+      });
+
+      it('validates the list as a channel list is', async () => {
+        rankedAt(1);
+        mockAccessLists.normalize.mockRejectedValue(
+          new BadRequestException('Unknown role'),
+        );
+        await expect(
+          service.setDocumentAccess('doc-1', 'ch-1', 'user-1', ['role:x']),
+        ).rejects.toThrow('Unknown role');
+      });
+
+      it('stores a new folder with the checked list', async () => {
+        rankedAt(1);
+        await service.createFolder('ch-1', 'Exec', undefined, 'user-1', [
+          'role:treasurer',
+        ]);
+        expect(mockFolderRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            who_can_see: ['role:treasurer', 'tier:exec', 'tier:president'],
+          }),
+        );
+      });
+
+      it('offers the options and the tiers a list keeps', async () => {
+        rankedAt(2);
+        mockAccessLists.listOptions.mockResolvedValue([
+          {
+            entry: 'role:treasurer',
+            kind: 'role',
+            id: 'treasurer',
+            name: 'Treasurer',
+          },
+        ]);
+        await expect(service.accessOptions('ch-1', 'user-1')).resolves.toEqual({
+          options: [
+            {
+              entry: 'role:treasurer',
+              kind: 'role',
+              id: 'treasurer',
+              name: 'Treasurer',
+            },
+          ],
+          always: ['tier:president', 'tier:exec', 'tier:member'],
+        });
+      });
     });
   });
 });

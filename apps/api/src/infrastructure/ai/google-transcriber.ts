@@ -1,5 +1,6 @@
-import { GoogleGenAI } from '@google/genai';
+import type { GoogleGenAI } from '@google/genai';
 import type { GoogleVertexEnvSettings } from '../../config/ai-config';
+import { googleGenAiClient } from './google-genai-client';
 import { toLanguageModelError } from './google-language-model';
 import type {
   ITranscriber,
@@ -51,17 +52,7 @@ export class GoogleTranscriber implements ITranscriber {
   constructor(private readonly client: GoogleTranscriptionClient) {}
 
   static fromSettings(settings: GoogleVertexEnvSettings): GoogleTranscriber {
-    return new GoogleTranscriber(
-      new GoogleGenAI({
-        enterprise: true,
-        project: settings.project,
-        location: settings.location,
-        googleAuthOptions: {
-          credentials: settings.credentials,
-          scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-        },
-      }),
-    );
+    return new GoogleTranscriber(googleGenAiClient(settings));
   }
 
   async transcribe(

@@ -44,7 +44,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { anyReadUncached, pausedRead } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { NestedError } from "@/components/shared/nested-states";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
@@ -215,9 +215,7 @@ export function InvoiceList({ id }: { id?: string }) {
    * cover a read that was never attempted — the same asserted-from-nothing
    * signal this flag exists to suppress, one state over.
    */
-  const overdueReadFailed =
-    overdueQuery.isError ||
-    (overdueQuery.isPending && overdueQuery.fetchStatus === "paused");
+  const overdueReadFailed = overdueQuery.isError || pausedRead(overdueQuery);
 
   const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
   const memberNameById = useMemo(() => {

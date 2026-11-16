@@ -90,16 +90,21 @@ export type SubscriptionWriteState =
 /**
  * A chapter that lapses to `past_due` gets a 3-day grace window before the hard
  * read-only lock (`spec/behavior/billing.md`, `spec/product/onboarding.md`).
- * Mirrors `SUBSCRIPTION_GRACE_PERIOD_MS` in the API's
- * `#domain/constants/subscription-grace` (read by `ChapterGuard` and by
- * `InviteService.redeem`); the two must move together.
+ * The one definition: the API re-exports it from
+ * `#domain/constants/subscription-grace` (read by `ChapterGuard`, and through
+ * `isSubscriptionHardLocked` by `InviteService.redeem`), and the clients read
+ * it here, so a token minted before a lapse is honoured or refused alike on
+ * every path.
  */
 export const SUBSCRIPTION_GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
 
 /**
- * Mirrors the guard's `isWithinGrace`, including its fail-open on a missing or
- * unparseable timestamp: an unknown lapse start is treated as "grace just
- * began", so a bad clock or a null column never hard-locks a chapter early.
+ * Whether a `past_due` chapter is still within its grace window: no more than
+ * {@link SUBSCRIPTION_GRACE_PERIOD_MS} since it lapsed. `ChapterGuard` reads
+ * it too. It fails open on a missing or unparseable timestamp (a legacy row,
+ * a missed webhook): an unknown lapse start is treated as "grace just began",
+ * so a bad clock or a null column never hard-locks a chapter early; the next
+ * webhook re-establishes the clock.
  */
 export function isWithinSubscriptionGrace(
   pastDueSince: string | null | undefined,

@@ -520,6 +520,45 @@ export function useGuardedSheetRef(ref: SheetRef) {
   return { modalRef, ...visit };
 }
 
+/** The handle {@link useGuardedSheetHandle} gives a sheet's host. */
+export interface GuardedSheetHandle {
+  present: () => void;
+  /** Closes the sheet, only while it is up (`useSheetVisit`, #3795). */
+  dismiss: () => void;
+}
+
+/**
+ * {@link useGuardedSheetRef} for a sheet whose host holds a plain
+ * `{ present, dismiss }` handle rather than gorhom's modal (the message menu's
+ * Forward and Remind sheets, #5173): `present()` runs `onPresent` (a sheet's
+ * reset for a fresh visit), then `willPresent()`, then the modal's own
+ * `present()`; `dismiss()` is the visit's guarded one. Wire the returned
+ * `modalRef`, `onAnimate` and `markClosed` as {@link useGuardedSheetRef} says.
+ * Keep `onPresent` stable (a `useCallback`), or the host's handle is rebuilt
+ * on every render.
+ */
+export function useGuardedSheetHandle(
+  ref: ForwardedRef<GuardedSheetHandle>,
+  { onPresent }: { onPresent?: () => void } = {},
+) {
+  const modalRef = useRef<BottomSheetModal>(null);
+  const visit = useSheetVisit(modalRef);
+  const { willPresent, dismiss } = visit;
+  useImperativeHandle(
+    ref,
+    (): GuardedSheetHandle => ({
+      present: () => {
+        onPresent?.();
+        willPresent();
+        modalRef.current?.present();
+      },
+      dismiss,
+    }),
+    [onPresent, willPresent, dismiss],
+  );
+  return { modalRef, ...visit };
+}
+
 /**
  * The text field a sheet form draws (s15's profile edit, s19's new task, s20's
  * log, s21's upload), as plain style objects for the caller's own

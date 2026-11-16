@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { beyondGrace, chapterSubscription } from "@/tests/chapter-subscription";
@@ -561,6 +567,29 @@ describe("InviteMemberDialog share link and list", () => {
       ),
     );
     expect(await screen.findByText("Copied")).toBeInTheDocument();
+  });
+
+  it("clears the Copied timer when the dialog goes away", async () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+    try {
+      await openDialog();
+      await userEvent.click(copyLink());
+      expect(await screen.findByText("Copied")).toBeInTheDocument();
+      const revert = setTimeoutSpy.mock.calls.findIndex(
+        ([, delay]) => delay === 2000,
+      );
+      expect(revert).toBeGreaterThanOrEqual(0);
+      cleanup();
+      // Left armed, it fired after the test DOM was torn down and failed the
+      // run with "window is not defined" (#5226).
+      expect(clearTimeoutSpy).toHaveBeenCalledWith(
+        setTimeoutSpy.mock.results[revert]!.value,
+      );
+    } finally {
+      setTimeoutSpy.mockRestore();
+      clearTimeoutSpy.mockRestore();
+    }
   });
 
   it("never shows a token: rows name the address, role, when, and status", async () => {

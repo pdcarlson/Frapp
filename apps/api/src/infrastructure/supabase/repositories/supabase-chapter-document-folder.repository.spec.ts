@@ -43,8 +43,40 @@ describe('SupabaseChapterDocumentFolderRepository — tenant scope', () => {
   let repo: SupabaseChapterDocumentFolderRepository;
 
   beforeEach(() => {
-    harness = createTenantHarness({ tables: seed() });
+    harness = createTenantHarness({
+      tables: seed(),
+      rpc: {
+        rename_document_folder: { data: [] },
+        delete_document_folder: { data: false },
+      },
+    });
     repo = new SupabaseChapterDocumentFolderRepository(harness.client);
+  });
+
+  // #3642 piece 1: both move documents by folder name in one transaction, in
+  // SQL (`20261116185618`, exercised in `scripts/pglite`); here, that each
+  // names its chapter.
+  it('rename and deleteMovingDocuments name the chapter they are given', async () => {
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.rename(FOLDER_B, CHAPTER_B, 'Governing documents'),
+    );
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.deleteMovingDocuments(FOLDER_B, CHAPTER_B),
+    );
+    expect(harness.rpcCalls).toEqual([
+      {
+        fn: 'rename_document_folder',
+        args: {
+          p_chapter_id: CHAPTER_B,
+          p_folder_id: FOLDER_B,
+          p_name: 'Governing documents',
+        },
+      },
+      {
+        fn: 'delete_document_folder',
+        args: { p_chapter_id: CHAPTER_B, p_folder_id: FOLDER_B },
+      },
+    ]);
   });
 
   it('findByChapter returns only the caller chapter folders', async () => {

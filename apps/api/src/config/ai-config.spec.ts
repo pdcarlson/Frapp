@@ -102,6 +102,29 @@ describe('googleVertexSettings', () => {
     });
   });
 
+  it('on Cloud Run, reads the project alone and signs in as the service', () => {
+    expect(
+      googleVertexSettings({
+        GOOGLE_VERTEX_PROJECT: 'cs-project-6vw9f5xp',
+        K_SERVICE: 'frapp-api',
+      }),
+    ).toEqual({
+      project: 'cs-project-6vw9f5xp',
+      location: 'global',
+      credentials: null,
+    });
+  });
+
+  it('on Cloud Run, still uses a key file when one is set', () => {
+    expect(
+      googleVertexSettings({
+        GOOGLE_VERTEX_PROJECT: 'cs-project-6vw9f5xp',
+        GOOGLE_VERTEX_CREDENTIALS_JSON: SERVICE_ACCOUNT,
+        K_SERVICE: 'frapp-api',
+      })?.credentials,
+    ).toEqual(JSON.parse(SERVICE_ACCOUNT));
+  });
+
   it('is null for a key file that is not a service account', () => {
     expect(
       googleVertexSettings({
@@ -119,6 +142,21 @@ describe('validateAiEnv, Google', () => {
     ).toHaveLength(1);
     expect(
       validateAiEnv({ GOOGLE_VERTEX_CREDENTIALS_JSON: SERVICE_ACCOUNT }),
+    ).toHaveLength(1);
+  });
+
+  it('accepts the project alone on Cloud Run, but never the key file alone', () => {
+    expect(
+      validateAiEnv({
+        GOOGLE_VERTEX_PROJECT: 'cs-project-6vw9f5xp',
+        K_SERVICE: 'frapp-api',
+      }),
+    ).toEqual([]);
+    expect(
+      validateAiEnv({
+        GOOGLE_VERTEX_CREDENTIALS_JSON: SERVICE_ACCOUNT,
+        K_SERVICE: 'frapp-api',
+      }),
     ).toHaveLength(1);
   });
 

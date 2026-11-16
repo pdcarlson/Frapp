@@ -187,6 +187,20 @@ export const AI_MODEL_CATALOG = {
     effort: 'low',
   },
   /**
+   * Backwork draft fill (#5233): one bulk-uploaded file's redacted text in,
+   * its course, professor, term, type and tags out, matched to the chapter's
+   * own names where it can. Only the stored, flattened file's text is read,
+   * so a word under a redaction box never reaches the model. The uploader
+   * checks every value before anything is filed.
+   */
+  'backwork.fill': {
+    ...CLAUDE_SONNET,
+    family: 'backwork',
+    kind: 'structured',
+    maxOutputTokens: 800,
+    effort: 'low',
+  },
+  /**
    * Corpus embeddings (#720). Gemini Embedding at 1,536 dimensions, decision
    * 3. Model id and price unverified (see above). Served by the Google adapter
    * once `GOOGLE_VERTEX_PROJECT` and its key are set; until then, outside

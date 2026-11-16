@@ -9,6 +9,7 @@ import {
   useRequestDocumentUploadUrl,
   type DocumentTypeRow,
 } from "@repo/hooks";
+import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/ui/date-field";
@@ -40,6 +41,11 @@ import {
   type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { DocumentTypesEditor } from "@/components/documents/document-types-editor";
+import { ChannelAccessField } from "@/components/chat-admin/channel-access-field";
+import {
+  FILE_ALWAYS_LINE,
+  useDocumentAccessChoices,
+} from "@/components/documents/document-access";
 import { useToast } from "@/lib/hooks/use-toast";
 import { cn, getErrorMessage } from "@/lib/utils";
 import {
@@ -83,6 +89,11 @@ type UploadDraft = {
   folder: string;
   documentType: string;
   effectiveDate: string;
+  /**
+   * Who can see the file (#3642 piece 1): `null` is the same as its folder
+   * (everyone, filed in no folder), a list narrows that to whom it names.
+   */
+  whoCanSee: string[] | null;
   file: File | null;
   /*
     Whether each guessable field still holds what the panel put there (or
@@ -107,6 +118,7 @@ const EMPTY_UPLOAD_DRAFT: UploadDraft = {
   folder: "",
   documentType: "",
   effectiveDate: "",
+  whoCanSee: null,
   file: null,
   autoTitle: true,
   autoType: true,
@@ -295,6 +307,9 @@ export function useDocumentUpload(
       setUploadError("Choose a file to upload.");
       return;
     }
+    // The API refuses an empty Chosen list, and only after the file is in
+    // the bucket, so the panel waits for an entry (its field says so).
+    if (isEmptyChannelAccessChoice(uploadDraft.whoCanSee ?? null)) return;
     const inspected = inspectUploadFile("document", file);
     if (!inspected.ok) {
       setUploadError(uploadRejectionDescription(inspected.reason));
@@ -331,6 +346,7 @@ export function useDocumentUpload(
         byte_size: file.size,
         document_type: uploadDraft.documentType.trim() || undefined,
         effective_date: draftEffectiveDate(uploadDraft) || undefined,
+        who_can_see: uploadDraft.whoCanSee ?? undefined,
       });
       const folder = uploadDraft.folder.trim();
       toast({
@@ -644,6 +660,13 @@ export function UploadDocumentPanel({
               ) : null}
             </UploadField>
 
+            <UploadAccessField
+              value={uploadDraft.whoCanSee ?? null}
+              folder={uploadDraft.folder.trim()}
+              onChange={(next) => set("whoCanSee", next)}
+              disabled={uploading}
+            />
+
             <UploadField id="doc-effective-date" label="Effective date">
               <DateField
                 id="doc-effective-date"
@@ -699,7 +722,9 @@ export function UploadDocumentPanel({
               form="doc-upload-form"
               type="submit"
               className={UPLOAD_SHEET_BUTTON_CLASS}
-              {...gate.controlProps(uploading)}
+              {...gate.controlProps(
+                uploading || isEmptyChannelAccessChoice(uploadDraft.whoCanSee),
+              )}
             >
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Upload
@@ -841,5 +866,42 @@ export function DocumentsPageDropTarget({
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * Who can see the file being uploaded (#3642 piece 1): "Same as folder" (or
+ * "Everyone" with no folder) unless the uploader chooses tiers, roles or
+ * groups, which narrow the folder's. Left out for a member outside the
+ * tiers, who may not set a list, and while the choices load: the default is
+ * the same as before lists existed.
+ */
+function UploadAccessField({
+  value,
+  folder,
+  onChange,
+  disabled,
+}: {
+  value: string[] | null;
+  folder: string;
+  onChange: (next: string[] | null) => void;
+  disabled: boolean;
+}) {
+  const access = useDocumentAccessChoices();
+  if (!access.canLimit && value === null) return null;
+  return (
+    <ChannelAccessField
+      id="doc-access"
+      question="see"
+      value={value}
+      onChange={onChange}
+      options={access.options}
+      optionsState={access.optionsState}
+      everyoneLabel={folder ? "Same as folder" : "Everyone"}
+      locked={access.locked}
+      alwaysLine={FILE_ALWAYS_LINE}
+      canChoose={access.canLimit}
+      disabled={disabled || access.optionsState === "loading"}
+    />
   );
 }

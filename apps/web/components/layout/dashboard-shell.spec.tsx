@@ -51,6 +51,11 @@ const routerReplace = vi.hoisted(() => vi.fn());
 const mockSearch = vi.hoisted(() => ({ value: "" }));
 /** The phone this browser runs on: none in jsdom unless a test says so. */
 const device = vi.hoisted(() => ({ phone: null as "ios" | "android" | null }));
+// The live-meeting card has its own spec (#5219).
+vi.mock("@/components/meetings/live-meeting-card", () => ({
+  LiveMeetingCard: () => null,
+}));
+
 vi.mock("@/lib/use-phone-platform", () => ({
   usePhonePlatform: () => device.phone,
 }));

@@ -59,10 +59,13 @@ import {
 } from "@/lib/backwork-bulk/handoff";
 import { getBulkSession, type Prepared, type Submission } from "@/lib/backwork-bulk/session";
 import { InlineNote } from "@/components/shared/inline-note";
+import { DraftsReview } from "./drafts-review";
 
 /**
  * Backwork bulk upload (#3499): drop PDFs or folders, redact and describe each
- * one, and keep going. The queue (`lib/bulk-upload/queue.ts`) loads the next
+ * one, and keep going. Each document is saved as a draft only the uploader
+ * sees, and the batch is checked and published from the table below the queue
+ * (#5208). The queue (`lib/bulk-upload/queue.ts`) loads the next
  * documents while the person works on the current one, and flattens and
  * uploads finished ones behind them, so nobody waits between documents.
  *
@@ -259,7 +262,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
         <div className="grid min-w-0 gap-4 @4xl:grid-cols-[240px_minmax(0,1fr)_320px]">
           <aside className="order-3 min-w-0 space-y-3 @4xl:order-1">
             <p className="text-caption font-semibold text-muted-foreground tabular-nums" aria-live="polite">
-              {counts.done} of {counts.total} uploaded
+              {counts.done} of {counts.total} saved as drafts
               {counts.failed > 0 ? `, ${counts.failed} need attention` : ""}
             </p>
             <QueueList
@@ -272,7 +275,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
             <BulkDropZone onFiles={addCollected} />
             {counts.done > 0 ? (
               <Button type="button" variant="ghost" size="toolbar" onClick={() => queue.clearDone()}>
-                Clear uploaded
+                Clear saved
               </Button>
             ) : null}
           </aside>
@@ -304,12 +307,14 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
                 className="w-full gap-2"
                 {...gate.controlProps(!current || current.status !== "ready")}
               >
-                <Upload className="h-4 w-4" /> Upload and next
+                <Upload className="h-4 w-4" /> Save and next
               </Button>
             </form>
           </section>
         </div>
       )}
+
+      <DraftsReview />
     </div>
   );
 }
@@ -378,7 +383,7 @@ function AllCaughtUp({ finishing }: { finishing: boolean }) {
       <p className="text-caption text-muted-foreground">
         {finishing
           ? "You can add more PDFs while these finish."
-          : "Drop more PDFs or folders to keep going."}
+          : "Check the drafts below and publish them, or drop more PDFs to keep going."}
       </p>
     </div>
   );
@@ -390,7 +395,7 @@ const STATUS_LABEL: Record<ItemStatus, string> = {
   ready: "Ready",
   waiting: "Waiting",
   finishing: "Uploading",
-  done: "Uploaded",
+  done: "Saved",
   failed: "Failed",
 };
 

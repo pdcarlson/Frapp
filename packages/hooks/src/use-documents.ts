@@ -88,7 +88,12 @@ export function useCreateDocumentFolder() {
   const invalidate = useInvalidateDocumentFolders();
   return useMutation({
     mutationKey: ["documents", "create-document-folder"],
-    mutationFn: async (body: { name: string; sort_order?: number }) => {
+    mutationFn: async (body: {
+      name: string;
+      sort_order?: number;
+      /** `null` or absent is everyone (#3642 piece 1). */
+      who_can_see?: string[] | null;
+    }) => {
       const { data, error } = await client.POST("/v1/documents/folders", {
         body,
       });
@@ -99,7 +104,10 @@ export function useCreateDocumentFolder() {
   });
 }
 
-/** Rename and reorder are one route — `PATCH` takes `name`, `sort_order`, or both. */
+/**
+ * Rename, reorder and who can see are one route: `PATCH` takes any of
+ * `name`, `sort_order` and `who_can_see` (`null` opens it to everyone).
+ */
 export function useUpdateDocumentFolder() {
   const client = useFrappClient();
   const invalidate = useInvalidateDocumentFolders();
@@ -112,10 +120,60 @@ export function useUpdateDocumentFolder() {
       id: string;
       name?: string;
       sort_order?: number;
+      who_can_see?: string[] | null;
     }) => {
       const { data, error } = await client.PATCH("/v1/documents/folders/{id}", {
         params: { path: { id } },
         body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+/**
+ * What a who-can-see list may hold (the chapter's tiers, roles and groups,
+ * as a channel's list offers them), and the tiers any list the caller sets
+ * always keeps: their own and every tier above it (#3642 piece 1).
+ */
+export function useDocumentAccessOptions(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["documents", chapterId, "access-options"],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/documents/access-options", {
+        signal,
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 300_000,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/**
+ * Sets who can see one file: `null` follows its folder, a list narrows it.
+ * Its uploader or a member with Manage documents may (#3642 piece 1).
+ */
+export function useSetDocumentAccess() {
+  const client = useFrappClient();
+  const invalidate = useInvalidateDocumentFolders();
+  return useMutation({
+    mutationKey: ["documents", "set-document-access"],
+    mutationFn: async ({
+      id,
+      who_can_see,
+    }: {
+      id: string;
+      who_can_see: string[] | null;
+    }) => {
+      const { data, error } = await client.PUT("/v1/documents/{id}/access", {
+        params: { path: { id } },
+        body: { who_can_see },
       });
       if (error) throw error;
       return data;

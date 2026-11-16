@@ -183,6 +183,11 @@ export const FEATURE_EVENTS = {
     properties: ['assignment_type', 'is_redacted', 'tag_count'],
   },
   'backwork-viewed': { feature: 'backwork', properties: [] },
+  // One per publish call from the drafts table (#5208): counts only.
+  'backwork-drafts-published': {
+    feature: 'backwork',
+    properties: ['count', 'failed_count'],
+  },
 
   // Recruitment
   'rush-candidate-added': {

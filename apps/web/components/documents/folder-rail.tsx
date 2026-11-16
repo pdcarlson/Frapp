@@ -28,6 +28,7 @@ import {
   useKeepFocus,
 } from "@/components/documents/use-keep-focus";
 import type { FolderRow } from "@/components/documents/document-types";
+import { LimitedMark } from "@/components/documents/document-access";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
@@ -64,7 +65,7 @@ function folderRowClassName(isActive: boolean): string {
 }
 
 /**
- * The five management icons (pin, up, down, rename, delete). A disabled one
+ * The five management icons (pin, up, down, edit, delete). A disabled one
  * (the first folder's Move up, the last one's Move down) keeps the quiet look rather than `button.tsx`'s
  * disabled card fill, which drew a boxed arrow in the middle of the rail.
  */
@@ -237,8 +238,8 @@ export function FolderRail({
         {loadFailed ? (
           <p className="px-2 pt-2 text-xs text-muted-foreground">
             Couldn&apos;t load the folder list, so these are read from the
-            documents shown. Empty folders and folder management are
-            unavailable until it loads.{" "}
+            documents shown. Empty folders and folder management are unavailable
+            until it loads.{" "}
             <button
               type="button"
               className={`underline ${FOCUS_RING_OFFSET}`}
@@ -302,6 +303,9 @@ function FolderItem({
         >
           <FolderGlyph className="h-4 w-4 shrink-0" active={active} />
           <span className="truncate">{folder.name}</span>
+          {folder.who_can_see ? (
+            <LimitedMark label="Not everyone can see this folder" />
+          ) : null}
         </button>
         {/*
           The star sits beside the row, not inside it: a button in a button
@@ -396,22 +400,28 @@ function FolderItem({
               variant="ghost"
               size="icon"
               className={MANAGE_CONTROL}
-              aria-label={`Rename ${folder.name}`}
+              aria-label={`Edit ${folder.name}`}
               onClick={() => openFolderDialog(folder)}
               {...gate.controlProps(folderBusy)}
             >
               <Pencil className="h-4 w-4" />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className={MANAGE_CONTROL}
-              aria-label={`Delete folder ${folder.name}`}
-              onClick={() => void handleDeleteFolder(folder)}
-              {...gate.controlProps(folderBusy)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            {/*
+              A folder Drive sync made (#5220) is deleted in Drive, and
+              Documents follows; the API refuses it here.
+            */}
+            {folder.drive_folder_id ? null : (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={MANAGE_CONTROL}
+                aria-label={`Delete folder ${folder.name}`}
+                onClick={() => void handleDeleteFolder(folder)}
+                {...gate.controlProps(folderBusy)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </Can>
       ) : null}

@@ -1,12 +1,10 @@
-import type { ReactNode } from "react";
-import Svg, { Path } from "react-native-svg";
+import { Path } from "react-native-svg";
 import { NAV_GLYPHS, type NavGlyphName } from "@repo/theme/nav-glyphs";
+import { Frame, paint, type GlyphPaintProps } from "@/components/glyph-recipe";
 import { NavGlyph } from "@/components/nav-glyph";
-import { tint } from "@/lib/theme";
 
 /**
- * The You tab's leading row glyphs (the More hub's until #3839), and the stroke recipe a few other
- * glyphs outside the hub still use.
+ * The You tab's leading row glyphs (the More hub's until #3839), and the bell.
  *
  * The hub rows draw the shared nav set in `@repo/theme/nav-glyphs` (see
  * {@link HubGlyph} below), so a destination has the same silhouette here as in
@@ -20,84 +18,13 @@ import { tint } from "@/lib/theme";
  * else a row's icon is a neutral text step. Never the chapter accent
  * (foundations.md §6, "Where the accent goes", 2026-11-05).
  *
- * `paint`, `Frame` and `STROKE_WIDTH` are the older stroke recipe (a 1.6px
- * stroke on a 24px grid, silhouette at 16% of the hue or 6% white when
- * neutral). The bell still draws in it.
+ * The bell (`NotificationsGlyph`) draws in the §1 stroke recipe,
+ * `components/glyph-recipe.tsx`.
  */
 
 const MORE_GLYPH_SIZE = 20;
 
-const STROKE_WIDTH = 1.6;
-
-/** iconography.md §1: the emphasis fill is the stroke hue at 16–18%. */
-const EMPHASIS_FILL_ALPHA = 0.16;
-
-/**
- * iconography.md §1's neutral fill, "white at 6%". A literal for the reason
- * `tab-glyphs.tsx` gives: no token carries it.
- */
-const NEUTRAL_FILL = "rgba(255,255,255,0.06)";
-
-export type MoreGlyphProps = {
-  /** The stroke hue: a neutral text step, or a You row's place hue. */
-  color: string;
-  /** `true` draws §1's neutral fill rather than the stroke hue's tint. */
-  neutral?: boolean;
-  /**
-   * Another §2 size, for a stroke-recipe glyph drawn outside the hub, such
-   * as the bell.
-   */
-  size?: number;
-};
-
-/**
- * The recipe's strokes and fills: `body` for the primary silhouette, `detail`
- * for a secondary stroke. Exported, with {@link Frame}, so a glyph drawn in
- * this recipe outside the hub (the bell) uses this one
- * definition rather than a copy.
- */
-export function paint({ color, neutral = false }: MoreGlyphProps) {
-  const fill = neutral ? NEUTRAL_FILL : tint(color, EMPHASIS_FILL_ALPHA);
-  return {
-    body: {
-      fill,
-      stroke: color,
-      strokeWidth: STROKE_WIDTH,
-      strokeLinejoin: "round" as const,
-    },
-    detail: {
-      fill: "none",
-      stroke: color,
-      strokeWidth: STROKE_WIDTH,
-      strokeLinecap: "round" as const,
-      strokeLinejoin: "round" as const,
-    },
-  };
-}
-
-/** The 24 grid at a §2 size, hidden from screen readers. */
-export function Frame({
-  children,
-  size = MORE_GLYPH_SIZE,
-}: {
-  children: ReactNode;
-  size?: number;
-}) {
-  return (
-    <Svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      // Decorative: the row's label names the destination.
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
-    >
-      {children}
-    </Svg>
-  );
-}
-
-export function NotificationsGlyph(props: MoreGlyphProps) {
+export function NotificationsGlyph(props: GlyphPaintProps) {
   const { body, detail } = paint(props);
   return (
     <Frame>

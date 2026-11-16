@@ -17,6 +17,7 @@ import type {
   FolderRow,
 } from "@/components/documents/document-types";
 import type { DocumentMarks } from "@/components/documents/use-document-marks";
+import { LimitedMark } from "@/components/documents/document-access";
 import { cn } from "@/lib/utils";
 
 /** A pinned or starred thing: a folder or a single file. */
@@ -43,6 +44,7 @@ export function MarkedStrip({
   gate,
   onOpenFolder,
   onOpenDocument,
+  isLimited,
 }: {
   pinned: readonly MarkedItem[];
   starred: readonly MarkedItem[];
@@ -50,6 +52,8 @@ export function MarkedStrip({
   gate: SubscriptionGate;
   onOpenFolder: (name: string) => void;
   onOpenDocument: (doc: ChapterDocument) => void;
+  /** Whether not everyone can see this card's folder or file: a lock. */
+  isLimited: (item: MarkedItem) => boolean;
 }) {
   if (pinned.length === 0 && starred.length === 0) return null;
   return (
@@ -72,6 +76,7 @@ export function MarkedStrip({
                   gate={gate}
                   onOpenFolder={onOpenFolder}
                   onOpenDocument={onOpenDocument}
+                  limited={isLimited(item)}
                 />
               ))}
             </ul>
@@ -88,8 +93,10 @@ function MarkedCard({
   gate,
   onOpenFolder,
   onOpenDocument,
+  limited,
 }: {
   item: MarkedItem;
+  limited: boolean;
   pinnedGroup: boolean;
   marks: DocumentMarks;
   gate: SubscriptionGate;
@@ -156,7 +163,10 @@ function MarkedCard({
           />
         )}
         <span className="block min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">{name}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+            <span className="truncate">{name}</span>
+            {limited ? <LimitedMark className="text-muted" /> : null}
+          </span>
           <span className="block truncate text-caption text-muted">{meta}</span>
         </span>
       </button>

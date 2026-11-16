@@ -980,6 +980,8 @@ export function createTermWorld(
     file_hash: backworkFileHash(file.id),
     is_redacted: true,
     tags: [],
+    // Every eval file is published: drafts (#5208) never reach Ask.
+    draft_fields: null,
     created_at: stamp,
   }));
   // What `search_backwork_resources` matches on: the course every way it is

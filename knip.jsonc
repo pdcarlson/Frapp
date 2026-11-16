@@ -27,8 +27,6 @@
     "apps/api": {
       "entry": [
         "src/main.ts",
-        // The image's entry (Dockerfile CMD): fills the env from Infisical, then loads main.
-        "src/boot.ts",
         // One-off backfills run by hand with ts-node.
         "src/backfill-*.ts",
         "test/**/*.ts",

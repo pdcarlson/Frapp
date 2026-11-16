@@ -1,8 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { GoogleDriveStatus } from "@repo/hooks";
-import { DriveFolderPanel } from "./drive-folder-panel";
+import { DriveFolderPanel, heldCopies } from "./drive-folder-panel";
+import type { ChapterDocument } from "./document-types";
 
 const EMAIL = "frapp-docs@signet-frapp.iam.gserviceaccount.com";
 let status: GoogleDriveStatus | undefined;
@@ -10,6 +11,27 @@ const connect = vi.fn();
 const syncNow = vi.fn();
 const disconnect = vi.fn();
 const toast = vi.fn();
+const openUp = vi.fn();
+const accessQuery = vi.hoisted(() => ({
+  data: undefined as
+    { options: unknown[]; always: string[] | null } | undefined,
+  isSuccess: false,
+  isError: false,
+}));
+const EXEC_OPTIONS = {
+  options: [
+    {
+      entry: "tier:t-exec",
+      kind: "tier",
+      id: "t-exec",
+      name: "Executive board",
+      color: null,
+      tier_id: null,
+      user_ids: ["u-1"],
+    },
+  ],
+  always: ["tier:t-exec"],
+};
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -20,6 +42,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     mutateAsync: disconnect,
     isPending: false,
   }),
+  useOpenUpDriveCopy: () => ({ mutateAsync: openUp, isPending: false }),
+  useDocumentAccessOptions: () => accessQuery,
 }));
 
 vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
@@ -47,6 +71,7 @@ const connected = (
     synced_count: 12,
     skipped_count: 2,
     syncing: false,
+    who_can_see: null,
     ...over,
   },
 });
@@ -55,6 +80,10 @@ describe("DriveFolderPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     status = undefined;
+    // Read, for a member outside the tiers: no list to set, folder comes in open.
+    accessQuery.data = { options: [], always: null };
+    accessQuery.isSuccess = true;
+    accessQuery.isError = false;
   });
 
   it("renders nothing while the server offers no Google Drive", () => {
@@ -90,9 +119,65 @@ describe("DriveFolderPanel", () => {
     );
     await user.click(connectButton);
 
-    expect(connect).toHaveBeenCalledWith(
-      "https://drive.google.com/drive/folders/abcdefghijk",
+    // Outside every tier: no list to set, so no step 3.
+    expect(screen.queryByText("3. Choose who sees it")).toBeNull();
+    expect(connect).toHaveBeenCalledWith({
+      folderLink: "https://drive.google.com/drive/folders/abcdefghijk",
+      whoCanSee: null,
+    });
+  });
+
+  // #5220: what the folder brings in starts behind the list picked here.
+  it("connects with the roles the officer chose to see it", async () => {
+    status = {
+      available: true,
+      service_account_email: EMAIL,
+      connection: null,
+    };
+    accessQuery.data = EXEC_OPTIONS;
+    accessQuery.isSuccess = true;
+    connect.mockResolvedValue(connected());
+    const user = userEvent.setup();
+    render(<DriveFolderPanel gate={gate} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Connect Google Drive" }),
     );
+    await user.type(
+      screen.getByLabelText("2. Paste the folder's link"),
+      "abcdefghijk",
+    );
+    await user.click(screen.getByRole("radio", { name: "Chosen roles" }));
+    const connectButton = screen.getByRole("button", { name: "Connect" });
+    await waitFor(() => expect(connectButton).toBeEnabled());
+    await user.click(connectButton);
+
+    expect(connect).toHaveBeenCalledWith({
+      folderLink: "abcdefghijk",
+      whoCanSee: ["tier:t-exec"],
+    });
+  });
+
+  it("waits to connect until it knows who may be chosen", async () => {
+    status = {
+      available: true,
+      service_account_email: EMAIL,
+      connection: null,
+    };
+    accessQuery.data = undefined;
+    accessQuery.isSuccess = false;
+    const user = userEvent.setup();
+    render(<DriveFolderPanel gate={gate} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Connect Google Drive" }),
+    );
+    await user.type(
+      screen.getByLabelText("2. Paste the folder's link"),
+      "abcdefghijk",
+    );
+    expect(screen.getByText("3. Choose who sees it")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
   });
 
   it("shows the server's reason a folder was refused, beside the link", async () => {
@@ -167,5 +252,65 @@ describe("DriveFolderPanel", () => {
     const buttons = screen.getAllByRole("button", { name: "Disconnect" });
     await user.click(buttons[buttons.length - 1]!);
     await waitFor(() => expect(disconnect).toHaveBeenCalled());
+  });
+
+  describe("held back (#5220)", () => {
+    const doc = (over: Partial<ChapterDocument>): ChapterDocument =>
+      ({
+        id: "doc-1",
+        title: "Budget",
+        folder: "Chapter files / Exec",
+        drive_file_id: "f1",
+        drive_held_folder_id: null,
+        ...over,
+      }) as ChapterDocument;
+    const folders = [
+      { id: "top", name: "Chapter files", sort_order: 0 },
+      { id: "exec", name: "Chapter files / Exec", sort_order: 1 },
+    ];
+
+    it("lists only copies held for a folder the officer can see", () => {
+      expect(
+        heldCopies(
+          [
+            doc({ drive_held_folder_id: "top" }),
+            doc({ id: "doc-2", drive_held_folder_id: null }),
+            doc({ id: "doc-3", drive_held_folder_id: "hidden" }),
+          ],
+          folders,
+        ).map((copy) => [copy.doc.id, copy.movedTo]),
+      ).toEqual([["doc-1", "Chapter files"]]);
+    });
+
+    it("opens a held copy up only after confirming where it goes", async () => {
+      status = connected();
+      openUp.mockResolvedValue(undefined);
+      const user = userEvent.setup();
+      render(
+        <DriveFolderPanel
+          gate={gate}
+          documents={[doc({ drive_held_folder_id: "top" })]}
+          folders={folders}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Google Drive" }));
+      const section = screen.getByRole("region", { name: "Held back" });
+      expect(
+        within(section).getByText(
+          "In Chapter files / Exec, moved to Chapter files in Drive",
+        ),
+      ).toBeInTheDocument();
+      await user.click(
+        within(section).getByRole("button", { name: "Open it up" }),
+      );
+      expect(openUp).not.toHaveBeenCalled();
+      expect(
+        await screen.findByText("Move Budget to Chapter files?"),
+      ).toBeInTheDocument();
+      const buttons = screen.getAllByRole("button", { name: "Open it up" });
+      await user.click(buttons[buttons.length - 1]!);
+      await waitFor(() => expect(openUp).toHaveBeenCalledWith("doc-1"));
+    });
   });
 });

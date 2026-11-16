@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { anyReadUncached, pausedRead } from "@/components/shared/async-states";
 import { InlineNote } from "@/components/shared/inline-note";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { denseListClassName } from "@/components/shared/table-controls";
@@ -89,8 +89,7 @@ export function ChapterAlertsSection() {
    * background refetch failure, and switches drawn from a still-held cache are
    * better than a card that vanishes when a focus refetch blips.
    */
-  const preferencesPaused =
-    preferencesQuery.isPending && preferencesQuery.fetchStatus === "paused";
+  const preferencesPaused = pausedRead(preferencesQuery);
   let categoriesState: React.ReactNode = null;
   if (!chapterId) {
     categoriesState = (

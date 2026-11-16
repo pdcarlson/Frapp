@@ -5,7 +5,10 @@ import {
 } from '@nestjs/common';
 import { MAX_BACKWORK_ZIP_FILES } from '@repo/validation';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
-import { BackworkDownloadUrlsQueryDto } from './backwork.dto';
+import {
+  BackworkDownloadUrlsQueryDto,
+  UpdateBackworkDraftsDto,
+} from './backwork.dto';
 
 /**
  * The zip's id list arrives as a query string. Run through the production
@@ -51,6 +54,30 @@ describe('BackworkDownloadUrlsQueryDto', () => {
     'refuses %j',
     async (query) => {
       await expect(transform(query)).rejects.toThrow(BadRequestException);
+    },
+  );
+});
+
+describe('UpdateBackworkDraftsDto', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const metadata: ArgumentMetadata = {
+    type: 'body',
+    metatype: UpdateBackworkDraftsDto,
+    data: '',
+  };
+  const transform = (body: unknown) => pipe.transform(body, metadata);
+  const ids = ['3f0c1d9e-0000-4000-8000-000000000001'];
+
+  it('takes a field to set, or null to clear one', async () => {
+    await expect(
+      transform({ ids, fields: { semester: 'Fall', year: null } }),
+    ).resolves.toMatchObject({ ids, fields: { semester: 'Fall', year: null } });
+  });
+
+  it.each([{ ids }, { ids, fields: null }, { ids, fields: 'Fall' }])(
+    'refuses %j instead of failing later',
+    async (body) => {
+      await expect(transform(body)).rejects.toThrow(BadRequestException);
     },
   );
 });
