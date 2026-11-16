@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   update: vi.fn(),
   publish: vi.fn(),
   remove: vi.fn(),
+  fill: vi.fn(),
   toast: vi.fn(),
 }));
 
@@ -17,6 +18,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateBackworkDrafts: () => ({ mutateAsync: state.update }),
   usePublishBackworkDrafts: () => ({ mutateAsync: state.publish }),
   useDeleteBackworkDraft: () => ({ mutateAsync: state.remove, isPending: false }),
+  useFillBackworkDraft: () => ({ mutateAsync: state.fill }),
 }));
 vi.mock("@/components/shared/subscription-gate", () => ({
   useSubscriptionGate: () => ({
@@ -53,6 +55,7 @@ describe("Backwork drafts review (#5208)", () => {
     state.update.mockReset().mockResolvedValue([]);
     state.publish.mockReset().mockResolvedValue({ published: [], failed: [] });
     state.remove.mockReset().mockResolvedValue("a");
+    state.fill.mockReset().mockResolvedValue({ status: "nothing_found", draft: null });
     state.toast.mockReset();
     state.draftsError = false;
   });
@@ -191,6 +194,72 @@ describe("Backwork drafts review (#5208)", () => {
     render(<DraftsReview />);
     fireEvent.click(screen.getByRole("button", { name: "Delete Midterm 2" }));
     await waitFor(() => expect(state.remove).toHaveBeenCalledWith("b"));
+  });
+});
+
+describe("Backwork drafts AI fill (#5233)", () => {
+  beforeEach(() => {
+    state.update.mockReset().mockResolvedValue([]);
+    state.publish.mockReset();
+    state.remove.mockReset();
+    state.toast.mockReset();
+    state.draftsError = false;
+    state.fill.mockReset().mockResolvedValue({ status: "nothing_found", draft: null });
+  });
+
+  it("asks once for each draft not filled yet, two at a time", async () => {
+    let release: () => void = () => {};
+    state.fill.mockImplementation(
+      () => new Promise((resolve) => (release = () => resolve({ status: "nothing_found", draft: null }))),
+    );
+    state.drafts = [
+      draft("a", {}),
+      draft("b", {}),
+      draft("c", {}),
+      draft("d", { ai_fill: "filled" }),
+    ];
+    render(<DraftsReview />);
+    await waitFor(() => expect(state.fill).toHaveBeenCalledTimes(2));
+    expect(state.fill.mock.calls.map(([id]) => id)).toEqual(["a", "b"]);
+    expect(screen.getByText(/Filling in 2 drafts from their pages/)).toBeInTheDocument();
+    release();
+    await waitFor(() => expect(state.fill).toHaveBeenCalledWith("c"));
+    expect(state.fill).not.toHaveBeenCalledWith("d");
+  });
+
+  it("marks the cells the AI filled until they are edited", () => {
+    state.drafts = [
+      draft("a", { title: "CHEM 1010 Exam 2", semester: "Spring", ai_filled: ["semester"], ai_fill: "filled" }),
+    ];
+    render(<DraftsReview />);
+    expect(screen.getByRole("combobox", { name: "Semester for CHEM 1010 Exam 2, filled in by AI" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Title for CHEM 1010 Exam 2" })).toBeInTheDocument();
+    expect(screen.getByText(/Fields marked AI were filled in from the file/)).toBeInTheDocument();
+  });
+
+  it("says when a file couldn't be read", () => {
+    state.drafts = [draft("a", { title: "Scan", ai_fill: "unreadable" })];
+    render(<DraftsReview />);
+    expect(screen.getByText(/Couldn.t read this file\. Fill it in by hand\./)).toBeInTheDocument();
+    expect(state.fill).not.toHaveBeenCalled();
+  });
+
+  it("stops asking, and says why, when the member hasn't turned on Frapp AI", async () => {
+    state.fill.mockRejectedValue({ statusCode: 403, code: "ai.consent.required" });
+    state.drafts = [draft("a", {}), draft("b", {}), draft("c", {})];
+    render(<DraftsReview />);
+    expect(await screen.findByText("Turn on Frapp AI to have drafts filled in from their pages.")).toBeInTheDocument();
+    expect(state.fill).toHaveBeenCalledTimes(2);
+  });
+
+  it("says nothing when AI is off on the server", async () => {
+    state.fill.mockRejectedValue({ statusCode: 404, code: "ai.not_available" });
+    state.drafts = [draft("a", {}), draft("b", {}), draft("c", {})];
+    render(<DraftsReview />);
+    await waitFor(() => expect(state.fill).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText(/Filling in/)).not.toBeInTheDocument());
+    expect(screen.queryByText(/Frapp AI/)).not.toBeInTheDocument();
+    expect(state.fill).toHaveBeenCalledTimes(2);
   });
 });
 

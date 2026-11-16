@@ -5538,6 +5538,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/backwork/drafts/{id}/fill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose fields for one of the caller's drafts from its redacted text
+         * @description Reads only the stored file's text layer, which for a bulk upload holds only the words outside its redaction boxes, never the file name. Sets only fields the draft does not have yet; the uploader checks every value before publishing.
+         */
+        post: operations["BackworkFillController_fill_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/nudges/current": {
         parameters: {
             query?: never;
@@ -11079,6 +11099,20 @@ export interface components {
             posted: boolean;
             /** @description What the answer drew on that not everyone who can read the channel could open, as of this call. */
             restricted: components["schemas"]["AskPostRestrictedDto"][];
+        };
+        BackworkDraftFillResponseDto: {
+            /**
+             * @description `filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read, likely a scan. The rest leave the draft unchanged: `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).
+             * @enum {string}
+             */
+            status: "filled" | "nothing_found" | "unreadable" | "refused" | "unavailable" | "invalid_output";
+            /** @description The fields this fill set. Absent when the draft is unchanged. */
+            filled?: string[];
+            /** @description The draft as it now stands. `draft_fields.ai_filled` lists the fields an AI fill set that nobody has edited since. */
+            draft?: {
+                [key: string]: unknown;
+            };
+            reason?: string;
         };
         MemberNudgeDto: {
             /** Format: uuid */
@@ -24115,6 +24149,50 @@ export interface operations {
                 content?: never;
             };
             /** @description AI is off on this server (`ai.not_available`), or the channel does not exist. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkFillController_fill_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkDraftFillResponseDto"];
+                };
+            };
+            /** @description The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Frapp AI turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or the draft is not the caller's or is gone. */
             404: {
                 headers: {
                     [name: string]: unknown;

@@ -1445,6 +1445,77 @@ describe('BackworkService', () => {
       expect(rows.map((row) => row.id)).toEqual(['a', 'b']);
     });
 
+    it('an edit takes the edited fields off the AI-filled list', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({
+          id: 'a',
+          draft_fields: {
+            title: 'T',
+            year: 2024,
+            semester: 'Spring',
+            ai_filled: ['title', 'year', 'semester'],
+            ai_fill: 'filled',
+          },
+        }),
+      ]);
+      mockResourceRepo.updateDraftFields.mockImplementation(
+        async (id, _chapter, _uploader, fields) =>
+          draftRow({ id, draft_fields: fields }),
+      );
+
+      await service.updateDrafts('ch-1', 'user-1', ['a'], {
+        title: 'Mine',
+        year: null,
+      });
+
+      expect(mockResourceRepo.updateDraftFields).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        'user-1',
+        {
+          title: 'Mine',
+          semester: 'Spring',
+          ai_filled: ['semester'],
+          ai_fill: 'filled',
+        },
+      );
+    });
+
+    it('an AI fill sets only fields that are still empty when it lands', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({ id: 'a', draft_fields: { title: 'Typed meanwhile' } }),
+      ]);
+      mockResourceRepo.updateDraftFields.mockImplementation(
+        async (id, _chapter, _uploader, fields) =>
+          draftRow({ id, draft_fields: fields }),
+      );
+
+      await service.applyAiFill('a', 'ch-1', 'user-1', {
+        fields: { title: 'AI title', semester: 'Fall' },
+        outcome: 'filled',
+      });
+
+      expect(mockResourceRepo.updateDraftFields).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        'user-1',
+        {
+          title: 'Typed meanwhile',
+          semester: 'Fall',
+          ai_filled: ['semester'],
+          ai_fill: 'filled',
+        },
+      );
+    });
+
+    it("reads a draft's stored file only when the draft is the caller's", async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValueOnce([]);
+      await expect(
+        service.draftWithFile('a', 'ch-1', 'user-1'),
+      ).resolves.toBeNull();
+      expect(mockStorageProvider.downloadFile).not.toHaveBeenCalled();
+    });
+
     it('publishes a draft the way a confirm files one', async () => {
       mockResourceRepo.findDraftsByIds.mockResolvedValue([
         draftRow({

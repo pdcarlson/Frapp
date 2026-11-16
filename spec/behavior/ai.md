@@ -73,7 +73,7 @@ It answers "do we have old CSCI 1200 midterms?" and "how much do we have for CSC
 It never reads, indexes or quotes a file's contents, and no backwork file is in the [indexed corpus](#indexed-corpus-retrieved).
 It is offered only to a member who may browse the library (`backwork:upload` or `backwork:admin`) in a chapter with backwork on, like every `/v1/backwork` route.
 An answer built on it warns before it is posted to a channel, because not everyone there may open the library.
-The AI that reads redacted pages to fill in upload fields ([#3487](https://github.com/frapplive/Frapp/issues/3487) phase 4) is a separate system with its own rule, not this one.
+The AI that reads redacted pages to fill in upload fields ([#5233](https://github.com/frapplive/Frapp/issues/5233), 2026-11-16) is a separate system with its own rule, not this one: [`backwork.md`](backwork.md) § AI Fill.
 
 > **The mobile s17 mock that flattened this split is gone** (2026-11-12, #4415).
 > Until then `apps/mobile/lib/ask/corpus.ts` answered from one keyword table that mixed events and dues amounts in with indexed prose, behind a build flag (`EXPO_PUBLIC_ASK_ENABLED`), so the screen could be reviewed before any API existed.

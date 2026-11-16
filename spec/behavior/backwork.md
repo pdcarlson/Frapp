@@ -103,9 +103,15 @@ Bulk upload saves every document as a draft (#5208), whether or not its fields a
 
 The single-file Upload sheet still files at once; only bulk upload makes drafts.
 
-## AI Metadata Extraction (Phase: v3+)
+## AI Fill
 
-On upload, an optional AI step parses the PDF and pre-fills metadata fields (department, course number, professor, assignment type, etc.). The user reviews and corrects before confirming. The data model and upload flow must not block this future capability (all metadata fields are optional; the upload endpoint accepts partial metadata).
+The upload AI fills each draft's empty fields from the file's own pages (Paul, 2026-11-16, [#5233](https://github.com/frapplive/Frapp/issues/5233)). It is not Frapp AI: Ask never reads a backwork file ([`ai.md`](ai.md) § Live structured data), while this reads one file, for its uploader, so they have less to type. Comparable apps: Google Photos and Apple Photos suggest a place or a person and wait for you to confirm, and expense apps such as Expensify fill a receipt's merchant and amount for you to check.
+
+- **What it reads.** Only the stored file's text layer. For a bulk upload that is the flattened copy, whose invisible text holds just the words outside the redaction boxes (§ PDF Redaction), so a word under a box never reaches the model. Not the file name, which can carry a student's name. A file with too little text (a scan) is marked "Couldn't read this file" without a model call; reading page images is a later step.
+- **What it fills.** Title, department, course and the course's name, professor, semester, year, type, number, copy type and topic tags. It is given the chapter's departments, courses and professors, and a value that matches one takes the chapter's spelling. It never sets a field the draft already has, including one the uploader typed while it ran, never renames a course that has a name, and never proposes Student Copy for a file uploaded as-is.
+- **When.** The review table asks for each draft that hasn't been filled yet, two at a time, as drafts land from the queue above or are left from an earlier visit. Each draft is asked about once per visit; a refusal or a bad answer leaves it as it was.
+- **Checking.** A field the AI set carries a small "AI" mark (and says "filled in by AI" to a screen reader) until someone edits it. Nothing is filed until the uploader publishes.
+- **Consent and cost.** It sits behind the chapter's Frapp AI switch and the uploader's own yes on the AI sheet, whose "Chapter documents" row already covers backwork; no new setting. Its spend is the `backwork` AI family, held against the uploader's and the chapter's caps like any other call. When the member hasn't said yes, or the chapter has Frapp AI off, the table says so in one line and the drafts are filled by hand; when AI is off on the server, it says nothing.
 
 ## Chat Integration
 

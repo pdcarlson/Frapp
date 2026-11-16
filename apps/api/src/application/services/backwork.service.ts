@@ -345,6 +345,14 @@ export class BackworkService {
         ...set,
       };
       for (const key of cleared) delete next[key];
+      // A value the uploader set or cleared is theirs now, not the AI's.
+      const aiFilled = draft.draft_fields?.ai_filled;
+      if (aiFilled) {
+        const touched = new Set<string>([...Object.keys(set), ...cleared]);
+        const left = aiFilled.filter((key) => !touched.has(key));
+        if (left.length > 0) next.ai_filled = left;
+        else delete next.ai_filled;
+      }
       const row = await this.resourceRepo.updateDraftFields(
         draft.id,
         chapterId,
@@ -354,6 +362,69 @@ export class BackworkService {
       if (row) updated.push(row);
     }
     return updated;
+  }
+
+  /**
+   * One of the caller's drafts and its stored file, for the AI fill (#5233).
+   * The bytes are the file as stored: for a bulk upload, the flattened copy
+   * whose text layer holds only the words outside the redaction boxes. Null
+   * when the draft is not the caller's, or its file is gone.
+   */
+  async draftWithFile(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<{ draft: BackworkResource; bytes: Uint8Array } | null> {
+    const [draft] = await this.resourceRepo.findDraftsByIds(
+      [id],
+      chapterId,
+      uploaderId,
+    );
+    if (!draft) return null;
+    const bytes = await this.storageProvider.downloadFile(
+      BACKWORK_BUCKET,
+      draft.storage_path,
+    );
+    return bytes ? { draft, bytes } : null;
+  }
+
+  /**
+   * Puts an AI fill on one of the caller's drafts. The draft is read again
+   * here, so a field the uploader set while the model ran is kept: only
+   * fields still empty take the fill's value. Null when the draft is gone.
+   */
+  async applyAiFill(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    fill: {
+      fields: BackworkDraftFields;
+      outcome: NonNullable<BackworkDraftFields['ai_fill']>;
+    },
+  ): Promise<BackworkResource | null> {
+    const [draft] = await this.resourceRepo.findDraftsByIds(
+      [id],
+      chapterId,
+      uploaderId,
+    );
+    if (!draft) return null;
+    const current = draft.draft_fields ?? {};
+    const next: Record<string, unknown> = { ...current };
+    const filled = new Set(current.ai_filled ?? []);
+    for (const [key, value] of Object.entries(fill.fields)) {
+      const existing = (current as Record<string, unknown>)[key];
+      const empty =
+        existing === undefined ||
+        existing === null ||
+        (typeof existing === 'string' && existing.trim() === '') ||
+        (Array.isArray(existing) && existing.length === 0);
+      if (!empty) continue;
+      next[key] = value;
+      filled.add(key);
+    }
+    if (filled.size > 0) next.ai_filled = [...filled];
+    next.ai_fill = fill.outcome;
+    return this.resourceRepo.updateDraftFields(id, chapterId, uploaderId, next);
   }
 
   /**
