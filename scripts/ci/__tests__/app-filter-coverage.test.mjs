@@ -179,8 +179,8 @@ describe("the mobile and API path filters list every file their specs read from 
         );
         assert.ok(
           head.includes(
-            // Behind the queue-tested gate every CI job carries (#5084).
-            `if: \${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.${name} == 'true') }}`,
+            // Behind the skip gate every CI job carries (#5084, #5141).
+            `if: \${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.${name} == 'true') }}`,
           ),
           `${job} runs on push, in the merge queue, and on a PR its filter matches`,
         );

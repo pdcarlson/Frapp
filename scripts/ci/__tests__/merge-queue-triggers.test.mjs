@@ -99,23 +99,25 @@ describe("queue runs take the full and diff arms", () => {
     // the filter's outputs are empty, and a skipped required job reports Success.
     for (const file of emitting) {
       for (const job of workflowJobs(file.path)) {
-        if (job.if === null || !/needs\.changes\.outputs\.(?!queue_tested\b)/.test(job.if)) continue;
-        // ci.yml ANDs `queue_tested` in front (#5084, queue-tested.test.mjs);
-        // the path arm keeps this exact form inside its parentheses.
+        if (job.if === null || !/needs\.changes\.outputs\.(?!(?:queue_tested|skip_suite)\b)/.test(job.if)) continue;
+        // ci.yml ANDs `skip_suite` in front (#5084, #5141; queue-tested.test.mjs
+        // and docs-only-skip.test.mjs); the path arm keeps this exact form
+        // inside its parentheses.
         assert.match(
           job.if,
-          /^\$\{\{ (needs\.changes\.outputs\.queue_tested != 'true' && \()?github\.event_name != 'pull_request' \|\| needs\.changes\.outputs\.\w+ == 'true'(\))? \}\}$/,
+          /^\$\{\{ (needs\.changes\.outputs\.(?:queue_tested|skip_suite) != 'true' && \()?github\.event_name != 'pull_request' \|\| needs\.changes\.outputs\.\w+ == 'true'(\))? \}\}$/,
           `${file.name} ${job.jobId}`,
         );
-        assert.equal(/queue_tested/.test(job.if), /\)\s*\}\}$/.test(job.if), `${file.name} ${job.jobId}: parenthesize the path arm`);
+        assert.equal(/queue_tested|skip_suite/.test(job.if), /\)\s*\}\}$/.test(job.if), `${file.name} ${job.jobId}: parenthesize the path arm`);
       }
     }
   });
 
   it("a job with a PR-only diff step also runs it in the queue", () => {
     // Otherwise both its PR step and its push step skip in the queue and the
-    // job reports green having checked nothing. The `changes` job's filters are
-    // PR-only on purpose: the gated jobs run in full instead (above).
+    // job reports green having checked nothing. The `changes` job's filters
+    // feed the gated jobs on a PR only: in the queue they run in full (above),
+    // and the filters there decide only the docs-only skip (#5141).
     for (const file of emitting) {
       for (const step of workflowSteps(file.path)) {
         if (step.jobId === "changes") continue;

@@ -9,7 +9,9 @@ on:
   # on the queue's test commit, or a queued PR waits out the queue's timeout and
   # drops out. A queue run is treated like a push: path-gated jobs run in full,
   # because it is the last check before the commit lands on main, and the diff
-  # checks measure against `merge_group.base_sha` where a PR uses its base.
+  # checks measure against `merge_group.base_sha` where a PR uses its base. The
+  # one exception is a docs-only entry, which skips the suite as a PR does
+  # (#5141, `skip_suite` below).
   # Pinned by merge-queue-triggers.test.mjs.
   merge_group:
     types: [checks_requested]
@@ -52,6 +54,12 @@ concurrency:
 # jobs used to write. A commit that reached main without the queue, and any
 # re-run, gets the full suite.
 #
+# A PR or merge queue entry that changes only docs/ and spec/ skips the suite
+# too (#5141): `changes` sets `skip_suite`, which every job above reads in place
+# of `queue_tested`, except ci-scripts-tests, secret-scan and migration-safety,
+# which read docs (pinned doc text, secrets, the migration ledgers) and so still
+# run. A doc that a skipped job reads is in `docs_reads` and runs the suite.
+#
 # Every job sets `timeout-minutes` (#3129, pinned by workflow-timeouts.test.mjs).
 # Nothing cancels on main, so a job hung at the 360-minute default blocks every
 # push behind it. Sized from runs on 2026-10-02, with headroom for a cold cache: 5
@@ -61,12 +69,12 @@ concurrency:
 
 jobs:
   # Path filter for the gated jobs, and required because they need it
-  # (required-checks.mjs). It filters only on pull_request, so a shallow checkout
-  # cannot fail the gate; on push and merge_group its outputs are empty and the
-  # gated jobs run in full on their `github.event_name != 'pull_request'` arm,
-  # unless `queue_tested` skips them. It answers `queue_tested` (header), which
-  # every job but packages-build reads, so they all need it; `changes` itself
-  # must never skip.
+  # (required-checks.mjs). It filters on pull_request and merge_group; the gated
+  # jobs read its path outputs only on a PR, and run in full on their
+  # `github.event_name != 'pull_request'` arm elsewhere, unless `skip_suite` skips
+  # them. In the queue the filters feed only the docs-only test. It answers
+  # `queue_tested` and `skip_suite` (header), which every job but packages-build
+  # reads, so they all need it; `changes` itself must never skip.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -80,6 +88,13 @@ jobs:
       # workflow already passed. Anything else, a failed lookup included, is
       # 'false', which runs the full suite.
       queue_tested: ${{ steps.queue.outputs.tested == 'true' }}
+      # 'true' when that, or when a PR or merge queue entry changes only docs:
+      # every file it touches is under docs/ or spec/ (`apps`, `outside_docs`)
+      # and none is a doc a skipped job reads (`filter`, `docs_reads`). Most
+      # jobs skip on it; the three that read docs gate on `queue_tested` alone.
+      # A failed or skipped filter step leaves its output empty, never 'false',
+      # so it can only ever run the suite.
+      skip_suite: ${{ steps.queue.outputs.tested == 'true' || (steps.apps.outputs.outside_docs == 'false' && steps.filter.outputs.docs_reads == 'false' && !(github.event.pull_request.changed_files > 3000)) }}
       web: ${{ steps.filter.outputs.web }}
       landing: ${{ steps.filter.outputs.landing }}
       pglite: ${{ steps.filter.outputs.pglite }}
@@ -110,9 +125,14 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
           GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/ci/queue-tested.mjs
+      # On a PR and in the merge queue, where paths-filter diffs the entry from
+      # `merge_group.base_sha` with git. In the queue only `skip_suite` reads
+      # them (the gated jobs run in full there), so a failure there falls back
+      # to the full suite instead of failing `changes`; on a PR it fails it.
       - name: Detect changed paths
         id: filter
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'push'
+        continue-on-error: ${{ github.event_name == 'merge_group' }}
         uses: dorny/paths-filter@v4
         with:
           filters: |
@@ -176,13 +196,23 @@ jobs:
             api_reads:
               - 'apps/mobile/app.json'
               - 'spec/behavior/observability.md'
+            # The docs a job that skips on a docs-only change reads (#5141;
+            # pinned by docs-only-skip.test.mjs). Changing one runs the suite.
+            docs_reads:
+              - 'spec/behavior/observability.md'
+              - 'spec/ui/design-system/README.md'
+              - 'spec/ui/design-system/foundations.md'
       # The other way round from `filter`: these skip a PR only when EVERY file it
       # changes is in an area the job never reads, so a file nobody listed (a new
       # root config, a script) runs the job rather than slipping past a required
       # check. mobile-validate and api-tests were the slowest jobs every PR ran.
+      #
+      # `outside_docs` is the docs-only test: 'false' when every file is under
+      # docs/ or spec/. Same queue fallback as `filter`.
       - name: Detect changes the mobile and API jobs read
         id: apps
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'push'
+        continue-on-error: ${{ github.event_name == 'merge_group' }}
         uses: dorny/paths-filter@v4
         with:
           predicate-quantifier: every
@@ -202,6 +232,10 @@ jobs:
               - '!apps/landing/**'
               - '!apps/mobile/**'
               - '!apps/desktop/**'
+              - '!docs/**'
+              - '!spec/**'
+            outside_docs:
+              - '**'
               - '!docs/**'
               - '!spec/**'
 
@@ -301,7 +335,7 @@ jobs:
   # ── Lint + type check (full monorepo) ───────────────────────────────────
   lint-and-typecheck:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -385,11 +419,11 @@ jobs:
   # `npm ci && check-types && lint` with no prebuilt packages/*/dist, so reverting
   # turbo.json's `^build` dependency fails here while every prebuilding job stays
   # green. Keep it free of build and cache steps, and of any `needs:` but
-  # `changes`, which builds nothing and is read only for `queue_tested`: adding
+  # `changes`, which builds nothing and is read only for `skip_suite`: adding
   # one disarms it.
   clean-checkout-typecheck:
     needs: changes
-    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -414,12 +448,12 @@ jobs:
   # Builds web and landing on a devDependency-pruned tree, as Vercel's production
   # install does. #1331 and #1372 broke production through this gap
   # (docs/ci-cd/agent-infra.md, docs/ci-cd/quality-gates.md). No `needs:` but
-  # `changes` (for `queue_tested` only), no prebuilt-package or cache step, and
+  # `changes` (for `skip_suite` only), no prebuilt-package or cache step, and
   # no path filter (`changes.web` misses apps/landing): adding any of them
   # disarms it.
   web-production-build:
     needs: changes
-    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -483,7 +517,7 @@ jobs:
   # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.api == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.api == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -515,7 +549,7 @@ jobs:
   # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
   web-tests:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -546,7 +580,7 @@ jobs:
   # ── API Docker image (same path as Render native Dockerfile builds) ─────
   api-docker-build:
     needs: changes
-    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -623,7 +657,7 @@ jobs:
   # ── API contract freshness check ────────────────────────────────────────
   api-contract-check:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -682,7 +716,7 @@ jobs:
   # imports through node_modules symlinks.
   dependency-cruiser:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -715,7 +749,7 @@ jobs:
   # would turn it green.
   duplicate-detection:
     needs: changes
-    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -779,7 +813,7 @@ jobs:
   # the switch), so not a required check.
   migration-lock-safety:
     needs: changes
-    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Reports; never blocks. Don't remove without that baseline.
@@ -809,7 +843,7 @@ jobs:
   # plausible wrong color (#840). Node builtins only, so no install.
   chapter-directory-seed:
     needs: changes
-    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -831,7 +865,7 @@ jobs:
   # ── Mobile app validation ───────────────────────────────────────────────
   mobile-validate:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -914,7 +948,7 @@ jobs:
   # no time to a run.
   mobile-tests-tokyo:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -958,7 +992,7 @@ jobs:
   # an expiry (docs/security/security-fixes.md § npm audit sweep + CI gate).
   dependency-audit:
     needs: changes
-    if: ${{ needs.changes.outputs.queue_tested != 'true' }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1026,7 +1060,7 @@ jobs:
   # § RLS enforcement.
   pglite-migrations:
     needs: changes
-    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.pglite == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.pglite == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -1080,7 +1114,7 @@ jobs:
   # the guards against a zero-test run: docs/ci-cd/quality-gates.md.
   web-responsive-floor:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.web == 'true') }}
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -1132,7 +1166,7 @@ jobs:
   # No `continue-on-error`.
   landing-fold:
     needs: [packages-build, changes]
-    if: ${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.landing == 'true') }}
+    if: ${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.landing == 'true') }}
     permissions:
       contents: read
     runs-on: ubuntu-latest
