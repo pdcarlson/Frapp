@@ -148,6 +148,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Bulk-uploaded backwork drafts now fill in their course, professor, term and type from the file's redacted pages, marked AI so you can check them before you publish.",
       "Bulk upload now boxes the Name and ID lines, email addresses, ID numbers and members' names it finds on each PDF before you look, so you check the boxes instead of drawing them all.",
       "Minutes save as you type, keep the meeting's name and Post pinned at the top, let you answer the draft's open questions right above the minutes, and let officers mark who was there when nobody checked in.",
+      "Bulk upload can save a whole folder at once: \"Save all the rest\" boxes each PDF where it found names and IDs and saves it as a private draft. Each one waits in the table for you to check its pages, add any box it missed, and only then is filled in by Frapp AI or published.",
     ],
     phone: [
       "The Calendar has its own + at the top for adding an event from any view, and on the Calendar it starts on the day you've picked, today or later.",
