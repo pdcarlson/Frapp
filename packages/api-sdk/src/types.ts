@@ -2575,6 +2575,26 @@ export interface paths {
         patch: operations["AttendanceController_updateStatus_v1"];
         trace?: never;
     };
+    "/v1/events/{eventId}/attendance/by-hand": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark members who were there, after the fact
+         * @description Fills in attendance for members with no row yet, in one request (the minutes page, for a meeting nobody checked in to). A member who already has a row keeps it; members the event does not invite are left out. Moves no points, like every officer mark.
+         */
+        post: operations["AttendanceController_markByHand_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/{eventId}/attendance/auto-absent": {
         parameters: {
             query?: never;
@@ -8238,6 +8258,19 @@ export interface components {
             /** @enum {string} */
             status: "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
             excuse_reason?: string;
+        };
+        MarkAttendanceByHandDto: {
+            user_ids: string[];
+            /** @enum {string} */
+            status: "PRESENT" | "LATE" | "EXCUSED";
+        };
+        MarkAttendanceByHandResultDto: {
+            /** @description The members given a row now. */
+            marked: string[];
+            /** @description Picked members who already had a row (a check-in, an excuse, an earlier mark), kept as they were. */
+            already_marked: number;
+            /** @description Picked members the event doesn't invite (its roles, alumni the event doesn't name, or not in the chapter), left unmarked. */
+            not_invited: number;
         };
         AutoAbsentResultDto: {
             /** @description Number of members newly recorded ABSENT. 0 when the event is not mandatory and targets no roles, or when everyone required already has an attendance record. */
@@ -17245,6 +17278,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    AttendanceController_markByHand_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkAttendanceByHandDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkAttendanceByHandResultDto"];
+                };
             };
             /** @description Error */
             default: {

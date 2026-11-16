@@ -3,7 +3,7 @@
 import { useId, useMemo, useState } from "react";
 import {
   useChapterRoster,
-  useUpdateAttendanceStatus,
+  useMarkAttendanceByHand,
   type MeetingMinutes,
 } from "@repo/hooks";
 import { memberLabel } from "@repo/hooks/display-names";
@@ -21,18 +21,17 @@ import {
 import { Input } from "@/components/ui/input";
 import { SegmentedChoice } from "@/components/ui/segmented";
 import { useToast } from "@/lib/hooks/use-toast";
+import { getErrorMessage } from "@/lib/utils";
 
 type Status = "PRESENT" | "LATE" | "EXCUSED";
 
-/** How many marks go out at once, so a 120-member chapter isn't 120 at once. */
-const AT_ONCE = 6;
-
 /**
  * Mark who was at a meeting by hand, for the meeting nobody checked in to
- * (Paul, 2026-11-16; `spec/behavior/meetings.md` § Attendees). It writes the
- * event's attendance, the same record checking in writes, so the minutes'
- * Attendees list, the event's attendance and points all agree. Someone
- * already marked keeps their mark unless they're picked again.
+ * (Paul, 2026-11-16; `spec/behavior/events.md` § Marking attendance by
+ * hand). One request writes the event's attendance for everyone picked. It
+ * only fills in: someone already marked (a check-in, an excuse) is shown
+ * and can't be picked, so a check-in is never overwritten. Like every
+ * officer mark it moves no points.
  */
 export function AttendanceBackfill({
   eventId,
@@ -46,12 +45,12 @@ export function AttendanceBackfill({
   const ids = useId();
   const { toast } = useToast();
   const roster = useChapterRoster();
-  const mark = useUpdateAttendanceStatus();
+  const mark = useMarkAttendanceByHand();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<Status>("PRESENT");
-  const [saving, setSaving] = useState(false);
+  const saving = mark.isPending;
 
   const already = useMemo(
     () =>
@@ -76,8 +75,9 @@ export function AttendanceBackfill({
   const shown = needle
     ? members.filter((member) => member.name.toLowerCase().includes(needle))
     : members;
+  const pickable = shown.filter((member) => !already.has(member.id));
   const allShownPicked =
-    shown.length > 0 && shown.every((member) => picked.has(member.id));
+    pickable.length > 0 && pickable.every((member) => picked.has(member.id));
 
   function toggle(id: string) {
     setPicked((current) => {
@@ -91,7 +91,7 @@ export function AttendanceBackfill({
   function toggleShown() {
     setPicked((current) => {
       const next = new Set(current);
-      for (const member of shown) {
+      for (const member of pickable) {
         if (allShownPicked) next.delete(member.id);
         else next.add(member.id);
       }
@@ -100,33 +100,28 @@ export function AttendanceBackfill({
   }
 
   async function save() {
-    const userIds = [...picked];
+    const userIds = [...picked].filter((id) => !already.has(id));
     if (userIds.length === 0) return;
-    setSaving(true);
-    let failed = 0;
-    for (let at = 0; at < userIds.length; at += AT_ONCE) {
-      const results = await Promise.allSettled(
-        userIds
-          .slice(at, at + AT_ONCE)
-          .map((userId) =>
-            mark.mutateAsync({ eventId, userId, body: { status } }),
-          ),
-      );
-      failed += results.filter((result) => result.status === "rejected").length;
-    }
-    setSaving(false);
-    onMarked();
-    if (failed > 0) {
+    try {
+      const result = await mark.mutateAsync({ eventId, userIds, status });
+      onMarked();
       toast({
-        title: MEETING_ATTENDANCE_COPY.someFailed(failed, userIds.length),
+        title: MEETING_ATTENDANCE_COPY.marked(result.marked.length),
+        description:
+          result.not_invited > 0
+            ? MEETING_ATTENDANCE_COPY.notInvited(result.not_invited)
+            : undefined,
+      });
+      setPicked(new Set());
+      setFilter("");
+      setOpen(false);
+    } catch (error) {
+      toast({
+        title: MEETING_ATTENDANCE_COPY.failed,
+        description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
-      return;
     }
-    toast({ title: MEETING_ATTENDANCE_COPY.marked(userIds.length) });
-    setPicked(new Set());
-    setFilter("");
-    setOpen(false);
   }
 
   return (
@@ -165,12 +160,12 @@ export function AttendanceBackfill({
               <input
                 type="checkbox"
                 checked={allShownPicked}
-                disabled={shown.length === 0}
+                disabled={pickable.length === 0}
                 onChange={toggleShown}
                 className={dashboardTableCheckboxClassName}
               />
               {needle
-                ? MEETING_ATTENDANCE_COPY.pickShown(shown.length)
+                ? MEETING_ATTENDANCE_COPY.pickShown(pickable.length)
                 : MEETING_ATTENDANCE_COPY.pickEveryone}
             </label>
             <ul
@@ -187,7 +182,8 @@ export function AttendanceBackfill({
                     <input
                       id={`${ids}-${member.id}`}
                       type="checkbox"
-                      checked={picked.has(member.id)}
+                      checked={picked.has(member.id) || already.has(member.id)}
+                      disabled={already.has(member.id)}
                       onChange={() => toggle(member.id)}
                       className={dashboardTableCheckboxClassName}
                     />

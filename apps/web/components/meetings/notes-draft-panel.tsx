@@ -169,7 +169,7 @@ export function NotesDraftPanel({
     const text = (
       answered ? `${notes.trimEnd()}\n\n${answered}` : notes
     ).trim();
-    if (answered) autosave.change(text);
+
     if (!text && !othersWrote) {
       setProblem(MEETING_NOTES_COPY.empty);
       return;
@@ -217,6 +217,9 @@ export function NotesDraftPanel({
           meeting_date: meetingLocalDay(eventStart),
         },
       });
+      // The server stored the notes with the answers; the box shows them
+      // only now, so a request that never went leaves the notes as they were.
+      if (answered) autosave.reset(text);
     } catch (error) {
       const code = codeOf(error);
       if (code === "meeting.stale") onStale();

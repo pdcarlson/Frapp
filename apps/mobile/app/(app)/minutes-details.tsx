@@ -73,7 +73,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * recorder for this meeting. The transcript becomes the notes the draft is
  * written from.
  *
- * Posting asks first, as web does: it tells every invited member once.
+ * Posting asks nothing first, as on the web (Paul, 2026-11-16), though it
+ * tells every invited member once.
  */
 const BACK_TO_MINUTES: BackTarget = { label: "Minutes", href: "/minutes" };
 

@@ -154,16 +154,16 @@ export const MEETING_COPY = {
 
 /**
  * Marking who was at a meeting by hand, when nobody checked in (Paul,
- * 2026-11-16; `meetings.md` § Attendees).
+ * 2026-11-16; `events.md` § Marking attendance by hand).
  */
 export const MEETING_ATTENDANCE_COPY = {
   open: "Mark who was there",
   openMore: "Mark more people",
   title: "Who was there",
-  body: "This marks the meeting's event attendance, the same as checking in.",
+  body: "This fills in the event's attendance for anyone not marked yet. Officer marks don't add points.",
   statusLabel: "Mark them as",
   find: "Find a member",
-  pickEveryone: "Everyone",
+  pickEveryone: "Everyone not marked yet",
   pickShown: (count: number) => `All ${count} shown`,
   alreadyMarked: "Marked",
   save: (count: number, status: "PRESENT" | "LATE" | "EXCUSED") => {
@@ -173,8 +173,11 @@ export const MEETING_ATTENDANCE_COPY = {
   },
   marked: (count: number) =>
     count === 1 ? "Marked 1 member" : `Marked ${count} members`,
-  someFailed: (failed: number, total: number) =>
-    `Couldn't mark ${failed} of ${total}. Try them again.`,
+  notInvited: (count: number) =>
+    count === 1
+      ? "1 wasn't invited to this event, so they weren't marked."
+      : `${count} weren't invited to this event, so they weren't marked.`,
+  failed: "Couldn't mark attendance",
 } as const;
 
 /** Drafting minutes from an officer's notes (`meetings.md` § Drafting from notes). */

@@ -542,7 +542,7 @@ Route: `(app)/minutes.tsx`, `(app)/minutes-details.tsx`.
 Live (2026-11-12, #4415; the board draws no such screens), hidden while the `meetings` module is off for the beta.
 You gains a **Minutes** row (drafts the viewer may edit, then posted, newest first); an event's page ends in a row to its minutes; a "minutes posted" push opens them.
 `minutes-details` is a document to read: an eyebrow over each section the chapter's template keeps, no cards ([`../../behavior/meetings.md`](../../behavior/meetings.md) § Reading minutes).
-An officer who may edit a draft gets **Draft minutes** (a tall sheet for pasted notes, `components/minutes/notes-draft-sheet.tsx`, only where the server offers drafting and after the AI question) and **Post**, which asks first.
+An officer who may edit a draft gets **Draft minutes** (a tall sheet for pasted notes, `components/minutes/notes-draft-sheet.tsx`, only where the server offers drafting and after the AI question) and **Post**, which posts at once, without asking first (Paul, 2026-11-16).
 Changing a section by hand is on the web, and one line under Post says so.
 Write minutes on an event is offered only where drafting is, since the phone has nothing else to write them with
 

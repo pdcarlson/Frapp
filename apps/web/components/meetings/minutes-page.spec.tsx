@@ -49,7 +49,7 @@ vi.mock("@repo/hooks", () => ({
   }),
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   usePermissionList: () => mocks.permissions.current,
-  useUpdateAttendanceStatus: () => ({
+  useMarkAttendanceByHand: () => ({
     mutateAsync: mocks.markAttendance,
     isPending: false,
   }),
@@ -439,7 +439,7 @@ describe("MinutesPage", () => {
     loaded(draft);
     let land: (value: unknown) => void = () => {};
     mocks.post.mockReturnValue(new Promise((resolve) => (land = resolve)));
-    render(<MinutesPage id="m-1" />);
+    const { rerender } = render(<MinutesPage id="m-1" />);
     fireEvent.click(screen.getByRole("button", { name: "Post minutes" }));
     // The editor gives way before the post lands.
     await waitFor(() =>
@@ -447,12 +447,58 @@ describe("MinutesPage", () => {
     );
     expect(screen.getByText("Done.")).toBeTruthy();
     await waitFor(() => expect(mocks.post).toHaveBeenCalled());
+    loaded({
+      ...draft,
+      status: "posted",
+      posted_at: "2026-11-10T02:00:00.000Z",
+    });
     land({ ...draft, status: "posted", posted_at: "2026-11-10T02:00:00.000Z" });
+    // Once it lands: posted, the toast, and the read view's own actions.
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith({ title: "Minutes posted" }),
+    );
+    // The real hook writes the posted meeting into the query cache, which
+    // re-renders the route; the mock needs a nudge to do the same.
+    rerender(<MinutesPage id="m-1" />);
+    expect(
+      await screen.findByRole("button", { name: "Copy link" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/posting/)).toBeNull();
     expect(mocks.confirm).not.toHaveBeenCalled();
     expect(mocks.update).not.toHaveBeenCalled();
     expect(mocks.post).toHaveBeenCalledWith({
       id: "m-1",
       expectedUpdatedAt: "2026-11-10T01:00:00.000Z",
+    });
+  });
+
+  it("saves typing that hasn't saved yet before posting, and posts that version", async () => {
+    const draft = minutes({
+      status: "draft",
+      posted_at: null,
+      can_edit: true,
+      content: EMPTY,
+    });
+    loaded(draft);
+    mocks.update.mockResolvedValue({
+      ...draft,
+      updated_at: "2026-11-10T02:00:00.000Z",
+      content: { ...EMPTY, summary: "Last line." },
+    });
+    mocks.post.mockResolvedValue({ ...draft, status: "posted" });
+    render(<MinutesPage id="m-1" />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Summary" }), {
+      target: { value: "Last line." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Post minutes" }));
+    await waitFor(() => expect(mocks.post).toHaveBeenCalled());
+    expect(mocks.update).toHaveBeenCalledTimes(1);
+    expect(mocks.update.mock.calls[0]![0].body.content.summary).toBe(
+      "Last line.",
+    );
+    expect(mocks.post).toHaveBeenCalledWith({
+      id: "m-1",
+      expectedUpdatedAt: "2026-11-10T02:00:00.000Z",
     });
   });
 
@@ -542,20 +588,42 @@ describe("MinutesPage", () => {
 
   it("marks who was there by hand when nobody checked in, for someone who can edit events", async () => {
     mocks.permissions.current = ["events:update"];
-    mocks.markAttendance.mockResolvedValue({});
+    mocks.markAttendance.mockResolvedValue({
+      marked: ["22222222-2222-4222-8222-222222222222"],
+      already_marked: 0,
+      not_invited: 0,
+    });
     mocks.refetch.mockResolvedValue({ data: undefined });
-    loaded(ownDraft({ attendees: { present: [], late: [], excused: [] } }));
+    loaded(
+      ownDraft({
+        attendees: {
+          present: ["11111111-1111-4111-8111-111111111111"],
+          late: [],
+          excused: [],
+        },
+      }),
+    );
     render(<MinutesPage id="m-1" />);
-    fireEvent.click(screen.getByRole("button", { name: "Mark who was there" }));
-    fireEvent.click(await screen.findByRole("checkbox", { name: "Sam Lee" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark more people" }));
+    // Someone already marked (here, checked in) can't be picked again.
+    expect(
+      (await screen.findByRole("checkbox", { name: /Jake Ross/ })).matches(
+        ":disabled",
+      ),
+    ).toBe(true);
+    // "Everyone not marked yet" picks only who has no mark, in one request.
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Everyone not marked yet" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Mark 1 present" }));
     await waitFor(() =>
       expect(mocks.markAttendance).toHaveBeenCalledWith({
         eventId: "e-1",
-        userId: "22222222-2222-4222-8222-222222222222",
-        body: { status: "PRESENT" },
+        userIds: ["22222222-2222-4222-8222-222222222222"],
+        status: "PRESENT",
       }),
     );
+    expect(mocks.markAttendance).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(mocks.refetch).toHaveBeenCalled());
     mocks.permissions.current = [];
   });

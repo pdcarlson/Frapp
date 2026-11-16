@@ -44,6 +44,10 @@ export const FEATURE_EVENTS = {
     feature: 'events',
     properties: ['status', 'has_excuse'],
   },
+  'attendance-marked-by-hand': {
+    feature: 'events',
+    properties: ['status', 'count'],
+  },
   // Absence excuses (#3735): never the reason a member wrote.
   'event-excuse-sent': {
     feature: 'events',

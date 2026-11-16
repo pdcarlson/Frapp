@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type ComponentProps,
   useEffect,
   useId,
   useLayoutEffect,
@@ -84,7 +85,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { useToast } from "@/lib/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
+import { useGrowWithText } from "@/lib/hooks/use-grow-with-text";
 import { LinkEventPanel } from "@/components/meetings/link-event";
 import { NotesDraftPanel } from "@/components/meetings/notes-draft-panel";
 import { AttendanceBackfill } from "@/components/meetings/attendance-backfill";
@@ -336,7 +338,9 @@ function Minutes({
    * goes with the next save.
    */
   async function save(): Promise<MeetingMinutes | null> {
-    if (inFlight.current) await inFlight.current;
+    // Every save waiting on this one checks again when it ends, so two never
+    // go out on the same version.
+    while (inFlight.current) await inFlight.current;
     const sent = draftRef.current;
     // Nothing new to store: the version on screen is the one to build on.
     if (sameDraft(sent, baseRef.current)) {
@@ -360,9 +364,9 @@ function Minutes({
         loadedAtRef.current = saved.updated_at;
         baseRef.current = draftOf(saved);
         setLoadedAt(saved.updated_at);
+        // The screen keeps what is typed, untrimmed and with rows still being
+        // filled in; it counts as saved because it stores the same.
         setBase(draftOf(saved));
-        // Only when nothing was typed meanwhile is the screen replaced.
-        if (draftRef.current === sent) setDraft(draftOf(saved));
         return saved;
       } catch (error) {
         if (codeOf(error) === "meeting.stale") {
@@ -397,6 +401,17 @@ function Minutes({
     // `save` reads the latest draft through refs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingAutosave, saveFailed, draft]);
+
+  // Leaving the page inside the app (a nav link) sends what is still
+  // waiting to save, as the notes box does.
+  const flushOnLeave = useRef(() => {});
+  useEffect(() => {
+    flushOnLeave.current = () => {
+      if (autosaves && !stale && !sameDraft(draftRef.current, baseRef.current))
+        void save();
+    };
+  });
+  useEffect(() => () => flushOnLeave.current(), []);
 
   async function handleSave() {
     const saved = await save();
@@ -500,7 +515,8 @@ function Minutes({
   const hasContent = !isMeetingContentEmpty(cleanContent(draft.content));
   // Once a draft has filled the minutes, they lead and the notes the draft
   // read fold away underneath; before that, the notes are the first step.
-  const notesFirst = !hasContent || !review;
+  // A redraft keeps them where they are while it is written.
+  const notesFirst = !hasContent || (!review && !drafting);
   // Where the notes panel puts its "To fill in" questions: above the
   // minutes, the first thing to do after a draft (Paul, 2026-11-16).
   const [fillInSlot, setFillInSlot] = useState<HTMLDivElement | null>(null);
@@ -525,7 +541,7 @@ function Minutes({
         hasContent={hasContent}
         folded={!notesFirst}
         fillInSlot={fillInSlot}
-        disabled={update.isPending || posting || stale}
+        disabled={posting || stale}
         prepare={async () => {
           if (dirty) return (await save())?.updated_at ?? null;
           // Nothing typed: build on the newest version, not the one this
@@ -542,7 +558,10 @@ function Minutes({
     ) : null;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 pb-16">
+    // A flex column, so the notes panel moves between the top and the foot
+    // by `order` alone: moving it in the tree would remount it mid-draft and
+    // lose the draft landing.
+    <div className="mx-auto flex max-w-3xl flex-col gap-8 pb-16">
       {/*
         The meeting's name and the page's actions stay in view the whole way
         down a long set of minutes (Paul, 2026-11-16). `-top-4` and the
@@ -585,7 +604,7 @@ function Minutes({
                   <>
                     <Button
                       variant="ghost"
-                      disabled={busy}
+                      disabled={busy || update.isPending}
                       onClick={() => {
                         setDraft(base);
                         setEditing(false);
@@ -674,7 +693,9 @@ function Minutes({
         />
       ) : null}
 
-      {notesFirst ? notesPanel : null}
+      {notesPanel ? (
+        <div className={notesFirst ? undefined : "order-1"}>{notesPanel}</div>
+      ) : null}
       {/* The draft's open questions land here, above the minutes. */}
       {showNotes ? <div ref={setFillInSlot} className="empty:hidden" /> : null}
 
@@ -699,7 +720,10 @@ function Minutes({
             {key === "attendees" ? (
               <>
                 <Attendees meeting={meeting} nameFor={names.nameFor} />
-                {editing && meeting.event_id && canMarkAttendance ? (
+                {editing &&
+                meeting.event_id &&
+                canMarkAttendance &&
+                meetingHasEnded(meeting) ? (
                   <AttendanceBackfill
                     eventId={meeting.event_id}
                     attendees={meeting.attendees}
@@ -734,12 +758,12 @@ function Minutes({
                 />
               )
             ) : editing ? (
-              <Textarea
+              <GrowingTextarea
                 aria-labelledby={`${ids}-${key}`}
                 value={draft.content[key as MeetingTextSection]}
                 maxLength={MEETING_TEXT_MAX_LENGTH}
                 // Grows with the text, so a long summary reads whole.
-                className="min-h-28 resize-none [field-sizing:content]"
+                className="min-h-28"
                 rows={key === "summary" ? 6 : 4}
                 onChange={(event) =>
                   editContent({
@@ -796,8 +820,6 @@ function Minutes({
         ) : null}
       </fieldset>
 
-      {notesFirst ? null : notesPanel}
-
       {/*
         Under the minutes, so the list arriving never moves what is being
         read. Posted minutes only, and never beside the editor: a suggestion
@@ -814,6 +836,31 @@ function Minutes({
       {confirmDialog}
     </div>
   );
+}
+
+/** A section's box, as tall as what is written in it. */
+function GrowingTextarea({
+  className,
+  ...props
+}: ComponentProps<typeof Textarea>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useGrowWithText(ref, String(props.value ?? ""));
+  return (
+    <Textarea
+      ref={ref}
+      className={cn("resize-none [field-sizing:content]", className)}
+      {...props}
+    />
+  );
+}
+
+/**
+ * Marking by hand waits for the meeting to end: a member marked while
+ * check-in is open could no longer check in themselves.
+ */
+function meetingHasEnded(meeting: MeetingMinutes): boolean {
+  const end = Date.parse(meeting.event_end_time ?? meeting.event_start_time);
+  return Number.isFinite(end) && end <= Date.now();
 }
 
 function hasAttendees(meeting: MeetingMinutes): boolean {
@@ -968,11 +1015,11 @@ function DecisionsEditor({
           className="space-y-2 rounded-lg border border-border p-3"
         >
           <div className="flex items-start gap-2">
-            <Textarea
+            <GrowingTextarea
               aria-label={`Decision ${index + 1}`}
               placeholder="What was decided"
               rows={1}
-              className="min-h-10 resize-none [field-sizing:content]"
+              className="min-h-10"
               value={decision.text}
               maxLength={MEETING_ITEM_TEXT_MAX_LENGTH}
               onChange={(event) => set(index, { text: event.target.value })}
@@ -1087,11 +1134,11 @@ function ActionItemsEditor({
           className="space-y-2 rounded-lg border border-border p-3"
         >
           <div className="flex items-start gap-2">
-            <Textarea
+            <GrowingTextarea
               aria-label={`Action item ${index + 1}`}
               placeholder="What needs doing"
               rows={1}
-              className="min-h-10 resize-none [field-sizing:content]"
+              className="min-h-10"
               value={item.text}
               maxLength={MEETING_ITEM_TEXT_MAX_LENGTH}
               onChange={(event) => set(index, { text: event.target.value })}

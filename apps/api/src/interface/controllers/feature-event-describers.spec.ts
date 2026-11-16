@@ -121,6 +121,15 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'AttendanceController.markByHand': {
+    'attendance-marked-by-hand': [
+      [
+        'three members present',
+        { body: { status: 'PRESENT', user_ids: ['a', 'b', 'c'] } },
+        { status: 'PRESENT', count: 3 },
+      ],
+    ],
+  },
   'EventExcuseController.decide': {
     'event-excuse-decided': [
       [
