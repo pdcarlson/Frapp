@@ -24,11 +24,11 @@ describe('a suggested task and the task form (#4313)', () => {
       id: 'task-1',
       ...input,
     }));
-    await new TaskController({ create: fromForm } as never, {} as never).create(
-      CHAPTER,
-      OFFICER,
-      fields,
-    );
+    await new TaskController(
+      { create: fromForm } as never,
+      {} as never,
+      {} as never,
+    ).create(CHAPTER, OFFICER, fields);
 
     // The suggestion: accepted as proposed.
     const fromSuggestion = jest.fn(async (input: object) => ({

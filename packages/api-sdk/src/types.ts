@@ -3286,7 +3286,7 @@ export interface paths {
         get: operations["TaskController_getOne_v1"];
         put?: never;
         post?: never;
-        /** Delete a task */
+        /** Delete a task; with `scope=series`, stop a repeating task (#5119) */
         delete: operations["TaskController_delete_v1"];
         options?: never;
         head?: never;
@@ -8406,6 +8406,17 @@ export interface components {
             /** @description Optional comment for the member (especially on rejection) */
             review_comment?: string;
         };
+        TaskSeriesSummaryDto: {
+            /** @description The series’ rule, as on create. */
+            recurrence_rule: string;
+            /**
+             * Format: date
+             * @description The day of the next copy still to be made: "Every Monday · next Nov 24". Meaningless once `ended`.
+             */
+            next_due_date: string;
+            /** @description Whether the series has stopped making copies: its rule ran out, an officer ended it, or its assignee left. */
+            ended: boolean;
+        };
         RequestTaskPhotoUploadUrlDto: {
             /** @description Original filename (a JPEG, PNG, GIF or WebP) */
             filename: string;
@@ -8447,6 +8458,8 @@ export interface components {
              * @enum {string}
              */
             proof_kind?: "none" | "photo" | "link";
+            /** @description Repeat on a schedule (#5119): the event rule format (`packages/validation/src/recurrence.ts`), `FREQ` DAILY, WEEKLY or MONTHLY, `INTERVAL` 1 to 30, `BYDAY` or `BYMONTHDAY`, a required `TZID` (the officer's zone), and `COUNT` (2 to 120), `UNTIL` (YYYYMMDD) or no end. Example: `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York`. The task is the first copy; the next is made once it is due, on the same time of day in that zone. */
+            recurrence_rule?: string;
             /** @description When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates. */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
@@ -8509,6 +8522,16 @@ export interface components {
             sent_back_reason: string | null;
             /** @description The assignee's reply sent with Mark done, or null. Cleared with the completion. */
             completion_note: string | null;
+            /**
+             * Format: uuid
+             * @description The repeating series this task is a copy of (#5119), or null for a task that doesn’t repeat.
+             */
+            series_id: string | null;
+            /**
+             * Format: date
+             * @description A copy’s day in its series’ pattern; null otherwise.
+             */
+            occurrence_date: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
@@ -8536,6 +8559,13 @@ export interface components {
              * @enum {string}
              */
             proof_kind?: "none" | "photo" | "link";
+            /**
+             * @description On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`).
+             * @enum {string}
+             */
+            scope?: "instance" | "series";
+            /** @description With `scope: series` only: a new rule, counted from the open copy, or null to stop repeating after it. Repeat on a schedule (#5119): the event rule format (`packages/validation/src/recurrence.ts`), `FREQ` DAILY, WEEKLY or MONTHLY, `INTERVAL` 1 to 30, `BYDAY` or `BYMONTHDAY`, a required `TZID` (the officer's zone), and `COUNT` (2 to 120), `UNTIL` (YYYYMMDD) or no end. Example: `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York`. The task is the first copy; the next is made once it is due, on the same time of day in that zone. */
+            recurrence_rule?: string | null;
         };
         UpdateTaskStatusDto: {
             /** @enum {string} */
@@ -18460,7 +18490,10 @@ export interface operations {
     };
     TaskController_delete_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. */
+                scope?: "instance" | "series";
+            };
             header?: never;
             path: {
                 id: string;

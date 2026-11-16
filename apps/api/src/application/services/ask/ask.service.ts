@@ -74,6 +74,7 @@ import {
 } from './agent/ask-agent-prompt';
 import { AskDiagnosticsService } from './ask-diagnostics.service';
 import { AskFromService, type AskFromPart } from './agent/ask-from.service';
+import { ownWords } from './agent/own-words';
 import { AskTraceService } from './observe/ask-trace.service';
 import {
   ASK_ANSWER_PROMPT_VERSION,
@@ -956,6 +957,24 @@ export class AskService {
         });
       }
       answer.proposals = waiting.map((card) => card.suggestion.id);
+    } else if (
+      answer.status === 'not_found' &&
+      outcome.result.status === 'ok' &&
+      outcome.result.droppedCitations === 0 &&
+      !outcome.result.truncated
+    ) {
+      // No citation stood, and none was tried and dropped: what the model
+      // wrote may be a reply that rests on no source, which is shown as one
+      // sentence in Frapp's own words (`own-words.ts`).
+      const sentence = ownWords(outcome.result.text);
+      if (sentence !== null) {
+        answer = emptyAnswer('answered', {
+          text: sentence,
+          own_words: true,
+          left_out_messages: outcome.leftOutMessages,
+          read_chat: entries.some((entry) => entry.chat),
+        });
+      }
     }
     if (answer.status === 'answered') {
       answer.entities = namedIn(answer.text, outcome.entities);

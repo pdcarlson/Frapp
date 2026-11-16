@@ -8,11 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
@@ -97,6 +93,7 @@ import {
 } from "@/lib/kept-sheet-draft";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The "New event" bottom sheet: an officer's quick create on the phone.

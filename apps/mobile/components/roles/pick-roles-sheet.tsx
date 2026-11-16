@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import type { PickableRole } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { PICK_ROLES_COPY } from "@repo/validation";
@@ -16,6 +16,7 @@ import {
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Add roles (#4958): the Non-chapter business roles a member adds and removes

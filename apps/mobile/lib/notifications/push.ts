@@ -5,9 +5,11 @@ import { createIsolatedModule } from "../isolated-module";
 import { requireNotifications } from "./push-module";
 import { isRecord, str } from "../more/narrow";
 import { chatChannelIdFrom, isThreadChatPush } from "./targets";
+import { pushesQuotingMessages } from "./deleted-message-pushes";
 import { PUSH_ACTION_CATEGORIES } from "./push-actions";
 import type {
   NotificationsModule,
+  PresentedNotification,
   PushNotificationResponse,
   PushSubscription,
 } from "./push-types";
@@ -345,13 +347,48 @@ export async function clearReadChatNotifications(
 }
 
 /**
+ * Dismisses the tray entries `pick` names. Best-effort like
+ * `clearReadChatNotifications`.
+ */
+async function dismissPresented(
+  pick: (presented: PresentedNotification[]) => string[],
+): Promise<void> {
+  const mod = localOnlyModule();
+  if (!mod) return;
+  try {
+    const presented = await mod.getPresentedNotificationsAsync();
+    await Promise.allSettled(
+      pick(presented).map((id) => mod.dismissNotificationAsync(id)),
+    );
+  } catch {
+    // As in `clearReadChatNotifications`: leave the tray as it is.
+  }
+}
+
+/**
+ * Takes the pushes quoting these messages out of the tray: the app learned
+ * they were deleted, live from the inbox's `changed` activity or from a
+ * conversation it loaded (#4470). Matched by the push's `messageId` only,
+ * never by channel.
+ */
+export async function dismissDeletedMessagePushes(
+  messageIds: ReadonlySet<string>,
+): Promise<void> {
+  if (messageIds.size === 0) return;
+  await dismissPresented((presented) =>
+    pushesQuotingMessages(presented, messageIds),
+  );
+}
+
+/**
  * Takes non-chat pushes (events, tasks, dues, and the rest) out of the tray
  * once the member has read their in-app row (`spec/behavior/notifications.md`
  * § Badge Count, #4011). Every push the server sends carries its row's
  * `notificationId`, so a push is matched to exactly the row it announced.
  *
- * Chat pushes are never touched here: `clearReadChatNotifications` is the only
- * thing that removes them, by the channel counts. A push whose row isn't in
+ * Chat pushes are never touched here: `clearReadChatNotifications` removes them
+ * by the channel counts, and `dismissDeletedMessagePushes` one by one when
+ * their message is deleted (#4470). A push whose row isn't in
  * `readNotificationIds` (unread, past the first page, a local notification
  * with no row) is left alone, so a stale list can only fail to clear.
  */

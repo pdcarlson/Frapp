@@ -1,10 +1,6 @@
 import { forwardRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
   formatScheduledFor,
   schedulePresets,
@@ -35,6 +31,7 @@ import {
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
 import { ScheduleWhenField } from "./schedule-send-sheet";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The member's scheduled messages in this channel (#4956), opened from the

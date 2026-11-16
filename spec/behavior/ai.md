@@ -273,6 +273,9 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
 - **No answer without a source.**
   The server checks every quote against its source ([Citation requirement](#citation-requirement)).
   An answer left with no checked citation is not shown: the member reads "I couldn't find that in your chapter's documents, minutes or records."
+  Through the tool loop, one exception (changed by Paul, 2026-11-16): some right answers rest on no source, such as "hi" back, what Frapp can do, "I don't give out phone numbers" or "which Jordan do you mean?".
+  Frapp answers those at once without reading, and one short sentence with no citation is shown, marked as Frapp's own words (`own_words`), when no quote was tried and dropped and the whole reply is one line of at most 400 characters (the sentence itself at most 240).
+  Anything longer with no checked citation is still "couldn't find that". An answer in Frapp's own words cannot be posted to a channel.
   When some quotes were dropped and others stood, the answer says part of it could not be matched.
 - **What streams is a preview.**
   Text appears as it is written, over one line that says what Frapp is doing.
@@ -1042,6 +1045,7 @@ Frapp does not keep the text of prompts or answers, with two exceptions.
   The Frapp team reads them; nobody in the chapter does.
   The same numbers go to analytics under the member's pseudonym, like every server event ([`observability.md` § AI answer events](observability.md#ai-answer-events)).
   How the team reads them: [`docs/ops/ask-answer-quality.md`](../../docs/ops/ask-answer-quality.md).
+  The privacy page names it (#4914, 2026-11-16).
   Only a turn answered through the tool loop writes one, so nothing is written on a server without `ASK_AGENT=on` (2026-11-13).
 - No prompt or answer text goes to any outside service: not to error tracking, not to analytics, not to a provider's own request logs.
   That rule has no exception ([`observability.md`](observability.md)).

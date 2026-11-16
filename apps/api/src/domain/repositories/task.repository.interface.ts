@@ -1,6 +1,7 @@
 import {
   Task,
   TaskPhoto,
+  TaskSeries,
   TaskStatus,
   TaskSubtask,
 } from '../entities/task.entity';
@@ -129,6 +130,34 @@ export interface ITaskRepository {
   releaseReminderClaims(chapterId: string, taskId: string): Promise<void>;
   delete(id: string, chapterId: string): Promise<void>;
   /**
+   * A repeating task's series and its first copy, with the copy's checklist,
+   * in one transaction (#5119): a failure leaves neither. Returns the copy.
+   */
+  createSeries(input: CreateTaskSeriesInput): Promise<Task>;
+  /** These series of the chapter, any order. */
+  findSeries(chapterId: string, ids: string[]): Promise<TaskSeries[]>;
+  /** A series' latest copy (the furthest `occurrence_date`), or null. */
+  findLatestSeriesCopy(
+    chapterId: string,
+    seriesId: string,
+  ): Promise<Task | null>;
+  /**
+   * Write `data` to a live series only while its `next_due_date` is still
+   * `expectedNext` (compare-and-set against the sweep making a copy between
+   * the caller's read and this write). Null when it no longer matches.
+   */
+  updateSeriesIfNext(
+    chapterId: string,
+    id: string,
+    expectedNext: string,
+    data: Partial<TaskSeries>,
+  ): Promise<TaskSeries | null>;
+  /**
+   * Whether any of a task's subtasks is checked: a copy with one is not
+   * "untouched", so ending its series keeps it (#5119).
+   */
+  hasCheckedSubtask(chapterId: string, taskId: string): Promise<boolean>;
+  /**
    * Whether any photo row holds this storage path (#4565, #4635): one object
    * belongs to one photo, so releasing it can never delete a photo another
    * task still shows. `task_photos.storage_path` is unique, so a racing
@@ -200,4 +229,25 @@ export interface ReopenCompletionOptions {
    * clears `confirmed_at` and `points_awarded`. Default `false`.
    */
   pointsAwarded?: boolean;
+}
+
+/** What {@link ITaskRepository.createSeries} writes (#5119). */
+export interface CreateTaskSeriesInput {
+  chapter_id: string;
+  created_by: string;
+  title: string;
+  description: string | null;
+  assignee_id: string;
+  point_reward: number | null;
+  proof_kind: TaskProofKind;
+  subtask_titles: string[];
+  due_time: string | null;
+  recurrence_rule: string;
+  /** The first copy's day, which the rule counts from. */
+  first_due_date: string;
+  /** The first copy's due moment, when it has a time of day. */
+  first_due_at: string | null;
+  /** When the first copy is due in the rule's zone (end of day if untimed). */
+  latest_due_at: string;
+  next_due_date: string;
 }
