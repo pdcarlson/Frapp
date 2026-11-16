@@ -15,6 +15,7 @@ export const TIME_ZONE_HEADER = "x-time-zone";
 /**
  * The mobile binary's version, `<platform>/<version>[+<build>]` (#2526); the
  * API's `#domain/constants/client-version` owns its shape and the minimum a
- * deployment still serves.
+ * deployment still serves. That file keeps its own copy of this literal (the
+ * deploy check loads it standalone) and its spec pins the copy to this one.
  */
 export const CLIENT_VERSION_HEADER = "x-client-version";

@@ -1,12 +1,22 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { CLIENT_VERSION_HEADER as SHARED_CLIENT_VERSION_HEADER } from '@repo/validation';
 import {
   CLIENT_PLATFORMS,
+  CLIENT_VERSION_HEADER,
   clientVersionForLog,
   isBelowMinimum,
   parseClientVersionHeader,
   parseVersionWithBuild,
 } from './client-version';
+
+describe('CLIENT_VERSION_HEADER', () => {
+  // The API keeps its own literal (the deploy check loads this file
+  // standalone); it must stay the name @repo/api-sdk sends.
+  it('matches the name the SDK sends', () => {
+    expect(CLIENT_VERSION_HEADER).toBe(SHARED_CLIENT_VERSION_HEADER);
+  });
+});
 
 describe('parseVersionWithBuild', () => {
   it('reads a version with and without a build number', () => {

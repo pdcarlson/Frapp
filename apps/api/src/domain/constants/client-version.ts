@@ -19,10 +19,13 @@
  */
 
 /**
- * Lower-case, as Node exposes request headers. Defined once in
- * `@repo/validation`, which `@repo/api-sdk` reads to send it.
+ * Lower-case, as Node exposes request headers. `@repo/validation` holds the
+ * same name for `@repo/api-sdk` to send; this file keeps its own literal
+ * because the deploy's config check loads it standalone through Node's type
+ * stripping (`scripts/ci/__tests__/client-version.test.mjs`), where no
+ * workspace package resolves. `client-version.spec.ts` pins the two equal.
  */
-export { CLIENT_VERSION_HEADER } from '@repo/validation';
+export const CLIENT_VERSION_HEADER = 'x-client-version';
 
 export const CLIENT_PLATFORMS = ['ios', 'android'] as const;
 export type ClientPlatform = (typeof CLIENT_PLATFORMS)[number];
