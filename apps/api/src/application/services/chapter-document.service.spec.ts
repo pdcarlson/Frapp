@@ -846,7 +846,8 @@ describe('ChapterDocumentService', () => {
 
       const result = await service.previewUrls(
         [baseDocument.id, 'doc-2', baseDocument.id, 'other-chapter-doc'],
-        'ch-1', 'user-1',
+        'ch-1',
+        'user-1',
       );
 
       expect(mockDocumentRepo.findByIds).toHaveBeenCalledWith(
@@ -879,7 +880,9 @@ describe('ChapterDocumentService', () => {
 
     it('asks storage for nothing when no id is in the chapter', async () => {
       mockDocumentRepo.findByIds.mockResolvedValue([]);
-      await expect(service.previewUrls(['x'], 'ch-1', 'user-1')).resolves.toEqual([]);
+      await expect(
+        service.previewUrls(['x'], 'ch-1', 'user-1'),
+      ).resolves.toEqual([]);
       expect(mockStorageProvider.getSignedDownloadUrls).not.toHaveBeenCalled();
     });
 
@@ -1024,18 +1027,18 @@ describe('ChapterDocumentService', () => {
     it('should throw ConflictException on a duplicate name', async () => {
       mockFolderRepo.findByName.mockResolvedValue(baseFolder);
 
-      await expect(service.createFolder('ch-1', 'Governance', undefined, 'user-1')).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.createFolder('ch-1', 'Governance', undefined, 'user-1'),
+      ).rejects.toThrow(ConflictException);
       expect(mockFolderRepo.create).not.toHaveBeenCalled();
     });
 
     it.each(['', '   '])(
       'should reject an empty folder name (%p)',
       async (name) => {
-        await expect(service.createFolder('ch-1', name, undefined, 'user-1')).rejects.toThrow(
-          BadRequestException,
-        );
+        await expect(
+          service.createFolder('ch-1', name, undefined, 'user-1'),
+        ).rejects.toThrow(BadRequestException);
         expect(mockFolderRepo.create).not.toHaveBeenCalled();
       },
     );
@@ -1046,9 +1049,9 @@ describe('ChapterDocumentService', () => {
       mockFolderRepo.findByName.mockResolvedValue(null);
       mockFolderRepo.create.mockRejectedValue({ code: '23505' });
 
-      await expect(service.createFolder('ch-1', 'Governance', undefined, 'user-1')).rejects.toThrow(
-        ConflictException,
-      );
+      await expect(
+        service.createFolder('ch-1', 'Governance', undefined, 'user-1'),
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should not swallow unrelated repository errors', async () => {
@@ -1058,9 +1061,9 @@ describe('ChapterDocumentService', () => {
         message: 'connection failure',
       });
 
-      await expect(service.createFolder('ch-1', 'Governance', undefined, 'user-1')).rejects.toEqual(
-        expect.objectContaining({ code: '08006' }),
-      );
+      await expect(
+        service.createFolder('ch-1', 'Governance', undefined, 'user-1'),
+      ).rejects.toEqual(expect.objectContaining({ code: '08006' }));
     });
   });
 
@@ -1095,7 +1098,9 @@ describe('ChapterDocumentService', () => {
         sort_order: 3,
       });
 
-      await service.updateFolder('folder-1', 'ch-1', 'user-1', { sort_order: 3 });
+      await service.updateFolder('folder-1', 'ch-1', 'user-1', {
+        sort_order: 3,
+      });
 
       expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
         sort_order: 3,
@@ -1107,7 +1112,9 @@ describe('ChapterDocumentService', () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
       mockFolderRepo.update.mockResolvedValue(baseFolder);
 
-      await service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Governance' });
+      await service.updateFolder('folder-1', 'ch-1', 'user-1', {
+        name: 'Governance',
+      });
 
       expect(mockDocumentRepo.renameFolder).not.toHaveBeenCalled();
     });
@@ -1151,7 +1158,12 @@ describe('ChapterDocumentService', () => {
       // with PGRST116, which would surface as a 500.
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
 
-      const result = await service.updateFolder('folder-1', 'ch-1', 'user-1', {});
+      const result = await service.updateFolder(
+        'folder-1',
+        'ch-1',
+        'user-1',
+        {},
+      );
 
       expect(result).toEqual(baseFolder);
       expect(mockFolderRepo.update).not.toHaveBeenCalled();
@@ -1170,7 +1182,9 @@ describe('ChapterDocumentService', () => {
         return { ...baseFolder, name: 'Bylaws' };
       });
 
-      await service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Bylaws' });
+      await service.updateFolder('folder-1', 'ch-1', 'user-1', {
+        name: 'Bylaws',
+      });
 
       expect(calls).toEqual(['documents', 'folder']);
     });
@@ -1210,18 +1224,18 @@ describe('ChapterDocumentService', () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
       mockDocumentRepo.moveToRoot.mockRejectedValue(new Error('db down'));
 
-      await expect(service.deleteFolder('folder-1', 'ch-1', 'user-1')).rejects.toThrow(
-        'db down',
-      );
+      await expect(
+        service.deleteFolder('folder-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('db down');
       expect(mockFolderRepo.delete).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException for a folder in another chapter', async () => {
       mockFolderRepo.findById.mockResolvedValue(null);
 
-      await expect(service.deleteFolder('folder-1', 'ch-2', 'user-1')).rejects.toThrow(
-        NotFoundException,
-      );
+      await expect(
+        service.deleteFolder('folder-1', 'ch-2', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
       expect(mockDocumentRepo.moveToRoot).not.toHaveBeenCalled();
     });
   });
@@ -1232,7 +1246,12 @@ describe('ChapterDocumentService', () => {
       mockFolderRepo.setPinnedAt.mockImplementation(
         async (_id, _ch, pinnedAt) => ({ ...baseFolder, pinned_at: pinnedAt }),
       );
-      const result = await service.setFolderPinned('folder-1', 'ch-1', 'user-1', true);
+      const result = await service.setFolderPinned(
+        'folder-1',
+        'ch-1',
+        'user-1',
+        true,
+      );
       expect(mockFolderRepo.findById).toHaveBeenCalledWith('folder-1', 'ch-1');
       expect(mockFolderRepo.setPinnedAt).toHaveBeenCalledWith(
         'folder-1',
@@ -1462,7 +1481,9 @@ describe('ChapterDocumentService', () => {
     const ids = (docs: ChapterDocument[]) => docs.map((doc) => doc.id);
 
     it("hides a file in a folder whose list the member isn't on, and one whose own list they aren't on", async () => {
-      mockRbac.getChannelAccessHolder.mockResolvedValue(holder(['tier:member']));
+      mockRbac.getChannelAccessHolder.mockResolvedValue(
+        holder(['tier:member']),
+      );
       await expect(
         service.findByChapter('ch-1', 'user-1').then(ids),
       ).resolves.toEqual(['doc-1']);
@@ -1528,7 +1549,7 @@ describe('ChapterDocumentService', () => {
       expect(mockDocumentRepo.create).not.toHaveBeenCalled();
     });
 
-    it('keeps a deleted folder\'s list on the files that followed it, before moving them', async () => {
+    it("keeps a deleted folder's list on the files that followed it, before moving them", async () => {
       mockRbac.getChannelAccessHolder.mockResolvedValue(holder(['tier:exec']));
       mockFolderRepo.findById.mockResolvedValue(execFolder);
       const calls: string[] = [];
@@ -1629,7 +1650,7 @@ describe('ChapterDocumentService', () => {
         expect(mockRbac.getRankContext).not.toHaveBeenCalled();
       });
 
-      it("refuses someone who neither uploaded the file nor manages documents", async () => {
+      it('refuses someone who neither uploaded the file nor manages documents', async () => {
         mockDocumentRepo.findById.mockResolvedValue({
           ...baseDocument,
           uploaded_by: 'user-9',
@@ -1680,11 +1701,14 @@ describe('ChapterDocumentService', () => {
       it('offers the options and the tiers a list keeps', async () => {
         rankedAt(2);
         mockAccessLists.listOptions.mockResolvedValue([
-          { entry: 'role:treasurer', kind: 'role', id: 'treasurer', name: 'Treasurer' },
+          {
+            entry: 'role:treasurer',
+            kind: 'role',
+            id: 'treasurer',
+            name: 'Treasurer',
+          },
         ]);
-        await expect(
-          service.accessOptions('ch-1', 'user-1'),
-        ).resolves.toEqual({
+        await expect(service.accessOptions('ch-1', 'user-1')).resolves.toEqual({
           options: [
             {
               entry: 'role:treasurer',

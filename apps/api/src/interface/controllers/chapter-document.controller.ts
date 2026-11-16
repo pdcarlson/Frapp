@@ -442,7 +442,12 @@ export class ChapterDocumentController {
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<DocumentFolderDto> {
-    return this.chapterDocumentService.setFolderPinned(id, chapterId, userId, true);
+    return this.chapterDocumentService.setFolderPinned(
+      id,
+      chapterId,
+      userId,
+      true,
+    );
   }
 
   @Delete('folders/:id/pin')
@@ -454,7 +459,12 @@ export class ChapterDocumentController {
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<DocumentFolderDto> {
-    return this.chapterDocumentService.setFolderPinned(id, chapterId, userId, false);
+    return this.chapterDocumentService.setFolderPinned(
+      id,
+      chapterId,
+      userId,
+      false,
+    );
   }
 
   @Put('folders/:id/star')
@@ -545,7 +555,12 @@ export class ChapterDocumentController {
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ChapterDocumentDto> {
-    return this.chapterDocumentService.setDocumentPinned(id, chapterId, userId, true);
+    return this.chapterDocumentService.setDocumentPinned(
+      id,
+      chapterId,
+      userId,
+      true,
+    );
   }
 
   @Delete(':id/pin')
@@ -557,7 +572,12 @@ export class ChapterDocumentController {
     @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ChapterDocumentDto> {
-    return this.chapterDocumentService.setDocumentPinned(id, chapterId, userId, false);
+    return this.chapterDocumentService.setDocumentPinned(
+      id,
+      chapterId,
+      userId,
+      false,
+    );
   }
 
   @Put(':id/star')

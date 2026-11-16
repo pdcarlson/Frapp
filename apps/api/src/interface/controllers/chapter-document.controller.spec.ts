@@ -136,7 +136,10 @@ describe('ChapterDocumentController', () => {
 
     it('accessOptions requires chapter_docs:upload, which every list setter holds', () => {
       expect(
-        Reflect.getMetadata(PERMISSIONS_KEY, controller.accessOptions as object),
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          controller.accessOptions as object,
+        ),
       ).toEqual([SystemPermissions.CHAPTER_DOCS_UPLOAD]);
     });
 

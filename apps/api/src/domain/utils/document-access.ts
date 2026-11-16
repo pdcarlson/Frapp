@@ -66,7 +66,9 @@ export function canSeeDocument(
 ): boolean {
   if (document.uploaded_by === viewer.userId) return true;
   const folderList =
-    document.folder !== null ? (folderLists.get(document.folder) ?? null) : null;
+    document.folder !== null
+      ? (folderLists.get(document.folder) ?? null)
+      : null;
   return (
     documentListAdmits(folderList, viewer.holder) &&
     documentListAdmits(document.who_can_see, viewer.holder)

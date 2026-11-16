@@ -316,9 +316,27 @@ describe('ChapterDocumentCorpusSource', () => {
       },
     ]);
     documents.findByIds.mockResolvedValue([
-      { ...document, id: 'open', folder: null, who_can_see: null, uploaded_by: 'x' },
-      { ...document, id: 'exec', folder: 'Exec', who_can_see: null, uploaded_by: 'x' },
-      { ...document, id: 'mine', folder: 'Exec', who_can_see: null, uploaded_by: MEMBER },
+      {
+        ...document,
+        id: 'open',
+        folder: null,
+        who_can_see: null,
+        uploaded_by: 'x',
+      },
+      {
+        ...document,
+        id: 'exec',
+        folder: 'Exec',
+        who_can_see: null,
+        uploaded_by: 'x',
+      },
+      {
+        ...document,
+        id: 'mine',
+        folder: 'Exec',
+        who_can_see: null,
+        uploaded_by: MEMBER,
+      },
       {
         ...document,
         id: 'treasurer',
