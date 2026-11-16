@@ -187,13 +187,13 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     }
     const [headerSeg, payloadSeg, signatureSeg] = segments;
 
-    // A header that decodes to JSON `null` gets past this check and throws
-    // on `header.alg` below, as it did before the decode was shared.
-    const header = decodeJwtSegment(headerSeg) as
-      { alg?: unknown; kid?: unknown } | undefined;
-    if (header === undefined) {
+    // A header that isn't a JSON object (unparseable, `null`, a number)
+    // carries no `alg`: fall back to per-IP keying, as the payload path does.
+    const decodedHeader = decodeJwtSegment(headerSeg);
+    if (decodedHeader === null || typeof decodedHeader !== 'object') {
       return null;
     }
+    const header = decodedHeader as { alg?: unknown; kid?: unknown };
 
     if (header.alg === 'HS256') {
       return this.hs256Claims(headerSeg, payloadSeg, signatureSeg);

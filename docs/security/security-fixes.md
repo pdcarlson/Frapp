@@ -328,6 +328,10 @@ The `canPerformWriteAction` / `canPerformReadAction` utilities in `apps/api/src/
 > spec — and its docblock ("during the grace period (past_due), writes are blocked") had drifted
 > from what the guard actually does. The module was deleted as dead code; the account above is
 > kept as the record of *this* fix.
+>
+> _Corrected 2026-11-16 (#4152):_ the window now has one definition. The API re-exports
+> `SUBSCRIPTION_GRACE_PERIOD_MS` and `isWithinSubscriptionGrace` from `@repo/validation`
+> (`apps/api/src/domain/constants/subscription-grace.ts`), so nothing is kept in step by hand.
 
 ### Prevention
 New chapter-scoped controllers default to paid-ops (fail-closed): writes are blocked when the chapter is `past_due`, `incomplete`, or `canceled` unless the controller is explicitly marked `@FreeTier()` or `@SubscriptionExempt()`. The subscription decorator wiring is asserted by `apps/api/src/interface/decorators/subscription.decorator.spec.ts` so any drift between the spec classification and the actual decorators trips a unit test.
