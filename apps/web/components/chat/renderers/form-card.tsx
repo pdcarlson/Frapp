@@ -15,16 +15,15 @@ import {
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   CLOSE_FORM_LABEL,
-  canCloseForm,
   fetchOwnFormResponse,
   formAnsweredState,
   formCardAction,
   formDeadlineLine,
   formQuestionCountLine,
   formResponseKey,
-  isFormClosed,
   readFormPayload,
 } from "@repo/chat-core/forms";
+import { canCloseCard, isCardClosed } from "@repo/chat-core/card-closing";
 import {
   VIEW_RESPONSES_LABEL,
   isFormCreator,
@@ -52,7 +51,7 @@ interface FormCardProps {
   isConfirmed: boolean;
   /**
    * Close form, offered to the card's creator or a `channels:manage` holder
-   * (`canCloseForm`). The caller confirms first (`ChatShell`).
+   * (`canCloseCard`). The caller confirms first (`ChatShell`).
    */
   onCloseCard?: (messageId: string, kind: "form") => void;
 }
@@ -105,12 +104,12 @@ export function FormCard({
     );
   }
 
-  const closed = isFormClosed(payload, now);
+  const closed = isCardClosed(payload, now);
   const action = formCardAction(formAnsweredState(own.data), closed);
   const deadline = formDeadlineLine(payload, now);
   const showClose =
     !!onCloseCard &&
-    canCloseForm(message, payload, viewerId, now, canManageChannels);
+    canCloseCard(message, payload, viewerId, now, canManageChannels);
   const open = () => {
     if (openInHost) openInHost(message);
     else setOpenHere(true);

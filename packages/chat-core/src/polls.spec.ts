@@ -5,7 +5,6 @@ import {
   POLLS_OFF_COPY,
   buildPollMessage,
   canClosePoll,
-  isPollCardClosed,
   isMultiChoicePoll,
   currentPollPicks,
   makePollOptionId,
@@ -20,6 +19,7 @@ import {
   pollsGateReason,
   readPollPayload,
 } from "./polls";
+import { isCardClosed } from "./card-closing";
 import type { ChatMessage } from "./types";
 
 describe("pollsGateOf (#3012)", () => {
@@ -115,7 +115,7 @@ describe("buildPollMessage (#3701)", () => {
     expect(readPollPayload(message)).toEqual(payload);
     // It never closes on its own, and says so; a timed card reads as before.
     const farFuture = Date.parse("2999-01-01T00:00:00.000Z");
-    expect(isPollCardClosed(payload, farFuture)).toBe(false);
+    expect(isCardClosed(payload, farFuture)).toBe(false);
     expect(pollCardEyebrow(payload, farFuture)).toBe("Poll · No end date");
     const timed = { ...payload, closes_at: "2026-11-10T18:30:00.000Z" };
     expect(pollCardEyebrow(timed, closesAt.getTime() - 1)).toBe("Poll");
@@ -335,16 +335,28 @@ describe("a poll card closed early (#3794)", () => {
   });
 
   it("is closed once closed early, whatever the deadline says", () => {
-    expect(isPollCardClosed(open, NOW)).toBe(false);
-    expect(isPollCardClosed(closed, NOW)).toBe(true);
+    expect(isCardClosed(open, NOW)).toBe(false);
+    expect(isCardClosed(closed, NOW)).toBe(true);
   });
 
   it("is still closed by its deadline, and never by one that doesn't parse", () => {
     expect(
-      isPollCardClosed({ ...open, closes_at: "2026-06-01T11:59:59.000Z" }, NOW),
+      isCardClosed({ ...open, closes_at: "2026-06-01T11:59:59.000Z" }, NOW),
     ).toBe(true);
-    expect(isPollCardClosed({ ...open, closes_at: "" }, NOW)).toBe(false);
-    expect(isPollCardClosed({ ...open, closes_at: "soon" }, NOW)).toBe(false);
+    expect(isCardClosed({ ...open, closes_at: "" }, NOW)).toBe(false);
+    expect(isCardClosed({ ...open, closes_at: "soon" }, NOW)).toBe(false);
+  });
+
+  it("is closed at its deadline itself, as the API's isPollClosed is (#4696)", () => {
+    const due = { ...open, closes_at: "2026-06-01T12:00:00.000Z" };
+    expect(pollCardEyebrow(due, NOW)).toBe("Poll · Closed");
+    expect(pollCardEyebrow(due, NOW - 1)).toBe("Poll");
+    expect(
+      canClosePoll(asMessage(due), due, "creator", NOW, {
+        pollsGate: "on",
+        canManageChannels: false,
+      }),
+    ).toBe(false);
   });
 
   const ON = { pollsGate: "on" as const, canManageChannels: false };

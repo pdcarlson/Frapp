@@ -1,10 +1,9 @@
-import { formatEndsLabel, parseInstant } from "@repo/formatting";
+import { formatEndsLabel } from "@repo/formatting";
 import {
   HEADCOUNT_GOING_SLOT_ID,
   HEADCOUNT_NOT_GOING_SLOT_ID,
   HEADCOUNT_SLOTS,
   SIGNUP_ANSWER_NOTE_MAX_LENGTH,
-  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS,
   SIGNUP_HEADCOUNT_FORMAT,
   SIGNUP_NOTE_MAX_LENGTH,
   SIGNUP_SLOT_CAPACITY_MAX,
@@ -13,7 +12,12 @@ import {
   SIGNUP_TITLE_MAX_LENGTH,
   joinNames,
 } from "@repo/validation";
-import { canActOnMessage, isOwnMessage } from "./message-actions";
+import {
+  checkCardEnd,
+  foldOptionLabel,
+  isCardClosed,
+  isCardOrganizer,
+} from "./card-closing";
 import {
   currentPollPicks,
   makePollOptionId,
@@ -177,37 +181,6 @@ export function isHeadcountSignup(payload: SignupPayload): boolean {
   return payload.format === SIGNUP_HEADCOUNT_FORMAT;
 }
 
-/**
- * Whether the card takes no more claims: closed early, or its end time has
- * come. The API's answer (`isCardClosed`), including `<=` at the end
- * time itself, so a card never offers a tap the server refuses.
- */
-export function isSignupClosed(payload: SignupPayload, now: number): boolean {
-  if (payload.closed_at) return true;
-  const deadline = parseInstant(payload.closes_at);
-  return deadline ? deadline.getTime() <= now : false;
-}
-
-/**
- * Whether the viewer is offered Close sign-ups on this card: it is on the
- * server and not deleted, still open, and the viewer posted it or holds
- * `channels:manage`. The same rule as Close poll (`canClosePoll`); the API
- * enforces it (`ChatService.closeCard`).
- */
-export function canCloseSignup(
-  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
-  payload: SignupPayload,
-  viewerId: string | null,
-  now: number,
-  canManageChannels: boolean,
-): boolean {
-  return (
-    (isOwnMessage(message, viewerId) || (canManageChannels && !!viewerId)) &&
-    canActOnMessage(message) &&
-    !isSignupClosed(payload, now)
-  );
-}
-
 /** Close sign-ups asks first, in the same words on web and the phone. */
 export const CLOSE_SIGNUP_LABEL = "Close sign-ups";
 export const CLOSE_SIGNUP_CONFIRM_TITLE = "Close sign-ups?";
@@ -224,7 +197,7 @@ export function signupDeadlineLine(
   payload: SignupPayload,
   now: number,
 ): string | null {
-  if (isSignupClosed(payload, now)) return null;
+  if (isCardClosed(payload, now)) return null;
   return formatEndsLabel("Ends", payload.closes_at, new Date(now));
 }
 
@@ -298,10 +271,7 @@ export function canExportSignup(
   viewerId: string | null,
   canManageChannels: boolean,
 ): boolean {
-  return (
-    (isOwnMessage(message, viewerId) || (canManageChannels && !!viewerId)) &&
-    canActOnMessage(message)
-  );
+  return isCardOrganizer(message, viewerId, canManageChannels);
 }
 
 /** A sign-up's export columns. */
@@ -442,7 +412,7 @@ export function signupCardEyebrow(
   now: number,
 ): string {
   const kind = isHeadcountSignup(payload) ? "Headcount" : "Sign-up";
-  if (isSignupClosed(payload, now)) return `${kind} · Closed`;
+  if (isCardClosed(payload, now)) return `${kind} · Closed`;
   if (isHeadcountSignup(payload)) {
     const going = tally.bySlot[HEADCOUNT_GOING_SLOT_ID]?.length ?? 0;
     return going === 0 ? kind : `${kind} · ${going} going`;
@@ -733,14 +703,8 @@ export type SignupDraftCheck =
 export const SIGNUP_SPOTS_PROBLEM = `Spots is a whole number from 1 to ${SIGNUP_SLOT_CAPACITY_MAX}, or blank for no limit.`;
 const DUPLICATE_SLOT_PROBLEM =
   "Two slots have the same name. Change one, or remove it.";
-export const SIGNUP_END_PASSED_PROBLEM =
-  "That end time has passed. Pick a later one, or none.";
 export const SIGNUP_END_TOO_FAR_PROBLEM =
   "Sign-ups can end at most a year from now.";
-
-/** The API's furthest end time (`signup-card-rules.ts`), less a day of slack. */
-const SIGNUP_END_MAX_AHEAD_MS =
-  (SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS - 1) * 24 * 60 * 60 * 1000;
 
 /**
  * A default end time for a member who turns one on: tomorrow at 6 PM, the
@@ -777,14 +741,8 @@ export function checkSignupDraft(
       problem: `Details can be at most ${SIGNUP_NOTE_MAX_LENGTH} characters.`,
     };
   }
-  if (closesAt) {
-    if (Number.isNaN(closesAt.getTime()) || closesAt.getTime() <= now) {
-      return { ok: false, problem: SIGNUP_END_PASSED_PROBLEM };
-    }
-    if (closesAt.getTime() > now + SIGNUP_END_MAX_AHEAD_MS) {
-      return { ok: false, problem: SIGNUP_END_TOO_FAR_PROBLEM };
-    }
-  }
+  const endProblem = checkCardEnd(closesAt, now, SIGNUP_END_TOO_FAR_PROBLEM);
+  if (endProblem) return { ok: false, problem: endProblem };
   const ends = closesAt ? { closesAt } : {};
   if (draft.format === SIGNUP_HEADCOUNT_FORMAT) {
     if (!title) return { ok: false, problem: null };
@@ -821,7 +779,7 @@ export function checkSignupDraft(
         slotKey: row.key,
       };
     }
-    const key = label.toLowerCase().replace(/\s+/g, " ");
+    const key = foldOptionLabel(label);
     if (seen.has(key)) {
       return { ok: false, problem: DUPLICATE_SLOT_PROBLEM, slotKey: row.key };
     }

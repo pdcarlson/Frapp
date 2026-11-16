@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FORM_OPTIONS_MAX, FORM_QUESTIONS_MAX } from "@repo/validation";
 import {
-  FORM_END_PASSED_PROBLEM,
   FORM_END_TOO_FAR_PROBLEM,
   addFormOption,
   addFormQuestion,
@@ -17,6 +16,7 @@ import {
   setFormQuestion,
   type FormDraft,
 } from "./form-draft";
+import { CARD_END_PASSED_PROBLEM } from "./card-closing";
 import { buildFormMessage } from "./forms";
 
 const NOW = Date.parse("2026-11-13T12:00:00.000Z");
@@ -161,13 +161,26 @@ describe("checkFormDraft", () => {
       ok: false,
       questionKey: q.key,
     });
+    // Runs of whitespace fold too (`foldOptionLabel`), as on the poll draft.
+    const base = written();
+    const bq = base.questions[0]!;
+    const beds = setFormOption(
+      setFormOption(base, bq.key, bq.options[0]!.key, "Two  Beds"),
+      bq.key,
+      bq.options[1]!.key,
+      "two beds",
+    );
+    expect(checkFormDraft(beds, NOW)).toMatchObject({
+      ok: false,
+      questionKey: bq.key,
+    });
   });
 
   it("refuses an end time that has passed or is more than a year out", () => {
     const past = { ...written(), closesAt: new Date(NOW - 1) };
     expect(checkFormDraft(past, NOW)).toEqual({
       ok: false,
-      problem: FORM_END_PASSED_PROBLEM,
+      problem: CARD_END_PASSED_PROBLEM,
     });
     const far = {
       ...written(),

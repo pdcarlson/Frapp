@@ -19,6 +19,9 @@ import {
   useForwardMessage,
   channelSetFingerprint,
   CHANNEL_NOTIFICATION_PREFERENCES_KEY,
+  useCreateChannel,
+  useUpdateChannel,
+  useDeleteChannel,
 } from "./use-chat";
 import { FrappClientProvider } from "./use-frapp-client";
 import React from "react";
@@ -845,6 +848,64 @@ describe("useSetChannelNotificationLevel", () => {
       queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
     });
   });
+});
+
+describe("channel-set mutations (create, update, delete)", () => {
+  const ok = vi.fn().mockResolvedValue({ data: {}, error: null });
+  const cases = [
+    {
+      name: "useCreateChannel",
+      run: () => {
+        const { result } = renderHook(() => useCreateChannel(), {
+          wrapper: createWrapper(queryClient, { POST: ok }),
+        });
+        result.current.mutate({ name: "general", type: "PUBLIC" });
+        return result;
+      },
+    },
+    {
+      name: "useUpdateChannel",
+      run: () => {
+        const { result } = renderHook(() => useUpdateChannel(), {
+          wrapper: createWrapper(queryClient, { PATCH: ok }),
+        });
+        result.current.mutate({ id: "chan-1", body: { name: "renamed" } });
+        return result;
+      },
+    },
+    {
+      name: "useDeleteChannel",
+      run: () => {
+        const { result } = renderHook(() => useDeleteChannel(), {
+          wrapper: createWrapper(queryClient, { DELETE: ok }),
+        });
+        result.current.mutate("chan-1");
+        return result;
+      },
+    },
+  ] as const;
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  for (const { name, run } of cases) {
+    it(`${name} re-reads the channel list and the notification levels`, async () => {
+      const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+      const result = run();
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] });
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
+      });
+      if (name === "useUpdateChannel") {
+        expect(invalidateSpy).toHaveBeenCalledWith({
+          queryKey: ["members", "chapter-1", "channel"],
+        });
+      }
+    });
+  }
 });
 
 describe("useUploadSignedUrl", () => {

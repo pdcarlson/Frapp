@@ -238,8 +238,8 @@ It is the first of a series on the issue: headcount, closing and an end time (st
   The form refuses a time already past or more than a year ahead; the server refuses more than a year ahead and keeps a past one, so a card queued offline past its end time posts closed.
   An open card's footer adds "Ends Friday at 6 PM" (`signupDeadlineLine`).
   The card's creator, or a `channels:manage` holder, may close it early with **Close sign-ups** (beside the footer line on web, under it on the phone), asked first ("Close sign-ups?": no one can sign up or change their answer after it closes, and it can't be reopened; the names stay on the card), through `POST /v1/channels/messages/:messageId/close` (`ChatService.closeCard`, which also closes a form card, [§ Form cards](#form-cards)), which stamps `payload.closed_at` and `closed_by`, and refuses a card already closed, a deleted card or one that isn't a sign-up or a form.
-  The same rule as Close poll ([`../polls.md`](../polls.md)); the client mirror is `canCloseSignup`.
-  Closed at its end time (from that minute, `isSignupClosed`, the server's `<=`) or early, the eyebrow reads "Sign-up · Closed" or "Headcount · Closed", the names stay, and every row is disabled, the ones the viewer doesn't hold dimmed as a full slot is.
+  The same rule as Close poll ([`../polls.md`](../polls.md)); the client mirror is `canCloseCard`.
+  Closed at its end time (from that minute, `isCardClosed`, the server's `<=`) or early, the eyebrow reads "Sign-up · Closed" or "Headcount · Closed", the names stay, and every row is disabled, the ones the viewer doesn't hold dimmed as a full slot is.
   A claim on a closed card is a 400 "Sign-ups are closed", decided again under the card's row lock by `claim_signup_slots`.
   The close is pessimistic, like Close poll: the closer's card redraws from the row the server returns, and everyone else's from the Realtime UPDATE.
 - **Why not a poll variant.**

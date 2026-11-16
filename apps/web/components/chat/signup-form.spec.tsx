@@ -3,9 +3,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   emptySignupDraft,
-  SIGNUP_END_PASSED_PROBLEM,
   SIGNUP_SPOTS_PROBLEM,
 } from "@repo/chat-core/signups";
+import { CARD_END_PASSED_PROBLEM } from "@repo/chat-core/card-closing";
 import { SignupForm } from "./signup-form";
 
 describe("SignupForm (#3926)", () => {
@@ -158,7 +158,7 @@ describe("SignupForm (#3926)", () => {
       await user.click(screen.getByRole("button", { name: "Post sign-up" }));
       expect(onPost).not.toHaveBeenCalled();
       expect(screen.getByRole("alert")).toHaveTextContent(
-        SIGNUP_END_PASSED_PROBLEM,
+        CARD_END_PASSED_PROBLEM,
       );
     } finally {
       now.mockRestore();
