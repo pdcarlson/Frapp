@@ -48,6 +48,7 @@ import {
 import {
   calendarHourStart,
   emptyEventDraft,
+  pickedDayStart,
   type NewEventDraft,
 } from "@/lib/events/create-event";
 import { LeadTileSkeleton } from "@/components/lead-tile";
@@ -63,6 +64,7 @@ import { CalendarSubscribeSheet } from "@/components/events/calendar-subscribe-s
 import {
   CalendarPlusGlyph,
   DisclosureGlyph,
+  PlusGlyph,
 } from "@/components/control-glyphs";
 import { HeaderButton } from "@/components/header-button";
 import {
@@ -79,6 +81,7 @@ import {
   useEventsView,
   type EventsView,
 } from "@/lib/events/events-view";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { useFrappTheme } from "@/lib/theme";
 
 /**
@@ -101,9 +104,11 @@ import { useFrappTheme } from "@/lib/theme";
  * can create events taps an hour to open New event starting then.
  *
  * A member who can create events (`events:create`, every member by default
- * since #3709) adds one from the tab
- * bar's quick-actions + (New event, `components/quick-actions/`); the
- * one-line zero state points at it, as Tasks' does.
+ * since #3709) adds one from the header's own + (#5113), in every view, as
+ * Apple Calendar and Fantastical put add at the top right; with a later day
+ * picked on the Calendar, the event starts that day. The tab bar's
+ * quick-actions + offers New event too (`components/quick-actions/`), but a
+ * member can take it off their panel, so the screen doesn't rely on it.
  *
  * The board's Going / Can't buttons and "Going ✓" marker are not drawn: RSVP
  * has no server model yet (`spec/behavior/events.md`), and they come back with
@@ -127,14 +132,15 @@ export default function EventsScreen() {
   const view = useEventsView();
   const calendarRange = useCalendarRange();
   const { tokens } = useFrappTheme();
+  const brand = useChapterBranding();
   const styles = createStyles(tokens);
   // Subscribe (#3322): the sheet asks for the member's calendar link only
   // while it is up.
   const subscribeSheet = useRef<BottomSheetModal>(null);
   const [subscribeOpen, setSubscribeOpen] = useState(false);
-  // An hour pressed in the 3 days or Day grid (#4818): New event, filled in
-  // to start then. One sheet per press (`key`), since a template seeds the
-  // draft once.
+  // New event from the header's + (#5113) or an hour pressed in the 3 days
+  // or Day grid (#4818), filled in to start then. One sheet per press
+  // (`key`), since a template seeds the draft once.
   const createSheet = useRef<BottomSheetModal>(null);
   const [createAt, setCreateAt] = useState<{
     key: number;
@@ -220,6 +226,13 @@ export default function EventsScreen() {
   const birthdaysQuery = useMemberBirthdays();
   const refresh = useRefetchAll([eventsQuery, tasksQuery, birthdaysQuery]);
 
+  function openNewEvent(start: Date | null) {
+    setCreateAt((previous) => ({
+      key: (previous?.key ?? 0) + 1,
+      template: { ...emptyEventDraft(), start },
+    }));
+  }
+
   function openEvent(eventId: string) {
     // Object form, because s07 now takes a param. Covered by the `pathname:`
     // matcher in `lib/routes.spec.ts`.
@@ -265,10 +278,8 @@ export default function EventsScreen() {
   }
 
   // One line where the rows would be, not a card (`writing.md` § 4, rule 7):
-  // the fact, and for a creator the way to change it, which is the tab bar's
-  // + (New event) rather than a button of the screen's own.
-  // The fact is web's line too (#4135); the how is the phone's own, since
-  // web has no tab bar +.
+  // the fact, and for a creator the way to change it, the header's + (#5113).
+  // The fact is web's line too (#4135); the how is the phone's own.
   const nothingScheduled = canCreateEvents
     ? `${EVENTS_COPY.empty} Tap + to add the first event.`
     : EVENTS_COPY.empty;
@@ -391,11 +402,7 @@ export default function EventsScreen() {
           canCreate={canCreateEvents}
           onCreateAt={(day, hour) => {
             const start = calendarHourStart(day, hour, now);
-            if (!start) return;
-            setCreateAt((previous) => ({
-              key: (previous?.key ?? 0) + 1,
-              template: { ...emptyEventDraft(), start },
-            }));
+            if (start) openNewEvent(start);
           }}
           // With nothing scheduled, Calendar says what the List says (by the
           // List's own test), and points a creator at the +, or in 3 days
@@ -419,15 +426,34 @@ export default function EventsScreen() {
       refresh={refresh}
       headerAction={
         chapterId ? (
-          <HeaderButton
-            label="Subscribe to events in your calendar"
-            onPress={() => {
-              setSubscribeOpen(true);
-              subscribeSheet.current?.present();
-            }}
-          >
-            <CalendarPlusGlyph color={tokens.color.text.foreground} />
-          </HeaderButton>
+          <View style={styles.headerActions}>
+            <HeaderButton
+              label="Subscribe to events in your calendar"
+              onPress={() => {
+                setSubscribeOpen(true);
+                subscribeSheet.current?.present();
+              }}
+            >
+              <CalendarPlusGlyph color={tokens.color.text.foreground} />
+            </HeaderButton>
+            {/* Add, rightmost and in the accent, since it acts on this
+                screen (#5113). In List there is no picked day, so the sheet
+                keeps its own default start. */}
+            {canCreateEvents ? (
+              <HeaderButton
+                label="New event"
+                onPress={() =>
+                  openNewEvent(
+                    view === "calendar"
+                      ? pickedDayStart(selectedDay, now)
+                      : null,
+                  )
+                }
+              >
+                <PlusGlyph color={brand.accent} />
+              </HeaderButton>
+            ) : null}
+          </View>
         ) : null
       }
     >
@@ -454,8 +480,8 @@ export default function EventsScreen() {
           ref={createSheet}
           now={now}
           template={createAt.template}
-          // The block landing in the grid where the hour was pressed is
-          // the visible confirmation; a screen reader hears it said.
+          // The new event landing in the list or the grid is the visible
+          // confirmation; a screen reader hears it said.
           onCreated={() =>
             AccessibilityInfo.announceForAccessibility("Event added.")
           }
@@ -556,6 +582,11 @@ function createStyles(tokens: SignetTokens) {
     },
     laterChevron: {
       marginLeft: "auto",
+    },
+    headerActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
     },
   });
 }

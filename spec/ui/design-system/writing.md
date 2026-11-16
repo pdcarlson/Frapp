@@ -357,7 +357,7 @@ The time-window line is its own row because the default window (Upcoming) hides 
 The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
 
 Mobile's Calendar tab (s06, Events until #4610) opens on whichever of List and Calendar the member last used (#3823).
-With nothing scheduled, either view says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07).
+With nothing scheduled, either view says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). *(Changed in #5113 by shawnatomklein-eng, 2026-11-15: the + the line names is the Calendar header's own, drawn for the same viewers; the words didn't change.)*
 It is mobile's `InlineNote` (`components/inline-note.tsx`), which replaced the `Nothing scheduled` card.
 When the chapter has events but none in the next two weeks, the List says `Nothing in the next two weeks.` above its folded Later row, which reads as web's does: `Later`, its count (`3 events`) and a disclosure chevron (right while folded, down while open), the whole row the control (#4135, 2026-11-13;
 it read `Show 3` and `Hide` until then);
@@ -585,7 +585,7 @@ Two constraints bind every one of them, and both are the point rather than style
 
 | Surface | Description |
 |---|---|
-| New event (sheet from the tab bar's +) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
+| New event (sheet from the tab bar's +, the Calendar header's +, or an hour of its grid) | `Your chapter's subscription isn't active, so new events can't be saved. An officer can sort this out for the chapter.` |
 | New task (s19) | `Your chapter's subscription isn't active, so new tasks can't be saved. An officer can sort this out for the chapter.` |
 | Task status (s08 toggle, chat task card) | `Your chapter's subscription isn't active, so task updates can't be saved. An officer can sort this out for the chapter.` Shown on the board, and on a mobile chat task card for Start, Mark done, Confirm and Send back (one copy for both, `taskStatusGateRefusal` in `apps/mobile/lib/tasks/status-refusal.ts`). On either, the controls stay withdrawn until the member comes back to the screen or to the app ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Your chapter's subscription isn't active, so check-in isn't available. An officer can sort this out for the chapter.` |
@@ -608,7 +608,7 @@ Both clients derive the state with `pollsGateOf` in `@repo/chat-core/polls`.
 
 | Surface | Description |
 |---|---|
-| New event (sheet from the tab bar's +) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
+| New event (sheet from the tab bar's +, the Calendar header's +, or an hour of its grid) | `Events are turned off for your chapter right now, so new events can't be saved. An officer can turn events back on.` |
 | New task (s19) | `Tasks are turned off for your chapter right now, so new tasks can't be saved. An officer can turn tasks back on.` |
 | Task status (s08 toggle, chat task card) | `Tasks are turned off for your chapter right now, so task updates can't be saved. An officer can turn tasks back on.` Shown on the board and on a mobile chat task card, and withdrawn for as long, like the subscription row for the same writes ([#2710](https://github.com/pdcarlson/Frapp/issues/2710), [#3185](https://github.com/pdcarlson/Frapp/issues/3185)). |
 | Event check-in | `Check-in is turned off for your chapter right now. An officer can turn events back on.` In place of Check in on the phone's event card and Event detail, and on web's chat event card while check-in is open (#4136, 2026-11-13; `CHECK_IN_MODULE_OFF_LINE` in `@repo/validation`) |

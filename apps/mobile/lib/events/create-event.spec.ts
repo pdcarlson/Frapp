@@ -6,6 +6,7 @@ import {
 } from "@repo/validation";
 import {
   calendarHourStart,
+  pickedDayStart,
   CHECK_IN_OPENS_ERROR,
   defaultEventStart,
   applyEventType,
@@ -429,5 +430,28 @@ describe("calendarHourStart", () => {
   it("offers nothing for an hour that is over", () => {
     expect(calendarHourStart(day, 13, AFTERNOON)).toBeNull();
     expect(calendarHourStart(local(5, 0), 20, AFTERNOON)).toBeNull();
+  });
+});
+
+// #5113: the Calendar header's +, with a day picked.
+describe("pickedDayStart", () => {
+  it("starts a later day at the usual hour", () => {
+    expect(pickedDayStart(local(9, 0), EVENING)).toEqual(local(9, 19));
+  });
+
+  it("keeps today at the usual hour while it is ahead", () => {
+    expect(pickedDayStart(local(6, 0), AFTERNOON)).toEqual(local(6, 19));
+  });
+
+  it("keeps today, at the next quarter hour, once the usual hour has passed", () => {
+    const start = pickedDayStart(local(6, 0), EVENING);
+    expect(start).toEqual(local(6, 19, 45));
+    expect(validateNewEvent(draft({ start, end: null }), EVENING).ok).toBe(
+      true,
+    );
+  });
+
+  it("leaves a day already gone to the sheet's default", () => {
+    expect(pickedDayStart(local(5, 0), AFTERNOON)).toBeNull();
   });
 });

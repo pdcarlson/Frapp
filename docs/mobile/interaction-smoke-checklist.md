@@ -61,7 +61,7 @@ in the S2 nav restructure (#957) — see
 | Chat (`/`) | Open #general thread preview | Opens `chat-thread` route |
 | Chat (`/`) | The bell beside Messages | Opens Notifications, with `‹ Chat`; its count is house gold and leaves out chat |
 | Events (`/(app)/(tabs)/events`) | Open event details | Opens `event-details` route |
-| Any tab | The + beside the tab bar | Opens the quick-actions panel; New task (shown only with `tasks:manage` and `members:view`) and New event (shown only with `events:create` and `members:view`) open their sheets over the current tab, and a create confirms above the bar. Events draws no + of its own. Press and hold the panel to edit it |
+| Any tab | The + beside the tab bar | Opens the quick-actions panel; New task (shown only with `tasks:manage` and `members:view`) and New event (shown only with `events:create` and `members:view`) open their sheets over the current tab, and a create confirms above the bar. The Calendar tab also draws its own New event + in its header, after Subscribe, for the same viewers (#5113). Press and hold the panel to edit it |
 | You (`/(app)/(tabs)/you`) | Your name, a Details row that is yours to set, and Status | The name and the row open the edit sheet; Status opens the status sheet |
 | You (`/(app)/(tabs)/you`) | Each row | Opens selected route. The exception is Host check-in (shown with `events:update`): with no upcoming event it reads "No upcoming event" and is disabled |
 
