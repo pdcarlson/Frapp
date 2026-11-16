@@ -318,6 +318,21 @@ or writes. `AgentLoopService` holds every rule below in code.
 > is now the second half alone: an answer with no citation the server found word for word in
 > something a tool returned this turn is replaced by "couldn't find that".
 >
+> **C6 and C7, changed again in #4899, decided by Paul 2026-11-16 ("allow one uncited
+> sentence").** The first run against a real model showed that a correct decline ("I don't give out
+> phone numbers") or a question back ("which Jordan?") has no source, so all of them reached the
+> member as "couldn't find that"; so did "testing" and "what can you do?". Now, through the loop
+> only, a turn with no citation that stood and none that was dropped shows the first sentence of
+> what the model wrote when the whole of it is one line of at most 400 characters
+> (`agent/own-words.ts`), marked as Frapp's own words (`AskAnswer.own_words`) and never postable to
+> a channel. What this gives up: that sentence is the model's, unchecked, so a planted message or a
+> wrong guess can put one sentence of the model's choosing in front of the asker, labelled as not
+> from the chapter's records. A longer uncited text, and one whose quotes were dropped, is still
+> replaced. The other two options Paul was offered: a short list of replies the app writes, which
+> the model picks from through a tool (recommended, since every word stays the app's own, but it
+> cannot answer a greeting or a question about Frapp in the member's own terms), and leaving declines
+> as "couldn't find that".
+
 > **C6, changed in #4899 by pdcarlson, 2026-11-13.** A fact still needs a checked quote, and an
 > answer still needs at least one. What Frapp concludes from cited facts (which of several things
 > matters most, what to do next) may now be said without a quote of its own. The prompt asks for

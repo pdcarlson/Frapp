@@ -357,6 +357,14 @@ export const AskAnswerSchema = z.object({
    * record: a client offers no thumbs then.
    */
   ask_id: z.string().nullish(),
+  /**
+   * `text` is one sentence in Frapp's own words that rests on no source: a
+   * greeting back, what Frapp can do, why it will not answer, or which of
+   * two members the asker means (Paul, 2026-11-16). It has no citations, and
+   * a client shows it as Frapp's own words, not as an answer from the
+   * chapter's records. Absent on every other answer.
+   */
+  own_words: z.boolean().nullish(),
 });
 export type AskAnswer = z.infer<typeof AskAnswerSchema>;
 
