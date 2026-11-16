@@ -6,8 +6,11 @@
 -- (`@VerifySessionLocally()` in the API). Such a token stays valid until it
 -- expires even after its account is deleted, so the per-request `users` lookup
 -- is what has to refuse it: `anonymize_user` tombstones the row and sets
--- `deleted_at`, and a tombstone is now no user at all. `ChapterGuard`'s direct
--- read (`lookupAppUser`) applies the same filter, so both paths agree.
+-- `deleted_at`, and a tombstone is now no user at all. A locally verified read
+-- starts this call (`prefetchChapterContext`) like any chapter request, and
+-- `ChapterGuard` takes its `user` from the answer. When the call fails, the
+-- guard's direct read (`lookupAppUser`) stands in, with the same filter, so
+-- both forms refuse a tombstone.
 --
 -- `create or replace` keeps the function's grants (EXECUTE for `service_role`
 -- only, from 20261112151000). Nothing else changes: same arguments, same

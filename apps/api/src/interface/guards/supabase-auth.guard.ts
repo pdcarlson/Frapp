@@ -15,6 +15,7 @@ import type { JwtPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { RequestContext, getHeaderValue } from '../types/request-context.types';
 import { VERIFY_SESSION_LOCALLY_KEY } from '../decorators/session-check.decorator';
+import { JWKS_VERIFIED_ALGS } from './custom-throttler.guard';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { createHash } from 'node:crypto';
 import { isAuthOutage, lookupUnavailable } from './guard-lookup';
@@ -54,14 +55,13 @@ const sessionLookups = new InFlightLookups<
 
 /**
  * The signing algorithms a token may carry to be verified locally (#5043):
- * the asymmetric ones `getClaims` checks against the project's JWKS. For any
- * other (`HS256`, `none`, none at all) `getClaims` would ask Auth instead, so
- * such a token takes the `getUser` path and is never accepted on its claims.
+ * the asymmetric ones `getClaims` checks against the project's JWKS, the
+ * throttler's own set, since the local path needs the throttler to have
+ * verified the token first. For any other (`HS256`, `none`, none at all)
+ * `getClaims` would ask Auth instead, so such a token takes the `getUser` path
+ * and is never accepted on its claims.
  */
-export const LOCALLY_VERIFIABLE_ALGS: ReadonlySet<string> = new Set([
-  'ES256',
-  'RS256',
-]);
+export const LOCALLY_VERIFIABLE_ALGS = JWKS_VERIFIED_ALGS;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -71,7 +71,10 @@ const UUID_PATTERN =
  * accepted (#5043): that this project issued it (`iss`) for a signed-in user
  * (`aud` and `role` `authenticated`, as `getUser` would require), and that it
  * names one (`sub`). Returns the first check that failed, or null. `exp` is
- * checked again so the answer never rests on the library alone.
+ * checked again so the answer never rests on the library alone, and so is
+ * `alg`: `mayVerifyLocally` already admits only `LOCALLY_VERIFIABLE_ALGS`, so
+ * `alg_not_allowed` is a backstop against a future caller, not a path the
+ * guard takes today.
  */
 export function failedClaimCheck(
   header: { alg?: unknown },
@@ -157,6 +160,19 @@ export class SupabaseAuthGuard implements CanActivate {
     // (#5043, Paul 2026-11-16). Every other request, and every write, still
     // calls `getUser` below.
     if (this.mayVerifyLocally(context, request, token)) {
+      // The chapter lookups start on the throttler's verified `sub` alongside
+      // the verification, as they do alongside `getUser` below, so the route
+      // keeps its one `get_request_context` call instead of reading the
+      // user, membership and roles one after another. `verifyLocally`
+      // refuses a token whose `sub` differs, and `ChapterGuard` uses what
+      // they read only under the `sub` it accepted.
+      const verified = request.throttlerVerifiedClaims as JwtPayload;
+      prefetchChapterContext(
+        this.supabase,
+        verified.sub,
+        verified,
+        request.headers,
+      );
       return this.verifyLocally(token, request);
     }
 

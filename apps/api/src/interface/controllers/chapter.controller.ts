@@ -53,7 +53,6 @@ import {
   FeatureEvent,
   type FeatureEventInput,
 } from '../decorators/feature-event.decorator';
-import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * Compile-time guard that every field `PATCH /chapters/current` can write is
@@ -148,7 +147,6 @@ export class ChapterController {
   }
 
   @Get('current')
-  @VerifySessionLocally()
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({

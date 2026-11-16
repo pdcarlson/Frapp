@@ -51,11 +51,8 @@ export interface AuthFailureDetail {
   /**
    * Supabase Auth's error code for a `token_rejected` (`bad_jwt`,
    * `session_not_found`, `user_not_found`, …), when it sent a well-formed one.
-   * For a `claims_rejected`, the local check that failed: `getClaims`'s code
-   * (`invalid_jwt` for a bad signature or an expired token; `bad_jwt` when it
-   * gave none), or `failedClaimCheck`'s (`iss_mismatch`,
-   * `aud_mismatch`, `role_mismatch`, `bad_sub`, `expired`, `alg_not_allowed`),
-   * or `sub_mismatch`.
+   * For a `claims_rejected`, what refused it on the local check:
+   * spec/behavior/observability.md lists the codes.
    */
   authErrorCode?: string;
   /**

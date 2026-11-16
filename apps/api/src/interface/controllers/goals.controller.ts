@@ -38,7 +38,6 @@ export class GoalsController {
   constructor(private readonly goalService: ChapterGoalService) {}
 
   @Get()
-  @VerifySessionLocally()
   @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_VIEW)
   @ApiOperation({
     summary: "The chapter's goals for points, service hours and study hours",

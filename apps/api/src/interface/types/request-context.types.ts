@@ -49,9 +49,12 @@ export interface RequestContext extends Request {
    * The claims of this request's bearer token, set by `CustomThrottlerGuard`
    * once it has verified the signature and `exp` (it runs first, as the
    * global guard). **Not authentication**: the session may still be revoked,
-   * and only `SupabaseAuthGuard`'s `getUser` decides that. It lets that guard
-   * start the chapter lookups on a verified `sub` while `getUser` is in
-   * flight (#3728) without verifying the token a second time. Absent when the
+   * and only `SupabaseAuthGuard` decides that, with `getUser` or, on a read
+   * marked `@VerifySessionLocally()` (#5043), by verifying the token again
+   * itself. It lets that guard start the chapter lookups on a verified `sub`
+   * while it checks (#3728), and its presence is a precondition of the local
+   * check, which keeps that check inside the throttler's unknown-`kid` bound.
+   * Absent when the
    * throttler skipped verification (an unknown `kid` within its retry
    * interval, no verifier for the `alg`, a route that skips throttling).
    */

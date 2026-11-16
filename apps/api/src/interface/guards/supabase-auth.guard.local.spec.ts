@@ -10,6 +10,7 @@ import { AuthRejectedException } from './auth-rejected.exception';
 import { VERIFY_SESSION_LOCALLY_KEY } from '../decorators/session-check.decorator';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import type { RequestContext } from '../types/request-context.types';
+import { runWithRequestReads } from '../../infrastructure/supabase/request-reads';
 
 /**
  * The local session check (#5043, Paul 2026-11-16), against the real
@@ -131,6 +132,17 @@ describe('SupabaseAuthGuard: reads verified locally (#5043)', () => {
         calls.push('getUser');
         return userAnswer();
       }
+      if (url.endsWith('/rest/v1/rpc/get_request_context')) {
+        calls.push('get_request_context');
+        return Promise.resolve(
+          Response.json({
+            user: { id: 'app-user-1' },
+            chapter: null,
+            member: null,
+            roles: [],
+          }),
+        );
+      }
       throw new Error(`unexpected fetch ${url}`);
     };
     // auth-js caches the JWKS process-wide per storage key; a fresh key per
@@ -174,7 +186,12 @@ describe('SupabaseAuthGuard: reads verified locally (#5043)', () => {
       method,
       headers: { authorization: `Bearer ${token}` },
       // The throttler (the global guard) verified this token first.
-      throttlerVerifiedClaims: throttled ? { sub: SUB } : undefined,
+      throttlerVerifiedClaims: throttled
+        ? {
+            sub: SUB,
+            active_chapter_id: '11111111-1111-4111-8111-111111111111',
+          }
+        : undefined,
     } as Partial<RequestContext>;
     const ctx = {
       switchToHttp: () => ({ getRequest: () => request }),
@@ -275,16 +292,56 @@ describe('SupabaseAuthGuard: reads verified locally (#5043)', () => {
     });
   });
 
-  it("refuses another project's token, signed by a key this project never published", async () => {
+  describe("refuses another project's token", () => {
     // Another project's real token: its own key and `kid`, its own issuer.
-    const foreign = await signEs256(
-      otherKey.privateKey,
-      { alg: 'ES256', kid: 'kid-project-b', typ: 'JWT' },
-      claims({ iss: 'https://project-b.supabase.co/auth/v1' }),
-    );
-    const error = await refusal(context(foreign).ctx);
-    expect(error).toBeInstanceOf(AuthRejectedException);
-    expect((error as AuthRejectedException).getStatus()).toBe(401);
+    const foreignToken = () =>
+      signEs256(
+        otherKey.privateKey,
+        { alg: 'ES256', kid: 'kid-project-b', typ: 'JWT' },
+        claims({ iss: 'https://project-b.supabase.co/auth/v1' }),
+      );
+
+    it("when its key is not in this project's JWKS (getClaims then asks this project's Auth, which refuses)", async () => {
+      const error = await refusal(context(await foreignToken()).ctx);
+      expect(error).toBeInstanceOf(AuthRejectedException);
+      expect((error as AuthRejectedException).detail.reason).toBe(
+        'claims_rejected',
+      );
+      expect(calls).toEqual(['jwks', 'getUser']);
+    });
+
+    it('by its issuer, even if Auth were to accept it', async () => {
+      // The guard's own `iss` check, not Auth, is what refuses here.
+      userAnswer = () =>
+        Promise.resolve(
+          Response.json({
+            id: SUB,
+            aud: 'authenticated',
+            role: 'authenticated',
+            app_metadata: {},
+            user_metadata: {},
+            created_at: '2026-01-01T00:00:00Z',
+          }),
+        );
+      const error = await refusal(context(await foreignToken()).ctx);
+      expect(error).toBeInstanceOf(AuthRejectedException);
+      expect((error as AuthRejectedException).detail).toMatchObject({
+        reason: 'claims_rejected',
+        authErrorCode: 'iss_mismatch',
+      });
+    });
+  });
+
+  it('starts the one get_request_context call alongside the verification (#3583)', async () => {
+    const { ctx } = context(await projectToken());
+
+    await runWithRequestReads('GET', async () => {
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+      await new Promise((resolve) => setImmediate(resolve));
+    });
+
+    expect(calls).toContain('get_request_context');
+    expect(calls).not.toContain('getUser');
   });
 
   it('fails closed with a 503 when the JWKS cannot be fetched, and never asks Auth instead', async () => {
@@ -363,6 +420,21 @@ describe('SupabaseAuthGuard: reads verified locally (#5043)', () => {
       const { ctx } = context(await projectToken(), { throttled: false });
       await expect(guard.canActivate(ctx)).resolves.toBe(true);
       expect(calls).toContain('getUser');
+    });
+
+    it('for a valid HS256 token, which Auth accepts and the guard does not refuse on its alg', async () => {
+      acceptingAuth();
+      const hs256 = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64(claims())}.c2ln`;
+      const { ctx, request } = context(hs256);
+
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+
+      // Only Auth: the session check, then `readClaims`, whose `getClaims`
+      // also asks Auth for a symmetric token. Never the JWKS.
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls.every((call) => call === 'getUser')).toBe(true);
+      expect(request.supabaseUser?.id).toBe(SUB);
+      expect(request.locallyVerifiedAuthId).toBeUndefined();
     });
 
     it('for an HS256 token, and Auth refuses a forged one', async () => {

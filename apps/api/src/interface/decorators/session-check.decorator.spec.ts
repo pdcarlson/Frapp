@@ -29,10 +29,16 @@ import { ChapterGuard } from '../guards/chapter.guard';
  * reviewer should see in the diff, so the roster is spelled out here: a route
  * that returns credentials, a signed URL to a private file, an export or
  * account data, or admin and audit records never joins it.
+ *
+ * Deliberately left off (they look like app-open reads but are not): `GET
+ * bootstrap` (the caller's account row, settings and signed photo, logo and
+ * avatar URLs, and its interceptor syncs the profile), `GET members` and
+ * `GET members/roster` (contact details and signed `profiles` URLs), `GET
+ * chapters/current` (a signed `branding` URL), and the admin-permission reads
+ * `GET points/transactions` (the audit ledger), `GET polls` and `GET goals`.
  */
 const ROSTER = [
   'GET activity',
-  'GET bootstrap',
   'GET channels',
   'GET channels/:id',
   'GET channels/:id/members',
@@ -46,19 +52,13 @@ const ROSTER = [
   'GET channels/mention-roles',
   'GET channels/messages/:messageId/reactions',
   'GET channels/unread',
-  'GET chapters/current',
   'GET chat-sidebar',
   'GET events',
   'GET events/:id',
-  'GET goals',
   'GET goals/mine',
-  'GET members',
-  'GET members/roster',
   'GET notifications',
   'GET points/leaderboard',
   'GET points/me',
-  'GET points/transactions',
-  'GET polls',
   'GET search',
   'GET tasks',
   'GET users/me/permissions',

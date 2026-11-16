@@ -26,7 +26,6 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { BootstrapDto, BootstrapQueryDto } from '../dtos/bootstrap.dto';
-import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 /**
  * One request for a client's first screen (#4709). See `BootstrapService` for
@@ -54,7 +53,6 @@ export class BootstrapController {
   constructor(private readonly bootstrap: BootstrapService) {}
 
   @Get()
-  @VerifySessionLocally()
   @ApiOperation({
     summary: "What a client's first screen reads, in one request",
     description:

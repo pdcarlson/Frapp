@@ -83,7 +83,6 @@ export class PointsController {
   }
 
   @Get('transactions')
-  @VerifySessionLocally()
   @RequirePermissions(SystemPermissions.POINTS_VIEW_ALL)
   @ApiOperation({
     summary: 'List chapter-wide point transactions',
