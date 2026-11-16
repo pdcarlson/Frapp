@@ -177,6 +177,7 @@ describe('ChapterDocumentCorpusSource', () => {
     content_type: 'application/pdf',
     effective_date: '2026-08-15',
     created_at: '2026-09-01T12:00:00.000Z',
+    drive_file_id: null,
   };
 
   function setup(row: typeof document | null = document) {

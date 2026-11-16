@@ -539,6 +539,15 @@ export interface Database {
         Returns: boolean;
       };
       /**
+       * `20261116185618` (#3642 piece 1). Moves a folder's documents to the
+       * top level, carrying a restricted folder's list onto them, and deletes
+       * it; false when the folder isn't in the chapter.
+       */
+      delete_document_folder: {
+        Args: { p_chapter_id: string; p_folder_id: string };
+        Returns: boolean;
+      };
+      /**
        * `20261105220000`. Deletes the channel groups a `purging` import
        * created that now hold no channel, and returns their ids. A no-op for
        * any other status.
@@ -577,23 +586,6 @@ export interface Database {
        * member-access role, in one transaction. Null when the chapter has no
        * such role; raises `insufficient_privilege` for a system role.
        */
-      /**
-       * `20261116185618` (#3642 piece 1). Moves a folder's documents to the
-       * top level, carrying a restricted folder's list onto them, and deletes
-       * it; false when the folder isn't in the chapter.
-       */
-      delete_document_folder: {
-        Args: { p_chapter_id: string; p_folder_id: string };
-        Returns: boolean;
-      };
-      /**
-       * `20261116185618` (#3642 piece 1). Renames a folder and re-files its
-       * documents in one transaction; no row when the folder isn't there.
-       */
-      rename_document_folder: {
-        Args: { p_chapter_id: string; p_folder_id: string; p_name: string };
-        Returns: ChapterDocumentFolder[];
-      };
       delete_role: {
         Args: { p_chapter_id: string; p_role_id: string };
         Returns: {
@@ -1050,6 +1042,14 @@ export interface Database {
       rename_chapter_document_type: {
         Args: { p_chapter_id: string; p_type_id: string; p_name: string };
         Returns: ChapterDocumentType[];
+      };
+      /**
+       * `20261116185618` (#3642 piece 1). Renames a folder and re-files its
+       * documents in one transaction; no row when the folder isn't there.
+       */
+      rename_document_folder: {
+        Args: { p_chapter_id: string; p_folder_id: string; p_name: string };
+        Returns: ChapterDocumentFolder[];
       };
       /** `20261110170000` (#3939) — `returns setof chapter_pledge_classes`. */
       reorder_chapter_pledge_classes: {
