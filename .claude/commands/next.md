@@ -23,7 +23,8 @@ is demanded, the §1.2 verification comment on the issue is the plan. Plan mode 
 §1.3 veto.
 
 **The GitHub MCP is the only tracker path.** If any `mcp__github__*` tracker call fails, stop and
-report: no unclaimed work, no `gh`, REST, other tracker, or scratch file, no deferred writes
+report: no unclaimed work, no `gh`, REST, other tracker, or scratch file, no deferred writes. The
+one exception is read-only search where the session has no MCP `search_*` tool
 ([`agent-infra.md` § GitHub access policy](../../docs/ci-cd/agent-infra.md#github-access-policy)). Load schemas first:
 `ToolSearch("select:mcp__github__get_me,mcp__github__list_issues,mcp__github__issue_read,mcp__github__issue_write,
 mcp__github__add_issue_comment,mcp__github__search_issues,mcp__github__search_pull_requests")`.

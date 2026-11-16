@@ -81,7 +81,9 @@ point here instead of restating these rules. Policy detail:
      versions or a frozen surface's visuals, and keeps at most one PR open at a time.
 4. **GitHub MCP only; if it is unavailable, stop and report.** The MCP is auditable and its writes
    are lossless, so no routine lists, searches, reads, files, labels, closes or comments on an issue
-   or PR over `gh` or REST, or parks tracker work in a scratch file, and a missing MCP is a full
+   or PR over `gh` or REST (the one exception is the read-only search a session without MCP
+   `search_*` tools makes, per
+   [`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)), or parks tracker work in a scratch file, and a missing MCP is a full
    stop, not a prompt to find another route. A setting the MCP has no tool for is judged by
    behaviour or reported for Paul, never read over `gh` or REST
    ([`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)). Weekly Upkeep writes a PR rather than issues, so a missing MCP
@@ -115,8 +117,9 @@ path `/next` uses, with no keys to manage. Start each run by loading the GitHub 
 `issue_read` on a known issue. If the MCP is unavailable, stop and report: there is no fallback
 tracker. Weekly Upkeep is the exception in rule 4.
 
-Sessions carry no GitHub token and `gh` doesn't work from one, so the MCP is the only route
-([`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)).
+Sessions carry no GitHub token and don't use `gh`, so the MCP is the route, apart from the
+read-only search exception in
+[`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy).
 
 Whether an MCP read is faithful enough to rewrite a body from is a measurement that has flipped
 several times, so read the current table in

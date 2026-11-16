@@ -58,8 +58,8 @@ from the Claude Code environment.
 > § "Infisical: Secret configuration".
 >
 > **GitHub tokens in a session.** The `GITHUB_TOKEN` and `GH_TOKEN` a session sees are the
-> agent proxy's placeholders, so `gh auth status` calls them invalid and `gh` doesn't work from a
-> session ([`agent-infra.md` § GitHub access policy](../../ci-cd/agent-infra.md#github-access-policy)).
+> agent proxy's placeholders, so `gh auth status` calls them invalid; a session doesn't use `gh`
+> (one search exception) ([`agent-infra.md` § GitHub access policy](../../ci-cd/agent-infra.md#github-access-policy)).
 > Older images may expose `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`;
 > don't use them. `RENDER_APIKEY` is retired with `RENDER_API_KEY` (the table above).
 

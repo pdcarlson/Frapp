@@ -147,8 +147,7 @@ An awake session reads GitHub through the GitHub MCP only
 ([`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)). That is what is
 *readable*, not what is *polled*: nothing in this sandbox runs while the session is asleep, so
 background polling of GitHub still cannot be relied on and the coverage gap argument is unchanged.
-Treat GitHub as reachable only while awake, through the MCP tools; direct REST only for the
-settings reads the MCP has no tool for.
+Treat GitHub as reachable only while awake, through the MCP tools.
 
 **Do not call `send_later` on the cloud surface, and do not try to fix it from the
 repo.** Directly observed (2026-08-08): it **still prompted the owner** through every allow-list
@@ -622,9 +621,8 @@ this compares against a design, not against something that ran.) What makes it s
   configure:branch-protection:verify` exits non-zero on any difference) — a **shipped capability of
   the script**, not something #1383 delivered: that stage-5 issue asked for the read-back, is still
   open, and its body still describes the script as PUT-only, so cite the capability rather than the
-  issue. **That read was available to a session from 2026-09-02 until sessions lost `GITHUB_PAT` on 2026-11-15; since then it is a laptop step** (corrected 2026-11-16, [`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)). A version before 2026-09-02 called the read "session-dependent" and
-  therefore treated the whole layer as not-verifiable-from-a-session, which the route rule under
-  [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule) corrects — `GET /repos/{owner}/Frapp/branches/main/protection` returns 200 direct
+  issue. **That read was available to a session from 2026-09-02 until 2026-11-16; since then it is a laptop step by policy** (corrected 2026-11-16, [`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy); the 2026-09-02 measurements below are in ADR-20's amendment of that date, (b)). A version before 2026-09-02 called the read "session-dependent" and
+  therefore treated the whole layer as not-verifiable-from-a-session, which ADR-20's 2026-09-02 amendment corrected — `GET /repos/{owner}/Frapp/branches/main/protection` returns 200 direct
   (21 required contexts as the roster stood at that read, since reduced by #1637 and by the
   docs-gate retirement; read `ALL_REQUIRED_CHECKS` rather than any count quoted here. Plus
   `strict: true`, `enforce_admins: true`, `required_linear_history: true`,

@@ -49,7 +49,7 @@ Whether a body edit may be sourced from an MCP read is a measurement that has fl
 a fixed fact: the table, the probe, and the fallback when it's red are in
 [`github-pm.md` → Reading a body you intend to rewrite](../../../docs/ci-cd/github-pm.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 A brief backfill touches many bodies, so before one, re-run the probe against fixture #1736 and
-record the result in the report. If a leg can't run (a session can't run the direct REST read, step 4),
+record the result in the report. If a leg can't run (say, the raw read in step 4 hits a search rate limit),
 say so rather than reporting an unqualified green. When the probe is red, add a
 brief as a comment, or author the full replacement body yourself; never round-trip a body through
 a lossy read to add a section.

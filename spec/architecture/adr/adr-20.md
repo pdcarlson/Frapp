@@ -167,7 +167,10 @@ the ones a later reader would otherwise re-litigate.
   Direct egress is subject only to the environment's network allowlist, which includes
   `api.github.com`. So **reads are available to an agent as a ground-truth channel**:
   `npm run configure:branch-protection:verify` exits 0 from this sandbox, and step 4 of a rollout
-  is evidenceable by an agent rather than only by a human's run output. Never respond to the 403 by
+  is evidenceable by an agent rather than only by a human's run output. (Corrected 2026-11-16: no
+  longer true. Sessions lost `GITHUB_PAT` on 2026-11-15 and reach GitHub through the MCP only, so
+  `:verify` is a laptop step;
+  [`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy).) Never respond to the 403 by
   regenerating the PAT with broader scopes — scope is not what it is about — and never set
   `NODE_USE_ENV_PROXY=1` for these scripts, which would push node onto the 403 route. What does
   **not** change: applying branch protection stays a human step with an admin PAT **by policy**,

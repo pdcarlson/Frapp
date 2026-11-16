@@ -59,23 +59,22 @@ echo 'GITHUB_PAT=<token>' >> .env
 > resolved — `--repo` still overrides both.
 
 > **`:verify` is a laptop step (2026-11-16).** A cloud session carries no GitHub token and reaches
-> GitHub through the GitHub MCP only, which has no branch-protection tool, so `:verify` can't read
-> live protection from one; it fails rather than reporting a match. From a session, judge
+> GitHub through the GitHub MCP only, which has no branch-protection tool, so a session doesn't run
+> `:verify`. Where one did (2026-11-16) it couldn't read live protection and failed rather than
+> reporting a match. From a session, judge
 > protection by behaviour or ask Paul
 > ([`agent-infra.md` § GitHub access policy](../ci-cd/agent-infra.md#github-access-policy), which
 > also says why each route fails).
 
 > **Applying branch protection is still a human step with an admin token — by policy, not because it
 > is unreachable.** The GitHub MCP server is the sanctioned write path for issues, PRs and comments
-> and exposes no branch-protection tool; REST is a read channel for ground truth, not a write
-> fallback. That is why promoting a check to required is filed as a `[human]` issue rather than
+> and exposes no branch-protection tool, and REST is a laptop read, never a write fallback. That is why promoting a check to required is filed as a `[human]` issue rather than
 > picked up by `/next`. What an agent owns is the preparation: confirm every intended context has
 > reported green on the target branch, and confirm the job names match the array strings exactly —
 > the preconditions that make an apply safe, both checkable through the MCP server.
 >
-> **From an agent session the only sanctioned invocation is
-> `npm run configure:branch-protection:verify`, and nothing else.** Never the bare command — with no
-> flags it is a live `PUT` of the whole payload. Never `--dry-run` without the `--` separator —
+> **An agent session runs no command in this file, `:verify` included.** On a laptop, never the
+> bare command by accident — with no flags it is a live `PUT` of the whole payload. Never `--dry-run` without the `--` separator —
 > npm swallows it and the script applies. Both traps are spelled out at the commands themselves in
 > Step 1 and Step 2; read them before running anything from this file.
 
@@ -94,9 +93,8 @@ This prints the exact configuration that will be applied without making any chan
 > `Mode: LIVE` and PUTs the entire protection payload. Reproduced on npm 10.9.7. The two spellings
 > differ by two characters and one is a governance write.
 >
-> **From an agent session, run `npm run configure:branch-protection:verify` and nothing else** —
-> never the bare command, never `--dry-run` without the `--`. Applying stays a human step with your
-> own admin token (see **Prerequisites**).
+> **An agent session runs none of this** (see **Prerequisites**). Applying stays a human step with
+> your own admin token.
 
 A dry run also **reads live protection back and prints the difference**, so the output answers
 "what would this actually change?" rather than only "what would this write?". That read-back is a
@@ -163,8 +161,8 @@ code and a printed delta rather than a checkmark.
 > `Mode: LIVE` and PUTs the **whole** protection payload, overwriting anything set by hand outside
 > the arrays. **An agent session must not run these commands**, and must not treat `--dry-run` as
 > the safe substitute: without the `--` separator npm swallows the flag and this same live apply is
-> what runs (Step 1). The only sanctioned agent invocation in this runbook is
-> `npm run configure:branch-protection:verify`.
+> what runs (Step 1). An agent session runs no command in this runbook
+> (see **Prerequisites**).
 
 ```bash
 npm run configure:branch-protection
@@ -432,7 +430,7 @@ If CI job names change (e.g., renaming a workflow job), update:
    the bare command is a live `PUT`, so an agent making the roster change in steps 1–2 opens the PR
    and stops here
 4. Confirm with `npm run configure:branch-protection:verify` — it exits non-zero if anything was
-   missed, writes nothing, and is the one invocation an agent session may run
+   missed and writes nothing; it is a laptop step too, so the agent asks Paul to run it
 
 That is the whole list, and it is short on purpose. It used to carry three more steps, which is why
 it was the drift engine rather than a safety net: `CONTRIBUTING.md` and `spec/environments/README.md`

@@ -20,8 +20,9 @@
  * Note this script does not DELETE protection rules, so removing the
  * `production` branch's rule after deleting the branch is a manual step.
  *
- * Usage (a person's own admin token; cloud sessions carry none and run only
- * `npm run configure:branch-protection:verify`, which reads through the agent proxy):
+ * Usage (a person's own admin token, on a laptop or in Actions; cloud sessions carry
+ * none and run no mode of this script, docs/ci-cd/agent-infra.md § GitHub access
+ * policy):
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs --dry-run
  *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs --verify
@@ -254,9 +255,8 @@ function buildProtectionPayload(branch) {
 // `api.github.com` from a cloud sandbox is ROUTE-DEPENDENT (ADR-20 amendment of
 // 2026-09-02, (b), and agent-infra.md → The `api.github.com` route rule). Node's global `fetch`,
 // which `ghRequest` uses, ignores HTTPS_PROXY and goes direct, and that route
-// has returned 200 with a PAT. The agent proxy's route (curl, or node under
-// NODE_USE_ENV_PROXY=1) passes some repo paths and 403s others, varying by
-// session. Keeping the semantics in functions that take a response rather than
+// has returned 200 with a PAT. Cloud sessions carry no PAT and don't run this
+// script; on 2026-11-16 every route from one was refused. Keeping the semantics in functions that take a response rather than
 // fetch one is what makes the diff unit-testable whichever route a run takes.
 //
 // The GET shape is NOT the PUT shape, which is the trap here. GitHub returns the

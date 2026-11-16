@@ -34,8 +34,8 @@ it has a tool for the question:
 The `curl`, `gh`, and CLI recipes below are for laptops and Actions. These also work from a session:
 Infisical (which has no MCP), the local-stack Supabase commands, and the staging `/health` check
 when live-staging egress is on ([`live-verification`](../live-verification/SKILL.md)). GitHub is the
-MCP only: sessions carry no GitHub token, and `gh` fails from one
-([`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy)).
+MCP only, apart from one read-only search exception: sessions carry no GitHub token and don't use
+`gh` ([`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy)).
 
 ## GitHub
 
