@@ -29,6 +29,7 @@ describe('EventExcuseService', () => {
     create: jest.Mock;
     decideAtomic: jest.Mock;
     withdrawAtomic: jest.Mock;
+    editReason: jest.Mock;
   };
   let eventRepo: { findById: jest.Mock };
   let memberRepo: { findByUserAndChapter: jest.Mock; findByChapter: jest.Mock };
@@ -97,6 +98,12 @@ describe('EventExcuseService', () => {
         .mockImplementation((row) => Promise.resolve(excuse({ ...row }))),
       decideAtomic: jest.fn(),
       withdrawAtomic: jest.fn().mockResolvedValue(excuse()),
+      editReason: jest
+        .fn()
+        .mockImplementation(
+          (_id: string, _chapter: string, _from: string, reason: string) =>
+            Promise.resolve(excuse({ reason })),
+        ),
     };
     eventRepo = { findById: jest.fn().mockResolvedValue(eventAt(72)) };
     memberRepo = {
@@ -375,6 +382,131 @@ describe('EventExcuseService', () => {
       await expect(service.withdraw('evt-1', 'member', 'ch-1')).rejects.toThrow(
         'A declined excuse cannot be withdrawn',
       );
+    });
+  });
+
+  describe('edit', () => {
+    it('rewrites a pending excuse in place, trimmed, with no second push', async () => {
+      excuseRepo.findByEventAndUser.mockResolvedValue(excuse());
+
+      const result = await service.edit(
+        'evt-1',
+        'member',
+        'ch-1',
+        '  Away game  ',
+      );
+
+      expect(excuseRepo.editReason).toHaveBeenCalledWith(
+        'exc-1',
+        'ch-1',
+        'PENDING',
+        'Away game',
+      );
+      expect(result.reason).toBe('Away game');
+      expect(notifications.notifyMembers).not.toHaveBeenCalled();
+    });
+
+    it('lets a pending excuse be edited after the event, inside the late window', async () => {
+      eventRepo.findById.mockResolvedValue(eventAt(-3));
+      excuseRepo.findByEventAndUser.mockResolvedValue(excuse());
+
+      await service.edit('evt-1', 'member', 'ch-1', 'Sick');
+
+      expect(excuseRepo.editReason).toHaveBeenCalled();
+    });
+
+    it('refuses a pending excuse once the excuse window has closed', async () => {
+      eventRepo.findById.mockResolvedValue(eventAt(-60));
+      excuseRepo.findByEventAndUser.mockResolvedValue(excuse());
+
+      await expect(
+        service.edit('evt-1', 'member', 'ch-1', 'Sick'),
+      ).rejects.toThrow(BadRequestException);
+      expect(excuseRepo.editReason).not.toHaveBeenCalled();
+    });
+
+    it('sends a declined excuse again before check-in closes, and pushes the receiver', async () => {
+      excuseRepo.findByEventAndUser.mockResolvedValue(
+        excuse({ status: 'DECLINED', decided_at: 'x', decided_by: 'creator' }),
+      );
+
+      await service.edit('evt-1', 'member', 'ch-1', 'Family emergency');
+
+      expect(excuseRepo.editReason).toHaveBeenCalledWith(
+        'exc-1',
+        'ch-1',
+        'DECLINED',
+        'Family emergency',
+      );
+      expect(notifications.notifyMembers).toHaveBeenCalledWith(
+        'ch-1',
+        ['creator'],
+        expect.objectContaining({ body: 'Family emergency' }),
+      );
+    });
+
+    it.each([
+      [{ status: 'PRESENT' }, 'You already checked in to this event'],
+      [{ status: 'LATE' }, 'You already checked in to this event'],
+      [
+        { status: 'ABSENT', marked_by: 'officer-1' },
+        'An officer marked you absent',
+      ],
+    ])(
+      'refuses to send a declined excuse again once attendance settles it (%o)',
+      async (row, message) => {
+        excuseRepo.findByEventAndUser.mockResolvedValue(
+          excuse({
+            status: 'DECLINED',
+            decided_at: 'x',
+            decided_by: 'creator',
+          }),
+        );
+        attendanceRepo.findByEventAndUser.mockResolvedValue(row);
+
+        await expect(
+          service.edit('evt-1', 'member', 'ch-1', 'Sick'),
+        ).rejects.toThrow(message);
+        expect(excuseRepo.editReason).not.toHaveBeenCalled();
+        expect(notifications.notifyMembers).not.toHaveBeenCalled();
+      },
+    );
+
+    it('keeps a decline once check-in has closed', async () => {
+      eventRepo.findById.mockResolvedValue(eventAt(-3));
+      excuseRepo.findByEventAndUser.mockResolvedValue(
+        excuse({ status: 'DECLINED', decided_at: 'x' }),
+      );
+
+      await expect(
+        service.edit('evt-1', 'member', 'ch-1', 'Sick'),
+      ).rejects.toThrow(ConflictException);
+      expect(excuseRepo.editReason).not.toHaveBeenCalled();
+    });
+
+    it('refuses an approved excuse', async () => {
+      excuseRepo.findByEventAndUser.mockResolvedValue(
+        excuse({ status: 'APPROVED', decided_at: 'x' }),
+      );
+
+      await expect(
+        service.edit('evt-1', 'member', 'ch-1', 'Sick'),
+      ).rejects.toThrow('An approved excuse cannot be edited');
+    });
+
+    it('404s with no excuse', async () => {
+      await expect(
+        service.edit('evt-1', 'member', 'ch-1', 'Sick'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('409s when it was decided in the meantime', async () => {
+      excuseRepo.findByEventAndUser.mockResolvedValue(excuse());
+      excuseRepo.editReason.mockResolvedValue(null);
+
+      await expect(
+        service.edit('evt-1', 'member', 'ch-1', 'Sick'),
+      ).rejects.toThrow('decided or withdrawn in the meantime');
     });
   });
 

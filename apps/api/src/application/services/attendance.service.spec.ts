@@ -57,6 +57,7 @@ describe('AttendanceService', () => {
   let mockExcuseRepo: {
     findUserIdsByEventAndStatus: jest.Mock;
     withdrawAtomic: jest.Mock;
+    editReason: jest.Mock;
   };
   let mockScreenRepo: jest.Mocked<IEventCheckInScreenRepository>;
   let mockRbac: {
@@ -148,6 +149,7 @@ describe('AttendanceService', () => {
     mockExcuseRepo = {
       findUserIdsByEventAndStatus: jest.fn().mockResolvedValue([]),
       withdrawAtomic: jest.fn().mockResolvedValue(null),
+      editReason: jest.fn().mockResolvedValue(null),
     };
 
     // No screen has shown the code unless a test says so.

@@ -128,6 +128,25 @@ export function useSendEventExcuse() {
   );
 }
 
+/**
+ * Rewrite the viewer's own excuse (#5115): a pending one stays pending, a
+ * declined one is sent again. {@link myExcuseView}'s `canEdit` says when.
+ */
+export function useEditEventExcuse() {
+  const client = useFrappClient();
+  return useExcuseWrite(
+    "excuse-edit",
+    async ({ eventId, reason }: { eventId: string; reason: string }) => {
+      const result = await client.PATCH("/v1/events/{eventId}/excuses/me", {
+        params: { path: { eventId } },
+        body: { reason: reason.trim() },
+      });
+      throwUnlessOk(result);
+      return result.data;
+    },
+  );
+}
+
 /** Take back the viewer's pending or approved excuse. */
 export function useWithdrawEventExcuse() {
   const client = useFrappClient();
@@ -241,9 +260,17 @@ export type MyExcuseView =
       reason: string;
       /** "Excuse sent to Jake", "Excused", "Excuse not accepted". */
       title: string;
-      /** The pending excuse's receiver, or the decision's reason line. */
+      /**
+       * A line under the row, or null: a declined excuse's "still expected"
+       * while it can still be sent again.
+       */
       detail: string | null;
       canWithdraw: boolean;
+      /**
+       * The reason can be rewritten (#5115): a pending one until the excuse
+       * window closes, a declined one (sent again) until check-in closes.
+       */
+      canEdit: boolean;
     };
 
 /**
@@ -255,6 +282,9 @@ export type MyExcuseView =
  * - **An excuse on record** says where it stands: pending names its receiver,
  *   approved says Excused, declined says it wasn't accepted. Pending and
  *   approved can be withdrawn until check-in closes; a declined one can't.
+ *   Pending can be edited until the excuse window closes, and declined
+ *   (which sends it again) until check-in closes, unless their row settles
+ *   it by then; approved can't (#5115).
  * - **No excuse yet** offers Can't make it until 48 hours after the end
  *   (`eventExcuseClosesAt`), unless their row already settles it
  *   ({@link attendanceSettlesExcuse}).
@@ -294,6 +324,8 @@ export function myExcuseView({
       valid &&
       now.getTime() <=
         checkInWindowBounds(startAt, endAt, opensMinutes).closesAt.getTime();
+    const windowOpen =
+      valid && now.getTime() <= eventExcuseClosesAt(endAt).getTime();
     switch (excuse.status) {
       case "PENDING":
         return {
@@ -301,8 +333,9 @@ export function myExcuseView({
           status: "PENDING",
           reason: excuse.reason,
           title: excuseReceiverLine(mine?.receiver ?? null),
-          detail: "Waiting for a decision",
+          detail: null,
           canWithdraw: Boolean(checkInOpen),
+          canEdit: Boolean(windowOpen),
         };
       case "APPROVED":
         return {
@@ -312,16 +345,26 @@ export function myExcuseView({
           title: "Excused",
           detail: null,
           canWithdraw: Boolean(checkInOpen),
+          canEdit: false,
         };
-      default:
+      default: {
+        // Sending it again asks anew, so it needs what a new excuse needs: a
+        // check-in or an officer's mark since the decline settles it, and
+        // the server would refuse (`EventExcuseService.edit`).
+        const askable =
+          Boolean(checkInOpen) &&
+          !ownUnanswered &&
+          !attendanceSettlesExcuse(ownAttendance);
         return {
           kind: "sent",
           status: "DECLINED",
           reason: excuse.reason,
           title: "Excuse not accepted",
-          detail: "You're still expected at this event.",
+          detail: askable ? "You're still expected at this event." : null,
           canWithdraw: false,
+          canEdit: askable,
         };
+      }
     }
   }
   if (!required || mineUnanswered || ownUnanswered || !valid)

@@ -99,6 +99,62 @@ describe('SupabaseEventExcuseRepository — tenant scope', () => {
     });
   });
 
+  it("editReason rewrites only the caller chapter's pending excuse", async () => {
+    const edited = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.editReason(EXCUSE_B, CHAPTER_B, 'PENDING', 'Away game'),
+    );
+
+    expect(edited).toMatchObject({ id: EXCUSE_B, reason: 'Away game' });
+    expect(edited?.status).toBe('PENDING');
+    const a = harness.rows('event_excuses').find((r) => r.id === EXCUSE_A);
+    expect(a?.reason).toBe('Exam review');
+  });
+
+  it('editReason re-opens a declined excuse and clears its decision', async () => {
+    const declined = {
+      event_id: EVENT,
+      ...row,
+      status: 'DECLINED',
+      decided_by: USER_SHARED,
+      decided_at: '2026-11-11T00:00:00.000Z',
+    };
+    harness = createTenantHarness({
+      tables: {
+        event_excuses: [
+          inA({ id: EXCUSE_A, ...declined }),
+          inB({ id: EXCUSE_B, ...declined }),
+        ],
+      },
+    });
+    repo = new SupabaseEventExcuseRepository(harness.client);
+
+    const edited = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.editReason(EXCUSE_B, CHAPTER_B, 'DECLINED', 'Family emergency'),
+    );
+
+    expect(edited).toMatchObject({
+      reason: 'Family emergency',
+      status: 'PENDING',
+      decided_by: null,
+      decided_at: null,
+    });
+  });
+
+  it('editReason changes nothing when the excuse left the status it was read in', async () => {
+    // Pending as seeded, but the caller read it as declined: a decision or
+    // withdraw landed in between, so the update must match no row.
+    const edited = await repo.editReason(
+      EXCUSE_B,
+      CHAPTER_B,
+      'DECLINED',
+      'Family emergency',
+    );
+
+    expect(edited).toBeNull();
+    const b = harness.rows('event_excuses').find((r) => r.id === EXCUSE_B);
+    expect(b?.reason).toBe('Exam review');
+  });
+
   it('withdrawAtomic passes the chapter to the RPC', async () => {
     await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.withdrawAtomic(CHAPTER_B, EVENT, USER_SHARED),

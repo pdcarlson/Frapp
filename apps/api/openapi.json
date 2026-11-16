@@ -8781,6 +8781,61 @@
           "Event excuses"
         ]
       },
+      "patch": {
+        "description": "A pending excuse, until 48 hours after the event ends; it stays pending. A declined one, until check-in closes: it goes back to pending and the receiver is pushed again. 409 for an approved excuse (withdraw it and send a new one) or a declined one after check-in closes; 404 when there is none.",
+        "operationId": "EventExcuseController_edit_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitEventExcuseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventExcuseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Edit the reason on your own excuse",
+        "tags": [
+          "Event excuses"
+        ]
+      },
       "delete": {
         "description": "Only until check-in closes. Withdrawing an approved excuse also removes the EXCUSED attendance it wrote, so the member can check in. 409 for a declined excuse or a finished event.",
         "operationId": "EventExcuseController_withdraw_v1",

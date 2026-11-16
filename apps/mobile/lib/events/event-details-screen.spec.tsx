@@ -114,6 +114,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useEventExcuses: () => ({ data: excuseList }),
   useSendEventExcuse: () => ({ mutateAsync: sendExcuse, isPending: false }),
   useWithdrawEventExcuse: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEditEventExcuse: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDecideEventExcuse: () => ({ mutateAsync: decideExcuse, isPending: false }),
   useEvent: () => ({
     isPending: eventPending,
@@ -849,7 +850,7 @@ describe("Event details excuses (#3735)", () => {
     );
     act(() => input.props.onChangeText("  Exam review "));
     await act(async () => {
-      pressable(tree, "Send excuse").props.onPress();
+      pressable(tree, "Send").props.onPress();
     });
     expect(sendExcuse).toHaveBeenCalledWith({
       eventId: "evt-1",
@@ -876,9 +877,11 @@ describe("Event details excuses (#3735)", () => {
       excuse: excuse("PENDING"),
       receiver: { user_id: "user-jake", display_name: "Jake" },
     };
-    expect(screenText(render())).toContain("Excuse sent to Jake");
+    expect(screenText(render())).toContain("Your excuse · Sent to Jake");
     myExcuse = { excuse: excuse("PENDING"), receiver: null };
-    expect(screenText(render())).toContain("Excuse sent to the officers");
+    expect(screenText(render())).toContain(
+      "Your excuse · Sent to the officers",
+    );
   });
 
   it("shows the creator their Excuses list, and approves from it", async () => {
