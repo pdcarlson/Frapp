@@ -145,7 +145,9 @@ export function useFolderManagement({
       and an unchanged list is no write at all, so saving a dialog opened
       only to look sends nothing.
     */
-    const renamed = editing && name !== previousName;
+    // A synced folder's name is Drive's (#5220): never sent, even if a sync
+    // renamed it while the dialog was open.
+    const renamed = editing && !folderDraft.synced && name !== previousName;
     const accessChanged =
       editing &&
       !sameChannelAccessList(

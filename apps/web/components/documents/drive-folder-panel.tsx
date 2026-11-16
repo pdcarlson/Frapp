@@ -126,6 +126,8 @@ function ConnectView({
   const [link, setLink] = useState("");
   const [whoCanSee, setWhoCanSee] = useState<string[] | null>(null);
   const accessId = useId();
+  const hideAccess = access.optionsState === "ready" && !access.canLimit;
+  const accessReady = access.optionsState === "ready";
   const [error, setError] = useState<string | null>(null);
   const inputId = useId();
   const errorId = useId();
@@ -135,6 +137,7 @@ function ConnectView({
     if (
       !link.trim() ||
       connect.isPending ||
+      !accessReady ||
       isEmptyChannelAccessChoice(whoCanSee)
     ) {
       return;
@@ -201,10 +204,13 @@ function ConnectView({
             ) : null}
           </li>
           {/*
-            Left out for a member outside the tiers, who may not set a list;
-            the folder then comes in open, as any folder they make does.
+            Left out only once the choices have loaded and say this member
+            may not set a list (outside every tier); the folder then comes in
+            open, as any folder they make does. While the choices load or
+            fail the field shows that, and Connect waits, so a folder is never
+            connected open because the picker didn't appear.
           */}
-          {access.canLimit ? (
+          {!hideAccess ? (
             <li className="space-y-2">
               <p className="text-body font-medium">3. Choose who sees it</p>
               <ChannelAccessField
@@ -236,6 +242,7 @@ function ConnectView({
           disabled={
             !link.trim() ||
             connect.isPending ||
+            !accessReady ||
             isEmptyChannelAccessChoice(whoCanSee) ||
             !gate.allowed
           }

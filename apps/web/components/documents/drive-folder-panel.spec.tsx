@@ -80,8 +80,10 @@ describe("DriveFolderPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     status = undefined;
-    accessQuery.data = undefined;
-    accessQuery.isSuccess = false;
+    // Read, for a member outside the tiers: no list to set, folder comes in open.
+    accessQuery.data = { options: [], always: null };
+    accessQuery.isSuccess = true;
+    accessQuery.isError = false;
   });
 
   it("renders nothing while the server offers no Google Drive", () => {
@@ -117,6 +119,8 @@ describe("DriveFolderPanel", () => {
     );
     await user.click(connectButton);
 
+    // Outside every tier: no list to set, so no step 3.
+    expect(screen.queryByText("3. Choose who sees it")).toBeNull();
     expect(connect).toHaveBeenCalledWith({
       folderLink: "https://drive.google.com/drive/folders/abcdefghijk",
       whoCanSee: null,
@@ -152,6 +156,28 @@ describe("DriveFolderPanel", () => {
       folderLink: "abcdefghijk",
       whoCanSee: ["tier:t-exec"],
     });
+  });
+
+  it("waits to connect until it knows who may be chosen", async () => {
+    status = {
+      available: true,
+      service_account_email: EMAIL,
+      connection: null,
+    };
+    accessQuery.data = undefined;
+    accessQuery.isSuccess = false;
+    const user = userEvent.setup();
+    render(<DriveFolderPanel gate={gate} />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Connect Google Drive" }),
+    );
+    await user.type(
+      screen.getByLabelText("2. Paste the folder's link"),
+      "abcdefghijk",
+    );
+    expect(screen.getByText("3. Choose who sees it")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect" })).toBeDisabled();
   });
 
   it("shows the server's reason a folder was refused, beside the link", async () => {

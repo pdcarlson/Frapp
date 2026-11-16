@@ -1646,6 +1646,21 @@ describe("DocumentsPage folder management (#791)", () => {
 
   // #5220: Drive names and deletes a folder its sync made; Documents follows.
   it("leaves renaming and deleting a synced folder to Google Drive", async () => {
+    accessQuery.data = {
+      options: [
+        {
+          entry: "tier:t-exec",
+          kind: "tier",
+          id: "t-exec",
+          name: "Executive board",
+          color: null,
+          tier_id: null,
+          user_ids: ["u-1"],
+        },
+      ],
+      always: ["tier:t-exec"],
+    };
+    accessQuery.isSuccess = true;
     foldersQuery.data = [
       {
         id: "f-1",
@@ -1671,6 +1686,10 @@ describe("DocumentsPage folder management (#791)", () => {
     expect(input).toHaveAttribute("readonly");
     expect(
       screen.getByText(/comes from Google Drive: rename or delete it there/i),
+    ).toBeInTheDocument();
+    // Who can see it stays the folder's own to set.
+    expect(
+      screen.getByRole("radio", { name: "Chosen roles" }),
     ).toBeInTheDocument();
   });
 
