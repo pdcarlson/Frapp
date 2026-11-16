@@ -7,8 +7,8 @@
  *
  * What is shown, and only when no citation stood and none was dropped (a
  * dropped quote means the model was stating a fact it could not back):
- * the first sentence of what the model wrote, when the whole of it is
- * one short line. A longer uncited text is the model answering from nothing, and is
+ * what the model wrote, when the whole of it is one short line, or its
+ * first sentence when the line runs longer. A longer uncited text is the model answering from nothing, and is
  * still "couldn't find that". The client marks the sentence as Frapp's own
  * words (`AskAnswer.own_words`).
  */
@@ -19,8 +19,12 @@ export const OWN_WORDS_MAX_TEXT = 400;
 /** The longest sentence shown. */
 export const OWN_WORDS_MAX_SENTENCE = 240;
 
-/** The end of a sentence: a stop with a space or the end after it. */
-const SENTENCE_END = /[.!?](?=\s|$)/;
+/**
+ * The end of a sentence: a stop with a space or the end after it, and not
+ * the stop of an initial ("Jordan A. Lee") or a title ("Dr.", "St.").
+ */
+const SENTENCE_END =
+  /(?<!(?:^|[\s@])(?:[A-Z]|Dr|Mr|Mrs|Ms|Jr|Sr|St|Mt|vs|etc|No))[.!?](?=\s|$)/;
 
 export function ownWords(text: string): string | null {
   const whole = text.trim();
@@ -30,6 +34,9 @@ export function ownWords(text: string): string | null {
   if (whole.includes('\n') || /^(?:[-*#>]|\d+[.)])\s/.test(whole)) {
     return null;
   }
+  // A short reply is shown whole, which keeps a question and the names it
+  // offers together; a longer one is cut to its first sentence.
+  if (whole.length <= OWN_WORDS_MAX_SENTENCE) return whole;
   const end = SENTENCE_END.exec(whole);
   const sentence = (end ? whole.slice(0, end.index + 1) : whole).trim();
   if (sentence === '' || sentence.length > OWN_WORDS_MAX_SENTENCE) return null;

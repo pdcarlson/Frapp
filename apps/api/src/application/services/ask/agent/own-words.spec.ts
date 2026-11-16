@@ -12,7 +12,15 @@ describe('ownWords', () => {
     ],
     [
       "I don't give out phone numbers. You can message Caleb in Frapp.",
-      "I don't give out phone numbers.",
+      "I don't give out phone numbers. You can message Caleb in Frapp.",
+    ],
+    [
+      `I don't give out phone numbers, emails or home addresses, so ask Dr. Caleb A. Osei directly. ${'You can message him here in Frapp or open his profile from the roster. '.repeat(3)}`,
+      "I don't give out phone numbers, emails or home addresses, so ask Dr. Caleb A. Osei directly.",
+    ],
+    [
+      'Which Jordan do you mean? @Jordan A. Lee or @Jordan B. Park.',
+      'Which Jordan do you mean? @Jordan A. Lee or @Jordan B. Park.',
     ],
     [
       'Which one do you mean: @Jordan Lee or @Jordan Park?',

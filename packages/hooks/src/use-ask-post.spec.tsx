@@ -200,6 +200,7 @@ describe("askChannelPostOffer", () => {
     status: "answered",
     report_receipt: "sealed",
     read_chat: false,
+    citations: [{ source: 0, at: 10, quote: "dues are $450" }],
   } as NonNullable<AskExchange["answer"]>;
   const turn = (over: Partial<AskExchange> = {}) =>
     ({
@@ -235,6 +236,12 @@ describe("askChannelPostOffer", () => {
     expect(
       askChannelPostOffer(
         turn({ answer: { ...answer, report_receipt: null } }),
+      ),
+    ).toEqual(none);
+    // Frapp's own words, or cards alone: no citation for a channel to check.
+    expect(
+      askChannelPostOffer(
+        turn({ answer: { ...answer, citations: [], own_words: true } }),
       ),
     ).toEqual(none);
   });

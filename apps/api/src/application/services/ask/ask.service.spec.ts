@@ -2563,7 +2563,7 @@ describe('AskService', () => {
         expect(answer).toMatchObject({
           status: 'answered',
           own_words: true,
-          text: "I don't give out phone numbers.",
+          text: "I don't give out phone numbers. Message Caleb in Frapp.",
           citations: [],
           sources: [],
         });

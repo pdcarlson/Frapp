@@ -655,6 +655,8 @@ export const ASK_COPY = {
     "I couldn't find that in your chapter's documents, minutes or records.",
   not_found_hint:
     "Ask can only answer from what your chapter has uploaded or posted in Frapp.",
+  /** Under an answer in Frapp's own words (`AskAnswer.own_words`). */
+  own_words: "Frapp's own words, not from your chapter's records.",
   refused: "Ask can't help with that question.",
   failed: "That didn't go through. Try again.",
   truncated: "This answer was cut short. Ask a narrower question for the rest.",
