@@ -369,6 +369,45 @@ describe("uploadDocumentPhoto", () => {
     });
   });
 
+  it("sends who can see only when the uploader chose a list (#5216)", async () => {
+    await uploadDocumentPhoto(
+      IMAGE,
+      { title: "", folder: null, whoCanSee: ["tier:t-1"] },
+      mutations,
+    );
+    expect(confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ who_can_see: ["tier:t-1"] }),
+    );
+
+    await uploadDocumentPhoto(
+      IMAGE,
+      { title: "", folder: null, whoCanSee: null },
+      mutations,
+    );
+    expect(confirm.mock.lastCall?.[0]).not.toHaveProperty("who_can_see");
+  });
+
+  it("retries with the list it was first sent with (#5216)", async () => {
+    confirm.mockRejectedValueOnce(new TypeError("Network request failed"));
+    const first = await uploadDocumentPhoto(
+      IMAGE,
+      { title: "", folder: null, whoCanSee: ["tier:t-1"] },
+      mutations,
+    );
+    const sent = first.status === "refused" ? first.sent : undefined;
+    expect(sent?.whoCanSee).toEqual(["tier:t-1"]);
+
+    await uploadDocumentPhoto(
+      IMAGE,
+      { title: "", folder: null, whoCanSee: null },
+      mutations,
+      sent,
+    );
+    expect(confirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ who_can_see: ["tier:t-1"] }),
+    );
+  });
+
   it("files at the library root when no folder is chosen", async () => {
     await expect(
       uploadDocumentPhoto(IMAGE, { title: "", folder: null }, mutations),
@@ -454,6 +493,7 @@ describe("uploadDocumentPhoto", () => {
         },
         title: "minutes.jpg",
         folder: null,
+        whoCanSee: null,
       },
     });
   });

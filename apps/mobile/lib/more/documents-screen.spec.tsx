@@ -42,9 +42,18 @@ const LOADED = {
   isFetching: false,
 };
 
+const accessQuery = vi.hoisted(() => ({
+  data: undefined as
+    { options: unknown[]; always: string[] | null } | undefined,
+  isSuccess: false,
+  isError: false,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   usePermissionList: () => permissions,
+  // Who can see (#5216): unread by default, so the upload sheet shows no row.
+  useDocumentAccessOptions: () => accessQuery,
   useDocuments: (...args: unknown[]) => {
     documentsArgs.push(args);
     return {
@@ -380,6 +389,44 @@ describe("Documents states and rows", () => {
 
     act(() => note(tree).props.action.onPress());
     expect(screenText(tree)).toContain("No documents yet.");
+  });
+
+  it("says not everyone can see a file with its own list or in a limited folder (#5216)", () => {
+    folderRows = [
+      { id: "f1", name: "Exec", sort_order: 0, who_can_see: ["tier:t-1"] },
+      { id: "f2", name: "Rush", sort_order: 1 },
+    ];
+    documentRows = [
+      {
+        id: "d1",
+        title: "Budget",
+        folder: "Exec",
+        created_at: "2026-10-03T12:00:00Z",
+      },
+      {
+        id: "d2",
+        title: "Bids",
+        folder: "Rush",
+        who_can_see: ["role:r-1"],
+        created_at: "2026-10-02T12:00:00Z",
+      },
+      {
+        id: "d3",
+        title: "Schedule",
+        folder: "Rush",
+        created_at: "2026-10-01T12:00:00Z",
+      },
+    ];
+    const tree = render();
+    const values = Object.fromEntries(
+      tree.root
+        .findAllByType(ListRow)
+        .map((row) => [row.props.label, row.props.accessibilityValue]),
+    );
+
+    expect(values.Budget).toContain("Not everyone can see this");
+    expect(values.Bids).toContain("Not everyone can see this");
+    expect(values.Schedule ?? "").not.toContain("Not everyone can see this");
   });
 
   it("marks only the opening row busy, and greys out none", async () => {

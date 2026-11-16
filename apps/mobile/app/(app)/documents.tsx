@@ -48,6 +48,10 @@ import {
   type DocumentActionsTarget,
 } from "@/components/documents/document-actions-sheet";
 import { PinGlyph, StarGlyph } from "@/components/documents/document-glyphs";
+import {
+  LIMITED_LABEL,
+  LimitedMark,
+} from "@/components/documents/limited-mark";
 import { MarkedCards } from "@/components/documents/marked-cards";
 import { DocumentTiles } from "@/components/documents/document-tiles";
 import { ListLayoutToggle } from "@/components/list-layout-toggle";
@@ -63,8 +67,10 @@ import { InlineNote } from "@/components/inline-note";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import {
   documentMeta,
+  isLimitedDocument,
   selectDocumentFolders,
   selectDocuments,
+  type MobileDocument,
 } from "@/lib/more/documents";
 import { shareDocumentFile } from "@/lib/more/document-file";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -263,6 +269,8 @@ export default function DocumentsScreen() {
     () => selectDocumentFolders(foldersQuery.data),
     [foldersQuery.data],
   );
+  // A lock on a file with its own list or in a folder with one (#5216).
+  const isLimited = (doc: MobileDocument) => isLimitedDocument(doc, folders);
   const documents = useMemo(
     () =>
       selectDocuments(documentsQuery.data).filter(
@@ -639,6 +647,7 @@ export default function DocumentsScreen() {
           <DocumentTiles
             rows={rows}
             isStarred={(id) => starredDocuments.has(id)}
+            isLimited={isLimited}
             busyIds={
               new Set(
                 [...deletingIds, openingId].filter(
@@ -675,8 +684,13 @@ export default function DocumentsScreen() {
               canManage ? "Star, pin or delete" : "Star or unstar"
             }
             trailing={
-              row.doc.pinned_at || starredDocuments.has(row.doc.id) ? (
+              row.doc.pinned_at ||
+              starredDocuments.has(row.doc.id) ||
+              isLimited(row.doc) ? (
                 <View style={styles.marks}>
+                  {isLimited(row.doc) ? (
+                    <LimitedMark color={tokens.color.text.mutedForeground} />
+                  ) : null}
                   {row.doc.pinned_at ? (
                     <PinGlyph color={accent} on size={14} />
                   ) : null}
@@ -688,6 +702,7 @@ export default function DocumentsScreen() {
             }
             accessibilityValue={
               [
+                isLimited(row.doc) ? LIMITED_LABEL : null,
                 row.doc.pinned_at ? "Pinned for the chapter" : null,
                 starredDocuments.has(row.doc.id) ? "Starred" : null,
               ]
@@ -756,8 +771,19 @@ export default function DocumentsScreen() {
               value: entry.name,
               label: entry.name,
               mark:
-                entry.pinned_at || starredFolders.has(entry.id) ? (
+                entry.pinned_at ||
+                starredFolders.has(entry.id) ||
+                entry.who_can_see ? (
                   <View style={styles.marks}>
+                    {entry.who_can_see ? (
+                      <LimitedMark
+                        color={
+                          folder === entry.name
+                            ? accentOnPrimary
+                            : tokens.color.text.mutedForeground
+                        }
+                      />
+                    ) : null}
                     {entry.pinned_at ? (
                       <PinGlyph
                         color={folder === entry.name ? accentOnPrimary : accent}
@@ -912,6 +938,11 @@ export default function DocumentsScreen() {
             item.kind === "folder"
               ? starredFolders.has(item.folder.id)
               : starredDocuments.has(item.doc.id)
+          }
+          isLimited={(item) =>
+            item.kind === "folder"
+              ? !!item.folder.who_can_see
+              : isLimited(item.doc)
           }
           openingId={openingId}
           deletingIds={deletingIds}
