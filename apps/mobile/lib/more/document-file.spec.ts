@@ -67,6 +67,16 @@ describe("documentFile", () => {
     ).toMatchObject({ name: "dues.xlsx" });
   });
 
+  it("saves under the type the library files it as, so a CSV typed text/plain stays a CSV", () => {
+    expect(
+      documentFile({
+        ...PDF,
+        content_type: "text/plain",
+        storage_path: "chapters/c1/documents/doc-1/dues.csv",
+      }),
+    ).toEqual({ name: "dues.csv", mimeType: "text/csv" });
+  });
+
   it("falls back to the stored extension on a row with no useful type", () => {
     expect(documentFile({ ...PDF, content_type: null })).toEqual({
       name: "bylaws_2026.pdf",

@@ -140,10 +140,11 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * ## Opening a document
  *
  * A tap downloads the file and hands it to the system share sheet, where the
- * member previews, saves or opens it in another app (#4409,
+ * member saves it to Files or opens it in an app that reads it (#4409,
  * `lib/more/document-file.ts`). It used to open the inline `downloadUrl` in
  * the in-app browser, the one place a member's upload was served as a page.
- * The row's spinner runs until the sheet is up.
+ * The row's spinner runs from the tap until the sheet closes, and a file that
+ * lands after the member has left s12 presents nothing.
  *
  * There is no separate download endpoint: `GET /v1/documents/{id}` returns the
  * document with a freshly signed `downloadUrl`. That read runs through a
@@ -445,6 +446,14 @@ export default function DocumentsScreen() {
   // The latest tap's number, and whether a share sheet is already up.
   const latestOpen = useRef(0);
   const presenting = useRef(false);
+  // Leaving s12 (back pops it) supersedes any tap still downloading, so its
+  // sheet never comes up over the screen the member went to.
+  useEffect(
+    () => () => {
+      latestOpen.current += 1;
+    },
+    [],
+  );
 
   async function open(id: string) {
     // One sheet at a time: iOS rejects a second presentation while one is
@@ -650,7 +659,7 @@ export default function DocumentsScreen() {
             key={row.doc.id}
             label={row.doc.title}
             description={documentMeta(row)}
-            accessibilityHint="Opens it to preview, save or share."
+            accessibilityHint="Opens the share sheet to save it or open it in another app."
             // Only the row being opened, or deleted, shows it. The others
             // stay as they are and take a tap, which moves the spinner to
             // them (`open`).

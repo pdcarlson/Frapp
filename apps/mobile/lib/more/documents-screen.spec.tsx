@@ -567,6 +567,131 @@ describe("Documents states and rows", () => {
     expect(rows()[0]!.props.busy).toBe(false);
   });
 
+  // A stale tap's failed download (an expired link, say) lands while the
+  // member waits on a newer row: it says nothing, and the newer row opens.
+  it("keeps a stale tap's failed download off the screen", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    download.mockImplementation(async (id: string) => ({
+      forcedDownloadUrl: `https://signed/${id}`,
+    }));
+    const landed: Record<string, (ok: boolean) => void> = {};
+    shareDocument.mockImplementation(
+      (id: string, payload: unknown, shouldPresent: () => boolean) =>
+        new Promise((resolve) => {
+          landed[id] = (ok) => {
+            if (ok && shouldPresent()) {
+              presented.push(
+                (payload as { forcedDownloadUrl: string }).forcedDownloadUrl,
+              );
+            }
+            resolve(ok);
+          };
+        }),
+    );
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+    await act(async () => {
+      landed.d1!(false);
+    });
+    expect(screenText(tree)).not.toContain("couldn't be opened");
+    await act(async () => {
+      landed.d2!(true);
+    });
+    expect(presented).toEqual(["https://signed/d2"]);
+    expect(screenText(tree)).not.toContain("couldn't be opened");
+  });
+
+  // A stale tap that finishes while a newer row's sheet is up must leave the
+  // one-sheet guard alone: clearing it would let a third tap start a second
+  // presentation, which iOS refuses with "couldn't be opened".
+  it("keeps the one-sheet guard while a stale tap finishes under another row's sheet", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+      { id: "d3", title: "Roster", created_at: "2026-09-01T12:00:00Z" },
+    ];
+    const settle: Record<string, (value: unknown) => void> = {};
+    download.mockImplementation(
+      (id: string) =>
+        new Promise((resolve) => {
+          settle[id] = resolve;
+        }),
+    );
+    let dismiss!: () => void;
+    holdSheet = new Promise((resolve) => {
+      dismiss = resolve;
+    });
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+    await act(async () => {
+      settle.d2!({ forcedDownloadUrl: "https://signed/d2" });
+    });
+    expect(presented).toEqual(["https://signed/d2"]);
+    // d1 lands now, stale, and finishes while d2's sheet is up.
+    await act(async () => {
+      settle.d1!({ forcedDownloadUrl: "https://signed/d1" });
+    });
+    await act(async () => {
+      rows()[2]!.props.onPress();
+    });
+    expect(download).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      dismiss();
+    });
+  });
+
+  // Back pops s12. A file still downloading then lands with no screen to
+  // present over: no sheet comes up over wherever the member went.
+  it("presents nothing for a file that lands after s12 has closed", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
+    download.mockResolvedValue({ forcedDownloadUrl: "https://signed/d1" });
+    let land!: () => void;
+    shareDocument.mockImplementation(
+      (_id: string, payload: unknown, shouldPresent: () => boolean) =>
+        new Promise((resolve) => {
+          land = () => {
+            if (shouldPresent()) {
+              presented.push(
+                (payload as { forcedDownloadUrl: string }).forcedDownloadUrl,
+              );
+            }
+            resolve(true);
+          };
+        }),
+    );
+    const tree = render();
+
+    await act(async () => {
+      tree.root.findAllByType(ListRow)[0]!.props.onPress();
+    });
+    act(() => tree.unmount());
+    mounted.splice(mounted.indexOf(tree), 1);
+    await act(async () => {
+      land();
+    });
+    expect(presented).toEqual([]);
+  });
+
   // Once a document's sheet is up, a tap that reaches another row does
   // nothing. iOS refuses a second presentation, and that refusal would show
   // "couldn't be opened" over the document that did open.

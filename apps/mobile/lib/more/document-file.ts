@@ -1,8 +1,8 @@
 /**
  * Opening a library document on the phone (#4409): s12 downloads the file and
- * hands it to the system share sheet, where the member previews it, saves it
- * to Files, or opens it in another app, as Slack, Drive, Dropbox and Teams do
- * with a member's upload.
+ * hands it to the system share sheet, where the member saves it to Files or
+ * opens it in an app that reads it. Slack, Drive, Dropbox and Teams likewise
+ * never open a member's upload as a web page on the phone.
  *
  * It used to open the inline `downloadUrl` in the in-app browser, the one
  * place a member's file was served inline as a page. Chat's trust rule says
@@ -12,6 +12,7 @@
  * (`spec/behavior/chapter-docs.md` § Two links).
  */
 import { selectDownloadUrl, selectForcedDownloadUrl } from "@repo/hooks";
+import { classifyFile } from "@repo/hooks/document-library";
 import {
   contentTypeByExtension,
   fileExtension,
@@ -31,36 +32,40 @@ const EXTENSION_BY_TYPE: ReadonlyMap<string, string> = (() => {
   return byType;
 })();
 
-function baseType(contentType: string | null): string | null {
-  if (!contentType) return null;
-  return contentType.split(";")[0]!.trim().toLowerCase();
-}
-
 /**
  * The name the downloaded file gets, with the type an app receiving it should
  * read it as, or `null` when the document's type isn't one the library takes.
  *
- * The extension follows the declared type when it is on the `document` upload
- * list (`@repo/validation`), else the stored file's own extension when that
- * is on the list (an older row with no useful type, as the File type filter
- * reads it). Either way it can only name a PDF, image, Office or text file:
- * an app receiving the file types it by its extension (iOS ignores a MIME
- * type), so a page can never arrive as one. The stem is the stored filename,
- * the name web's Download saves under, else the title.
+ * The type is the one the library groups and names the file by
+ * (`classifyFile`'s `groupType`: the declared type, or the stored extension's
+ * when the declared one is absent or unrecognised), so a `.csv` declared
+ * `text/plain` saves as the CSV its tile says it is. Its extension comes from
+ * the `document` upload list (`@repo/validation`), else the stored file's own
+ * extension when that is on the list: either way it can only name a PDF,
+ * image, Office or text file. An app receiving the file types it by its
+ * extension (iOS ignores a MIME type), so a page can never arrive as one.
+ *
+ * The stem is the stored filename made safe to be one path segment, else the
+ * title. That is close to, not exactly, the name web's Download saves under:
+ * `Q&A (draft).pdf` arrives as `Q_A_draft.pdf`.
  */
 export function documentFile(
   payload: unknown,
 ): { name: string; mimeType: string } | null {
   if (!payload || typeof payload !== "object") return null;
   const row = payload as Record<string, unknown>;
-  const storedName = str(row, "storage_path")?.split("/").pop() ?? "";
+  const storagePath = str(row, "storage_path");
+  const storedName = storagePath?.split("/").pop() ?? "";
 
-  const declared = baseType(str(row, "content_type"));
-  let extension = declared ? EXTENSION_BY_TYPE.get(declared) : undefined;
-  let mimeType = declared;
+  const { groupType } = classifyFile({
+    content_type: str(row, "content_type"),
+    storage_path: storagePath,
+  });
+  let extension = groupType ? EXTENSION_BY_TYPE.get(groupType) : undefined;
+  let mimeType = groupType;
   if (!extension) {
     const stored = fileExtension(storedName);
-    if (!stored || !isAllowedUploadExtension("document", stored)) return null;
+    if (!isAllowedUploadExtension("document", stored)) return null;
     extension = stored;
     mimeType = contentTypeByExtension("document")[stored] ?? null;
   }

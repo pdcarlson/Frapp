@@ -859,7 +859,7 @@ describe('ChapterDocumentService', () => {
       const result = await service.findById('doc-1', 'ch-1');
 
       expect(result.id).toBe('doc-1');
-      // Inline, as before: the viewer and mobile's in-app browser read it.
+      // Inline, as before: the web viewer reads it.
       expect(result.downloadUrl).toBe(
         'https://storage.supabase.co/signed?token=t',
       );

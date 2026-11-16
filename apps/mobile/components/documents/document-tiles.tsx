@@ -74,7 +74,7 @@ export function DocumentTiles({
                 onCard
                 accessibilityRole="button"
                 accessibilityLabel={doc.title}
-                accessibilityHint={[meta, "Opens it to preview, save or share."]
+                accessibilityHint={[meta, "Opens the share sheet to save it or open it in another app."]
                   .filter(Boolean)
                   .join(". ")}
                 accessibilityValue={marks ? { text: marks } : undefined}

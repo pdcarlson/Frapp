@@ -12,8 +12,10 @@ import { Platform, Share } from "react-native";
  * disk whatever `Content-Disposition` the signed URL carries, and what opens
  * the file afterwards is whatever app the member picks, which types it by the
  * extension the caller chose. So every caller names the file with an
- * extension taken from the declared type, never from a member-chosen name
- * (`spec/behavior/chat/README.md` § File and image uploads).
+ * extension from an upload allowlist: chat's from the declared type, a
+ * document's from the type the library files it under, else its stored
+ * extension when that is on the `document` list. Never one a member typed and
+ * nothing checked (`spec/behavior/chat/README.md` § File and image uploads).
  *
  * **What the sheet offers.** iOS heads the sheet with the file's name and
  * thumbnail and offers Save to Files and the installed apps that take the
@@ -56,13 +58,13 @@ export interface ShareRemoteFileOptions {
  * Save to Camera Roll needs the photo-library purpose string (above);
  * Assign to Contact writes a contact photo.
  */
-export const EXCLUDED_IOS_ACTIVITIES = [
+const EXCLUDED_IOS_ACTIVITIES = [
   "com.apple.UIKit.activity.SaveToCameraRoll",
   "com.apple.UIKit.activity.AssignToContact",
 ];
 
 /** Longest name stem a caller writes, well under every file system's limit. */
-export const MAX_STEM_LENGTH = 80;
+const MAX_STEM_LENGTH = 80;
 
 /**
  * A member-chosen name made safe to be one path segment: its own extension
