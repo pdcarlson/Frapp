@@ -52,7 +52,7 @@ export type PlacedSpan<T> = TimedSpan<T> & {
   lanes: number;
 };
 
-export const MINUTES_PER_DAY = 24 * 60;
+const MINUTES_PER_DAY = 24 * 60;
 
 /**
  * A block shorter than this is drawn this tall so its name can be read, and

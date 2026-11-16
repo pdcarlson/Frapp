@@ -65,7 +65,7 @@ export function EndTimeField({
 }
 
 /** The end time moved to another day (`YYYY-MM-DD`), its time kept. */
-export function withDay(at: Date, day: string): Date {
+function withDay(at: Date, day: string): Date {
   const [y, m, d] = day.split("-").map(Number);
   if (!y || !m || !d) return at;
   const next = new Date(at);
@@ -74,7 +74,7 @@ export function withDay(at: Date, day: string): Date {
 }
 
 /** The end time moved to another time of day (`HH:MM`), its day kept. */
-export function withTime(at: Date, time: string): Date {
+function withTime(at: Date, time: string): Date {
   const [hh, mm] = time.split(":").map(Number);
   if (hh === undefined || mm === undefined || Number.isNaN(hh + mm)) return at;
   const next = new Date(at);

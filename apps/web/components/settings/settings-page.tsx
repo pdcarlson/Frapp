@@ -29,6 +29,7 @@ import {
   ErrorState,
   anyReadUncached,
   OfflineState,
+  pausedRead,
 } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useNetwork } from "@/lib/providers/network-provider";
@@ -279,8 +280,7 @@ function SettingsPageContent() {
     not fail that way — it blocks the thread — so this is a cost the
     conversion introduces and has to pay for. Found by the pre-push review.
   */
-  const chapterPaused =
-    chapterQuery.isPending && chapterQuery.fetchStatus === "paused";
+  const chapterPaused = pausedRead(chapterQuery);
   let stateBanner: React.ReactNode = null;
   if (
     isOffline &&

@@ -25,7 +25,7 @@ export function isPdfFile(file: { name: string; type: string }): boolean {
  * Finder's `.DS_Store` and `._` resource forks, Windows' `Thumbs.db` and
  * `desktop.ini`. Picking or dropping a folder brings them along unseen.
  */
-export function isSystemFile(file: { name: string }): boolean {
+function isSystemFile(file: { name: string }): boolean {
   const name = file.name.toLowerCase();
   return (
     name === ".ds_store" ||

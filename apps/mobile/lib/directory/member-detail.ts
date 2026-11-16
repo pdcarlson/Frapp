@@ -25,7 +25,7 @@ import {
   str,
 } from "../more/narrow";
 
-export interface MemberCustomField {
+interface MemberCustomField {
   fieldId: string;
   label: string;
   /** Already display-formatted, booleans as Yes/No. Never empty: unset fields are left out. */

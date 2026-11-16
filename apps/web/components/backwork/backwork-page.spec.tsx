@@ -88,6 +88,8 @@ const RESOURCE = {
   created_at: "2026-08-01T00:00:00Z",
 };
 
+const mockDrafts = vi.hoisted(() => ({ value: [] as unknown[] }));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
@@ -95,6 +97,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useFetchBackworkResource: () => mockFetchResource,
   useFetchBackworkDownloadUrls: () => mockFetchDownloadUrls,
   useDeleteBackworkResource: () => ({ mutateAsync: mockDeleteResource }),
+  useBackworkDrafts: () => ({ data: mockDrafts.value }),
   useMyPermissions: () => ({
     data: { permissions: mockPermissions.value },
   }),
@@ -2161,5 +2164,44 @@ describe("BackworkPage keeps the upload draft (#4593)", () => {
 
     expect(screen.getByLabelText("Title")).toHaveValue("");
     expect(screen.queryByText("Draft restored")).toBeNull();
+  });
+});
+
+describe("BackworkPage drafts note (#5208)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockOffline.value = false;
+    resolvedResourcesQuery();
+    chapter.active();
+    mockPermissions.value = ["backwork:upload", "backwork:admin"];
+  });
+  afterEach(() => {
+    mockDrafts.value = [];
+    mockPermissions.value = ["backwork:upload", "backwork:admin"];
+  });
+
+  const waitingDraft = {
+    id: "d1",
+    storage_path: "chapters/c/backwork/d1/file.pdf",
+    is_redacted: true,
+    created_at: "2026-11-16T00:00:00Z",
+    draft_fields: {},
+  };
+
+  it("points an uploader with drafts at the review table", () => {
+    mockDrafts.value = [waitingDraft];
+    render(<BackworkPage />);
+    expect(screen.getByText(/1 of your uploads is a draft/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Review and publish" })).toHaveAttribute(
+      "href",
+      "/backwork/upload",
+    );
+  });
+
+  it("says nothing to a member who can't upload", () => {
+    mockDrafts.value = [waitingDraft];
+    mockPermissions.value = [];
+    render(<BackworkPage />);
+    expect(screen.queryByRole("link", { name: "Review and publish" })).not.toBeInTheDocument();
   });
 });

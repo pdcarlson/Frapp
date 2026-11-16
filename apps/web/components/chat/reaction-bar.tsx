@@ -16,7 +16,7 @@ import { ReactionGlyph } from "./chat-glyphs";
 import { EmojiPicker, preloadEmojiPicker } from "./emoji-picker";
 import { cn } from "@/lib/utils";
 import {
-  actionTypeFromEmoji,
+  reactionActionType,
   emojiFromActionType,
   type ReactionState,
 } from "@repo/chat-core/types";
@@ -135,7 +135,7 @@ export function ReactionQuickPick({
   return (
     <>
       {QUICK_REACTIONS.map((emoji) => {
-        const mine = (reactions[actionTypeFromEmoji(emoji)] ?? []).includes(
+        const mine = (reactions[reactionActionType(emoji)] ?? []).includes(
           viewerId,
         );
         return (

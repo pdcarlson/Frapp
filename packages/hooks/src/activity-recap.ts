@@ -12,16 +12,15 @@ import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export type ActivityRecap = components["schemas"]["ActivityRecapDto"];
-export type ActivityRecapPart = ActivityRecap["unavailable"][number];
 
 /** Chapter-scoped keys; the read is `activityRecapKeys.chapter(chapterId)`. */
-export const activityRecapKeys = createChapterQueryKeys("activity-recap");
+const activityRecapKeys = createChapterQueryKeys("activity-recap");
 
 /**
  * How many days of the week the recap shows for: Sunday, Monday and Tuesday.
  * A digest of last week read on a Friday is news about a fortnight ago.
  */
-export const RECAP_SHOWN_DAYS = 3;
+const RECAP_SHOWN_DAYS = 3;
 
 /** Whether `now` is early enough in the member's week to show last week's recap. */
 export function recapInSeason(now: Date = new Date()): boolean {
@@ -86,7 +85,7 @@ export function recapWeek(now: Date = new Date()): {
  * in `@repo/formatting`, which the weekly recap push shares (#4985).
  * `spokenLabel` is for a screen reader.
  */
-export type RecapFigure = FormattedRecapFigure;
+type RecapFigure = FormattedRecapFigure;
 
 /** The recap's card, or `null` when there is nothing to recap. */
 export interface RecapCard {

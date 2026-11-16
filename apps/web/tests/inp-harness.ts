@@ -15,7 +15,7 @@
 
 type ObserverCallback = (list: { getEntries(): unknown[] }) => void;
 
-export type Envelope = [
+type Envelope = [
   Record<string, unknown>,
   [Record<string, unknown>, unknown][],
 ];

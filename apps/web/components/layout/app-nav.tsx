@@ -12,6 +12,7 @@ import {
 } from "@/components/layout/protected-nav-item";
 import { FOCUS_RING_SHELL } from "@/components/ui/focus";
 import { EYEBROW } from "@/components/ui/typography";
+import { LiveMeetingCard } from "@/components/meetings/live-meeting-card";
 
 /**
  * The module nav: its rows, section headings and the collapse toggle.
@@ -291,6 +292,9 @@ export function AppNav({
       >
         {sections}
       </nav>
+      {/* The foot of the column is empty; a live meeting the viewer runs
+          shows its Start minutes card there (#5219). No room in the rail. */}
+      {isCollapsed ? null : <LiveMeetingCard />}
       {isDrawer || !onToggleCollapsed ? null : (
         /*
          * The collapse toggle (#4044). It stays pinned to the bottom of the

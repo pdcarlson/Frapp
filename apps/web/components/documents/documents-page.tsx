@@ -19,6 +19,7 @@ import {
   useMyPermissions,
   useSemesters,
   useDocumentTypes,
+  useViewerUserId,
   type DocumentTypeRow,
 } from "@repo/hooks";
 import { can } from "@repo/validation";
@@ -52,6 +53,10 @@ import {
   useFolderManagement,
 } from "@/components/documents/folder-management";
 import { FolderImportPanel } from "@/components/documents/folder-import-panel";
+import {
+  DocumentAccessDialog,
+  canSetDocumentAccess,
+} from "@/components/documents/document-access";
 import { DriveFolderPanel } from "@/components/documents/drive-folder-panel";
 import { FolderRail } from "@/components/documents/folder-rail";
 import { MarkedStrip } from "@/components/documents/marked-strip";
@@ -277,6 +282,30 @@ function ChapterDocumentsPage() {
     "chapter_docs:manage",
     permissionsPayload?.permissions ?? [],
   );
+  /*
+    Who can see (#3642 piece 1). A file in a limited folder, or with its own
+    list, draws a lock; its uploader and whoever manages documents get its
+    Who can see control. The list only ever holds what this member sees.
+  */
+  const viewerId = useViewerUserId();
+  const limitedFolders = useMemo(
+    () =>
+      new Set(
+        folders
+          .filter((folder) => folder.who_can_see != null)
+          .map((folder) => folder.name),
+      ),
+    [folders],
+  );
+  const isLimited = (doc: ChapterDocument) =>
+    doc.who_can_see != null ||
+    (doc.folder !== null && limitedFolders.has(doc.folder));
+  const canSetAccess = (doc: ChapterDocument) =>
+    canSetDocumentAccess(doc, viewerId, {
+      manages: canManageTypes,
+      uploads: canUpload,
+    });
+  const [accessDoc, setAccessDoc] = useState<ChapterDocument | null>(null);
   const folderNames = useMemo(
     () => folders.map((folder) => folder.name),
     [folders],
@@ -489,6 +518,11 @@ function ChapterDocumentsPage() {
               gate={gate}
               onOpenFolder={setActiveFolder}
               onOpenDocument={openDocument}
+              isLimited={(item) =>
+                item.kind === "folder"
+                  ? item.folder.who_can_see != null
+                  : isLimited(item.doc)
+              }
             />
           ) : null}
           <DocumentList
@@ -522,6 +556,9 @@ function ChapterDocumentsPage() {
             onUpload={canUpload ? () => upload.openPanel() : undefined}
             marks={marks}
             onHoldRow={hold}
+            isLimited={isLimited}
+            canSetAccess={canSetAccess}
+            onSetAccess={setAccessDoc}
           />
         </div>
       </div>
@@ -533,6 +570,11 @@ function ChapterDocumentsPage() {
         interaction the Chapter Ops slice shipped and its guard caught.
       */}
       <FolderDialog gate={gate} management={folderManagement} />
+      <DocumentAccessDialog
+        doc={accessDoc}
+        gate={gate}
+        onClose={() => setAccessDoc(null)}
+      />
       <Suspense fallback={null}>
         <OpenLinkedDocument
           known={documents}

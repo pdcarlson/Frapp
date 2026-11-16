@@ -28,7 +28,7 @@ import { PointsService } from './points.service';
 import { RbacService } from './rbac.service';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
-export const PREDICTIONS_MODULE = 'predictions';
+const PREDICTIONS_MODULE = 'predictions';
 export const PREDICTION_ANSWERS_MIN = 2;
 export const PREDICTION_ANSWERS_MAX = 10;
 /** How long stakers have to question a result before it pays. */
@@ -54,7 +54,7 @@ export interface CreatePredictionInput {
   clientMessageId?: string | null;
 }
 
-export interface PredictionAnswerView {
+interface PredictionAnswerView {
   id: string;
   label: string;
   /** Points staked on this answer. */
@@ -63,7 +63,7 @@ export interface PredictionAnswerView {
   chance: number | null;
 }
 
-export interface PredictionStakerView {
+interface PredictionStakerView {
   user_id: string;
   answer_id: string;
   amount: number;
@@ -83,7 +83,7 @@ export interface PredictionMarketView {
   open_questions: PredictionQuestionView[];
 }
 
-export interface PredictionQuestionView {
+interface PredictionQuestionView {
   user_id: string;
   note: string;
   created_at: string;

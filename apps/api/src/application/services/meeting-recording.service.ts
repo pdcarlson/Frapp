@@ -87,7 +87,7 @@ const VOCABULARY_LIMIT = 200;
 const SWEEP_BATCH = 200;
 
 /** What the upload step needs to send the file straight to storage. */
-export interface MeetingRecordingUploadTarget {
+interface MeetingRecordingUploadTarget {
   upload_id: string;
   bucket: string;
   path: string;

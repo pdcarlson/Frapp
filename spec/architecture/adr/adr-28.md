@@ -134,6 +134,10 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    from two new projects, `frapp-ai-staging` and `frapp-ai-prod`. Hosting stays where
    [ADR-24](adr-24.md) put it, on that ADR's triggers. This record adds a vendor and changes nothing
    in ADR-24.
+   *(Corrected 2026-11-16: the `frapp-ai-*` projects were not used. Staging's calls run from the
+   frapp.live organization's nonprod project since 2026-11-15, and Paul moved hosting to Cloud Run
+   the next day, so once each environment's API runs there, its calls run from the same project as the API
+   ([`cloud-run.md`](../../../docs/ops/deployment/cloud-run.md#secrets), #5228).)*
 10. **Frapp owns the state.** No provider-side store holds chapter content: no File Search, no Files
     API, no managed retrieval corpus. No agent framework owns the loop or its memory. The usage
     ledger, the prompts, the search index, the job queue and the suggestions are Frapp's tables and
@@ -301,6 +305,13 @@ The catalog names the models. This table is a dated observation, not a pin.
     chapter passes about 20,000 passages. The word half has a GIN index.
 - **AI over vault content, rush data and backwork.** All three stay out.
   [`ai.md`](../../behavior/ai.md)'s list of sources is closed.
+  - **Changed in #5209 by pdcarlson, 2026-11-16, Paul's decision.** Backwork's catalog is in, its
+    files are not: Frapp AI's `find_backwork` tool reads each file's course, professor, type, term,
+    kind of copy and whether names are blacked out, as the asker and only for a member who may
+    browse the library, and hands the file over as a download fetched when the member taps it. No
+    backwork file's contents are read, indexed or quoted ([`ai.md`](../../behavior/ai.md) § Live
+    structured data). The upload pipeline's AI that reads redacted pages to propose fields (#3487)
+    is a separate decision. Vault and rush still stay out.
 
 **Not verified.** The session could not reach `ai.google.dev` or `docs.cloud.google.com`, so every
 statement about Google in this record rests on search results. Two of them carry a decision, and

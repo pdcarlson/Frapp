@@ -4,6 +4,7 @@ import { classifyFile } from "@repo/hooks/document-library";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { DocumentsGlyph } from "@/components/documents/resources-glyphs";
 import { OPEN_DOCUMENT_ATTRIBUTE } from "@/components/documents/document-viewer";
+import { LimitedMark } from "@/components/documents/document-access";
 import {
   DocumentControls,
   documentFacts,
@@ -59,6 +60,8 @@ export function DocumentTile({
   onToggleStar,
   onTogglePin,
   previewLink,
+  limited = false,
+  onSetAccess,
 }: {
   doc: ChapterDocument;
   /** Who uploaded it, when the roster can name them (#3852). */
@@ -73,6 +76,10 @@ export function DocumentTile({
   onTogglePin: (doc: ChapterDocument) => void;
   /** This file's preview link from the list's batch (`useDocumentPreviews`). */
   previewLink: ThumbnailLink;
+  /** Not everyone can see it (#3642 piece 1). */
+  limited?: boolean;
+  /** Opens Who can see; absent for a member who may not set it. */
+  onSetAccess?: (doc: ChapterDocument) => void;
 }) {
   const pinned = !!doc.pinned_at;
   const { label: typeLabel } = classifyFile(doc);
@@ -117,8 +124,9 @@ export function DocumentTile({
             />
           ) : null}
           <span className="block min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold">
-              {doc.title}
+            <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+              <span className="truncate">{doc.title}</span>
+              {limited ? <LimitedMark className="text-muted" /> : null}
             </span>
             <span className="block truncate text-caption text-muted">
               {[typeLabel, facts.uploaded].filter(Boolean).join(" · ")}
@@ -145,6 +153,7 @@ export function DocumentTile({
         onDelete={onDelete}
         onToggleStar={onToggleStar}
         onTogglePin={onTogglePin}
+        onSetAccess={onSetAccess}
         className="flex-wrap px-1.5 pb-1"
       />
     </li>

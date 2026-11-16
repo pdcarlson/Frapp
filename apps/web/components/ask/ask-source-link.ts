@@ -34,7 +34,20 @@ export function askSourceHref(source: AskSource): string | null {
       });
     case "page":
       return PAGE_ROUTES[target.page] ?? null;
+    // Not a page: a tap downloads the file (`askSourceBackworkId`).
+    case "backwork":
+      return null;
   }
+}
+
+/**
+ * The backwork file a source is, or null (#5209). A tap downloads it through
+ * a link fetched at that moment (`use-ask-backwork-download.ts`), so it is a
+ * button, not a link.
+ */
+export function askSourceBackworkId(source: AskSource): string | null {
+  const target = askSourceTarget(source);
+  return target?.type === "backwork" ? target.backwork_id : null;
 }
 
 /**

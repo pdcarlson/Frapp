@@ -36,6 +36,7 @@ const hooks = vi.hoisted(() => ({
   statusEnabled: [] as boolean[],
   savedUntil: null as string | null,
   download: vi.fn(),
+  backwork: vi.fn(),
   signal: vi.fn(),
   actions: [] as string[],
   actEnabled: [] as boolean[],
@@ -71,6 +72,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     };
   },
   useDocumentDownloadUrl: () => ({ mutateAsync: hooks.download }),
+  useFetchBackworkResource: () => hooks.backwork,
   useAskSignal: () => hooks.signal,
   // The thumbs have their own specs (`ask-turn.spec.tsx`).
   useAskThumbs: () => ({
@@ -442,6 +444,40 @@ describe("AskSheet", () => {
     const tree = render();
     await act(async () => sourceRow(tree, 1).props.onPress());
     expect(hooks.signal).toHaveBeenLastCalledWith("trace-1", "source_opened");
+  });
+
+  it("downloads a backwork file Frapp found, fetching its link only then (#5209)", async () => {
+    const turn = answered();
+    hooks.exchanges = [
+      {
+        ...turn,
+        answer: {
+          ...turn.answer!,
+          sources: [
+            {
+              id: "backwork:bw1",
+              kind: "backwork",
+              title: "Midterm 2 · CSCI 1200",
+              detail: "CSCI 1200 · Fall 2025",
+              date: null,
+              target: { type: "backwork", backwork_id: "bw1" },
+            },
+            turn.answer!.sources[1]!,
+          ],
+        },
+      },
+    ];
+    hooks.backwork.mockResolvedValue({
+      downloadUrl: "https://files.example/bw1",
+    });
+    const tree = render();
+    expect(hooks.backwork).not.toHaveBeenCalled();
+    await act(async () => sourceRow(tree, 1).props.onPress());
+    expect(hooks.backwork).toHaveBeenCalledWith("bw1");
+    expect(hooks.download).not.toHaveBeenCalled();
+    expect(WebBrowser.openBrowserAsync).toHaveBeenCalledWith(
+      "https://files.example/bw1",
+    );
   });
 
   it("says a document didn't open rather than doing nothing", async () => {

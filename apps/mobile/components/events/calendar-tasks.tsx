@@ -20,7 +20,7 @@ import { Chip } from "@/components/filter-chips";
 import { PressableRow } from "@/components/list-section";
 import { createEventRowStyles } from "@/components/events/event-rows";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
-import { Frame, paint } from "@/components/more/more-glyphs";
+import { Frame, paint } from "@/components/glyph-recipe";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**

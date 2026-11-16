@@ -155,7 +155,7 @@ export interface PlusMenuContext {
   roleRetryHint: string;
 }
 
-export interface PlusMenuRow {
+interface PlusMenuRow {
   command: PlusMenuCommand;
   label: string;
   /** Why the row can't be used this second, shown beside it; else `null`. */

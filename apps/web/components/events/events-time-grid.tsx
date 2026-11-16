@@ -347,7 +347,7 @@ export function EventsTimeGrid({
   );
 }
 
-export function SeriesMark({ facts }: { facts: CalendarEventFacts }) {
+function SeriesMark({ facts }: { facts: CalendarEventFacts }) {
   if (facts.isSeriesHead) {
     return <EventsGlyph className="h-3 w-3 shrink-0 text-muted-foreground" />;
   }

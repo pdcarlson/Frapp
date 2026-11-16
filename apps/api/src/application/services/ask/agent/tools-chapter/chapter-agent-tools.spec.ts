@@ -35,6 +35,8 @@ const GATES: Record<string, { permission: string; module: string | null }> = {
   my_hours: { permission: 'members:view', module: 'hours' },
   service_hours: { permission: 'members:view', module: 'hours' },
   my_dues: { permission: 'members:view', module: 'dues' },
+  // Any of `backwork:upload` or `backwork:admin`, like `BackworkController`.
+  find_backwork: { permission: 'backwork:upload', module: 'backwork' },
 };
 
 const ALL_ON = {
@@ -43,6 +45,7 @@ const ALL_ON = {
   points: true,
   hours: true,
   dues: true,
+  backwork: true,
 };
 
 describe('Chapter agent tools', () => {
@@ -160,6 +163,10 @@ const READS = new Set([
   'attendance.getAttendance',
   'attendance.getMyAttendance',
   'attendance.getMyAttendanceForEvents',
+  'backwork.findByChapter',
+  'backwork.getCourses',
+  'backwork.getDepartments',
+  'backwork.getProfessors',
   'events.findByChapter',
   'excuses.getMine',
   'groups.list',
@@ -171,6 +178,7 @@ const READS = new Set([
   'points.getUserSummary',
   'rbac.findByChapter',
   'rbac.getAlumniRoleId',
+  'search.searchBackwork',
   'service.findByChapterFiltered',
   'service.leaderboard',
   'standing.getStanding',

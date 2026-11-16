@@ -54,7 +54,7 @@ export interface PreviewNames {
   fallbackLabel: (author: PreviewAuthor) => string;
 }
 
-export interface PreviewAuthor {
+interface PreviewAuthor {
   sender_id: string | null;
   author_name: string | null;
 }

@@ -17,11 +17,11 @@ import type { FlattenOptions } from "./pdf";
 
 /**
  * The background finish step of a bulk upload (#3499): flatten when the
- * document needs it, upload, confirm. Kept apart from the page so the one
+ * document needs it, upload, confirm as a draft (#5208). Kept apart from the page so the one
  * rule that matters most here is tested on its own: for a Student Copy, or
  * any document with a box, only the flattened bytes ever leave the browser.
  */
-export type ConfirmBody = Parameters<
+type ConfirmBody = Parameters<
   ReturnType<typeof useConfirmBackworkUpload>["mutateAsync"]
 >[0];
 
@@ -164,5 +164,8 @@ export async function finishUpload<Doc>(
     file_hash: fileHash,
     ...confirmFields(submission.fields, flatten ? "Redacted backwork" : file.name),
     is_redacted: flatten,
+    // Saved as a draft (#5208): the person reviews the batch in one table
+    // and publishes it, so a field left blank here is fixed there.
+    draft: true,
   });
 }

@@ -492,6 +492,34 @@ export class StudyService {
     });
   }
 
+  /**
+   * The member's active session in the chapter and the geofence it runs in,
+   * read fresh for heartbeat, pause, resume and stop (each inside its
+   * `retryOnStale`, after its own alumni check): a 404 when there is no active
+   * session, or when its geofence is gone.
+   */
+  private async loadActiveSession(
+    userId: string,
+    chapterId: string,
+  ): Promise<{ session: StudySession; geofence: StudyGeofence }> {
+    const session = await this.sessionRepo.findActiveByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    if (!session) {
+      throw new NotFoundException('No active study session found');
+    }
+
+    const geofence = await this.geofenceRepo.findById(
+      session.geofence_id,
+      chapterId,
+    );
+    if (!geofence) {
+      throw new NotFoundException('Geofence not found');
+    }
+    return { session, geofence };
+  }
+
   async heartbeat(
     userId: string,
     chapterId: string,
@@ -502,21 +530,10 @@ export class StudyService {
     return this.retryOnStale(async () => {
       await this.assertNotAlumni(chapterId, userId);
 
-      const session = await this.sessionRepo.findActiveByUserAndChapter(
+      const { session, geofence } = await this.loadActiveSession(
         userId,
         chapterId,
       );
-      if (!session) {
-        throw new NotFoundException('No active study session found');
-      }
-
-      const geofence = await this.geofenceRepo.findById(
-        session.geofence_id,
-        chapterId,
-      );
-      if (!geofence) {
-        throw new NotFoundException('Geofence not found');
-      }
 
       const now = new Date();
 
@@ -618,21 +635,10 @@ export class StudyService {
     return this.retryOnStale(async () => {
       const isAlumni = await this.rbac.isAlumni(chapterId, userId);
 
-      const session = await this.sessionRepo.findActiveByUserAndChapter(
+      const { session, geofence } = await this.loadActiveSession(
         userId,
         chapterId,
       );
-      if (!session) {
-        throw new NotFoundException('No active study session found');
-      }
-
-      const geofence = await this.geofenceRepo.findById(
-        session.geofence_id,
-        chapterId,
-      );
-      if (!geofence) {
-        throw new NotFoundException('Geofence not found');
-      }
 
       const now = new Date();
 
@@ -689,21 +695,10 @@ export class StudyService {
     return this.retryOnStale(async () => {
       const isAlumni = await this.rbac.isAlumni(chapterId, userId);
 
-      const session = await this.sessionRepo.findActiveByUserAndChapter(
+      const { session, geofence } = await this.loadActiveSession(
         userId,
         chapterId,
       );
-      if (!session) {
-        throw new NotFoundException('No active study session found');
-      }
-
-      const geofence = await this.geofenceRepo.findById(
-        session.geofence_id,
-        chapterId,
-      );
-      if (!geofence) {
-        throw new NotFoundException('Geofence not found');
-      }
 
       const now = new Date();
 
@@ -745,21 +740,10 @@ export class StudyService {
       // always close a session; the award below is what's withheld.
       const isAlumni = await this.rbac.isAlumni(chapterId, userId);
 
-      const session = await this.sessionRepo.findActiveByUserAndChapter(
+      const { session, geofence } = await this.loadActiveSession(
         userId,
         chapterId,
       );
-      if (!session) {
-        throw new NotFoundException('No active study session found');
-      }
-
-      const geofence = await this.geofenceRepo.findById(
-        session.geofence_id,
-        chapterId,
-      );
-      if (!geofence) {
-        throw new NotFoundException('Geofence not found');
-      }
 
       const now = new Date();
 

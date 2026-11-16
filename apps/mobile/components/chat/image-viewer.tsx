@@ -113,7 +113,7 @@ export function viewerImages(
 }
 
 /** Which message's images the viewer shows, and which one. */
-export interface ViewerTarget {
+interface ViewerTarget {
   channelId: string;
   messageId: string;
   imageId: string;

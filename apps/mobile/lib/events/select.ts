@@ -32,6 +32,7 @@ import {
   type EventAttendanceFields,
 } from "@repo/validation";
 import { formatDayHeading, localIsoDate, parseInstant } from "@repo/formatting";
+import { isRecord, str } from "@/lib/more/narrow";
 import { isCurrentOrUpcoming, sortEventsByStart } from "./format";
 
 export interface EventRow {
@@ -98,18 +99,6 @@ export interface EventDetail extends EventRow {
   created_by: string | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object";
-}
-
-function str(row: Record<string, unknown>, key: string): string | null {
-  const raw = row[key];
-  // Trim-checked, not just length-checked — matching `lib/more/narrow.ts`'s
-  // `str()`. A whitespace-only value (e.g. notes edited down to nothing) must
-  // read as absent, or a section renders with a label and an invisible body.
-  return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
-}
-
 function toRow(row: Record<string, unknown>): EventRow | null {
   const id = str(row, "id");
   const name = str(row, "name");
@@ -159,7 +148,11 @@ export function selectAllEventRows(data: unknown): EventRow[] {
   return sortEventsByStart(rows);
 }
 
-/** One row of the s06 list: an event and, for a series, how often it meets. */
+/**
+ * One row of the s06 list: an event and, for a series, how often it meets.
+ * @public Nothing imports it, but the exported `EventDayGroup` names it, and
+ * the app emits declarations, so it has to stay exported.
+ */
 export interface EventListEntry {
   event: EventRow;
   /** "Every Sunday" on a series' row, `null` on a one-time event. */

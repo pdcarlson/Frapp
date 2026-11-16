@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import { Circle, Path } from "react-native-svg";
-import { Frame, paint } from "@/components/more/more-glyphs";
+import { Frame, paint } from "@/components/glyph-recipe";
 
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`
@@ -8,7 +8,7 @@ import { Frame, paint } from "@/components/more/more-glyphs";
  * all read, try again, share, and back. Share also leads a labelled button (setup's
  * `Share invite`), and the invite link's own mark, `LinkGlyph`, lives here
  * beside it. Control furniture, so they draw only the §1 stroke recipe's
- * detail strokes, with no silhouette fill, from `more-glyphs.tsx`'s `Frame`
+ * detail strokes, with no silhouette fill, from `glyph-recipe.tsx`'s `Frame`
  * and `paint`, so a change to the recipe reaches them too. Back keeps the
  * recipe but draws a heavier stroke.
  *
@@ -124,6 +124,19 @@ export function CopyGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
         {...detail}
       />
       <Path d="M4 16a2 2 0 01-2-2V4a2 2 0 012-2h10a2 2 0 012 2" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * A file that downloads when tapped: a backwork file Frapp found (#5209).
+ * Web draws Lucide's `Download` there.
+ */
+export function DownloadGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M12 3v12M7 10l5 5 5-5M4 21h16" {...detail} />
     </Frame>
   );
 }

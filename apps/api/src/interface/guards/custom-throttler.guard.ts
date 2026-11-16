@@ -9,6 +9,7 @@ import type { Response } from 'express';
 import type { JwtPayload } from '@supabase/supabase-js';
 import { getHeaderValue } from '../types/request-context.types';
 import { constantTimeEquals } from '#domain/utils/constant-time';
+import { decodeJwtSegment } from '#domain/utils/jwt-segment';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
@@ -186,14 +187,13 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     }
     const [headerSeg, payloadSeg, signatureSeg] = segments;
 
-    let header: { alg?: unknown; kid?: unknown };
-    try {
-      header = JSON.parse(
-        Buffer.from(headerSeg, 'base64url').toString('utf8'),
-      ) as { alg?: unknown; kid?: unknown };
-    } catch {
+    // A header that isn't a JSON object (unparseable, `null`, a number)
+    // carries no `alg`: fall back to per-IP keying, as the payload path does.
+    const decodedHeader = decodeJwtSegment(headerSeg);
+    if (decodedHeader === null || typeof decodedHeader !== 'object') {
       return null;
     }
+    const header = decodedHeader as { alg?: unknown; kid?: unknown };
 
     if (header.alg === 'HS256') {
       return this.hs256Claims(headerSeg, payloadSeg, signatureSeg);
@@ -230,16 +230,10 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       return null;
     }
 
-    try {
-      const payload: unknown = JSON.parse(
-        Buffer.from(payloadSeg, 'base64url').toString('utf8'),
-      );
-      return payload !== null && typeof payload === 'object'
-        ? (payload as JwtPayload)
-        : null;
-    } catch {
-      return null;
-    }
+    const payload = decodeJwtSegment(payloadSeg);
+    return payload !== null && typeof payload === 'object'
+      ? (payload as JwtPayload)
+      : null;
   }
 
   /**

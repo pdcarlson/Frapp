@@ -58,6 +58,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     reset: vi.fn(),
   }),
   useDocumentDownloadUrl: () => ({ mutateAsync: vi.fn() }),
+  useFetchBackworkResource: () => vi.fn(),
   useAskSignal: () => hooks.signal,
 }));
 

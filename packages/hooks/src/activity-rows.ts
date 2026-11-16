@@ -12,17 +12,17 @@ import {
 } from "@repo/formatting";
 
 export type Activity = components["schemas"]["ActivityDto"];
-export type ActivityTask = components["schemas"]["ActivityTaskDto"];
+type ActivityTask = components["schemas"]["ActivityTaskDto"];
 export type ActivityPoll = components["schemas"]["ActivityPollDto"];
-export type ActivityEvent = components["schemas"]["ActivityEventDto"];
-export type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
+type ActivityEvent = components["schemas"]["ActivityEventDto"];
+type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
 export type ActivityLink = components["schemas"]["ActivityLinkDto"];
 /** A reminder the member set on a chat message (#4957). Private to them. */
-export type ActivityReminder = components["schemas"]["ActivityReminderDto"];
+type ActivityReminder = components["schemas"]["ActivityReminderDto"];
 /** A sign-up sheet, headcount or form waiting on the member's answer (#3926). */
 export type ActivityCard = components["schemas"]["ActivityCardDto"];
 /** How many have answered something the member made, of how many can (#4792). */
-export type ActivityProgress = components["schemas"]["ActivityProgressDto"];
+type ActivityProgress = components["schemas"]["ActivityProgressDto"];
 export type ActivitySection = Activity["unavailable"][number];
 /** What `POST /v1/activity/reads` names: an item's kind and id. */
 export type ActivityItemRef = components["schemas"]["ActivityItemRefDto"];
@@ -87,7 +87,7 @@ export const ACTIVITY_GLYPH_NAV: Record<ActivityGlyph, NavGlyphName> = {
  * PM", which says the day in words (and to a screen reader, since the block
  * is decoration) and gives the year outside the current one.
  */
-export interface ActivityDateBlock {
+interface ActivityDateBlock {
   month: string;
   day: string;
 }

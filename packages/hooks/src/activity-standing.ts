@@ -7,7 +7,7 @@ import { createChapterQueryKeys } from "./chapter-query-keys";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export type ActivityStanding = components["schemas"]["ActivityStandingDto"];
-export type ActivityStandingSection = ActivityStanding["unavailable"][number];
+type ActivityStandingSection = ActivityStanding["unavailable"][number];
 
 /** Chapter-scoped keys; the read is `activityStandingKeys.chapter(chapterId)`. */
 export const activityStandingKeys = createChapterQueryKeys("activity-standing");

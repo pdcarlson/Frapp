@@ -97,7 +97,7 @@ const CARRY_TOLERANCE_MS = 3 * 60 * 60 * 1000;
  * parent still reads the old start, so the shift is counted again, and
  * without this pass a retried move of a day would carry nothing.
  */
-export function pairReplacedOccurrences(
+function pairReplacedOccurrences(
   old: readonly Event[],
   rebuilt: readonly Event[],
   shiftMs: number,

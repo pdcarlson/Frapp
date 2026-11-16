@@ -7,6 +7,7 @@ import { moduleDisabledMessage } from "@repo/validation";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { localIsoDate } from "@repo/formatting";
 import {
   DOCUMENT_FILE_TYPE_REFUSAL,
   DOCUMENT_SIZE_REFUSAL,
@@ -364,6 +365,7 @@ describe("uploadDocumentPhoto", () => {
       folder: "Minutes",
       content_type: "image/jpeg",
       byte_size: 4096,
+      effective_date: localIsoDate(new Date()),
     });
   });
 

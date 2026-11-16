@@ -152,7 +152,7 @@ interface ListRowModel extends ListedMessage {
   openable: boolean;
 }
 
-export function PinnedRows({
+function PinnedRows({
   channelId,
   nameFor,
   onOpen,
@@ -203,7 +203,7 @@ export function PinnedRows({
   return <Rows rows={rows} empty={PINNED_EMPTY} onOpen={onOpen} />;
 }
 
-export function SavedRows({
+function SavedRows({
   nameFor,
   onOpen,
   onRemove,

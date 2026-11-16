@@ -2,7 +2,6 @@ import {
   forwardRef,
   type Ref,
   useCallback,
-  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -48,9 +47,10 @@ import {
   SheetPrimaryButton,
   SheetScrim,
   sheetFieldStyles,
+  useGuardedSheetHandle,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  type GuardedSheetHandle,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { selectChannels } from "@/lib/chat/channel-list";
@@ -81,12 +81,6 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /** As the report form: the sheet holds a list, so it takes a fixed detent. */
 const FORWARD_SNAP_POINTS = ["85%"];
-
-export interface ForwardSheetHandle {
-  present: () => void;
-  /** Closes the picker, only while it is up (`useSheetVisit`, #3795). */
-  dismiss: () => void;
-}
 
 export interface ForwardSheetProps {
   target: ForwardTarget | null;
@@ -130,25 +124,14 @@ export interface ForwardSheetProps {
  * anyway). A failure keeps the sheet and the draft up behind an alert that
  * says whether trying again can help (`forwardFailureBody`).
  */
-export const ForwardSheet = forwardRef<ForwardSheetHandle, ForwardSheetProps>(
+export const ForwardSheet = forwardRef<GuardedSheetHandle, ForwardSheetProps>(
   function ForwardSheet({ target, nameFor, viewerId }, ref) {
     const backgroundStyle = useSheetBackgroundStyle();
-    const modalRef = useRef<BottomSheetModal>(null);
+    // The menu's dismiss on a deleted message is guarded (#3795, #5173); the
+    // sheet's own close, on Send or a screen reader's escape, runs only while
+    // it is up, so it stays on the modal.
+    const { modalRef, ...visit } = useGuardedSheetHandle(ref);
     const close = useSheetClose(modalRef);
-    const visit = useSheetVisit(modalRef);
-    const { dismiss, willPresent } = visit;
-
-    useImperativeHandle(
-      ref,
-      () => ({
-        present: () => {
-          willPresent();
-          modalRef.current?.present();
-        },
-        dismiss,
-      }),
-      [dismiss, willPresent],
-    );
 
     return (
       <BottomSheetModal
@@ -182,7 +165,7 @@ export const ForwardSheet = forwardRef<ForwardSheetHandle, ForwardSheetProps>(
   },
 );
 
-export function ForwardSheetBody({
+function ForwardSheetBody({
   target,
   nameFor,
   viewerId,
