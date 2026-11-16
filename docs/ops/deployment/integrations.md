@@ -465,7 +465,7 @@ client. Owner-only, in the `signet-frapp` Google Cloud project.
    account's in prod. Delete the downloaded files. Redeploy the API after the
    sync reaches Render.
 
-**Verify after setup.** `GET /v1/google-drive` (signed in, any chapter)
+**Verify after setup.** `GET /v1/google-drive` (signed in as an officer with Manage documents)
 answers `"available": true` with the account's email. In a test chapter, share
 a Drive folder with that email as a Viewer and connect it from Documents:
 within a minute its files appear there.
@@ -476,4 +476,4 @@ within a minute its files appear there.
 | --- | --- |
 | The API won't boot: `GOOGLE_DRIVE_CREDENTIALS_JSON must be a service account key file` | Step 4 holds something other than the JSON key file, or only part of it |
 | Connecting says Frapp can't see the folder, though it is shared | The folder was shared with the other environment's account, or with a person instead of the account's email |
-| Connected, but nothing appears, and the API logs `Google Drive sync broke for connection …` with `accessNotConfigured` | Step 1 |
+| Connecting says it couldn't reach Google Drive, or a connected folder stops syncing and the API reports `accessNotConfigured` | Step 1 |
