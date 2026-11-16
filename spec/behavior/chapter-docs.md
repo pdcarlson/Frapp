@@ -5,7 +5,7 @@ A "Chapter Files" storage area for organizational documents (bylaws, constitutio
 ## Permissions
 
 - `chapter_docs:upload` — Upload new documents.
-- `chapter_docs:manage` — Delete documents, create/rename/delete folders, and add, rename and delete document types.
+- `chapter_docs:manage` — Delete documents, create/rename/delete folders, add, rename and delete document types, and connect or disconnect the chapter's Google Drive folder.
 - Reads are gated on `members:view`, which every seeded role holds (the President holds it from its starting tier, beside the `*` wildcard) — so in practice every member can view and download, but the controller's class-level gate is a permission rather than an all-members bypass. Upload and management need their own `chapter_docs:*` permissions.
 
 ## Structure
@@ -130,6 +130,20 @@ What previews (`previewKind` in `apps/web/components/documents/document-viewer.t
 Neither path loads the member's file as a document, which keeps the trust rule chat states for member uploads: pdf.js parses the bytes and paints a canvas, and an `<img>` decodes or fails. The file is fetched from our own storage only. A load that fails (the link, the bytes, or an image that doesn't decode) says so with Try again, which fetches fresh links first; Download stays in the corner throughout. A file that doesn't preview fetches no links until Download is pressed, and Download reuses the links the viewer already holds while they're fresh.
 
 Mobile is unchanged: s12 still opens `downloadUrl` in the in-app browser.
+
+## Google Drive folder
+
+*(Added 2026-11-16, #5157; Paul picked "Connect a chapter folder" over linking single files or a web-only Drive picker.)* A chapter that keeps its files in Google Drive connects one Drive folder, and Documents holds a copy of every file in it, kept matching the folder. Comparable apps: Notion's and Slack's Google Drive connections, and Dropbox shared folders.
+
+- **Connecting.** An officer with `chapter_docs:manage` shares the folder in Google Drive with Frapp's address (a Google service account, one per environment; `GET /v1/google-drive` names it) as a Viewer, then pastes the folder's link in Documents (`PUT /v1/google-drive`). The link is checked with Google at once: a link that isn't a Drive folder, a link to a file, or a folder not shared with Frapp is refused with what to do, and nothing is saved. One folder per chapter; connecting another means disconnecting first.
+- **Why a service account.** Frapp reads only what a chapter explicitly shared with it, and no member signs in to Google. Reading a folder through a member's own Google sign-in would need the `drive.readonly` permission, which Google classes as restricted and audits yearly, because the narrower `drive.file` does not reliably reach a picked folder's contents.
+- **Copies, not links.** Each file is copied into the documents bucket and filed as an ordinary document (`drive_file_id`, `drive_modified_at` and `drive_url` set), so members who can't open the Drive folder still open, preview, star and search it, on the web and the phone, and Ask reads it. Copies are filed as uploaded by the officer who connected the folder. Google Docs and Slides are copied as PDF and Sheets as Excel (`.xlsx`); other files keep their type when it is on the upload allowlist below and are at most `MAX_UPLOAD_BYTES`. Forms, shortcuts and Google's other types, other file types, larger files and files past the 500th are left out and counted.
+- **Folders.** Files at the top of the Drive folder have no folder. A subfolder's files go in the Documents folder of the same name, and a subfolder of that joins both names ("Rush / Flyers"). Three levels are read: the folder and two below it.
+- **Keeping in sync.** Every 15 minutes, or at once after Connect or **Sync now** (`POST /v1/google-drive/sync`), a pass reads the folder: new files are filed, files whose Drive modified time changed are copied again in place (the document keeps its pins and stars), renamed or moved files are renamed and refiled without copying, and copies of files that left the folder are removed. A pass copies at most 20 files and the rest follow at once, so a large first connect takes a few minutes.
+- **Drive owns a copy.** Deleting one in Frapp is refused ("Remove it in Google Drive"), since the next pass would bring it back. Renaming or refiling one in Frapp lasts until the next pass puts back Drive's name and folder.
+- **Lost access.** When Google answers that Frapp can no longer see the folder (unshared or deleted), the connection shows that, with the address to share it with again, and the copies stay as they were; sharing it again resumes syncing at the next pass.
+- **Disconnecting** (`DELETE /v1/google-drive`) removes every copy from Documents; nothing in Drive changes. It works while the chapter's subscription is locked.
+- **Who sees what.** Every member who can read Documents sees where a copy came from and when the folder last synced; only `chapter_docs:manage` sees Connect, Sync now and Disconnect.
 
 ## Upload allowlist
 

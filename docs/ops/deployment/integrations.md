@@ -439,3 +439,41 @@ on Events, a toast says connected, and within a minute a calendar named
 | The member is told Frapp needs permission to make its calendar | They unticked it on Google's page, or step 2's scope is missing |
 | "Google hasn't verified this app" | Step 2's scope is sensitive and the review is pending |
 | Connected, but nothing appears | The API logs `Google Calendar sync failed for connection …` with Google's reason |
+
+## 7C. Google Drive folder
+
+**Optional.** Unset, Documents doesn't offer Google Drive; set, an officer can
+connect a chapter's Drive folder and Frapp copies its files into Documents and
+keeps them matching it
+([`chapter-docs.md` § Google Drive folder](../../../spec/behavior/chapter-docs.md#google-drive-folder),
+#5157). Frapp reads only folders a chapter shares with its service account, so
+there is no consent screen, no scope review and nothing on the Google sign-in
+client. Owner-only, in the `signet-frapp` Google Cloud project.
+
+1. **Enable the API.** Google Cloud console, project `signet-frapp` → APIs &
+   Services → Library → **Google Drive API** → Enable.
+2. **Make two service accounts**, one per environment, so a staging chapter
+   can never read a folder shared with production. IAM & Admin → Service
+   Accounts → Create service account: name **Frapp Documents (staging)**, no
+   roles, Done. Then again, **Frapp Documents**. Members see each account's
+   email (the address they share folders with), so keep the ids readable,
+   such as `frapp-docs-staging` and `frapp-docs`.
+3. **Make a key for each.** Open the account → Keys → Add key → Create new
+   key → JSON. The file downloads once; it is a secret.
+4. **Store each in Infisical** as `GOOGLE_DRIVE_CREDENTIALS_JSON`, the whole
+   file's contents: the staging account's in staging, the production
+   account's in prod. Delete the downloaded files. Redeploy the API after the
+   sync reaches Render.
+
+**Verify after setup.** `GET /v1/google-drive` (signed in, any chapter)
+answers `"available": true` with the account's email. In a test chapter, share
+a Drive folder with that email as a Viewer and connect it from Documents:
+within a minute its files appear there.
+
+**What goes wrong.**
+
+| Symptom | Cause |
+| --- | --- |
+| The API won't boot: `GOOGLE_DRIVE_CREDENTIALS_JSON must be a service account key file` | Step 4 holds something other than the JSON key file, or only part of it |
+| Connecting says Frapp can't see the folder, though it is shared | The folder was shared with the other environment's account, or with a person instead of the account's email |
+| Connected, but nothing appears, and the API logs `Google Drive sync broke for connection …` with `accessNotConfigured` | Step 1 |
