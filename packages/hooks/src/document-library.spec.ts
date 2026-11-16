@@ -16,6 +16,7 @@ import {
   isFiltering,
   kindOptions,
   isMarkFiltering,
+  limitedDocumentCheck,
 } from "./document-library";
 
 type ChapterDocument = {
@@ -662,5 +663,36 @@ describe("markedItems and tierRows (#3934)", () => {
     expect(
       tierRows([...rows].reverse(), new Set(["d-2"])).map((row) => row.doc.id),
     ).toEqual(["d-1", "d-2", "d-3"]);
+  });
+});
+
+describe("limitedDocumentCheck (#5216)", () => {
+  const folders = [
+    { name: "Exec", who_can_see: ["tier:exec"] },
+    { name: "Rush", who_can_see: null },
+  ];
+
+  it("locks a file with its own list, wherever it sits", () => {
+    const isLimited = limitedDocumentCheck(folders);
+    expect(isLimited({ folder: null, who_can_see: ["role:a"] })).toBe(true);
+    expect(isLimited({ folder: "Rush", who_can_see: ["role:a"] })).toBe(true);
+  });
+
+  it("locks a file in a folder with a list, not one in an open folder", () => {
+    const isLimited = limitedDocumentCheck(folders);
+    expect(isLimited({ folder: "Exec", who_can_see: null })).toBe(true);
+    expect(isLimited({ folder: "Rush", who_can_see: null })).toBe(false);
+    expect(isLimited({ folder: null })).toBe(false);
+    expect(isLimited({ folder: "" })).toBe(false);
+  });
+
+  it("locks an own upload whose folder this member can't see", () => {
+    expect(limitedDocumentCheck(folders)({ folder: "Treasury" })).toBe(true);
+  });
+
+  it("counts only a file's own list until the folders load", () => {
+    const isLimited = limitedDocumentCheck(null);
+    expect(isLimited({ folder: "Treasury" })).toBe(false);
+    expect(isLimited({ folder: "Exec", who_can_see: ["role:a"] })).toBe(true);
   });
 });

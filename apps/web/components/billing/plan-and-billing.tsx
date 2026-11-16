@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useBillingStatus, useCurrentUser, useInvoices } from "@repo/hooks";
 import { isBetaOffModule } from "@repo/validation";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { anyReadUncached, pausedRead } from "@/components/shared/async-states";
 import { NestedOffline } from "@/components/shared/nested-states";
 import { PlanPanel } from "@/components/billing/plan-panel";
 import { PlanMatrix } from "@/components/billing/plan-matrix";
@@ -185,7 +185,7 @@ function CancelOrClose({ status }: { status: string | null }) {
     status !== "incomplete" &&
     status !== "canceled" &&
     statusQuery.isPending &&
-    statusQuery.fetchStatus !== "paused";
+    !pausedRead(statusQuery);
   if (status === "incomplete" || status === "canceled") {
     cancelLine = "There is no subscription to cancel.";
   } else if (cancelLoading) {

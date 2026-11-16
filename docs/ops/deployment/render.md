@@ -20,9 +20,6 @@ Create **two** Render Web Services: one for production, one for staging.
 
 ### 5.2 Environment Variables
 
-An image-backed service (§ 5.8) holds only an Infisical bootstrap and reads the rest when the API
-starts; this section is about the synced, git-backed services.
-
 As with Vercel ([environment variables](vercel.md#42-environment-variables-per-project)), these are **not entered by hand in the Render dashboard**. Infisical holds
 the canonical values and its syncs push them into `frapp-api-staging` and `frapp-api-prod`
 (`render-api-staging` and `render-api-production`); the dashboard is the destination. See
@@ -188,38 +185,17 @@ since a tag can be pushed again between the build and Render's pull.
 Which kind each environment's service is, is its `renderDeploySource` there: `commit` or `image`.
 
 Render can't turn one kind of service into the other, so moving an environment means a new service
-and a repointed domain. An image-backed service also gets no Infisical sync: it holds one read-only
-Infisical machine identity and the API reads its config when it starts
-([`SECRETS_MANAGEMENT.md` § Image-backed API](../../internal/environment/SECRETS_MANAGEMENT.md#image-backed-api-read-at-boot-not-synced)).
-`/health`'s `commit` comes from the image, which the build stamps with `RENDER_GIT_COMMIT`, since
-Render sets that only on a git-backed service.
+and a repointed domain. `/health`'s `commit` comes from the image, which the build stamps with
+`RENDER_GIT_COMMIT`, since Render sets that only on a git-backed service.
 
-**State (2026-11-16):** staging's deploys build and push the image on every API deploy, while both
-services are still git-backed; until staging moves, a failed build only warns. Production is refused
-as `image` until its deploy builds one. Moving staging, in order:
-
-1. Make the `frapp-api` package public (GitHub → the `frapplive` organization → Packages →
-   `frapp-api` → Package settings → Change visibility), so Render pulls it with no registry
-   credential. The image holds the public repo's code and no secret.
-2. In Infisical, create a machine identity for staging's API with Universal Auth, add it to the
-   Frapp project with read access to `staging` only, and create its client secret.
-3. In Render, **New → Web Service → Existing image**, `ghcr.io/frapplive/frapp-api:<a commit staging
-   deployed>`, in the same project as `frapp-api-staging`: region Ohio, instance type Free, health
-   check path `/health`. Its environment holds only the three bootstrap names
-   ([`ENV_REFERENCE.md` § Image-backed API bootstrap](../../internal/environment/ENV_REFERENCE.md#image-backed-api-bootstrap-render-only)),
-   with the identity's Client ID and secret. Once its `onrender.com` URL answers `/health` with the
-   commit, suspend it (**Settings → Suspend**): staging runs one API at a time (§ 5.6), and a second
-   one would miss every deploy until step 5 while migrations change the schema under it.
-4. A PR sets staging's `renderServiceId` to the new service and `renderDeploySource` to `image`, and
-   moves the staging conformance check to the new service's settings.
-5. As soon as that PR merges (its staging deploy waits for `main`'s CI, which leaves a few minutes):
-   resume the new service, move `api-staging.frapp.live` to it (§ 5.3) and point the DNS record at
-   its `onrender.com` host, then suspend the old service. The merge's deploy then lands on the new
-   one.
-6. Delete the `render-api-staging` sync (§ 5 of the secrets guide), and delete the old service once
-   staging has run on the new one for a while.
-
-Production follows the same steps with the owner's go, after its deploy promotes the image staging
-already runs rather than building its own.
+**State (2026-11-16): superseded.** Paul moved the API to Cloud Run instead
+([`cloud-run.md`](cloud-run.md), [#5228](https://github.com/frapplive/Frapp/issues/5228)), so no
+environment moves to an image-backed Render service. Staging's deploys still build and push the image
+on every API deploy, and both services are still git-backed. A trial image-backed service,
+`frapp-api-staging-image` (`srv-dbtlikl6e07s73c6gg5g`, Free, Ohio), was made on 2026-11-16 and serves
+nothing; delete it in Render (**Settings → Delete Web Service**). The plan for it had the API read
+its config from Infisical when it started; Paul dropped that the same day
+([`SECRETS_MANAGEMENT.md` § Cloud Run API](../../internal/environment/SECRETS_MANAGEMENT.md#cloud-run-api-synced-to-secret-manager)),
+and the code is gone.
 
 ---

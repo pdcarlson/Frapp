@@ -30,13 +30,13 @@ import {
   formPageNotice,
   formProblemCountLine,
   formResponseKey,
-  isFormClosed,
   readFormPayload,
   saveFormResponse,
   type FormAnswerEdits,
   type FormPayload,
   type FormQuestion,
 } from "@repo/chat-core/forms";
+import { isCardClosed } from "@repo/chat-core/card-closing";
 import type { ChatMessage } from "@repo/chat-core/types";
 import {
   useFrappClient,
@@ -282,7 +282,7 @@ function FormFillBody({
   const apiClient = useFrappClient();
   const queryClient = useQueryClient();
   const now = useNow();
-  const closed = isFormClosed(payload, now);
+  const closed = isCardClosed(payload, now);
   const deadline = formDeadlineLine(payload, now);
 
   // Read again on open (#4727): answers sent from web since must not be

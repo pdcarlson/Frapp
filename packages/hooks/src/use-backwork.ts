@@ -301,8 +301,17 @@ export type BackworkDraft = {
   storage_path: string;
   is_redacted: boolean;
   created_at: string;
-  draft_fields: BackworkDraftFields;
+  draft_fields: BackworkDraftFields & {
+    /** Fields an AI fill set that nobody has edited since (#5233). */
+    ai_filled?: string[];
+    /** How the last AI fill ended, when one ran. */
+    ai_fill?: "filled" | "nothing_found" | "unreadable";
+  };
 };
+
+/** How one AI fill of a draft ended (`POST /v1/backwork/drafts/{id}/fill`). */
+export type BackworkDraftFillStatus =
+  components["schemas"]["BackworkDraftFillResponseDto"]["status"];
 
 /**
  * The caller's own backwork drafts in the active chapter, in upload order
@@ -408,6 +417,44 @@ export function useDeleteBackworkDraft() {
       queryClient.invalidateQueries({
         queryKey: ["backwork", chapterId, "drafts"],
       });
+    },
+  });
+}
+
+/**
+ * Asks the upload AI to fill one draft's empty fields from its redacted text
+ * (#5233). Puts the filled draft in the cached list as soon as it answers.
+ * Throws on 403 (`ai.consent.required`, `ai.chapter_off`) and 404 (AI off on
+ * this server, or the draft is gone), so a caller can stop asking.
+ */
+export function useFillBackworkDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["backwork", "fill-backwork-draft"],
+    mutationFn: async (id: string) => {
+      const result = await client.POST("/v1/backwork/drafts/{id}/fill", {
+        params: { path: { id } },
+      });
+      throwUnlessOk(result);
+      const data = result.data as unknown as {
+        status: BackworkDraftFillStatus;
+        draft?: BackworkDraft;
+      };
+      return { id, status: data.status, draft: data.draft ?? null };
+    },
+    onSuccess: ({ draft }) => {
+      if (!draft) return;
+      queryClient.setQueryData(
+        ["backwork", chapterId, "drafts"],
+        (current: unknown) =>
+          Array.isArray(current)
+            ? current.map((row: BackworkDraft) =>
+                row.id === draft.id ? draft : row,
+              )
+            : current,
+      );
     },
   });
 }

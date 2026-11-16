@@ -139,6 +139,11 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can connect the chapter's Google Drive folder to Documents, and every file in it shows up for the chapter and stays in sync.",
       "Several people can take notes on the same meeting, and the minutes draft reads everyone's notes and the recording, shows whose line each item came from, and lists where the notes disagreed.",
       "A new document's effective date starts on Today, so you only touch it when the file took effect on another day.",
+      "Bulk backwork uploads now save as drafts only you can see, so you can fix a whole batch in one table and publish it when it's right.",
+      "Whoever made an event sees a Start minutes card in the sidebar while it is on.",
+      "Starting minutes asks one thing at a time, picks the meeting that is on now for you, and only needs a day for a meeting that was never on the calendar.",
+      "You can choose which tiers, roles or groups can see a Documents folder or a single file, and a lock marks the ones not everyone can see.",
+      "Bulk-uploaded backwork drafts now fill in their course, professor, term and type from the file's redacted pages, marked AI so you can check them before you publish.",
     ],
     phone: [
       "The Calendar has its own + at the top for adding an event from any view, and on the Calendar it starts on the day you've picked, today or later.",

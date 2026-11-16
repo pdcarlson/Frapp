@@ -60,6 +60,7 @@ import {
   anyReadUncached,
   readIsOffline,
   PermissionsOfflineSurface,
+  pausedRead,
 } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import {
@@ -75,8 +76,10 @@ import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { ChatReportsCard } from "./chat-reports-card";
 import {
   ChannelAccessField,
+  channelAccessOptionsState,
   describeChannelAccess,
   type ChannelAccessOption,
+  type ChannelAccessOptionsState,
 } from "@/components/chat-admin/channel-access-field";
 import {
   ChannelsSkeleton,
@@ -321,14 +324,7 @@ function ChatAdminBody({
     () => asArray<ChannelAccessOption>(accessOptionsQuery.data),
     [accessOptionsQuery.data],
   );
-  const accessOptionsState: "ready" | "loading" | "error" =
-    accessOptionsQuery.data !== undefined
-      ? "ready"
-      : accessOptionsQuery.isError ||
-          (accessOptionsQuery.isPending &&
-            accessOptionsQuery.fetchStatus === "paused")
-        ? "error"
-        : "loading";
+  const accessOptionsState = channelAccessOptionsState(accessOptionsQuery);
 
   // ── Category drafts ─────────────────────────────────────────────────────
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -721,9 +717,7 @@ function ChatAdminBody({
     void accessOptionsQuery.refetch();
   }
 
-  const paused =
-    (channelsQuery.isPending && channelsQuery.fetchStatus === "paused") ||
-    (categoriesQuery.isPending && categoriesQuery.fetchStatus === "paused");
+  const paused = pausedRead(channelsQuery) || pausedRead(categoriesQuery);
 
   // The nested family, not `async-states.tsx`'s: those paint `--card`, so on
   // this flush route they would redraw the card the route deleted. `sole`
@@ -1335,7 +1329,7 @@ function ChannelAccessSection({
   post: string[] | null;
   matching: boolean;
   options: readonly ChannelAccessOption[];
-  optionsState: "ready" | "loading" | "error";
+  optionsState: ChannelAccessOptionsState;
   onSeeChange: (next: string[] | null) => void;
   onPostChange: (next: string[] | null) => void;
   onMatch: () => void;
@@ -1456,7 +1450,7 @@ function CategoryAccessEditor({
   onSeeChange: (next: string[] | null) => void;
   onPostChange: (next: string[] | null) => void;
   options: readonly ChannelAccessOption[];
-  optionsState: "ready" | "loading" | "error";
+  optionsState: ChannelAccessOptionsState;
   saving: boolean;
   onCancel: () => void;
   onSave: () => void;

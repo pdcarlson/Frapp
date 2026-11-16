@@ -36,6 +36,7 @@ import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import {
   ChannelAccessField,
+  channelAccessOptionsState,
   type ChannelAccessOption,
 } from "@/components/chat-admin/channel-access-field";
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
@@ -125,14 +126,7 @@ export function CreateChannelSheet({
     () => asArray<ChannelAccessOption>(accessOptionsQuery.data),
     [accessOptionsQuery.data],
   );
-  const accessOptionsState: "ready" | "loading" | "error" =
-    accessOptionsQuery.data !== undefined
-      ? "ready"
-      : accessOptionsQuery.isError ||
-          (accessOptionsQuery.isPending &&
-            accessOptionsQuery.fetchStatus === "paused")
-        ? "error"
-        : "loading";
+  const accessOptionsState = channelAccessOptionsState(accessOptionsQuery);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");

@@ -3,10 +3,10 @@ import { MARK_GLYPH_PATHS } from "@repo/theme/nav-glyphs";
 import {
   GlyphFrame,
   glyphPaint,
-  STROKE_WIDTH,
   TabGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
+import { STROKE_WIDTH } from "@/components/glyph-recipe";
 
 /**
  * The eyebrow glyphs of the chat cards that have no tab of their own, and

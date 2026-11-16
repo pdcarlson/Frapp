@@ -7,12 +7,23 @@ import {
   type ImportDeps,
   type MintRequest,
 } from "./folder-import-session";
+import type { ItemStatus } from "@/lib/bulk-upload/queue";
 
-const flush = async () => {
-  for (let i = 0; i < 10; i += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-};
+/**
+ * Waits until every item has reached one of `statuses`, however long the
+ * reads, hashes and batched calls take: a fixed sleep false-fails on a loaded
+ * runner. Waiting for the end state, not for the first call, means a stray
+ * extra call has already happened by the time the counts are checked.
+ */
+const reached = (run: FolderImport, statuses: readonly ItemStatus[]) =>
+  vi.waitFor(() => {
+    const items = run.getSnapshot().queue.items;
+    expect(items.every((it) => statuses.includes(it.status))).toBe(true);
+  });
+/** Every file read and hashed, ready for Import or failed. */
+const prepared = (run: FolderImport) => reached(run, ["ready", "failed"]);
+/** Every file Import sent on uploaded and filed, or failed. */
+const settled = (run: FolderImport) => reached(run, ["done", "failed"]);
 
 function file(path: string, body = path, type = "application/pdf"): File {
   const name = path.slice(path.lastIndexOf("/") + 1);
@@ -92,7 +103,7 @@ describe("FolderImport", () => {
       ],
       CONTEXT,
     );
-    await flush();
+    await prepared(run);
     const view = run.getSnapshot();
     const reasons = duplicateReasons(view.rows, view.queue);
     const [first, copy, budget] = view.rows;
@@ -113,14 +124,12 @@ describe("FolderImport", () => {
       ],
       CONTEXT,
     );
-    await flush();
+    await prepared(run);
     const policy = run.getSnapshot().rows[1]!;
     run.update(policy.id, { title: "Risk policy", documentType: "" });
 
     expect(run.apply()).toBe(2);
-    await flush();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await flush();
+    await settled(run);
 
     // One mint and one confirm for both; the likely copy was left out.
     expect(deps.mint).toHaveBeenCalledTimes(1);
@@ -146,18 +155,16 @@ describe("FolderImport", () => {
       ),
     });
     run.add([file("Drop/bylaws.pdf")], CONTEXT);
-    await flush();
+    await prepared(run);
     run.apply();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await flush();
+    await settled(run);
     const item = run.getSnapshot().queue.items[0]!;
     expect(item.status).toBe("failed");
     expect(item.error).toBe("Type list is full");
 
     refuse = false;
     run.retry(item.id);
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await flush();
+    await settled(run);
     expect(run.getSnapshot().queue.items[0]!.status).toBe("done");
   });
 
@@ -174,10 +181,9 @@ describe("FolderImport", () => {
       }),
     });
     run.add([file("Drop/bylaws.pdf")], CONTEXT);
-    await flush();
+    await prepared(run);
     run.apply();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await flush();
+    await settled(run);
     expect(deps.sleep).toHaveBeenCalledWith(15_000);
     expect(run.getSnapshot().queue.items[0]!.status).toBe("done");
   });
@@ -208,16 +214,14 @@ describe("FolderImport", () => {
       }),
     });
     run.add([file("Drop/bylaws.pdf")], CONTEXT);
-    await flush();
+    await prepared(run);
     run.apply();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await flush();
+    await settled(run);
     const item = run.getSnapshot().queue.items[0]!;
     expect(item.status).toBe("failed");
 
     run.retry(item.id);
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await flush();
+    await settled(run);
 
     expect(run.getSnapshot().queue.items[0]!.status).toBe("done");
     expect(deps.mint).toHaveBeenCalledTimes(1);
@@ -235,11 +239,9 @@ describe("FolderImport", () => {
       Array.from({ length: 30 }, (_, i) => file(`Drop/f${i}.pdf`, `body ${i}`)),
       CONTEXT,
     );
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    await flush();
+    await prepared(run);
     expect(run.apply()).toBe(30);
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    await flush();
+    await settled(run);
     expect(vi.mocked(deps.mint).mock.calls.map(([files]) => files.length)).toEqual([
       25, 5,
     ]);
@@ -252,10 +254,9 @@ describe("FolderImport", () => {
       value: () => Promise.reject(new Error("moved")),
     });
     run.add([file("Drop/bylaws.pdf"), broken], CONTEXT);
-    await flush();
+    await prepared(run);
     expect(run.apply()).toBe(1);
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await flush();
+    await settled(run);
     expect(run.getSnapshot().queue.items.map((it) => it.status)).toEqual(["done"]);
   });
 
@@ -266,10 +267,9 @@ describe("FolderImport", () => {
       }),
     });
     run.add([file("Drop/bylaws.pdf")], CONTEXT);
-    await flush();
+    await prepared(run);
     run.apply();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    await flush();
+    await settled(run);
     expect(deps.put).not.toHaveBeenCalled();
     expect(deps.confirm).not.toHaveBeenCalled();
     expect(run.getSnapshot().queue.items[0]!.status).toBe("failed");

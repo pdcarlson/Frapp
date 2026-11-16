@@ -15,6 +15,7 @@
 import { directChannelDisplayName, type DisplayNameMap } from "@repo/hooks";
 import { channelDescription } from "@repo/hooks/channel-start";
 import { isDirectChannel as isDirectChannelType } from "@repo/validation";
+import { isRecord } from "@/lib/more/narrow";
 
 /** Minimal channel shape; the SDK response type is unusable. */
 export interface ChannelSummary {
@@ -99,10 +100,6 @@ export interface ChannelCategorySummary {
   /** The category's two answers, which a new or matching channel takes; as on `ChannelSummary`. */
   who_can_see?: string[] | null;
   who_can_post?: string[] | null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object";
 }
 
 /**

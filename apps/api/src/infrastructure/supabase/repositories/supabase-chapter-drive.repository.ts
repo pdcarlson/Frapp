@@ -48,6 +48,7 @@ export class SupabaseChapterDriveRepository implements IChapterDriveRepository {
     folder_id: string;
     folder_name: string;
     connected_by: string;
+    who_can_see: string[] | null;
   }): Promise<ChapterDriveConnection> {
     const { data: created, error } = await this.supabase
       .from('chapter_drive_connections')

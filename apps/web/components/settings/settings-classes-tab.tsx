@@ -40,6 +40,7 @@ import {
   ErrorState,
   OfflineState,
   anyReadUncached,
+  pausedRead,
 } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
@@ -187,7 +188,7 @@ export function SettingsClassesTab({ canManage, classTerm, orderTerm }: Props) {
   }
 
   const paused =
-    classesQuery.isPending && classesQuery.fetchStatus === "paused";
+    pausedRead(classesQuery);
 
   let body: ReactNode;
   if (isOffline && anyReadUncached(classesQuery)) {

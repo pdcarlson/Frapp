@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { DOCUMENT_TEXT_EXTRACTOR } from '#domain/adapters/document-text-extractor.interface';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
+import { CHAPTER_DOCUMENT_FOLDER_REPOSITORY } from '#domain/repositories/chapter-document-folder.repository.interface';
 import { CHAT_MEMBER_BLOCK_REPOSITORY } from '#domain/repositories/chat-moderation.repository.interface';
 import { CORPUS_REPOSITORY } from '#domain/repositories/corpus.repository.interface';
 import { MEETING_REPOSITORY } from '#domain/repositories/meeting.repository.interface';
@@ -19,6 +20,7 @@ import { CorpusIndexSweepService } from '../../application/workers/corpus-index-
 import { DocumentTextExtractor } from '../../infrastructure/extraction/document-text-extractor';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { SupabaseChapterDocumentRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-document.repository';
+import { SupabaseChapterDocumentFolderRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-document-folder.repository';
 import { SupabaseChatMemberBlockRepository } from '../../infrastructure/supabase/repositories/supabase-chat-member-block.repository';
 import { SupabaseCorpusRepository } from '../../infrastructure/supabase/repositories/supabase-corpus.repository';
 import { SupabaseMeetingRepository } from '../../infrastructure/supabase/repositories/supabase-meeting.repository';
@@ -89,6 +91,10 @@ import { RbacModule } from '../rbac/rbac.module';
     {
       provide: CHAPTER_DOCUMENT_REPOSITORY,
       useClass: SupabaseChapterDocumentRepository,
+    },
+    {
+      provide: CHAPTER_DOCUMENT_FOLDER_REPOSITORY,
+      useClass: SupabaseChapterDocumentFolderRepository,
     },
     { provide: MEETING_REPOSITORY, useClass: SupabaseMeetingRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },

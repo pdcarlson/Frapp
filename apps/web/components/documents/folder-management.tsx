@@ -7,7 +7,9 @@ import {
   useDeleteDocumentFolder,
   useUpdateDocumentFolder,
 } from "@repo/hooks";
+import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
 import { tierByMarks } from "@repo/hooks/document-library";
+import { sameChannelAccessList } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,10 +32,34 @@ import type {
   ChapterDocumentFolder,
   FolderRow,
 } from "@/components/documents/document-types";
+import { ChannelAccessField } from "@/components/chat-admin/channel-access-field";
+import {
+  FOLDER_ALWAYS_LINE,
+  useDocumentAccessChoices,
+} from "@/components/documents/document-access";
 
 /**
- * Folder writes — create, rename, reorder, delete — and the one dialog that
- * serves create and rename. The rail and the dialog both read from what this
+ * The folder dialog's draft; `whoCanSee` `null` is everyone (#3642 piece 1).
+ * `synced` marks a folder Google Drive sync made (#5220), whose name is
+ * Drive's.
+ */
+type FolderDraft = {
+  id: string | null;
+  name: string;
+  whoCanSee: string[] | null;
+  synced: boolean;
+};
+
+const EMPTY_FOLDER_DRAFT: FolderDraft = {
+  id: null,
+  name: "",
+  whoCanSee: null,
+  synced: false,
+};
+
+/**
+ * Folder writes — create, edit, reorder, delete — and the one dialog that
+ * serves create and edit (its name and who can see it). The rail and the dialog both read from what this
  * returns, so the busy flag they disable on is a single value.
  */
 export function useFolderManagement({
@@ -63,10 +89,8 @@ export function useFolderManagement({
     behind the same subscription gate the rest of this page's writes do.
   */
   const folderDialog = useGatedDialog(gate);
-  const [folderDraft, setFolderDraft] = useState<{
-    id: string | null;
-    name: string;
-  }>({ id: null, name: "" });
+  const [folderDraft, setFolderDraft] =
+    useState<FolderDraft>(EMPTY_FOLDER_DRAFT);
   const [folderBusy, setFolderBusy] = useState(false);
   /*
     The same guard `deletingIds` provides for document deletes, in the shape a
@@ -91,7 +115,12 @@ export function useFolderManagement({
   }
 
   function openFolderDialog(folder: FolderRow | null) {
-    setFolderDraft({ id: folder?.id ?? null, name: folder?.name ?? "" });
+    setFolderDraft({
+      id: folder?.id ?? null,
+      name: folder?.name ?? "",
+      whoCanSee: folder?.who_can_see ?? null,
+      synced: !!folder?.drive_folder_id,
+    });
     folderDialog.setOpen(true);
   }
 
@@ -106,34 +135,73 @@ export function useFolderManagement({
       });
       return;
     }
-    const renaming = folderDraft.id !== null;
-    const previousName = renaming
-      ? (folders.find((folder) => folder.id === folderDraft.id)?.name ?? null)
+    const editing = folderDraft.id !== null;
+    const previous = editing
+      ? (folders.find((folder) => folder.id === folderDraft.id) ?? null)
       : null;
+    const previousName = previous?.name ?? null;
+    /*
+      Only what changed is sent: a rename re-files the folder's documents,
+      and an unchanged list is no write at all, so saving a dialog opened
+      only to look sends nothing.
+    */
+    // A synced folder's name is Drive's (#5220): never sent, even if a sync
+    // renamed it while the dialog was open.
+    const renamed = editing && !folderDraft.synced && name !== previousName;
+    const accessChanged =
+      editing &&
+      !sameChannelAccessList(
+        folderDraft.whoCanSee,
+        previous?.who_can_see ?? null,
+      );
+    // An empty Chosen list is refused by the API; Save waits for an entry.
+    if (isEmptyChannelAccessChoice(folderDraft.whoCanSee)) return;
+    if (editing && !renamed && !accessChanged) {
+      folderDialog.setOpen(false);
+      setFolderDraft(EMPTY_FOLDER_DRAFT);
+      return;
+    }
     if (!beginFolderWrite()) return;
     try {
-      if (renaming) {
-        await updateFolder.mutateAsync({ id: folderDraft.id!, name });
+      if (editing) {
+        await updateFolder.mutateAsync({
+          id: folderDraft.id!,
+          ...(renamed ? { name } : {}),
+          ...(accessChanged ? { who_can_see: folderDraft.whoCanSee } : {}),
+        });
       } else {
-        await createFolder.mutateAsync({ name });
+        await createFolder.mutateAsync({
+          name,
+          ...(folderDraft.whoCanSee !== null
+            ? { who_can_see: folderDraft.whoCanSee }
+            : {}),
+        });
       }
       toast({
-        title: renaming ? "Folder renamed" : "Folder created",
-        description: renaming
-          ? `Documents in this folder now read "${name}".`
-          : `"${name}" is ready to file documents into.`,
+        title: !editing
+          ? "Folder created"
+          : renamed
+            ? "Folder renamed"
+            : "Saved who can see it",
+        description: !editing
+          ? `"${name}" is ready to file documents into.`
+          : renamed
+            ? `Documents in this folder now read "${name}".`
+            : folderDraft.whoCanSee === null
+              ? `Everyone who can open Documents sees ${name}.`
+              : `Only the people chosen see ${name} and what's in it.`,
       });
       // A rename re-files documents server-side, so a tab still pointing at the
       // old name would filter to nothing. Follow the folder rather than reset.
-      if (renaming && activeFolder === previousName) setActiveFolder(name);
+      if (renamed && activeFolder === previousName) setActiveFolder(name);
       folderDialog.setOpen(false);
-      setFolderDraft({ id: null, name: "" });
+      setFolderDraft(EMPTY_FOLDER_DRAFT);
     } catch (error) {
       // The API answers a duplicate name with 409 and a readable body
       // (`A folder named "X" already exists`), which `getErrorMessage` surfaces
       // verbatim — the fallback is for the network-failure case only.
       toast({
-        title: renaming ? "Couldn't rename folder" : "Couldn't create folder",
+        title: editing ? "Couldn't save folder" : "Couldn't create folder",
         description: getErrorMessage(error, "Try again in a moment."),
         variant: "destructive",
       });
@@ -287,6 +355,7 @@ export function FolderDialog({
     folderBusy,
     handleSaveFolder,
   } = management;
+  const access = useDocumentAccessChoices(folderDialog.open);
 
   /*
     Controlled with no `DialogTrigger` — it is opened from any of the
@@ -298,12 +367,14 @@ export function FolderDialog({
       <DialogContent {...folderDialog.contentProps}>
         <DialogHeader>
           <DialogTitle>
-            {folderDraft.id ? "Rename folder" : "New folder"}
+            {folderDraft.id ? "Edit folder" : "New folder"}
           </DialogTitle>
           <DialogDescription>
-            {folderDraft.id
-              ? "Documents record their folder by name, so renaming re-files every document in it."
-              : "Folders are flat and one level deep. Create it now, then file documents into it on upload."}
+            {folderDraft.synced
+              ? "This folder comes from Google Drive: rename or delete it there. Who can see it reaches every file inside, and stays when Drive renames it."
+              : folderDraft.id
+                ? "Renaming re-files every document in it. Who can see it reaches every file inside."
+                : "Folders are flat and one level deep. Create it now, then file documents into it on upload."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -323,8 +394,31 @@ export function FolderDialog({
                 }))
               }
               placeholder="Governance"
+              readOnly={folderDraft.synced}
+              aria-readonly={folderDraft.synced || undefined}
             />
           </div>
+          {/*
+            Left out for a member outside the tiers, who may not set a list
+            (the API refuses), rather than offered and refused on save. On a
+            folder that already has one they may still open it to everyone.
+          */}
+          {access.canLimit || folderDraft.whoCanSee !== null ? (
+            <ChannelAccessField
+              id="doc-folder-access"
+              question="see"
+              value={folderDraft.whoCanSee}
+              onChange={(next) =>
+                setFolderDraft((prev) => ({ ...prev, whoCanSee: next }))
+              }
+              options={access.options}
+              optionsState={access.optionsState}
+              locked={access.locked}
+              alwaysLine={FOLDER_ALWAYS_LINE}
+              canChoose={access.canLimit}
+              disabled={folderBusy || access.optionsState === "loading"}
+            />
+          ) : null}
         </form>
         <DialogFooter>
           <Button
@@ -337,10 +431,14 @@ export function FolderDialog({
           <Button
             form="doc-folder-form"
             type="submit"
-            {...gate.controlProps(folderBusy || !folderDraft.name.trim())}
+            {...gate.controlProps(
+              folderBusy ||
+                !folderDraft.name.trim() ||
+                isEmptyChannelAccessChoice(folderDraft.whoCanSee),
+            )}
           >
             {folderBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {folderDraft.id ? "Rename folder" : "Create folder"}
+            {folderDraft.id ? "Save folder" : "Create folder"}
           </Button>
         </DialogFooter>
       </DialogContent>

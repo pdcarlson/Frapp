@@ -42,6 +42,7 @@ export interface IChapterDocumentRepository {
       | 'byte_size'
       | 'drive_modified_at'
       | 'drive_url'
+      | 'drive_held_folder_id'
     >,
   ): Promise<void>;
   /**
@@ -54,11 +55,10 @@ export interface IChapterDocumentRepository {
     chapterId: string,
     pinnedAt: string | null,
   ): Promise<ChapterDocument | null>;
-  moveToRoot(folder: string, chapterId: string): Promise<void>;
-  /** Re-files every document under `fromFolder` into `toFolder`. */
-  renameFolder(
-    fromFolder: string,
-    toFolder: string,
+  /** Sets one file's own who can see (`null`: the same as its folder). */
+  setWhoCanSee(
+    id: string,
     chapterId: string,
-  ): Promise<void>;
+    whoCanSee: string[] | null,
+  ): Promise<ChapterDocument | null>;
 }

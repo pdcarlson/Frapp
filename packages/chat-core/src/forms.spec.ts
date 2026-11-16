@@ -1,14 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   buildFormMessage,
-  canCloseForm,
   fetchOwnFormResponse,
   formAnswerProblems,
   formAnswersForSave,
   formCardAction,
   formDeadlineLine,
   formQuestionCountLine,
-  isFormClosed,
   readFormPayload,
   saveFormResponse,
   type FormPayload,
@@ -16,6 +14,7 @@ import {
   formOpenRead,
   formOpenReadNote,
 } from "./forms";
+import { canCloseCard, isCardClosed } from "./card-closing";
 import type { FrappApiClient } from "./chat-client";
 import type { ChatMessage } from "./types";
 
@@ -105,7 +104,7 @@ describe("forms (#3926 step 3)", () => {
 
   it("reads closed and the deadline line as the API does", () => {
     expect(
-      isFormClosed({ ...card, closes_at: "2026-11-13T12:00:00Z" }, NOW),
+      isCardClosed({ ...card, closes_at: "2026-11-13T12:00:00Z" }, NOW),
     ).toBe(true);
     expect(formDeadlineLine({ ...card, closed_at: "x" }, NOW)).toBe("Closed");
     expect(formDeadlineLine(card, NOW)).toBeNull();
@@ -118,11 +117,11 @@ describe("forms (#3926 step 3)", () => {
   });
 
   it("offers Close form to its creator or a moderator while it is open", () => {
-    expect(canCloseForm(message(card), card, "u1", NOW, false)).toBe(true);
-    expect(canCloseForm(message(card), card, "u2", NOW, false)).toBe(false);
-    expect(canCloseForm(message(card), card, "u2", NOW, true)).toBe(true);
+    expect(canCloseCard(message(card), card, "u1", NOW, false)).toBe(true);
+    expect(canCloseCard(message(card), card, "u2", NOW, false)).toBe(false);
+    expect(canCloseCard(message(card), card, "u2", NOW, true)).toBe(true);
     expect(
-      canCloseForm(
+      canCloseCard(
         message(card),
         { ...card, closed_at: "x" },
         "u1",

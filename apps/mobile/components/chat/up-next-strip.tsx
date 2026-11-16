@@ -13,6 +13,7 @@ import { useNowDate } from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { records } from "@/lib/more/narrow";
 import { eyebrowStyle } from "@/components/eyebrow";
 import { ForwardGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_GLYPH, LeadTile } from "@/components/lead-tile";
@@ -84,14 +85,12 @@ export interface UpNextStripProps {
   now?: Date;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object";
-}
-
-function asArray(value: unknown): Record<string, unknown>[] {
-  return Array.isArray(value) ? value.filter(isRecord) : [];
-}
-
+/**
+ * A non-empty string, or `null`. Length-checked, not trimmed like
+ * `lib/more/narrow.ts`'s `str()`: a whitespace-only event name or task title
+ * the API accepted still shows here rather than the strip skipping to the
+ * next one (#2100 kept that rather than change what the strip shows).
+ */
 function str(row: Record<string, unknown>, key: string): string | null {
   const raw = row[key];
   return typeof raw === "string" && raw.length > 0 ? raw : null;
@@ -102,7 +101,7 @@ export function selectNextEvent(
   events: unknown,
   now: Date,
 ): UpNextEvent | null {
-  const upcoming = asArray(events)
+  const upcoming = records(events)
     .map((row) => {
       const id = str(row, "id");
       const name = str(row, "name");
@@ -155,7 +154,7 @@ export function selectNextTask(
   viewerUserId: string | null,
 ): UpNextTask | null {
   if (!viewerUserId) return null;
-  const open = asArray(tasks)
+  const open = records(tasks)
     .filter((row) => str(row, "assignee_id") === viewerUserId)
     .map((row) => {
       const id = str(row, "id");

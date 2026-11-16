@@ -1,6 +1,6 @@
 "use client";
 
-import { Download, Loader2, Trash2 } from "lucide-react";
+import { Download, Loader2, Trash2, Users } from "lucide-react";
 import { formatDay } from "@repo/formatting";
 import { isDriveCopy, uploadedLine } from "@repo/hooks/document-library";
 import { IconButton } from "@/components/ui/icon-button";
@@ -13,6 +13,7 @@ import {
 } from "@/components/documents/resources-glyphs";
 import { OPEN_DOCUMENT_ATTRIBUTE } from "@/components/documents/document-viewer";
 import { KEEP_FOCUS_ATTRIBUTE } from "@/components/documents/use-keep-focus";
+import { LimitedMark } from "@/components/documents/document-access";
 import { useDocumentDownload } from "@/components/documents/use-document-download";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
 import type { ChapterDocument } from "@/components/documents/document-types";
@@ -87,6 +88,8 @@ export function DocumentRow({
   onDelete,
   onToggleStar,
   onTogglePin,
+  limited = false,
+  onSetAccess,
 }: {
   doc: ChapterDocument;
   /** Who uploaded it, when the roster can name them (#3852). */
@@ -102,6 +105,10 @@ export function DocumentRow({
   onDelete: (doc: ChapterDocument) => void;
   onToggleStar: (doc: ChapterDocument) => void;
   onTogglePin: (doc: ChapterDocument) => void;
+  /** Not everyone can see it: its own list, or its folder's (#3642 piece 1). */
+  limited?: boolean;
+  /** Opens Who can see; absent for a member who may not set it. */
+  onSetAccess?: (doc: ChapterDocument) => void;
 }) {
   const facts = documentFacts(doc, uploader);
   return (
@@ -147,8 +154,9 @@ export function DocumentRow({
       >
         <DocumentsGlyph className="hidden h-4 w-4 shrink-0 text-muted @md:block" />
         <span className="block min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">
-            {doc.title}
+          <span className="flex min-w-0 items-center gap-1.5 text-sm font-semibold">
+            <span className="truncate">{doc.title}</span>
+            {limited ? <LimitedMark className="text-muted" /> : null}
           </span>
           {/*
           Description LAST, and the order is load-bearing. The
@@ -180,6 +188,7 @@ export function DocumentRow({
         onDelete={onDelete}
         onToggleStar={onToggleStar}
         onTogglePin={onTogglePin}
+        onSetAccess={onSetAccess}
         className="shrink-0 @md:ml-auto"
       />
     </li>
@@ -187,7 +196,7 @@ export function DocumentRow({
 }
 
 /**
- * A file's own controls: Star, Pin, Download and Delete, shared by the list's
+ * A file's own controls: Star, Pin, Who can see, Download and Delete, shared by the list's
  * row and the grid's tile (#4175) so the two layouts offer the same actions
  * under the same names and gates.
  */
@@ -200,6 +209,7 @@ export function DocumentControls({
   onDelete,
   onToggleStar,
   onTogglePin,
+  onSetAccess,
   className,
 }: {
   doc: ChapterDocument;
@@ -210,6 +220,7 @@ export function DocumentControls({
   onDelete: (doc: ChapterDocument) => void;
   onToggleStar: (doc: ChapterDocument) => void;
   onTogglePin: (doc: ChapterDocument) => void;
+  onSetAccess?: (doc: ChapterDocument) => void;
   className?: string;
 }) {
   const pinned = !!doc.pinned_at;
@@ -261,6 +272,20 @@ export function DocumentControls({
           <PinGlyph active={pinned} />
         </IconButton>
       </Can>
+      {/*
+        Who can see (#3642 piece 1), for its uploader and whoever manages
+        documents, as Drive puts Share on each file's own row. The page
+        decides who gets it, so it is absent rather than refused.
+      */}
+      {onSetAccess ? (
+        <IconButton
+          label={`Who can see ${doc.title}`}
+          onClick={() => onSetAccess(doc)}
+          {...gate.controlProps()}
+        >
+          <Users />
+        </IconButton>
+      ) : null}
       <DownloadButton id={doc.id} title={doc.title} />
       {/*
         A copy of a Drive file (#5157) has no Delete: Drive owns it, the API

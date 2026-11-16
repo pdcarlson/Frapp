@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { codeOf } from "@repo/api-sdk";
 import {
   useChooseMeetingDraftVersion,
@@ -23,6 +24,7 @@ import {
   meetingLocalDay,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type {
   ConfirmRequest,
@@ -59,6 +61,8 @@ export function NotesDraftPanel({
   notesState,
   recording,
   hasContent,
+  folded = false,
+  fillInSlot = null,
   disabled,
   prepare,
   onSettled,
@@ -77,6 +81,17 @@ export function NotesDraftPanel({
   recording: MeetingRecordingState | null;
   /** The sections below already hold something a draft would replace. */
   hasContent: boolean;
+  /**
+   * The minutes are written and lead the page, so the notes fold away under
+   * them behind a Show button (Paul, 2026-11-16: a 4-hour transcript is not
+   * what the officer edits).
+   */
+  folded?: boolean;
+  /**
+   * Where the draft's "To fill in" questions go, above the minutes, so
+   * answering them is the first thing to do; in this panel when null.
+   */
+  fillInSlot?: HTMLElement | null;
   disabled: boolean;
   /**
    * Saves what is typed below and answers the version a draft should build
@@ -109,6 +124,14 @@ export function NotesDraftPanel({
   );
   const notes = autosave.text;
   const [problem, setProblem] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  // One answer per open question, for the draft on screen.
+  const [answers, setAnswers] = useState<string[]>([]);
+  const [answersFor, setAnswersFor] = useState(state.requested_at);
+  if (answersFor !== state.requested_at) {
+    setAnswersFor(state.requested_at);
+    setAnswers([]);
+  }
 
   const drafting =
     state.status === "drafting" || request.isPending || use.isPending;
@@ -135,8 +158,18 @@ export function NotesDraftPanel({
     if (was === "drafting" || state.status === "applied") settled.current();
   }, [state.status]);
 
-  async function handleDraft() {
-    const text = notes.trim();
+  /**
+   * Write the draft. With `answered`, the officer's answers to the open
+   * questions join the end of their notes first, as their own lines, so the
+   * redraft reads them like the rest of the notes and can quote them; the
+   * author's notes outrank every other source, so an answer settles what the
+   * transcript left open.
+   */
+  async function handleDraft(answered?: string) {
+    const text = (
+      answered ? `${notes.trimEnd()}\n\n${answered}` : notes
+    ).trim();
+
     if (!text && !othersWrote) {
       setProblem(MEETING_NOTES_COPY.empty);
       return;
@@ -157,7 +190,8 @@ export function NotesDraftPanel({
         return;
       }
     }
-    if (hasContent) {
+    // Answering the open questions says plainly that the draft is rewritten.
+    if (hasContent && !answered) {
       const answer = await confirm({
         title: MEETING_NOTES_COPY.replaceTitle,
         description: MEETING_NOTES_COPY.replaceBodyDraft,
@@ -183,6 +217,9 @@ export function NotesDraftPanel({
           meeting_date: meetingLocalDay(eventStart),
         },
       });
+      // The server stored the notes with the answers; the box shows them
+      // only now, so a request that never went leaves the notes as they were.
+      if (answered) autosave.reset(text);
     } catch (error) {
       const code = codeOf(error);
       if (code === "meeting.stale") onStale();
@@ -194,6 +231,17 @@ export function NotesDraftPanel({
         setProblem(MEETING_DRAFT_FAILURE_COPY.chapter_off);
       else setProblem(getErrorMessage(error, MEETING_NOTES_COPY.startFailed));
     }
+  }
+
+  async function handleAnswers() {
+    const lines = state.review.gaps
+      .map((gap, index) => {
+        const answer = (answers[index] ?? "").replace(/\s+/g, " ").trim();
+        return answer ? `${gap.trim()} ${answer}` : null;
+      })
+      .filter((line): line is string => line !== null);
+    if (lines.length === 0) return;
+    await handleDraft([MEETING_NOTES_COPY.answersHeading, ...lines].join("\n"));
   }
 
   async function handleStop() {
@@ -320,56 +368,142 @@ export function NotesDraftPanel({
   // An API from before several note-takers sends no disagreements.
   const conflicts = state.review.conflicts ?? [];
 
+  const answered = answers.some((answer) => answer.trim().length > 0);
+  const fillIn =
+    reviewed && !drafting && (gaps.length > 0 || leftOut > 0) ? (
+      <section
+        aria-labelledby={`${ids}-fill-in`}
+        className={
+          fillInSlot
+            ? "space-y-3 rounded-lg border border-primary/40 bg-surface-1 p-4"
+            : "space-y-3 border-t border-border pt-3"
+        }
+      >
+        <div className="space-y-1">
+          <h3 id={`${ids}-fill-in`} className="text-base font-semibold">
+            {MEETING_NOTES_COPY.toFillIn}
+            {gaps.length > 0 ? `, ${gaps.length}` : ""}
+          </h3>
+          {gaps.length > 0 ? (
+            <p className="text-caption text-muted-foreground">
+              {MEETING_NOTES_COPY.toFillInHint}
+            </p>
+          ) : null}
+        </div>
+        {gaps.length > 0 ? (
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleAnswers();
+            }}
+          >
+            <ol role="list" className="space-y-3">
+              {gaps.map((gap, index) => (
+                <li key={index} className="grid gap-1">
+                  <label htmlFor={`${ids}-answer-${index}`} className="text-sm">
+                    {gap}
+                  </label>
+                  <Input
+                    id={`${ids}-answer-${index}`}
+                    placeholder={MEETING_NOTES_COPY.answerPlaceholder}
+                    value={answers[index] ?? ""}
+                    disabled={disabled}
+                    maxLength={500}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setAnswers((current) => {
+                        const next = [...current];
+                        next[index] = value;
+                        return next;
+                      });
+                    }}
+                  />
+                </li>
+              ))}
+            </ol>
+            <Button type="submit" disabled={disabled || !answered}>
+              {MEETING_NOTES_COPY.updateDraft}
+            </Button>
+          </form>
+        ) : null}
+        {leftOut > 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {MEETING_NOTES_COPY.leftOut(leftOut)}
+          </p>
+        ) : null}
+      </section>
+    ) : null;
+
   return (
     <section
       aria-labelledby={`${ids}-heading`}
       className="space-y-3 rounded-lg border border-border p-4"
     >
-      <div className="space-y-1">
-        <h3 id={`${ids}-heading`} className="text-base font-semibold">
-          {MEETING_NOTES_COPY.heading}
-        </h3>
-        <p className="text-caption text-muted-foreground">
-          {MEETING_NOTES_COPY.hint}
-        </p>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1 space-y-1">
+          <h3 id={`${ids}-heading`} className="text-base font-semibold">
+            {folded
+              ? MEETING_NOTES_COPY.foldedHeading
+              : MEETING_NOTES_COPY.heading}
+          </h3>
+          <p className="text-caption text-muted-foreground">
+            {folded
+              ? MEETING_NOTES_COPY.foldedSummary(wordCount(notes))
+              : MEETING_NOTES_COPY.hint}
+          </p>
+        </div>
+        {folded ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={open}
+            aria-controls={`${ids}-notes`}
+            onClick={() => setOpen((was) => !was)}
+          >
+            {open ? MEETING_NOTES_COPY.hide : MEETING_NOTES_COPY.show}
+          </Button>
+        ) : null}
       </div>
-      {recording?.available && recording.blocked !== "chapter_off" ? (
-        <RecordingUpload
-          meetingId={meetingId}
-          state={recording}
+      <div id={`${ids}-notes`} hidden={folded && !open} className="space-y-3">
+        {recording?.available && recording.blocked !== "chapter_off" ? (
+          <RecordingUpload
+            meetingId={meetingId}
+            state={recording}
+            disabled={drafting || disabled}
+            ensureConsent={ensureConsent}
+            confirm={confirm}
+          />
+        ) : null}
+        <Textarea
+          aria-labelledby={`${ids}-heading`}
+          aria-describedby={`${ids}-status`}
+          aria-invalid={problem ? true : undefined}
+          placeholder={MEETING_NOTES_COPY.placeholder}
+          rows={8}
+          value={notes}
           disabled={drafting || disabled}
-          ensureConsent={ensureConsent}
-          confirm={confirm}
+          onChange={(event) => {
+            autosave.change(event.target.value);
+            if (problem) setProblem(null);
+          }}
         />
-      ) : null}
-      <Textarea
-        aria-labelledby={`${ids}-heading`}
-        aria-describedby={`${ids}-status`}
-        aria-invalid={problem ? true : undefined}
-        placeholder={MEETING_NOTES_COPY.placeholder}
-        rows={8}
-        value={notes}
-        disabled={drafting || disabled}
-        onChange={(event) => {
-          autosave.change(event.target.value);
-          if (problem) setProblem(null);
-        }}
-      />
-      {saving && autosave.status !== "failed" ? (
-        <p className="text-caption text-muted-foreground">{saving}</p>
-      ) : null}
-      {notesState &&
-      (notesState.takers.length > 0 ||
-        transcriptReady ||
-        notesState.can_add) ? (
-        <NoteTakersList
-          meetingId={meetingId}
-          state={notesState}
-          recording={recording}
-          disabled={drafting || disabled}
-          confirm={confirm}
-        />
-      ) : null}
+        {saving && autosave.status !== "failed" ? (
+          <p className="text-caption text-muted-foreground">{saving}</p>
+        ) : null}
+        {notesState &&
+        (notesState.takers.length > 0 ||
+          transcriptReady ||
+          notesState.can_add) ? (
+          <NoteTakersList
+            meetingId={meetingId}
+            state={notesState}
+            recording={recording}
+            disabled={drafting || disabled}
+            confirm={confirm}
+          />
+        ) : null}
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         {drafting ? (
           <Button
@@ -433,25 +567,7 @@ export function NotesDraftPanel({
       >
         {status.text}
       </p>
-      {reviewed && !drafting && (gaps.length > 0 || leftOut > 0) ? (
-        <div className="space-y-1 border-t border-border pt-3">
-          <h4 className="text-sm font-semibold">
-            {MEETING_NOTES_COPY.toFillIn}
-          </h4>
-          {gaps.length > 0 ? (
-            <ul role="list" className="list-disc space-y-1 pl-5 text-sm">
-              {gaps.map((gap, index) => (
-                <li key={index}>{gap}</li>
-              ))}
-            </ul>
-          ) : null}
-          {leftOut > 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {MEETING_NOTES_COPY.leftOut(leftOut)}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+      {fillInSlot ? (fillIn ? createPortal(fillIn, fillInSlot) : null) : fillIn}
       {reviewed && !drafting && conflicts.length > 0 ? (
         <div className="space-y-2 border-t border-border pt-3">
           <h4 className="text-sm font-semibold">
@@ -523,4 +639,10 @@ export function NotesDraftPanel({
       {consentDialog}
     </section>
   );
+}
+
+/** Words in the notes, for the folded panel's one line. */
+function wordCount(text: string): number {
+  const trimmed = text.trim();
+  return trimmed ? trimmed.split(/\s+/).length : 0;
 }

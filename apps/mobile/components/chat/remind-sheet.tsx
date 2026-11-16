@@ -1,10 +1,4 @@
-import {
-  forwardRef,
-  useCallback,
-  useImperativeHandle,
-  useRef,
-  useState,
-} from "react";
+import { forwardRef, useCallback, useState } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import DateTimePicker, {
@@ -24,9 +18,10 @@ import {
   SheetHeader,
   SheetPrimaryButton,
   SheetScrim,
+  useGuardedSheetHandle,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  type GuardedSheetHandle,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -61,12 +56,6 @@ function withClock(day: Date, clock: Date): Date {
   return at;
 }
 
-export interface RemindSheetHandle {
-  present: () => void;
-  /** Closes the sheet, only while it is up (`useSheetVisit`, #3795). */
-  dismiss: () => void;
-}
-
 export interface RemindSheetProps {
   messageId: string | null;
   /** Sets the reminder; the caller confirms it or says why it failed. */
@@ -87,16 +76,12 @@ export interface RemindSheetProps {
  * picker and the report form do, presented by the menu itself, so closing it
  * returns to the thread (`forward-sheet.tsx` says why).
  */
-export const RemindSheet = forwardRef<RemindSheetHandle, RemindSheetProps>(
+export const RemindSheet = forwardRef<GuardedSheetHandle, RemindSheetProps>(
   function RemindSheet({ messageId, onRemind, platform = Platform.OS }, ref) {
     const { tokens } = useFrappTheme();
     const { accent } = useChapterBranding();
     const styles = createStyles(tokens);
     const backgroundStyle = useSheetBackgroundStyle();
-    const modalRef = useRef<BottomSheetModal>(null);
-    const close = useSheetClose(modalRef);
-    const visit = useSheetVisit(modalRef);
-    const { dismiss, willPresent } = visit;
     // Read when the sheet opens and on each step, so the presets' times are
     // the ones they will set.
     const [now, setNow] = useState(() => new Date());
@@ -104,20 +89,19 @@ export const RemindSheet = forwardRef<RemindSheetHandle, RemindSheetProps>(
     /** Android's dialogs came back with a time already gone. */
     const [pastNote, setPastNote] = useState(false);
 
-    useImperativeHandle(
-      ref,
-      () => ({
-        present: () => {
-          setNow(new Date());
-          setCustom(null);
-          setPastNote(false);
-          willPresent();
-          modalRef.current?.present();
-        },
-        dismiss,
-      }),
-      [dismiss, willPresent],
-    );
+    // A fresh visit: the presets' times from now, the custom step closed.
+    const resetForVisit = useCallback(() => {
+      setNow(new Date());
+      setCustom(null);
+      setPastNote(false);
+    }, []);
+    // The menu's dismiss on a deleted message is guarded (#3795, #5173); the
+    // sheet's own close, on a pick or a screen reader's escape, runs only
+    // while it is up, so it stays on the modal.
+    const { modalRef, ...visit } = useGuardedSheetHandle(ref, {
+      onPresent: resetForVisit,
+    });
+    const close = useSheetClose(modalRef);
 
     const remind = useCallback(
       (at: Date) => {

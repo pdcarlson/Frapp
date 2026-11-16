@@ -140,6 +140,22 @@ export function invalidateChannelSummaries(queryClient: QueryClient): void {
   });
 }
 
+/**
+ * Re-read what a channel create, update or delete changes: the channel list,
+ * and the notification-preference levels. The effective-level response is a
+ * function of the channel SET and each channel NAME (`defaultLevelFor` is
+ * name-keyed), so a create, rename or delete can change it. Lifting the prefs
+ * key out of the ["channels"] prefix removed the incidental coupling that used
+ * to cover this, so the channel-set mutations name it explicitly.
+ * Message-level and read-receipt mutations deliberately do NOT.
+ */
+function invalidateChannelSet(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: ["channels"] });
+  void queryClient.invalidateQueries({
+    queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
+  });
+}
+
 export function useChannel(id: string) {
   const client = useFrappClient();
   return useQuery({
@@ -488,16 +504,7 @@ export function useCreateChannel() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
-      // The effective-level response is a function of the channel SET and each
-      // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
-      // delete can change it. Lifting the prefs key out of the ["channels"]
-      // prefix removed the incidental coupling that used to cover this, so the
-      // channel-set mutations name it explicitly. Message-level and
-      // read-receipt mutations deliberately do NOT.
-      queryClient.invalidateQueries({
-        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
-      });
+      invalidateChannelSet(queryClient);
     },
   });
 }
@@ -551,19 +558,10 @@ export function useUpdateChannel() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      invalidateChannelSet(queryClient);
       // `who_can_see` decides who reads the channel.
       queryClient.invalidateQueries({
         queryKey: ["members", chapterId, "channel"],
-      });
-      // The effective-level response is a function of the channel SET and each
-      // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
-      // delete can change it. Lifting the prefs key out of the ["channels"]
-      // prefix removed the incidental coupling that used to cover this, so the
-      // channel-set mutations name it explicitly. Message-level and
-      // read-receipt mutations deliberately do NOT.
-      queryClient.invalidateQueries({
-        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
       });
     },
   });
@@ -624,16 +622,7 @@ export function useDeleteChannel() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
-      // The effective-level response is a function of the channel SET and each
-      // channel NAME (`defaultLevelFor` is name-keyed), so a create, rename or
-      // delete can change it. Lifting the prefs key out of the ["channels"]
-      // prefix removed the incidental coupling that used to cover this, so the
-      // channel-set mutations name it explicitly. Message-level and
-      // read-receipt mutations deliberately do NOT.
-      queryClient.invalidateQueries({
-        queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
-      });
+      invalidateChannelSet(queryClient);
     },
   });
 }

@@ -644,6 +644,125 @@ export class AttendanceService {
     return this.attendanceRepo.findByEvent(eventId);
   }
 
+  /**
+   * Marks members who were at an event by hand, after the fact (Paul,
+   * 2026-11-16: minutes for a meeting nobody checked in to;
+   * `spec/behavior/events.md` § Marking attendance by hand). It only fills
+   * in: a member who already has a row (checked in, marked absent, excused)
+   * keeps it, so a hand mark never overwrites a check-in. Each member is held
+   * to the rules a check-in is: in this chapter, invited by the event's
+   * roles, and not an alumnus the event doesn't name. Like every officer
+   * mark, it moves no points (§ Attendance by role). A member's pending
+   * excuse is withdrawn, as a check-in withdraws it, so it never strands on
+   * the receiver's list beside a row that settles it.
+   */
+  async markByHand(
+    eventId: string,
+    chapterId: string,
+    userIds: readonly string[],
+    status: Exclude<EventAttendance['status'], 'ABSENT'>,
+    markedBy: string,
+  ): Promise<{
+    marked: string[];
+    already_marked: number;
+    not_invited: number;
+  }> {
+    const event = await this.eventRepo.findById(eventId, chapterId);
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+    const wanted = [...new Set(userIds)];
+    const [members, existing] = await Promise.all([
+      this.memberRepo.findByChapter(chapterId),
+      this.attendanceRepo.findByEvent(eventId),
+    ]);
+    const byUser = new Map(members.map((m) => [m.user_id, m]));
+    const recorded = new Set(existing.map((row) => row.user_id));
+    // Read once, only when someone could be left out by it.
+    let alumniRoleId: string | null | undefined;
+
+    const toMark: string[] = [];
+    let alreadyMarked = 0;
+    let notInvited = 0;
+    for (const userId of wanted) {
+      const member = byUser.get(userId);
+      if (!member) {
+        notInvited += 1;
+        continue;
+      }
+      if (recorded.has(userId)) {
+        alreadyMarked += 1;
+        continue;
+      }
+      const attendance = attendanceFor(event, member.role_ids);
+      if (attendance.status === 'not_invited') {
+        notInvited += 1;
+        continue;
+      }
+      if (!attendance.byRole) {
+        if (alumniRoleId === undefined) {
+          alumniRoleId = await this.rbac.getAlumniRoleId(chapterId);
+        }
+        if (alumniRoleId && member.role_ids.includes(alumniRoleId)) {
+          notInvited += 1;
+          continue;
+        }
+      }
+      toMark.push(userId);
+    }
+
+    const rows = () =>
+      toMark.map((userId) => ({
+        event_id: eventId,
+        user_id: userId,
+        status,
+        check_in_time: null,
+        excuse_reason: null,
+        marked_by: markedBy,
+      }));
+    let marked = toMark;
+    if (toMark.length > 0) {
+      try {
+        await this.attendanceRepo.createMany(rows());
+      } catch {
+        // Someone checked in, or another officer marked, between the read
+        // and the write (the unique event and member pair refused the whole
+        // insert). Read again and write only who still has no row.
+        const now = new Set(
+          (await this.attendanceRepo.findByEvent(eventId)).map(
+            (row) => row.user_id,
+          ),
+        );
+        marked = toMark.filter((userId) => !now.has(userId));
+        alreadyMarked += toMark.length - marked.length;
+        if (marked.length > 0) {
+          await this.attendanceRepo.createMany(
+            rows().filter((row) => marked.includes(row.user_id)),
+          );
+        }
+      }
+    }
+
+    for (const userId of marked) {
+      try {
+        await this.excuseRepo.withdrawAtomic(chapterId, eventId, userId);
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'mark-by-hand-drop-pending-excuse',
+          message: `Could not drop the pending excuse of ${userId} for event ${eventId} after a hand mark`,
+          error,
+        });
+      }
+    }
+
+    return {
+      marked,
+      already_marked: alreadyMarked,
+      not_invited: notInvited,
+    };
+  }
+
   async updateStatus(
     eventId: string,
     userId: string,
