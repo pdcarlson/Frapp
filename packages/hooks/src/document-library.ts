@@ -22,7 +22,11 @@ import { fuzzyMatchWords, normalizeWords } from "./fuzzy-match";
  */
 export const POSTGREST_MAX_ROWS = 1000;
 
-/** A documents response this long is treated as truncated. */
+/**
+ * A documents response this long is treated as truncated.
+ * @alias The documents list reads its cap under its own name; it is the
+ * PostgREST row cap above, so knip lets the pair be.
+ */
 export const DOCUMENT_LIST_CAP = POSTGREST_MAX_ROWS;
 
 /** The capped-list status line, both apps (`writing.md` § Chapter Documents (dashboard)). */

@@ -46,7 +46,7 @@ import { AiRunService } from './ai-run.service';
 const MINUTES_DRAFT_TASK = 'minutes.draft';
 
 /** Notes older than this are deleted, posted or not (§ Retention). */
-export const MEETING_NOTES_RETENTION_DAYS = 30;
+const MEETING_NOTES_RETENTION_DAYS = 30;
 
 /**
  * Ranks a note-taker's notes for settling a disagreement: lower wins. The

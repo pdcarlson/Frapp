@@ -45,6 +45,16 @@ export {
   BAGGAGE_HEADER,
   isPseudonymHex,
 } from "./correlation";
+// spec/behavior/observability.md keeps the correlation types in this barrel,
+// so each is tagged `@public` for knip even while nothing imports it.
+export type {
+  /** @public */ RequestId,
+  /** @public */ SentryTraceId,
+  /** @public */ SentryEventId,
+  /** @public */ PostHogDistinctId,
+  /** @public */ PostHogChapterGroupId,
+  /** @public */ AnalyticsIdentity,
+} from "./correlation";
 
 export {
   SENTRY_ERROR_SAMPLE_RATE,

@@ -1,8 +1,9 @@
 export {
   formatClock,
   /**
-   * @public Unconsumed since 2026-11-05 (`spec/architecture/README.md`);
-   * retiring it is #3420. `apps/web/lib/date-call-sites.spec.ts` names it.
+   * @public No web screen has called it since 2026-11-05
+   * (`spec/architecture/README.md`); retiring it is #3420, after mobile stops
+   * using it. `apps/web/lib/date-call-sites.spec.ts` names it.
    */
   formatLocaleDate,
   /** @public See `formatLocaleDate`. */

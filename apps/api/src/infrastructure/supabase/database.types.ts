@@ -123,6 +123,10 @@ import type {
 } from '#domain/entities';
 import type { StripeWebhookClaimOutcome } from '#domain/repositories/stripe-webhook-event.repository.interface';
 
+/**
+ * @public Nothing imports it, but the exported `Database` type names it, and
+ * the API compiles with declarations on, so it has to stay exported.
+ */
 export type Json =
   | string
   | number

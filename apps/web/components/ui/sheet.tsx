@@ -59,8 +59,10 @@ const sheetVariants = cva(
   }
 )
 
-// Exported so `PanelContent`, which wraps `SheetContent`, has a nameable
-// props type: without it `tsc` fails with TS4023.
+/**
+ * @public Exported so `PanelContent`, which wraps `SheetContent`, has a
+ * nameable props type: without it `tsc` fails with TS4023.
+ */
 export interface SheetContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
     VariantProps<typeof sheetVariants> {}
