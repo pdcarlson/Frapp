@@ -4,6 +4,7 @@ import {
   hasKeptDraft,
   keepEditsOver,
   readKeptDraft,
+  readKeptSend,
   useKeptDraftKeys,
   useKeptFormDraft,
   writeKeptDraft,
@@ -36,12 +37,30 @@ import {
  * that is gone, while a later visit may have written a draft of its own. A
  * landed save then clears nothing, since its draft was held out of the store
  * already; a failed one puts its draft back only where no later one stands.
+ *
+ * With `waitsOnSend`, a sheet mounted while its last visit's save is still
+ * out (#5086) opens on what that visit sent, not blank, and waits on it:
+ * `sendingElsewhere` is true until it settles, and the sheet locks as the one
+ * that sent it did, so the same entry isn't sent twice. A failed save leaves
+ * the sheet holding its draft, kept from then on; one that lands turns
+ * `landedElsewhere` true, and the sheet closes (or, for notes the server now
+ * holds, takes them as its base). Only a sheet whose save is awaited, and so
+ * settles after the sheet has gone, can pass it: a `mutate` callback never
+ * runs once its sheet unmounts, so a sheet that sends that way would wait for
+ * good, and opens blank instead.
  */
-export function useKeptSheetOpening<T>(name: string | null): T | undefined {
+export function useKeptSheetOpening<T>(
+  name: string | null,
+  options?: { waitsOnSend?: boolean },
+): T | undefined {
   const keys = useKeptDraftKeys();
-  const [opening] = useState(() =>
-    name === null ? undefined : readKeptDraft<T>(keys.draft(name)),
-  );
+  const waitsOnSend = options?.waitsOnSend === true;
+  const [opening] = useState(() => {
+    if (name === null) return undefined;
+    const key = keys.draft(name);
+    const kept = readKeptDraft<T>(key);
+    return kept !== undefined || !waitsOnSend ? kept : readKeptSend<T>(key);
+  });
   return opening;
 }
 
@@ -56,14 +75,32 @@ export function useKeptSheetDraft<T>(
   clear: () => void;
   hold: () => void;
   release: (patch?: Partial<T>) => void;
+  /** The save of an earlier visit this sheet opened on is still out. */
+  sendingElsewhere: boolean;
+  /** That save landed: what the sheet shows has been sent. */
+  landedElsewhere: boolean;
 } {
   const keys = useKeptDraftKeys();
   const key = name === null ? null : keys.draft(name);
+  // Same object, so it came from the save in flight rather than the store.
+  const [adoptsSend] = useState(
+    () =>
+      key !== null && opening !== undefined && readKeptSend<T>(key) === opening,
+  );
   const kept = useKeptFormDraft<T>(name, true, value, {
     signature,
     restoredAtMount: opening !== undefined,
+    adoptsSend,
   });
-  const { drop, rebase, hold, release } = kept;
+  const {
+    drop,
+    rebase,
+    hold,
+    release,
+    settleGone,
+    sendingElsewhere,
+    landedElsewhere,
+  } = kept;
   const gone = useRef(false);
   useEffect(() => {
     gone.current = false;
@@ -74,23 +111,35 @@ export function useKeptSheetDraft<T>(
   // What the sheet is left showing (blank, or what failed to send) is not a
   // new draft.
   const clear = useCallback(() => {
-    if (gone.current) return;
+    if (gone.current) {
+      settleGone("landed");
+      return;
+    }
     drop();
     rebase();
-  }, [drop, rebase]);
+  }, [drop, rebase, settleGone]);
   const releaseWith = useCallback(
     (patch?: Partial<T>) => {
       if (key === null) return;
-      if (gone.current && hasKeptDraft(key)) return;
+      if (gone.current && hasKeptDraft(key)) {
+        settleGone("failed");
+        return;
+      }
       release();
       const now = readKeptDraft<T>(key);
       if (patch && now !== undefined) writeKeptDraft(key, { ...now, ...patch });
     },
-    [key, release],
+    [key, release, settleGone],
   );
   return useMemo(
-    () => ({ clear, hold, release: releaseWith }),
-    [clear, hold, releaseWith],
+    () => ({
+      clear,
+      hold,
+      release: releaseWith,
+      sendingElsewhere,
+      landedElsewhere,
+    }),
+    [clear, hold, releaseWith, sendingElsewhere, landedElsewhere],
   );
 }
 
