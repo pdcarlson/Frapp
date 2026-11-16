@@ -63,6 +63,15 @@ test("staging: sign-in is limited to this repository, its owner and the staging 
   assert.match(r.stdout, /region:\s+us-east4/);
 });
 
+test("the API's identity may call Vertex AI in its own project, so it needs no key file", () => {
+  const r = run(["staging", "nonprod-123"], "nonprod");
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.calls.some((c) => c.includes("--project=nonprod-123") && c.includes("services enable") && c.includes("aiplatform.googleapis.com")));
+  const grant = r.calls.find((c) => c.includes("roles/aiplatform.user")) ?? "";
+  assert.match(grant, /projects add-iam-policy-binding nonprod-123/);
+  assert.match(grant, /serviceAccount:frapp-api-runtime@nonprod-123\.iam\.gserviceaccount\.com/);
+});
+
 test("production: sign-in is limited to the production environment, and it may read staging's images", () => {
   const r = run(["production", "prod-456", "--staging-project", "nonprod-123"], "prod");
   assert.equal(r.status, 0, r.stderr);

@@ -134,6 +134,10 @@ under the AI epic, [#427](https://github.com/pdcarlson/Frapp/issues/427).
    from two new projects, `frapp-ai-staging` and `frapp-ai-prod`. Hosting stays where
    [ADR-24](adr-24.md) put it, on that ADR's triggers. This record adds a vendor and changes nothing
    in ADR-24.
+   *(Corrected 2026-11-16: the `frapp-ai-*` projects were not used. Staging's calls run from the
+   frapp.live organization's nonprod project since 2026-11-15, and Paul moved hosting to Cloud Run
+   the next day, so each environment's calls now run from the same project as its API
+   ([`cloud-run.md`](../../../docs/ops/deployment/cloud-run.md#secrets), #5228).)*
 10. **Frapp owns the state.** No provider-side store holds chapter content: no File Search, no Files
     API, no managed retrieval corpus. No agent framework owns the loop or its memory. The usage
     ledger, the prompts, the search index, the job queue and the suggestions are Frapp's tables and
