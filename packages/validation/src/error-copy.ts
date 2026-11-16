@@ -293,6 +293,9 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   "That upload has already been filed": "That file was already added.",
   "A file with the same hash already exists in this chapter":
     "That file is already uploaded.",
+  "This file is already in your drafts.": "That file is already in your drafts.",
+  "Someone in your chapter already saved this file as a draft.":
+    "Someone in your chapter already uploaded this file and hasn't published it yet.",
   "Invalid content type. Only images are allowed.": "Pick an image file.",
   "Invalid file extension. Only image files are allowed.":
     "Pick an image file.",

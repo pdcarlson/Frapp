@@ -15,7 +15,7 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  */
 
 /** The contract's status union, so a status the API adds reaches here (#2860). */
-export type DiscordImportStatus =
+type DiscordImportStatus =
   components["schemas"]["DiscordImportResponseDto"]["status"];
 
 /** Statuses the worker is actively moving. Only these are worth polling. */

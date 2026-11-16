@@ -53,10 +53,10 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * 6 proof photos, or a link.
  */
 
-export const TASK_PHOTO_HINT = `JPEG, PNG, GIF or WebP photos, up to ${MAX_UPLOAD_LABEL} each.`;
+const TASK_PHOTO_HINT = `JPEG, PNG, GIF or WebP photos, up to ${MAX_UPLOAD_LABEL} each.`;
 
 /** Why a picked file can't be a task photo, or null when it can. */
-export function taskPhotoProblem(file: File): string | null {
+function taskPhotoProblem(file: File): string | null {
   const inspected = inspectUploadFile("task_photo", file);
   if (inspected.ok) return null;
   return inspected.reason === "size"
@@ -144,7 +144,7 @@ function StoredPhoto({
  * keys page through the set, the way Google Photos and an Asana attachment
  * preview do.
  */
-export function TaskPhotoViewer({
+function TaskPhotoViewer({
   taskId,
   photos,
   index,
@@ -390,7 +390,7 @@ function PickedPhoto({ file, className }: { file: File; className?: string }) {
  * each: the task's own stored ones (editing) and newly picked files. Holds
  * at most `TASK_PHOTOS_MAX` between them.
  */
-export function TaskPhotoPicker({
+function TaskPhotoPicker({
   id,
   taskId,
   kept = [],

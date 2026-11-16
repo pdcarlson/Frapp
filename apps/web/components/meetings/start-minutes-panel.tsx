@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { localIsoDate } from "@repo/formatting";
 import { codeOf } from "@repo/api-sdk";
 import {
   useEvents,
@@ -15,6 +16,7 @@ import {
   MEETING_TYPE_LABELS,
   STANDARDS_MEETING_NOTE,
   can,
+  checkInWindowBounds,
   type MeetingType,
 } from "@repo/validation";
 import {
@@ -27,7 +29,6 @@ import {
 import { FieldError } from "@/components/shared/short-form";
 import { InlineNote } from "@/components/shared/inline-note";
 import { Button } from "@/components/ui/button";
-import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedChoice } from "@/components/ui/segmented";
@@ -37,7 +38,14 @@ import {
   useKeptDraftKeys,
   useKeptFormDraft,
 } from "@repo/hooks/kept-drafts";
-import { MinutesAudienceField } from "@/components/meetings/minutes-audience";
+import {
+  DEFAULT_MEETING_NAME,
+  InlineChange,
+  OffCalendarMeetingFields,
+  QuietLine,
+  offCalendarSpan,
+  type OffCalendarMeeting,
+} from "@/components/meetings/off-calendar-meeting";
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { useToast } from "@/lib/hooks/use-toast";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
@@ -47,12 +55,23 @@ import {
   meetingWhenLabel,
 } from "@/components/meetings/meeting-copy";
 
-/** How far back the event list reaches: a meeting written up within the month. */
-const RECENT_DAYS = 30;
+/**
+ * How far back the event list reaches: through a semester, so backlogging
+ * last month's minutes still starts from the calendar (#5219).
+ */
+const RECENT_DAYS = 120;
 /** And forward: minutes started at the top of a meeting that hasn't begun. */
 const AHEAD_HOURS = 24;
+/** Rows shown before "Show older meetings". */
+const FIRST_ROWS = 5;
 
-type EventRow = { id: string; name: string; start_time: string };
+type EventRow = {
+  id: string;
+  name: string;
+  start_time: string;
+  end_time?: string | null;
+  check_in_opens_minutes?: number | null;
+};
 type Source = { kind: "event"; id: string } | { kind: "new" };
 
 /** The kept draft's name (`@repo/hooks/kept-drafts`, #4593). */
@@ -60,8 +79,10 @@ export const MINUTES_DRAFT = "minutes-start";
 
 /** What the form keeps when the officer leaves it before starting. */
 type MinutesDraft = {
+  /** What the officer picked; null follows the panel's own pick. */
   source: Source | null;
-  type: MeetingType;
+  /** The type the officer chose; null follows the guess from the name. */
+  type: MeetingType | null;
   otherLabel: string;
   name: string;
   date: string;
@@ -74,10 +95,10 @@ type MinutesDraft = {
 function freshMinutesDraft(): MinutesDraft {
   return {
     source: null,
-    type: "chapter",
+    type: null,
     otherLabel: "",
     name: "",
-    date: todayInput(),
+    date: localIsoDate(new Date()),
     startTime: "",
     endTime: "",
     audience: "everyone",
@@ -85,23 +106,46 @@ function freshMinutesDraft(): MinutesDraft {
   };
 }
 
-function todayInput(now = new Date()): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
-
-/** A local `YYYY-MM-DD` and `HH:MM` as an instant, or null. */
-export function localIso(date: string, time: string): string | null {
-  if (!date || !time) return null;
-  const at = new Date(`${date}T${time}`);
-  return Number.isNaN(at.getTime()) ? null : at.toISOString();
+/**
+ * The meeting New minutes opens on (#5219): one on now, else the newest one
+ * that has started and has no minutes. Null when every recent one has them.
+ */
+export function likelyMeeting(
+  events: EventRow[],
+  withMinutes: ReadonlySet<string>,
+  now: number,
+): EventRow | null {
+  const open = events.filter((event) => !withMinutes.has(event.id));
+  // "On" is its check-in window, as the live-meeting card reads it.
+  const on = open.find((event) => {
+    const start = new Date(event.start_time);
+    const end = new Date(event.end_time ?? "");
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return false;
+    }
+    const { opensAt, closesAt } = checkInWindowBounds(
+      start,
+      end,
+      event.check_in_opens_minutes,
+    );
+    return opensAt.getTime() <= now && now <= closesAt.getTime();
+  });
+  if (on) return on;
+  return (
+    open
+      .filter((event) => Date.parse(event.start_time) <= now)
+      .sort((a, b) => Date.parse(b.start_time) - Date.parse(a.start_time))[0] ??
+    null
+  );
 }
 
 /**
- * Start minutes (`spec/behavior/meetings.md` § Writing minutes): pick the
+ * Start minutes (`spec/behavior/meetings.md` § Writing minutes by hand): pick the
  * meeting from the calendar, the way Granola and Otter attach a note to the
  * calendar event it was taken in, or name one that never made it onto the
- * calendar. Then the type, which the event's name guesses. It opens docked in
+ * calendar. One question at a time (#5219): the likely meeting comes picked,
+ * the type is guessed from its name and stated in one line, and a meeting off
+ * the calendar asks only its name and day. It opens docked in
  * place of the Meetings page, chat staying beside it (2026-11-12, #4593).
  */
 export function StartMinutesPanel({
@@ -140,16 +184,20 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   const start = useStartMeeting();
 
   const [now] = useState(() => Date.now());
+  const allEvents = useMemo(
+    () => asArray<EventRow>(eventsQuery.data).filter((event) => !!event?.id),
+    [eventsQuery.data],
+  );
   const recent = useMemo<EventRow[]>(() => {
     const from = now - RECENT_DAYS * 86_400_000;
     const to = now + AHEAD_HOURS * 3_600_000;
-    return asArray<EventRow>(eventsQuery.data)
+    return allEvents
       .filter((event) => {
-        const at = Date.parse(event?.start_time ?? "");
-        return !!event?.id && at >= from && at <= to;
+        const at = Date.parse(event.start_time ?? "");
+        return at >= from && at <= to;
       })
       .sort((a, b) => Date.parse(b.start_time) - Date.parse(a.start_time));
-  }, [eventsQuery.data, now]);
+  }, [allEvents, now]);
   /** Events whose minutes the viewer can already open. */
   const started = useMemo(() => {
     const byEvent = new Map<string, string>();
@@ -167,29 +215,25 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   const draftKey = useKeptDraftKeys().draft(MINUTES_DRAFT);
   const [kept] = useState(() => readKeptDraft<MinutesDraft>(draftKey));
   const initial = kept ?? freshMinutesDraft();
-  const [source, setSource] = useState<Source | null>(initial.source);
-  const [type, setType] = useState<MeetingType>(initial.type);
+  const [chosen, setChosen] = useState<Source | null>(initial.source);
+  const [typeChoice, setTypeChoice] = useState<MeetingType | null>(
+    initial.type,
+  );
   const [otherLabel, setOtherLabel] = useState(initial.otherLabel);
-  const [name, setName] = useState(initial.name);
-  const [date, setDate] = useState(initial.date);
-  const [startTime, setStartTime] = useState(initial.startTime);
-  const [endTime, setEndTime] = useState(initial.endTime);
-  const [audience, setAudience] = useState(initial.audience);
-  const [roleIds, setRoleIds] = useState<string[]>(initial.roleIds);
+  const [meeting, setMeeting] = useState<OffCalendarMeeting>({
+    name: initial.name,
+    date: initial.date,
+    startTime: initial.startTime,
+    endTime: initial.endTime,
+    audience: initial.audience,
+    roleIds: initial.roleIds,
+  });
+  const [changingType, setChangingType] = useState(false);
+  const [showOlder, setShowOlder] = useState(false);
   const draft = useKeptFormDraft<MinutesDraft>(
     MINUTES_DRAFT,
     true,
-    {
-      source,
-      type,
-      otherLabel,
-      name,
-      date,
-      startTime,
-      endTime,
-      audience,
-      roleIds,
-    },
+    { source: chosen, type: typeChoice, otherLabel, ...meeting },
     { restoredAtMount: kept !== undefined },
   );
   // A start that lands after the officer left the page doesn't pull them to
@@ -202,16 +246,59 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     };
   }, []);
 
-  function fill(draft: MinutesDraft) {
-    setSource(draft.source);
-    setType(draft.type);
-    setOtherLabel(draft.otherLabel);
-    setName(draft.name);
-    setDate(draft.date);
-    setStartTime(draft.startTime);
-    setEndTime(draft.endTime);
-    setAudience(draft.audience);
-    setRoleIds(draft.roleIds);
+  /*
+    One question at a time (#5219): the panel opens on the meeting that is on
+    now, or the newest one without minutes, already picked, so a calendar
+    meeting is one press of Start minutes. With nothing on the calendar it
+    opens straight on the meeting's name. The officer's own pick wins, and
+    the panel's pick isn't kept as a draft: an untouched form keeps nothing.
+  */
+  // Events the server said already have minutes this viewer can't see (an
+  // officer's unposted draft): the panel's pick moves past them.
+  const [taken, setTaken] = useState<string[]>([]);
+  const autoSource = useMemo<Source | null>(() => {
+    // Without the minutes list it can't tell which meetings have them.
+    if (eventsQuery.isPending || meetingsQuery.isPending) return null;
+    if (meetingsQuery.isError) return null;
+    const likely = likelyMeeting(
+      recent,
+      new Set([...started.keys(), ...taken]),
+      now,
+    );
+    if (likely) return { kind: "event", id: likely.id };
+    return recent.length === 0 && canCreateEvents ? { kind: "new" } : null;
+  }, [
+    eventsQuery.isPending,
+    meetingsQuery.isPending,
+    meetingsQuery.isError,
+    recent,
+    started,
+    taken,
+    now,
+    canCreateEvents,
+  ]);
+  // Back to the list from the meeting's name: nothing picked, and the
+  // panel's own pick stays out of it.
+  const source =
+    chosen?.kind === "event" && !chosen.id ? null : (chosen ?? autoSource);
+  const sourceName =
+    source?.kind === "event"
+      ? (recent.find((event) => event.id === source.id)?.name ?? "")
+      : meeting.name;
+  const type = typeChoice ?? guessMeetingType(sourceName);
+
+  function fill(next: MinutesDraft) {
+    setChosen(next.source);
+    setTypeChoice(next.type);
+    setOtherLabel(next.otherLabel);
+    setMeeting({
+      name: next.name,
+      date: next.date,
+      startTime: next.startTime,
+      endTime: next.endTime,
+      audience: next.audience,
+      roleIds: next.roleIds,
+    });
   }
   function discard() {
     draft.discard();
@@ -219,7 +306,6 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     fill(freshMinutesDraft());
   }
   const [problems, setProblems] = useState<Record<string, string>>({});
-
 
   function pickEvent(event: EventRow) {
     const existing = started.get(event.id);
@@ -230,40 +316,37 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
       router.push(meetingHref(existing));
       return;
     }
-    setSource({ kind: "event", id: event.id });
-    setType(guessMeetingType(event.name));
+    setChosen({ kind: "event", id: event.id });
+    setTypeChoice(null);
     setProblems({});
   }
 
-  function validate(): Record<string, string> {
-    const next: Record<string, string> = {};
-    if (!source) next.source = "Pick the meeting these minutes are for.";
+  type Span = { start_time: string; end_time: string };
+  function validate(): { found: Record<string, string>; span: Span | null } {
+    const found: Record<string, string> = {};
+    let span: Span | null = null;
+    if (!source) found.source = "Pick the meeting these minutes are for.";
     if (source?.kind === "new") {
-      if (!name.trim()) next.name = "Name the meeting.";
-      const from = localIso(date, startTime);
-      const to = localIso(date, endTime);
-      if (!date) next.date = "Add the day it met, like Tuesday or Nov 4.";
-      else if (!from || !to) next.time = "Add when it started and ended.";
-      else if (Date.parse(to) <= Date.parse(from)) {
-        next.time = "It has to end after it starts.";
-      }
-      if (audience === "roles" && roleIds.length === 0) {
-        next.roles = "Pick at least one role, or choose Everyone.";
+      const result = offCalendarSpan(meeting, allEvents, new Date());
+      if ("problem" in result) found[result.field] = result.problem;
+      else span = result;
+      if (meeting.audience === "roles" && meeting.roleIds.length === 0) {
+        found.roles = "Pick at least one role, or choose Everyone.";
       }
     }
-    return next;
+    return { found, span };
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const found = validate();
+    const { found, span } = validate();
     setProblems(found);
     if (Object.keys(found).length > 0 || !source) return;
     // Out of the store while it runs: coming back mid-start must not offer
     // the same minutes to start twice.
     draft.hold();
     try {
-      const meeting = await start.mutateAsync({
+      const result = await start.mutateAsync({
         meeting_type: type,
         other_label:
           type === "other" && otherLabel.trim() ? otherLabel.trim() : null,
@@ -271,23 +354,27 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
           ? { event_id: source.id }
           : {
               new_event: {
-                name: name.trim(),
-                start_time: localIso(date, startTime)!,
-                end_time: localIso(date, endTime)!,
-                role_ids: audience === "roles" ? roleIds : [],
+                name: meeting.name.trim() || DEFAULT_MEETING_NAME,
+                ...span!,
+                role_ids: meeting.audience === "roles" ? meeting.roleIds : [],
               },
             }),
       });
       draft.drop();
       if (!mounted.current) return;
       onDone();
-      router.push(meetingHref(meeting.id));
+      router.push(meetingHref(result.id));
     } catch (error) {
       draft.release();
       if (codeOf(error) === "meeting.already_started") {
         // Someone started them while this panel was open. The list refetches
         // with them in it when the viewer may read them.
         void meetingsQuery.refetch();
+        if (source.kind === "event") {
+          const id = source.id;
+          setTaken((before) => [...before, id]);
+          if (chosen?.kind === "event") setChosen(null);
+        }
         toast({
           title: "These minutes are already started",
           description:
@@ -307,186 +394,151 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
     value,
     label: MEETING_TYPE_LABELS[value],
   }));
+  const typeName =
+    type === "other" && otherLabel.trim()
+      ? otherLabel.trim()
+      : MEETING_TYPE_LABELS[type];
+
+  // The picked row always shows, even when it sits past the first few.
+  const pickedId = source?.kind === "event" ? source.id : null;
+  const shownEvents = showOlder
+    ? recent
+    : recent.filter(
+        (event, index) => index < FIRST_ROWS || event.id === pickedId,
+      );
+  const hidden = recent.length - shownEvents.length;
 
   return (
     <>
       <PanelBody as="form" id={`${ids}-form`} onSubmit={submit} noValidate>
         <div className="grid gap-6">
-          <section aria-labelledby={`${ids}-which`} className="grid gap-2">
-            <h3 id={`${ids}-which`} className="text-sm font-semibold">
-              Which meeting?
-            </h3>
-            {eventsQuery.isPending ? (
-              <p className="text-sm text-muted-foreground">Loading events</p>
-            ) : recent.length === 0 ? (
-              <InlineNote>No events in the last month.</InlineNote>
-            ) : (
-              <ul role="list" className="grid gap-0.5">
-                {recent.map((event) => {
-                  const held =
-                    source?.kind === "event" && source.id === event.id;
-                  const existing = started.has(event.id);
-                  return (
-                    <li key={event.id}>
-                      <button
-                        type="button"
-                        aria-pressed={held}
-                        onClick={() => pickEvent(event)}
-                        className={cn(
-                          "flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-1.5 text-left transition-colors",
-                          held
-                            ? "bg-accent-subtle text-accent-text"
-                            : "hover:bg-card-hover",
-                          FOCUS_RING_OFFSET,
-                        )}
-                      >
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-semibold">
-                            {event.name}
-                          </span>
-                          <span className="block text-caption text-muted-foreground">
-                            {meetingWhenLabel(event.start_time)}
-                          </span>
-                        </span>
-                        {existing ? (
-                          <span className="shrink-0 text-caption text-muted-foreground">
-                            Open minutes
-                          </span>
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {canCreateEvents ? (
-              <button
-                type="button"
-                aria-pressed={source?.kind === "new"}
-                onClick={() => {
-                  setSource({ kind: "new" });
-                  setProblems({});
-                }}
-                className={cn(
-                  "flex min-h-11 w-full items-center rounded-md px-3 text-left text-sm font-semibold transition-colors",
-                  source?.kind === "new"
-                    ? "bg-accent-subtle text-accent-text"
-                    : "hover:bg-card-hover",
-                  FOCUS_RING_OFFSET,
-                )}
-              >
-                It isn&apos;t on the calendar
-              </button>
-            ) : null}
-            {problems.source ? (
-              <FieldError>{problems.source}</FieldError>
-            ) : null}
-          </section>
-
           {source?.kind === "new" ? (
-            <section aria-labelledby={`${ids}-new`} className="grid gap-3">
-              <h3 id={`${ids}-new`} className="sr-only">
-                The meeting
-              </h3>
-              <div className="grid gap-1">
-                <Label htmlFor={`${ids}-name`}>Meeting name</Label>
-                <Input
-                  id={`${ids}-name`}
-                  value={name}
-                  maxLength={200}
-                  placeholder="Exec meeting"
-                  aria-invalid={problems.name ? true : undefined}
-                  onChange={(event) => setName(event.target.value)}
-                  onBlur={() => {
-                    if (name.trim()) setType(guessMeetingType(name));
+            <section aria-label="The meeting" className="grid gap-4">
+              {recent.length > 0 ? (
+                <QuietLine
+                  onClick={() => {
+                    setChosen({ kind: "event", id: "" });
+                    setProblems({});
                   }}
-                />
-                {problems.name ? (
-                  <FieldError>{problems.name}</FieldError>
-                ) : null}
-              </div>
-              <div className="grid gap-1">
-                <Label htmlFor={`${ids}-date`}>Date</Label>
-                <DateField
-                  id={`${ids}-date`}
-                  lean="back"
-                  placeholder="e.g. yesterday"
-                  value={date}
-                  aria-invalid={problems.date ? true : undefined}
-                  onChange={setDate}
-                />
-                {problems.date ? (
-                  <FieldError>{problems.date}</FieldError>
-                ) : null}
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid min-w-0 gap-1">
-                  <Label htmlFor={`${ids}-start`}>Started</Label>
-                  <Input
-                    id={`${ids}-start`}
-                    type="time"
-                    step={300}
-                    value={startTime}
-                    aria-invalid={problems.time ? true : undefined}
-                    onChange={(event) => setStartTime(event.target.value)}
-                  />
-                </div>
-                <div className="grid min-w-0 gap-1">
-                  <Label htmlFor={`${ids}-end`}>Ended</Label>
-                  <Input
-                    id={`${ids}-end`}
-                    type="time"
-                    step={300}
-                    value={endTime}
-                    aria-invalid={problems.time ? true : undefined}
-                    onChange={(event) => setEndTime(event.target.value)}
-                  />
-                </div>
-                {problems.time ? (
-                  <div className="col-span-2">
-                    <FieldError>{problems.time}</FieldError>
-                  </div>
-                ) : null}
-              </div>
-              <MinutesAudienceField
-                audience={audience}
-                onAudienceChange={setAudience}
-                roleIds={roleIds}
-                onRoleIdsChange={setRoleIds}
-                error={problems.roles}
+                >
+                  Pick it from the calendar instead
+                </QuietLine>
+              ) : null}
+              <OffCalendarMeetingFields
+                value={meeting}
+                onChange={setMeeting}
+                problems={problems}
+                autoFocus={kept === undefined}
               />
             </section>
-          ) : null}
+          ) : (
+            <section aria-labelledby={`${ids}-which`} className="grid gap-2">
+              <h3 id={`${ids}-which`} className="text-sm font-semibold">
+                Which meeting?
+              </h3>
+              {eventsQuery.isPending ? (
+                <p className="text-sm text-muted-foreground">Loading events</p>
+              ) : recent.length === 0 ? (
+                <InlineNote>No events on the calendar lately.</InlineNote>
+              ) : (
+                <ul role="list" className="grid gap-0.5">
+                  {shownEvents.map((event) => {
+                    const held = pickedId === event.id;
+                    const existing = started.has(event.id);
+                    return (
+                      <li key={event.id}>
+                        <button
+                          type="button"
+                          aria-pressed={held}
+                          onClick={() => pickEvent(event)}
+                          className={cn(
+                            "flex min-h-11 w-full items-center gap-3 rounded-md px-3 py-1.5 text-left transition-colors",
+                            held
+                              ? "bg-accent-subtle text-accent-text"
+                              : "hover:bg-card-hover",
+                            FOCUS_RING_OFFSET,
+                          )}
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold">
+                              {event.name}
+                            </span>
+                            <span className="block text-caption text-muted-foreground">
+                              {meetingWhenLabel(event.start_time)}
+                            </span>
+                          </span>
+                          {existing ? (
+                            <span className="shrink-0 text-caption text-muted-foreground">
+                              Open minutes
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              {hidden > 0 ? (
+                <QuietLine onClick={() => setShowOlder(true)}>
+                  Show older meetings
+                </QuietLine>
+              ) : null}
+              {canCreateEvents ? (
+                <QuietLine
+                  onClick={() => {
+                    setChosen({ kind: "new" });
+                    setProblems({});
+                  }}
+                >
+                  It isn&apos;t on the calendar
+                </QuietLine>
+              ) : null}
+              {problems.source ? (
+                <FieldError>{problems.source}</FieldError>
+              ) : null}
+            </section>
+          )}
 
-          <section aria-labelledby={`${ids}-type`} className="grid gap-2">
-            <h3 id={`${ids}-type`} className="text-sm font-semibold">
-              Type
-            </h3>
-            <SegmentedChoice
-              label="Meeting type"
-              value={type}
-              onChange={setType}
-              options={typeOptions}
-              fill
-            />
-            {type === "other" ? (
-              <div className="grid gap-1">
-                <Label htmlFor={`${ids}-other`}>
-                  What kind of meeting (optional)
-                </Label>
-                <Input
-                  id={`${ids}-other`}
-                  value={otherLabel}
-                  maxLength={MEETING_OTHER_LABEL_MAX_LENGTH}
-                  placeholder="Alumni board"
-                  onChange={(event) => setOtherLabel(event.target.value)}
-                />
-              </div>
-            ) : null}
-            <p className="text-caption text-muted-foreground">
-              {STANDARDS_MEETING_NOTE}
-            </p>
-          </section>
+          {source ? (
+            <section aria-labelledby={`${ids}-type`} className="grid gap-2">
+              {changingType ? (
+                <>
+                  <h3 id={`${ids}-type`} className="text-sm font-semibold">
+                    Type
+                  </h3>
+                  <SegmentedChoice
+                    label="Meeting type"
+                    value={type}
+                    onChange={setTypeChoice}
+                    options={typeOptions}
+                    fill
+                  />
+                  {type === "other" ? (
+                    <div className="grid gap-1">
+                      <Label htmlFor={`${ids}-other`}>
+                        What kind of meeting (optional)
+                      </Label>
+                      <Input
+                        id={`${ids}-other`}
+                        value={otherLabel}
+                        maxLength={MEETING_OTHER_LABEL_MAX_LENGTH}
+                        placeholder="Alumni board"
+                        onChange={(event) => setOtherLabel(event.target.value)}
+                      />
+                    </div>
+                  ) : null}
+                  <p className="text-caption text-muted-foreground">
+                    {STANDARDS_MEETING_NOTE}
+                  </p>
+                </>
+              ) : (
+                <p id={`${ids}-type`} className="text-sm text-muted-foreground">
+                  Filed as {typeName}.{" "}
+                  <InlineChange onClick={() => setChangingType(true)} />
+                </p>
+              )}
+            </section>
+          ) : null}
         </div>
       </PanelBody>
       <PanelFooter>

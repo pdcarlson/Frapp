@@ -40,6 +40,10 @@ const TOOL_ROWS: Record<string, readonly Row[]> = {
   MyHoursAgentTool: ['roster'],
   ServiceHoursAgentTool: ['roster'],
   MyDuesAgentTool: ['roster'],
+  // The backwork catalog (#5209): a file's course, type, term and professor,
+  // never its contents. Counted with the chapter's documents, as the
+  // privacy policy's "your chapter's documents" reads.
+  FindBackworkAgentTool: ['chapter_records'],
   // Conversations and records (`agent/tools-conversations`).
   SearchMessagesTool: ['channel_messages'],
   ReadChannelTool: ['channel_messages'],

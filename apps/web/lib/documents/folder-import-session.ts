@@ -60,7 +60,7 @@ export type ConfirmRequest = {
   content_type: string;
   byte_size: number;
 };
-export type ConfirmResult = { storage_path: string; error?: string };
+type ConfirmResult = { storage_path: string; error?: string };
 
 export type ImportDeps = {
   mint: (files: MintRequest[]) => Promise<MintTicket[]>;

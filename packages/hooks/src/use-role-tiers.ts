@@ -4,8 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
-/** One of the chapter's tiers of roles (#4071), highest first by `position`. */
-export type RoleTier = components["schemas"]["RoleTierDto"];
 export type CreateRoleTierBody = components["schemas"]["CreateRoleTierDto"];
 export type UpdateRoleTierBody = components["schemas"]["UpdateRoleTierDto"];
 

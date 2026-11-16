@@ -267,6 +267,12 @@ describe("askSourceTarget", () => {
     expect(
       askSourceTarget({ ...base, target: { type: "page", page: "events" } }),
     ).toEqual({ type: "page", page: "events" });
+    expect(
+      askSourceTarget({
+        ...base,
+        target: { type: "backwork", backwork_id: "b1" },
+      }),
+    ).toEqual({ type: "backwork", backwork_id: "b1" });
   });
 
   it("refuses a target missing its ids or naming a page this build lacks", () => {
@@ -277,6 +283,9 @@ describe("askSourceTarget", () => {
     ).toBeNull();
     expect(
       askSourceTarget({ ...base, target: { type: "page", page: "vault" } }),
+    ).toBeNull();
+    expect(
+      askSourceTarget({ ...base, target: { type: "backwork" } }),
     ).toBeNull();
   });
 });

@@ -102,6 +102,8 @@ function build(
     readers?: ChapterMemberAccess[];
     readableMinutes?: string[];
     openEvents?: string[];
+    /** Documents every reader sees; all of them when left out. */
+    openDocuments?: string[];
   } = {},
 ) {
   const channelAccess = {
@@ -124,11 +126,18 @@ function build(
   const consent = {
     check: jest.fn().mockResolvedValue({ allowed: true }),
   };
+  const documents = {
+    visibleToAll: jest.fn(
+      async (_chapter: string, ids: string[]) =>
+        new Set(over.openDocuments ?? ids),
+    ),
+  };
   const service = new AskPostService(
     consent as never,
     channelAccess as never,
     meetings as never,
     events as never,
+    documents as never,
     messageRepo as never,
   );
   const post = (
@@ -151,6 +160,7 @@ function build(
     channelAccess,
     meetings,
     events,
+    documents,
     messageRepo,
   };
 }
@@ -369,6 +379,27 @@ describe('AskPostService', () => {
           { key: `document:${DOC}`, kind: 'document', title: 'Bylaws' },
         ],
       });
+    });
+
+    // #3642 piece 1: a file some reader isn't on the list of is one the post
+    // would show them.
+    it("a document is restricted when a reader can't see it in Documents", async () => {
+      const others = [reader('user-b')];
+      const { post, documents } = build({
+        readers: [reader(ASKER), ...others],
+        openDocuments: [],
+      });
+      await expect(post(receipt(), { confirm: false })).resolves.toEqual({
+        posted: false,
+        restricted: [
+          { key: `document:${DOC}`, kind: 'document', title: 'Bylaws' },
+        ],
+      });
+      expect(documents.visibleToAll).toHaveBeenCalledWith(
+        CHAPTER,
+        [DOC],
+        others,
+      );
     });
 
     it('lists a document once however many passages of it were read', async () => {

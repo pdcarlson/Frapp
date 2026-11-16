@@ -30,7 +30,10 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
 import { AttendanceService } from './attendance.service';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
-import { isEventVisibleTo } from './event-role-targeting';
+import {
+  isEventVisibleTo,
+  visibleEventOrNotFound,
+} from './event-role-targeting';
 
 /** Who an excuse goes to, as the member sees it ("Excuse sent to Jake"). */
 export interface ExcuseReceiver {
@@ -84,17 +87,12 @@ export class EventExcuseService {
     chapterId: string,
     userId: string,
   ): Promise<Event> {
-    const event = await this.eventRepo.findById(eventId, chapterId);
-    if (
-      !event ||
-      !(await isEventVisibleTo(event, chapterId, userId, {
-        rbac: this.rbac,
-        memberRepo: this.memberRepo,
-      }))
-    ) {
-      throw new NotFoundException('Event not found');
-    }
-    return event;
+    return visibleEventOrNotFound(
+      await this.eventRepo.findById(eventId, chapterId),
+      chapterId,
+      userId,
+      { rbac: this.rbac, memberRepo: this.memberRepo },
+    );
   }
 
   /**

@@ -434,9 +434,7 @@ const CHECK_IN_SCREEN_CHECKS: Readonly<Record<CheckInScreenCheck, true>> = {
 };
 
 /** The `check` from the route's answer, or `null` for anything else. */
-export function checkInScreenCheckOf(
-  response: unknown,
-): CheckInScreenCheck | null {
+function checkInScreenCheckOf(response: unknown): CheckInScreenCheck | null {
   if (typeof response !== "object" || response === null) return null;
   const check = (response as { check?: unknown }).check;
   return typeof check === "string" &&

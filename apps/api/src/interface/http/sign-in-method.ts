@@ -6,8 +6,7 @@ import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
  * A magic link and a password are both `email`. Anything else (a provider
  * added later) is `other`, and no user at all is `null`.
  */
-export const SIGN_IN_METHODS = ['apple', 'google', 'email', 'other'] as const;
-export type SignInMethod = (typeof SIGN_IN_METHODS)[number];
+export type SignInMethod = 'apple' | 'google' | 'email' | 'other';
 
 export function signInMethodOf(
   user: Partial<Pick<SupabaseAuthUser, 'app_metadata'>> | undefined,

@@ -182,7 +182,7 @@ export const ForwardSheet = forwardRef<ForwardSheetHandle, ForwardSheetProps>(
   },
 );
 
-export function ForwardSheetBody({
+function ForwardSheetBody({
   target,
   nameFor,
   viewerId,

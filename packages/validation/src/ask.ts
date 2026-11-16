@@ -232,6 +232,11 @@ export const ASK_SOURCE_KINDS = [
   "points",
   "dues",
   "tasks",
+  /**
+   * One backwork file's catalog entry (#5209): its course, type, term and
+   * professor, never the file's contents. A tap downloads the file.
+   */
+  "backwork",
 ] as const;
 export type AskSourceKind = (typeof ASK_SOURCE_KINDS)[number];
 
@@ -253,7 +258,12 @@ export type AskSourceTarget =
   | { type: "document"; document_id: string; page: number | null }
   | { type: "meeting"; meeting_id: string }
   | { type: "message"; channel_id: string; message_id: string }
-  | { type: "page"; page: AskSourcePage };
+  | { type: "page"; page: AskSourcePage }
+  /**
+   * A backwork file. The client fetches `GET /v1/backwork/:id`'s signed
+   * `downloadUrl` when the member taps it, so no link is ever in an answer.
+   */
+  | { type: "backwork"; backwork_id: string };
 
 const AskSourceSchema = z.object({
   /** Stable within one answer; what a citation points at. */
@@ -542,6 +552,10 @@ export function askSourceTarget(source: AskSource): AskSourceTarget | null {
         ? { type: "page", page: page as AskSourcePage }
         : null;
     }
+    case "backwork": {
+      const id = text("backwork_id");
+      return id ? { type: "backwork", backwork_id: id } : null;
+    }
     default:
       return null;
   }
@@ -687,6 +701,7 @@ export const ASK_COPY = {
     points: "Points",
     dues: "Dues",
     tasks: "Tasks",
+    backwork: "Backwork",
   } satisfies Record<AskSourceKind, string>,
   send: "Send",
   try_again: "Try again",

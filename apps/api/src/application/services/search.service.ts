@@ -8,8 +8,7 @@ import {
 import { RbacService } from './rbac.service';
 import { ChatBlockService } from './chat-block.service';
 import { maskBlockedMessages, type MaskedChatMessage } from './chat-block-mask';
-import { isInvited } from './event-role-targeting';
-import { eventLimitsAudience } from '@repo/validation';
+import { filterVisibleEvents } from './event-role-targeting';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { Event } from '#domain/entities/event.entity';
@@ -336,11 +335,16 @@ export class SearchService {
    * member without either permission (Alumni, or VP or Secretary alone) would
    * otherwise read file titles, courses and terms they cannot open. Same
    * any-of rule as `BackworkController`, wildcard included.
+   *
+   * Public for Ask's `find_backwork` (#5209), which reads the catalog through
+   * this gate and ranking rather than a second query. `limit` is capped at 50
+   * by `search_backwork_resources` itself.
    */
-  private async searchBackwork(
+  async searchBackwork(
     chapterId: string,
     userId: string,
     query: string,
+    limit = SEARCH_LIMIT,
   ): Promise<BackworkResource[]> {
     const mayBrowse = await this.rbacService.memberHasAnyPermission(
       chapterId,
@@ -348,49 +352,27 @@ export class SearchService {
       [SystemPermissions.BACKWORK_UPLOAD, SystemPermissions.BACKWORK_ADMIN],
     );
     if (!mayBrowse) return [];
-    return this.repo.searchBackwork(chapterId, query, SEARCH_LIMIT);
+    return this.repo.searchBackwork(chapterId, query, limit);
   }
 
-  /** Event hits in the chapter, filtered to what the caller may see. */
+  /**
+   * Event hits in the chapter, filtered to what the caller may see. Search
+   * must not become a side-channel around `EventService`'s read visibility
+   * (#1463): a role-targeted event is invisible via `GET /v1/events` to a
+   * member without an intersecting role, so it must be invisible here too. It
+   * answers through the list's own gate, `filterVisibleEvents`
+   * (`event-role-targeting.ts`).
+   */
   private async searchEvents(
     chapterId: string,
     userId: string,
     query: string,
   ): Promise<Event[]> {
     const events = await this.repo.searchEvents(chapterId, query, SEARCH_LIMIT);
-    return this.filterVisibleEvents(chapterId, userId, events);
-  }
-
-  /**
-   * Search must not become a side-channel around `EventService`'s read
-   * visibility (#1463): a role-targeted event is invisible via `GET
-   * /v1/events` to a member without an intersecting role, so it must be
-   * invisible here too. The batch form of `isEventVisibleTo`
-   * (`event-role-targeting.ts`), as `EventService.findByChapter` is: same
-   * `isInvited` predicate, same `events:update` (wildcard-inclusive)
-   * management exemption, read once for the whole list. A change to the rule
-   * lands in all three.
-   */
-  private async filterVisibleEvents(
-    chapterId: string,
-    userId: string,
-    events: Event[],
-  ): Promise<Event[]> {
-    const hasTargetedEvents = events.some(eventLimitsAudience);
-    if (!hasTargetedEvents) return events;
-
-    if (
-      await this.rbacService.memberHasAnyPermission(chapterId, userId, [
-        SystemPermissions.EVENTS_UPDATE,
-      ])
-    ) {
-      return events;
-    }
-
-    const member = await this.members.findByUserAndChapter(userId, chapterId);
-    const memberRoleIds = member?.role_ids ?? [];
-
-    return events.filter((event) => isInvited(event, memberRoleIds));
+    return filterVisibleEvents(events, chapterId, userId, {
+      rbac: this.rbacService,
+      memberRepo: this.members,
+    });
   }
 
   /**

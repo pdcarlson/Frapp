@@ -9,7 +9,7 @@ import { selectViewerProfile } from "@/lib/more/profile";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /** The glyph slot every tab draws in (`tab-glyphs.tsx`). */
-export const YOU_AVATAR_SIZE = 24;
+const YOU_AVATAR_SIZE = 24;
 /** The active ring's stroke, and the gap between it and the avatar. */
 const RING = 1.5;
 

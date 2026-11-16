@@ -38,10 +38,6 @@ export {
   parseTracesSampleRate,
   formatSampleRateWarning,
 } from "./sample-rate";
-export type {
-  SampleRateParseReason,
-  SampleRateParseResult,
-} from "./sample-rate";
 
 export {
   REQUEST_ID_HEADER,
@@ -49,13 +45,15 @@ export {
   BAGGAGE_HEADER,
   isPseudonymHex,
 } from "./correlation";
+// spec/behavior/observability.md keeps the correlation types in this barrel,
+// so each is tagged `@public` for knip even while nothing imports it.
 export type {
-  RequestId,
-  SentryTraceId,
-  SentryEventId,
-  PostHogDistinctId,
-  PostHogChapterGroupId,
-  AnalyticsIdentity,
+  /** @public */ RequestId,
+  /** @public */ SentryTraceId,
+  /** @public */ SentryEventId,
+  /** @public */ PostHogDistinctId,
+  /** @public */ PostHogChapterGroupId,
+  /** @public */ AnalyticsIdentity,
 } from "./correlation";
 
 export {
@@ -84,7 +82,6 @@ export {
   CLIENT_CONTRACT_ERROR_CODES,
   MEMBER_CAUSED_ERROR_CODES,
 } from "./api-error-codes";
-export type { ClientContractErrorCode } from "./api-error-codes";
 export {
   createQueryErrorReporter,
 } from "./query-errors";
@@ -93,19 +90,4 @@ export {
   buildAuthFailureReport,
   createAuthFailureReporter,
 } from "./auth-failures";
-export type {
-  AuthFailureFlow,
-  AuthFailureInput,
-  AuthFailureKind,
-  AuthFailureReport,
-  AuthFailureReporter,
-  AuthFailureReporterOptions,
-} from "./auth-failures";
-export type {
-  QueryErrorKind,
-  QueryErrorReport,
-  QueryErrorReporter,
-  QueryErrorReporterOptions,
-  ReportedMutation,
-  ReportedQuery,
-} from "./query-errors";
+export type { AuthFailureInput } from "./auth-failures";

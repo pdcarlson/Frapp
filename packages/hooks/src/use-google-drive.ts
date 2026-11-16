@@ -10,11 +10,9 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
  * into Documents and keeps them matching it. Behavior:
  * `spec/behavior/chapter-docs.md` § Google Drive folder.
  */
-export const googleDriveKeys = createChapterQueryKeys("google-drive");
+const googleDriveKeys = createChapterQueryKeys("google-drive");
 
 export type GoogleDriveStatus = components["schemas"]["GoogleDriveStatusDto"];
-export type GoogleDriveConnection =
-  components["schemas"]["GoogleDriveConnectionDto"];
 
 /** How often the status is re-read while a sync is due or running. */
 const SYNCING_POLL_MS = 4_000;

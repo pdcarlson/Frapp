@@ -89,6 +89,11 @@ const leaderboardRead = read([{ user_id: "u-1", total: 42 }]);
 
 const classesRead = read([]);
 
+// The live-meeting card has its own spec (#5219).
+vi.mock("@/components/meetings/live-meeting-card", () => ({
+  LiveMeetingCard: () => null,
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => {
   // The fraternal-order sort is the real one: it is what this screen promises.
   const actual = await importOriginal<typeof import("@repo/hooks")>();

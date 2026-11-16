@@ -60,7 +60,7 @@ import { Textarea } from "@/components/ui/textarea";
  * already uses.
  */
 
-export type ConfirmTone = "destructive" | "default";
+type ConfirmTone = "destructive" | "default";
 
 export type ConfirmRequest = {
   /** The question, as a question. `writing.md` §2. */

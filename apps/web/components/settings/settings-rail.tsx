@@ -38,7 +38,7 @@ const RAIL_ROW_RESET =
 const RAIL_TRIGGER_CLASS = `${RAIL_ROW_RESET} h-[34px] justify-start rounded-[10px] px-[10px] text-sm text-muted-foreground enabled:hover:bg-card data-[state=active]:bg-accent-subtle data-[state=active]:font-semibold data-[state=active]:text-accent-text data-[state=active]:shadow-none enabled:data-[state=active]:text-accent-text lg:w-full lg:flex-none`;
 
 /** The rail's groups, in order. */
-export type SettingsTabGroup = "chapter" | "people" | "modules";
+type SettingsTabGroup = "chapter" | "people" | "modules";
 
 const SETTINGS_TAB_GROUP_LABELS: Readonly<Record<SettingsTabGroup, string>> = {
   chapter: "Chapter",

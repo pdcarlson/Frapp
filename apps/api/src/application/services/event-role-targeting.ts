@@ -1,3 +1,4 @@
+import { NotFoundException } from '@nestjs/common';
 import {
   eventAttendanceFor,
   eventLimitsAudience,
@@ -78,8 +79,12 @@ export interface EventViewer {
 
 /**
  * The read gate for a member whose permissions and roles are already in
- * hand: the same rule as {@link isEventVisibleTo}, with no lookups. For a
- * caller checking many members at once (`EventService.visibleToAll`).
+ * hand, with no lookups: the one statement of the rule. An event that invites
+ * everyone is visible to every member; one that leaves anyone out, to a
+ * holder of `events:update` (or the wildcard) and to the members it invites.
+ * Every read path answers through it: {@link isEventVisibleTo} for one event,
+ * {@link filterVisibleEvents} for a list, and a caller checking many members
+ * at once (`EventService.visibleToAll`) directly.
  */
 export function isEventVisibleWith(
   event: EventAttendanceFields,
@@ -95,50 +100,106 @@ export function isEventVisibleWith(
   return isInvited(event, viewer.role_ids);
 }
 
+/** What resolving a viewer reads: the caller's own RBAC service and member repository. */
+export interface EventViewerLookups {
+  rbac: {
+    memberHasAnyPermission(
+      chapterId: string,
+      userId: string,
+      permissions: string[],
+    ): Promise<boolean>;
+  };
+  memberRepo: {
+    findByUserAndChapter(
+      userId: string,
+      chapterId: string,
+    ): Promise<{ role_ids: string[] } | null>;
+  };
+}
+
+const NO_PERMISSIONS: ReadonlySet<string> = new Set();
+const MANAGES_EVENTS: ReadonlySet<string> = new Set([
+  SystemPermissions.EVENTS_UPDATE,
+]);
+
+/**
+ * `userId` as {@link isEventVisibleWith} reads them, or `null` for someone who
+ * is not a member and holds no `events:update`. `memberHasAnyPermission`
+ * counts the wildcard, so its yes stands for both; the member row is read
+ * only when it says no.
+ */
+async function resolveEventViewer(
+  chapterId: string,
+  userId: string,
+  lookups: EventViewerLookups,
+): Promise<EventViewer | null> {
+  if (
+    await lookups.rbac.memberHasAnyPermission(chapterId, userId, [
+      SystemPermissions.EVENTS_UPDATE,
+    ])
+  ) {
+    return { permissions: MANAGES_EVENTS, role_ids: [] };
+  }
+  const member = await lookups.memberRepo.findByUserAndChapter(
+    userId,
+    chapterId,
+  );
+  return member
+    ? { permissions: NO_PERMISSIONS, role_ids: member.role_ids }
+    : null;
+}
+
 /**
  * Whether `userId` may see `event` through the read routes
- * (`spec/behavior/events.md` § Attendance by role): an event that invites
- * everyone is visible to every member; one that leaves anyone out, to an
- * `events:update` holder and to the members it invites. A caller that can't
- * see an event gets the same 404 a nonexistent id does, so no response
- * confirms a role-targeted event exists.
- *
- * The single-event form of the rule: `GET /v1/events/:id`
- * (`EventService.findById`) and `GET /v1/events/:id/attendance/me`
- * (`AttendanceService.getMyAttendance`) both answer through it. The list
- * (`EventService.findByChapter`) and search (`SearchService.filterVisibleEvents`)
- * apply the same rule in batch form, reading the permission and member row
- * once for many events, and {@link isEventVisibleWith} states it for a member
- * already resolved, so a change to the rule lands in all four.
+ * (`spec/behavior/events.md` § Attendance by role), by
+ * {@link isEventVisibleWith}. A caller that can't see an event gets the same
+ * 404 a nonexistent id does, so no response confirms a role-targeted event
+ * exists. Someone who is not a member of the chapter sees no event that
+ * limits its audience. No lookups when the event invites everyone.
  */
 export async function isEventVisibleTo(
   event: EventAttendanceFields,
   chapterId: string,
   userId: string,
-  deps: {
-    rbac: {
-      memberHasAnyPermission(
-        chapterId: string,
-        userId: string,
-        permissions: string[],
-      ): Promise<boolean>;
-    };
-    memberRepo: {
-      findByUserAndChapter(
-        userId: string,
-        chapterId: string,
-      ): Promise<{ role_ids: string[] } | null>;
-    };
-  },
+  lookups: EventViewerLookups,
 ): Promise<boolean> {
   if (!eventLimitsAudience(event)) return true;
-  if (
-    await deps.rbac.memberHasAnyPermission(chapterId, userId, [
-      SystemPermissions.EVENTS_UPDATE,
-    ])
-  ) {
-    return true;
+  const viewer = await resolveEventViewer(chapterId, userId, lookups);
+  return !!viewer && isEventVisibleWith(event, viewer);
+}
+
+/**
+ * `event` when `userId` may see it (`isEventVisibleTo`), else the same
+ * `Event not found` 404 a missing event (`null`) gets.
+ */
+export async function visibleEventOrNotFound<E extends EventAttendanceFields>(
+  event: E | null,
+  chapterId: string,
+  userId: string,
+  lookups: EventViewerLookups,
+): Promise<E> {
+  if (!event || !(await isEventVisibleTo(event, chapterId, userId, lookups))) {
+    throw new NotFoundException('Event not found');
   }
-  const member = await deps.memberRepo.findByUserAndChapter(userId, chapterId);
-  return !!member && isInvited(event, member.role_ids);
+  return event;
+}
+
+/**
+ * `events` narrowed to those `userId` may see, by {@link isEventVisibleWith}:
+ * the list, the creator's list and search. The permission and member row are
+ * read once for the whole list, and not at all when no event limits its
+ * audience. A caller with no member row is read as holding no roles.
+ */
+export async function filterVisibleEvents<E extends EventAttendanceFields>(
+  events: E[],
+  chapterId: string,
+  userId: string,
+  lookups: EventViewerLookups,
+): Promise<E[]> {
+  if (!events.some(eventLimitsAudience)) return events;
+  const viewer = (await resolveEventViewer(chapterId, userId, lookups)) ?? {
+    permissions: NO_PERMISSIONS,
+    role_ids: [],
+  };
+  return events.filter((event) => isEventVisibleWith(event, viewer));
 }

@@ -31,6 +31,12 @@ describe("askSourceOpening", () => {
     ).toEqual({ kind: "document", documentId: "d1" });
   });
 
+  it("downloads a backwork file rather than opening a screen (#5209)", () => {
+    expect(
+      askSourceOpening(source({ type: "backwork", backwork_id: "b1" })),
+    ).toEqual({ kind: "backwork", backworkId: "b1" });
+  });
+
   it("opens minutes on the minutes screen", () => {
     expect(
       askSourceOpening(source({ type: "meeting", meeting_id: "m1" })),

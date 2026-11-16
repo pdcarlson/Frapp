@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { decodeJwtSegment } from '#domain/utils/jwt-segment';
 import {
   GOOGLE_CALENDAR_SCOPE,
   GoogleCalendarApiError,
@@ -368,14 +369,9 @@ function stringField(value: unknown, key: string): string | null {
 export function emailFromIdToken(idToken: string | null): string | null {
   const payload = idToken?.split('.')[1];
   if (!payload) return null;
-  try {
-    const claims = JSON.parse(
-      Buffer.from(payload, 'base64url').toString('utf8'),
-    ) as { email?: unknown; email_verified?: unknown };
-    return typeof claims.email === 'string' && claims.email_verified !== false
-      ? claims.email
-      : null;
-  } catch {
-    return null;
-  }
+  const claims = decodeJwtSegment(payload) as
+    { email?: unknown; email_verified?: unknown } | null | undefined;
+  return typeof claims?.email === 'string' && claims.email_verified !== false
+    ? claims.email
+    : null;
 }
