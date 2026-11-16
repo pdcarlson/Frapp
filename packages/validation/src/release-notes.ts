@@ -135,6 +135,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     web: [
       "Tasks now groups your own tasks as Today, This week and Later, and officers can switch between My tasks and All tasks, group the chapter's tasks by person, and filter them by assignee, status and due date.",
       "Officers can now add an agenda to any event and check items off during the meeting, and attach links or Chapter Files documents, all right on the event, where everyone invited can read them.",
+      "Officers can connect the chapter's Google Drive folder to Documents, and every file in it shows up for the chapter and stays in sync.",
     ],
     phone: [
       "The Calendar has its own + at the top for adding an event from any view, and on the Calendar it starts on the day you've picked, today or later.",
@@ -145,6 +146,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A task's Mark done or Send back, or meeting notes, reopened while still sending now shows what you sent and waits for it, instead of opening blank.",
       "Tapping a document now opens your phone's share sheet, where you can save it to Files or open it in an app that reads it.",
       "In a chat, Members, a member's profile, Pinned and Saved, and the + menu and its forms open again after you leave a chat or switch channels, instead of sometimes showing nothing.",
+      "Officers can now build an event's agenda, check items off during the meeting, and attach links or Chapter Files documents right on the event, where everyone invited can read them and its notes.",
     ],
   },
   {
