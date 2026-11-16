@@ -146,11 +146,6 @@ export type FindInput = {
   departments?: unknown;
   /** Groups the chapter has switched off (a module gate), never listed. */
   hiddenGroups?: ReadonlySet<FindGroup>;
-  /**
-   * Rows per group, in place of the dialog's caps: the phone's list sits
-   * between a thread and a keyboard and shows fewer.
-   */
-  groupLimit?: number;
   now?: Date;
 };
 
@@ -161,13 +156,11 @@ export function buildFindResults({
   payload,
   departments,
   hiddenGroups,
-  groupLimit,
   now = new Date(),
 }: FindInput): FindResult[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
-  const limit =
-    groupLimit ?? (filter === "All" ? ALL_GROUP_LIMIT : SINGLE_GROUP_LIMIT);
+  const limit = filter === "All" ? ALL_GROUP_LIMIT : SINGLE_GROUP_LIMIT;
   const wants = (group: FindGroup) =>
     !hiddenGroups?.has(group) && (filter === "All" || filter === group);
 

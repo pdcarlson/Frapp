@@ -316,8 +316,6 @@ export const AskSheet = forwardRef<
     [ask, options, clearNotice],
   );
 
-  // A place found while typing: the sheet closes and its screen opens, as
-  // a source's does. What was typed was a search, so it is not kept.
   const canSend = draft.trim().length > 0 && !working;
 
   return (

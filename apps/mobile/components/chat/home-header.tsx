@@ -11,6 +11,7 @@ import { HeaderButton } from "@/components/header-button";
 import { NotificationsGlyph } from "@/components/more/more-glyphs";
 import { SearchGlyph, ThreadsGlyph } from "@/components/control-glyphs";
 import { gutterBleed, PressableRow } from "@/components/list-section";
+import { InboxCountBadge } from "@/components/chat/channel-row";
 import { NavGlyph } from "@/components/nav-glyph";
 import { useTourAnchor } from "@/components/onboarding/tour";
 import { selectUnreadNonChatCount } from "@/lib/more/notifications";
@@ -150,27 +151,26 @@ export function SearchButton() {
 
 /**
  * All threads (#4960): the member's threads across channels, in a sheet over
- * Chat home (`AllThreadsSheet`). The first row of the channel list since
- * #5139, as Slack's Home lists Threads above its channels; it was a round in
- * the title row before. It reads as an unread channel row does (a bolder
- * title and the leading pip), and its count of threads with new replies is
- * house gold, like the bell's: not direct address. A member in no thread yet
- * sees no row, since the sheet would only say there are none.
+ * Chat home (`AllThreadsSheet`). The first row of Chat home since #5139, as
+ * Slack's Home lists Threads above its channels; it was a round in the title
+ * row before. It is always drawn, in every state of the channel list, like
+ * the round was: hiding it until the threads read answers would push the
+ * list down under a thumb, and a failed read would hide the sheet's own
+ * retry. While any thread has new replies it reads as an unread channel row
+ * does (a bolder title and the leading pip) and badges that count in house
+ * gold, on the channel badge's geometry (`InboxCountBadge`): not direct
+ * address.
  */
 export function ThreadsRow({ onPress }: { onPress: () => void }) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
-  const threads = useMemberThreads().data;
-  const unread = unreadThreadCount(threads);
-  if (!threads || threads.length === 0) return null;
+  const unread = unreadThreadCount(useMemberThreads().data);
   return (
     <PressableRow
       testID="threads-row"
       accessibilityRole="button"
       accessibilityLabel={
-        unread > 0
-          ? `Threads, ${unread} with new replies`
-          : "Threads"
+        unread > 0 ? `Threads, ${unread} with new replies` : "Threads"
       }
       accessibilityHint="Opens the threads you're part of."
       onPress={onPress}
@@ -190,9 +190,7 @@ export function ThreadsRow({ onPress }: { onPress: () => void }) {
         Threads
       </Text>
       {unread > 0 ? (
-        <View testID="threads-badge" style={styles.badge}>
-          <Text style={styles.badgeText}>{unread > 99 ? "99+" : unread}</Text>
-        </View>
+        <InboxCountBadge count={unread} testID="threads-badge" />
       ) : null}
     </PressableRow>
   );
@@ -200,7 +198,8 @@ export function ThreadsRow({ onPress }: { onPress: () => void }) {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    // A channel row's one-line geometry (`channel-row.tsx`).
+    // A channel row's one-line geometry and its unread pip and title
+    // weights (`channel-row.tsx`).
     row: {
       flexDirection: "row",
       alignItems: "center",
@@ -230,19 +229,6 @@ function createStyles(tokens: SignetTokens) {
         weight: tokens.typography.weight.bold,
       }),
       color: tokens.color.text.foreground,
-    },
-    badge: {
-      minWidth: 22,
-      height: 22,
-      paddingHorizontal: tokens.spacing.sm,
-      borderRadius: 11,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: tokens.color.gold.house,
-    },
-    badgeText: {
-      ...typeRole({ size: 12, weight: tokens.typography.weight.bold }),
-      color: tokens.color.gold.onHouse,
     },
   });
 }

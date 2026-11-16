@@ -22,11 +22,20 @@ const hooks = vi.hoisted(() => ({
   channels: [] as unknown[],
   modules: {} as Record<string, boolean>,
   ask: false,
+  chapterId: "ch-1" as string | null,
+  timedOutSources: [] as string[],
+  present: vi.fn(),
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useSearch: () => ({
-    data: hooks.payload ? { payload: hooks.payload } : undefined,
+    data: hooks.payload
+      ? {
+          payload: hooks.payload,
+          timedOutSources: hooks.timedOutSources,
+          timedOut: hooks.timedOutSources.length > 0,
+        }
+      : undefined,
     isPending: !hooks.payload,
     isFetching: hooks.fetching,
     isError: hooks.error,
@@ -34,7 +43,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useChannels: () => ({ data: hooks.channels }),
   useCurrentChapter: () => ({ data: { enabled_modules: hooks.modules } }),
   useViewerUserId: () => "u-me",
-  useActiveChapterId: () => "ch-1",
+  useActiveChapterId: () => hooks.chapterId,
 }));
 vi.mock("@repo/hooks/use-debounced-value", () => ({
   useDebouncedValue: <T,>(value: T) => value,
@@ -47,10 +56,19 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#3366ff" }),
 }));
 vi.mock("@/components/frapp-crest", () => ({ FrappCrest: () => null }));
-vi.mock("@/components/ask/ask-sheet", () => ({
-  AskSheet: (props: { initialDraft?: string }) =>
-    React.createElement("AskSheet", props),
-}));
+vi.mock("@/components/ask/ask-sheet", async () => {
+  const { forwardRef, useImperativeHandle, createElement } =
+    await import("react");
+  return {
+    AskSheet: forwardRef(function AskSheet(
+      props: { initialDraft?: string },
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({ present: hooks.present }));
+      return createElement("AskSheet", props);
+    }),
+  };
+});
 
 import { SearchScreen, SEARCH_COPY } from "./search-screen";
 
@@ -109,6 +127,9 @@ beforeEach(() => {
   hooks.channels = CHANNELS;
   hooks.modules = {};
   hooks.ask = false;
+  hooks.chapterId = "ch-1";
+  hooks.timedOutSources = [];
+  hooks.present.mockClear();
   vi.mocked(vi.mocked(useRouter)().push).mockClear();
   vi.mocked(AsyncStorage.getItem).mockResolvedValue(null);
   vi.mocked(AsyncStorage.setItem).mockClear();
@@ -192,5 +213,72 @@ describe("SearchScreen", () => {
       (node) => (node.type as unknown) === "AskSheet",
     );
     expect(sheet.props.initialDraft).toBe("who runs rush");
+    // Mounted is not shown: the sheet is presented.
+    expect(hooks.present).toHaveBeenCalled();
+  });
+
+  it("narrows to one group with its chip, and offers no chip for a group that is off", async () => {
+    hooks.modules = { events: false };
+    const tree = await render();
+    await type(tree, "rush");
+    const chips = tree.root
+      .findAll((node) => node.props.accessibilityRole === "tab")
+      .map((node) => drawnText(node));
+    expect(chips.filter((c, i) => chips.indexOf(c) === i)).toEqual([
+      "All",
+      "Channels",
+      "Members",
+      "Messages",
+    ]);
+    const messages = tree.root.find(
+      (node) =>
+        node.props.accessibilityRole === "tab" &&
+        typeof node.props.onPress === "function" &&
+        drawnText(node) === "Messages",
+    );
+    await act(async () => messages.props.onPress());
+    const text = drawnText(results(tree));
+    expect(text).toContain("Rush week starts Monday");
+    expect(text).not.toContain("Rush Chair Ana");
+  });
+
+  it("says when a shown group timed out under rows, and ignores a hidden one", async () => {
+    hooks.timedOutSources = ["messages"];
+    hooks.payload = { ...PAYLOAD, messages: [] };
+    const tree = await render();
+    await type(tree, "rush");
+    expect(drawnText(tree.root)).toContain(SEARCH_COPY.partial(["Messages"]));
+    // Backwork is never listed on the phone, so its timeout is not news.
+    hooks.timedOutSources = ["backwork"];
+    hooks.payload = { members: [], messages: [], events: [] };
+    hooks.channels = [];
+    await type(tree, "zzz");
+    expect(drawnText(tree.root)).toContain(SEARCH_COPY.none);
+  });
+
+  it("says search is unavailable, not that nothing matched, with no chapter", async () => {
+    hooks.chapterId = null;
+    const tree = await render();
+    await type(tree, "rush");
+    expect(drawnText(tree.root)).toContain(SEARCH_COPY.failed);
+    expect(drawnText(tree.root)).not.toContain(SEARCH_COPY.none);
+  });
+
+  it("adds to the stored searches, not to an empty list still loading", async () => {
+    vi.mocked(AsyncStorage.getItem).mockResolvedValue(
+      JSON.stringify(["formal"]),
+    );
+    const tree = await render();
+    await type(tree, "rush");
+    const row = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        /^rush(,|$)/.test(String(node.props.accessibilityLabel ?? "")),
+    );
+    await act(async () => row.props.onPress());
+    expect(AsyncStorage.setItem).toHaveBeenLastCalledWith(
+      "frapp.recentSearches.u-me.ch-1",
+      JSON.stringify(["rush", "formal"]),
+    );
   });
 });

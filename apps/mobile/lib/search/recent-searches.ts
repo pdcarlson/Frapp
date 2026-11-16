@@ -55,7 +55,9 @@ export async function readRecentSearches(
   chapterId: string | null,
 ): Promise<string[]> {
   try {
-    return parseRecentSearches(await AsyncStorage.getItem(key(userId, chapterId)));
+    return parseRecentSearches(
+      await AsyncStorage.getItem(key(userId, chapterId)),
+    );
   } catch {
     return [];
   }

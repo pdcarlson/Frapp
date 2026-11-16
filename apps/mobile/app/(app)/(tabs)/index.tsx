@@ -795,6 +795,13 @@ export default function ChatHomeScreen() {
         </Text>
       ) : null}
 
+      {/* Threads, first above the channels as Slack's Home lists it
+          (#5139; a title-row round from #4960 until then). Drawn in every
+          state of the list below, as the round was. */}
+      {chapterScope !== "none" ? (
+        <ThreadsRow onPress={() => threadsSheetRef.current?.present?.()} />
+      ) : null}
+
       <ScreenReady
         ready={
           chapterScope === "none" ||
@@ -844,9 +851,6 @@ export default function ChatHomeScreen() {
         )
       ) : (
         <>
-          {/* Threads, first in the list as Slack's Home lists it (#5139;
-              a title-row round from #4960 until then). */}
-          <ThreadsRow onPress={() => threadsSheetRef.current?.present?.()} />
           {/*
             The list (2026-11-06 redesign): the member's sections, each row
             with its latest message and time. The filters sit behind the

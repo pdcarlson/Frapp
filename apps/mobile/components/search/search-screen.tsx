@@ -76,10 +76,21 @@ export const SEARCH_COPY = {
   failed: "Search is unavailable right now. Try again in a moment.",
   timedOut: "Search took too long. Try a narrower term.",
   none: "No matches.",
+  partial: (groups: readonly string[]) =>
+    `Stopped looking in ${groups.join(", ")}. Results may be incomplete.`,
+  partialUnnamed: "Some sources timed out. Results may be incomplete.",
   askAbout: (query: string) => `${ASK_COPY.name} about “${query}”`,
 } as const;
 
 const DEBOUNCE_MS = 200;
+
+/** Which group a timed-out search source fills (`x-search-timeout-sources`). */
+const GROUP_FOR_SOURCE: Record<string, FindGroup> = {
+  backwork: "Backwork",
+  events: "Events",
+  members: "Members",
+  messages: "Messages",
+};
 
 type SearchRow = FindResult & { route: NotificationTarget };
 
@@ -116,12 +127,16 @@ export function SearchScreen() {
       live = false;
     };
   }, [viewerId, chapterId]);
+  // Read, add, write: from what is stored, never from what is on screen,
+  // which is empty until the first read answers. Adding to that would write
+  // over the member's earlier searches on a slow cold start.
   const remember = useCallback(
     (words: string) => {
-      setRecent((current) => {
-        const next = withRecentSearch(current, words);
-        if (viewerId) writeRecentSearches(viewerId, chapterId, next);
-        return next;
+      if (!viewerId) return;
+      void readRecentSearches(viewerId, chapterId).then((stored) => {
+        const next = withRecentSearch(stored, words);
+        writeRecentSearches(viewerId, chapterId, next);
+        setRecent(next);
       });
     },
     [viewerId, chapterId],
@@ -163,7 +178,13 @@ export function SearchScreen() {
   const shownFilter: FindFilter =
     filter !== "All" && hiddenGroups.has(filter) ? "All" : filter;
 
-  const settling = runnable && (debounced !== typed || search.isFetching);
+  // A search with no chapter to run in never starts, so it is not "nothing
+  // found" either.
+  const noChapter = chapterId === null;
+  const settling =
+    runnable &&
+    !noChapter &&
+    (debounced !== typed || search.isFetching || search.isPending);
   const rows = useMemo((): readonly SearchRow[] => {
     if (!runnable) return [];
     return buildFindResults({
@@ -178,20 +199,41 @@ export function SearchScreen() {
     });
   }, [runnable, debounced, shownFilter, named, search.data, hiddenGroups]);
 
+  // Web's rule (`find-dialog.tsx`): only a timeout in a group the member is
+  // looking at counts, and one that cut a list short is said under the rows,
+  // because "stopped looking" must never read as "found nothing"
+  // (spec/behavior/search.md). Channels are matched here and never time out.
+  const shownGroup = (group: FindGroup) =>
+    !hiddenGroups.has(group) &&
+    (shownFilter === "All" || shownFilter === group);
+  const allTimedOut = search.data?.timedOutSources ?? [];
+  const timedOutGroups = allTimedOut
+    .map((source) => GROUP_FOR_SOURCE[source])
+    .filter((group): group is FindGroup => !!group && shownGroup(group));
   const timedOut =
-    (search.data?.timedOutSources?.length ?? 0) > 0 ||
-    (search.data?.timedOut ?? false);
+    allTimedOut.length > 0
+      ? timedOutGroups.length > 0
+      : (search.data?.timedOut ?? false) && shownFilter !== "Channels";
+
   let status: string | null = null;
   if (typed !== "" && !runnable) status = SEARCH_COPY.tooShort;
+  else if (runnable && noChapter) status = SEARCH_COPY.failed;
   else if (runnable && settling && rows.length === 0)
     status = SEARCH_COPY.searching;
   else if (runnable && search.isError) status = SEARCH_COPY.failed;
   else if (runnable && !settling && rows.length === 0)
     status = timedOut ? SEARCH_COPY.timedOut : SEARCH_COPY.none;
+  const partial =
+    runnable && !settling && rows.length > 0 && timedOut
+      ? timedOutGroups.length > 0
+        ? SEARCH_COPY.partial(timedOutGroups)
+        : SEARCH_COPY.partialUnnamed
+      : null;
 
   const open = (row: SearchRow) => {
     selectionHaptic();
-    remember(typed);
+    // The rows are the settled search's, so its words are what led here.
+    remember(debounced);
     openNotificationTarget(router, row.route);
   };
 
@@ -264,6 +306,7 @@ export function SearchScreen() {
               {status}
             </Text>
           ) : null}
+          {partial ? <Text style={styles.status}>{partial}</Text> : null}
           <View testID="search-results">
             {rows.map((row, index) => (
               <View key={row.id}>
