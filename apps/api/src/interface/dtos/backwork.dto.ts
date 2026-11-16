@@ -2,8 +2,10 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsDefined,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -206,6 +208,8 @@ export class UpdateBackworkDraftsDto extends BackworkDraftIdsDto {
     description:
       'Fields to set on every listed draft. Fields left out keep their value; a field sent as null clears it.',
   })
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => BackworkFieldsDto)
   fields: BackworkFieldsDto;

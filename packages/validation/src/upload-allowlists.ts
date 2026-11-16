@@ -125,9 +125,11 @@ export const MAX_BACKWORK_ZIP_LABEL = "250 MB";
 /**
  * Most backwork drafts one edit or publish call takes (#5208). A bulk upload
  * batch can run to hundreds of exams; the review table sends a bigger
- * selection in chunks of this size.
+ * selection in chunks of this size. The API works through a call one draft
+ * at a time (a few queries each), so 50 keeps a call well inside the SDK's
+ * 20-second write timeout.
  */
-export const MAX_BACKWORK_DRAFT_BATCH = 200;
+export const MAX_BACKWORK_DRAFT_BATCH = 50;
 
 /**
  * The `archive` kind is NOT a member-upload surface.

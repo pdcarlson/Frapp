@@ -3,6 +3,8 @@ import {
   DOCUMENT_VARIANTS,
   MAX_BACKWORK_DRAFT_BATCH,
   SEMESTERS,
+  YEAR_MAX,
+  isUnredactedStudentCopy,
 } from "@repo/validation";
 import type { BackworkDraft, BackworkDraftFields } from "@repo/hooks";
 import { BACKWORK_YEAR_MIN } from "./finish";
@@ -28,19 +30,23 @@ type ColumnSpec = {
   label: string;
   kind: "text" | "int" | "choice";
   choices?: readonly string[];
-  /** Smallest whole number the API takes, for `int` columns. */
+  /** Smallest and largest whole number the API takes, for `int` columns. */
   min?: number;
+  max?: number;
+  /** Longest text the API takes, for `text` columns. */
+  maxLength?: number;
 };
 
 export const DRAFT_COLUMNS: readonly ColumnSpec[] = [
-  { key: "title", label: "Title", kind: "text" },
-  { key: "department_code", label: "Department", kind: "text" },
-  { key: "course_number", label: "Course", kind: "text" },
-  { key: "professor_name", label: "Professor", kind: "text" },
+  { key: "title", label: "Title", kind: "text", maxLength: 255 },
+  { key: "department_code", label: "Department", kind: "text", maxLength: 20 },
+  { key: "course_number", label: "Course", kind: "text", maxLength: 20 },
+  { key: "professor_name", label: "Professor", kind: "text", maxLength: 255 },
   { key: "assignment_type", label: "Type", kind: "choice", choices: ASSIGNMENT_TYPES },
-  { key: "assignment_number", label: "Number", kind: "int", min: 1 },
+  // The API takes up to int4; no assignment is numbered past a few hundred.
+  { key: "assignment_number", label: "Number", kind: "int", min: 1, max: 9_999 },
   { key: "semester", label: "Semester", kind: "choice", choices: SEMESTERS },
-  { key: "year", label: "Year", kind: "int", min: BACKWORK_YEAR_MIN },
+  { key: "year", label: "Year", kind: "int", min: BACKWORK_YEAR_MIN, max: YEAR_MAX },
   { key: "document_variant", label: "Copy", kind: "choice", choices: DOCUMENT_VARIANTS },
 ];
 
@@ -72,11 +78,13 @@ export function cellPatch(
     if (!/^\d+$/.test(text)) return undefined;
     const value = Number(text);
     if (!Number.isSafeInteger(value) || value < (spec.min ?? 0)) return undefined;
+    if (spec.max !== undefined && value > spec.max) return undefined;
     return { [key]: value };
   }
   if (spec.kind === "choice") {
     return spec.choices?.includes(text) ? { [key]: text } : undefined;
   }
+  if (spec.maxLength !== undefined && text.length > spec.maxLength) return undefined;
   return { [key]: text };
 }
 
@@ -86,7 +94,7 @@ export function cellPatch(
  * the press: a Student Copy has to have been flattened.
  */
 export function publishBlocker(draft: BackworkDraft): string | null {
-  if (draft.draft_fields?.document_variant === "Student Copy" && !draft.is_redacted) {
+  if (isUnredactedStudentCopy(draft.draft_fields?.document_variant, draft.is_redacted)) {
     return "Uploaded as-is, so it can't be a Student Copy.";
   }
   return null;

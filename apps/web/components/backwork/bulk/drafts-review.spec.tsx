@@ -4,6 +4,7 @@ import type { BackworkDraft } from "@repo/hooks";
 
 const state = vi.hoisted(() => ({
   drafts: [] as BackworkDraft[],
+  draftsError: false,
   update: vi.fn(),
   publish: vi.fn(),
   remove: vi.fn(),
@@ -12,7 +13,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useBackworkDrafts: () => ({ data: state.drafts }),
+  useBackworkDrafts: () => ({ data: state.drafts, isError: state.draftsError }),
   useUpdateBackworkDrafts: () => ({ mutateAsync: state.update }),
   usePublishBackworkDrafts: () => ({ mutateAsync: state.publish }),
   useDeleteBackworkDraft: () => ({ mutateAsync: state.remove, isPending: false }),
@@ -53,6 +54,7 @@ describe("Backwork drafts review (#5208)", () => {
     state.publish.mockReset().mockResolvedValue({ published: [], failed: [] });
     state.remove.mockReset().mockResolvedValue("a");
     state.toast.mockReset();
+    state.draftsError = false;
   });
 
   it("shows nothing when there are no drafts", () => {
@@ -129,6 +131,60 @@ describe("Backwork drafts review (#5208)", () => {
     const row = screen.getByRole("textbox", { name: "Title for Blank exam" }).closest("tr")!;
     expect(within(row).getByText("Uploaded as-is, so it can't be a Student Copy.")).toBeInTheDocument();
     expect(within(row).getByText("Uploaded as-is")).toBeInTheDocument();
+  });
+
+  it("clears a refused row's reason once the row is edited", async () => {
+    state.publish.mockResolvedValue({
+      published: [],
+      failed: [{ id: "a", message: "Couldn't publish this one. Try again." }],
+    });
+    render(<DraftsReview />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Midterm 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Publish 1 selected" }));
+    await screen.findByText("Couldn't publish this one. Try again.");
+
+    const title = screen.getByRole("textbox", { name: "Title for Midterm 1" });
+    fireEvent.change(title, { target: { value: "Midterm 1, Fall" } });
+    fireEvent.blur(title);
+    await waitFor(() =>
+      expect(screen.queryByText("Couldn't publish this one. Try again.")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("puts a cell back when its save fails", async () => {
+    state.update.mockRejectedValue(new Error("offline"));
+    render(<DraftsReview />);
+    const title = screen.getByRole("textbox", { name: "Title for Midterm 2" });
+    fireEvent.change(title, { target: { value: "Renamed" } });
+    fireEvent.blur(title);
+    await waitFor(() => expect(title).toHaveValue("Midterm 2"));
+    expect(state.toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Couldn't save that change" }),
+    );
+  });
+
+  it("counts only the chunks that never answered as failed", async () => {
+    state.drafts = Array.from({ length: 60 }, (_, n) => draft(`d${n}`, { title: `Exam ${n}` }));
+    state.publish
+      .mockResolvedValueOnce({ published: Array.from({ length: 50 }, (_, n) => ({ id: `d${n}` })), failed: [] })
+      .mockRejectedValueOnce(new Error("offline"));
+    render(<DraftsReview />);
+    fireEvent.click(screen.getByRole("button", { name: "Publish all 60" }));
+
+    await waitFor(() =>
+      expect(state.toast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Published 50 files to Backwork",
+          description: "10 stayed drafts. The reason is on each row.",
+        }),
+      ),
+    );
+  });
+
+  it("says so when the drafts can't load, instead of showing nothing", () => {
+    state.draftsError = true;
+    render(<DraftsReview />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Couldn't load your drafts.");
   });
 
   it("deletes one draft from its row", async () => {

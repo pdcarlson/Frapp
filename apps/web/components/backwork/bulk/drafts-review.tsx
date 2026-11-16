@@ -36,7 +36,7 @@ import {
 } from "@/components/shared/table-controls";
 import { useSubscriptionGate } from "@/components/shared/subscription-gate";
 import { useToast } from "@/lib/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
 import {
   DRAFT_COLUMNS,
   cellPatch,
@@ -47,6 +47,7 @@ import {
   publishBlocker,
   type DraftColumn,
 } from "@/lib/backwork-bulk/drafts";
+import { isUnredactedStudentCopy } from "@repo/validation";
 
 /** A Radix Select item can't hold "", so a cleared choice goes as this. */
 const NONE = "__none";
@@ -76,6 +77,11 @@ export function DraftsReview() {
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [failures, setFailures] = useState<ReadonlyMap<string, string>>(new Map());
   const [publishing, setPublishing] = useState(false);
+  // A column set across the selection writes row by row, and publishing reads
+  // each row once, so cell edits wait while either runs: an edit made mid-way
+  // would be overwritten by the older copy the bulk write is holding.
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const busy = publishing || bulkSaving;
 
   // Selection only ever holds drafts that are still here.
   const liveSelected = useMemo(
@@ -83,6 +89,13 @@ export function DraftsReview() {
     [drafts, selected],
   );
 
+  if (draftsQuery.isError) {
+    return (
+      <p className="text-caption text-destructive-text" role="alert">
+        Couldn&apos;t load your drafts. Reload the page to try again.
+      </p>
+    );
+  }
   if (drafts.length === 0) return null;
 
   const allSelected = liveSelected.length === drafts.length;
@@ -95,17 +108,31 @@ export function DraftsReview() {
       return next;
     });
 
-  async function save(ids: string[], fields: BackworkDraftFields) {
+  /** Saves a change; false when it didn't stick, so the cell can go back. */
+  async function save(ids: string[], fields: BackworkDraftFields): Promise<boolean> {
+    const bulk = ids.length > 1;
+    if (bulk) setBulkSaving(true);
     try {
       for (const chunk of chunkIds(ids)) {
         await update.mutateAsync({ ids: chunk, fields });
       }
-    } catch {
+      // A fixed row no longer shows the reason its last publish was refused.
+      setFailures((current) => {
+        if (!ids.some((id) => current.has(id))) return current;
+        const next = new Map(current);
+        for (const id of ids) next.delete(id);
+        return next;
+      });
+      return true;
+    } catch (error) {
       toast({
         title: "Couldn't save that change",
-        description: "Check your connection and try again.",
+        description: getErrorMessage(error, "Check your connection and try again."),
         variant: "destructive",
       });
+      return false;
+    } finally {
+      if (bulk) setBulkSaving(false);
     }
   }
 
@@ -114,14 +141,19 @@ export function DraftsReview() {
     setPublishing(true);
     let filed = 0;
     const failed = new Map<string, string>();
+    const answered = new Set<string>();
     try {
       for (const chunk of chunkIds(ids)) {
         const result = await publish.mutateAsync(chunk);
         filed += result.published.length;
         for (const failure of result.failed) failed.set(failure.id, failure.message);
+        for (const id of chunk) answered.add(id);
       }
     } catch {
-      for (const id of ids) if (!failed.has(id)) failed.set(id, "Couldn't publish this one. Try again.");
+      // Only the chunks that never got an answer; earlier ones already did.
+      for (const id of ids) {
+        if (!answered.has(id)) failed.set(id, "Couldn't publish this one. Try again.");
+      }
     } finally {
       setPublishing(false);
     }
@@ -173,7 +205,7 @@ export function DraftsReview() {
               {liveSelected.length} selected
             </span>
             <SetColumn
-              disabled={!gate.allowed}
+              disabled={!gate.allowed || busy}
               onApply={(fields) => save(liveSelected, fields)}
             />
           </>
@@ -187,7 +219,7 @@ export function DraftsReview() {
           size="toolbar"
           className="ml-auto gap-2"
           onClick={() => publishIds(publishTargets)}
-          {...gate.controlProps(publishing)}
+          {...gate.controlProps(busy)}
         >
           <Upload className="h-4 w-4" aria-hidden="true" />
           {liveSelected.length > 0
@@ -244,7 +276,7 @@ export function DraftsReview() {
                     <DraftCell
                       draft={draft}
                       column={column.key}
-                      disabled={!gate.allowed}
+                      disabled={!gate.allowed || busy}
                       onSave={(fields) => save([draft.id], fields)}
                     />
                     {column.key === "title" ? (
@@ -312,7 +344,7 @@ function DraftCell({
   draft: BackworkDraft;
   column: DraftColumn;
   disabled: boolean;
-  onSave: (fields: BackworkDraftFields) => void;
+  onSave: (fields: BackworkDraftFields) => Promise<boolean>;
 }) {
   const spec = columnSpec(column);
   const stored = cellText(draft, column);
@@ -325,7 +357,7 @@ function DraftCell({
         disabled={disabled}
         onValueChange={(next) => {
           const patch = cellPatch(column, next === NONE ? "" : next);
-          if (patch) onSave(patch);
+          if (patch) void onSave(patch);
         }}
       >
         <SelectTrigger className={CELL_CLASS} aria-label={label}>
@@ -338,7 +370,9 @@ function DraftCell({
               key={choice}
               value={choice}
               // Only a flattened file may be a Student Copy (`publishBlocker`).
-              disabled={column === "document_variant" && choice === "Student Copy" && !draft.is_redacted}
+              disabled={
+                column === "document_variant" && isUnredactedStudentCopy(choice, draft.is_redacted)
+              }
             >
               {choice}
             </SelectItem>
@@ -360,8 +394,7 @@ function DraftCell({
         if (raw.trim() === stored) return true;
         const patch = cellPatch(column, raw);
         if (!patch) return false;
-        onSave(patch);
-        return true;
+        return onSave(patch);
       }}
     />
   );
@@ -378,12 +411,17 @@ function TextCell({
   label: string;
   numeric: boolean;
   disabled: boolean;
-  /** False when the text isn't a value the column takes; the field goes back. */
-  onCommit: (raw: string) => boolean;
+  /**
+   * False (now, or once the save answers) when the text isn't a value the
+   * column takes or didn't save; the field goes back.
+   */
+  onCommit: (raw: string) => boolean | Promise<boolean>;
 }) {
   const [value, setValue] = useState(stored);
   const commit = () => {
-    if (!onCommit(value)) setValue(stored);
+    const outcome = onCommit(value);
+    if (outcome === false) setValue(stored);
+    else if (outcome !== true) void outcome.then((saved) => !saved && setValue(stored));
   };
   return (
     <Input
@@ -412,7 +450,7 @@ function SetColumn({
   onApply,
 }: {
   disabled: boolean;
-  onApply: (fields: BackworkDraftFields) => void;
+  onApply: (fields: BackworkDraftFields) => unknown;
 }) {
   const [column, setColumn] = useState<DraftColumn>("semester");
   const [value, setValue] = useState("");

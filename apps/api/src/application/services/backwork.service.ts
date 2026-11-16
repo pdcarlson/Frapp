@@ -17,6 +17,7 @@ import {
   collapseCourseText,
   courseTextTooLong,
   departmentCodeKey,
+  isUnredactedStudentCopy,
   normalizeCourseNicknames,
 } from '@repo/validation';
 import {
@@ -144,10 +145,31 @@ function fileRefusal(
   fields: BackworkFieldsInput,
   isRedacted: boolean,
 ): string | null {
-  if (fields.document_variant === 'Student Copy' && !isRedacted) {
+  if (isUnredactedStudentCopy(fields.document_variant, isRedacted)) {
     return 'A Student Copy has to be redacted. This file was uploaded as-is, so pick another copy type or upload it again through bulk upload.';
   }
   return null;
+}
+
+/** Department and professor ids already resolved in one publish call. */
+type TaxonomyLookups = {
+  departments: Map<string, Promise<string | null>>;
+  professors: Map<string, Promise<string | null>>;
+};
+
+/** `load()` once per key when there is a cache; a failed load isn't kept. */
+function memo(
+  cache: Map<string, Promise<string | null>> | undefined,
+  key: string,
+  load: () => Promise<string | null>,
+): Promise<string | null> {
+  if (!cache) return load();
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const pending = load();
+  cache.set(key, pending);
+  pending.catch(() => cache.delete(key));
+  return pending;
 }
 
 /** The keys a caller set, with blanks and undefined dropped. */
@@ -247,8 +269,15 @@ export class BackworkService {
       input.file_hash,
     );
     if (existing) {
+      // A draft is invisible to everyone but its uploader, so a 409 for one
+      // says so instead of pointing at a library that doesn't show it.
+      const message = !existing.draft_fields
+        ? 'A file with the same hash already exists in this chapter'
+        : existing.uploader_id === input.uploader_id
+          ? 'This file is already in your drafts.'
+          : 'Someone in your chapter already saved this file as a draft.';
       throw new ConflictException({
-        message: 'A file with the same hash already exists in this chapter',
+        message,
         existingResourceId: existing.id,
       });
     }
@@ -346,6 +375,12 @@ export class BackworkService {
     );
     const byId = new Map(drafts.map((draft) => [draft.id, draft]));
     const result: PublishDraftsResult = { published: [], failed: [] };
+    // A batch nearly always shares a department and a professor: look each
+    // up once, not once per draft.
+    const lookups: TaxonomyLookups = {
+      departments: new Map(),
+      professors: new Map(),
+    };
     for (const id of ids) {
       const draft = byId.get(id);
       if (!draft) {
@@ -359,7 +394,7 @@ export class BackworkService {
         continue;
       }
       try {
-        const columns = await this.resolveColumns(chapterId, fields);
+        const columns = await this.resolveColumns(chapterId, fields, lookups);
         const row = await this.resourceRepo.publishDraft(
           id,
           chapterId,
@@ -427,20 +462,23 @@ export class BackworkService {
   private async resolveColumns(
     chapterId: string,
     fields: BackworkFieldsInput,
+    lookups?: TaxonomyLookups,
   ): Promise<BackworkPublishedColumns> {
     let departmentId: string | null = null;
-    if (fields.department_code?.trim()) {
-      departmentId = await this.resolveOrCreateDepartment(
-        chapterId,
-        fields.department_code,
+    const departmentCode = fields.department_code;
+    if (departmentCode?.trim()) {
+      departmentId = await memo(
+        lookups?.departments,
+        departmentCodeKey(departmentCode),
+        () => this.resolveOrCreateDepartment(chapterId, departmentCode),
       );
     }
 
     let professorId: string | null = null;
-    if (fields.professor_name?.trim()) {
-      professorId = await this.resolveOrCreateProfessor(
-        chapterId,
-        fields.professor_name,
+    const professorName = fields.professor_name;
+    if (professorName?.trim()) {
+      professorId = await memo(lookups?.professors, professorName, () =>
+        this.resolveOrCreateProfessor(chapterId, professorName),
       );
     }
 
@@ -557,7 +595,12 @@ export class BackworkService {
   }
 
   async delete(id: string, chapterId: string): Promise<void> {
-    const resource = await this.resourceRepo.findById(id, chapterId);
+    // Admins can delete drafts too: one a member left behind (they left the
+    // chapter, or deleted their account) would otherwise hold its file hash
+    // forever, since a re-upload of the same file counts as a duplicate.
+    const resource = await this.resourceRepo.findById(id, chapterId, {
+      includeDrafts: true,
+    });
     if (!resource) {
       throw new NotFoundException('Backwork resource not found');
     }

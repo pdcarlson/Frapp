@@ -1575,5 +1575,72 @@ describe('BackworkService', () => {
       expect(mockResourceRepo.deleteDraft).not.toHaveBeenCalled();
       expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ['user-1', 'This file is already in your drafts.'],
+      ['user-2', 'Someone in your chapter already saved this file as a draft.'],
+    ])(
+      'says a duplicate is a draft, not a library file (uploader %s)',
+      async (uploaderId, message) => {
+        mockResourceRepo.findByFileHash.mockResolvedValue(
+          draftRow({ uploader_id: 'user-1' }),
+        );
+
+        const attempt = service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: uploaderId,
+          storage_path: 'chapters/ch-1/backwork/r/a.pdf',
+          file_hash: 'h',
+          draft: true,
+        });
+
+        await expect(attempt).rejects.toThrow(ConflictException);
+        await expect(attempt).rejects.toMatchObject({
+          response: { message, existingResourceId: 'draft-1' },
+        });
+      },
+    );
+
+    it('lets an admin delete a draft someone left behind', async () => {
+      mockResourceRepo.findById.mockResolvedValue(draftRow());
+      mockStorageProvider.deleteFile.mockResolvedValue();
+      mockResourceRepo.delete.mockResolvedValue();
+
+      await service.delete('draft-1', 'ch-1');
+
+      expect(mockResourceRepo.findById).toHaveBeenCalledWith(
+        'draft-1',
+        'ch-1',
+        { includeDrafts: true },
+      );
+      expect(mockResourceRepo.delete).toHaveBeenCalledWith('draft-1', 'ch-1');
+    });
+
+    it('looks up a shared department and professor once per publish', async () => {
+      const fields = { department_code: 'CS', professor_name: 'Dr. Smith' };
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({ id: 'a', draft_fields: fields }),
+        draftRow({ id: 'b', draft_fields: fields }),
+        draftRow({
+          id: 'c',
+          draft_fields: { ...fields, department_code: 'cs' },
+        }),
+      ]);
+      mockDepartmentRepo.findByCode.mockResolvedValue(baseDepartment);
+      mockProfessorRepo.findByName.mockResolvedValue(baseProfessor);
+      mockResourceRepo.publishDraft.mockImplementation(async (id) =>
+        draftRow({ id, draft_fields: null }),
+      );
+
+      const result = await service.publishDrafts('ch-1', 'user-1', [
+        'a',
+        'b',
+        'c',
+      ]);
+
+      expect(result.published).toHaveLength(3);
+      expect(mockDepartmentRepo.findByCode).toHaveBeenCalledTimes(1);
+      expect(mockProfessorRepo.findByName).toHaveBeenCalledTimes(1);
+    });
   });
 });

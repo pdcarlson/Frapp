@@ -44,7 +44,12 @@ export type BackworkPublishedColumns = Pick<
  * already sitting in someone's drafts is still a duplicate.
  */
 export interface IBackworkResourceRepository {
-  findById(id: string, chapterId: string): Promise<BackworkResource | null>;
+  /** A published resource. `includeDrafts` also finds a draft, for the admin delete. */
+  findById(
+    id: string,
+    chapterId: string,
+    options?: { includeDrafts?: boolean },
+  ): Promise<BackworkResource | null>;
   findByChapter(
     chapterId: string,
     filters?: BackworkResourceFilter,

@@ -26,14 +26,15 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
   async findById(
     id: string,
     chapterId: string,
+    options?: { includeDrafts?: boolean },
   ): Promise<BackworkResource | null> {
-    const { data, error } = await this.supabase
+    let query = this.supabase
       .from('backwork_resources')
       .select('*')
       .eq('id', id)
-      .eq('chapter_id', chapterId)
-      .is('draft_fields', null)
-      .maybeSingle();
+      .eq('chapter_id', chapterId);
+    if (!options?.includeDrafts) query = query.is('draft_fields', null);
+    const { data, error } = await query.maybeSingle();
     if (error) throw new SupabaseQueryError(error);
     return data;
   }
@@ -206,7 +207,13 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
   ): Promise<BackworkResource | null> {
     const { data, error } = await this.supabase
       .from('backwork_resources')
-      .update({ ...columns, draft_fields: null })
+      // Published now, so it reads as added now in the library and Activity,
+      // which order by created_at.
+      .update({
+        ...columns,
+        draft_fields: null,
+        created_at: new Date().toISOString(),
+      })
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .eq('uploader_id', uploaderId)

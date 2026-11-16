@@ -314,11 +314,11 @@ export function useBackworkDrafts(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: ["backwork", chapterId, "drafts"],
     queryFn: async ({ signal }) => {
-      const { data, error } = await client.GET("/v1/backwork/drafts", {
-        signal,
-      });
-      if (error) throw error;
-      return (data ?? []) as unknown as BackworkDraft[];
+      const result = await client.GET("/v1/backwork/drafts", { signal });
+      // On the status: an empty-bodied failure must not read as "no drafts",
+      // which would hide a saved batch.
+      throwUnlessOk(result);
+      return (result.data ?? []) as unknown as BackworkDraft[];
     },
     staleTime: 30_000,
     enabled: !!chapterId && (options.enabled ?? true),

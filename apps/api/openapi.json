@@ -27417,7 +27417,7 @@
         "type": "object",
         "properties": {
           "ids": {
-            "maxItems": 200,
+            "maxItems": 50,
             "description": "The caller's drafts. Other ids are left out.",
             "type": "array",
             "items": {
@@ -27442,7 +27442,7 @@
         "type": "object",
         "properties": {
           "ids": {
-            "maxItems": 200,
+            "maxItems": 50,
             "description": "The caller's drafts. Other ids are left out.",
             "type": "array",
             "items": {

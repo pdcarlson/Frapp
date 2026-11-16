@@ -31,6 +31,15 @@ describe("backwork draft cells (#5208)", () => {
     expect(cellPatch("year", "20.5")).toBeUndefined();
     expect(cellPatch("assignment_number", "0")).toBeUndefined();
     expect(cellPatch("assignment_number", "3")).toEqual({ assignment_number: 3 });
+    // The upper bounds too: a typo here would otherwise come back as a 400.
+    expect(cellPatch("year", "20245")).toBeUndefined();
+    expect(cellPatch("assignment_number", "9999999999")).toBeUndefined();
+  });
+
+  it("refuses text longer than the API takes", () => {
+    expect(cellPatch("department_code", "C".repeat(21))).toBeUndefined();
+    expect(cellPatch("department_code", "C".repeat(20))).toEqual({ department_code: "C".repeat(20) });
+    expect(cellPatch("title", "t".repeat(256))).toBeUndefined();
   });
 
   it("takes only a choice on the list", () => {
