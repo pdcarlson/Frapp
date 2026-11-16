@@ -123,6 +123,13 @@ export const MAX_BACKWORK_ZIP_BYTES = 250 * 1024 * 1024;
 export const MAX_BACKWORK_ZIP_LABEL = "250 MB";
 
 /**
+ * Most backwork drafts one edit or publish call takes (#5208). A bulk upload
+ * batch can run to hundreds of exams; the review table sends a bigger
+ * selection in chunks of this size.
+ */
+export const MAX_BACKWORK_DRAFT_BATCH = 200;
+
+/**
  * The `archive` kind is NOT a member-upload surface.
  *
  * It exists for one flow: a chapter admin uploading a DiscordChatExporter

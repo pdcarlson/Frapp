@@ -231,6 +231,7 @@ export {
   isAllowedUploadExtension,
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
+  MAX_BACKWORK_DRAFT_BATCH,
   MAX_BACKWORK_UPLOAD_BYTES,
   MAX_BACKWORK_UPLOAD_LABEL,
   MAX_BACKWORK_ZIP_BYTES,

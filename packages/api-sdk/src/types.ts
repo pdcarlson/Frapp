@@ -2953,6 +2953,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/backwork/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The caller's backwork drafts, in upload order */
+        get: operations["BackworkController_listDrafts_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set fields on several of the caller's drafts at once */
+        patch: operations["BackworkController_updateDrafts_v1"];
+        trace?: never;
+    };
+    "/v1/backwork/drafts/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** File the caller's drafts; ones that can't be filed stay drafts */
+        post: operations["BackworkController_publishDrafts_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/drafts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete one of the caller's drafts and its file */
+        delete: operations["BackworkController_deleteDraft_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/backwork/download-urls": {
         parameters: {
             query?: never;
@@ -8402,30 +8454,72 @@ export interface components {
             resource_id: string;
         };
         ConfirmBackworkUploadDto: {
+            title?: string | null;
+            /** @description Department code (e.g. "CS") */
+            department_code?: string | null;
+            /** @description Course number (e.g. "101") */
+            course_number?: string | null;
+            /** @description The course's name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course. */
+            course_name?: string | null;
+            /** @description Professor name */
+            professor_name?: string | null;
+            year?: number | null;
+            /** @enum {string|null} */
+            semester?: "Spring" | "Summer" | "Fall" | "Winter" | null;
+            /** @enum {string|null} */
+            assignment_type?: "Exam" | "Midterm" | "Final Exam" | "Quiz" | "Homework" | "Lab" | "Project" | "Study Guide" | "Notes" | "Other" | null;
+            assignment_number?: number | null;
+            /** @enum {string|null} */
+            document_variant?: "Student Copy" | "Blank Copy" | "Answer Key" | null;
+            tags?: string[] | null;
             /** @description Storage path returned from upload-url */
             storage_path: string;
             /** @description SHA-256 hash of the uploaded file */
             file_hash: string;
-            title?: string;
-            /** @description Department code (e.g. "CS") */
-            department_code?: string;
-            /** @description Course number (e.g. "101") */
-            course_number?: string;
-            /** @description The course's name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course. */
-            course_name?: string;
-            /** @description Professor name */
-            professor_name?: string;
-            year?: number;
-            /** @enum {string} */
-            semester?: "Spring" | "Summer" | "Fall" | "Winter";
-            /** @enum {string} */
-            assignment_type?: "Exam" | "Midterm" | "Final Exam" | "Quiz" | "Homework" | "Lab" | "Project" | "Study Guide" | "Notes" | "Other";
-            assignment_number?: number;
-            /** @enum {string} */
-            document_variant?: "Student Copy" | "Blank Copy" | "Answer Key";
-            tags?: string[];
             /** @default false */
             is_redacted: boolean;
+            /** @description Save as a draft: the fields are kept as sent, not filed, and only the uploader sees the file until it is published (POST /v1/backwork/drafts/publish). */
+            draft?: boolean;
+        };
+        BackworkFieldsDto: {
+            title?: string | null;
+            /** @description Department code (e.g. "CS") */
+            department_code?: string | null;
+            /** @description Course number (e.g. "101") */
+            course_number?: string | null;
+            /** @description The course's name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course. */
+            course_name?: string | null;
+            /** @description Professor name */
+            professor_name?: string | null;
+            year?: number | null;
+            /** @enum {string|null} */
+            semester?: "Spring" | "Summer" | "Fall" | "Winter" | null;
+            /** @enum {string|null} */
+            assignment_type?: "Exam" | "Midterm" | "Final Exam" | "Quiz" | "Homework" | "Lab" | "Project" | "Study Guide" | "Notes" | "Other" | null;
+            assignment_number?: number | null;
+            /** @enum {string|null} */
+            document_variant?: "Student Copy" | "Blank Copy" | "Answer Key" | null;
+            tags?: string[] | null;
+        };
+        UpdateBackworkDraftsDto: {
+            /** @description The caller's drafts. Other ids are left out. */
+            ids: string[];
+            /** @description Fields to set on every listed draft. Fields left out keep their value; a field sent as null clears it. */
+            fields: components["schemas"]["BackworkFieldsDto"];
+        };
+        PublishBackworkDraftsDto: {
+            /** @description The caller's drafts. Other ids are left out. */
+            ids: string[];
+        };
+        BackworkDraftFailureDto: {
+            id: string;
+            /** @description Why it stayed a draft, in words to show. */
+            message: string;
+        };
+        PublishBackworkDraftsResponseDto: {
+            /** @description The filed resources. */
+            published: Record<string, never>[];
+            failed: components["schemas"]["BackworkDraftFailureDto"][];
         };
         BackworkDownloadUrlDto: {
             /** Format: uuid */
@@ -18066,6 +18160,122 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_listDrafts_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_updateDrafts_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateBackworkDraftsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_publishDrafts_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishBackworkDraftsDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishBackworkDraftsResponseDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_deleteDraft_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

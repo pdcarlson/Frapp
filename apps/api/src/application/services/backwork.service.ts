@@ -25,6 +25,7 @@ import {
   BACKWORK_PROFESSOR_REPOSITORY,
   BACKWORK_COURSE_REPOSITORY,
   type BackworkCourseWrite,
+  type BackworkPublishedColumns,
   type BackworkResourceFilter,
 } from '#domain/repositories/backwork.repository.interface';
 import type {
@@ -34,6 +35,7 @@ import type {
   IBackworkCourseRepository,
 } from '#domain/repositories/backwork.repository.interface';
 import type {
+  BackworkDraftFields,
   BackworkResource,
   BackworkDepartment,
   BackworkProfessor,
@@ -77,11 +79,11 @@ export interface UpsertCourseInput {
   remove_nicknames?: string[];
 }
 
-export interface ConfirmUploadInput {
-  chapter_id: string;
-  uploader_id: string;
-  storage_path: string;
-  file_hash: string;
+/**
+ * A document's metadata, as the confirm body and a draft carry it. Every field
+ * is optional, so a draft can be saved before any of it is known.
+ */
+export interface BackworkFieldsInput {
   title?: string | null;
   department_code?: string | null;
   course_number?: string | null;
@@ -96,8 +98,69 @@ export interface ConfirmUploadInput {
   assignment_type?: string | null;
   assignment_number?: number | null;
   document_variant?: string | null;
-  tags?: string[];
+  tags?: string[] | null;
+}
+
+const DRAFT_FIELD_KEYS = [
+  'title',
+  'department_code',
+  'course_number',
+  'course_name',
+  'professor_name',
+  'year',
+  'semester',
+  'assignment_type',
+  'assignment_number',
+  'document_variant',
+  'tags',
+] as const satisfies ReadonlyArray<keyof BackworkFieldsInput>;
+
+export interface ConfirmUploadInput extends BackworkFieldsInput {
+  chapter_id: string;
+  uploader_id: string;
+  storage_path: string;
+  file_hash: string;
   is_redacted?: boolean;
+  /**
+   * Save as a draft (#5208): the fields are kept as typed, not filed, and the
+   * row is visible only to the uploader until it is published.
+   */
+  draft?: boolean;
+}
+
+export interface PublishDraftsResult {
+  published: BackworkResource[];
+  failed: Array<{ id: string; message: string }>;
+}
+
+/**
+ * Why a document can't be filed as it stands, or null. A Student Copy must
+ * have been flattened: its original carries a student's name, and only the
+ * browser can redact it (spec § PDF Redaction). The web forms already refuse
+ * this; the API holds the line for a draft whose copy type is changed after
+ * upload.
+ */
+function fileRefusal(
+  fields: BackworkFieldsInput,
+  isRedacted: boolean,
+): string | null {
+  if (fields.document_variant === 'Student Copy' && !isRedacted) {
+    return 'A Student Copy has to be redacted. This file was uploaded as-is, so pick another copy type or upload it again through bulk upload.';
+  }
+  return null;
+}
+
+/** The keys a caller set, with blanks and undefined dropped. */
+function draftFieldsFrom(input: BackworkFieldsInput): BackworkDraftFields {
+  const out: Record<string, unknown> = {};
+  for (const key of DRAFT_FIELD_KEYS) {
+    const value = input[key];
+    if (value === undefined || value === null) continue;
+    if (typeof value === 'string' && value.trim() === '') continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    out[key] = value;
+  }
+  return out;
 }
 
 @Injectable()
@@ -190,64 +253,243 @@ export class BackworkService {
       });
     }
 
-    let departmentId: string | null = null;
-    if (input.department_code?.trim()) {
-      departmentId = await this.resolveOrCreateDepartment(
-        input.chapter_id,
-        input.department_code,
-      );
+    if (input.draft) {
+      return this.resourceRepo.create({
+        chapter_id: input.chapter_id,
+        uploader_id: input.uploader_id,
+        storage_path: input.storage_path,
+        file_hash: input.file_hash,
+        is_redacted: input.is_redacted ?? false,
+        draft_fields: draftFieldsFrom(input),
+      });
     }
 
-    let professorId: string | null = null;
-    if (input.professor_name) {
-      professorId = await this.resolveOrCreateProfessor(
-        input.chapter_id,
-        input.professor_name,
-      );
-    }
+    const isRedacted = input.is_redacted ?? false;
+    const refusal = fileRefusal(input, isRedacted);
+    if (refusal) throw new BadRequestException(refusal);
 
-    // Trimmed like the course key (`lower(btrim(course_number))`), so the
-    // stored number and the course join agree.
-    const courseNumber = input.course_number?.trim() || null;
+    const columns = await this.resolveColumns(input.chapter_id, input);
     const created = await this.resourceRepo.create({
       chapter_id: input.chapter_id,
       uploader_id: input.uploader_id,
       storage_path: input.storage_path,
       file_hash: input.file_hash,
-      title: input.title ?? null,
-      department_id: departmentId,
-      course_number: courseNumber,
-      professor_id: professorId,
-      year: input.year ?? null,
-      semester: (input.semester as Semester) ?? null,
-      assignment_type: (input.assignment_type as AssignmentType) ?? null,
-      assignment_number: input.assignment_number ?? null,
-      document_variant: (input.document_variant as DocumentVariant) ?? null,
-      tags: input.tags ?? [],
-      is_redacted: input.is_redacted ?? false,
+      ...columns,
+      is_redacted: isRedacted,
     });
+    await this.nameCourseAfterFiling(input.chapter_id, columns, input, created);
+    return created;
+  }
 
-    const courseName = input.course_name
-      ? collapseCourseText(input.course_name)
-      : '';
-    if (departmentId && courseNumber && courseName) {
-      // Best effort: the file is filed by now, and a course name that didn't
-      // save must not report the upload as failed (the member would retry and
-      // hit the duplicate-hash 409). It can be named from the row menu.
+  /** The caller's drafts in this chapter, in upload order. */
+  async findDrafts(
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<BackworkResource[]> {
+    return this.resourceRepo.findDrafts(chapterId, uploaderId);
+  }
+
+  /**
+   * Sets the given fields on each of the caller's drafts among `ids`, keeping
+   * the rest of each draft as it was. A field sent as `null` or blank clears
+   * it. Ids that aren't the caller's drafts are left out of the result.
+   */
+  async updateDrafts(
+    chapterId: string,
+    uploaderId: string,
+    ids: string[],
+    fields: BackworkFieldsInput,
+  ): Promise<BackworkResource[]> {
+    const drafts = await this.resourceRepo.findDraftsByIds(
+      ids,
+      chapterId,
+      uploaderId,
+    );
+    const set = draftFieldsFrom(fields);
+    const cleared = DRAFT_FIELD_KEYS.filter(
+      (key) => key in fields && fields[key] !== undefined && !(key in set),
+    );
+    const updated: BackworkResource[] = [];
+    for (const draft of drafts) {
+      const next: Record<string, unknown> = {
+        ...(draft.draft_fields ?? {}),
+        ...set,
+      };
+      for (const key of cleared) delete next[key];
+      const row = await this.resourceRepo.updateDraftFields(
+        draft.id,
+        chapterId,
+        uploaderId,
+        next,
+      );
+      if (row) updated.push(row);
+    }
+    return updated;
+  }
+
+  /**
+   * Files each of the caller's drafts among `ids` the way a confirm would:
+   * departments and professors resolved or created, the course named if it
+   * had no name. One draft that can't be filed doesn't stop the rest; it is
+   * reported in `failed` and stays a draft. An id that isn't the caller's
+   * draft (already published, deleted, someone else's) is reported too.
+   */
+  async publishDrafts(
+    chapterId: string,
+    uploaderId: string,
+    ids: string[],
+  ): Promise<PublishDraftsResult> {
+    const drafts = await this.resourceRepo.findDraftsByIds(
+      ids,
+      chapterId,
+      uploaderId,
+    );
+    const byId = new Map(drafts.map((draft) => [draft.id, draft]));
+    const result: PublishDraftsResult = { published: [], failed: [] };
+    for (const id of ids) {
+      const draft = byId.get(id);
+      if (!draft) {
+        result.failed.push({ id, message: 'This draft is no longer here.' });
+        continue;
+      }
+      const fields = (draft.draft_fields ?? {}) as BackworkFieldsInput;
+      const refusal = fileRefusal(fields, draft.is_redacted);
+      if (refusal) {
+        result.failed.push({ id, message: refusal });
+        continue;
+      }
       try {
-        await this.nameCourseIfUnnamed(
-          input.chapter_id,
-          departmentId,
-          courseNumber,
-          courseName,
+        const columns = await this.resolveColumns(chapterId, fields);
+        const row = await this.resourceRepo.publishDraft(
+          id,
+          chapterId,
+          uploaderId,
+          columns,
         );
+        if (!row) {
+          result.failed.push({ id, message: 'This draft is no longer here.' });
+          continue;
+        }
+        await this.nameCourseAfterFiling(chapterId, columns, fields, row);
+        result.published.push(row);
       } catch (error) {
         this.logger.warn(
-          `Couldn't name course ${courseNumber} (department ${departmentId}) for chapter ${input.chapter_id} after upload ${created.id}: ${(error as Error)?.message ?? String(error)}`,
+          `Couldn't publish backwork draft ${id} for chapter ${chapterId}: ${(error as Error)?.message ?? String(error)}`,
         );
+        result.failed.push({
+          id,
+          message: "Couldn't publish this one. Try again.",
+        });
       }
     }
-    return created;
+    return result;
+  }
+
+  /**
+   * Deletes one of the caller's drafts and its file. The row goes first, so a
+   * storage failure leaves an unreachable object rather than a row whose file
+   * is gone (#3526).
+   */
+  async deleteDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<void> {
+    const [draft] = await this.resourceRepo.findDraftsByIds(
+      [id],
+      chapterId,
+      uploaderId,
+    );
+    if (!draft) throw new NotFoundException('Draft not found');
+    const deleted = await this.resourceRepo.deleteDraft(
+      id,
+      chapterId,
+      uploaderId,
+    );
+    if (!deleted) throw new NotFoundException('Draft not found');
+    try {
+      await this.storageProvider.deleteFile(
+        BACKWORK_BUCKET,
+        draft.storage_path,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Deleted backwork draft ${id} but not its file ${draft.storage_path}: ${(error as Error)?.message ?? String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * The filed columns for a document's fields: department and professor
+   * resolved by name, or created. Shared by confirm and publish so both file
+   * a document the same way.
+   */
+  private async resolveColumns(
+    chapterId: string,
+    fields: BackworkFieldsInput,
+  ): Promise<BackworkPublishedColumns> {
+    let departmentId: string | null = null;
+    if (fields.department_code?.trim()) {
+      departmentId = await this.resolveOrCreateDepartment(
+        chapterId,
+        fields.department_code,
+      );
+    }
+
+    let professorId: string | null = null;
+    if (fields.professor_name?.trim()) {
+      professorId = await this.resolveOrCreateProfessor(
+        chapterId,
+        fields.professor_name,
+      );
+    }
+
+    return {
+      title: fields.title ?? null,
+      department_id: departmentId,
+      // Trimmed like the course key (`lower(btrim(course_number))`), so the
+      // stored number and the course join agree.
+      course_number: fields.course_number?.trim() || null,
+      professor_id: professorId,
+      year: fields.year ?? null,
+      semester: (fields.semester as Semester) ?? null,
+      assignment_type: (fields.assignment_type as AssignmentType) ?? null,
+      assignment_number: fields.assignment_number ?? null,
+      document_variant: (fields.document_variant as DocumentVariant) ?? null,
+      tags: fields.tags ?? [],
+    };
+  }
+
+  /**
+   * Names the course from the form's "Course name" if it has none yet. Best
+   * effort: the file is filed by now, and a course name that didn't save
+   * must not report the upload as failed (the member would retry and hit the
+   * duplicate-hash 409). It can be named from the row menu.
+   */
+  private async nameCourseAfterFiling(
+    chapterId: string,
+    columns: BackworkPublishedColumns,
+    fields: BackworkFieldsInput,
+    filed: BackworkResource,
+  ): Promise<void> {
+    const courseName = fields.course_name
+      ? collapseCourseText(fields.course_name)
+      : '';
+    if (!columns.department_id || !columns.course_number || !courseName) {
+      return;
+    }
+    try {
+      await this.nameCourseIfUnnamed(
+        chapterId,
+        columns.department_id,
+        columns.course_number,
+        courseName,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Couldn't name course ${columns.course_number} (department ${columns.department_id}) for chapter ${chapterId} after upload ${filed.id}: ${(error as Error)?.message ?? String(error)}`,
+      );
+    }
   }
 
   /**

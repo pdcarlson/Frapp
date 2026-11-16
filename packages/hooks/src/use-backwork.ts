@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { throwUnlessOk } from "@repo/api-sdk";
+import { throwUnlessOk, type components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 /**
@@ -274,6 +274,8 @@ export function useConfirmBackworkUpload() {
       document_variant?: "Student Copy" | "Blank Copy" | "Answer Key";
       tags?: string[];
       is_redacted: boolean;
+      /** Save as a draft only the uploader sees, to publish later (#5208). */
+      draft?: boolean;
     }) => {
       const result = await client.POST("/v1/backwork", { body });
       // On the status (see `throwUnlessOk`): an empty-bodied failure must not
@@ -283,6 +285,129 @@ export function useConfirmBackworkUpload() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["backwork"] });
+    },
+  });
+}
+
+/**
+ * A draft's fields as the API keeps them (#5208): names, not ids, and only
+ * the ones that were set. The same shape a draft edit sends.
+ */
+export type BackworkDraftFields = components["schemas"]["BackworkFieldsDto"];
+
+/** One of the caller's backwork drafts (`GET /v1/backwork/drafts`). */
+export type BackworkDraft = {
+  id: string;
+  storage_path: string;
+  is_redacted: boolean;
+  created_at: string;
+  draft_fields: BackworkDraftFields;
+};
+
+/**
+ * The caller's own backwork drafts in the active chapter, in upload order
+ * (#5208). Nobody else sees them; publishing files them in the library.
+ */
+export function useBackworkDrafts(options: { enabled?: boolean } = {}) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["backwork", chapterId, "drafts"],
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork/drafts", {
+        signal,
+      });
+      if (error) throw error;
+      return (data ?? []) as unknown as BackworkDraft[];
+    },
+    staleTime: 30_000,
+    enabled: !!chapterId && (options.enabled ?? true),
+  });
+}
+
+/**
+ * Sets the same fields on several drafts at once; a field sent as `null`
+ * clears it. Patches the cached list from the response at once, so an edited
+ * cell doesn't flash back to its old value while the refetch runs.
+ */
+export function useUpdateBackworkDrafts() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["backwork", "update-backwork-drafts"],
+    mutationFn: async (body: { ids: string[]; fields: BackworkDraftFields }) => {
+      const result = await client.PATCH("/v1/backwork/drafts", {
+        body,
+      });
+      throwUnlessOk(result);
+      return (result.data ?? []) as unknown as BackworkDraft[];
+    },
+    onSuccess: (updated) => {
+      const byId = new Map(updated.map((row) => [row.id, row]));
+      queryClient.setQueryData(
+        ["backwork", chapterId, "drafts"],
+        (current: unknown) =>
+          Array.isArray(current)
+            ? current.map((row: BackworkDraft) => byId.get(row.id) ?? row)
+            : current,
+      );
+    },
+  });
+}
+
+/**
+ * Files drafts in the library. One that can't be filed stays a draft and
+ * comes back in `failed` with a message to show.
+ */
+export function usePublishBackworkDrafts() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["backwork", "publish-backwork-drafts"],
+    mutationFn: async (ids: string[]) => {
+      const result = await client.POST("/v1/backwork/drafts/publish", {
+        body: { ids },
+      });
+      throwUnlessOk(result);
+      return result.data as {
+        published: Array<{ id: string }>;
+        failed: Array<{ id: string; message: string }>;
+      };
+    },
+    onSettled: () => {
+      // The library, its departments and professors (a publish can create
+      // them), and the drafts list all change.
+      queryClient.invalidateQueries({ queryKey: ["backwork"] });
+    },
+  });
+}
+
+/** Deletes one of the caller's drafts and its stored file. */
+export function useDeleteBackworkDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["backwork", "delete-backwork-draft"],
+    mutationFn: async (id: string) => {
+      const result = await client.DELETE("/v1/backwork/drafts/{id}", {
+        params: { path: { id } },
+      });
+      throwUnlessOk(result);
+      return id;
+    },
+    onSuccess: (id) => {
+      queryClient.setQueryData(
+        ["backwork", chapterId, "drafts"],
+        (current: unknown) =>
+          Array.isArray(current)
+            ? current.filter((row: BackworkDraft) => row.id !== id)
+            : current,
+      );
+      queryClient.invalidateQueries({
+        queryKey: ["backwork", chapterId, "drafts"],
+      });
     },
   });
 }

@@ -88,6 +88,8 @@ const RESOURCE = {
   created_at: "2026-08-01T00:00:00Z",
 };
 
+const mockDrafts = vi.hoisted(() => ({ value: [] as unknown[] }));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useCurrentChapter: () => mockCurrentChapter(),
@@ -95,6 +97,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useFetchBackworkResource: () => mockFetchResource,
   useFetchBackworkDownloadUrls: () => mockFetchDownloadUrls,
   useDeleteBackworkResource: () => ({ mutateAsync: mockDeleteResource }),
+  useBackworkDrafts: () => ({ data: mockDrafts.value }),
   useMyPermissions: () => ({
     data: { permissions: mockPermissions.value },
   }),

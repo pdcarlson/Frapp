@@ -4,10 +4,12 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient, TablesInsert } from '../database.types';
 import type {
   IBackworkResourceRepository,
+  BackworkPublishedColumns,
   BackworkResourceFilter,
 } from '#domain/repositories/backwork.repository.interface';
 import { BackworkResource } from '#domain/entities/backwork.entity';
 import type {
+  BackworkDraftFields,
   AssignmentType,
   DocumentVariant,
   Semester,
@@ -30,6 +32,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .select('*')
       .eq('id', id)
       .eq('chapter_id', chapterId)
+      .is('draft_fields', null)
       .maybeSingle();
     if (error) throw new SupabaseQueryError(error);
     return data;
@@ -42,7 +45,8 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     let query = this.supabase
       .from('backwork_resources')
       .select('*')
-      .eq('chapter_id', chapterId);
+      .eq('chapter_id', chapterId)
+      .is('draft_fields', null);
 
     if (filters?.department_id) {
       query = query.eq('department_id', filters.department_id);
@@ -101,6 +105,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .from('backwork_resources')
       .select('*')
       .eq('chapter_id', chapterId)
+      .is('draft_fields', null)
       .in('id', ids);
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
@@ -139,6 +144,94 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .eq('id', id)
       .eq('chapter_id', chapterId);
     if (error) throw new SupabaseQueryError(error);
+  }
+
+  async findDrafts(
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<BackworkResource[]> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async findDraftsByIds(
+    ids: string[],
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<BackworkResource[]> {
+    if (ids.length === 0) return [];
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .in('id', ids);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async updateDraftFields(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    fields: BackworkDraftFields,
+  ): Promise<BackworkResource | null> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .update({ draft_fields: fields })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async publishDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    columns: BackworkPublishedColumns,
+  ): Promise<BackworkResource | null> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .update({ ...columns, draft_fields: null })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async deleteDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .delete()
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
   }
 
   async countByDepartment(

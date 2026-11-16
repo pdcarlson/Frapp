@@ -9958,6 +9958,160 @@
         ]
       }
     },
+    "/v1/backwork/drafts": {
+      "get": {
+        "operationId": "BackworkController_listDrafts_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's backwork drafts, in upload order",
+        "tags": [
+          "Backwork"
+        ]
+      },
+      "patch": {
+        "operationId": "BackworkController_updateDrafts_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateBackworkDraftsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set fields on several of the caller's drafts at once",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/drafts/publish": {
+      "post": {
+        "operationId": "BackworkController_publishDrafts_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishBackworkDraftsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishBackworkDraftsResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "File the caller's drafts; ones that can't be filed stay drafts",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/drafts/{id}": {
+      "delete": {
+        "operationId": "BackworkController_deleteDraft_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete one of the caller's drafts and its file",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
     "/v1/backwork/download-urls": {
       "get": {
         "operationId": "BackworkController_downloadUrls_v1",
@@ -27078,40 +27232,39 @@
       "ConfirmBackworkUploadDto": {
         "type": "object",
         "properties": {
-          "storage_path": {
-            "type": "string",
-            "description": "Storage path returned from upload-url"
-          },
-          "file_hash": {
-            "type": "string",
-            "description": "SHA-256 hash of the uploaded file"
-          },
           "title": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "department_code": {
             "type": "string",
+            "nullable": true,
             "description": "Department code (e.g. \"CS\")"
           },
           "course_number": {
             "type": "string",
+            "nullable": true,
             "description": "Course number (e.g. \"101\")"
           },
           "course_name": {
             "type": "string",
+            "nullable": true,
             "description": "The course's name (\"Calculus I\"). Saved only when the course has no name yet; an upload never renames a course.",
             "maxLength": 255
           },
           "professor_name": {
             "type": "string",
+            "nullable": true,
             "description": "Professor name"
           },
           "year": {
             "type": "number",
+            "nullable": true,
             "maximum": 9999
           },
           "semester": {
             "type": "string",
+            "nullable": true,
             "enum": [
               "Spring",
               "Summer",
@@ -27121,6 +27274,7 @@
           },
           "assignment_type": {
             "type": "string",
+            "nullable": true,
             "enum": [
               "Exam",
               "Midterm",
@@ -27136,10 +27290,12 @@
           },
           "assignment_number": {
             "type": "number",
+            "nullable": true,
             "maximum": 2147483647
           },
           "document_variant": {
             "type": "string",
+            "nullable": true,
             "enum": [
               "Student Copy",
               "Blank Copy",
@@ -27147,19 +27303,193 @@
             ]
           },
           "tags": {
+            "nullable": true,
             "type": "array",
             "items": {
               "type": "string"
             }
           },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path returned from upload-url"
+          },
+          "file_hash": {
+            "type": "string",
+            "description": "SHA-256 hash of the uploaded file"
+          },
           "is_redacted": {
             "type": "boolean",
             "default": false
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "Save as a draft: the fields are kept as sent, not filed, and only the uploader sees the file until it is published (POST /v1/backwork/drafts/publish)."
           }
         },
         "required": [
           "storage_path",
           "file_hash"
+        ]
+      },
+      "BackworkFieldsDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "department_code": {
+            "type": "string",
+            "nullable": true,
+            "description": "Department code (e.g. \"CS\")"
+          },
+          "course_number": {
+            "type": "string",
+            "nullable": true,
+            "description": "Course number (e.g. \"101\")"
+          },
+          "course_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "The course's name (\"Calculus I\"). Saved only when the course has no name yet; an upload never renames a course.",
+            "maxLength": 255
+          },
+          "professor_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Professor name"
+          },
+          "year": {
+            "type": "number",
+            "nullable": true,
+            "maximum": 9999
+          },
+          "semester": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "Spring",
+              "Summer",
+              "Fall",
+              "Winter"
+            ]
+          },
+          "assignment_type": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "Exam",
+              "Midterm",
+              "Final Exam",
+              "Quiz",
+              "Homework",
+              "Lab",
+              "Project",
+              "Study Guide",
+              "Notes",
+              "Other"
+            ]
+          },
+          "assignment_number": {
+            "type": "number",
+            "nullable": true,
+            "maximum": 2147483647
+          },
+          "document_variant": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "Student Copy",
+              "Blank Copy",
+              "Answer Key"
+            ]
+          },
+          "tags": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UpdateBackworkDraftsDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "maxItems": 200,
+            "description": "The caller's drafts. Other ids are left out.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "description": "Fields to set on every listed draft. Fields left out keep their value; a field sent as null clears it.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BackworkFieldsDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ids",
+          "fields"
+        ]
+      },
+      "PublishBackworkDraftsDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "maxItems": 200,
+            "description": "The caller's drafts. Other ids are left out.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "BackworkDraftFailureDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "description": "Why it stayed a draft, in words to show."
+          }
+        },
+        "required": [
+          "id",
+          "message"
+        ]
+      },
+      "PublishBackworkDraftsResponseDto": {
+        "type": "object",
+        "properties": {
+          "published": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The filed resources."
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BackworkDraftFailureDto"
+            }
+          }
+        },
+        "required": [
+          "published",
+          "failed"
         ]
       },
       "BackworkDownloadUrlDto": {
