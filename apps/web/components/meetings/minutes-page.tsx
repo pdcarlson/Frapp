@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import {
+  type ComponentProps,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { X } from "lucide-react";
+import { MoreHorizontal, X } from "lucide-react";
 import { codeOf, statusOf } from "@repo/api-sdk";
 import {
   useChapterRoster,
@@ -14,6 +22,7 @@ import {
   useMeetingNotes,
   useMeetingRecording,
   useMemberDisplayNames,
+  usePermissionList,
   usePostMeeting,
   useUpdateMeeting,
   type MeetingDraftState,
@@ -33,6 +42,7 @@ import {
   MEETING_TYPE_LABELS,
   MEETING_VOTE_MAX,
   STANDARDS_MEETING_NOTE,
+  can,
   isMeetingContentEmpty,
   meetingDraftQuoteFor,
   meetingDraftSourceFor,
@@ -48,14 +58,12 @@ import {
   type MeetingTextSection,
   type MeetingType,
 } from "@repo/validation";
-import { PageActions } from "@/components/layout/page-actions";
 import { ErrorState } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   InlineNote,
   inlineNoteActionClassName,
 } from "@/components/shared/inline-note";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -69,11 +77,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { useToast } from "@/lib/hooks/use-toast";
-import { getErrorMessage } from "@/lib/utils";
+import { cn, getErrorMessage } from "@/lib/utils";
+import { useGrowWithText } from "@/lib/hooks/use-grow-with-text";
 import { LinkEventPanel } from "@/components/meetings/link-event";
 import { NotesDraftPanel } from "@/components/meetings/notes-draft-panel";
+import { AttendanceBackfill } from "@/components/meetings/attendance-backfill";
 import { SuggestedTasks } from "@/components/ai/suggested-tasks";
 import { MinutesPageSkeleton } from "@/components/meetings/meetings-skeleton";
 import {
@@ -114,9 +130,35 @@ function cleanContent(content: MeetingContent): MeetingContent {
   };
 }
 
-function sameDraft(a: Draft, b: Draft): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+/**
+ * A draft as a save would store it: blank rows gone, ends trimmed. Two
+ * drafts that only differ in a trailing space are the same, so a pause
+ * after typing a space saves nothing and nothing typed is trimmed away.
+ */
+function storedForm(draft: Draft): string {
+  const content = cleanContent(draft.content);
+  const text = Object.fromEntries(
+    Object.entries(content).map(([key, value]) => [
+      key,
+      typeof value === "string" ? value.trim() : value,
+    ]),
+  );
+  return JSON.stringify({
+    meeting_type: draft.meeting_type,
+    other_label: draft.meeting_type === "other" ? draft.other_label.trim() : "",
+    content: text,
+  });
 }
+
+function sameDraft(a: Draft, b: Draft): boolean {
+  return storedForm(a) === storedForm(b);
+}
+
+/**
+ * How long a draft's typing rests before it saves on its own, the way Google
+ * Docs and Notion save (Paul, 2026-11-16: no Save button to chase).
+ */
+const AUTOSAVE_MS = 1200;
 
 /**
  * `/meetings/:id`: one meeting's minutes (`spec/behavior/meetings.md`). Read
@@ -200,6 +242,9 @@ function Minutes({
   const remove = useDeleteMeeting();
   const names = useMemberDisplayNames();
   const viewer = useCurrentUser().data as { id?: string } | undefined;
+  // Marking attendance is the events rule, the same as on the event's own
+  // attendance list: it counts toward points.
+  const canMarkAttendance = can("events:update", usePermissionList());
   const myName = viewer?.id ? names.nameFor(viewer.id) : null;
 
   const isDraft = meeting.status === "draft";
@@ -210,11 +255,27 @@ function Minutes({
   // made on an older version is refused rather than overwriting a newer one.
   const [loadedAt, setLoadedAt] = useState(meeting.updated_at);
   const [stale, setStale] = useState(false);
+  // Posting switches to the read view at once (Paul, 2026-11-16); the post
+  // itself lands a moment later, and a failure puts the editor back.
+  const [posting, setPosting] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const dirty = !sameDraft(draft, base);
+  // The latest of each, for saves that finish after more typing.
+  const draftRef = useRef(draft);
+  const loadedAtRef = useRef(loadedAt);
+  const baseRef = useRef(base);
+  useLayoutEffect(() => {
+    draftRef.current = draft;
+    baseRef.current = base;
+    loadedAtRef.current = loadedAt;
+  });
+  // One save at a time: a second waits for the first, so two never race on
+  // the same version and refuse each other as stale.
+  const inFlight = useRef<Promise<MeetingMinutes | null> | null>(null);
   // While a draft is being written the sections are about to be replaced, so
   // they wait: typing into them now would be lost or would strand the draft.
   const drafting = draftState?.status === "drafting";
-  const busy = update.isPending || post.isPending || drafting;
+  const busy = post.isPending || posting || drafting;
   const showNotes =
     !!draftState && isDraft && editing && draftState.blocked !== "chapter_off";
   const review =
@@ -236,7 +297,8 @@ function Minutes({
   if (
     Date.parse(meeting.updated_at) > Date.parse(loadedAt) &&
     !dirty &&
-    !busy
+    !busy &&
+    !update.isPending
   ) {
     adopt(meeting);
   }
@@ -250,7 +312,7 @@ function Minutes({
   }, [dirty]);
 
   const shown = useMemo(() => {
-    const content = editing ? draft.content : base.content;
+    const content = editing || posting ? draft.content : base.content;
     const keys = shownMeetingSections(
       meeting.sections as MeetingSectionKey[],
       content,
@@ -261,7 +323,7 @@ function Minutes({
         ? hasAttendees(meeting)
         : meetingSectionHasContent(content, key),
     );
-  }, [editing, draft.content, base.content, meeting]);
+  }, [editing, posting, draft.content, base.content, meeting]);
 
   function editContent(patch: Partial<MeetingContent>) {
     setDraft((current) => ({
@@ -270,36 +332,86 @@ function Minutes({
     }));
   }
 
-  /** Save, and answer the stored minutes, or null when the save didn't land. */
+  /**
+   * Save what is on screen, and answer the stored minutes, or null when the
+   * save didn't land. Typing that arrives while it saves stays on screen and
+   * goes with the next save.
+   */
   async function save(): Promise<MeetingMinutes | null> {
-    const content = cleanContent(draft.content);
-    const otherLabel = draft.other_label.trim();
-    try {
-      const saved = await update.mutateAsync({
-        id: meeting.id,
-        body: {
-          expected_updated_at: loadedAt,
-          meeting_type: draft.meeting_type,
-          other_label:
-            draft.meeting_type === "other" && otherLabel ? otherLabel : null,
-          content,
-        },
-      });
-      adopt(saved);
-      return saved;
-    } catch (error) {
-      if (codeOf(error) === "meeting.stale") {
-        setStale(true);
+    // Every save waiting on this one checks again when it ends, so two never
+    // go out on the same version.
+    while (inFlight.current) await inFlight.current;
+    const sent = draftRef.current;
+    // Nothing new to store: the version on screen is the one to build on.
+    if (sameDraft(sent, baseRef.current)) {
+      return { ...meeting, updated_at: loadedAtRef.current };
+    }
+    const run = (async () => {
+      const content = cleanContent(sent.content);
+      const otherLabel = sent.other_label.trim();
+      try {
+        const saved = await update.mutateAsync({
+          id: meeting.id,
+          body: {
+            expected_updated_at: loadedAtRef.current,
+            meeting_type: sent.meeting_type,
+            other_label:
+              sent.meeting_type === "other" && otherLabel ? otherLabel : null,
+            content,
+          },
+        });
+        setSaveFailed(false);
+        loadedAtRef.current = saved.updated_at;
+        baseRef.current = draftOf(saved);
+        setLoadedAt(saved.updated_at);
+        // The screen keeps what is typed, untrimmed and with rows still being
+        // filled in; it counts as saved because it stores the same.
+        setBase(draftOf(saved));
+        return saved;
+      } catch (error) {
+        if (codeOf(error) === "meeting.stale") {
+          setStale(true);
+          return null;
+        }
+        setSaveFailed(true);
+        toast({
+          title: "Couldn't save the minutes",
+          description: getErrorMessage(error, "Try again in a moment."),
+          variant: "destructive",
+        });
         return null;
       }
-      toast({
-        title: "Couldn't save the minutes",
-        description: getErrorMessage(error, "Try again in a moment."),
-        variant: "destructive",
-      });
-      return null;
+    })();
+    inFlight.current = run;
+    try {
+      return await run;
+    } finally {
+      if (inFlight.current === run) inFlight.current = null;
     }
   }
+
+  // A draft saves itself once typing rests. Posted minutes keep Save and
+  // Cancel: an edit there changes what members already read.
+  const autosaves = editing && isDraft && !posting;
+  const pendingAutosave = autosaves && dirty && !stale && !drafting;
+  useEffect(() => {
+    if (!pendingAutosave || saveFailed) return;
+    const timer = window.setTimeout(() => void save(), AUTOSAVE_MS);
+    return () => window.clearTimeout(timer);
+    // `save` reads the latest draft through refs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAutosave, saveFailed, draft]);
+
+  // Leaving the page inside the app (a nav link) sends what is still
+  // waiting to save, as the notes box does.
+  const flushOnLeave = useRef(() => {});
+  useEffect(() => {
+    flushOnLeave.current = () => {
+      if (autosaves && !stale && !sameDraft(draftRef.current, baseRef.current))
+        void save();
+    };
+  });
+  useEffect(() => () => flushOnLeave.current(), []);
 
   async function handleSave() {
     const saved = await save();
@@ -307,20 +419,34 @@ function Minutes({
     if (saved) toast({ title: "Minutes saved" });
   }
 
+  /**
+   * Post with no question first (Paul, 2026-11-16): the read view shows at
+   * once, and a failure brings the editor back with every word kept.
+   */
   async function handlePost() {
-    const answer = await confirm({
-      title: MEETING_COPY.postConfirmTitle,
-      description: MEETING_COPY.postConfirmBody,
-      confirmLabel: MEETING_COPY.post,
-    });
-    if (!answer) return;
-    const expectedUpdatedAt = dirty ? (await save())?.updated_at : loadedAt;
-    if (!expectedUpdatedAt) return;
+    setPosting(true);
+    setEditing(false);
+    const restore = () => {
+      setPosting(false);
+      setEditing(true);
+    };
+    const expectedUpdatedAt = dirty
+      ? (await save())?.updated_at
+      : loadedAtRef.current;
+    if (!expectedUpdatedAt) {
+      restore();
+      return;
+    }
     try {
-      await post.mutateAsync({ id: meeting.id, expectedUpdatedAt });
-      setEditing(false);
+      const posted = await post.mutateAsync({
+        id: meeting.id,
+        expectedUpdatedAt,
+      });
+      adopt(posted);
+      setPosting(false);
       toast({ title: MEETING_COPY.posted_toast });
     } catch (error) {
+      restore();
       if (codeOf(error) === "meeting.stale") {
         setStale(true);
         return;
@@ -384,76 +510,163 @@ function Minutes({
     (editing ? draft.meeting_type : base.meeting_type) as MeetingType,
     editing ? draft.other_label : base.other_label,
   );
+  // What the read view shows: while a post lands, the words just posted.
+  const view = posting ? draft : base;
+  const hasContent = !isMeetingContentEmpty(cleanContent(draft.content));
+  // Once a draft has filled the minutes, they lead and the notes the draft
+  // read fold away underneath; before that, the notes are the first step.
+  // A redraft keeps them where they are while it is written.
+  const notesFirst = !hasContent || (!review && !drafting);
+  // Where the notes panel puts its "To fill in" questions: above the
+  // minutes, the first thing to do after a draft (Paul, 2026-11-16).
+  const [fillInSlot, setFillInSlot] = useState<HTMLDivElement | null>(null);
+  const saveLine = !autosaves
+    ? null
+    : stale
+      ? null
+      : saveFailed
+        ? "Not saved"
+        : update.isPending || dirty
+          ? "Saving…"
+          : "Saved";
+
+  const notesPanel =
+    showNotes && draftState ? (
+      <NotesDraftPanel
+        meetingId={meeting.id}
+        eventStart={meeting.event_start_time}
+        state={draftState}
+        notesState={notesState}
+        recording={recordingState}
+        hasContent={hasContent}
+        folded={!notesFirst}
+        fillInSlot={fillInSlot}
+        disabled={posting || stale}
+        prepare={async () => {
+          if (dirty) return (await save())?.updated_at ?? null;
+          // Nothing typed: build on the newest version, not the one this
+          // page happened to load.
+          const fresh = await onReload();
+          if (!fresh) return loadedAtRef.current;
+          adopt(fresh);
+          return fresh.updated_at;
+        }}
+        onSettled={() => void onReload()}
+        onStale={() => setStale(true)}
+        confirm={confirm}
+      />
+    ) : null;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 pb-16">
-      <PageActions>
-        {editing ? (
-          <>
-            {!isDraft ? (
-              <Button
-                variant="ghost"
-                disabled={busy}
-                onClick={() => {
-                  setDraft(base);
-                  setEditing(false);
-                }}
+    // A flex column, so the notes panel moves between the top and the foot
+    // by `order` alone: moving it in the tree would remount it mid-draft and
+    // lose the draft landing.
+    <div className="mx-auto flex max-w-3xl flex-col gap-8 pb-16">
+      {/*
+        The meeting's name and the page's actions stay in view the whole way
+        down a long set of minutes (Paul, 2026-11-16). `-top-4` and the
+        negative sides undo the page column's own padding so nothing scrolls
+        past above or beside the bar.
+      */}
+      <header className="sticky -top-4 z-20 -mx-4 border-b border-border bg-background px-4 py-3 sm:-mx-6 sm:px-6">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-xl font-bold leading-tight">
+              {meeting.event_name}
+            </h2>
+            <p className="truncate text-caption text-muted-foreground">
+              {typeLabel} meeting, {when}
+              {posting
+                ? ", posting"
+                : isDraft
+                  ? `, ${MEETING_COPY.draftBadge.toLowerCase()}`
+                  : meeting.posted_at
+                    ? `. ${MEETING_COPY.posted(meetingDayLabel(meeting.posted_at))}`
+                    : ""}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {saveLine ? (
+              <span
+                role="status"
+                className={
+                  saveFailed
+                    ? "text-caption text-destructive-text"
+                    : "text-caption text-muted-foreground"
+                }
               >
-                Cancel
-              </Button>
+                {saveLine}
+              </span>
             ) : null}
-            <Button
-              variant={isDraft ? "secondary" : "default"}
-              disabled={busy || !dirty}
-              onClick={() => void handleSave()}
-            >
-              {dirty || update.isPending ? "Save" : "Saved"}
-            </Button>
-            {isDraft ? (
-              <Button disabled={busy} onClick={() => void handlePost()}>
-                {MEETING_COPY.post}
-              </Button>
+            {editing ? (
+              <>
+                {!isDraft ? (
+                  <>
+                    <Button
+                      variant="ghost"
+                      disabled={busy || update.isPending}
+                      onClick={() => {
+                        setDraft(base);
+                        setEditing(false);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      disabled={busy || update.isPending || !dirty}
+                      onClick={() => void handleSave()}
+                    >
+                      {dirty || update.isPending ? "Save" : "Saved"}
+                    </Button>
+                  </>
+                ) : saveFailed ? (
+                  <Button
+                    variant="secondary"
+                    disabled={busy || update.isPending}
+                    onClick={() => void handleSave()}
+                  >
+                    Save
+                  </Button>
+                ) : null}
+                {isDraft ? (
+                  <Button disabled={busy} onClick={() => void handlePost()}>
+                    {MEETING_COPY.post}
+                  </Button>
+                ) : null}
+              </>
+            ) : (
+              <>
+                {!isDraft && !posting ? (
+                  <Button variant="secondary" onClick={() => void copyLink()}>
+                    Copy link
+                  </Button>
+                ) : null}
+                {meeting.can_edit && !posting ? (
+                  <Button variant="secondary" onClick={() => setEditing(true)}>
+                    Edit
+                  </Button>
+                ) : null}
+              </>
+            )}
+            {meeting.can_delete ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <IconButton label="More" disabled={busy}>
+                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                  </IconButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    disabled={remove.isPending}
+                    onSelect={() => void handleDelete()}
+                  >
+                    Delete minutes
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : null}
-          </>
-        ) : (
-          <>
-            {!isDraft ? (
-              <Button variant="secondary" onClick={() => void copyLink()}>
-                Copy link
-              </Button>
-            ) : null}
-            {meeting.can_edit ? (
-              <Button variant="secondary" onClick={() => setEditing(true)}>
-                Edit
-              </Button>
-            ) : null}
-          </>
-        )}
-        {meeting.can_delete ? (
-          <Button
-            variant="ghost"
-            disabled={busy || remove.isPending}
-            onClick={() => void handleDelete()}
-          >
-            Delete
-          </Button>
-        ) : null}
-      </PageActions>
-
-      <header className="space-y-2">
-        <h2 className="text-2xl font-bold leading-tight">
-          {meeting.event_name}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          {typeLabel} meeting, {when}
-        </p>
-        {isDraft ? (
-          <Badge variant="outline">{MEETING_COPY.draftBadge}</Badge>
-        ) : meeting.posted_at ? (
-          <p className="text-caption text-muted-foreground">
-            {MEETING_COPY.posted(meetingDayLabel(meeting.posted_at))}
-          </p>
-        ) : null}
+          </div>
+        </div>
       </header>
 
       {stale ? (
@@ -480,39 +693,96 @@ function Minutes({
         />
       ) : null}
 
-      {showNotes && draftState ? (
-        <NotesDraftPanel
-          meetingId={meeting.id}
-          eventStart={meeting.event_start_time}
-          state={draftState}
-          notesState={notesState}
-          recording={recordingState}
-          hasContent={!isMeetingContentEmpty(cleanContent(draft.content))}
-          disabled={update.isPending || post.isPending || stale}
-          prepare={async () => {
-            if (dirty) return (await save())?.updated_at ?? null;
-            // Nothing typed: build on the newest version, not the one this
-            // page happened to load.
-            const fresh = await onReload();
-            if (!fresh) return loadedAt;
-            adopt(fresh);
-            return fresh.updated_at;
-          }}
-          onSettled={() => void onReload()}
-          onStale={() => setStale(true)}
-          confirm={confirm}
-        />
+      {notesPanel ? (
+        <div className={notesFirst ? undefined : "order-1"}>{notesPanel}</div>
       ) : null}
+      {/* The draft's open questions land here, above the minutes. */}
+      {showNotes ? <div ref={setFillInSlot} className="empty:hidden" /> : null}
 
       <fieldset
         disabled={drafting}
         aria-busy={drafting || undefined}
         className="m-0 min-w-0 space-y-8 border-0 p-0"
       >
+        {!editing && shown.length === 0 ? (
+          <InlineNote>{MEETING_COPY.nothingWritten}</InlineNote>
+        ) : null}
+
+        {shown.map((key) => (
+          <section
+            key={key}
+            aria-labelledby={`${ids}-${key}`}
+            className="space-y-2"
+          >
+            <h3 id={`${ids}-${key}`} className="text-base font-semibold">
+              {sectionLabel(key)}
+            </h3>
+            {key === "attendees" ? (
+              <>
+                <Attendees meeting={meeting} nameFor={names.nameFor} />
+                {editing &&
+                meeting.event_id &&
+                canMarkAttendance &&
+                meetingHasEnded(meeting) ? (
+                  <AttendanceBackfill
+                    eventId={meeting.event_id}
+                    attendees={meeting.attendees}
+                    onMarked={() => void onReload()}
+                  />
+                ) : null}
+              </>
+            ) : key === "decisions" ? (
+              editing ? (
+                <DecisionsEditor
+                  decisions={draft.content.decisions}
+                  onChange={(decisions) => editContent({ decisions })}
+                  quoteFor={(text) => quoteOf(review, "decision", text, myName)}
+                />
+              ) : (
+                <DecisionsView decisions={view.content.decisions} />
+              )
+            ) : key === "action_items" ? (
+              editing ? (
+                <ActionItemsEditor
+                  disabled={drafting}
+                  items={draft.content.action_items}
+                  onChange={(action_items) => editContent({ action_items })}
+                  quoteFor={(text) =>
+                    quoteOf(review, "action_item", text, myName)
+                  }
+                />
+              ) : (
+                <ActionItemsView
+                  items={view.content.action_items}
+                  nameFor={names.nameFor}
+                />
+              )
+            ) : editing ? (
+              <GrowingTextarea
+                aria-labelledby={`${ids}-${key}`}
+                value={draft.content[key as MeetingTextSection]}
+                maxLength={MEETING_TEXT_MAX_LENGTH}
+                // Grows with the text, so a long summary reads whole.
+                className="min-h-28"
+                rows={key === "summary" ? 6 : 4}
+                onChange={(event) =>
+                  editContent({
+                    [key]: event.target.value,
+                  } as Partial<MeetingContent>)
+                }
+              />
+            ) : (
+              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                {view.content[key as MeetingTextSection]}
+              </p>
+            )}
+          </section>
+        ))}
+
         {editing ? (
           <section aria-labelledby={`${ids}-type`} className="space-y-2">
             <h3 id={`${ids}-type`} className="text-sm font-semibold">
-              Type
+              Meeting type
             </h3>
             <SegmentedChoice
               label="Meeting type"
@@ -548,67 +818,6 @@ function Minutes({
             </p>
           </section>
         ) : null}
-
-        {!editing && shown.length === 0 ? (
-          <InlineNote>{MEETING_COPY.nothingWritten}</InlineNote>
-        ) : null}
-
-        {shown.map((key) => (
-          <section
-            key={key}
-            aria-labelledby={`${ids}-${key}`}
-            className="space-y-2"
-          >
-            <h3 id={`${ids}-${key}`} className="text-base font-semibold">
-              {sectionLabel(key)}
-            </h3>
-            {key === "attendees" ? (
-              <Attendees meeting={meeting} nameFor={names.nameFor} />
-            ) : key === "decisions" ? (
-              editing ? (
-                <DecisionsEditor
-                  decisions={draft.content.decisions}
-                  onChange={(decisions) => editContent({ decisions })}
-                  quoteFor={(text) => quoteOf(review, "decision", text, myName)}
-                />
-              ) : (
-                <DecisionsView decisions={base.content.decisions} />
-              )
-            ) : key === "action_items" ? (
-              editing ? (
-                <ActionItemsEditor
-                  disabled={drafting}
-                  items={draft.content.action_items}
-                  onChange={(action_items) => editContent({ action_items })}
-                  quoteFor={(text) =>
-                    quoteOf(review, "action_item", text, myName)
-                  }
-                />
-              ) : (
-                <ActionItemsView
-                  items={base.content.action_items}
-                  nameFor={names.nameFor}
-                />
-              )
-            ) : editing ? (
-              <Textarea
-                aria-labelledby={`${ids}-${key}`}
-                value={draft.content[key as MeetingTextSection]}
-                maxLength={MEETING_TEXT_MAX_LENGTH}
-                rows={key === "summary" ? 6 : 4}
-                onChange={(event) =>
-                  editContent({
-                    [key]: event.target.value,
-                  } as Partial<MeetingContent>)
-                }
-              />
-            ) : (
-              <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-                {base.content[key as MeetingTextSection]}
-              </p>
-            )}
-          </section>
-        ))}
       </fieldset>
 
       {/*
@@ -627,6 +836,31 @@ function Minutes({
       {confirmDialog}
     </div>
   );
+}
+
+/** A section's box, as tall as what is written in it. */
+function GrowingTextarea({
+  className,
+  ...props
+}: ComponentProps<typeof Textarea>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useGrowWithText(ref, String(props.value ?? ""));
+  return (
+    <Textarea
+      ref={ref}
+      className={cn("resize-none [field-sizing:content]", className)}
+      {...props}
+    />
+  );
+}
+
+/**
+ * Marking by hand waits for the meeting to end: a member marked while
+ * check-in is open could no longer check in themselves.
+ */
+function meetingHasEnded(meeting: MeetingMinutes): boolean {
+  const end = Date.parse(meeting.event_end_time ?? meeting.event_start_time);
+  return Number.isFinite(end) && end <= Date.now();
 }
 
 function hasAttendees(meeting: MeetingMinutes): boolean {
@@ -781,9 +1015,11 @@ function DecisionsEditor({
           className="space-y-2 rounded-lg border border-border p-3"
         >
           <div className="flex items-start gap-2">
-            <Input
+            <GrowingTextarea
               aria-label={`Decision ${index + 1}`}
               placeholder="What was decided"
+              rows={1}
+              className="min-h-10"
               value={decision.text}
               maxLength={MEETING_ITEM_TEXT_MAX_LENGTH}
               onChange={(event) => set(index, { text: event.target.value })}
@@ -898,9 +1134,11 @@ function ActionItemsEditor({
           className="space-y-2 rounded-lg border border-border p-3"
         >
           <div className="flex items-start gap-2">
-            <Input
+            <GrowingTextarea
               aria-label={`Action item ${index + 1}`}
               placeholder="What needs doing"
+              rows={1}
+              className="min-h-10"
               value={item.text}
               maxLength={MEETING_ITEM_TEXT_MAX_LENGTH}
               onChange={(event) => set(index, { text: event.target.value })}

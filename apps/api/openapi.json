@@ -8642,6 +8642,63 @@
         ]
       }
     },
+    "/v1/events/{eventId}/attendance/by-hand": {
+      "post": {
+        "description": "Fills in attendance for members with no row yet, in one request (the minutes page, for a meeting nobody checked in to). A member who already has a row keeps it; members the event does not invite are left out. Moves no points, like every officer mark.",
+        "operationId": "AttendanceController_markByHand_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarkAttendanceByHandDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkAttendanceByHandResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark members who were there, after the fact",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
     "/v1/events/{eventId}/attendance/auto-absent": {
       "post": {
         "operationId": "AttendanceController_markAutoAbsent_v1",
@@ -26951,6 +27008,57 @@
         },
         "required": [
           "status"
+        ]
+      },
+      "MarkAttendanceByHandDto": {
+        "type": "object",
+        "properties": {
+          "user_ids": {
+            "maxItems": 1000,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PRESENT",
+              "LATE",
+              "EXCUSED"
+            ]
+          }
+        },
+        "required": [
+          "user_ids",
+          "status"
+        ]
+      },
+      "MarkAttendanceByHandResultDto": {
+        "type": "object",
+        "properties": {
+          "marked": {
+            "description": "The members given a row now.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "already_marked": {
+            "type": "number",
+            "description": "Picked members who already had a row (a check-in, an excuse, an earlier mark), kept as they were."
+          },
+          "not_invited": {
+            "type": "number",
+            "description": "Picked members the event doesn't invite (its roles, alumni the event doesn't name, or not in the chapter), left unmarked."
+          }
+        },
+        "required": [
+          "marked",
+          "already_marked",
+          "not_invited"
         ]
       },
       "AutoAbsentResultDto": {
