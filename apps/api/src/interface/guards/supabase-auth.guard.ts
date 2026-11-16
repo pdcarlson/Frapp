@@ -79,7 +79,10 @@ export function failedClaimCheck(
   issuer: string,
   nowSeconds: number,
 ): string | null {
-  if (typeof header.alg !== 'string' || !LOCALLY_VERIFIABLE_ALGS.has(header.alg)) {
+  if (
+    typeof header.alg !== 'string' ||
+    !LOCALLY_VERIFIABLE_ALGS.has(header.alg)
+  ) {
     return 'alg_not_allowed';
   }
   if (claims.iss !== issuer) return 'iss_mismatch';
@@ -260,9 +263,7 @@ export class SupabaseAuthGuard implements CanActivate {
     token: string,
     request: RequestContext,
   ): Promise<boolean> {
-    let answer: Awaited<
-      ReturnType<FrappSupabaseClient['auth']['getClaims']>
-    >;
+    let answer: Awaited<ReturnType<FrappSupabaseClient['auth']['getClaims']>>;
     try {
       answer = await this.supabase.auth.getClaims(token);
     } catch (error) {

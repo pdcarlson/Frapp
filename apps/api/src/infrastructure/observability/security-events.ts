@@ -40,9 +40,7 @@ const SECURITY_EVENT_KINDS: Readonly<Record<number, SecurityEventKind>> = {
  * Any other 401 (the Stripe webhook's signature check) carries no reason.
  */
 export type AuthFailureReason =
-  | 'no_bearer'
-  | 'token_rejected'
-  | 'claims_rejected';
+  'no_bearer' | 'token_rejected' | 'claims_rejected';
 
 /**
  * What the guard knew about a refused credential. Never the token, and never

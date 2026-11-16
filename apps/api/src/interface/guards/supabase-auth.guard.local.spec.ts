@@ -141,7 +141,7 @@ describe('SupabaseAuthGuard: reads verified locally (#5043)', () => {
         autoRefreshToken: false,
         storageKey: `local-session-spec-${++clientCount}`,
       },
-      global: { fetch: fetchStub as typeof fetch },
+      global: { fetch: fetchStub },
     }) as unknown as FrappSupabaseClient;
     const config = {
       get: (key: string) => (key === 'SUPABASE_URL' ? PROJECT_URL : undefined),
@@ -388,10 +388,10 @@ describe('SupabaseAuthGuard: reads verified locally (#5043)', () => {
           storageKey: `local-session-spec-${++clientCount}`,
         },
         global: {
-          fetch: ((input: RequestInfo | URL) => {
+          fetch: (input: RequestInfo | URL) => {
             calls.push(String(input).endsWith('/user') ? 'getUser' : 'other');
             return userAnswer();
-          }) as typeof fetch,
+          },
         },
       }) as unknown as FrappSupabaseClient;
       const unconfigured = new SupabaseAuthGuard(client, new Reflector());
@@ -416,17 +416,52 @@ describe('failedClaimCheck (#5043)', () => {
 
   it.each([
     ['passes a well-formed token', es256, base, null],
-    ['accepts aud as an array', es256, { ...base, aud: ['authenticated'] }, null],
+    [
+      'accepts aud as an array',
+      es256,
+      { ...base, aud: ['authenticated'] },
+      null,
+    ],
     ['accepts RS256', { alg: 'RS256' }, base, null],
     ['refuses HS256', { alg: 'HS256' }, base, 'alg_not_allowed'],
     ['refuses alg none', { alg: 'none' }, base, 'alg_not_allowed'],
     ['refuses a missing alg', {}, base, 'alg_not_allowed'],
-    ['refuses another issuer', es256, { ...base, iss: 'https://x/auth/v1' }, 'iss_mismatch'],
-    ['refuses a missing issuer', es256, { ...base, iss: undefined }, 'iss_mismatch'],
-    ['refuses the anon audience', es256, { ...base, aud: 'anon' }, 'aud_mismatch'],
-    ['refuses a missing audience', es256, { ...base, aud: undefined }, 'aud_mismatch'],
-    ['refuses the anon role', es256, { ...base, role: 'anon' }, 'role_mismatch'],
-    ['refuses service_role', es256, { ...base, role: 'service_role' }, 'role_mismatch'],
+    [
+      'refuses another issuer',
+      es256,
+      { ...base, iss: 'https://x/auth/v1' },
+      'iss_mismatch',
+    ],
+    [
+      'refuses a missing issuer',
+      es256,
+      { ...base, iss: undefined },
+      'iss_mismatch',
+    ],
+    [
+      'refuses the anon audience',
+      es256,
+      { ...base, aud: 'anon' },
+      'aud_mismatch',
+    ],
+    [
+      'refuses a missing audience',
+      es256,
+      { ...base, aud: undefined },
+      'aud_mismatch',
+    ],
+    [
+      'refuses the anon role',
+      es256,
+      { ...base, role: 'anon' },
+      'role_mismatch',
+    ],
+    [
+      'refuses service_role',
+      es256,
+      { ...base, role: 'service_role' },
+      'role_mismatch',
+    ],
     ['refuses a non-uuid sub', es256, { ...base, sub: 'abc' }, 'bad_sub'],
     ['refuses a missing sub', es256, { ...base, sub: undefined }, 'bad_sub'],
     ['refuses exp now', es256, { ...base, exp: now }, 'expired'],
