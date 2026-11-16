@@ -177,7 +177,9 @@ describe("CalendarSubscribeMenu", () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(LINK.url));
     expect(toastSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ description: expect.stringMatching(/copied/i) }),
+      expect.objectContaining({
+        description: expect.stringMatching(/copied/i),
+      }),
     );
   });
 
@@ -200,7 +202,9 @@ describe("CalendarSubscribeMenu", () => {
   describe("Google Calendar", () => {
     it("connects Google from the Google row, not the link", async () => {
       googleHook.mockReturnValue(OFFERED);
-      startSpy.mockResolvedValue("https://accounts.google.com/o/oauth2/v2/auth");
+      startSpy.mockResolvedValue(
+        "https://accounts.google.com/o/oauth2/v2/auth",
+      );
       render(<CalendarSubscribeMenu />);
       await openMenu();
 
@@ -224,8 +228,13 @@ describe("CalendarSubscribeMenu", () => {
       const row = await screen.findByRole("menuitem", {
         name: /Google Calendar\s*Connected/,
       });
-      expect(row).toHaveAttribute("href", "https://calendar.google.com/calendar/r");
-      expect(screen.getByText(/connected as member@gmail.com/)).toBeInTheDocument();
+      expect(row).toHaveAttribute(
+        "href",
+        "https://calendar.google.com/calendar/r",
+      );
+      expect(
+        screen.getByText(/connected as member@gmail.com/),
+      ).toBeInTheDocument();
       // #4676: the footnote and the confirm are the shared copy, not a local one.
       expect(
         screen.getByText(googleCalendarFootnote(CONNECTED.data)),
@@ -248,7 +257,9 @@ describe("CalendarSubscribeMenu", () => {
       googleHook.mockReturnValue({
         data: { ...CONNECTED.data, status: "needs_reconnect" },
       });
-      startSpy.mockResolvedValue("https://accounts.google.com/o/oauth2/v2/auth");
+      startSpy.mockResolvedValue(
+        "https://accounts.google.com/o/oauth2/v2/auth",
+      );
       render(<CalendarSubscribeMenu />);
       await openMenu();
 
@@ -296,6 +307,74 @@ describe("CalendarSubscribeMenu", () => {
       );
       expect(confirmSpy).not.toHaveBeenCalled();
       expect(window.location.search).toBe("");
+    });
+
+    // #4676: every return, fallback and footnote is the shared copy.
+    it("says a sign-in Google didn't finish failed, in the shared words", async () => {
+      window.history.replaceState(null, "", "/events?gcal=failed");
+      render(<CalendarSubscribeMenu />);
+
+      await waitFor(() =>
+        expect(toastSpy).toHaveBeenCalledWith({
+          variant: "destructive",
+          description: GOOGLE_CALENDAR_RETURN_COPY.failed,
+        }),
+      );
+    });
+
+    it("falls back to the shared failed words when finishing the connection fails", async () => {
+      confirmSpy.mockRejectedValue(new Error("boom"));
+      window.history.replaceState(
+        null,
+        "",
+        "/events?gcal=confirm&gcal_code=code-2&gcal_state=state-2",
+      );
+      render(<CalendarSubscribeMenu />);
+
+      await waitFor(() =>
+        expect(toastSpy).toHaveBeenCalledWith({
+          variant: "destructive",
+          description: GOOGLE_CALENDAR_RETURN_COPY.failed,
+        }),
+      );
+      expect(confirmSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("reads the shared footnote when Google isn't offered", async () => {
+      render(<CalendarSubscribeMenu />);
+      await openMenu();
+
+      expect(
+        await screen.findByText(googleCalendarFootnote(null)),
+      ).toBeInTheDocument();
+    });
+
+    it("reads the shared footnote when Google is offered but not connected", async () => {
+      googleHook.mockReturnValue(OFFERED);
+      render(<CalendarSubscribeMenu />);
+      await openMenu();
+
+      expect(
+        await screen.findByText(googleCalendarFootnote(OFFERED.data)),
+      ).toBeInTheDocument();
+    });
+
+    it("asks to disconnect the member's Google account when its address isn't known", async () => {
+      googleHook.mockReturnValue({
+        data: { ...CONNECTED.data, google_email: null },
+      });
+      render(<CalendarSubscribeMenu />);
+      await openMenu();
+
+      await userEvent.click(
+        await screen.findByRole("menuitem", {
+          name: "Disconnect Google Calendar",
+        }),
+      );
+      const copy = googleCalendarDisconnectCopy(null);
+      expect(await screen.findByText(copy.title)).toBeInTheDocument();
+      expect(screen.getByText(copy.description)).toBeInTheDocument();
+      expect(disconnectSpy).not.toHaveBeenCalled();
     });
 
     it("says the sign-in expired in the shared words", async () => {

@@ -261,11 +261,13 @@ export function authFallbackCopy(
 }
 
 /**
- * Shown wherever a Continue with Apple button is, on web and on the phone's
- * s01: an invited member who signs in with Apple's Hide My Email can still
- * redeem an invite sent to a university address, because redeem binds the
- * signed-in user, not the invite's email (`spec/behavior/onboarding.md`). The
- * store's App Review notes rely on this line (`apps/mobile/store/README.md`).
+ * Shown beside every Continue with Apple button (web's sign-in and sign-up,
+ * the phone's s01), and under the invite field on the phone's s02 invite step
+ * (`spec/ui/design-system/writing.md`, "Mobile s02 invite step"): an invited
+ * member who signs in with Apple's Hide My Email can still redeem an invite
+ * sent to a university address, because redeem binds the signed-in user, not
+ * the invite's email (`spec/behavior/onboarding.md`). The store's App Review
+ * notes rely on this line (`apps/mobile/store/README.md`).
  */
 export const OAUTH_MEMBERSHIP_HINT =
   "Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.";

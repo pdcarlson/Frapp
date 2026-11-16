@@ -290,6 +290,63 @@ describe("CalendarSubscribeSheet", () => {
       act(() => tree.unmount());
     });
 
+    it("says a sign-in Google didn't finish failed, in the shared words", async () => {
+      state.google = OFFERED;
+      const alert = vi.mocked(Alert.alert);
+      alert.mockClear();
+      const useURL = vi.mocked(Linking.useURL);
+      useURL.mockReturnValue("frapp://events?gcal=failed");
+      try {
+        const tree = render();
+        await act(async () => {});
+        expect(alert).toHaveBeenCalledWith(
+          "Google Calendar wasn't connected",
+          GOOGLE_CALENDAR_RETURN_COPY.failed,
+        );
+        act(() => tree.unmount());
+      } finally {
+        useURL.mockReturnValue(null);
+      }
+    });
+
+    it("falls back to the shared failed words when finishing the connection fails", async () => {
+      state.google = OFFERED;
+      state.confirm.mockRejectedValue(new Error("boom"));
+      const alert = vi.mocked(Alert.alert);
+      alert.mockClear();
+      const useURL = vi.mocked(Linking.useURL);
+      useURL.mockReturnValue(
+        "frapp://events?gcal=confirm&gcal_code=code-x&gcal_state=state-x",
+      );
+      try {
+        const tree = render();
+        await act(async () => {});
+        expect(state.confirm).toHaveBeenCalledTimes(1);
+        expect(alert).toHaveBeenCalledWith(
+          "Google Calendar wasn't connected",
+          GOOGLE_CALENDAR_RETURN_COPY.failed,
+        );
+        act(() => tree.unmount());
+      } finally {
+        useURL.mockReturnValue(null);
+      }
+    });
+
+    // #4676: the footnote is the shared copy in every state, not a local one.
+    it("reads the shared footnote when Google isn't offered", () => {
+      state.google = { available: false, connected: false };
+      const tree = render();
+      expect(screenText(tree)).toContain(googleCalendarFootnote(null));
+      act(() => tree.unmount());
+    });
+
+    it("reads the shared footnote when Google is offered but not connected", () => {
+      state.google = OFFERED;
+      const tree = render();
+      expect(screenText(tree)).toContain(googleCalendarFootnote(OFFERED));
+      act(() => tree.unmount());
+    });
+
     it("says nothing when the member cancels on Google's page", async () => {
       state.google = OFFERED;
       state.start.mockResolvedValue("https://accounts.google.com/auth");
@@ -319,7 +376,9 @@ describe("CalendarSubscribeSheet", () => {
       // #4676: the footnote and the confirm are the shared copy, not a local one.
       expect(screenText(tree)).toContain(googleCalendarFootnote(CONNECTED));
       act(() => row(tree, "Google Calendar, Connected").props.onPress());
-      expect(open).toHaveBeenCalledWith("https://calendar.google.com/calendar/r");
+      expect(open).toHaveBeenCalledWith(
+        "https://calendar.google.com/calendar/r",
+      );
 
       act(() => row(tree, "Disconnect Google Calendar").props.onPress());
       expect(state.disconnect).not.toHaveBeenCalled();
