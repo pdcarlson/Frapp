@@ -8,6 +8,7 @@ import {
   useUpdateDocumentFolder,
 } from "@repo/hooks";
 import { tierByMarks } from "@repo/hooks/document-library";
+import { sameChannelAccessList } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,14 +45,6 @@ type FolderDraft = {
 };
 
 const EMPTY_FOLDER_DRAFT: FolderDraft = { id: null, name: "", whoCanSee: null };
-
-function sameList(
-  a: readonly string[] | null,
-  b: readonly string[] | null,
-): boolean {
-  if (a === null || b === null) return a === b;
-  return a.length === b.length && [...a].sort().join() === [...b].sort().join();
-}
 
 /**
  * Folder writes — create, edit, reorder, delete — and the one dialog that
@@ -143,7 +136,10 @@ export function useFolderManagement({
     const renamed = editing && name !== previousName;
     const accessChanged =
       editing &&
-      !sameList(folderDraft.whoCanSee, previous?.who_can_see ?? null);
+      !sameChannelAccessList(
+        folderDraft.whoCanSee,
+        previous?.who_can_see ?? null,
+      );
     if (editing && !renamed && !accessChanged) {
       folderDialog.setOpen(false);
       setFolderDraft(EMPTY_FOLDER_DRAFT);
