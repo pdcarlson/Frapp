@@ -77,6 +77,27 @@ describe("finishUpload", () => {
     expect(await bytesOf(put.mock.calls[0]![0].body)).toBe(text(FLAT));
   });
 
+  it("saves a document from Save the rest as waiting for its page check", async () => {
+    const { deps } = harness();
+    await finishUpload(
+      {
+        file: new File([ORIGINAL as BlobPart], "exam.pdf", { type: "application/pdf" }),
+        prepared: { bytes: ORIGINAL, hash: await sha256Hex(ORIGINAL), doc: DOC },
+        submission: { fields: EMPTY_FIELDS, boxes: {}, flatten: false, unchecked: true },
+      },
+      deps,
+    );
+    expect(deps.confirm).toHaveBeenCalledWith(
+      expect.objectContaining({ draft: true, pages_checked: false }),
+    );
+    // A document the person saved by hand says nothing about its check.
+    const plain = harness();
+    await run({}, {}, plain.deps);
+    expect(plain.deps.confirm).toHaveBeenCalledWith(
+      expect.not.objectContaining({ pages_checked: expect.anything() }),
+    );
+  });
+
   it("uploads an unboxed Blank Copy as the original", async () => {
     const { deps, put, flatten } = harness();
     await run({ document_variant: "Blank Copy" }, {}, deps);

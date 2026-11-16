@@ -1,0 +1,1 @@
+Bulk upload can save a whole folder at once: "Save all the rest" boxes each PDF where it found names and IDs and saves it as a private draft. Each one waits in the table for you to check its pages, add any box it missed, and only then is filled in by Frapp AI or published.

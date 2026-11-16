@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  FastForward,
   Loader2,
   RotateCcw,
   Upload,
@@ -175,6 +176,32 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
   }
   const searched = !!current && suggestedFor === current.id;
 
+  // "Save the rest" (#5252, Paul 2026-11-16): every document left in the
+  // queue is saved with its suggested boxes, without opening each one. Each
+  // lands in the table as a draft waiting for its uploader's "Check pages",
+  // and the AI fill reads it only after that check. Ends when nothing is
+  // left to review, so files dropped later are opened one by one again.
+  const [savingRest, setSavingRest] = useState(false);
+  if (savingRest && !current) setSavingRest(false);
+  const savingStopped = savingRest && current?.status === "failed";
+  useEffect(() => {
+    if (!savingRest || !current || current.status !== "ready" || !searched || !gate.allowed) return;
+    queue.submit(current.id, {
+      fields,
+      boxes,
+      flatten: mustFlatten(fields, boxes),
+      unchecked: true,
+    });
+  }, [savingRest, current, searched, gate.allowed, queue, fields, boxes]);
+
+  function saveRest() {
+    if (!gate.allowed) return;
+    // What was typed for this document carries to the rest, as Save and next
+    // would carry it to the next one.
+    setSticky({ ...fields, title: "", assignment_number: "" });
+    setSavingRest(true);
+  }
+
   const pending = snapshot.items.some((it) =>
     (["queued", "preparing", "ready", "waiting", "finishing"] as ItemStatus[]).includes(it.status),
   );
@@ -297,7 +324,15 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
           </aside>
 
           <section className="order-1 min-w-0 @4xl:order-2" aria-label="Redact">
-            {current ? (
+            {savingRest && current ? (
+              <SavingRest
+                left={snapshot.items.filter((it) => ["queued", "preparing", "ready"].includes(it.status)).length}
+                stoppedOn={savingStopped ? current : null}
+                onRetry={() => queue.retry(current.id)}
+                onSkip={() => queue.remove(current.id)}
+                onStop={() => setSavingRest(false)}
+              />
+            ) : current ? (
               <CurrentDocument item={current} suggestion={searched ? suggestion : null} boxes={boxes} onBoxes={setBoxes} loadPreview={loadPreview} onRetry={() => queue.retry(current.id)} onRemove={() => queue.remove(current.id)} />
             ) : (
               <AllCaughtUp finishing={pending} />
@@ -312,7 +347,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
                 submitCurrent();
               }}
             >
-              <BulkFieldsForm value={fields} onChange={setFields} disabled={!current} />
+              <BulkFieldsForm value={fields} onChange={setFields} disabled={!current || savingRest} />
               <p className="text-caption text-muted-foreground">
                 {mustFlatten(fields, boxes)
                   ? "This copy is flattened on your device with the boxes burned in. Only the flattened file is uploaded, named after the title. The title starts as the file's name, so make sure it doesn't name a student."
@@ -321,10 +356,27 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
               <Button
                 type="submit"
                 className="w-full gap-2"
-                {...gate.controlProps(!current || current.status !== "ready" || !searched)}
+                {...gate.controlProps(!current || current.status !== "ready" || !searched || savingRest)}
               >
                 <Upload className="h-4 w-4" /> Save and next
               </Button>
+              {current && !savingRest ? (
+                <div className="space-y-1">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full gap-2"
+                    onClick={saveRest}
+                    {...gate.controlProps()}
+                  >
+                    <FastForward className="h-4 w-4" aria-hidden="true" /> Save all the rest
+                  </Button>
+                  <p className="text-caption text-muted-foreground">
+                    Saves this and every document left with the boxes found for it, using these details. Each one
+                    waits in the table below for you to check its pages before it&apos;s filled in or published.
+                  </p>
+                </div>
+              ) : null}
             </form>
           </section>
         </div>
@@ -390,6 +442,61 @@ function CurrentDocument({
       ) : (
         <PageLoading label="Loading the PDF" />
       )}
+    </div>
+  );
+}
+
+/** The middle column while "Save the rest" works through the queue. */
+function SavingRest({
+  left,
+  stoppedOn,
+  onRetry,
+  onSkip,
+  onStop,
+}: {
+  /** Documents not saved yet. */
+  left: number;
+  /** A document that couldn't be opened, which holds up the rest. */
+  stoppedOn: QueueItem<Prepared, Submission> | null;
+  onRetry: () => void;
+  onSkip: () => void;
+  onStop: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-card p-10 text-center">
+      {stoppedOn ? (
+        <>
+          <AlertTriangle className="h-6 w-6 text-destructive-text" aria-hidden="true" />
+          <p className="text-label font-semibold text-foreground">
+            Stopped at {stoppedOn.file.name}
+          </p>
+          <p className="text-caption text-muted-foreground" role="alert">
+            {stoppedOn.error}
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button type="button" variant="secondary" size="toolbar" onClick={onRetry} className="gap-1.5">
+              <RotateCcw className="h-4 w-4" aria-hidden="true" /> Try again
+            </Button>
+            <Button type="button" variant="ghost" size="toolbar" onClick={onSkip}>
+              Skip it and go on
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-hidden="true" />
+          <p className="text-label font-semibold text-foreground tabular-nums" aria-live="polite">
+            Saving the rest: {left} left
+          </p>
+          <p className="text-caption text-muted-foreground">
+            Each is boxed where names and IDs were found and saved as a draft only you can see. Check its pages in
+            the table below.
+          </p>
+        </>
+      )}
+      <Button type="button" variant="ghost" size="toolbar" onClick={onStop}>
+        Stop and open them one by one
+      </Button>
     </div>
   );
 }
