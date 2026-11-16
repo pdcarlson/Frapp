@@ -1,1 +1,0 @@
-Cards Ask Frapp proposes have Edit, so you can change an event's time, attendance, notes or repeat in the event form before it is added, and an event you ask for every week now comes back as a repeating series.
