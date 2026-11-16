@@ -6,10 +6,13 @@ import {
 } from '#domain/adapters/google-drive.interface';
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
+import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
 import type { IChapterDriveRepository } from '#domain/repositories/chapter-drive.repository.interface';
-import type { ChapterDocument } from '#domain/entities/chapter-document.entity';
+import type {
+  ChapterDocument,
+  ChapterDocumentFolder,
+} from '#domain/entities/chapter-document.entity';
 import type { ChapterDriveConnection } from '#domain/entities/chapter-drive-connection.entity';
-import type { ChapterDocumentService } from '../chapter-document.service';
 import {
   DRIVE_COPY_BUDGET,
   DRIVE_MAX_FILES,
@@ -49,6 +52,7 @@ const connection = (
   synced_count: 0,
   skipped_count: 0,
   created_at: NOW.toISOString(),
+  who_can_see: null,
   ...over,
 });
 
@@ -70,7 +74,22 @@ const copy = (over: Partial<ChapterDocument>): ChapterDocument => ({
   // As PostgREST hands a timestamptz back, not as Drive wrote it.
   drive_modified_at: '2026-11-15T00:00:00+00:00',
   drive_url: 'https://drive.google.com/file/d/f1/view',
+  drive_held_folder_id: null,
   who_can_see: null,
+  ...over,
+});
+
+const frappFolder = (
+  over: Partial<ChapterDocumentFolder>,
+): ChapterDocumentFolder => ({
+  id: 'fold-x',
+  chapter_id: 'ch-1',
+  name: 'Folder',
+  sort_order: 0,
+  created_at: NOW.toISOString(),
+  pinned_at: null,
+  who_can_see: null,
+  drive_folder_id: null,
   ...over,
 });
 
@@ -79,9 +98,10 @@ describe('GoogleDriveSyncService', () => {
   let connections: jest.Mocked<IChapterDriveRepository>;
   let documents: jest.Mocked<IChapterDocumentRepository>;
   let storage: jest.Mocked<IStorageProvider>;
-  let documentService: jest.Mocked<
-    Pick<ChapterDocumentService, 'ensureFolder'>
-  >;
+  let folders: jest.Mocked<IChapterDocumentFolderRepository>;
+  /** The chapter's folders, as the fake folder repository holds them. */
+  let folderRows: ChapterDocumentFolder[];
+  const byName = (name: string) => folderRows.find((row) => row.name === name);
   let service: GoogleDriveSyncService;
   let tree: Record<string, GoogleDriveItem[]>;
 
@@ -125,17 +145,54 @@ describe('GoogleDriveSyncService', () => {
       deleteFile: jest.fn().mockResolvedValue(undefined),
       deleteFiles: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<IStorageProvider>;
-    documentService = { ensureFolder: jest.fn().mockResolvedValue({}) };
+    folderRows = [];
+    let made = 0;
+    folders = {
+      findByChapter: jest.fn((_chapter: string) =>
+        Promise.resolve(folderRows.map((row) => ({ ...row }))),
+      ),
+      findById: jest.fn(),
+      findByName: jest.fn(),
+      create: jest.fn((data) => {
+        if (byName(data.name)) {
+          return Promise.reject(
+            Object.assign(new Error('dup'), { code: '23505' }),
+          );
+        }
+        made += 1;
+        const row = frappFolder({
+          id: `fold-${made}`,
+          name: data.name,
+          sort_order: data.sort_order,
+          who_can_see: data.who_can_see ?? null,
+          drive_folder_id: data.drive_folder_id ?? null,
+        });
+        folderRows.push(row);
+        return Promise.resolve({ ...row });
+      }),
+      update: jest.fn(),
+      rename: jest.fn((id: string, _chapter: string, name: string) => {
+        const row = folderRows.find((r) => r.id === id);
+        if (!row) return Promise.resolve(null);
+        row.name = name;
+        return Promise.resolve({ ...row });
+      }),
+      deleteMovingDocuments: jest.fn((id: string, _chapter: string) => {
+        folderRows = folderRows.filter((row) => row.id !== id);
+        return Promise.resolve(true);
+      }),
+      setPinnedAt: jest.fn(),
+    };
     service = new GoogleDriveSyncService(
       drive,
       connections,
       documents,
+      folders,
       storage,
-      documentService as unknown as ChapterDocumentService,
     );
   });
 
-  it('files a new PDF at the top of the folder with no folder', async () => {
+  it('files a new PDF in a folder named for the connected one, open to the chapter', async () => {
     tree[ROOT] = [item({})];
 
     await expect(service.process(connection(), NOW)).resolves.toBe('synced');
@@ -151,7 +208,7 @@ describe('GoogleDriveSyncService', () => {
       expect.objectContaining({
         chapter_id: 'ch-1',
         title: 'Bylaws',
-        folder: null,
+        folder: 'Chapter files',
         uploaded_by: 'user-1',
         drive_file_id: 'f1',
         drive_modified_at: '2026-11-15T00:00:00.000Z',
@@ -202,16 +259,22 @@ describe('GoogleDriveSyncService', () => {
       expect.any(Number),
     );
     expect(documents.create).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Plan', folder: 'Rush' }),
+      expect.objectContaining({
+        title: 'Plan',
+        folder: 'Chapter files / Rush',
+      }),
     );
     expect(documents.create).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Budget', folder: 'Rush / Flyers' }),
+      expect.objectContaining({
+        title: 'Budget',
+        folder: 'Chapter files / Rush / Flyers',
+      }),
     );
-    expect(documentService.ensureFolder).toHaveBeenCalledWith('Rush', 'ch-1');
-    expect(documentService.ensureFolder).toHaveBeenCalledWith(
-      'Rush / Flyers',
-      'ch-1',
-    );
+    expect(folderRows.map((row) => [row.name, row.drive_folder_id])).toEqual([
+      ['Chapter files', ROOT],
+      ['Chapter files / Rush', 'sub'],
+      ['Chapter files / Rush / Flyers', 'deep'],
+    ]);
   });
 
   it('leaves out folders past three levels, unsupported types and oversized files', async () => {
@@ -245,18 +308,20 @@ describe('GoogleDriveSyncService', () => {
     expect(drive.download).not.toHaveBeenCalled();
     expect(documents.updateDriveCopy).toHaveBeenCalledWith('doc-1', 'ch-1', {
       title: 'Bylaws 2026',
-      folder: 'Minutes',
+      folder: 'Chapter files / Minutes',
+      drive_held_folder_id: null,
       drive_url: 'https://drive.google.com/file/d/f1/view',
     });
-    expect(documentService.ensureFolder).toHaveBeenCalledWith(
-      'Minutes',
-      'ch-1',
-    );
   });
 
   it('leaves an unchanged copy alone, whichever way the time is written', async () => {
     tree[ROOT] = [item({})];
-    documents.findDriveCopies.mockResolvedValue([copy({})]);
+    folderRows = [
+      frappFolder({ id: 'top', name: 'Chapter files', drive_folder_id: ROOT }),
+    ];
+    documents.findDriveCopies.mockResolvedValue([
+      copy({ folder: 'Chapter files' }),
+    ]);
 
     await service.process(connection(), NOW);
 
@@ -272,6 +337,9 @@ describe('GoogleDriveSyncService', () => {
         ? Promise.reject(new GoogleDriveApiError('not_found', 404, 'notFound'))
         : Promise.resolve(tree[id] ?? []),
     );
+    folderRows = [
+      frappFolder({ id: 'old', name: 'Old minutes', drive_folder_id: 'gone' }),
+    ];
     documents.findDriveCopies.mockResolvedValue([
       copy({ folder: 'Old minutes' }),
     ]);
@@ -279,6 +347,7 @@ describe('GoogleDriveSyncService', () => {
     await expect(service.process(connection(), NOW)).resolves.toBe('synced');
 
     expect(documents.delete).not.toHaveBeenCalled();
+    expect(folders.deleteMovingDocuments).not.toHaveBeenCalled();
     expect(connections.finishSync).toHaveBeenCalledWith(
       'conn-1',
       expect.objectContaining({ status: 'active' }),
@@ -426,7 +495,11 @@ describe('GoogleDriveSyncService', () => {
     expect(connections.delete).not.toHaveBeenCalled();
   });
 
-  it('removes every copy, then the connection, once disconnected', async () => {
+  it('removes every copy and synced folder, then the connection, once disconnected', async () => {
+    folderRows = [
+      frappFolder({ id: 'top', name: 'Chapter files', drive_folder_id: ROOT }),
+      frappFolder({ id: 'mine', name: 'Rush' }),
+    ];
     documents.findDriveCopies.mockResolvedValue([
       copy({}),
       copy({ id: 'doc-2', storage_path: 'p2', drive_file_id: 'f2' }),
@@ -442,7 +515,287 @@ describe('GoogleDriveSyncService', () => {
       'chapters/ch-1/documents/old/Bylaws.pdf',
       'p2',
     ]);
+    expect(folders.deleteMovingDocuments).toHaveBeenCalledTimes(1);
+    expect(folders.deleteMovingDocuments).toHaveBeenCalledWith('top', 'ch-1');
     expect(connections.delete).toHaveBeenCalledWith('conn-1');
+  });
+
+  // #5220: who can see a copy survives what happens to it in Drive.
+  describe('who can see', () => {
+    const EXEC = ['tier:exec'];
+
+    it('starts the top folder with the connection list and each new subfolder with its parent list', async () => {
+      tree[ROOT] = [folder('sub', 'Exec')];
+      tree.sub = [folder('deep', 'Budget')];
+
+      await service.process(connection({ who_can_see: EXEC }), NOW);
+
+      expect(folderRows.map((row) => [row.name, row.who_can_see])).toEqual([
+        ['Chapter files', EXEC],
+        ['Chapter files / Exec', EXEC],
+        ['Chapter files / Exec / Budget', EXEC],
+      ]);
+    });
+
+    it('starts a new subfolder with its parent folder list, not the connection list', async () => {
+      tree[ROOT] = [folder('sub', 'Exec')];
+      tree.sub = [folder('deep', 'Minutes')];
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'exec',
+          name: 'Chapter files / Exec',
+          drive_folder_id: 'sub',
+          who_can_see: EXEC,
+        }),
+      ];
+
+      await service.process(connection(), NOW);
+
+      expect(byName('Chapter files / Exec / Minutes')?.who_can_see).toEqual(
+        EXEC,
+      );
+    });
+
+    it('renames the same folder when Drive renames it, keeping its list', async () => {
+      tree[ROOT] = [folder('sub', 'Exec Board')];
+      tree.sub = [item({})];
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'exec',
+          name: 'Chapter files / Exec',
+          drive_folder_id: 'sub',
+          who_can_see: EXEC,
+        }),
+      ];
+      // The rename re-files the copy in the database; the pass reads it after.
+      documents.findDriveCopies.mockImplementation(() =>
+        Promise.resolve([
+          copy({
+            folder: byName('Chapter files / Exec Board')
+              ? 'Chapter files / Exec Board'
+              : 'Chapter files / Exec',
+          }),
+        ]),
+      );
+
+      await service.process(connection(), NOW);
+
+      expect(folders.rename).toHaveBeenCalledWith(
+        'exec',
+        'ch-1',
+        'Chapter files / Exec Board',
+      );
+      expect(folders.create).not.toHaveBeenCalled();
+      expect(byName('Chapter files / Exec Board')?.who_can_see).toEqual(EXEC);
+      expect(documents.updateDriveCopy).not.toHaveBeenCalled();
+    });
+
+    it('keeps a synced folder under its old name when a rename races for a taken name', async () => {
+      tree[ROOT] = [folder('sub', 'Exec Board'), item({})];
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'exec',
+          name: 'Chapter files / Exec',
+          drive_folder_id: 'sub',
+          who_can_see: EXEC,
+        }),
+      ];
+      folders.rename.mockRejectedValueOnce({ code: '23505' });
+
+      await expect(service.process(connection(), NOW)).resolves.toBe('synced');
+
+      expect(byName('Chapter files / Exec')?.who_can_see).toEqual(EXEC);
+      expect(documents.create).toHaveBeenCalledWith(
+        expect.objectContaining({ folder: 'Chapter files' }),
+      );
+    });
+
+    it('numbers a synced folder whose name another folder already has', async () => {
+      folderRows = [frappFolder({ id: 'mine', name: 'Chapter files' })];
+      tree[ROOT] = [item({})];
+
+      await service.process(connection(), NOW);
+
+      expect(documents.create).toHaveBeenCalledWith(
+        expect.objectContaining({ folder: 'Chapter files (2)' }),
+      );
+      expect(byName('Chapter files')?.drive_folder_id).toBeNull();
+    });
+
+    it('holds a copy Drive moved into a folder more people may see, and says where Drive put it', async () => {
+      tree[ROOT] = [folder('sub', 'Exec'), item({})];
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'exec',
+          name: 'Chapter files / Exec',
+          drive_folder_id: 'sub',
+          who_can_see: EXEC,
+        }),
+      ];
+      documents.findDriveCopies.mockResolvedValue([
+        copy({ folder: 'Chapter files / Exec' }),
+      ]);
+
+      await service.process(connection(), NOW);
+
+      expect(documents.updateDriveCopy).toHaveBeenCalledWith('doc-1', 'ch-1', {
+        title: 'Bylaws',
+        folder: 'Chapter files / Exec',
+        drive_held_folder_id: 'top',
+        drive_url: 'https://drive.google.com/file/d/f1/view',
+      });
+    });
+
+    it('moves a copy Drive moved into a folder no more people see, and lets go of a hold once Drive agrees', async () => {
+      tree[ROOT] = [folder('sub', 'Exec')];
+      tree.sub = [item({}), item({ id: 'f2', name: 'Dues.pdf' })];
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'exec',
+          name: 'Chapter files / Exec',
+          drive_folder_id: 'sub',
+          who_can_see: EXEC,
+        }),
+      ];
+      documents.findDriveCopies.mockResolvedValue([
+        copy({ folder: 'Chapter files' }),
+        copy({
+          id: 'doc-2',
+          drive_file_id: 'f2',
+          title: 'Dues',
+          folder: 'Chapter files / Exec',
+          drive_held_folder_id: 'top',
+        }),
+      ]);
+
+      await service.process(connection(), NOW);
+
+      expect(documents.updateDriveCopy).toHaveBeenCalledWith(
+        'doc-1',
+        'ch-1',
+        expect.objectContaining({
+          folder: 'Chapter files / Exec',
+          drive_held_folder_id: null,
+        }),
+      );
+      expect(documents.updateDriveCopy).toHaveBeenCalledWith(
+        'doc-2',
+        'ch-1',
+        expect.objectContaining({
+          folder: 'Chapter files / Exec',
+          drive_held_folder_id: null,
+        }),
+      );
+    });
+
+    it('holds a changed copy too, when its new place is wider', async () => {
+      tree[ROOT] = [
+        folder('sub', 'Exec'),
+        item({ modifiedTime: '2026-11-16T00:00:00.000Z' }),
+      ];
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'exec',
+          name: 'Chapter files / Exec',
+          drive_folder_id: 'sub',
+          who_can_see: EXEC,
+        }),
+      ];
+      documents.findDriveCopies.mockResolvedValue([
+        copy({ folder: 'Chapter files / Exec' }),
+      ]);
+
+      await service.process(connection(), NOW);
+
+      expect(documents.updateDriveCopy).toHaveBeenCalledWith(
+        'doc-1',
+        'ch-1',
+        expect.objectContaining({
+          folder: 'Chapter files / Exec',
+          drive_held_folder_id: 'top',
+        }),
+      );
+    });
+
+    it('deletes a synced folder Drive no longer has, once a full read shows it gone', async () => {
+      tree[ROOT] = [];
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'old',
+          name: 'Chapter files / Old',
+          drive_folder_id: 'old-id',
+        }),
+        frappFolder({ id: 'mine', name: 'Rush' }),
+      ];
+
+      await service.process(connection(), NOW);
+
+      expect(folders.deleteMovingDocuments).toHaveBeenCalledTimes(1);
+      expect(folders.deleteMovingDocuments).toHaveBeenCalledWith('old', 'ch-1');
+    });
+
+    it('keeps a synced folder it did not see when the read was only in part', async () => {
+      tree[ROOT] = [folder('bad', 'Unreadable')];
+      drive.listChildren.mockImplementation((id: string) =>
+        id === 'bad'
+          ? Promise.reject(
+              new GoogleDriveApiError('not_found', 404, 'notFound'),
+            )
+          : Promise.resolve(tree[id] ?? []),
+      );
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'old',
+          name: 'Chapter files / Old',
+          drive_folder_id: 'old-id',
+          who_can_see: EXEC,
+        }),
+      ];
+
+      await service.process(connection(), NOW);
+
+      expect(folders.deleteMovingDocuments).not.toHaveBeenCalled();
+    });
   });
 
   it('refuses a connection whose id now names a file', async () => {
@@ -461,7 +814,7 @@ describe('planFile', () => {
           mimeType:
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         }),
-        null,
+        ROOT,
       ),
     ).toMatchObject({ title: 'Rush Plan', filename: 'Rush Plan.docx' });
   });
@@ -474,13 +827,13 @@ describe('planFile', () => {
           mimeType: 'application/vnd.google-apps.presentation',
           size: null,
         }),
-        'Rush',
+        'rush',
       ),
     ).toMatchObject({
       filename: 'Deck.pdf',
       contentType: 'application/pdf',
       exportMime: 'application/pdf',
-      folder: 'Rush',
+      folderDriveId: 'rush',
     });
   });
 
@@ -488,9 +841,9 @@ describe('planFile', () => {
     expect(
       planFile(
         item({ mimeType: 'application/vnd.google-apps.shortcut' }),
-        null,
+        ROOT,
       ),
     ).toBeNull();
-    expect(planFile(item({ name: '   ' }), null)).toBeNull();
+    expect(planFile(item({ name: '   ' }), ROOT)).toBeNull();
   });
 });

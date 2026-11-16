@@ -3,6 +3,7 @@ import {
   canSeeFolder,
   documentListAdmits,
   folderListsByName,
+  listNoWiderThan,
   listsInPlay,
   tiersAListKeeps,
 } from './document-access';
@@ -152,6 +153,28 @@ describe('document-access (#3642 piece 1)', () => {
       expect(
         tiersAListKeeps({ rank: OUTSIDE_TIERS_RANK, wildcard: false }, tiers),
       ).toBeNull();
+    });
+  });
+
+  describe('listNoWiderThan (#5220)', () => {
+    it('lets anything into an open place, and nothing open into a limited one', () => {
+      expect(listNoWiderThan(null, null)).toBe(true);
+      expect(listNoWiderThan(['tier:exec'], null)).toBe(true);
+      expect(listNoWiderThan(null, ['tier:exec'])).toBe(false);
+    });
+
+    it('allows a list whose every entry the current list already has', () => {
+      expect(listNoWiderThan(['tier:exec'], ['tier:exec', 'role:r1'])).toBe(
+        true,
+      );
+      expect(listNoWiderThan([], ['tier:exec'])).toBe(true);
+    });
+
+    it('refuses a list that names anyone the current list does not', () => {
+      expect(listNoWiderThan(['role:r2'], ['tier:exec'])).toBe(false);
+      expect(
+        listNoWiderThan(['tier:exec', 'tier:members'], ['tier:exec']),
+      ).toBe(false);
     });
   });
 });

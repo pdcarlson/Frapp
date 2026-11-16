@@ -74,6 +74,7 @@ describe('SupabaseChapterDriveRepository — tenant scope', () => {
         folder_id: 'folder-2',
         folder_name: 'Rush',
         connected_by: USER_SHARED,
+        who_can_see: null,
       }),
     );
     expect(created).toMatchObject({ chapter_id: CHAPTER_B });

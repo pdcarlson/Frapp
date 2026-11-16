@@ -29,6 +29,8 @@ export interface IChapterDocumentFolderRepository {
     name: string;
     sort_order: number;
     who_can_see?: string[] | null;
+    /** For a folder Drive sync mirrors (#5220). */
+    drive_folder_id?: string | null;
   }): Promise<ChapterDocumentFolder>;
   update(
     id: string,

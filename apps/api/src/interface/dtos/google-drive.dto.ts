@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, MaxLength, MinLength } from 'class-validator';
+import { WhoCanSee } from './chapter-document.dto';
 
 /** A chapter's connected Google Drive folder (#5157). */
 export class GoogleDriveConnectionDto {
@@ -30,6 +31,13 @@ export class GoogleDriveConnectionDto {
   skipped_count: number;
   @ApiProperty({ description: 'Whether a sync is due or running now' })
   syncing: boolean;
+  @ApiProperty({
+    type: [String],
+    nullable: true,
+    description:
+      "Who sees what it brings in (#5220): the list its top folder in Documents started with. Null for everyone who can open Documents. The folder's own list counts from then on.",
+  })
+  who_can_see: string[] | null;
 }
 
 export class GoogleDriveStatusDto {
@@ -57,4 +65,9 @@ export class ConnectGoogleDriveDto {
   @MinLength(10)
   @MaxLength(500)
   folder_link: string;
+
+  @WhoCanSee(
+    "Who sees what the folder brings in (#5220): null or left out for everyone who can open Documents, or the tiers, roles and groups named. Its top folder in Documents starts with this list and each new subfolder with its parent's. Not empty. The caller's own tier and every tier above it are always kept.",
+  )
+  who_can_see?: string[] | null;
 }

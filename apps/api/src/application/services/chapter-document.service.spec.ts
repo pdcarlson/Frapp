@@ -72,6 +72,7 @@ describe('ChapterDocumentService', () => {
     drive_file_id: null,
     drive_modified_at: null,
     drive_url: null,
+    drive_held_folder_id: null,
     who_can_see: null,
   };
 
@@ -83,6 +84,7 @@ describe('ChapterDocumentService', () => {
     created_at: '2026-01-01T00:00:00.000Z',
     pinned_at: null,
     who_can_see: null,
+    drive_folder_id: null,
   };
 
   beforeEach(async () => {
@@ -1657,7 +1659,7 @@ describe('ChapterDocumentService', () => {
       expect(mockRbac.getChannelAccessHolder).not.toHaveBeenCalled();
     });
 
-    it('refuses to limit a folder that holds Google Drive copies until sync keeps lists (#5220)', async () => {
+    it('limits a folder synced from Google Drive like any other (#5220)', async () => {
       mockRbac.getRankContext.mockResolvedValue({
         reach: {
           rank: 0,
@@ -1669,16 +1671,125 @@ describe('ChapterDocumentService', () => {
         roles: [],
         positions: new Map(),
       });
-      mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockDocumentRepo.findDriveCopies.mockResolvedValue([
-        { ...baseDocument, drive_file_id: 'drive-1' },
-      ]);
+      mockFolderRepo.findById.mockResolvedValue({
+        ...baseFolder,
+        drive_folder_id: 'drive-folder',
+      });
+      mockFolderRepo.update.mockResolvedValue({
+        ...baseFolder,
+        drive_folder_id: 'drive-folder',
+        who_can_see: ['role:treasurer'],
+      });
+      await service.updateFolder('folder-1', 'ch-1', 'user-1', {
+        who_can_see: ['role:treasurer'],
+      });
+      expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
+        who_can_see: ['role:treasurer'],
+      });
+    });
+
+    it('leaves renaming and deleting a synced folder to Google Drive (#5220)', async () => {
+      const synced = { ...baseFolder, drive_folder_id: 'drive-folder' };
+      mockFolderRepo.findById.mockResolvedValue(synced);
+      mockFolderRepo.findByName.mockResolvedValue(null);
       await expect(
-        service.updateFolder('folder-1', 'ch-1', 'user-1', {
+        service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Exec' }),
+      ).rejects.toThrow('Rename or delete it in Drive');
+      await expect(
+        service.deleteFolder('folder-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow('Rename or delete it in Drive');
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
+      expect(mockFolderRepo.deleteMovingDocuments).not.toHaveBeenCalled();
+    });
+
+    describe('openUpDriveCopy (#5220)', () => {
+      const held = {
+        ...baseDocument,
+        folder: 'Exec',
+        drive_file_id: 'drive-1',
+        drive_held_folder_id: 'folder-1',
+      };
+
+      it('moves a held copy into the folder Drive put it in', async () => {
+        mockRbac.getChannelAccessHolder.mockResolvedValue(
+          holder(['tier:exec']),
+        );
+        mockDocumentRepo.findById
+          .mockResolvedValueOnce(held)
+          .mockResolvedValueOnce({
+            ...held,
+            folder: 'Governance',
+            drive_held_folder_id: null,
+          });
+        mockFolderRepo.findById.mockResolvedValue(baseFolder);
+
+        const moved = await service.openUpDriveCopy('doc-1', 'ch-1', 'user-1');
+
+        expect(mockDocumentRepo.updateDriveCopy).toHaveBeenCalledWith(
+          'doc-1',
+          'ch-1',
+          { folder: 'Governance', drive_held_folder_id: null },
+        );
+        expect(moved.folder).toBe('Governance');
+      });
+
+      it('refuses a copy sync is not holding', async () => {
+        mockRbac.getChannelAccessHolder.mockResolvedValue(
+          holder(['tier:exec']),
+        );
+        mockDocumentRepo.findById.mockResolvedValue({
+          ...held,
+          drive_held_folder_id: null,
+        });
+        await expect(
+          service.openUpDriveCopy('doc-1', 'ch-1', 'user-1'),
+        ).rejects.toThrow(ConflictException);
+        expect(mockDocumentRepo.updateDriveCopy).not.toHaveBeenCalled();
+      });
+
+      it("hides which folder Drive put a held copy in from a reader who can't see that folder", async () => {
+        mockRbac.getChannelAccessHolder.mockResolvedValue(
+          holder(['tier:exec']),
+        );
+        mockFolderRepo.findByChapter.mockResolvedValue([
+          {
+            ...baseFolder,
+            id: 'exec',
+            name: 'Exec',
+            who_can_see: ['tier:exec'],
+          },
+          {
+            ...baseFolder,
+            id: 'folder-1',
+            name: 'Treasury',
+            who_can_see: ['role:treasurer'],
+          },
+          { ...baseFolder, id: 'open', name: 'Governance', who_can_see: null },
+        ]);
+
+        const [hidden] = await service.visibleTo('ch-1', 'user-1', [held]);
+        expect(hidden.drive_held_folder_id).toBeNull();
+
+        const [shown] = await service.visibleTo('ch-1', 'user-1', [
+          { ...held, drive_held_folder_id: 'open' },
+        ]);
+        expect(shown.drive_held_folder_id).toBe('open');
+      });
+
+      it("answers 404 when the manager can't see the folder Drive put it in", async () => {
+        mockRbac.getChannelAccessHolder.mockResolvedValue(
+          holder(['tier:exec']),
+        );
+        mockDocumentRepo.findById.mockResolvedValue(held);
+        mockFolderRepo.findById.mockResolvedValue({
+          ...baseFolder,
           who_can_see: ['role:treasurer'],
-        }),
-      ).rejects.toThrow("can't be limited yet");
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+        });
+        await expect(
+          service.openUpDriveCopy('doc-1', 'ch-1', 'user-1'),
+        ).rejects.toThrow(NotFoundException);
+        expect(mockDocumentRepo.updateDriveCopy).not.toHaveBeenCalled();
+      });
     });
 
     it("lets whoever connected Google Drive change no copy's list as its uploader", async () => {
