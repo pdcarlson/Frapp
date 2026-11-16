@@ -20,7 +20,7 @@ import { SupabaseArchiveMediaCopier } from '../../infrastructure/storage/supabas
 import { DiscordBotGatewayService } from '../../infrastructure/discord/discord-bot-gateway.service';
 import { DiscordOAuthClientService } from '../../infrastructure/discord/discord-oauth-client.service';
 import { RbacModule } from '../rbac/rbac.module';
-import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
+import { ChannelCacheModule } from '../channel-cache/channel-cache.module';
 import { NotificationModule } from '../notification/notification.module';
 import { DISCORD_IMPORT_REPOSITORY } from '#domain/repositories/discord-import.repository.interface';
 import { DISCORD_CONNECTION_REPOSITORY } from '#domain/repositories/discord-connection.repository.interface';

@@ -44,12 +44,20 @@ src/
   main.ts
   app.module.ts
 
+  config/           # env parsing and boot-time configuration
+
   interface/
     controllers/
     dtos/
     guards/
     interceptors/
     filters/
+    decorators/
+    pipes/
+    middleware/
+    http/
+    types/
+    utils/
 
   application/
     services/
@@ -58,17 +66,31 @@ src/
   infrastructure/
     supabase/
       repositories/
+    ai/
+    analytics/
     billing/
+    discord/
+    email/
+    extraction/
+    gifs/
+    google/
+    link-title/
     notifications/
+    observability/
+    pdf/
+    secrets/
     storage/
 
   domain/
     entities/
     repositories/
     adapters/
-    constants/permissions.ts
+    constants/      # permissions.ts and other shared rules
+    utils/
 
-  modules/          # Nest wiring only: *.module.ts files and their specs
+  modules/          # Nest wiring only: every *.module.ts and its spec, including
+                    # the @Global() SupabaseModule and modules several others
+                    # import (channel-cache/)
 ```
 
 > **Note:** Controllers only handle HTTP concerns (routing, status codes, DTOs). They never talk to Supabase directly — they call application services instead.

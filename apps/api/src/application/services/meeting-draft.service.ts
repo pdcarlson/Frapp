@@ -40,6 +40,7 @@ import type { Meeting, MeetingDraft } from '#domain/entities/meeting.entity';
 import type { AiRunFailureReason } from '#domain/entities/ai-run.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
+import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import {
   buildMinutesDraftPrompt,
   verifyMinutesDraft,
@@ -66,9 +67,6 @@ import { aiConsentRefusal } from './ai/ai-consent-refusal';
 /** The catalog task, and the AI run kind, for a draft from notes. */
 const MINUTES_DRAFT_TASK = 'minutes.draft';
 const MINUTES_DRAFT_RUN_KIND = 'minutes_draft';
-
-/** Notes and drafts older than this are deleted, posted or not. */
-const MEETING_DRAFT_RETENTION_DAYS = 30;
 
 /** What the editor reads about a meeting's draft from notes. */
 export interface MeetingDraftState {
@@ -458,9 +456,7 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
    * than the limit, everywhere.
    */
   async deleteExpired(now: Date = new Date()): Promise<number> {
-    const cutoff = new Date(
-      now.getTime() - MEETING_DRAFT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    );
+    const cutoff = meetingRetentionCutoff(now);
     const [drafts, notes] = await Promise.all([
       this.drafts.deleteRequestedBefore(cutoff.toISOString()),
       this.meetingNotes.deleteExpired(now),

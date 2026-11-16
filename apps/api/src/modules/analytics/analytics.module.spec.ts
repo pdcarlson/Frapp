@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { selectAnalyticsProvider } from './analytics.module';
 import { NoopAnalyticsProvider } from '../../infrastructure/analytics/noop-analytics.provider';
-import { PosthogAnalyticsProvider } from '../../infrastructure/analytics/posthog-analytics.provider';
+import { PosthogAnalyticsProvider } from '../../infrastructure/analytics/posthog-runtime';
 import { resetPosthogRuntimeForTests } from '../../infrastructure/analytics/posthog-runtime';
 
 /** Minimal ConfigService stand-in: only `get` is exercised by the factory. */

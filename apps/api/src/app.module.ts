@@ -5,7 +5,7 @@ import { SentryModule } from '@sentry/nestjs/setup';
 import { CustomThrottlerGuard } from './interface/guards/custom-throttler.guard';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-import { SupabaseModule } from './infrastructure/supabase/supabase.module';
+import { SupabaseModule } from './modules/supabase/supabase.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';

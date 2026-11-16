@@ -45,6 +45,7 @@ import type {
 import type { AiRunFailureReason } from '#domain/entities/ai-run.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
+import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import { MeetingService } from './meeting.service';
 import { assertMeetingDraftable } from './meeting-draft.service';
 import { AiRunService } from './ai-run.service';
@@ -67,9 +68,6 @@ const MEETING_TRANSCRIPTION_VERSION = 'meetings.transcribe@v1';
 
 /** The private bucket a recording waits in (`20261112210000_meeting_recordings.sql`). */
 export const MEETING_AUDIO_BUCKET = 'meeting-audio';
-
-/** A recording and its transcript older than this are deleted, like notes. */
-const MEETING_RECORDING_RETENTION_DAYS = 30;
 
 /**
  * How long an upload may stay unfinished before it reads as failed. Two
@@ -457,9 +455,7 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
 
   /** The retention sweep: every recording older than the limit, everywhere. */
   async deleteExpired(now: Date = new Date()): Promise<number> {
-    const cutoff = new Date(
-      now.getTime() - MEETING_RECORDING_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    );
+    const cutoff = meetingRetentionCutoff(now);
     return this.recordings.deleteCreatedBefore(cutoff.toISOString());
   }
 

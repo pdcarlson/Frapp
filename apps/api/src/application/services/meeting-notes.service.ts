@@ -31,6 +31,7 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import type { Meeting, MeetingNote } from '#domain/entities/meeting.entity';
 import { SystemPermissions, WILDCARD } from '#domain/constants/permissions';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
+import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import { OUTSIDE_TIERS_RANK } from '#domain/utils/role-rank';
 import {
   readableSources,
@@ -44,9 +45,6 @@ import { AiRunService } from './ai-run.service';
 
 /** The catalog task whose consent a note-taker's notes go out under. */
 const MINUTES_DRAFT_TASK = 'minutes.draft';
-
-/** Notes older than this are deleted, posted or not (§ Retention). */
-const MEETING_NOTES_RETENTION_DAYS = 30;
 
 /**
  * Ranks a note-taker's notes for settling a disagreement: lower wins. The
@@ -449,9 +447,7 @@ export class MeetingNotesService {
 
   /** The retention sweep: every note-taker's notes older than the limit. */
   async deleteExpired(now: Date = new Date()): Promise<number> {
-    const cutoff = new Date(
-      now.getTime() - MEETING_NOTES_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    );
+    const cutoff = meetingRetentionCutoff(now);
     return this.notes.deleteCreatedBefore(cutoff.toISOString());
   }
 
