@@ -33,11 +33,12 @@
 
 set -euo pipefail
 
-STAGING_REGION="us-east4"
-PRODUCTION_REGION="us-east5"
+# shellcheck source=scripts/gcp/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 STAGING_HOST="api-staging.frapp.live"
 PRODUCTION_HOST="api.frapp.live"
-SERVICE="frapp-api"
+SERVICE="$CLOUD_RUN_SERVICE"
 
 ADDRESS="frapp-api-ip"
 NEG="frapp-api-neg"
@@ -48,8 +49,9 @@ DNS_AUTH="frapp-api-dns-auth"
 CERT="frapp-api-cert"
 CERT_MAP="frapp-api-certs"
 CERT_MAP_ENTRY="frapp-api-host"
-HTTPS_PROXY="frapp-api-https"
-HTTP_PROXY="frapp-api-http"
+# Not HTTPS_PROXY / HTTP_PROXY: those names are the proxy settings gcloud reads.
+HTTPS_TARGET="frapp-api-https"
+HTTP_TARGET="frapp-api-http"
 HTTPS_RULE="frapp-api-https"
 HTTP_RULE="frapp-api-http"
 
@@ -62,26 +64,16 @@ usage() {
 ENVIRONMENT="$1"
 PROJECT_ID="$2"
 case "$ENVIRONMENT" in
-  staging) REGION="$STAGING_REGION"; HOST="$STAGING_HOST" ;;
-  production) REGION="$PRODUCTION_REGION"; HOST="$PRODUCTION_HOST" ;;
+  staging) REGION="$GCP_STAGING_REGION"; HOST="$STAGING_HOST" ;;
+  production) REGION="$GCP_PRODUCTION_REGION"; HOST="$PRODUCTION_HOST" ;;
   *) usage ;;
 esac
 
-step() { printf '\n==> %s\n' "$*"; }
-gc() { gcloud --project="$PROJECT_ID" --quiet "$@"; }
 exists() { gc "$@" >/dev/null 2>&1; }
 
 step "Checking project $PROJECT_ID"
 PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)')"
-LOWER_NAME="$(printf '%s %s' "$PROJECT_NAME" "$PROJECT_ID" | tr '[:upper:]' '[:lower:]')"
-if [[ "$ENVIRONMENT" == "staging" && "$LOWER_NAME" != *nonprod* && "$LOWER_NAME" != *staging* ]]; then
-  echo "Project $PROJECT_ID is named \"$PROJECT_NAME\", which doesn't look like the nonprod project. Refusing to point $HOST at it." >&2
-  exit 1
-fi
-if [[ "$ENVIRONMENT" == "production" && ( "$LOWER_NAME" == *nonprod* || "$LOWER_NAME" == *staging* || "$LOWER_NAME" != *prod* ) ]]; then
-  echo "Project $PROJECT_ID is named \"$PROJECT_NAME\", which doesn't look like the prod project. Refusing to point $HOST at it." >&2
-  exit 1
-fi
+require_project_for_environment "$ENVIRONMENT" "$PROJECT_ID" "$PROJECT_NAME"
 if ! exists run services describe "$SERVICE" --region="$REGION"; then
   echo "There is no Cloud Run service $SERVICE in $REGION yet. Let a deploy create it first, then run this again." >&2
   exit 1
@@ -105,10 +97,15 @@ fi
 if ! exists compute backend-services describe "$BACKEND" --global; then
   gc compute backend-services create "$BACKEND" --global --load-balancing-scheme=EXTERNAL_MANAGED \
     --enable-logging --logging-sample-rate=1.0
-  gc compute backend-services add-backend "$BACKEND" --global \
-    --network-endpoint-group="$NEG" --network-endpoint-group-region="$REGION"
 else
   gc compute backend-services update "$BACKEND" --global --enable-logging --logging-sample-rate=1.0 >/dev/null
+fi
+# Checked on every run, not only after the create: a run stopped between the
+# two would otherwise leave a backend with nothing behind it, which answers 502.
+BACKENDS="$(gc compute backend-services describe "$BACKEND" --global --format='value(backends[].group)')"
+if [[ "$BACKENDS" != *"/networkEndpointGroups/$NEG"* ]]; then
+  gc compute backend-services add-backend "$BACKEND" --global \
+    --network-endpoint-group="$NEG" --network-endpoint-group-region="$REGION"
 fi
 if ! exists compute url-maps describe "$URL_MAP" --global; then
   gc compute url-maps create "$URL_MAP" --global --default-service="$BACKEND"
@@ -133,13 +130,13 @@ fi
 CERT_STATE="$(gc certificate-manager certificates describe "$CERT" --format='value(managed.state)')"
 
 step "HTTPS on $IP:443"
-if ! exists compute target-https-proxies describe "$HTTPS_PROXY" --global; then
-  gc compute target-https-proxies create "$HTTPS_PROXY" --global \
+if ! exists compute target-https-proxies describe "$HTTPS_TARGET" --global; then
+  gc compute target-https-proxies create "$HTTPS_TARGET" --global \
     --url-map="$URL_MAP" --certificate-map="$CERT_MAP"
 fi
 if ! exists compute forwarding-rules describe "$HTTPS_RULE" --global; then
   gc compute forwarding-rules create "$HTTPS_RULE" --global --load-balancing-scheme=EXTERNAL_MANAGED \
-    --network-tier=PREMIUM --address="$ADDRESS" --target-https-proxy="$HTTPS_PROXY" --ports=443
+    --network-tier=PREMIUM --address="$ADDRESS" --target-https-proxy="$HTTPS_TARGET" --ports=443
 fi
 
 # Calendar apps fetch a webcal:// feed over plain HTTP, so port 80 answers with
@@ -153,12 +150,12 @@ defaultUrlRedirect:
   redirectResponseCode: PERMANENT_REDIRECT
 YAML
 fi
-if ! exists compute target-http-proxies describe "$HTTP_PROXY" --global; then
-  gc compute target-http-proxies create "$HTTP_PROXY" --global --url-map="$REDIRECT_MAP"
+if ! exists compute target-http-proxies describe "$HTTP_TARGET" --global; then
+  gc compute target-http-proxies create "$HTTP_TARGET" --global --url-map="$REDIRECT_MAP"
 fi
 if ! exists compute forwarding-rules describe "$HTTP_RULE" --global; then
   gc compute forwarding-rules create "$HTTP_RULE" --global --load-balancing-scheme=EXTERNAL_MANAGED \
-    --network-tier=PREMIUM --address="$ADDRESS" --target-http-proxy="$HTTP_PROXY" --ports=80
+    --network-tier=PREMIUM --address="$ADDRESS" --target-http-proxy="$HTTP_TARGET" --ports=80
 fi
 
 step "Done. Paste this block back into the chat (none of it is secret):"

@@ -45,8 +45,9 @@
 
 set -euo pipefail
 
-STAGING_REGION="us-east4"
-PRODUCTION_REGION="us-east5"
+# shellcheck source=scripts/gcp/lib.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
 REPOSITORY="frapp"
 RUNTIME_SA_NAME="frapp-api-runtime"
 DEPLOYER_SA_NAME="frapp-deployer"
@@ -83,14 +84,14 @@ done
 
 case "$ENVIRONMENT" in
   staging)
-    REGION="$STAGING_REGION"
+    REGION="$GCP_STAGING_REGION"
     if [[ -n "$STAGING_PROJECT_ID" ]]; then
       echo "--staging-project is only for production." >&2
       exit 2
     fi
     ;;
   production)
-    REGION="$PRODUCTION_REGION"
+    REGION="$GCP_PRODUCTION_REGION"
     if [[ -z "$STAGING_PROJECT_ID" ]]; then
       echo "production needs --staging-project <nonprod-project-id>: its deploys copy the image staging ran." >&2
       exit 2
@@ -112,8 +113,6 @@ if [[ -n "$INFISICAL_ORG_ID" ]]; then
   INFISICAL_SA_NAME="infisical-${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
 fi
 
-step() { printf '\n==> %s\n' "$*"; }
-gc() { gcloud --project="$PROJECT_ID" --quiet "$@"; }
 
 # A grant naming a service account or pool made seconds ago can fail while
 # Google's IAM catches up. Retry those for about a minute before giving up.
@@ -132,17 +131,8 @@ retry() {
 step "Checking project $PROJECT_ID"
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)')"
-# The environment argument decides who may deploy here, so a project named for
-# the other environment is refused rather than wired to it.
-LOWER_NAME="$(printf '%s %s' "$PROJECT_NAME" "$PROJECT_ID" | tr '[:upper:]' '[:lower:]')"
-if [[ "$ENVIRONMENT" == "staging" && "$LOWER_NAME" != *nonprod* && "$LOWER_NAME" != *staging* ]]; then
-  echo "Project $PROJECT_ID is named \"$PROJECT_NAME\", which doesn't look like the nonprod project. Refusing to set it up for staging." >&2
-  exit 1
-fi
-if [[ "$ENVIRONMENT" == "production" && ( "$LOWER_NAME" == *nonprod* || "$LOWER_NAME" == *staging* || "$LOWER_NAME" != *prod* ) ]]; then
-  echo "Project $PROJECT_ID is named \"$PROJECT_NAME\", which doesn't look like the prod project. Refusing to set it up for production." >&2
-  exit 1
-fi
+# The environment argument decides who may deploy here.
+require_project_for_environment "$ENVIRONMENT" "$PROJECT_ID" "$PROJECT_NAME"
 BILLING_ENABLED="$(gcloud billing projects describe "$PROJECT_ID" --format='value(billingEnabled)')"
 if [[ "$BILLING_ENABLED" != "True" ]]; then
   echo "Billing is not enabled on $PROJECT_ID. Link it to the frapp.live billing account first (Billing > Account management > Projects)." >&2
@@ -253,7 +243,7 @@ retry gc iam service-accounts add-iam-policy-binding "$DEPLOYER_SA" \
 if [[ "$ENVIRONMENT" == "production" ]]; then
   step "Production's deployer may read staging's images ($STAGING_PROJECT_ID)"
   retry gcloud --project="$STAGING_PROJECT_ID" --quiet artifacts repositories add-iam-policy-binding "$REPOSITORY" \
-    --location="$STAGING_REGION" --member="serviceAccount:$DEPLOYER_SA" --role=roles/artifactregistry.reader >/dev/null
+    --location="$GCP_STAGING_REGION" --member="serviceAccount:$DEPLOYER_SA" --role=roles/artifactregistry.reader >/dev/null
 fi
 
 INFISICAL_SA=""
