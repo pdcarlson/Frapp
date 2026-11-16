@@ -18,8 +18,11 @@
  * of `0.9.0` in favour of a later one without bumping the store version.
  */
 
-/** Lower-case, as Node exposes request headers. */
-export const CLIENT_VERSION_HEADER = 'x-client-version';
+/**
+ * Lower-case, as Node exposes request headers. Defined once in
+ * `@repo/validation`, which `@repo/api-sdk` reads to send it.
+ */
+export { CLIENT_VERSION_HEADER } from '@repo/validation';
 
 export const CLIENT_PLATFORMS = ['ios', 'android'] as const;
 export type ClientPlatform = (typeof CLIENT_PLATFORMS)[number];
