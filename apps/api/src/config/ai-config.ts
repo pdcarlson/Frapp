@@ -1,5 +1,6 @@
 import { isProductionSupabaseUrl } from '@repo/validation';
 import { isAiEnabled } from '#domain/utils/ai-enabled';
+import { runsOnCloudRun } from './runtime-platform';
 
 type Env = Record<string, unknown>;
 
@@ -28,18 +29,23 @@ export function aiProviderMode(env: Env = process.env): AiProviderMode {
  * free tier fall under terms that allow training on what they receive
  * (ADR-28 decision 3).
  *
- * - `GOOGLE_VERTEX_PROJECT`: the project id (`frapp-ai-staging` or
- *   `frapp-ai-prod`, #4316).
- * - `GOOGLE_VERTEX_CREDENTIALS_JSON`: that project's service account key
- *   file, as JSON. Needed together with the project; boot refuses one
- *   without the other.
+ * - `GOOGLE_VERTEX_PROJECT`: the Google Cloud project the calls bill to.
+ * - `GOOGLE_VERTEX_CREDENTIALS_JSON`: a service account key file for that
+ *   project, as JSON. On Cloud Run (#5228) it is left unset and the API
+ *   signs in as the service's own identity, which has no key to leak.
+ *   Anywhere else it is needed together with the project, and boot refuses
+ *   one without the other.
  * - `GOOGLE_VERTEX_LOCATION`: optional, `global` when unset.
  */
 export interface GoogleVertexEnvSettings {
   project: string;
   location: string;
-  /** A service account's key file, parsed. Never an API key. */
-  credentials: Record<string, unknown>;
+  /**
+   * A service account's key file, parsed, or `null` to sign in as the
+   * runtime's own identity (Application Default Credentials). Never an API
+   * key.
+   */
+  credentials: Record<string, unknown> | null;
 }
 
 const GOOGLE_VERTEX_DEFAULT_LOCATION = 'global';
@@ -76,10 +82,15 @@ export function googleVertexSettings(
   env: Env = process.env,
 ): GoogleVertexEnvSettings | null {
   const project = envSetting(env, 'GOOGLE_VERTEX_PROJECT');
+  if (!project) return null;
   const json = envSetting(env, 'GOOGLE_VERTEX_CREDENTIALS_JSON');
-  if (!project || !json) return null;
-  const credentials = parseServiceAccount(json);
-  if (!credentials) return null;
+  let credentials: Record<string, unknown> | null = null;
+  if (json) {
+    credentials = parseServiceAccount(json);
+    if (!credentials) return null;
+  } else if (!runsOnCloudRun(env)) {
+    return null;
+  }
   return {
     project,
     location:
@@ -115,9 +126,13 @@ export function validateAiEnv(env: Env): string[] {
   }
   const vertexProject = envSetting(env, 'GOOGLE_VERTEX_PROJECT');
   const vertexJson = envSetting(env, 'GOOGLE_VERTEX_CREDENTIALS_JSON');
-  if (Boolean(vertexProject) !== Boolean(vertexJson)) {
+  if (vertexJson && !vertexProject) {
     problems.push(
-      'GOOGLE_VERTEX_PROJECT and GOOGLE_VERTEX_CREDENTIALS_JSON are set together or not at all.',
+      'GOOGLE_VERTEX_CREDENTIALS_JSON is set without GOOGLE_VERTEX_PROJECT.',
+    );
+  } else if (vertexProject && !vertexJson && !runsOnCloudRun(env)) {
+    problems.push(
+      'GOOGLE_VERTEX_PROJECT is set without GOOGLE_VERTEX_CREDENTIALS_JSON. Only Cloud Run signs in without a key file.',
     );
   } else if (vertexJson && !parseServiceAccount(vertexJson)) {
     problems.push(

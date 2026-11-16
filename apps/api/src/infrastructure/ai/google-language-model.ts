@@ -2,7 +2,7 @@ import {
   ApiError,
   BlockedReason,
   FinishReason,
-  GoogleGenAI,
+  type GoogleGenAI,
   ThinkingLevel,
   type Content,
   type GenerateContentConfig,
@@ -10,6 +10,7 @@ import {
   type GenerateContentResponse,
 } from '@google/genai';
 import type { GoogleVertexEnvSettings } from '../../config/ai-config';
+import { googleGenAiClient } from './google-genai-client';
 import {
   LanguageModelError,
   type EmbeddingPurpose,
@@ -86,17 +87,7 @@ export class GoogleLanguageModel implements ILanguageModel {
   constructor(private readonly client: GoogleModelsClient) {}
 
   static fromSettings(settings: GoogleVertexEnvSettings): GoogleLanguageModel {
-    return new GoogleLanguageModel(
-      new GoogleGenAI({
-        enterprise: true,
-        project: settings.project,
-        location: settings.location,
-        googleAuthOptions: {
-          credentials: settings.credentials,
-          scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-        },
-      }),
-    );
+    return new GoogleLanguageModel(googleGenAiClient(settings));
   }
 
   async generate(asked: LanguageModelRequest): Promise<LanguageModelResult> {

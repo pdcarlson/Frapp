@@ -160,7 +160,8 @@ gc services enable \
   sts.googleapis.com \
   cloudresourcemanager.googleapis.com \
   serviceusage.googleapis.com \
-  logging.googleapis.com
+  logging.googleapis.com \
+  aiplatform.googleapis.com
 
 step "Artifact Registry repository $REPOSITORY in $REGION"
 if ! gc artifacts repositories describe "$REPOSITORY" --location="$REGION" >/dev/null 2>&1; then
@@ -201,8 +202,11 @@ step "Service accounts"
 ensure_sa "$RUNTIME_SA_NAME" "Frapp API (runs on Cloud Run)"
 ensure_sa "$DEPLOYER_SA_NAME" "GitHub Actions deploys"
 
-step "What the API may do: read this project's secrets"
+step "What the API may do: read this project's secrets, and call Vertex AI in it"
 project_role "serviceAccount:$RUNTIME_SA" roles/secretmanager.secretAccessor
+# Vertex AI bills to this project and the API signs in as this account, so no
+# key file is needed on Cloud Run (GOOGLE_VERTEX_CREDENTIALS_JSON, ai-config.ts).
+project_role "serviceAccount:$RUNTIME_SA" roles/aiplatform.user
 
 step "What a deploy may do: manage Cloud Run, push images, list secrets, run the API as its identity"
 # run.admin for now: a deploy also turns off Cloud Run's invoker check so the

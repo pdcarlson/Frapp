@@ -34,7 +34,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 │    ...  (web and landing only; no EXPO_PUBLIC_* lives here)       │
 │                                                                   │
 │  3 environments: dev, staging, prod                               │
-│  Syncs: Render ×2, until each API service reads at boot — §5      │
+│  Syncs: Render ×2, until the API moves to Cloud Run — §5          │
 │  Vercel none (builds inject Infisical) — §5                       │
 │  Web/landing (both envs): built from an Infisical injection — §5  │
 └──────────────────────────────────────────────────────────────────┘
@@ -167,53 +167,43 @@ To inspect or edit one: Infisical → Integrations → **Secret Syncs**. To crea
 fresh org, first authenticate the provider under **App Connections** (Vercel, Render), then
 **Add Sync** and pick the source environment, path, and destination scope shown above.
 
-#### Image-backed API: read at boot, not synced
+#### Cloud Run API: synced to Secret Manager
 
-**Decision (owner, 2026-11-16, [#2506](https://github.com/frapplive/Frapp/issues/2506)):** detach
-Render from Infisical, so fewer places hold the values. An image-backed API service (one that pulls
-the image the deploy job builds on GitHub; [`render.md` § 5.8](../../ops/deployment/render.md#58-image-backed-service-2506))
-gets no sync. It holds one read-only Infisical machine identity, and the API reads its environment
-when the process starts, before anything else loads
-([`infisical-boot-secrets.ts`](../../../apps/api/src/infrastructure/secrets/infisical-boot-secrets.ts),
-run by `apps/api/src/boot.ts`, the image's `CMD`). Staging moves first; production stays on its sync
-until the owner moves it.
+**Decision (owner, 2026-11-16, [#5228](https://github.com/frapplive/Frapp/issues/5228)):** the API
+moves from Render to Cloud Run ([`cloud-run.md`](../../ops/deployment/cloud-run.md)), and each
+environment's values reach it through a sync: Infisical's GCP Secret Manager sync copies path `/` of
+`staging` into the nonprod Google project and `prod` into the prod project, and the deploy names each
+secret as an environment variable. Infisical stays the one place a value changes. The image holds no
+value, and neither does GitHub. Until the cutover finishes, the two Render syncs above still feed the
+Render services.
 
-**Who holds what, for that service:**
+Planned, and not live yet (the sync account comes from
+[`scripts/gcp/bootstrap.sh`](../../../scripts/gcp/bootstrap.sh) `--infisical-org-id`):
 
-| Surface  | Holds |
-| -------- | ----- |
-| Infisical | Every value, as before. Each read shows in its audit log. |
-| Render    | The bootstrap only: `INFISICAL_UNIVERSAL_AUTH_CLIENT_ID`, `INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET`, `INFISICAL_ENVIRONMENT` ([`ENV_REFERENCE.md` § Image-backed API bootstrap](./ENV_REFERENCE.md#image-backed-api-bootstrap-render-only)). No app value. |
-| GitHub    | Nothing new: the deploy identity and the Render and Vercel keys it already held. The image on GitHub's container registry carries no secret; `SENTRY_AUTH_TOKEN` reaches its build as a BuildKit secret, which leaves no trace in the image. |
-| Vercel    | Nothing, as before. |
+| Name | Infisical env | Path | Destination |
+| ---- | ------------- | ---- | ----------- |
+| `gcp-api-staging` | Staging | `/` | Secret Manager in `cs-project-6vw9f5xp` (nonprod) |
+| `gcp-api-production` | Production | `/` | Secret Manager in `cs-project-nyit2x59` (prod) |
 
-Once no service is synced, Infisical's Render App Connection, a Render API key that can deploy any
-service, can be deleted too.
+A change in Infisical still reaches the API at its next deploy; how the deploy pins versions, and
+which names it skips, is [`cloud-run.md` § Secrets](../../ops/deployment/cloud-run.md#secrets). Each
+project's Secret Manager holds a copy of every value in its environment, as a Render service's
+environment did. Once no Render service is synced, delete Infisical's Render App Connection too: it
+holds a Render API key that can deploy any service (#5228's last step).
 
-**What it doesn't change.** Whoever can read the Render service's environment can use that identity
-to read every value in its Infisical environment, so the damage from a Render compromise is the same
-as with the sync's copies. The gain is one credential to revoke instead of a copy of each value, and
-an audit trail. Narrowing it needs the API's keys in their own secret path, which nothing does yet.
-
-**What it adds.** The API can't start while Infisical is unreachable: it retries for about a minute,
-then exits, and Render keeps the previous deploy serving when a new one fails its health check. A
-running instance is unaffected, but every start reads Infisical again: a deploy, a restart, a crash,
-and on staging's Free instance type each wake from idle (Render spins a Free service down after
-about 15 minutes without traffic). So an outage longer than that can take an idle staging down until
-Infisical is back. See [§ Infisical Down](#infisical-down).
-
-**How it reads.** Universal Auth login, then path `/` of the environment with references resolved
-(`/api/v3/secrets/raw`), as the sync read it. An Infisical value replaces a platform one under the
-same name, as the sync's did (Render's own `PORT`, for one), except `INFISICAL_*` and `RENDER_*`,
-which are never taken from Infisical. It refuses a partial bootstrap (any one of the three names set
-without the others), a slug other than `staging` or `prod`, a refused credential and an empty environment, and drops the client secret from the
-process's env once used. It never logs a value. A change in Infisical reaches the API at its next
-deploy or restart, as a synced value did.
-
-**The identity.** One per environment, never shared between them (ADR-24 rule I6), each added to the
-Frapp project with read access to its own environment only, and with no other use. Universal Auth
-issues the client secret once; it goes straight into the Render service's environment and nowhere
-else.
+**What was tried first, and why it was dropped.** The owner first asked to detach Render from
+Infisical so fewer places hold the values: the service would hold one read-only Infisical machine
+identity, and the API would read its environment when it started (built in #5203, never run by a
+service). Infisical's free plan has no custom roles, and its built-in project roles grant every
+environment of a project at once (Viewer reads `dev`, `staging` and `prod`), so a staging service's
+identity would have read production too. The organization's other identity, `github-actions`, is an
+organization Admin, so it was never a candidate. Offered a separate Infisical project for production
+or a paid plan instead, the owner kept a sync (2026-11-16), and the startup read was removed in
+#5228. Its gain was small anyway: whoever could read the service's environment could use that
+identity to read the same values, so it bought one credential to revoke instead of a copy of each
+value, plus Infisical's audit log, at the cost of an API that couldn't start while Infisical was
+down. Revisit it if production's values move to their own Infisical project or the plan gains custom
+roles; the removed code is in #5203.
 
 #### GitHub Actions is not a sync
 
@@ -486,7 +476,7 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
 | R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The staging Vercel syncs and their `Preview · main` rows were deleted on 2026-09-28 (#834); neither project's Preview env holds a copy (§5). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
 
-**All rotations happen in one place (Infisical).** Syncs propagate changes to Render automatically; an image-backed API reads Infisical when it starts, so it takes a change at its next deploy or restart ([§ Image-backed API](#image-backed-api-read-at-boot-not-synced)). The web and landing builds read Infisical directly, staging and production alike (#2673), so they pick up a change only when they are next uploaded. For staging that is a re-run of the **Deploy staging** run for `main`'s tip, or the next merge that changes something web or landing is built from; a merge that changes neither uploads nothing (#2865). For production it is a **Deploy production** dispatch. A value a bundle inlines (`NEXT_PUBLIC_*`) stays the old one until then.
+**All rotations happen in one place (Infisical).** Syncs propagate changes to Render automatically, and the API takes them at its next deploy. On Cloud Run that is still true: the sync copies a change to Secret Manager, and the next deploy pins it ([§ Cloud Run API](#cloud-run-api-synced-to-secret-manager)). The web and landing builds read Infisical directly, staging and production alike (#2673), so they pick up a change only when they are next uploaded. For staging that is a re-run of the **Deploy staging** run for `main`'s tip, or the next merge that changes something web or landing is built from; a merge that changes neither uploads nothing (#2865). For production it is a **Deploy production** dispatch. A value a bundle inlines (`NEXT_PUBLIC_*`) stays the old one until then.
 
 ## Emergency Procedures
 
@@ -500,7 +490,6 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 ### Infisical Down
 
 - Existing secrets in Vercel/Render are unaffected (synced copies persist), and so are the running deployments
-- An image-backed API ([§ 5](#image-backed-api-read-at-boot-not-synced)) keeps running, but can't start until Infisical answers: a new deploy fails its health check and Render keeps the previous one serving, and an instance that restarts stays down. If one must start before Infisical recovers, delete the three `INFISICAL_*` bootstrap names from the service and paste the values it needs onto it instead (the boot step then does nothing); put the bootstrap back and delete the pasted values afterwards
 - Deploys that inject at job time fail until it recovers: `deploy-staging.yml` and `deploy-production.yml`
 - New changes must go directly to providers temporarily
 - When Infisical recovers, reconcile and re-sync
