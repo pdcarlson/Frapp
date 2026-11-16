@@ -338,7 +338,11 @@ describe("Points rules", () => {
     const onPatch = vi.fn();
     render(
       <PointsRules
-        points={{ adjustment_rate_limit_per_hour: 50, anomaly_threshold: 100 }}
+        points={{
+          adjustment_rate_limit_per_hour: 50,
+          anomaly_threshold: 100,
+          prediction_max_stake: 25,
+        }}
         canManage
         saving={false}
         onPatch={onPatch}
