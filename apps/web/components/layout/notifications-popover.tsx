@@ -126,6 +126,22 @@ type Notification = {
 };
 
 /**
+ * The message a chat row opens at: the one it is tied to, or for a thread
+ * reply its thread's first message, which the channel's timeline holds. A row
+ * tied to none (a bundle, a row written before rows carried the id) opens the
+ * channel at its newest messages, a thread bundle included.
+ */
+function messageAt(
+  notification: Notification,
+  threadRootId: string | undefined,
+): string | null {
+  const tied =
+    notification.data?.messageId ?? notification.chat_message_id ?? null;
+  if (!tied) return null;
+  return threadRootId ?? tied;
+}
+
+/**
  * Map a notification target payload to an in-app dashboard path.
  *
  * The mobile app uses the same payload shape (see spec/behavior §7) but
@@ -148,11 +164,7 @@ export function deepLinkFor(notification: Notification): string {
     case "chat":
       return chatDeepLink({
         channelId: target.channelId,
-        messageId:
-          target.threadRootId ??
-          notification.data?.messageId ??
-          notification.chat_message_id ??
-          null,
+        messageId: messageAt(notification, target.threadRootId),
       });
     case "events":
       return target.meetingId ? `/meetings/${target.meetingId}` : "/events";

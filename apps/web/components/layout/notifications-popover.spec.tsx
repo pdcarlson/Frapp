@@ -843,8 +843,11 @@ describe("deepLinkFor: opening at a message (#4957, #4977)", () => {
     ).toBe("/chat?channel=c1&message=root-1");
   });
 
-  it("opens a bundle, which quotes no one message, on its channel", () => {
+  it("opens a bundle, which quotes no one message, on its channel, a thread's included", () => {
     expect(deepLinkFor(chat({}))).toBe("/chat?channel=c1");
+    expect(deepLinkFor(chat({ threadRootId: "root-1" }))).toBe(
+      "/chat?channel=c1",
+    );
   });
 });
 
