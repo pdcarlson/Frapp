@@ -66,7 +66,10 @@ export function RecordingBar() {
         accessibilityLabel={view.description}
         accessibilityHint={MEETING_RECORDER_COPY.barHint}
         onPress={() =>
-          router.push({ pathname: "/minutes-details", params: { id: meetingId } })
+          router.push({
+            pathname: "/minutes-details",
+            params: { id: meetingId },
+          })
         }
         style={({ pressed }) => [styles.pill, pressed ? styles.pressed : null]}
       >

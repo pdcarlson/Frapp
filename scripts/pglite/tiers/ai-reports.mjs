@@ -67,6 +67,10 @@ console.log("\n=== Functional: Report this (20261112220000) ===");
       "the officer's notes, kept only while the minutes are a draft",
     "meeting_drafts.result":
       "the draft, kept only while the minutes are a draft",
+    "meeting_drafts.sources":
+      "what the draft was written from (each note-taker's notes and the transcript), kept with the draft (#4935)",
+    "meeting_notes.notes":
+      "a note-taker's own notes, kept only while the minutes are a draft (#4935)",
     "ai_suggestions.payload": "the proposal, emptied once decided",
     "ai_suggestions.quote": "the source's words, nulled once decided",
     "corpus_chunks.content":
@@ -124,6 +128,9 @@ console.log("\n=== Functional: Report this (20261112220000) ===");
     "corpus_sources.source_type",
     "corpus_sources.status",
     "meeting_drafts.failure_code",
+    // Whose notes a draft read: member ids, so the draft goes with any of
+    // their accounts (#4935).
+    "meeting_drafts.source_user_ids",
     "meeting_drafts.status",
   ]);
 
@@ -259,7 +266,7 @@ console.log("\n=== Functional: Report this (20261112220000) ===");
          from information_schema.columns
         where table_schema = 'public'
           and (table_name like 'ai\\_%' or table_name like 'corpus\\_%'
-               or table_name in ('meeting_drafts', 'user_ai_consents', 'chapter_ai_settings'))
+               or table_name in ('meeting_drafts', 'meeting_notes', 'user_ai_consents', 'chapter_ai_settings'))
           and data_type in ('text', 'jsonb', 'json', 'character varying', 'ARRAY')
         order by 1`,
     );

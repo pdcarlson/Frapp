@@ -76,7 +76,9 @@ const subject = {
   eventName: "Chapter meeting",
   maxSeconds: 7200,
 };
-function server(over: Partial<MeetingRecordingState> = {}): MeetingRecordingState {
+function server(
+  over: Partial<MeetingRecordingState> = {},
+): MeetingRecordingState {
   return {
     status: "none",
     available: true,
@@ -176,7 +178,11 @@ describe("RecordingRow", () => {
   it("asks before a new recording replaces a transcript", async () => {
     const tree = render(
       IDLE,
-      server({ status: "ready", transcript: "Speaker 1: Hello.", duration_seconds: 600 }),
+      server({
+        status: "ready",
+        transcript: "Speaker 1: Hello.",
+        duration_seconds: 600,
+      }),
     );
     confirm.mockResolvedValueOnce(false);
     await press(tree, MEETING_RECORDER_COPY.recordAgain);
@@ -212,7 +218,10 @@ describe("RecordingRow", () => {
   });
 
   it("resumes a paused recording", async () => {
-    const tree = render({ ...RECORDING, paused: "interrupted" } as RecorderState);
+    const tree = render({
+      ...RECORDING,
+      paused: "interrupted",
+    } as RecorderState);
     await press(tree, MEETING_RECORDER_COPY.resume);
     expect(session.recorder.resume).toHaveBeenCalledTimes(1);
   });
@@ -252,7 +261,11 @@ describe("RecordingRow", () => {
         typeof node.type === "string" &&
         node.props.accessibilityRole === "progressbar",
     )[0];
-    expect(bar?.props.accessibilityValue).toEqual({ min: 0, max: 100, now: 25 });
+    expect(bar?.props.accessibilityValue).toEqual({
+      min: 0,
+      max: 100,
+      now: 25,
+    });
     await press(tree, MEETING_RECORDER_COPY.cancel);
     expect(session.recorder.cancelUpload).toHaveBeenCalledTimes(1);
   });
@@ -285,12 +298,19 @@ describe("RecordingRow", () => {
   it("opens the notes for a ready transcript, and stops a transcription after asking", async () => {
     let tree = render(
       IDLE,
-      server({ status: "ready", transcript: "Speaker 1: Hello.", duration_seconds: 600 }),
+      server({
+        status: "ready",
+        transcript: "Speaker 1: Hello.",
+        duration_seconds: 600,
+      }),
     );
     await press(tree, MEETING_RECORDER_COPY.openNotes);
     expect(onOpenNotes).toHaveBeenCalledTimes(1);
 
-    tree = render(IDLE, server({ status: "transcribing", duration_seconds: 600 }));
+    tree = render(
+      IDLE,
+      server({ status: "transcribing", duration_seconds: 600 }),
+    );
     await press(tree, MEETING_RECORDER_COPY.stopTranscribing);
     expect(remove).toHaveBeenCalledWith({ id: "m1" });
   });
@@ -301,7 +321,11 @@ describe("RecordingRow", () => {
 
     const tree = render(
       IDLE,
-      server({ status: "ready", transcript: "Speaker 1: Hello.", duration_seconds: 600 }),
+      server({
+        status: "ready",
+        transcript: "Speaker 1: Hello.",
+        duration_seconds: 600,
+      }),
     );
     expect(button(tree, MEETING_RECORDER_COPY.openNotes)).toBeDefined();
     expect(button(tree, MEETING_RECORDER_COPY.recordAgain)).toBeUndefined();

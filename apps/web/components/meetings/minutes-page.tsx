@@ -7,14 +7,17 @@ import { X } from "lucide-react";
 import { codeOf, statusOf } from "@repo/api-sdk";
 import {
   useChapterRoster,
+  useCurrentUser,
   useDeleteMeeting,
   useMeeting,
   useMeetingDraft,
+  useMeetingNotes,
   useMeetingRecording,
   useMemberDisplayNames,
   usePostMeeting,
   useUpdateMeeting,
   type MeetingDraftState,
+  type MeetingNotesState,
   type MeetingRecordingState,
   type MeetingMinutes,
 } from "@repo/hooks";
@@ -32,6 +35,8 @@ import {
   STANDARDS_MEETING_NOTE,
   isMeetingContentEmpty,
   meetingDraftQuoteFor,
+  meetingDraftSourceFor,
+  MEETING_NOTE_TAKERS_COPY,
   meetingSectionHasContent,
   meetingTypeLabel,
   readMeetingContent,
@@ -67,6 +72,7 @@ import {
 import { DueDateField } from "@/components/tasks/due-date-field";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
+import { LinkEventPanel } from "@/components/meetings/link-event";
 import { NotesDraftPanel } from "@/components/meetings/notes-draft-panel";
 import { SuggestedTasks } from "@/components/ai/suggested-tasks";
 import { MinutesPageSkeleton } from "@/components/meetings/meetings-skeleton";
@@ -125,11 +131,16 @@ export function MinutesPage({ id }: { id: string }) {
   const drafts =
     !!query.data && query.data.status === "draft" && query.data.can_edit;
   const draftQuery = useMeetingDraft(id, { enabled: drafts });
-  // The same for the recording row inside that box.
+  // The same for the recording row inside that box, and the note-takers
+  // listed under it (#4935).
   const recordingQuery = useMeetingRecording(id, { enabled: drafts });
+  const notesQuery = useMeetingNotes(id, { enabled: drafts });
   if (
     query.isPending ||
-    (drafts && (draftQuery.isPending || recordingQuery.isPending))
+    (drafts &&
+      (draftQuery.isPending ||
+        recordingQuery.isPending ||
+        notesQuery.isPending))
   ) {
     return <MinutesPageSkeleton />;
   }
@@ -142,9 +153,7 @@ export function MinutesPage({ id }: { id: string }) {
             missing ? MEETING_COPY.missingTitle : MEETING_COPY.loadFailedTitle
           }
           description={
-            missing
-              ? MEETING_COPY.missingBody
-              : MEETING_COPY.loadFailedBody
+            missing ? MEETING_COPY.missingBody : MEETING_COPY.loadFailedBody
           }
           onRetry={missing ? undefined : () => void query.refetch()}
         />
@@ -162,6 +171,7 @@ export function MinutesPage({ id }: { id: string }) {
       meeting={query.data}
       draftState={drafts ? (draftQuery.data ?? null) : null}
       recordingState={drafts ? (recordingQuery.data ?? null) : null}
+      notesState={drafts ? (notesQuery.data ?? null) : null}
       onReload={async () => (await query.refetch()).data}
     />
   );
@@ -171,12 +181,14 @@ function Minutes({
   meeting,
   draftState,
   recordingState,
+  notesState,
   onReload,
 }: {
   meeting: MeetingMinutes;
   /** Where drafting from notes stands; null when it isn't offered here. */
   draftState: MeetingDraftState | null;
   recordingState: MeetingRecordingState | null;
+  notesState: MeetingNotesState | null;
   onReload: () => Promise<MeetingMinutes | undefined>;
 }) {
   const ids = useId();
@@ -187,6 +199,8 @@ function Minutes({
   const post = usePostMeeting();
   const remove = useDeleteMeeting();
   const names = useMemberDisplayNames();
+  const viewer = useCurrentUser().data as { id?: string } | undefined;
+  const myName = viewer?.id ? names.nameFor(viewer.id) : null;
 
   const isDraft = meeting.status === "draft";
   const [editing, setEditing] = useState(meeting.can_edit && isDraft);
@@ -447,9 +461,7 @@ function Minutes({
           role="alert"
           className="space-y-2 rounded-lg border border-warning/30 bg-warning-tint p-3 text-sm"
         >
-          <p>
-            {MEETING_COPY.stale}
-          </p>
+          <p>{MEETING_COPY.stale}</p>
           <Button
             size="sm"
             variant="secondary"
@@ -460,11 +472,20 @@ function Minutes({
         </div>
       ) : null}
 
+      {!meeting.event_id && meeting.can_edit ? (
+        <LinkEventPanel
+          meetingId={meeting.id}
+          meetingName={meeting.event_name}
+          onLinked={() => void onReload()}
+        />
+      ) : null}
+
       {showNotes && draftState ? (
         <NotesDraftPanel
           meetingId={meeting.id}
           eventStart={meeting.event_start_time}
           state={draftState}
+          notesState={notesState}
           recording={recordingState}
           hasContent={!isMeetingContentEmpty(cleanContent(draft.content))}
           disabled={update.isPending || post.isPending || stale}
@@ -529,9 +550,7 @@ function Minutes({
         ) : null}
 
         {!editing && shown.length === 0 ? (
-          <InlineNote>
-            {MEETING_COPY.nothingWritten}
-          </InlineNote>
+          <InlineNote>{MEETING_COPY.nothingWritten}</InlineNote>
         ) : null}
 
         {shown.map((key) => (
@@ -550,9 +569,7 @@ function Minutes({
                 <DecisionsEditor
                   decisions={draft.content.decisions}
                   onChange={(decisions) => editContent({ decisions })}
-                  quoteFor={(text) =>
-                    meetingDraftQuoteFor(review, "decision", text)
-                  }
+                  quoteFor={(text) => quoteOf(review, "decision", text, myName)}
                 />
               ) : (
                 <DecisionsView decisions={base.content.decisions} />
@@ -564,7 +581,7 @@ function Minutes({
                   items={draft.content.action_items}
                   onChange={(action_items) => editContent({ action_items })}
                   quoteFor={(text) =>
-                    meetingDraftQuoteFor(review, "action_item", text)
+                    quoteOf(review, "action_item", text, myName)
                   }
                 />
               ) : (
@@ -626,14 +643,10 @@ function Attendees({
 }) {
   const attendees = meeting.attendees;
   if (!attendees) {
-    return (
-      <InlineNote>{MEETING_COPY.attendeesGone}</InlineNote>
-    );
+    return <InlineNote>{MEETING_COPY.attendeesGone}</InlineNote>;
   }
   if (!hasAttendees(meeting)) {
-    return (
-      <InlineNote>{MEETING_COPY.attendeesNone}</InlineNote>
-    );
+    return <InlineNote>{MEETING_COPY.attendeesNone}</InlineNote>;
   }
   const groups = [
     { label: MEETING_LIST_COPY.present, ids: attendees.present },
@@ -711,13 +724,31 @@ function ActionItemsView({
  * The line of the officer's notes a drafted item came from, shown while the
  * item still reads as drafted, so each one can be checked at a glance.
  */
-function NotesQuote({ quote }: { quote: string | null }) {
+function NotesQuote({ quote }: { quote: DraftQuote | null }) {
   if (!quote) return null;
   return (
     <p className="break-words text-caption text-muted-foreground">
-      From your notes: “{quote}”
+      {quote.from
+        ? MEETING_NOTE_TAKERS_COPY.from(quote.from, quote.mine)
+        : "From your notes"}
+      : “{quote.quote}”
     </p>
   );
+}
+
+/** The line a drafted item came from, and whose it is (#4935). */
+type DraftQuote = { quote: string; from: string | null; mine: boolean };
+
+function quoteOf(
+  review: MeetingDraftState["review"] | null,
+  kind: "decision" | "action_item",
+  text: string,
+  myName: string | null,
+): DraftQuote | null {
+  const quote = meetingDraftQuoteFor(review, kind, text);
+  if (!quote) return null;
+  const from = meetingDraftSourceFor(review, kind, text);
+  return { quote, from, mine: !!from && from === myName };
 }
 
 function clampVote(value: string): number {
@@ -733,7 +764,7 @@ function DecisionsEditor({
 }: {
   decisions: MeetingDecision[];
   onChange: (next: MeetingDecision[]) => void;
-  quoteFor: (text: string) => string | null;
+  quoteFor: (text: string) => DraftQuote | null;
 }) {
   const ids = useId();
   const set = (index: number, patch: Partial<MeetingDecision>) =>
@@ -841,7 +872,7 @@ function ActionItemsEditor({
   disabled: boolean;
   items: MeetingActionItem[];
   onChange: (next: MeetingActionItem[]) => void;
-  quoteFor: (text: string) => string | null;
+  quoteFor: (text: string) => DraftQuote | null;
 }) {
   const ids = useId();
   const rosterQuery = useChapterRoster();

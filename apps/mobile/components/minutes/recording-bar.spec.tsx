@@ -25,7 +25,11 @@ vi.mock("@/lib/connection/use-connection", () => ({
 
 import { RecordingBar } from "./recording-bar";
 
-const subject = { meetingId: "m1", eventName: "Chapter meeting", maxSeconds: 7200 };
+const subject = {
+  meetingId: "m1",
+  eventName: "Chapter meeting",
+  maxSeconds: 7200,
+};
 const RECORDING: RecorderState = {
   phase: "recording",
   subject,
@@ -48,9 +52,13 @@ function render(state: RecorderState): ReactTestRenderer {
 const pill = (tree: ReactTestRenderer) =>
   tree.root.findAll((node) => (node.type as unknown) === "Pressable")[0];
 const topOf = (tree: ReactTestRenderer) =>
-  ([tree.root.findAllByType("View" as never)[0]?.props.style].flat(Infinity) as {
-    top?: number;
-  }[]).find((style) => style?.top !== undefined)?.top;
+  (
+    [tree.root.findAllByType("View" as never)[0]?.props.style].flat(
+      Infinity,
+    ) as {
+      top?: number;
+    }[]
+  ).find((style) => style?.top !== undefined)?.top;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -67,11 +75,16 @@ describe("RecordingBar", () => {
   it("says Recording with the running clock on every other screen", () => {
     const tree = render(RECORDING);
     expect(screenText(tree)).toBe("Recording 1:02:03");
-    expect(pill(tree).props.accessibilityLabel).toBe("Recording Chapter meeting");
+    expect(pill(tree).props.accessibilityLabel).toBe(
+      "Recording Chapter meeting",
+    );
   });
 
   it("says Paused when a call took the microphone", () => {
-    const tree = render({ ...RECORDING, paused: "interrupted" } as RecorderState);
+    const tree = render({
+      ...RECORDING,
+      paused: "interrupted",
+    } as RecorderState);
     expect(screenText(tree)).toBe("Paused 1:02:03");
   });
 

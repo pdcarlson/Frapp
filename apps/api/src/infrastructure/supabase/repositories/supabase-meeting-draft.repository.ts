@@ -110,6 +110,20 @@ export class SupabaseMeetingDraftRepository implements IMeetingDraftRepository {
     if (error) throw new SupabaseQueryError(error);
   }
 
+  async deleteWrittenFrom(
+    chapterId: string,
+    meetingId: string,
+    userId: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('meeting_drafts')
+      .delete()
+      .eq('meeting_id', meetingId)
+      .eq('chapter_id', chapterId)
+      .contains('source_user_ids', [userId]);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async deleteRequestedBefore(cutoff: string): Promise<number> {
     const { data, error } = await this.supabase
       .from('meeting_drafts')

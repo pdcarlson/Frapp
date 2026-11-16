@@ -416,8 +416,7 @@ export const MEETING_RECORDER_COPY = {
   recordAgain: "Record again",
   replaceTitle: "Record again?",
   replaceBody:
-    "The earlier transcript is removed. What is already in your notes stays.",
-  addTranscript: "Add the transcript",
+    "The earlier transcript is removed, and the next draft reads the new one.",
   /** The bar shown on every other screen while the phone records. */
   bar: (eventName: string) => `Recording ${eventName}`,
   barPaused: (eventName: string) => `Recording paused: ${eventName}`,

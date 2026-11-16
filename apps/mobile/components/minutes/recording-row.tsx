@@ -152,7 +152,8 @@ export function RecordingRow({
           confirmLabel: MEETING_RECORDER_COPY.stopTranscribing,
           destructive: true,
         });
-        if (yes) await remove.mutateAsync({ id: meetingId }).catch(() => undefined);
+        if (yes)
+          await remove.mutateAsync({ id: meetingId }).catch(() => undefined);
         return;
       }
       case "open_notes":
