@@ -6,16 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  ActionSheetIOS,
-  Alert,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   BottomSheetModal,
   BottomSheetTextInput,
@@ -82,6 +73,7 @@ import {
   NewTaskSheet,
   type TaskSuggestionSeed,
 } from "@/components/tasks/new-task-sheet";
+import { showActionMenu } from "@/lib/action-menu";
 import type { KeptTargets } from "@/lib/ask/kept-targets";
 import { proposedEventTemplate } from "@/lib/ask/proposed-event-template";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -468,7 +460,7 @@ function EventFacts({
 /**
  * The ··· in a card's corner (Paul, 2026-11-16, #5148: Cancel goes into the
  * menu): Dismiss, and Report this when it is offered. The iOS action sheet,
- * or Android's dialog, as the member sheet's menu (`member-menu.ts`).
+ * or Android's dialog, through the app's one menu (`lib/action-menu.ts`).
  */
 function openCardMenu(
   title: string,
@@ -476,28 +468,17 @@ function openCardMenu(
   onDismiss: () => void,
   onReport: () => void,
 ) {
-  const options = [
-    { label: ACT_COPY.dismiss, run: onDismiss },
-    ...(reportable ? [{ label: AI_REPORT_COPY.action, run: onReport }] : []),
-  ];
-  if (Platform.OS === "ios") {
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title,
-        options: [...options.map((option) => option.label), ACT_COPY.cancel],
-        cancelButtonIndex: options.length,
-        userInterfaceStyle: "dark",
-      },
-      (index) => options[index]?.run(),
-    );
-    return;
-  }
-  Alert.alert(
+  showActionMenu({
     title,
-    undefined,
-    options.map((option) => ({ text: option.label, onPress: option.run })),
-    { cancelable: true },
-  );
+    rows: [
+      { label: ACT_COPY.dismiss, onPress: onDismiss },
+      ...(reportable
+        ? [{ label: AI_REPORT_COPY.action, onPress: onReport }]
+        : []),
+    ],
+    cancelLabel: ACT_COPY.cancel,
+    userInterfaceStyle: "dark",
+  });
 }
 
 /** A card under an answer carries no notes: they come only with a typed request. */

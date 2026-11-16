@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React, { act, useState } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { ActionSheetIOS } from "react-native";
+import { ActionSheetIOS, Alert, Platform } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ActResponse,
@@ -748,6 +748,50 @@ describe("a proposal in the Ask conversation", () => {
       subject: "ai_suggestion",
       subjectId: "sg-1",
     });
+  });
+
+  // Pinned per platform (#5168): the sheet ends on Ask's own Cancel, and
+  // Android's dialog lists the same rows with no Cancel button.
+  it("draws the card's ··· menu on each platform", () => {
+    const platform = Platform as { OS: string };
+    const os = platform.OS;
+    const sheet = vi
+      .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+      .mockImplementation(() => undefined);
+    const dialog = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+    try {
+      const tree = show(POINTS);
+      const more = () =>
+        tree.root.findAll(
+          (node) =>
+            (node.type as unknown) === "Pressable" &&
+            labelMatches(node.props.accessibilityLabel, MORE),
+        )[0]!;
+      platform.OS = "ios";
+      act(() => more().props.onPress());
+      const [options] = sheet.mock.calls.at(-1)!;
+      const rows = options.options.slice(0, -1);
+      expect(options).toEqual({
+        title: expect.any(String),
+        options: [...rows, ACT_COPY.cancel],
+        cancelButtonIndex: rows.length,
+        userInterfaceStyle: "dark",
+      });
+      expect(rows[0]).toBe(ACT_COPY.dismiss);
+
+      platform.OS = "android";
+      act(() => more().props.onPress());
+      expect(dialog.mock.calls.at(-1)).toEqual([
+        options.title,
+        undefined,
+        rows.map((text: string) => ({ text, onPress: expect.any(Function) })),
+        { cancelable: true },
+      ]);
+    } finally {
+      platform.OS = os;
+      sheet.mockRestore();
+      dialog.mockRestore();
+    }
   });
 });
 
