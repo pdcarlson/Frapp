@@ -37,6 +37,7 @@ import {
   type PermissionCatalogEntry,
 } from '#domain/constants/permissions';
 import { flattenPermissionSets } from '#domain/utils/permissions';
+import { rankContextFrom, type RankContext } from '#domain/utils/rank-context';
 import { PG_CHECK_VIOLATION } from '#domain/constants/postgres-error-codes';
 import { isAiEnabled } from '../../config/ai-config';
 import {
@@ -44,7 +45,6 @@ import {
   canReach,
   OUTSIDE_TIERS_RANK,
   effectivePermissions,
-  holderRank,
   permissionsNotHeld,
   roleRank,
   tierPositions,
@@ -122,16 +122,7 @@ export function assertPermissionsHeld(
   }
 }
 
-/**
- * Who is acting and the chapter's roles and tiers, from one read of each, for
- * the rank rules (#4071). `roles` and `tiers` are re-scoped to the chapter.
- */
-export interface RankContext {
-  reach: ActorReach;
-  roles: Role[];
-  tiers: RoleTier[];
-  positions: ReadonlyMap<string, number>;
-}
+export type { RankContext } from '#domain/utils/rank-context';
 
 /** The chapter's next-highest-ranked role that has at least one live holder,
  * once the (now-vacant) President role is excluded — the pool a presidency
@@ -213,31 +204,7 @@ export class RbacService {
       this.roleRepo.findByChapter(chapterId),
       this.tierRepo.findByChapter(chapterId),
     ]);
-    const roles = allRoles.filter((role) => role.chapter_id === chapterId);
-    const tiers = allTiers.filter((tier) => tier.chapter_id === chapterId);
-    const positions = tierPositions(tiers);
-    // `role_ids` is not foreign-keyed and may carry a stale, foreign or
-    // upper-case id; only this chapter's live roles count, as in the guard.
-    const roleById = new Map(
-      roles.map((role) => [role.id.toLowerCase(), role] as const),
-    );
-    const held = (
-      member && member.chapter_id === chapterId ? member.role_ids : []
-    )
-      .map((id) => roleById.get(id.toLowerCase()))
-      .filter((role): role is Role => role !== undefined);
-    const permissions = flattenPermissionSets(held.map((r) => r.permissions));
-    return {
-      reach: {
-        memberId: member?.id ?? null,
-        rank: holderRank(held, positions),
-        permissions,
-        wildcard: permissions.has(WILDCARD),
-      },
-      roles,
-      tiers,
-      positions,
-    };
+    return rankContextFrom(chapterId, member, allRoles, allTiers);
   }
 
   /**

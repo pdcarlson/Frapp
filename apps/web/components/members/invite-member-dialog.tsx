@@ -151,8 +151,8 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const everyoneRoleId = everyoneRole?.id;
   // A role holding `*` is left out: an invite can't grant it (the API answers
   // 403); it changes hands only through Transfer presidency. So is a role
-  // ranked above the sender, or carrying a permission they lack (#4546, Paul
-  // 2026-11-13): a chair invites a peer or a brother, never an officer. Until
+  // ranked at or above the sender, or carrying a permission they lack (#4546,
+  // #1830, Paul 2026-11-16): a chair invites a brother, never a peer. Until
   // that list loads, or if it fails, every role is offered and the API still
   // refuses the rest.
   const invitableRoleIds = invitableRolesQuery.data;

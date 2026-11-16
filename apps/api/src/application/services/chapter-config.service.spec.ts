@@ -66,7 +66,12 @@ jest.mock('@sentry/nestjs', () => ({
 import * as Sentry from '@sentry/nestjs';
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   ChapterConfigService,
   mergeDefinedFields,
@@ -76,6 +81,19 @@ import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import { CHAPTER_CONFIG_REPOSITORY } from '#domain/repositories/chapter-config.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
+import type { Member } from '#domain/entities/member.entity';
+import type { Role, RoleTier } from '#domain/entities/role.entity';
+import { memberFixture, roleFixture } from '#test/helpers/entity-fixtures';
+import {
+  CHAPTER_ID as TIERED_CHAPTER_ID,
+  ROLE,
+  USER,
+  tieredChapterMembers,
+  tieredChapterRoles,
+  tieredChapterTiers,
+} from '#test/helpers/tiered-chapter.fixture';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { ActivationService } from './activation.service';
 import {
@@ -118,6 +136,12 @@ function makeRepos(
     /** #4959: the stored birthday post channel. */
     birthdayChannelId?: string | null;
     roleLookupRow?: { id: string } | null;
+    /**
+     * #1830: the setter's rank, for the invite rule on the default. Defaults
+     * to a President (holds `*`) in a chapter whose roles are the President's
+     * and `roleLookupRow`, so tests about other fields never trip it.
+     */
+    rank?: { member: Member | null; roles: Role[]; tiers: RoleTier[] };
     roleLookupError?: {
       code?: string;
       message: string;
@@ -235,6 +259,34 @@ function makeRepos(
     upsertServiceConfig: serviceUpsert,
     upsertPointsConfig: pointsUpsert,
   };
+  // #1830: what the default invite role's rank check reads for the setter.
+  const presidentRole = roleFixture({
+    id: 'role-president',
+    chapter_id: CHAPTER_ID,
+    name: 'President',
+    permissions: ['*'],
+  });
+  const rank = options.rank ?? {
+    member: memberFixture({
+      user_id: 'user-1',
+      chapter_id: CHAPTER_ID,
+      role_ids: [presidentRole.id],
+    }),
+    roles: [
+      presidentRole,
+      ...(options.roleLookupRow
+        ? [
+            roleFixture({
+              id: options.roleLookupRow.id,
+              chapter_id: CHAPTER_ID,
+              name: options.roleLookupRow.id,
+              permissions: [],
+            }),
+          ]
+        : []),
+    ],
+    tiers: [],
+  };
   /*
    * Returns the role only when the lookup was scoped to this chapter, so a
    * service that stopped passing the chapter gets `[]` (a 400) on every
@@ -245,6 +297,7 @@ function makeRepos(
    * filters, for the same reason.)
    */
   const roleRepo = {
+    findByChapter: jest.fn(() => Promise.resolve(rank.roles)),
     findByIds: jest.fn((ids: string[], chapterId?: string) => {
       if (options.roleLookupError) {
         return Promise.reject(new SupabaseQueryError(options.roleLookupError));
@@ -253,6 +306,13 @@ function makeRepos(
       const scoped = chapterId === CHAPTER_ID && ids.length > 0;
       return Promise.resolve(scoped && row ? [row] : []);
     }),
+  };
+
+  const memberRepo = {
+    findByUserAndChapter: jest.fn(() => Promise.resolve(rank.member)),
+  };
+  const tierRepo = {
+    findByChapter: jest.fn(() => Promise.resolve(rank.tiers)),
   };
 
   // #4959: the birthday post channel's ownership check, chapter-first.
@@ -281,6 +341,8 @@ function makeRepos(
     chapterRepo,
     configRepo,
     roleRepo,
+    memberRepo,
+    tierRepo,
     channelRepo,
     workflowUpsert,
     duesUpsert,
@@ -328,6 +390,8 @@ async function buildService(repos: Repos) {
       { provide: CHAPTER_REPOSITORY, useValue: repos.chapterRepo },
       { provide: CHAPTER_CONFIG_REPOSITORY, useValue: repos.configRepo },
       { provide: ROLE_REPOSITORY, useValue: repos.roleRepo },
+      { provide: MEMBER_REPOSITORY, useValue: repos.memberRepo },
+      { provide: ROLE_TIER_REPOSITORY, useValue: repos.tierRepo },
       { provide: CHAT_CHANNEL_REPOSITORY, useValue: repos.channelRepo },
       { provide: ActivationService, useValue: mockActivation },
       { provide: ChapterAuditLogService, useValue: mockAuditLog },
@@ -1470,6 +1534,95 @@ describe('ChapterConfigService default invite role (#422)', () => {
       CHAPTER_ID,
       expect.objectContaining({ default_invite_role_id: null }),
     );
+  });
+
+  /*
+   * #1830 (Paul, 2026-11-16): the default follows the invite rule for whoever
+   * sets it. Run in the tiered chapter, where a chair was given
+   * `chapter-config:manage` on top of the chairs' tier.
+   */
+  describe('holds the default to the invite rule (#1830)', () => {
+    function tieredRepos(userId: string, roleId: string) {
+      const roles = tieredChapterRoles().map((role) =>
+        role.id === ROLE.riskChair
+          ? {
+              ...role,
+              permissions: [...role.permissions, 'chapter-config:manage'],
+            }
+          : role,
+      );
+      const repos = makeRepos([], null, {}, null, null, {
+        roleLookupRow: { id: roleId },
+        rank: {
+          member:
+            tieredChapterMembers().find((m) => m.user_id === userId) ?? null,
+          roles,
+          tiers: tieredChapterTiers(),
+        },
+      });
+      // The fixture chapter has its own id; answer its role lookups.
+      repos.roleRepo.findByIds.mockImplementation(() =>
+        Promise.resolve(roles.filter((role) => role.id === roleId)),
+      );
+      return repos;
+    }
+
+    async function patch(repos: Repos, userId: string, roleId: string) {
+      const service = await buildService(repos);
+      return service.patchConfig(TIERED_CHAPTER_ID, userId, {
+        default_invite_role_id: roleId,
+      });
+    }
+
+    it('refuses the President role, even to the President, with 400', async () => {
+      const repos = tieredRepos(USER.president, ROLE.president);
+      await expect(
+        patch(repos, USER.president, ROLE.president),
+      ).rejects.toMatchObject({
+        response: { code: 'chapter.config.default_invite_role_president' },
+      });
+      expect(repos.chapterUpdate).not.toHaveBeenCalled();
+    });
+
+    it("refuses a chair setting their own tier's role, an equal rank, with 403", async () => {
+      const repos = tieredRepos(USER.riskChair, ROLE.socialChair);
+      await expect(
+        patch(repos, USER.riskChair, ROLE.socialChair),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repos.chapterUpdate).not.toHaveBeenCalled();
+    });
+
+    it('refuses a chair setting an officer role, a higher rank, with 403', async () => {
+      const repos = tieredRepos(USER.riskChair, ROLE.vicePresident);
+      await expect(
+        patch(repos, USER.riskChair, ROLE.vicePresident),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repos.chapterUpdate).not.toHaveBeenCalled();
+    });
+
+    it('matches an upper-case role id, so it cannot slip past the rule', async () => {
+      const repos = tieredRepos(USER.riskChair, ROLE.vicePresident);
+      // `@IsUUID()` and the uuid lookup both accept any case.
+      const shouted = ROLE.vicePresident.toUpperCase();
+      repos.roleRepo.findByIds.mockImplementation(() =>
+        Promise.resolve(
+          tieredChapterRoles().filter((r) => r.id === ROLE.vicePresident),
+        ),
+      );
+      await expect(
+        patch(repos, USER.riskChair, shouted),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repos.chapterUpdate).not.toHaveBeenCalled();
+    });
+
+    it('lets a chair set a role ranked below their own', async () => {
+      const repos = tieredRepos(USER.riskChair, ROLE.brother);
+      await patch(repos, USER.riskChair, ROLE.brother);
+      expect(repos.chapterUpdate).toHaveBeenCalledWith(
+        TIERED_CHAPTER_ID,
+        expect.objectContaining({ default_invite_role_id: ROLE.brother }),
+      );
+    });
   });
 
   it('audits the change like every other config write', async () => {

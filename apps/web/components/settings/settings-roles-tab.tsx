@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { parseChapterRoles } from "@repo/hooks/chapter-roles";
-import { useMyPermissions, useRoles } from "@repo/hooks";
+import { useInvitableRoleIds, useMyPermissions, useRoles } from "@repo/hooks";
 import {
   PresidencyClaimBanner,
   TransferPresidencySection,
@@ -148,25 +148,31 @@ function DefaultInviteRoleCard({
   isSaving?: boolean;
 }) {
   const rolesQuery = useRoles();
+  const invitableQuery = useInvitableRoleIds({ enabled: canManage });
 
   const roles = useMemo(
     () => parseChapterRoles(rolesQuery.data),
     [rolesQuery.data],
   );
   // A role holding `*` is no default: an invite can't grant it (the API
-  // answers 403). One already configured stays listed, so the card names it
-  // rather than calling it gone, and the officer can pick another.
-  const roleOptions = useMemo(
-    () =>
-      roles
-        .filter(
-          (role) =>
-            !role.everyone && (!role.locked || role.id === configuredDefaultId),
-        )
-        .map(({ id, name }) => ({ id, name }))
-        .sort((first, second) => first.name.localeCompare(second.name)),
-    [roles, configuredDefaultId],
-  );
+  // answers 400). Nor is one the officer couldn't invite into themselves,
+  // ranked at or above them (#1830; the API answers 403), once
+  // `GET /v1/invites/roles` says which those are. One already configured
+  // stays listed, so the card names it rather than calling it gone, and the
+  // officer can pick another.
+  const invitableIds = invitableQuery.data;
+  const roleOptions = useMemo(() => {
+    const invitable = invitableIds ? new Set(invitableIds) : undefined;
+    return roles
+      .filter(
+        (role) =>
+          !role.everyone &&
+          (role.id === configuredDefaultId ||
+            (!role.locked && (invitable?.has(role.id) ?? true))),
+      )
+      .map(({ id, name }) => ({ id, name }))
+      .sort((first, second) => first.name.localeCompare(second.name));
+  }, [roles, configuredDefaultId, invitableIds]);
 
   // The Everyone role (#4191) is what an invite with no default grants, so a
   // chapter whose default names it reads as having none.
