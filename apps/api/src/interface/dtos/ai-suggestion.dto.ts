@@ -426,7 +426,8 @@ export class NewEventSuggestionDto {
     type: String,
     format: 'uuid',
     nullable: true,
-    description: 'The chapter event type the event is one of, when one matched.',
+    description:
+      'The chapter event type the event is one of, when one matched.',
   })
   event_type_id: string | null;
 

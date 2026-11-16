@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
@@ -20,6 +20,7 @@ import {
 import { POINTS_SUGGESTION_MAX_MEMBERS } from '../ai-suggestion-points-kind';
 import { AttendanceService } from '../attendance.service';
 import { EventService } from '../event.service';
+import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
 import { EventTypeService } from '../event-type.service';
 import { ActPeopleResolver } from './act-people';
 import {
@@ -425,6 +426,8 @@ export class CreateEventActTool implements ActTool {
   readonly effect = 'propose' as const;
   readonly kind = 'new_event' as const;
 
+  private readonly logger = new Logger(CreateEventActTool.name);
+
   constructor(
     private readonly events: EventService,
     private readonly eventTypes: EventTypeService,
@@ -454,18 +457,24 @@ export class CreateEventActTool implements ActTool {
       plan.amount <= POINTS_ADJUSTMENT_MAX
         ? plan.amount
         : null;
+    // Only a member who may change events sets an event's points or makes
+    // it required; anyone else's is made with none and optional
+    // (`EventService.create`), so their card says so and asks nothing.
+    const setsRequirements = holds(context, SystemPermissions.EVENTS_UPDATE);
     // Points the member did not say are copied from the chapter's own
     // records, and the card says from where (Paul, 2026-11-16: never "the
     // chapter's usual amount"). With nothing to copy they stay empty, and
     // the card asks for them before it can be confirmed.
     const type = await this.matchingType(name, context);
     const earlier =
-      said === null && !type
-        ? await this.earlierNamed(name, context).catch(() => null)
+      setsRequirements && said === null && !type
+        ? await this.earlierNamed(name, context)
         : null;
-    const points = said ?? type?.point_value ?? earlier?.point_value ?? null;
+    const points = setsRequirements
+      ? (said ?? type?.point_value ?? earlier?.point_value ?? null)
+      : 0;
     const pointsFrom =
-      said !== null
+      !setsRequirements || said !== null
         ? null
         : type
           ? { kind: 'type' as const, name: type.name }
@@ -473,7 +482,9 @@ export class CreateEventActTool implements ActTool {
             ? { kind: 'event' as const, name: earlier.name }
             : null;
     // Attendance not said follows the type, as the event form does.
-    const mandatory = plan.required ?? type?.is_mandatory ?? false;
+    const mandatory = setsRequirements
+      ? (plan.required ?? type?.is_mandatory ?? false)
+      : false;
     return {
       status: 'draft',
       payload: {
@@ -496,25 +507,34 @@ export class CreateEventActTool implements ActTool {
 
   /**
    * The chapter's event type this event is one of: the type of that exact
-   * name, or the one type whose name fits it word for word either way
-   * ("Chapter" is a "Chapter meeting"; "Philanthropy 5K" is "Philanthropy").
+   * name, or the one type whose name the event's words fit ("Chapter" is a
+   * "Chapter meeting").
    * None when two types fit, or the list cannot be read.
    */
   private async matchingType(
     name: string,
     context: ActToolContext,
   ): Promise<EventType | null> {
-    const types = await this.eventTypes
-      .list(context.chapterId)
-      .catch(() => [] as EventType[]);
+    let types: EventType[];
+    try {
+      types = await this.eventTypes.list(context.chapterId);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'ask-event-type-match',
+        message: `Ask could not read event types for chapter ${context.chapterId}; the card asks for points instead`,
+        error,
+      });
+      return null;
+    }
     const lower = name.toLowerCase();
     const exact = types.find((type) => type.name.toLowerCase() === lower);
     if (exact) return exact;
     const typed = words(name);
-    const fits = types.filter((type) => {
-      const have = words(type.name);
-      return wordsFit(typed, have) || wordsFit(have, typed);
-    });
+    // Only the event's words fitting the type's, never the other way:
+    // a one-word type such as "Chapter" would otherwise claim "Chapter
+    // retreat planning call" and make it required (#5148 review).
+    const fits = types.filter((type) => wordsFit(typed, words(type.name)));
     return fits.length === 1 ? fits[0] : null;
   }
 
@@ -528,16 +548,27 @@ export class CreateEventActTool implements ActTool {
   ): Promise<Event | null> {
     const lower = name.toLowerCase();
     const nowIso = context.now.toISOString();
-    const events = await this.events.findByChapter(
-      context.chapterId,
-      context.userId,
-      {
-        endsAfter: new Date(
-          context.now.getTime() - SAME_NAME_BACK_DAYS * DAY_MS,
-        ).toISOString(),
-        startsBefore: nowIso,
-      },
-    );
+    let events: Event[];
+    try {
+      events = await this.events.findByChapter(
+        context.chapterId,
+        context.userId,
+        {
+          endsAfter: new Date(
+            context.now.getTime() - SAME_NAME_BACK_DAYS * DAY_MS,
+          ).toISOString(),
+          startsBefore: nowIso,
+        },
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'ask-event-same-name',
+        message: `Ask could not read recent events for chapter ${context.chapterId}; the card asks for points instead`,
+        error,
+      });
+      return null;
+    }
     return (
       events
         .filter((event) => event.name.trim().toLowerCase() === lower)

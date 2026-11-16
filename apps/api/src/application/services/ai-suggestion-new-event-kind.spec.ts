@@ -1,5 +1,6 @@
 import { NewEventSuggestionKind } from './ai-suggestion-new-event-kind';
 import type { EventService } from './event.service';
+import type { EventTypeService } from './event-type.service';
 
 const CHAPTER = '11111111-1111-4111-8111-111111111111';
 const OFFICER = '22222222-2222-4222-8222-222222222222';
@@ -7,7 +8,12 @@ const OFFICER = '22222222-2222-4222-8222-222222222222';
 const MADE = '33333333-3333-4333-8333-333333333333';
 const SERIES = 'FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;COUNT=13;TZID=America/New_York';
 
-function build(made: { id: string; created_by: string } | null = null) {
+const TYPE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9';
+
+function build(
+  made: { id: string; created_by: string } | null = null,
+  typeIds: string[] = [TYPE],
+) {
   const events = {
     create: jest.fn(async () => ({ id: 'event-1' })),
     findById: jest.fn(async () => {
@@ -15,8 +21,14 @@ function build(made: { id: string; created_by: string } | null = null) {
       return made;
     }),
   };
+  const eventTypes = {
+    list: jest.fn(async () => typeIds.map((id) => ({ id }))),
+  };
   return {
-    kind: new NewEventSuggestionKind(events as unknown as EventService),
+    kind: new NewEventSuggestionKind(
+      events as unknown as EventService,
+      eventTypes as unknown as EventTypeService,
+    ),
     events,
   };
 }
@@ -172,7 +184,7 @@ describe('NewEventSuggestionKind', () => {
 
   it('passes the points and the matched event type to the service', async () => {
     const { kind, events } = build();
-    const type = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa9';
+    const type = TYPE;
     await kind.commit({
       chapterId: CHAPTER,
       userId: OFFICER,
@@ -183,12 +195,26 @@ describe('NewEventSuggestionKind', () => {
     );
   });
 
+  it('makes the event without a type deleted since it was proposed', async () => {
+    const { kind, events } = build(null, []);
+    await kind.commit({
+      chapterId: CHAPTER,
+      userId: OFFICER,
+      payload: proposal({ point_value: 20, event_type_id: TYPE }),
+    });
+    expect(events.create).toHaveBeenCalledWith(
+      expect.not.objectContaining({ event_type_id: expect.anything() }),
+    );
+  });
+
   describe('points nobody chose (Paul, 2026-11-16)', () => {
     it('will not be accepted without points', () => {
       const { kind } = build();
       expect(() => kind.assertAcceptable(proposal())).toThrow(
         expect.objectContaining({
-          response: expect.objectContaining({ code: 'ai.suggestion.incomplete' }),
+          response: expect.objectContaining({
+            code: 'ai.suggestion.incomplete',
+          }),
         }),
       );
       expect(() =>
@@ -222,7 +248,10 @@ describe('NewEventSuggestionKind', () => {
       ).toMatchObject({ points_from: { kind: 'type', name: 'Social' } });
       expect(
         kind.normalizeProposal(
-          proposal({ points_from: { kind: 'guess', name: 'x' }, event_type_id: 'nope' }),
+          proposal({
+            points_from: { kind: 'guess', name: 'x' },
+            event_type_id: 'nope',
+          }),
         ),
       ).toMatchObject({ points_from: null, event_type_id: null });
     });

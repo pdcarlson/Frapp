@@ -292,7 +292,9 @@ function FinishedCard({
     <View style={[styles.card, styles.cardFinished]} testID="ask-card-finished">
       <View style={styles.headRow}>
         <AskCardGlyph
-          name={done ? "done" : resolution.kind === "gone" ? "clock" : "dismissed"}
+          name={
+            done ? "done" : resolution.kind === "gone" ? "clock" : "dismissed"
+          }
           color={tone}
         />
         <Text style={[styles.headText, { color: tone }]}>
@@ -418,7 +420,10 @@ function EventFacts({
     <>
       {when ? (
         <View style={styles.when}>
-          <View style={styles.tile} importantForAccessibility="no-hide-descendants">
+          <View
+            style={styles.tile}
+            importantForAccessibility="no-hide-descendants"
+          >
             <Text style={[styles.tileDay, { color: accentPrimary }]}>
               {when.weekday}
             </Text>
@@ -935,6 +940,7 @@ function ActCard({
   } | null>(null);
   // An event's points when nobody said them and nothing matched (#5148).
   const [eventPoints, setEventPoints] = useState("");
+  const typedEventPoints = actEventPointsInput(eventPoints);
   const needsPoints = !!event && event.point_value === null;
   const shownAmount = useMemo(() => {
     if (!points || !editingPoints) return points?.amount ?? 0;
@@ -963,8 +969,7 @@ function ActCard({
 
   async function confirm() {
     setProblem(null);
-    let edits: { points?: PointsSuggestionEdits; newEventPoints?: number } =
-      {};
+    let edits: { points?: PointsSuggestionEdits; newEventPoints?: number } = {};
     if (points) {
       if (targets.length === 0) {
         setFlagged(true);
@@ -1471,7 +1476,13 @@ function ActCard({
       {event && eventFormMounted ? (
         <NewEventSheet
           ref={eventFormRef}
-          template={proposedEventTemplate(event)}
+          template={proposedEventTemplate({
+            ...event,
+            // Points typed on the card go with it into the form (#5148).
+            point_value:
+              event.point_value ??
+              (typedEventPoints.ok ? typedEventPoints.value : null),
+          })}
           onCreated={(created) => void recordMadeEvent(created.id)}
         />
       ) : null}

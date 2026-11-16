@@ -33,6 +33,8 @@ export function proposedEventTemplate(event: ProposedEvent): NewEventDraft {
     },
     repeat: proposedRepeatDraft(event.recurrence_rule),
     description: event.description ?? "",
+    // The type the card matched (#5148), as Confirm would make it.
+    eventTypeId: event.event_type_id ?? null,
     // Open on what the card did not show: who's coming, the repeat, notes.
     showMore: true,
   };

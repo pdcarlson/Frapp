@@ -432,14 +432,20 @@ describe("a proposal in the Ask conversation", () => {
   };
 
   it("confirms an event proposal, and opens the event it made", async () => {
-    hooks.accept.mockResolvedValue({ result: { kind: "new_event", id: "ev-1" } });
+    hooks.accept.mockResolvedValue({
+      result: { kind: "new_event", id: "ev-1" },
+    });
     const tree = show(STUDY_NIGHT);
     const text = screenText(tree);
     expect(text).toContain("Study night");
     expect(text).toContain("Library");
     expect(text).toContain(ACT_COPY.everyone_optional);
     await act(async () => byLabel(tree, CONFIRM).props.onPress());
-    expect(screenText(tree)).toContain(ACT_COPY.done_event);
+    const done = screenText(tree);
+    expect(done).toContain(ACT_COPY.done_event);
+    // The card stays, greyed, with what it made (Paul, 2026-11-16).
+    expect(done).toContain("Study night");
+    expect(done).toContain("Library");
     act(() => byLabel(tree, ACT_COPY.open_event).props.onPress());
     expect(onOpen).toHaveBeenCalledWith({
       href: "/event-details?id=ev-1",
@@ -448,7 +454,9 @@ describe("a proposal in the Ask conversation", () => {
   });
 
   it("asks for points it can't fill, and sends what the officer enters (#5148)", async () => {
-    hooks.accept.mockResolvedValue({ result: { kind: "new_event", id: "ev-1" } });
+    hooks.accept.mockResolvedValue({
+      result: { kind: "new_event", id: "ev-1" },
+    });
     const tree = show({
       ...STUDY_NIGHT,
       suggestion: {
@@ -466,7 +474,10 @@ describe("a proposal in the Ask conversation", () => {
     )[0]!;
     act(() => input.props.onChangeText("5"));
     await act(async () => byLabel(tree, CONFIRM).props.onPress());
-    expect(hooks.accept).toHaveBeenCalledWith({ id: "sg-3", newEventPoints: 5 });
+    expect(hooks.accept).toHaveBeenCalledWith({
+      id: "sg-3",
+      newEventPoints: 5,
+    });
   });
 
   describe("Edit (#5117)", () => {

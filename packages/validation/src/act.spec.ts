@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   actPointsEdits,
-  actRepeatLine,
   actAttendanceLine,
   actConfirmRefusalLine,
   ACT_ACTIONS,
@@ -106,20 +105,22 @@ describe("a proposal's Edit and repeat (#5117)", () => {
   const WEEKLY =
     "FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=13;TZID=America/New_York";
 
-  it("writes a series out in full, with the year only when it runs into the next", () => {
-    expect(actRepeatLine(WEEKLY, "2026-11-15T23:48:00.000Z")).toBe(
-      "Every Sunday, 13 times, the last on Sunday, February 7, 2027",
-    );
+  it("writes a series out, with the year only when it runs into the next", () => {
+    expect(actRepeatParts(WEEKLY, "2026-11-15T23:48:00.000Z")).toEqual({
+      line: "Every Sunday until February 7, 2027",
+      count: "13 times",
+    });
     expect(
-      actRepeatLine(
+      actRepeatParts(
         "FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;COUNT=3;TZID=America/New_York",
         "2026-09-02T23:00:00.000Z",
       ),
-    ).toBe(
-      "Every other Wednesday, 3 times, the last on Wednesday, September 30",
-    );
-    expect(actRepeatLine(null, "2026-11-15T23:48:00.000Z")).toBe("");
-    expect(actRepeatLine("WEEKLY", "2026-11-15T23:48:00.000Z")).toBe("");
+    ).toEqual({
+      line: "Every other Wednesday until September 30",
+      count: "3 times",
+    });
+    expect(actRepeatParts(null, "2026-11-15T23:48:00.000Z")).toBeNull();
+    expect(actRepeatParts("WEEKLY", "2026-11-15T23:48:00.000Z")).toBeNull();
   });
 
   it("reads a points card's fields into only what changed", () => {

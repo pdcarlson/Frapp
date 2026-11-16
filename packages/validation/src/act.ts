@@ -86,7 +86,6 @@ export const ACT_PROPOSAL_EXPIRY_DAYS = 1;
  * is `ASK_COPY`'s.
  */
 export const ACT_COPY = {
-  confirm: "Confirm",
   cancel: "Cancel",
   /**
    * The card's named action (Paul, 2026-11-16, #5148): one button that says
@@ -102,7 +101,6 @@ export const ACT_COPY = {
    * everything the card does not show (#5117).
    */
   edit: "Edit",
-  confirming: "Confirming",
   mine_only: "Only you see this.",
   no_members: "Add at least one member to confirm.",
   /** The points field under a points card's Edit (#5117). */
@@ -161,11 +159,6 @@ export const ACT_COPY = {
   field_members: "Members",
   field_for: "For",
   field_due: "Due",
-  field_when: "When",
-  field_repeats: "Repeats",
-  field_where: "Where",
-  field_points: "Points",
-  field_attendance: "Attendance",
   show_members: "Show members",
   hide_members: "Hide members",
   remove_member: "Remove",
@@ -175,8 +168,6 @@ export const ACT_COPY = {
   pick_event: "Which event?",
   no_recent_events: "There are no recent events to pick from.",
   former_member: "A former member",
-  required: "Required",
-  optional: "Optional",
   /** Who an event proposed on the card is for: always the whole chapter. */
   everyone_required: "Required for everyone",
   everyone_optional: "Optional, everyone invited",
@@ -374,9 +365,10 @@ export function actRepeatParts(
   if (!extent) return { line: pattern, count: "" };
   const zone = parsed.timeZone;
   const year = (at: Date) =>
-    new Intl.DateTimeFormat("en-US", { year: "numeric", timeZone: zone }).format(
-      at,
-    );
+    new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      timeZone: zone,
+    }).format(at);
   const last = new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",
@@ -384,39 +376,6 @@ export function actRepeatParts(
     ...(year(extent.last) !== year(first) ? { year: "numeric" as const } : {}),
   }).format(extent.last);
   return { line: `${pattern} until ${last}`, count: `${extent.count} times` };
-}
-
-/**
- * How a proposed series repeats, written out in full ("Every Sunday, 13
- * times, the last on Sunday, February 7"), read in the rule's own zone.
- * Empty for one event or a rule that cannot be read.
- */
-export function actRepeatLine(
-  rule: string | null | undefined,
-  start: string,
-): string {
-  if (!rule) return "";
-  const parsed = parseRepeatRule(rule);
-  const first = new Date(start);
-  if (!parsed || parsed.legacy || Number.isNaN(first.getTime())) return "";
-  const pattern = describeRepeatPattern(rule, first);
-  const extent = seriesExtent(first, rule);
-  if (!pattern || !extent) return pattern ?? "";
-  const zone = parsed.timeZone;
-  const year = (at: Date) =>
-    new Intl.DateTimeFormat("en-US", {
-      year: "numeric",
-      timeZone: zone,
-    }).format(at);
-  const last = new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    timeZone: zone,
-    // The year only when the series runs into the next one.
-    ...(year(extent.last) !== year(first) ? { year: "numeric" as const } : {}),
-  }).format(extent.last);
-  return `${pattern}, ${extent.count} times, the last on ${last}`;
 }
 
 /**

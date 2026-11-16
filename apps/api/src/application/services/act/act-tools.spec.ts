@@ -408,9 +408,24 @@ describe('CreateTaskActTool', () => {
 
 describe('CreateEventActTool', () => {
   const TYPES = [
-    { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', name: 'Chapter meeting', point_value: 10, is_mandatory: true },
-    { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2', name: 'Committee meeting', point_value: 5, is_mandatory: false },
-    { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3', name: 'Philanthropy', point_value: 15, is_mandatory: false },
+    {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+      name: 'Chapter meeting',
+      point_value: 10,
+      is_mandatory: true,
+    },
+    {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
+      name: 'Committee meeting',
+      point_value: 5,
+      is_mandatory: false,
+    },
+    {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
+      name: 'Philanthropy',
+      point_value: 15,
+      is_mandatory: false,
+    },
   ];
   function buildEvent(options: { types?: unknown[]; events?: Event[] } = {}) {
     const events = {
@@ -429,7 +444,8 @@ describe('CreateEventActTool', () => {
     };
   }
   const { tool } = buildEvent();
-  const context = toolContext(['events:create']);
+  // An officer who may set points and attendance (`events:update`).
+  const context = toolContext(['events:create', 'events:update']);
 
   it("proposes an hour-long event at the time said, in the member's zone", async () => {
     expect(
@@ -457,7 +473,12 @@ describe('CreateEventActTool', () => {
 
   describe('points the member did not say (Paul, 2026-11-16)', () => {
     const said = (over: Partial<ActPlan> = {}) =>
-      plan({ title: 'Chapter', date: '2026-11-22', start_time: '18:48', ...over });
+      plan({
+        title: 'Chapter',
+        date: '2026-11-22',
+        start_time: '18:48',
+        ...over,
+      });
 
     it('copies points and attendance from the one type it fits', async () => {
       const { tool: typed } = buildEvent({ types: TYPES });
@@ -469,12 +490,31 @@ describe('CreateEventActTool', () => {
           event_type_id: TYPES[0].id,
         },
       });
-      // A longer name still fits its type.
+      // A type's one word never claims a longer name: "Chapter retreat
+      // planning call" is not a required Chapter meeting.
       expect(
         await typed.draft(said({ title: 'Philanthropy 5K' }), context),
       ).toMatchObject({
-        payload: { point_value: 15, points_from: { kind: 'type', name: 'Philanthropy' } },
+        payload: { point_value: null, points_from: null, event_type_id: null },
       });
+    });
+
+    it("asks nothing of a member who can't set points, and proposes none", async () => {
+      const { tool: typed, events } = buildEvent({ types: TYPES });
+      expect(
+        await typed.draft(
+          said({ amount: 5, required: true }),
+          toolContext(['events:create']),
+        ),
+      ).toMatchObject({
+        payload: {
+          point_value: 0,
+          is_mandatory: false,
+          points_from: null,
+          event_type_id: TYPES[0].id,
+        },
+      });
+      expect(events.findByChapter).not.toHaveBeenCalled();
     });
 
     it('keeps what the member said over the type', async () => {
@@ -501,9 +541,15 @@ describe('CreateEventActTool', () => {
     });
 
     it('copies the points of the last event with the same name', async () => {
-      const older = { ...event('e1', 'Study hours', '2026-10-01T00:00:00.000Z'), point_value: 2 } as Event;
-      const newer = { ...event('e2', 'study hours', '2026-11-05T00:00:00.000Z'), point_value: 4 } as Event;
-      const { tool: earlier } = buildEvent({ events: [older, newer] });
+      const older = {
+        ...event('e1', 'Study hours', '2026-10-01T00:00:00.000Z'),
+        point_value: 2,
+      };
+      const newer = {
+        ...event('e2', 'study hours', '2026-11-05T00:00:00.000Z'),
+        point_value: 4,
+      };
+      const { tool: earlier, events } = buildEvent({ events: [older, newer] });
       expect(
         await earlier.draft(said({ title: 'Study hours' }), context),
       ).toMatchObject({
@@ -513,14 +559,30 @@ describe('CreateEventActTool', () => {
           event_type_id: null,
         },
       });
+      // Only events this member can see, from the last half year, before now.
+      const [chapterId, viewer, window] = events.findByChapter.mock.calls[0];
+      expect(chapterId).toBe(context.chapterId);
+      expect(viewer).toBe(context.userId);
+      expect(window).toEqual({
+        endsAfter: new Date(
+          context.now.getTime() - 180 * 86_400_000,
+        ).toISOString(),
+        startsBefore: context.now.toISOString(),
+      });
     });
 
     it('leaves points empty when there is nothing to copy, or the reads fail', async () => {
       const failing = new CreateEventActTool(
-        { findByChapter: jest.fn().mockRejectedValue(new Error('down')) } as unknown as EventService,
-        { list: jest.fn().mockRejectedValue(new Error('down')) } as unknown as EventTypeService,
+        {
+          findByChapter: jest.fn().mockRejectedValue(new Error('down')),
+        } as unknown as EventService,
+        {
+          list: jest.fn().mockRejectedValue(new Error('down')),
+        } as unknown as EventTypeService,
       );
-      expect(await failing.draft(said({ title: 'Study hours' }), context)).toMatchObject({
+      expect(
+        await failing.draft(said({ title: 'Study hours' }), context),
+      ).toMatchObject({
         status: 'draft',
         payload: { point_value: null, points_from: null },
       });

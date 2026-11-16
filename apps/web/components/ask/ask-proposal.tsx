@@ -86,6 +86,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { EYEBROW } from "@/components/ui/typography";
+import { eventDeepLink } from "@/lib/events/event-links";
 import { cn } from "@/lib/utils";
 
 /**
@@ -262,7 +263,7 @@ function resultLink(
   if (resolution.kind !== "done") return null;
   if (resolution.page === "events" && resolution.id) {
     return {
-      href: `/events?event=${encodeURIComponent(resolution.id)}`,
+      href: eventDeepLink(resolution.id),
       label: ACT_COPY.open_event,
     };
   }
@@ -353,9 +354,7 @@ function CardDetails({ suggestion }: { suggestion: AiSuggestion }) {
           </p>
         ) : null}
         {task.due_date ? (
-          <Fact icon={Clock}>
-            {meetingDueLabel(task.due_date)}
-          </Fact>
+          <Fact icon={Clock}>{meetingDueLabel(task.due_date)}</Fact>
         ) : null}
       </div>
     );
@@ -842,6 +841,11 @@ function ActCard({
   // closed; what was typed is kept under the card's name (#4593).
   const [eventForm, setEventForm] = useState<boolean | null>(null);
   // One object for the proposal: the form fills again when it changes.
+  // Points typed on the card, and the event type it matched, go with it
+  // into the form (#5148), so Edit never makes something Confirm wouldn't.
+  const typedEventPoints = actEventPointsInput(eventPoints);
+  const templatePoints =
+    event?.point_value ?? (typedEventPoints.ok ? typedEventPoints.value : null);
   const eventTemplate = useMemo(
     () =>
       event
@@ -849,11 +853,12 @@ function ActCard({
             name: event.name,
             description: event.description,
             location: event.location,
-            point_value: event.point_value,
+            point_value: templatePoints,
             is_mandatory: event.is_mandatory,
+            event_type_id: event.event_type_id ?? null,
           }
         : null,
-    [event],
+    [event, templatePoints],
   );
   const shownAmount = useMemo(() => {
     if (!points || !editing) return points?.amount ?? 0;
@@ -1287,7 +1292,10 @@ function ActCard({
                   </SelectContent>
                 </Select>
                 {flagged && !assigneeId ? (
-                  <p role="alert" className="text-caption text-destructive-text">
+                  <p
+                    role="alert"
+                    className="text-caption text-destructive-text"
+                  >
                     {ACT_COPY.need_assignee}
                   </p>
                 ) : null}

@@ -211,9 +211,7 @@ describe("AskProposal", () => {
     expect(within(card).getByText("Jordan Reyes")).toBeDefined();
     expect(state.accept).not.toHaveBeenCalled();
 
-    await userEvent.click(
-      within(card).getByRole("button", { name: CONFIRM }),
-    );
+    await userEvent.click(within(card).getByRole("button", { name: CONFIRM }));
     // Unchanged, so no edits are sent.
     expect(state.accept).toHaveBeenCalledWith({ id: "suggestion-1" });
     expect(
@@ -235,9 +233,7 @@ describe("AskProposal", () => {
       }),
     );
     expect(screen.getByText("Give 5 points to 1 member")).toBeDefined();
-    await userEvent.click(
-      screen.getByRole("button", { name: CONFIRM }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
     expect(state.accept).toHaveBeenCalledWith({
       id: "suggestion-1",
       points: { target_user_ids: [JORDAN] },
@@ -251,9 +247,7 @@ describe("AskProposal", () => {
         'Nobody in the chapter matched "Jake". Add them below if they should be included.',
       ),
     ).toBeDefined();
-    await userEvent.click(
-      screen.getByRole("button", { name: CONFIRM }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
     expect(state.accept).not.toHaveBeenCalled();
     expect(screen.getByText(ACT_COPY.no_members)).toBeDefined();
   });
@@ -291,15 +285,11 @@ describe("AskProposal", () => {
         "This changes points for 60 members, and your chapter allows 50 point adjustments an hour.",
     });
     show(pointsCard([JORDAN]));
-    await userEvent.click(
-      await screen.findByRole("button", { name: CONFIRM }),
-    );
+    await userEvent.click(await screen.findByRole("button", { name: CONFIRM }));
     expect((await screen.findByRole("alert")).textContent).toBe(
       ACT_COPY.refused_confirm["ai.suggestion.points.over_limit"],
     );
-    expect(
-      screen.getByRole("button", { name: CONFIRM }),
-    ).toBeDefined();
+    expect(screen.getByRole("button", { name: CONFIRM })).toBeDefined();
   });
 
   it.each([
@@ -315,9 +305,7 @@ describe("AskProposal", () => {
         await screen.findByRole("button", { name: CONFIRM }),
       );
       expect(await screen.findByText(ACT_COPY.gone)).toBeDefined();
-      expect(
-        screen.queryByRole("button", { name: CONFIRM }),
-      ).toBeNull();
+      expect(screen.queryByRole("button", { name: CONFIRM })).toBeNull();
       expect(screen.queryByRole("button", { name: /^More/ })).toBeNull();
       expect(screen.queryByText(ACT_COPY.cancelled)).toBeNull();
     },
@@ -363,9 +351,7 @@ describe("AskProposal", () => {
     render(thread);
     expect(await screen.findByText("Give 5 points to 1 member")).toBeDefined();
     expect(screen.queryByText("Jacob Miller")).toBeNull();
-    await userEvent.click(
-      screen.getByRole("button", { name: CONFIRM }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
     expect(state.accept).toHaveBeenCalledWith({
       id: "suggestion-1",
       points: { target_user_ids: [JORDAN] },
@@ -446,9 +432,7 @@ describe("AskProposal", () => {
       const amount = screen.getByLabelText(ACT_COPY.field_amount);
       await userEvent.clear(amount);
       await userEvent.type(amount, "0");
-      await userEvent.click(
-        screen.getByRole("button", { name: CONFIRM }),
-      );
+      await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
       expect(state.accept).not.toHaveBeenCalled();
       expect(screen.getByText(ACT_COPY.bad_amount)).toBeDefined();
 
@@ -457,9 +441,7 @@ describe("AskProposal", () => {
       expect(
         screen.getByText("Take 10 points away from 2 members"),
       ).toBeDefined();
-      await userEvent.click(
-        screen.getByRole("button", { name: CONFIRM }),
-      );
+      await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
       expect(state.accept).toHaveBeenCalledWith({
         id: "suggestion-1",
         points: { amount: -10 },
@@ -485,18 +467,14 @@ describe("AskProposal", () => {
       );
       const name = screen.getByLabelText(ACT_COPY.field_task_name);
       await userEvent.clear(name);
-      await userEvent.click(
-        screen.getByRole("button", { name: CONFIRM }),
-      );
+      await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
       expect(screen.getByText(ACT_COPY.no_task_name)).toBeDefined();
       await userEvent.type(name, "Book the bus for formal");
       await userEvent.type(
         screen.getByLabelText(ACT_COPY.field_details),
         "Two buses, 60 seats",
       );
-      await userEvent.click(
-        screen.getByRole("button", { name: CONFIRM }),
-      );
+      await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
       expect(state.accept).toHaveBeenCalledWith({
         id: "suggestion-1",
         task: {
@@ -521,9 +499,7 @@ describe("AskProposal", () => {
       }),
     });
     expect(await screen.findByText("Book the bus")).toBeDefined();
-    await userEvent.click(
-      screen.getByRole("button", { name: CONFIRM }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
     expect(state.accept).not.toHaveBeenCalled();
     expect(screen.getByText(ACT_COPY.need_assignee)).toBeDefined();
   });
@@ -552,13 +528,10 @@ describe("AskProposal", () => {
     expect(screen.getByText(ACT_COPY.points_missing)).toBeDefined();
     await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
     expect(state.accept).not.toHaveBeenCalled();
-    expect(
-      (await screen.findByRole("alert")).textContent,
-    ).toBe(ACT_COPY.bad_event_points);
-    await userEvent.type(
-      screen.getByLabelText(ACT_COPY.points_label),
-      "0",
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      ACT_COPY.bad_event_points,
     );
+    await userEvent.type(screen.getByLabelText(ACT_COPY.points_label), "0");
     await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
     expect(state.accept).toHaveBeenCalledWith({
       id: "suggestion-1",
@@ -696,9 +669,7 @@ describe("AskProposal", () => {
         subtasks: [],
       }),
     });
-    await userEvent.click(
-      screen.getByRole("button", { name: CONFIRM }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: CONFIRM }));
     expect(await screen.findByText(ACT_COPY.done_task)).toBeDefined();
     expect(screen.getByText("Book the bus")).toBeDefined();
     expect(screen.queryByRole("button", { name: CONFIRM })).toBeNull();
@@ -761,9 +732,7 @@ describe("AskAnswerCards", () => {
     expect(await screen.findByText(ACT_COPY.cancelled)).toBeDefined();
     // The line still says what the card was about.
     expect(screen.getByText("Buy cups")).toBeDefined();
-    expect(
-      screen.getAllByRole("button", { name: CONFIRM }),
-    ).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: CONFIRM })).toHaveLength(1);
     // Only the card still waiting is asked for again.
     expect(state.cards.asked.at(-1)).toEqual(["s2"]);
   });

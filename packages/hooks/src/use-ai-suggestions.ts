@@ -173,8 +173,7 @@ export function useAcceptAiSuggestion() {
       if (newEventId) body = { new_event: { event_id: newEventId } };
       else if (newEventPoints !== undefined) {
         body = { new_event: { point_value: newEventPoints } };
-      }
-      else if (eventId) body = { event: { event_id: eventId } };
+      } else if (eventId) body = { event: { event_id: eventId } };
       else body = { ...(task ? { task } : {}), ...(points ? { points } : {}) };
       const result = await client.POST("/v1/ai/suggestions/{id}/accept", {
         params: { path: { id } },

@@ -15,6 +15,7 @@ import type {
   AiSuggestionKindHandler,
 } from './ai-suggestion-kinds';
 import { EventService } from './event.service';
+import { EventTypeService } from './event-type.service';
 
 export const NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH = 255;
 export const NEW_EVENT_SUGGESTION_TEXT_MAX_LENGTH = 2000;
@@ -162,7 +163,10 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
   readonly expiresAfterDays = NEW_EVENT_SUGGESTION_EXPIRY_DAYS;
   readonly pushCategory = 'events';
 
-  constructor(private readonly events: EventService) {}
+  constructor(
+    private readonly events: EventService,
+    private readonly eventTypes: EventTypeService,
+  ) {}
 
   describeBatch(count: number): string {
     return count === 1
@@ -278,6 +282,17 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
     }
   }
 
+  /** The id, unless the chapter's types were read and it isn't among them. */
+  private async typeStillThere(
+    id: string | null,
+    chapterId: string,
+  ): Promise<string | null> {
+    if (id === null) return null;
+    const types = await this.eventTypes.list(chapterId).catch(() => null);
+    if (types === null) return id;
+    return types.some((type) => type.id === id) ? id : null;
+  }
+
   async commit(input: {
     chapterId: string;
     userId: string;
@@ -295,6 +310,12 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
       return { resultId: made.id };
     }
     const event = readNewEventPayload(input.payload);
+    // The type Ask matched may have been deleted since: the event is made
+    // without it rather than refused until the card expires (#5148).
+    const typeId = await this.typeStillThere(
+      event.event_type_id,
+      input.chapterId,
+    );
     const created = await this.events.create({
       chapter_id: input.chapterId,
       created_by: input.userId,
@@ -305,9 +326,7 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
       end_time: event.end_time,
       is_mandatory: event.is_mandatory,
       ...(event.point_value === null ? {} : { point_value: event.point_value }),
-      ...(event.event_type_id === null
-        ? {}
-        : { event_type_id: event.event_type_id }),
+      ...(typeId === null ? {} : { event_type_id: typeId }),
       ...(event.recurrence_rule === null
         ? {}
         : { recurrence_rule: event.recurrence_rule }),
