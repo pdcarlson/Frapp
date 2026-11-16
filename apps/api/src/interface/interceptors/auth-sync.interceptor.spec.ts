@@ -95,6 +95,32 @@ describe('AuthSyncInterceptor', () => {
     });
   });
 
+  // A read `SupabaseAuthGuard` verified locally (#5043) has claims, not the
+  // Auth user, and claims can be an hour stale: it must not sync them.
+  it('syncs nothing for a session verified locally, but records its time zone', async () => {
+    const request = {
+      locallyVerifiedAuthId: auth('auth-123'),
+      appUser: { id: 'user-1' },
+      method: 'GET',
+      headers: { 'x-time-zone': 'America/Chicago' },
+    };
+    const ctx = {
+      switchToHttp: () => ({ getRequest: () => request }),
+    } as unknown as ExecutionContext;
+
+    const result$ = await interceptor.intercept(ctx, mockCallHandler);
+
+    expect(mockAuthService.syncUser).not.toHaveBeenCalled();
+    expect(request.appUser).toEqual({ id: 'user-1' });
+    expect(mockTimeZones.record).toHaveBeenCalledWith(
+      'user-1',
+      'America/Chicago',
+    );
+    await new Promise<void>((resolve) => {
+      result$.subscribe({ complete: resolve });
+    });
+  });
+
   it('should use empty string for email when supabaseUser email is null', async () => {
     mockAuthService.syncUser.mockResolvedValue({ id: 'user-2' });
 

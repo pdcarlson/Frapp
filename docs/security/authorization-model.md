@@ -22,7 +22,7 @@ guards compose, in this order:
 
 | Guard               | Proves                                                                                                                                                                  | Source                          |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| `SupabaseAuthGuard` | The bearer token is valid; `request.supabaseUser` is set                                                                                                                | `guards/supabase-auth.guard.ts` |
+| `SupabaseAuthGuard` | The bearer token is valid. Sets `request.supabaseUser` after asking Auth (`getUser`), or `request.locallyVerifiedAuthId` on a read it verified locally (`@VerifySessionLocally()`, #5043) | `guards/supabase-auth.guard.ts` |
 | `ChapterGuard`      | The caller **is a member of** the active chapter; sets `request.chapterId`, `request.member`, `request.appUser`. Also enforces subscription state and the module toggle | `guards/chapter.guard.ts`       |
 | `PermissionsGuard`  | The caller's resolved permission set satisfies `@RequirePermissions` / `@RequireAnyOfPermissions`                                                                       | `guards/permissions.guard.ts`   |
 
@@ -38,7 +38,7 @@ that bound for the session, membership and roles on 2026-11-13 (#3752; [`rbac.md
 
 | Lookup                                                   | Key                                | Where                                              |
 | -------------------------------------------------------- | ---------------------------------- | -------------------------------------------------- |
-| Session check (`auth.getUser`)                           | SHA-256 of the bearer token        | `SupabaseAuthGuard` (`sessionLookups`)             |
+| Session check (`auth.getUser`; a read marked `@VerifySessionLocally()` makes none) | SHA-256 of the bearer token | `SupabaseAuthGuard` (`sessionLookups`) |
 | `get_request_context` (user, chapter, membership, roles) | Auth user id and chapter id        | `ChapterGuard` prefetch (`requestContextLookups`)  |
 | The caller's `users` row id                              | Auth user id                       | `ChapterGuard`, and `SupabaseAuthGuard` on a route with `AuthSyncInterceptor` and no `ChapterGuard` (`appUserLookups`, any method) |
 | The chapter's subscription and module state              | Chapter id                         | `ChapterGuard` (`chapterLookups`)                  |
