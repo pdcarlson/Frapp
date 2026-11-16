@@ -50,52 +50,38 @@ const { permissions, search, currentChapter, ai } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@repo/hooks", () => ({
-  // A server with AI off: no AI row (#4308).
-  useAiConsent: () => ({ data: null }),
-  aiAvailableFrom: () => ai.available,
-  isFirstAiReadInFlight: () => false,
-  useCurrentChapter: () => ({
-    data: currentChapter.current,
-    isPending: false,
-    isLoading: false,
-    isError: false,
-    fetchStatus: "idle",
-    refetch: vi.fn(),
+vi.mock("@repo/hooks", async () =>
+  (await import("@/tests/settings-harness")).settingsHooks({
+    currentChapter: () => ({
+      data: currentChapter.current,
+      isPending: false,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "idle",
+      refetch: vi.fn(),
+    }),
+    permissions: () => permissions.current ?? [],
+    overrides: {
+      aiAvailableFrom: () => ai.available,
+      // A read that can still be in flight, or fail.
+      useMyPermissions: () => ({
+        data: permissions.current
+          ? { permissions: permissions.current }
+          : undefined,
+        isPending: !permissions.current && !permissions.failed,
+        isError: permissions.failed,
+        error: permissions.failed ? new Error("Network down") : null,
+        fetchStatus: "idle",
+        refetch: permissions.refetch,
+      }),
+      useRoleTiers: () => ({ data: [], isPending: false, isError: false }),
+      useMembers: () => ({ data: [], isPending: false, isError: false }),
+      useViewerUserId: () => null,
+      useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
+      useUpdateRoleTier: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    },
   }),
-  useMyPermissions: () => ({
-    data: permissions.current
-      ? { permissions: permissions.current }
-      : undefined,
-    isPending: !permissions.current && !permissions.failed,
-    isError: permissions.failed,
-    error: permissions.failed ? new Error("Network down") : null,
-    fetchStatus: "idle",
-    refetch: permissions.refetch,
-  }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  useSemesters: () => ({ data: [], isPending: false, isError: false }),
-  useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUploadChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useChannels: () => ({ data: [] }),
-  useOrgConfig: () => ({
-    data: { org_archetype: "ifc" },
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePendingConfigKeys: () => new Set<string>(),
-  useRoles: () => ({ data: [], isPending: false, isError: false }),
-  useRoleTiers: () => ({ data: [], isPending: false, isError: false }),
-  useMembers: () => ({ data: [], isPending: false, isError: false }),
-  useViewerUserId: () => null,
-  useUpdateRole: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateRoleTier: () => ({ mutateAsync: vi.fn(), isPending: false }),
-}));
+);
 
 vi.mock("@/lib/providers/network-provider", async (importOriginal) => {
   const actual =
@@ -110,22 +96,23 @@ vi.mock("@/lib/providers/network-provider", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chap-1" }),
-}));
+vi.mock("@/lib/stores/chapter-store", async () =>
+  (await import("@/tests/settings-harness")).chapterStore(),
+);
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(search.current),
-}));
+vi.mock("next/navigation", async () =>
+  (await import("@/tests/settings-harness")).navigation(
+    () => new URLSearchParams(search.current),
+  ),
+);
 
-vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
+vi.mock("@/components/shared/can", async () =>
+  (await import("@/tests/settings-harness")).canPassThrough(),
+);
 
-vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
-}));
+vi.mock("@/lib/hooks/use-toast", async () =>
+  (await import("@/tests/settings-harness")).toastStub(),
+);
 
 // The Roles tab's matrix has its own reads and its own spec; here it only has
 // to be the tab a deep link lands on.

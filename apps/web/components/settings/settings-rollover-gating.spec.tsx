@@ -22,58 +22,41 @@ const PERMISSIONS = [
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
 // `subscriptionWriteState` run for real, so this covers the whole path from the
 // wire format to the disabled control.
-vi.mock("@repo/hooks", () => ({
-  // A server with AI off: no AI row (#4308).
-  useAiConsent: () => ({ data: null }),
-  aiAvailableFrom: () => false,
-  isFirstAiReadInFlight: () => false,
-  useCurrentChapter: () => mockCurrentChapter(),
-  useMyPermissions: () => ({
-    data: { permissions: PERMISSIONS },
-    isPending: false,
-    isError: false,
+vi.mock("@repo/hooks", async () =>
+  (await import("@/tests/settings-harness")).settingsHooks({
+    currentChapter: () => mockCurrentChapter(),
+    permissions: () => PERMISSIONS,
+    overrides: {
+      useUpdateChapter: () => ({
+        mutateAsync: mockUpdateChapter,
+        isPending: false,
+      }),
+    },
   }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  useSemesters: () => ({ data: [], isPending: false, isError: false }),
-  useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUploadChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({
-    mutateAsync: mockUpdateChapter,
-    isPending: false,
-  }),
-  useChannels: () => ({ data: [] }),
-  useOrgConfig: () => ({
-    data: { org_archetype: "ifc" },
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePendingConfigKeys: () => new Set<string>(),
-}));
+);
 
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chap-1" }),
-}));
+vi.mock("@/lib/stores/chapter-store", async () =>
+  (await import("@/tests/settings-harness")).chapterStore(),
+);
 
-vi.mock("next/navigation", () => ({
-  // `tab=semester`: board `4d` gives Semester its own rail entry, so the
-  // rollover form no longer sits at the bottom of the default Chapter tab.
-  // Landing the page on the tab under test is also what the nav's own deep
-  // links do.
-  useSearchParams: () => new URLSearchParams("tab=semester"),
-}));
+// `tab=semester`: board `4d` gives Semester its own rail entry, so the
+// rollover form no longer sits at the bottom of the default Chapter tab.
+// Landing the page on the tab under test is also what the nav's own deep
+// links do.
+vi.mock("next/navigation", async () =>
+  (await import("@/tests/settings-harness")).navigation(
+    () => new URLSearchParams("tab=semester"),
+  ),
+);
 
 // The permission gate has its own tests; here it must not swallow the controls.
-vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
+vi.mock("@/components/shared/can", async () =>
+  (await import("@/tests/settings-harness")).canPassThrough(),
+);
 
-vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
-}));
+vi.mock("@/lib/hooks/use-toast", async () =>
+  (await import("@/tests/settings-harness")).toastStub(),
+);
 
 // Plan and billing has its own specs (`plan-panel.spec.tsx` pins that its
 // Stripe actions stay live on a lapsed chapter); here it only has to mount.
