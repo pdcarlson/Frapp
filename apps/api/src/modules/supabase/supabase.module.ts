@@ -1,5 +1,8 @@
 import { Global, Module } from '@nestjs/common';
-import { supabaseProvider, SUPABASE_CLIENT } from './supabase.provider';
+import {
+  supabaseProvider,
+  SUPABASE_CLIENT,
+} from '../../infrastructure/supabase/supabase.provider';
 
 @Global()
 @Module({

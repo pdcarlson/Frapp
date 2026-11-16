@@ -68,7 +68,7 @@ import { SupabaseChatNotificationPreferenceRepository } from '../../infrastructu
 import { CHAT_NOTIFICATION_PREFERENCE_REPOSITORY } from '#domain/repositories/chat-notification-preference.repository.interface';
 import { ChatMentionService } from '../../application/services/chat-mention.service';
 import { ChapterPresenceReader } from '../../application/services/chapter-presence-reader.service';
-import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
+import { ChannelCacheModule } from '../channel-cache/channel-cache.module';
 import { ChatBlockModule } from '../chat-block/chat-block.module';
 import { ChatScheduledMessageController } from '../../interface/controllers/chat-scheduled-message.controller';
 import { ChatScheduledMessageService } from '../../application/services/chat-scheduled-message.service';
