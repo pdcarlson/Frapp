@@ -6,7 +6,7 @@ import { ChapterModule } from '../chapter/chapter.module';
 import { AuthModule } from '../auth/auth.module';
 import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
 import { RbacModule } from '../rbac/rbac.module';
-import { ChannelCacheModule } from '../chat-push-worker/channel-cache.module';
+import { ChannelCacheModule } from '../channel-cache/channel-cache.module';
 import { STORAGE_PROVIDER } from '#domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
