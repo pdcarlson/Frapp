@@ -5549,7 +5549,7 @@ export interface paths {
         put?: never;
         /**
          * Propose fields for one of the caller's drafts from its redacted text
-         * @description Reads only the stored file's text layer, which for a bulk upload holds only the words outside its redaction boxes, never the file name. Sets only fields the draft does not have yet; the uploader checks every value before publishing.
+         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted` and is not read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.
          */
         post: operations["BackworkFillController_fill_v1"];
         delete?: never;
@@ -11102,10 +11102,10 @@ export interface components {
         };
         BackworkDraftFillResponseDto: {
             /**
-             * @description `filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read, likely a scan. The rest leave the draft unchanged: `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).
+             * @description `filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).
              * @enum {string}
              */
-            status: "filled" | "nothing_found" | "unreadable" | "refused" | "unavailable" | "invalid_output";
+            status: "filled" | "nothing_found" | "unreadable" | "not_redacted" | "refused" | "unavailable" | "invalid_output";
             /** @description The fields this fill set. Absent when the draft is unchanged. */
             filled?: string[];
             /** @description The draft as it now stands. `draft_fields.ai_filled` lists the fields an AI fill set that nobody has edited since. */

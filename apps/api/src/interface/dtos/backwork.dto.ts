@@ -415,12 +415,13 @@ export class BackworkDraftFillResponseDto {
       'filled',
       'nothing_found',
       'unreadable',
+      'not_redacted',
       'refused',
       'unavailable',
       'invalid_output',
     ],
     description:
-      '`filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read, likely a scan. The rest leave the draft unchanged: `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).',
+      '`filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).',
   })
   status: string;
 

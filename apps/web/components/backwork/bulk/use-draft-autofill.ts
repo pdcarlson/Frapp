@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { codeOf } from "@repo/api-sdk";
+import { codeOf, statusOf } from "@repo/api-sdk";
 import { useFillBackworkDraft, type BackworkDraft } from "@repo/hooks";
 
 /** Fills at once: enough to keep up with a queue, light on the spend caps. */
 const AT_ONCE = 2;
+
+/** How long to wait after the API says "too many requests". */
+const COOLDOWN_MS = 30_000;
 
 /**
  * Why the fill stopped for this visit to the page:
@@ -16,13 +19,15 @@ const AT_ONCE = 2;
 export type DraftAutofillStop = "consent" | "chapter_off" | "off";
 
 /**
- * Asks the upload AI to fill each draft that hasn't been filled yet
+ * Asks the upload AI to fill each redacted draft that hasn't been filled yet
  * (`draft_fields.ai_fill` unset), a couple at a time, as drafts appear
  * (#5233). New drafts from the queue above are picked up as they land in the
  * list, and drafts from an earlier visit are filled too.
  *
- * A draft is asked about once per visit: a refusal or a bad answer leaves it
- * as it was, for the member to fill by hand. A 403 or a 404 for AI stops
+ * A draft uploaded as-is is never sent: its stored file is the original, and
+ * the API refuses it too. A draft is asked about once per visit: a refusal or
+ * a bad answer leaves it as it was, for the member to fill by hand. A 429
+ * puts it back in line and pauses the fill for a moment. A 403 or a 404 for AI stops
  * every fill, since the next answer would be the same.
  */
 export function useDraftAutofill(drafts: readonly BackworkDraft[], enabled: boolean) {
@@ -31,13 +36,22 @@ export function useDraftAutofill(drafts: readonly BackworkDraft[], enabled: bool
   const tried = useRef(new Set<string>());
   const [running, setRunning] = useState<ReadonlySet<string>>(new Set());
   const [stopped, setStopped] = useState<DraftAutofillStop | null>(null);
+  const [coolingDown, setCoolingDown] = useState(false);
 
   useEffect(() => {
-    if (!enabled || stopped) return;
+    if (!coolingDown) return;
+    const timer = setTimeout(() => setCoolingDown(false), COOLDOWN_MS);
+    return () => clearTimeout(timer);
+  }, [coolingDown]);
+
+  useEffect(() => {
+    if (!enabled || stopped || coolingDown) return;
     const room = AT_ONCE - running.size;
     if (room <= 0) return;
     const next = drafts
-      .filter((draft) => !draft.draft_fields?.ai_fill && !tried.current.has(draft.id))
+      .filter(
+        (draft) => draft.is_redacted && !draft.draft_fields?.ai_fill && !tried.current.has(draft.id),
+      )
       .slice(0, room);
     if (next.length === 0) return;
 
@@ -51,6 +65,9 @@ export function useDraftAutofill(drafts: readonly BackworkDraft[], enabled: bool
           else if (code === "ai.chapter_off") setStopped("chapter_off");
           else if (code === "ai.not_available") {
             setStopped("off");
+          } else if (statusOf(error) === 429) {
+            tried.current.delete(draft.id);
+            setCoolingDown(true);
           }
           // Anything else (the draft was deleted, a network blip) leaves this
           // one alone and goes on with the rest.
@@ -63,7 +80,7 @@ export function useDraftAutofill(drafts: readonly BackworkDraft[], enabled: bool
           });
         });
     }
-  }, [drafts, enabled, stopped, running, mutate]);
+  }, [drafts, enabled, stopped, coolingDown, running, mutate]);
 
   return { running, stopped };
 }

@@ -311,9 +311,9 @@ The catalog names the models. This table is a dated observation, not a pin.
   - **Changed in #5233 by pdcarlson, 2026-11-16, Paul's decision** ("the AI for uploads and
     processing is different from Frapp AI itself"). The upload pipeline's AI may read one backwork
     file's redacted text, for its uploader, to propose the draft's fields: catalog task
-    `backwork.fill`, family `backwork`, behind the Frapp AI switch and the uploader's Yes. Only the
-    stored, flattened file's text layer is read, never the original or its name, and the uploader
-    checks every value before it is filed ([`backwork.md`](../../behavior/backwork.md) § AI Fill).
+    `backwork.fill`, family `backwork`, behind the Frapp AI switch and the uploader's Yes. Only a
+    redacted draft's stored, flattened file's text layer is read, never an as-is upload, an original
+    or a file name, and the uploader checks every value before it is filed ([`backwork.md`](../../behavior/backwork.md) § AI Fill).
     Ask still never reads a backwork file.
 
 **Not verified.** The session could not reach `ai.google.dev` or `docs.cloud.google.com`, so every

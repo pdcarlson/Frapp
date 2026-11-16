@@ -1508,12 +1508,33 @@ describe('BackworkService', () => {
       );
     });
 
-    it("reads a draft's stored file only when the draft is the caller's", async () => {
+    it("downloads a redacted draft's own stored file, and refuses one uploaded as-is", async () => {
+      const bytes = new Uint8Array([1]);
+      mockStorageProvider.downloadFile.mockResolvedValueOnce(bytes);
+      const redacted = draftRow({ id: 'a', is_redacted: true });
+      await expect(service.redactedDraftFile(redacted)).resolves.toBe(bytes);
+      expect(mockStorageProvider.downloadFile).toHaveBeenCalledWith(
+        'backwork',
+        redacted.storage_path,
+      );
+
+      mockStorageProvider.downloadFile.mockClear();
+      await expect(
+        service.redactedDraftFile(draftRow({ id: 'b', is_redacted: false })),
+      ).rejects.toThrow('uploaded as-is');
+      expect(mockStorageProvider.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it("finds only the caller's own draft", async () => {
       mockResourceRepo.findDraftsByIds.mockResolvedValueOnce([]);
       await expect(
-        service.draftWithFile('a', 'ch-1', 'user-1'),
+        service.findOwnDraft('a', 'ch-1', 'user-1'),
       ).resolves.toBeNull();
-      expect(mockStorageProvider.downloadFile).not.toHaveBeenCalled();
+      expect(mockResourceRepo.findDraftsByIds).toHaveBeenCalledWith(
+        ['a'],
+        'ch-1',
+        'user-1',
+      );
     });
 
     it('publishes a draft the way a confirm files one', async () => {

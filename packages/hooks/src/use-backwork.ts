@@ -311,12 +311,7 @@ export type BackworkDraft = {
 
 /** How one AI fill of a draft ended (`POST /v1/backwork/drafts/{id}/fill`). */
 export type BackworkDraftFillStatus =
-  | "filled"
-  | "nothing_found"
-  | "unreadable"
-  | "refused"
-  | "unavailable"
-  | "invalid_output";
+  components["schemas"]["BackworkDraftFillResponseDto"]["status"];
 
 /**
  * The caller's own backwork drafts in the active chapter, in upload order

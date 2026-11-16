@@ -24,7 +24,6 @@ import {
 } from '../decorators/current-user.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import { BackworkDraftFillResponseDto } from '../dtos/backwork.dto';
 import { AiEnabledGuard } from '../guards/ai-enabled.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -52,12 +51,11 @@ export class BackworkFillController {
 
   @Post('drafts/:id/fill')
   @HttpCode(200)
-  @ThrottleFanOutWrite()
   @ApiOperation({
     summary:
       "Propose fields for one of the caller's drafts from its redacted text",
     description:
-      "Reads only the stored file's text layer, which for a bulk upload holds only the words outside its redaction boxes, never the file name. Sets only fields the draft does not have yet; the uploader checks every value before publishing.",
+      "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted` and is not read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.",
   })
   @ApiOkResponse({ type: BackworkDraftFillResponseDto })
   @ApiForbiddenResponse({

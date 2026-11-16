@@ -200,6 +200,7 @@ How the first two gates are kept (#4308, #4790):
   The AI gateway asks before it sends anything: the call's family must be switched on in the chapter the call is made in, and the member it acts for must have said yes on the current sheet.
   Nothing is cached, so a switch turned off or an answer changed to No stops the very next call.
   Indexing and searching the chapter's sources sit behind the Ask switch, since they exist for Ask.
+  So does the backwork upload fill (family `backwork`, #5233, 2026-11-16), with the uploader's own Yes: [`backwork.md`](backwork.md) § AI Fill.
   Indexing the chapter's records needs only that switch, not a member's Yes: they are the chapter's, whoever uploaded or posted them, so a document from an officer who said No is still indexed.
   A member's own question is their own use, so it is embedded for a search only after they said yes.
   Chat as a source is not a call's switch: it decides which messages the corpus reads and whether a summary may read a channel ([Catch me up](#catch-me-up), 2026-11-12), and with it off no member's messages are read.

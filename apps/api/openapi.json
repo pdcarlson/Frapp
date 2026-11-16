@@ -18568,7 +18568,7 @@
     },
     "/v1/backwork/drafts/{id}/fill": {
       "post": {
-        "description": "Reads only the stored file's text layer, which for a bulk upload holds only the words outside its redaction boxes, never the file name. Sets only fields the draft does not have yet; the uploader checks every value before publishing.",
+        "description": "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted` and is not read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.",
         "operationId": "BackworkFillController_fill_v1",
         "parameters": [
           {
@@ -34529,11 +34529,12 @@
               "filled",
               "nothing_found",
               "unreadable",
+              "not_redacted",
               "refused",
               "unavailable",
               "invalid_output"
             ],
-            "description": "`filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read, likely a scan. The rest leave the draft unchanged: `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again)."
+            "description": "`filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again)."
           },
           "filled": {
             "description": "The fields this fill set. Absent when the draft is unchanged.",

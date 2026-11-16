@@ -35,22 +35,23 @@ export const BACKWORK_FILL_MAX_CHARS = 12_000;
 export const BACKWORK_FILL_MIN_CHARS = 40;
 
 const MAX_LISTED = 300;
-const MAX_TAGS = 8;
 const YEAR_MIN = 1950;
 
-/** The draft fields a fill may set, in the review table's order. */
+/**
+ * The draft fields a fill may set: exactly the review table's columns, so
+ * the uploader sees and checks every value it sets. A course's name and the
+ * tags have no column there, so the fill leaves them alone.
+ */
 export const BACKWORK_FILL_KEYS = [
   'title',
   'department_code',
   'course_number',
-  'course_name',
   'professor_name',
   'year',
   'semester',
   'assignment_type',
   'assignment_number',
   'document_variant',
-  'tags',
 ] as const satisfies ReadonlyArray<keyof BackworkDraftFields>;
 
 export type BackworkFillKey = (typeof BACKWORK_FILL_KEYS)[number];
@@ -61,14 +62,12 @@ export const BackworkFillOutputSchema = z.object({
   title: text(120),
   department_code: text(20),
   course_number: text(20),
-  course_name: text(255),
   professor_name: text(255),
   year: z.number().int().nullable(),
   semester: z.enum(SEMESTERS).nullable(),
   assignment_type: z.enum(ASSIGNMENT_TYPES).nullable(),
   assignment_number: z.number().int().nullable(),
   document_variant: z.enum(DOCUMENT_VARIANTS).nullable(),
-  tags: z.array(z.string().max(40)).max(MAX_TAGS),
 });
 
 export type BackworkFillOutput = z.infer<typeof BackworkFillOutputSchema>;
@@ -143,13 +142,11 @@ export function backworkFillSystem(
     '',
     'Rules:',
     '- department_code and course_number: the course the file is for, such as "CHEM" and "1010". When it is one of the chapter courses listed below, use that exact code and number.',
-    '- course_name: the course title, only when the text states it.',
     '- professor_name: the instructor as the text names them. When it is one of the chapter professors listed below, use that exact name. Never a student.',
     `- year and semester: the term the file is from. Year between ${YEAR_MIN} and ${currentYear}. A term like "Sp24" is Spring 2024.`,
     '- assignment_type and assignment_number: what the file is, such as Exam 2 or Homework 5. "Prelim" is an Exam.',
     '- document_variant: "Answer Key" for a solutions or key file, "Blank Copy" for an unfilled exam, "Student Copy" for one a student answered (handwritten or typed answers, a score). Null when unclear.',
     '- title: a short label a member would recognize, such as "CHEM 1010 Exam 2 (Spring 2024)". No names of people.',
-    `- tags: up to ${MAX_TAGS} short topic words from the text, such as "stoichiometry". No names of people.`,
     '',
     'Chapter departments:',
     listed(departments),
@@ -182,7 +179,8 @@ function clean(value: string | null): string | null {
   return trimmed === '' ? null : trimmed;
 }
 
-function hasValue(value: unknown): boolean {
+/** Whether a draft field holds something: not absent, blank or empty. */
+export function hasValue(value: unknown): boolean {
   if (value === undefined || value === null) return false;
   if (typeof value === 'string') return value.trim() !== '';
   if (Array.isArray(value)) return value.length > 0;
@@ -210,32 +208,46 @@ export function checkBackworkFill(
   const title = clean(output.title);
   if (title) proposed.title = title;
 
+  // Department and course number are one course: half of the model's
+  // course is never paired with half of the uploader's. When the draft
+  // already has one of them and the model read the other part of a
+  // different course, neither is proposed.
   const code = clean(output.department_code);
-  let departmentId: string | null = null;
-  if (code) {
-    const key = departmentCodeKey(code);
-    const known = taxonomy.departments.find(
-      (department) => departmentCodeKey(department.code) === key,
-    );
-    departmentId = known?.id ?? null;
-    proposed.department_code = known?.code ?? key;
-  }
-
   const number = clean(output.course_number);
-  if (number) proposed.course_number = number;
-
-  const courseName = clean(output.course_name);
-  const knownCourse =
-    departmentId && number
-      ? taxonomy.courses.find(
-          (course) =>
-            course.department_id === departmentId &&
-            course.course_number.toUpperCase() === number.toUpperCase(),
-        )
-      : undefined;
-  if (knownCourse) proposed.course_number = knownCourse.course_number;
-  // A course that already has a name keeps it; the fill never renames one.
-  if (courseName && !knownCourse?.name) proposed.course_name = courseName;
+  const codeKey = code ? departmentCodeKey(code) : null;
+  const draftCode =
+    typeof input.draft.department_code === 'string' &&
+    input.draft.department_code.trim() !== ''
+      ? departmentCodeKey(input.draft.department_code)
+      : null;
+  const draftNumber =
+    typeof input.draft.course_number === 'string' &&
+    input.draft.course_number.trim() !== ''
+      ? input.draft.course_number.trim().toUpperCase()
+      : null;
+  const sameCourse =
+    (draftCode === null || codeKey === null || draftCode === codeKey) &&
+    (draftNumber === null ||
+      number === null ||
+      draftNumber === number.toUpperCase());
+  if (sameCourse) {
+    if (codeKey) {
+      const known = taxonomy.departments.find(
+        (department) => departmentCodeKey(department.code) === codeKey,
+      );
+      proposed.department_code = known?.code ?? codeKey;
+      const knownCourse =
+        known && number
+          ? taxonomy.courses.find(
+              (course) =>
+                course.department_id === known.id &&
+                course.course_number.toUpperCase() === number.toUpperCase(),
+            )
+          : undefined;
+      if (knownCourse) proposed.course_number = knownCourse.course_number;
+    }
+    if (number && !proposed.course_number) proposed.course_number = number;
+  }
 
   const professor = clean(output.professor_name);
   if (professor) {
@@ -268,15 +280,6 @@ export function checkBackworkFill(
     proposed.document_variant = output.document_variant;
   }
 
-  const tags = [
-    ...new Set(
-      output.tags
-        .map((tag) => clean(tag)?.toLowerCase() ?? '')
-        .filter((tag) => tag !== ''),
-    ),
-  ].slice(0, MAX_TAGS);
-  if (tags.length > 0) proposed.tags = tags;
-
   const fields: BackworkDraftFields = {};
   const filled: BackworkFillKey[] = [];
   for (const key of BACKWORK_FILL_KEYS) {
@@ -285,4 +288,11 @@ export function checkBackworkFill(
     filled.push(key);
   }
   return { fields, filled };
+}
+
+/** Whether a fill has anything left to set on this draft. */
+export function backworkDraftHasEmptyFields(
+  draft: BackworkDraftFields,
+): boolean {
+  return BACKWORK_FILL_KEYS.some((key) => !hasValue(draft[key]));
 }

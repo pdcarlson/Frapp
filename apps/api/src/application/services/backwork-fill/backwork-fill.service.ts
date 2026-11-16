@@ -10,6 +10,7 @@ import {
   BackworkFillOutputSchema,
   backworkFillMessages,
   backworkFillSystem,
+  backworkDraftHasEmptyFields,
   backworkFillText,
   checkBackworkFill,
 } from '#domain/utils/backwork-fill';
@@ -25,6 +26,8 @@ const TASK = 'backwork.fill';
  *
  * - `filled`, `nothing_found`, `unreadable`: the draft says so too
  *   (`draft_fields.ai_fill`), and `draft` is the draft as it now stands.
+ * - `not_redacted`: the draft was uploaded as-is, so its stored file is the
+ *   original, which no model may read; unchanged, and no call is made.
  * - `refused`: the provider declined; the draft is unchanged.
  * - `unavailable`: AI is off here or a spend cap is reached; unchanged.
  * - `invalid_output`: the model's answer did not fit; unchanged, try again.
@@ -36,7 +39,7 @@ export type BackworkFillResult =
       draft: BackworkResource;
     }
   | {
-      status: 'refused' | 'unavailable' | 'invalid_output';
+      status: 'not_redacted' | 'refused' | 'unavailable' | 'invalid_output';
       reason?: string;
     };
 
@@ -49,10 +52,12 @@ export type BackworkFillResult =
  * Steps, in order:
  * 1. Consent: the chapter's Frapp AI switch and the uploader's own Yes,
  *    checked before the file is read, so a member who said No costs nothing.
- * 2. The draft and its stored file: the caller's own draft only.
- * 3. The file's text layer. A flattened bulk upload keeps only the words
- *    outside its redaction boxes; a file with too little text is a scan, and
- *    is marked `unreadable` without a model call.
+ * 2. The draft: the caller's own only. One uploaded as-is is refused, since
+ *    its stored file is the original; one with every field already set is
+ *    marked `nothing_found` without reading its file.
+ * 3. The redacted file's text layer, which holds only the words outside its
+ *    redaction boxes. A file with too little text (a scan) or too large to
+ *    open is marked `unreadable` without a model call.
  * 4. One structured call, given the chapter's departments, courses and
  *    professors so it can use their spelling.
  * 5. The answer is checked (`checkBackworkFill`) and put on the draft, never
@@ -92,11 +97,16 @@ export class BackworkFillService {
     if (!decision.allowed) throw aiConsentRefusal(decision.reason);
 
     // 2.
-    const found = await this.backwork.draftWithFile(draftId, chapterId, userId);
-    if (!found) throw new NotFoundException('Draft not found');
-    const { draft, bytes } = found;
+    const draft = await this.backwork.findOwnDraft(draftId, chapterId, userId);
+    if (!draft) throw new NotFoundException('Draft not found');
+    if (!draft.is_redacted) return { status: 'not_redacted' };
+    if (!backworkDraftHasEmptyFields(draft.draft_fields ?? {})) {
+      return this.record(chapterId, userId, draftId, 'nothing_found', {}, []);
+    }
 
     // 3.
+    const bytes = await this.backwork.redactedDraftFile(draft);
+    if (!bytes) throw new NotFoundException('Draft not found');
     const extracted = await this.extractor.extract({
       bytes,
       contentType: 'application/pdf',

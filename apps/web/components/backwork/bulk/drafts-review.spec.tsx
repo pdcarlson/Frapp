@@ -252,6 +252,42 @@ describe("Backwork drafts AI fill (#5233)", () => {
     expect(state.fill).toHaveBeenCalledTimes(2);
   });
 
+  it("says so when the president has Frapp AI off, and stops asking", async () => {
+    state.fill.mockRejectedValue({ statusCode: 403, code: "ai.chapter_off" });
+    state.drafts = [draft("a", {}), draft("b", {}), draft("c", {})];
+    render(<DraftsReview />);
+    expect(
+      await screen.findByText("Frapp AI is off for your chapter, so drafts aren't filled in for you."),
+    ).toBeInTheDocument();
+    expect(state.fill).toHaveBeenCalledTimes(2);
+  });
+
+  it("never sends a draft uploaded as-is", async () => {
+    state.drafts = [draft("a", {}, false), draft("b", {})];
+    render(<DraftsReview />);
+    await waitFor(() => expect(state.fill).toHaveBeenCalledWith("b"));
+    expect(state.fill).not.toHaveBeenCalledWith("a");
+  });
+
+  it("puts a draft back in line after a 429, and pauses before asking again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      state.fill
+        .mockRejectedValueOnce({ statusCode: 429 })
+        .mockResolvedValue({ status: "nothing_found", draft: null });
+      state.drafts = [draft("a", {})];
+      render(<DraftsReview />);
+      await waitFor(() => expect(state.fill).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(state.fill).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(25_000);
+      await waitFor(() => expect(state.fill).toHaveBeenCalledTimes(2));
+      expect(state.fill.mock.calls.map(([id]) => id)).toEqual(["a", "a"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("says nothing when AI is off on the server", async () => {
     state.fill.mockRejectedValue({ statusCode: 404, code: "ai.not_available" });
     state.drafts = [draft("a", {}), draft("b", {}), draft("c", {})];

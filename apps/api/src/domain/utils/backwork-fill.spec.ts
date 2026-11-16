@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   BACKWORK_FILL_MAX_CHARS,
   BackworkFillOutputSchema,
+  backworkDraftHasEmptyFields,
   backworkFillSystem,
   backworkFillText,
   checkBackworkFill,
@@ -27,14 +28,12 @@ const EMPTY: BackworkFillOutput = {
   title: null,
   department_code: null,
   course_number: null,
-  course_name: null,
   professor_name: null,
   year: null,
   semester: null,
   assignment_type: null,
   assignment_number: null,
   document_variant: null,
-  tags: [],
 };
 
 function check(
@@ -104,7 +103,6 @@ describe('checkBackworkFill', () => {
     const { fields, filled } = check({
       department_code: 'chem',
       course_number: '1010',
-      course_name: 'Gen Chem',
       professor_name: 'dr. alvarez',
     });
     expect(fields).toEqual({
@@ -112,21 +110,39 @@ describe('checkBackworkFill', () => {
       course_number: '1010',
       professor_name: 'Dr. Alvarez',
     });
-    // The course already has a name; the fill never renames one.
-    expect(filled).not.toContain('course_name');
+    expect(filled).toEqual([
+      'department_code',
+      'course_number',
+      'professor_name',
+    ]);
   });
 
-  it('proposes a name for a known course that has none, and new codes upper-cased', () => {
-    expect(
-      check({
-        department_code: 'chem',
-        course_number: '2080',
-        course_name: 'Organic',
-      }).fields.course_name,
-    ).toBe('Organic');
+  it('upper-cases a department code the chapter does not have yet', () => {
     expect(check({ department_code: ' bio ' }).fields.department_code).toBe(
       'BIO',
     );
+  });
+
+  it("never pairs the model's course number with the uploader's other department", () => {
+    expect(
+      check(
+        { department_code: 'MATH', course_number: '1010', year: 2024 },
+        { department_code: 'chem' },
+      ).fields,
+    ).toEqual({ year: 2024 });
+    expect(
+      check(
+        { department_code: 'MATH', course_number: '1010' },
+        { course_number: '2080' },
+      ).fields,
+    ).toEqual({});
+    // The same course the uploader started: the missing half is filled.
+    expect(
+      check(
+        { department_code: 'CHEM', course_number: '1010' },
+        { department_code: 'chem' },
+      ).fields,
+    ).toEqual({ course_number: '1010' });
   });
 
   it('never replaces a field the draft already has', () => {
@@ -135,12 +151,11 @@ describe('checkBackworkFill', () => {
         title: 'CHEM 1010 Exam 2',
         year: 2024,
         semester: 'Spring',
-        tags: ['acids'],
       },
       { title: 'My title', year: 2023 },
     );
-    expect(fields).toEqual({ semester: 'Spring', tags: ['acids'] });
-    expect(filled).toEqual(['semester', 'tags']);
+    expect(fields).toEqual({ semester: 'Spring' });
+    expect(filled).toEqual(['semester']);
   });
 
   it('fills a field the draft has only as a blank', () => {
@@ -165,13 +180,26 @@ describe('checkBackworkFill', () => {
     ).toEqual({ document_variant: 'Student Copy' });
   });
 
-  it('lower-cases and de-duplicates tags', () => {
-    expect(
-      check({ tags: ['Acids', 'acids ', '', 'Bases'] }).fields.tags,
-    ).toEqual(['acids', 'bases']);
-  });
-
   it('proposes nothing from an empty answer', () => {
     expect(check({})).toEqual({ fields: {}, filled: [] });
+  });
+});
+
+describe('backworkDraftHasEmptyFields', () => {
+  it('is false only when every column the fill sets has a value', () => {
+    const full = {
+      title: 't',
+      department_code: 'CHEM',
+      course_number: '1010',
+      professor_name: 'A',
+      year: 2024,
+      semester: 'Spring' as const,
+      assignment_type: 'Exam' as const,
+      assignment_number: 2,
+      document_variant: 'Blank Copy' as const,
+    };
+    expect(backworkDraftHasEmptyFields(full)).toBe(false);
+    expect(backworkDraftHasEmptyFields({ ...full, title: ' ' })).toBe(true);
+    expect(backworkDraftHasEmptyFields({})).toBe(true);
   });
 });

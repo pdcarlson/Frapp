@@ -52,6 +52,7 @@ import {
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { safeObjectFilename, storedFilename } from '#domain/constants/storage';
+import { hasValue } from '#domain/utils/backwork-fill';
 import {
   applyNicknameEdit,
   courseEditRefusal,
@@ -364,28 +365,35 @@ export class BackworkService {
     return updated;
   }
 
-  /**
-   * One of the caller's drafts and its stored file, for the AI fill (#5233).
-   * The bytes are the file as stored: for a bulk upload, the flattened copy
-   * whose text layer holds only the words outside the redaction boxes. Null
-   * when the draft is not the caller's, or its file is gone.
-   */
-  async draftWithFile(
+  /** One of the caller's drafts, or null when it isn't theirs or is gone. */
+  async findOwnDraft(
     id: string,
     chapterId: string,
     uploaderId: string,
-  ): Promise<{ draft: BackworkResource; bytes: Uint8Array } | null> {
+  ): Promise<BackworkResource | null> {
     const [draft] = await this.resourceRepo.findDraftsByIds(
       [id],
       chapterId,
       uploaderId,
     );
-    if (!draft) return null;
-    const bytes = await this.storageProvider.downloadFile(
+    return draft ?? null;
+  }
+
+  /**
+   * A redacted draft's stored file, for the AI fill (#5233): the flattened
+   * copy, whose text layer holds only the words outside its redaction boxes.
+   * Refuses a draft uploaded as-is, whose stored file is the original, so
+   * no caller can hand an unredacted file to a model by mistake. Null when
+   * the file is gone.
+   */
+  async redactedDraftFile(draft: BackworkResource): Promise<Uint8Array | null> {
+    if (!draft.is_redacted) {
+      throw new Error(`Backwork draft ${draft.id} was uploaded as-is`);
+    }
+    return this.storageProvider.downloadFile(
       BACKWORK_BUCKET,
       draft.storage_path,
     );
-    return bytes ? { draft, bytes } : null;
   }
 
   /**
@@ -412,13 +420,7 @@ export class BackworkService {
     const next: Record<string, unknown> = { ...current };
     const filled = new Set(current.ai_filled ?? []);
     for (const [key, value] of Object.entries(fill.fields)) {
-      const existing = (current as Record<string, unknown>)[key];
-      const empty =
-        existing === undefined ||
-        existing === null ||
-        (typeof existing === 'string' && existing.trim() === '') ||
-        (Array.isArray(existing) && existing.length === 0);
-      if (!empty) continue;
+      if (hasValue((current as Record<string, unknown>)[key])) continue;
       next[key] = value;
       filled.add(key);
     }

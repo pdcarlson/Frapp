@@ -11,12 +11,17 @@ const USER = 'user-1';
 const DRAFT = 'draft-1';
 const NOW = new Date('2026-11-16T12:00:00Z');
 
-function draft(fields: Record<string, unknown> = {}): BackworkResource {
+const STORED_BYTES = new Uint8Array([37, 80, 68, 70]);
+
+function draft(
+  fields: Record<string, unknown> = {},
+  isRedacted = true,
+): BackworkResource {
   return {
     id: DRAFT,
     chapter_id: CHAPTER,
     uploader_id: USER,
-    is_redacted: true,
+    is_redacted: isRedacted,
     storage_path: `${CHAPTER}/backwork/file.pdf`,
     draft_fields: fields,
   } as unknown as BackworkResource;
@@ -30,17 +35,19 @@ function setup(
     allowed?: boolean;
     text?: string;
     found?: boolean;
+    isRedacted?: boolean;
     generated?: unknown;
     stored?: Record<string, unknown>;
   } = {},
 ) {
   const stored = options.stored ?? {};
   const backwork = {
-    draftWithFile: jest.fn(async () =>
+    findOwnDraft: jest.fn(async () =>
       options.found === false
         ? null
-        : { draft: draft(stored), bytes: new Uint8Array([1, 2, 3]) },
+        : draft(stored, options.isRedacted ?? true),
     ),
+    redactedDraftFile: jest.fn(async () => STORED_BYTES),
     getDepartments: jest.fn(async () => [
       { id: 'd1', code: 'CHEM', name: 'Chemistry' },
     ]),
@@ -72,14 +79,12 @@ function setup(
             title: 'CHEM 1010 Exam 2 (Spring 2024)',
             department_code: 'chem',
             course_number: '1010',
-            course_name: null,
             professor_name: 'alvarez',
             year: 2024,
             semester: 'Spring',
             assignment_type: 'Exam',
             assignment_number: 2,
             document_variant: null,
-            tags: [],
           },
           usage: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0 },
         },
@@ -142,17 +147,51 @@ describe('BackworkFillService', () => {
     });
   });
 
-  it('sends the model only the stored file text: never the file name or the draft title', async () => {
-    const { run, gateway, extractor } = setup({
+  it("reads the redacted draft's stored bytes, and sends the model only their text: never the file name or the draft title", async () => {
+    const { run, gateway, extractor, backwork } = setup({
       stored: { title: 'Jane Doe exam 2' },
     });
     await run();
+    expect(backwork.redactedDraftFile).toHaveBeenCalledWith(
+      expect.objectContaining({ id: DRAFT, is_redacted: true }),
+    );
     expect(extractor.extract).toHaveBeenCalledWith(
-      expect.objectContaining({ fileName: 'backwork.pdf' }),
+      expect.objectContaining({
+        bytes: STORED_BYTES,
+        fileName: 'backwork.pdf',
+      }),
     );
     const sent = JSON.stringify(gateway.generateObject.mock.calls[0][1]);
     expect(sent).not.toContain('Jane Doe');
     expect(sent).not.toContain('file.pdf');
+  });
+
+  it('never reads a draft uploaded as-is, whose stored file is the original', async () => {
+    const { run, gateway, extractor, backwork } = setup({ isRedacted: false });
+    await expect(run()).resolves.toEqual({ status: 'not_redacted' });
+    expect(backwork.redactedDraftFile).not.toHaveBeenCalled();
+    expect(extractor.extract).not.toHaveBeenCalled();
+    expect(gateway.generateObject).not.toHaveBeenCalled();
+    expect(backwork.applyAiFill).not.toHaveBeenCalled();
+  });
+
+  it('marks a draft with every field set without reading its file', async () => {
+    const { run, gateway, backwork } = setup({
+      stored: {
+        title: 't',
+        department_code: 'CHEM',
+        course_number: '1010',
+        professor_name: 'A',
+        year: 2024,
+        semester: 'Spring',
+        assignment_type: 'Exam',
+        assignment_number: 2,
+        document_variant: 'Blank Copy',
+      },
+    });
+    await expect(run()).resolves.toMatchObject({ status: 'nothing_found' });
+    expect(backwork.redactedDraftFile).not.toHaveBeenCalled();
+    expect(gateway.generateObject).not.toHaveBeenCalled();
   });
 
   it('marks a file with no readable text without calling the model', async () => {
@@ -169,7 +208,7 @@ describe('BackworkFillService', () => {
   it('refuses before reading the file when the member has not said yes', async () => {
     const { run, backwork } = setup({ allowed: false });
     await expect(run()).rejects.toBeInstanceOf(ForbiddenException);
-    expect(backwork.draftWithFile).not.toHaveBeenCalled();
+    expect(backwork.findOwnDraft).not.toHaveBeenCalled();
   });
 
   it("is a 404 for a draft that isn't the caller's", async () => {
