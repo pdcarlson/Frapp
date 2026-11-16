@@ -1,1 +1,1 @@
-In a chat, Members, a member's profile and Pinned and Saved open again after you switch tabs or channels, instead of sometimes showing nothing.
+In a chat, Members, a member's profile, Pinned and Saved, and the + menu and its forms open again after you leave a chat or switch channels, instead of sometimes showing nothing.

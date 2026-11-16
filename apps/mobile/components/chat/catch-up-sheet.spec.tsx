@@ -334,6 +334,13 @@ describe("Catch me up", () => {
     expect(modal.present).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves a sheet swiped away alone on the next channel switch (#5059)", async () => {
+    const tree = await start(render(), CHANNEL);
+    act(() => sheet(tree).props.onDismiss());
+    act(() => tree.update(screen("c2")));
+    expect(modal.dismiss).not.toHaveBeenCalled();
+  });
+
   it("drops the summary, and any request, when the channel changes under it", async () => {
     const tree = await start(render(), CHANNEL);
     show(tree, done());

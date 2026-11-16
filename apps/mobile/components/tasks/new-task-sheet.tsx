@@ -46,7 +46,7 @@ import {
   sheetFieldStyles,
   TallSheetHeader,
   useSheetBackgroundStyle,
-  useSheetVisit,
+  useGuardedSheetRef,
   useTallSheetProps,
   SheetBackToClose,
   useSheetClose,
@@ -355,8 +355,11 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const pickerRef = useRef<BottomSheetModal>(null);
     const closeSheet = useSheetClose(ref);
     const closePicker = useSheetClose(pickerRef);
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
 
     const viewerUserId = useViewerUserId();
     const rosterQuery = useChapterRoster();
@@ -912,7 +915,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     return (
       <>
         <BottomSheetModal
-          ref={ref}
+          ref={modalRef}
           stackBehavior={SHEET_STACK_BEHAVIOR}
           enableDynamicSizing
           keyboardBehavior="interactive"

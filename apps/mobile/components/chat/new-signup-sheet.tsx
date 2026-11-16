@@ -38,7 +38,7 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  useGuardedSheetRef,
 } from "@/components/sheet-scaffold";
 import { IconButton } from "@/components/icon-button";
 import { Segmented } from "@/components/segmented";
@@ -79,8 +79,11 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const closeSheet = useSheetClose(ref);
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
 
     const [draft, setDraft] = useState<SignupDraft>(emptySignupDraft);
     const [focused, setFocused] = useState<Focus>(null);
@@ -161,7 +164,7 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
 
     return (
       <BottomSheetModal
-        ref={ref}
+        ref={modalRef}
         stackBehavior={SHEET_STACK_BEHAVIOR}
         enableDynamicSizing
         keyboardBehavior="interactive"
