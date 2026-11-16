@@ -49,6 +49,7 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { LogHoursSheet } from "./log-hours-sheet";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 const PHOTO = {
   uri: "file:///receipt.jpg",
@@ -159,7 +160,10 @@ describe("Log hours from a chat's + (#3865)", () => {
   it("closes on a lost answer, which may have written, without the success haptic", async () => {
     const lost = { ok: true, unconfirmed: true, warning: "Couldn't confirm." };
     const onPosted = vi.fn();
-    const tree = render(vi.fn(async () => lost), onPosted);
+    const tree = render(
+      vi.fn(async () => lost),
+      onPosted,
+    );
     fill(tree);
     await act(async () => submitButton(tree).props.onPress());
     expect(dismiss).toHaveBeenCalledTimes(1);
@@ -192,5 +196,15 @@ describe("Log hours from a chat's + (#3865)", () => {
     expect(screenText(tree)).toContain(RECEIPT_REQUIRED_COPY);
     expect(onPosted).not.toHaveBeenCalled();
     act(() => tree.unmount());
+  });
+});
+
+describe("LogHoursSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <LogHoursSheet ref={ref} now={new Date("2026-09-27T12:00:00Z")} />
+      </FrappThemeProvider>
+    ));
   });
 });

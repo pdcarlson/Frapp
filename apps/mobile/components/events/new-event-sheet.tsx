@@ -8,11 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
@@ -58,7 +54,7 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  useGuardedSheetRef,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { FilterChips } from "@/components/filter-chips";
@@ -98,6 +94,7 @@ import {
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { useNotesLabel } from "@/lib/minutes/meetings-on";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The "New event" bottom sheet: an officer's quick create on the phone.
@@ -300,8 +297,11 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const closeSheet = useSheetClose(ref);
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
     const createEvent = useCreateEvent();
     const updateEvent = useUpdateEvent();
     const deleteEvent = useDeleteEvent();
@@ -693,7 +693,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     return (
       <>
         <BottomSheetModal
-          ref={ref}
+          ref={modalRef}
           stackBehavior={SHEET_STACK_BEHAVIOR}
           enableDynamicSizing
           keyboardBehavior="interactive"

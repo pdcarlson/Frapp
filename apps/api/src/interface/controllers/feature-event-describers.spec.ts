@@ -660,6 +660,7 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
           has_subtasks: false,
           proof_kind: 'none',
           posted_to_chat: true,
+          repeats: false,
         },
       ],
       [
@@ -673,6 +674,7 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
             due_at: '2026-11-14T22:00:00.000Z',
             photos: [{ storage_path: 'chapters/c1/tasks/p1/mess.jpg' }],
             proof_kind: 'photo',
+            series_id: 's1',
           },
         },
         {
@@ -683,6 +685,7 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
           has_subtasks: true,
           proof_kind: 'photo',
           posted_to_chat: false,
+          repeats: true,
         },
       ],
     ],

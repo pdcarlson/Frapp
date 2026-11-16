@@ -2531,6 +2531,84 @@ describe('AskService', () => {
       });
     });
 
+    describe("one sentence in Frapp's own words (Paul, 2026-11-16)", () => {
+      /** A turn whose model wrote `text` and nothing a source backs. */
+      const uncited = (
+        text: string,
+        over: Partial<
+          Extract<AgentLoopOutcome['result'], { status: 'ok' }>
+        > = {},
+      ): AgentLoopOutcome => {
+        const base = outcome();
+        return {
+          ...base,
+          result:
+            base.result.status === 'ok'
+              ? { ...base.result, text, citations: [], ...over }
+              : base.result,
+        };
+      };
+      const shown = async (given: AgentLoopOutcome) => {
+        const { service } = build({
+          agentTools: [agentTool()],
+          loop: [{ type: 'end', outcome: given }],
+        });
+        return (await run(service)).answer;
+      };
+
+      it('shows a short reply with no source as its own words', async () => {
+        const answer = await shown(
+          uncited("I don't give out phone numbers. Message Caleb in Frapp."),
+        );
+        expect(answer).toMatchObject({
+          status: 'answered',
+          own_words: true,
+          text: "I don't give out phone numbers. Message Caleb in Frapp.",
+          citations: [],
+          sources: [],
+        });
+      });
+
+      it('links a member it names, as any answer does', async () => {
+        const base = uncited(
+          'Which one do you mean: @Jordan Lee or @Jordan Park?',
+        );
+        const answer = await shown({
+          ...base,
+          entities: [
+            { type: 'member', id: 'u1', name: 'Jordan Lee' },
+            { type: 'member', id: 'u2', name: 'Jordan Park' },
+          ],
+        });
+        expect(answer.own_words).toBe(true);
+        expect(answer.entities?.map((entity) => entity.id)).toEqual([
+          'u1',
+          'u2',
+        ]);
+      });
+
+      it.each([
+        [
+          'a quote was tried and dropped',
+          uncited('Dues are $450.', { droppedCitations: 1 }),
+        ],
+        ['it is a long answer', uncited('Dues are due on Friday. '.repeat(30))],
+        ['it is a list', uncited('- Dues are $450\n- Formal is Friday')],
+        ['nothing was written', uncited('')],
+      ])("is still couldn't find that when %s", async (_why, given) => {
+        const answer = await shown(given);
+        expect(answer.status).toBe('not_found');
+        expect(answer.own_words).toBeUndefined();
+        expect(answer.text).toBe('');
+      });
+
+      it('marks no answer that stands on a source', async () => {
+        const answer = await shown(outcome());
+        expect(answer.status).toBe('answered');
+        expect(answer.own_words).toBeUndefined();
+      });
+    });
+
     describe('where the member asked from (#4899)', () => {
       const CHANNEL = '11111111-1111-4111-8111-111111111111';
       const openAt: AskFromPart[] = [

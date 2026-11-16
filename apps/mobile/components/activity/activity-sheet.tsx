@@ -5,7 +5,7 @@ import {
   NavigationContext,
   NavigationRouteContext,
 } from "expo-router/react-navigation";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   activityEventMessage,
   activityHoursMessage,
@@ -57,6 +57,7 @@ import {
 } from "@/lib/chat/message-reminder";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 type RowOf<K extends ActivityRow["kind"]> = Extract<ActivityRow, { kind: K }>;
 

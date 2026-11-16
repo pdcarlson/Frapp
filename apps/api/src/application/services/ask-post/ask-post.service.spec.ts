@@ -245,6 +245,23 @@ describe('AskPostService', () => {
       },
     );
 
+    it("refuses an answer in Frapp's own words, which cites nothing", async () => {
+      const { post } = build();
+      await refusedWith(
+        post(
+          receipt({
+            shown: {
+              ...receipt().shown,
+              text: 'Hi, ask me anything about your chapter.',
+              citations: [],
+              sources: [],
+            },
+          }),
+        ),
+        'ai.ask.post.not_an_answer',
+      );
+    });
+
     it('refuses an answer that was handed chat, cited or not', async () => {
       const { post, messageRepo } = build();
       await refusedWith(

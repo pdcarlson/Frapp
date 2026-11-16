@@ -23,6 +23,7 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { NewSignupSheet, type NewSignupSheetProps } from "./new-signup-sheet";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 function render(onPost: NewSignupSheetProps["onPost"]): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -120,5 +121,15 @@ describe("New sign-up sheet (#3926)", () => {
     expect(field(tree, "Title").props.value).toBe("Sober drivers");
     expect(successHaptic).not.toHaveBeenCalled();
     act(() => tree.unmount());
+  });
+});
+
+describe("NewSignupSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <NewSignupSheet ref={ref} onPost={vi.fn()} />
+      </FrappThemeProvider>
+    ));
   });
 });

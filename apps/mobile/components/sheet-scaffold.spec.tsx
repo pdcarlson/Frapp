@@ -10,9 +10,12 @@ import {
   SheetHeader,
   SheetScrim,
   sheetFieldStyles,
+  useGuardedSheetRef,
   useSheetClose,
 } from "./sheet-scaffold";
 import { signetDarkTokens } from "@repo/theme/signet";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
+import { expectHostDismissGuarded, wedgingModal } from "@/test/wedging-sheet";
 
 /**
  * Which sheets carry a Cancel: `spec/ui/design-system/components.md`
@@ -113,5 +116,56 @@ describe("sheet fields", () => {
     expect(styles.fieldMultilineText.lineHeight).toBe(
       signetDarkTokens.typography.role.body.lineHeight,
     );
+  });
+});
+
+describe("useGuardedSheetRef (#4229, #5059)", () => {
+  const Sheet = React.forwardRef<BottomSheetModal>(function Sheet(_, ref) {
+    const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
+    return React.createElement("BottomSheetModal", {
+      ref: modalRef,
+      onAnimate,
+      onDismiss: markClosed,
+    });
+  });
+
+  it("keeps a host's dismiss off a sheet that isn't up", () => {
+    expectHostDismissGuarded((ref) => <Sheet ref={ref} />);
+  });
+
+  it("holds a dismiss that lands as the sheet opens, and closes it once it moves", () => {
+    const modal = wedgingModal();
+    const ref = React.createRef<BottomSheetModal>();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(<Sheet ref={ref} />, {
+        createNodeMock: () => modal,
+      });
+    });
+    act(() => ref.current?.present());
+    // Before gorhom's first `onAnimate`: neither up nor safe to dismiss.
+    act(() => ref.current?.dismiss());
+    expect(modal.dismiss).not.toHaveBeenCalled();
+    act(() =>
+      (
+        tree.root.findByType("BottomSheetModal" as never).props as {
+          onAnimate: (from: number, to: number) => void;
+        }
+      ).onAnimate(-1, 0),
+    );
+    expect(modal.dismiss).toHaveBeenCalledTimes(1);
+    expect(modal.wedged).toBe(false);
+  });
+
+  it("passes the rest of the modal's methods through", () => {
+    const modal = { ...wedgingModal(), snapToIndex: vi.fn(), expand: vi.fn() };
+    const ref = React.createRef<BottomSheetModal>();
+    act(() => {
+      create(<Sheet ref={ref} />, { createNodeMock: () => modal });
+    });
+    act(() => ref.current?.snapToIndex(1));
+    act(() => ref.current?.expand());
+    expect(modal.snapToIndex).toHaveBeenCalledWith(1, undefined);
+    expect(modal.expand).toHaveBeenCalledTimes(1);
   });
 });

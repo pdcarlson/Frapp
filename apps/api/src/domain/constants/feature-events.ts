@@ -93,6 +93,7 @@ export const FEATURE_EVENTS = {
       'has_subtasks',
       'posted_to_chat',
       'proof_kind',
+      'repeats',
     ],
   },
   'task-status-changed': {

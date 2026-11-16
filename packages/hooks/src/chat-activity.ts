@@ -21,6 +21,12 @@ export type ChatActivity =
       channelId: string;
       senderId: string | null;
     }
+  | {
+      type: "changed";
+      channelId: string;
+      messageId: string;
+      deleted: boolean;
+    }
   | { type: "resync" }
   | { type: "joined" };
 
@@ -105,6 +111,8 @@ export interface ChatActivityHandler {
  *   Without the stamp the next count would light up the very channel the
  *   member is reading (the cursor was stamped when it opened, before this
  *   message). One stamp per channel per burst, not one per message.
+ * - A `changed` (an edit or delete, #4442) reads both again and stamps
+ *   nothing: no new message arrived to be read.
  * - Anything else reads both summaries again.
  * - A `resync` reads both again, and first re-stamps the channel being looked
  *   at: whatever arrived in it while the app was away, the member is now
@@ -190,8 +198,7 @@ export function createChatActivityHandler(
     });
     const neverRead =
       !unread ||
-      (unread.state.dataUpdatedAt === 0 &&
-        unread.state.fetchStatus === "idle");
+      (unread.state.dataUpdatedAt === 0 && unread.state.fetchStatus === "idle");
     if (neverRead) return;
     const promiseAtJoin = unread.promise;
     let readSinceJoin = false;
@@ -247,6 +254,8 @@ export function createChatActivityHandler(
       refresh = true;
       const viewed = options.viewing();
       if (viewed) stamps.add(viewed);
+    } else if (activity.type === "changed") {
+      refresh = true;
     } else {
       const viewerId = options.viewerId();
       const fromSomeoneElse =

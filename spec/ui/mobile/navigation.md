@@ -378,6 +378,10 @@ picker, so the 0.9.1 store build carries it. `photosPermission` now names all fi
 callers ("send photos in chapter chat, add photos to your chapter's documents, and attach
 photo proof to service hours"). #3401 keeps the picker and #2620.
 
+_2026-11-16:_ a sixth caller, a task's photos (`lib/tasks/task-photos.ts`, #4565, #4635),
+is named: "add photos to your chapter's documents and to tasks" (#4611). The privacy
+policy's permissions clause names it in the same change, moving only the page's pin.
+
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`
 key at all**. Each of those three is load-bearing _(as of 2026-09-30; the microphone

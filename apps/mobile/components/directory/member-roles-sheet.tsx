@@ -1,10 +1,6 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetFlatList,
-  BottomSheetModal,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { statusOf } from "@repo/api-sdk";
 import { useRoles, useUpdateMemberRoles } from "@repo/hooks";
@@ -34,6 +30,7 @@ import {
   toggleRole,
   type RoleOption,
 } from "@/lib/directory/role-editor";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /**
  * Edit a member's roles: the only place on mobile that does it (Directory, tap
