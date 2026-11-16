@@ -5,6 +5,11 @@ const { hidden } = vi.hoisted(() => ({
   hidden: { features: new Set<string>(), calls: [] as unknown[][] },
 }));
 
+// The live-meeting card has its own spec (#5219).
+vi.mock("@/components/meetings/live-meeting-card", () => ({
+  LiveMeetingCard: () => null,
+}));
+
 vi.mock("@repo/hooks", () => ({
   useAccessibleChapters: () => ({ data: [], isSuccess: true }),
   useCurrentChapter: () => ({ data: undefined, isError: false }),
