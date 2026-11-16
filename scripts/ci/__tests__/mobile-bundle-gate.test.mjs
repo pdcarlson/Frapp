@@ -76,14 +76,14 @@ describe(`${JOB}: the mobile bundle step (#2388)`, () => {
     assert.doesNotMatch(command, /\|\||set\s+\+e|;\s*(true|exit\s+0)\b/);
     const job = workflowJobs(CI_YML).find((j) => j.jobId === JOB);
     assert.ok(job, `${JOB} job not found`);
-    // Path-gated on a PR since 2026-11-11 (ci.yml `changes.mobile`, whose
-    // coverage app-filter-coverage.test.mjs pins); every push still runs it,
-    // except one whose commit the merge queue already passed (#5084), and so
-    // does every queue entry that isn't docs-only (#5141).
+    // Path-gated on a PR since 2026-11-11 and in the merge queue since #5195
+    // (ci.yml `changes.mobile`, whose coverage app-filter-coverage.test.mjs
+    // pins); every push still runs it, except one whose commit the merge queue
+    // already passed (#5084).
     assert.equal(
       job.if,
-      "${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}",
-      `${JOB} runs on every merge queue entry, every push the queue didn't test, and every PR that touches what it reads`,
+      "${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name == 'push' || needs.changes.outputs.mobile == 'true') }}",
+      `${JOB} runs on every push the queue didn't test, and every PR or queue entry that touches what it reads`,
     );
     assert.doesNotMatch(String(job.keys.get("continue-on-error") ?? ""), /true/);
     assert.ok(CI_CHECKS.includes(JOB), `${JOB} is a required check`);
