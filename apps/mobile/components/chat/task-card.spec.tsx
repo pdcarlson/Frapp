@@ -55,17 +55,11 @@ vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({ writeBlockedReason: state.writeBlockedReason }),
 }));
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#C49A3A",
-    accentPrimary: "#C49A3A",
-    accentOnPrimary: "#2B2009",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, MUTED_GOLD_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(MUTED_GOLD_BRANDING);
+});
 
 // The edit sheet is the board's (#4296), covered by its own spec; here only
 // what it was opened on matters.

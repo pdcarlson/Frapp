@@ -9,18 +9,11 @@ import { describe, expect, it, vi } from "vitest";
 // mount. A purple chapter's values, deliberately not house gold, so a control
 // that slips back to a `gold.*` token shows up in an assertion; the hook
 // itself has its own spec.
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
 import { FrappThemeProvider } from "@/lib/theme";
 import {
   HISTORY_START_COPY,
