@@ -14,6 +14,7 @@ import {
   setChapterPresence,
 } from "@/lib/presence/presence-store";
 import type { PresenceStatus } from "@repo/hooks/presence-status";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 /**
  * The mobile member sheet (#3536): who can read the channel, officers first,
@@ -367,5 +368,15 @@ describe("ChannelMemberSheet", () => {
     expect(modal.props.snapPoints).toEqual(["100%"]);
     expect(text(tree)).toContain("Members");
     expect(tree.root.findAllByType(MemberRows)).toHaveLength(1);
+  });
+});
+
+describe("ChannelMemberSheet — dismissed by the thread while closed (#4229)", () => {
+  it("never reaches the modal unless it is up, so Members still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <ChannelMemberSheet ref={ref} channelId="chan-1" />
+      </FrappThemeProvider>
+    ));
   });
 });
