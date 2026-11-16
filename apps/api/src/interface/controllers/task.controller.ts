@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -15,11 +16,13 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiExtraModels,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
 import { TaskService } from '../../application/services/task.service';
+import { TaskSeriesService } from '../../application/services/task-series.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -40,6 +43,8 @@ import {
   CreateTaskDto,
   CreateTaskResponseDto,
   CreateTaskSubtaskDto,
+  DeleteTaskQueryDto,
+  TaskSeriesSummaryDto,
   TaskSubtaskDto,
   UpdateTaskDto,
   UpdateTaskSubtaskDto,
@@ -54,6 +59,9 @@ import { SystemPermissions } from '#domain/constants/permissions';
 
 @ApiTags('Tasks')
 @ApiBearerAuth()
+// Task reads declare no response schema; the clients type a task's `series`
+// summary (#5119) from this one.
+@ApiExtraModels(TaskSeriesSummaryDto)
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @RequireModule('tasks')
@@ -61,6 +69,7 @@ import { SystemPermissions } from '#domain/constants/permissions';
 export class TaskController {
   constructor(
     private readonly taskService: TaskService,
+    private readonly taskSeriesService: TaskSeriesService,
     private readonly rbacService: RbacService,
   ) {}
 
@@ -175,6 +184,7 @@ export class TaskController {
       has_reference_photo: (result.photos?.length ?? 0) > 0,
       proof_kind: result.proof_kind,
       posted_to_chat: result.card_posted === true,
+      repeats: !!result.series_id,
     }),
   )
   async create(
@@ -194,6 +204,7 @@ export class TaskController {
       point_reward: dto.point_reward ?? null,
       reference_photo_paths: dto.reference_photo_paths,
       proof_kind: dto.proof_kind,
+      recurrence_rule: dto.recurrence_rule,
       channel_id: dto.channel_id,
       client_message_id: dto.client_message_id,
     });
@@ -211,7 +222,19 @@ export class TaskController {
     @Param('id') id: string,
     @Body() dto: UpdateTaskDto,
   ) {
-    return this.taskService.update(id, chapterId, userId, dto);
+    const { scope, recurrence_rule, ...edit } = dto;
+    if (scope === 'series') {
+      return this.taskSeriesService.update(id, chapterId, userId, {
+        ...edit,
+        recurrence_rule,
+      });
+    }
+    if (recurrence_rule !== undefined) {
+      throw new BadRequestException(
+        'A repeat rule changes only with scope "series"',
+      );
+    }
+    return this.taskService.update(id, chapterId, userId, edit);
   }
 
   @Patch(':id/status')
@@ -338,8 +361,19 @@ export class TaskController {
 
   @Delete(':id')
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
-  @ApiOperation({ summary: 'Delete a task' })
-  async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
+  @ApiOperation({
+    summary:
+      'Delete a task; with `scope=series`, stop a repeating task (#5119)',
+  })
+  async delete(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @Query() query: DeleteTaskQueryDto,
+  ) {
+    if (query.scope === 'series') {
+      await this.taskSeriesService.delete(id, chapterId);
+      return { success: true };
+    }
     await this.taskService.delete(id, chapterId);
     return { success: true };
   }

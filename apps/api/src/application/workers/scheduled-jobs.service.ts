@@ -9,6 +9,9 @@ import { NotificationService } from '../services/notification.service';
 import { ChapterWorkflowsService } from '../services/chapter-workflows.service';
 import { PollService } from '../services/poll.service';
 import { ChatReportService } from '../services/chat-report.service';
+import { TaskService } from '../services/task.service';
+import { planNextCopy } from '../services/task-series-schedule';
+import type { TaskSeries } from '#domain/entities';
 import {
   ReportRetentionService,
   type ReportSweepResult,
@@ -41,6 +44,13 @@ import {
   chapterPaletteColumns,
   logChapterPaletteWarnings,
 } from '../services/chapter-palette';
+
+/**
+ * Repeating-task series one sweep run advances at most (#5119). Each costs a
+ * membership read, an RPC and a push, so a run stays well inside its five
+ * minutes; a larger backlog is taken up by the next run.
+ */
+const TASK_SERIES_PER_RUN = 200;
 
 /**
  * How far back the hourly auto-absent sweep reaches. Comfortably longer than
@@ -220,6 +230,7 @@ export class ScheduledJobsService {
     private readonly memberRepo: IMemberRepository,
     private readonly chatReports: ChatReportService,
     private readonly eventExcuses: EventExcuseService,
+    private readonly taskService: TaskService,
   ) {}
 
   @ReportedCron(CronExpression.EVERY_HOUR)
@@ -265,7 +276,11 @@ export class ScheduledJobsService {
    */
   @ReportedCron(CronExpression.EVERY_5_MINUTES)
   async handleTimedTaskReminderSweep(): Promise<void> {
-    await this.sweepTimedTaskReminders(new Date());
+    const now = new Date();
+    // Repeating tasks' next copies first (#5119), so a copy made this tick
+    // is in the reminder read below.
+    await this.materializeDueTaskSeries(now);
+    await this.sweepTimedTaskReminders(now);
   }
 
   /**
@@ -912,6 +927,111 @@ export class ScheduledJobsService {
 
     if (sent > 0) this.logger.log(`task sweep: sent ${sent} reminders`);
     return { sent };
+  }
+
+  /**
+   * Repeating tasks (#5119): for each live series whose latest copy is due,
+   * make the next copy and push it to its assignee. One copy at a time: the
+   * missed copy stays as it is (overdue, reminded as any task is), and days a
+   * stopped sweep missed are skipped rather than made at once
+   * (`planNextCopy`).
+   *
+   * - **Idempotent across instances.** The write is compare-and-set on the
+   *   series' `next_due_date` under a row lock, backed by the unique
+   *   `(series_id, occurrence_date)` key, so two instances racing make one
+   *   copy and only the winner pushes.
+   * - **Bounded.** At most {@link TASK_SERIES_PER_RUN} series a run; the
+   *   rest wait five minutes.
+   * - **An assignee who left** ends the series, and its creator hears why,
+   *   when they are still in the chapter.
+   */
+  async materializeDueTaskSeries(now: Date): Promise<{ made: number }> {
+    const due = await this.repository.findDueTaskSeries(
+      now,
+      TASK_SERIES_PER_RUN,
+    );
+    let made = 0;
+    for (const series of due) {
+      try {
+        if (await this.advanceTaskSeries(series, now)) made += 1;
+      } catch (error) {
+        reportCaughtFailure(this.logger, {
+          level: 'warning',
+          site: 'task-series-sweep',
+          message: `task series sweep: series ${series.id} failed`,
+          error,
+        });
+      }
+    }
+    if (made > 0) this.logger.log(`task series sweep: made ${made} copies`);
+    return { made };
+  }
+
+  private async advanceTaskSeries(
+    series: TaskSeries,
+    now: Date,
+  ): Promise<boolean> {
+    const assignee = await this.memberRepo.findByUserAndChapter(
+      series.assignee_id,
+      series.chapter_id,
+    );
+    if (!assignee) {
+      if (
+        await this.repository.endTaskSeries(series.id, series.next_due_date)
+      ) {
+        await this.notifySeriesEnded(series);
+      }
+      return false;
+    }
+
+    const plan = planNextCopy(series, now);
+    if (!plan) {
+      // The rule ran out between copies (an UNTIL among skipped days).
+      await this.repository.endTaskSeries(series.id, series.next_due_date);
+      return false;
+    }
+    const copy = await this.repository.materializeTaskSeriesCopy({
+      seriesId: series.id,
+      expectedNext: series.next_due_date,
+      occurrenceDate: plan.occurrenceDate,
+      dueAt: plan.dueAt,
+      latestDueAt: plan.latestDueAt,
+      nextDueDate: plan.nextDueDate,
+      end: plan.nextDueDate === null,
+    });
+    if (!copy) return false;
+    await this.taskService.notifyAssigned(copy, series.created_by);
+    return true;
+  }
+
+  /** Tell a series' creator it stopped because its assignee left. */
+  private async notifySeriesEnded(series: TaskSeries): Promise<void> {
+    if (series.created_by === series.assignee_id) return;
+    const creator = await this.memberRepo.findByUserAndChapter(
+      series.created_by,
+      series.chapter_id,
+    );
+    if (!creator) return;
+    try {
+      await this.notificationService.notifyUser(
+        series.created_by,
+        series.chapter_id,
+        {
+          title: series.title,
+          body: 'Stopped repeating: the person it was assigned to left the chapter.',
+          priority: 'NORMAL',
+          category: 'tasks',
+          data: { target: { screen: 'tasks' } },
+        },
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'task-series-sweep',
+        message: `task series sweep: ended notice failed for series ${series.id}`,
+        error,
+      });
+    }
   }
 
   /**

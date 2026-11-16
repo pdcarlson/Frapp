@@ -3,6 +3,7 @@ import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
 import { TaskController } from './task.controller';
 import { TaskService } from '../../application/services/task.service';
+import { TaskSeriesService } from '../../application/services/task-series.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import { ForbiddenException } from '@nestjs/common';
@@ -15,6 +16,7 @@ import {
 describe('TaskController', () => {
   let controller: TaskController;
   let taskService: jest.Mocked<TaskService>;
+  let taskSeriesService: { update: jest.Mock; delete: jest.Mock };
   let rbacService: jest.Mocked<RbacService>;
 
   beforeEach(async () => {
@@ -29,6 +31,8 @@ describe('TaskController', () => {
       getPhotoDownloadUrl: jest.fn(),
     } as any;
 
+    taskSeriesService = { update: jest.fn(), delete: jest.fn() };
+
     rbacService = {
       memberHasAnyPermission: jest.fn(),
     } as any;
@@ -37,6 +41,7 @@ describe('TaskController', () => {
       controllers: [TaskController],
       providers: [
         { provide: TaskService, useValue: taskService },
+        { provide: TaskSeriesService, useValue: taskSeriesService },
         { provide: RbacService, useValue: rbacService },
       ],
     }).compile();
@@ -400,7 +405,7 @@ describe('TaskController', () => {
       const taskId = 'task-1';
       taskService.delete.mockResolvedValue(undefined);
 
-      const result = await controller.delete(chapterId, taskId);
+      const result = await controller.delete(chapterId, taskId, {});
 
       expect(taskService.delete).toHaveBeenCalledWith(taskId, chapterId);
       expect(result).toEqual({ success: true });

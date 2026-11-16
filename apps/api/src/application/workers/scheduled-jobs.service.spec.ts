@@ -10,6 +10,7 @@ import { ChatReportService } from '../services/chat-report.service';
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import { ScheduledJobsService } from './scheduled-jobs.service';
 import { EventExcuseService } from '../services/event-excuse.service';
+import { TaskService } from '../services/task.service';
 import { SCHEDULED_JOBS_REPOSITORY } from '#domain/repositories/scheduled-jobs.repository.interface';
 import { SIGNET_ENGINE_VERSION } from '@repo/chapter-theme';
 import { buildChapterPalette } from '../services/chapter-palette';
@@ -68,6 +69,10 @@ describe('ScheduledJobsService', () => {
   let findChaptersWithStalePalette: jest.Mock;
   let writeRecomputedPalette: jest.Mock;
   let sweepPendingEvidenceReleases: jest.Mock;
+  let findDueTaskSeries: jest.Mock;
+  let materializeTaskSeriesCopy: jest.Mock;
+  let endTaskSeries: jest.Mock;
+  let notifyAssigned: jest.Mock;
 
   const INVOICE = {
     id: 'inv-1',
@@ -122,6 +127,10 @@ describe('ScheduledJobsService', () => {
     // Default: the compare-and-set write lands.
     writeRecomputedPalette = jest.fn().mockResolvedValue(true);
     sweepPendingEvidenceReleases = jest.fn().mockResolvedValue(0);
+    findDueTaskSeries = jest.fn().mockResolvedValue([]);
+    materializeTaskSeriesCopy = jest.fn().mockResolvedValue(null);
+    endTaskSeries = jest.fn().mockResolvedValue(true);
+    notifyAssigned = jest.fn().mockResolvedValue(undefined);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -139,6 +148,9 @@ describe('ScheduledJobsService', () => {
             releaseDispatch,
             findChaptersWithStalePalette,
             writeRecomputedPalette,
+            findDueTaskSeries,
+            materializeTaskSeriesCopy,
+            endTaskSeries,
           },
         },
         {
@@ -158,6 +170,7 @@ describe('ScheduledJobsService', () => {
           useValue: { sweepPendingEvidenceReleases },
         },
         { provide: EventExcuseService, useValue: { remindPending } },
+        { provide: TaskService, useValue: { notifyAssigned } },
       ],
     }).compile();
 
@@ -843,6 +856,154 @@ describe('ScheduledJobsService', () => {
         'DUE_SOON',
         TOMORROW,
       );
+    });
+  });
+
+  describe('materializeDueTaskSeries (#5119)', () => {
+    // Weekly on Monday at 9 PM New York; the Nov 16 copy fell due at
+    // 02:00Z on the 17th.
+    const SERIES = {
+      id: 'series-1',
+      chapter_id: 'chap-1',
+      created_by: 'admin-1',
+      title: 'Kitchen duty',
+      description: null,
+      assignee_id: 'user-1',
+      point_reward: 5,
+      proof_kind: 'none' as const,
+      subtask_titles: [],
+      due_time: '21:00:00',
+      recurrence_rule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York',
+      first_due_date: '2026-11-16',
+      next_due_date: '2026-11-23',
+      latest_due_at: '2026-11-17T02:00:00.000Z',
+      made_count: 1,
+      ended_at: null,
+      created_at: '2026-11-10T00:00:00.000Z',
+    };
+    const AFTER_DUE = new Date('2026-11-17T02:03:00.000Z');
+
+    it('makes the next copy, at 9 PM local, and pushes it to the assignee', async () => {
+      findDueTaskSeries.mockResolvedValue([SERIES]);
+      const copy = { id: 'task-2', assignee_id: 'user-1' };
+      materializeTaskSeriesCopy.mockResolvedValue(copy);
+
+      const result = await service.materializeDueTaskSeries(AFTER_DUE);
+
+      expect(result).toEqual({ made: 1 });
+      expect(findDueTaskSeries).toHaveBeenCalledWith(AFTER_DUE, 200);
+      expect(materializeTaskSeriesCopy).toHaveBeenCalledWith({
+        seriesId: 'series-1',
+        expectedNext: '2026-11-23',
+        occurrenceDate: '2026-11-23',
+        dueAt: '2026-11-24T02:00:00.000Z',
+        latestDueAt: '2026-11-24T02:00:00.000Z',
+        nextDueDate: '2026-11-30',
+        end: false,
+      });
+      expect(notifyAssigned).toHaveBeenCalledWith(copy, 'admin-1');
+    });
+
+    it('ends the series with its last copy when COUNT runs out', async () => {
+      findDueTaskSeries.mockResolvedValue([
+        {
+          ...SERIES,
+          recurrence_rule:
+            'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;COUNT=2;TZID=America/New_York',
+        },
+      ]);
+      materializeTaskSeriesCopy.mockResolvedValue({ id: 'task-2' });
+
+      await service.materializeDueTaskSeries(AFTER_DUE);
+
+      expect(materializeTaskSeriesCopy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          occurrenceDate: '2026-11-23',
+          nextDueDate: null,
+          end: true,
+        }),
+      );
+    });
+
+    it('skips the days a stopped sweep missed instead of making them overdue', async () => {
+      findDueTaskSeries.mockResolvedValue([SERIES]);
+      materializeTaskSeriesCopy.mockResolvedValue({ id: 'task-2' });
+
+      // Back up on Dec 2: the Nov 23 and Nov 30 copies are already past due.
+      await service.materializeDueTaskSeries(
+        new Date('2026-12-02T12:00:00.000Z'),
+      );
+
+      expect(materializeTaskSeriesCopy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expectedNext: '2026-11-23',
+          occurrenceDate: '2026-12-07',
+          nextDueDate: '2026-12-14',
+        }),
+      );
+    });
+
+    it('pushes nothing when another instance made the copy first', async () => {
+      findDueTaskSeries.mockResolvedValue([SERIES]);
+      materializeTaskSeriesCopy.mockResolvedValue(null);
+
+      const result = await service.materializeDueTaskSeries(AFTER_DUE);
+
+      expect(result).toEqual({ made: 0 });
+      expect(notifyAssigned).not.toHaveBeenCalled();
+    });
+
+    it('makes one copy when two instances race over the same series', async () => {
+      // The database's compare-and-set on next_due_date, in memory.
+      let next = SERIES.next_due_date;
+      findDueTaskSeries.mockResolvedValue([SERIES]);
+      materializeTaskSeriesCopy.mockImplementation(
+        async (input: { expectedNext: string; nextDueDate: string }) => {
+          await Promise.resolve();
+          if (next !== input.expectedNext) return null;
+          next = input.nextDueDate;
+          return { id: `copy-${input.expectedNext}` };
+        },
+      );
+
+      const [a, b] = await Promise.all([
+        service.materializeDueTaskSeries(AFTER_DUE),
+        service.materializeDueTaskSeries(AFTER_DUE),
+      ]);
+
+      expect(a.made + b.made).toBe(1);
+      expect(notifyAssigned).toHaveBeenCalledTimes(1);
+    });
+
+    it('ends the series and tells its creator when the assignee left', async () => {
+      findDueTaskSeries.mockResolvedValue([SERIES]);
+      findByUserAndChapter.mockImplementation(async (userId: string) =>
+        userId === 'user-1' ? null : { id: 'mem-admin' },
+      );
+
+      await service.materializeDueTaskSeries(AFTER_DUE);
+
+      expect(endTaskSeries).toHaveBeenCalledWith('series-1', '2026-11-23');
+      expect(materializeTaskSeriesCopy).not.toHaveBeenCalled();
+      expect(notifyUser).toHaveBeenCalledWith(
+        'admin-1',
+        'chap-1',
+        expect.objectContaining({ title: 'Kitchen duty', category: 'tasks' }),
+      );
+    });
+
+    it('keeps sweeping when one series fails', async () => {
+      findDueTaskSeries.mockResolvedValue([
+        { ...SERIES, id: 'series-bad' },
+        SERIES,
+      ]);
+      materializeTaskSeriesCopy
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockResolvedValueOnce({ id: 'task-2' });
+
+      const result = await service.materializeDueTaskSeries(AFTER_DUE);
+
+      expect(result).toEqual({ made: 1 });
     });
   });
 

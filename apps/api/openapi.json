@@ -11143,6 +11143,19 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "On a copy of a repeating task: `instance` (default) deletes this task only; `series` (\"All upcoming tasks\") stops the repeat and deletes the open copy if no one has started it. Done and overdue copies stay.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "instance",
+                "series"
+              ]
+            }
           }
         ],
         "responses": {
@@ -11165,7 +11178,7 @@
             "bearer": []
           }
         ],
-        "summary": "Delete a task",
+        "summary": "Delete a task; with `scope=series`, stop a repeating task (#5119)",
         "tags": [
           "Tasks"
         ]
@@ -26576,6 +26589,29 @@
           "status"
         ]
       },
+      "TaskSeriesSummaryDto": {
+        "type": "object",
+        "properties": {
+          "recurrence_rule": {
+            "type": "string",
+            "description": "The series’ rule, as on create."
+          },
+          "next_due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "The day of the next copy still to be made: \"Every Monday · next Nov 24\". Meaningless once `ended`."
+          },
+          "ended": {
+            "type": "boolean",
+            "description": "Whether the series has stopped making copies: its rule ran out, an officer ended it, or its assignee left."
+          }
+        },
+        "required": [
+          "recurrence_rule",
+          "next_due_date",
+          "ended"
+        ]
+      },
       "RequestTaskPhotoUploadUrlDto": {
         "type": "object",
         "properties": {
@@ -26676,6 +26712,11 @@
               "link"
             ],
             "description": "What Mark done needs (#4635): `none` (default), `photo` (one or more proof photos) or `link`."
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "description": "Repeat on a schedule (#5119): the event rule format (`packages/validation/src/recurrence.ts`), `FREQ` DAILY, WEEKLY or MONTHLY, `INTERVAL` 1 to 30, `BYDAY` or `BYMONTHDAY`, a required `TZID` (the officer's zone), and `COUNT` (2 to 120), `UNTIL` (YYYYMMDD) or no end. Example: `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York`. The task is the first copy; the next is made once it is due, on the same time of day in that zone.",
+            "maxLength": 200
           },
           "channel_id": {
             "type": "string",
@@ -26834,6 +26875,18 @@
             "nullable": true,
             "description": "The assignee's reply sent with Mark done, or null. Cleared with the completion."
           },
+          "series_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The repeating series this task is a copy of (#5119), or null for a task that doesn’t repeat."
+          },
+          "occurrence_date": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "A copy’s day in its series’ pattern; null otherwise."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -26869,6 +26922,8 @@
           "proof_link",
           "sent_back_reason",
           "completion_note",
+          "series_id",
+          "occurrence_date",
           "created_at",
           "photos"
         ]
@@ -26918,6 +26973,20 @@
               "link"
             ],
             "description": "What Mark done needs (#4635). Changing it doesn't touch a completion already waiting on an officer."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "instance",
+              "series"
+            ],
+            "description": "On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` (\"All upcoming tasks\") edits what the next copies are made from and the series’ open copy, unless it is marked done. Done copies never change."
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 200,
+            "description": "With `scope: series` only: a new rule, counted from the open copy, or null to stop repeating after it. Repeat on a schedule (#5119): the event rule format (`packages/validation/src/recurrence.ts`), `FREQ` DAILY, WEEKLY or MONTHLY, `INTERVAL` 1 to 30, `BYDAY` or `BYMONTHDAY`, a required `TZID` (the officer's zone), and `COUNT` (2 to 120), `UNTIL` (YYYYMMDD) or no end. Example: `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York`. The task is the first copy; the next is made once it is due, on the same time of day in that zone."
           }
         }
       },

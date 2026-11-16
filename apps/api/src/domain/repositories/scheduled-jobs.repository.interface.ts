@@ -2,6 +2,7 @@ import type {
   DispatchEntityType,
   DispatchThreshold,
 } from '../entities/scheduled-notification-dispatch.entity';
+import type { Task, TaskSeries } from '../entities/task.entity';
 
 export const SCHEDULED_JOBS_REPOSITORY = 'SCHEDULED_JOBS_REPOSITORY';
 
@@ -87,7 +88,43 @@ export interface StalePaletteRow {
  * read its candidates must not send a partial batch, and the next tick
  * retries. The implementation documents each query's window semantics.
  */
+/** The sweep's write for one series' next copy (#5119). */
+export interface MaterializeTaskSeriesCopyInput {
+  seriesId: string;
+  /** The `next_due_date` the sweep read: the compare-and-set. */
+  expectedNext: string;
+  /** The copy's day. Later than `expectedNext` when days were skipped. */
+  occurrenceDate: string;
+  /** The copy's due moment, when it has a time of day. */
+  dueAt: string | null;
+  /** When this copy is due in the rule's zone: the series' next trigger. */
+  latestDueAt: string;
+  /** The day after this copy, or null when the rule ends with it. */
+  nextDueDate: string | null;
+  /** End the series after this copy. */
+  end: boolean;
+}
+
 export interface IScheduledJobsRepository {
+  /**
+   * Live repeating-task series whose latest copy is due at or before `now`,
+   * oldest trigger first, at most `limit` (#5119). Cross-chapter: the sweep
+   * reads every chapter's.
+   */
+  findDueTaskSeries(now: Date, limit: number): Promise<TaskSeries[]>;
+  /**
+   * Make one series' next copy and move the series on, atomically and only
+   * while it still expects `expectedNext`. Null when another instance (or an
+   * officer's edit) got there first, or the day already had its copy.
+   */
+  materializeTaskSeriesCopy(
+    input: MaterializeTaskSeriesCopyInput,
+  ): Promise<Task | null>;
+  /**
+   * End a live series that still expects `expectedNext`, with no copy (its
+   * rule ran out, or its assignee left). False when another write moved it.
+   */
+  endTaskSeries(seriesId: string, expectedNext: string): Promise<boolean>;
   findEventsPendingAutoAbsent(
     endedAfter: Date,
     endedBefore: Date,

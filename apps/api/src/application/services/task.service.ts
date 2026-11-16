@@ -19,6 +19,7 @@ import type {
   Task,
   TaskPhoto,
   TaskPhotoKind,
+  TaskSeriesSummary,
   TaskSubtask,
   TaskView,
 } from '#domain/entities/task.entity';
@@ -59,6 +60,7 @@ import {
   taskSubmittedCopy,
 } from './push-copy';
 import { instantOrThrow } from './instant-bound';
+import { planSeriesStart, readTaskRule } from './task-series-schedule';
 import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
@@ -158,6 +160,11 @@ export interface CreateTaskInput {
   reference_photo_paths?: string[];
   /** What Mark done needs (#4635). Default `none`. */
   proof_kind?: TaskProofKind;
+  /**
+   * Repeat on this rule (#5119): the task is the first copy of a new series,
+   * and the sweep makes each next copy once the latest one is due.
+   */
+  recurrence_rule?: string;
   /**
    * When set together with `client_message_id`, an interactive task card is
    * posted to this chat channel after the row commits (the `/task` slash
@@ -432,9 +439,10 @@ export class TaskService {
   ): Promise<TaskView[]> {
     if (tasks.length === 0) return tasks;
     const ids = tasks.map((task) => task.id);
-    const [subtasks, withPhotos] = await Promise.all([
+    const [subtasks, withPhotos, series] = await Promise.all([
       this.taskRepo.findSubtasks(chapterId, ids),
       this.withPhotos(chapterId, tasks),
+      this.seriesSummaries(chapterId, tasks),
     ]);
     const byTask = new Map<string, TaskSubtask[]>();
     for (const subtask of subtasks) {
@@ -445,7 +453,30 @@ export class TaskService {
     return withPhotos.map((task) => ({
       ...task,
       subtasks: byTask.get(task.id) ?? [],
+      series: task.series_id ? (series.get(task.series_id) ?? null) : null,
     }));
+  }
+
+  /** How each task's series repeats, by series id (#5119). */
+  private async seriesSummaries(
+    chapterId: string,
+    tasks: Task[],
+  ): Promise<Map<string, TaskSeriesSummary>> {
+    const ids = [
+      ...new Set(
+        tasks.flatMap((task) => (task.series_id ? [task.series_id] : [])),
+      ),
+    ];
+    const summaries = new Map<string, TaskSeriesSummary>();
+    if (ids.length === 0) return summaries;
+    for (const series of await this.taskRepo.findSeries(chapterId, ids)) {
+      summaries.set(series.id, {
+        recurrence_rule: series.recurrence_rule,
+        next_due_date: series.next_due_date,
+        ended: series.ended_at !== null,
+      });
+    }
+    return summaries;
   }
 
   /**
@@ -647,21 +678,39 @@ export class TaskService {
       throw new BadRequestException('Assignee must be a member of the chapter');
     }
 
-    const task = await this.taskRepo.create({
-      chapter_id: input.chapter_id,
-      title: input.title,
-      description: input.description ?? null,
-      assignee_id: input.assignee_id,
-      created_by: input.created_by,
-      due_date: input.due_date,
-      due_at: dueAt,
-      status: TaskStatus.TODO,
-      point_reward: input.point_reward ?? null,
-      points_awarded: false,
-      completed_at: null,
-      confirmed_at: null,
-      proof_kind: input.proof_kind ?? 'none',
-    });
+    const repeat = this.checkedRepeat(input, dueAt);
+    const task = repeat
+      ? await this.taskRepo.createSeries({
+          chapter_id: input.chapter_id,
+          created_by: input.created_by,
+          title: input.title,
+          description: input.description ?? null,
+          assignee_id: input.assignee_id,
+          point_reward: input.point_reward ?? null,
+          proof_kind: input.proof_kind ?? 'none',
+          subtask_titles: subtaskTitles,
+          due_time: repeat.due_time,
+          recurrence_rule: repeat.rule,
+          first_due_date: input.due_date.slice(0, 10),
+          first_due_at: dueAt,
+          latest_due_at: repeat.latest_due_at,
+          next_due_date: repeat.next_due_date,
+        })
+      : await this.taskRepo.create({
+          chapter_id: input.chapter_id,
+          title: input.title,
+          description: input.description ?? null,
+          assignee_id: input.assignee_id,
+          created_by: input.created_by,
+          due_date: input.due_date,
+          due_at: dueAt,
+          status: TaskStatus.TODO,
+          point_reward: input.point_reward ?? null,
+          points_awarded: false,
+          completed_at: null,
+          confirmed_at: null,
+          proof_kind: input.proof_kind ?? 'none',
+        });
 
     // Reference photos go in after their task, like the checklist below. A
     // failed insert is reported and the create stands; the officer sees no
@@ -685,8 +734,9 @@ export class TaskService {
     // The checklist goes in after its task. A failed insert is reported and
     // the create still succeeds: the task exists, and failing the request
     // would invite a retry that makes a second one. The officer sees a task
-    // with no subtasks and can add them from it.
-    if (subtaskTitles.length > 0) {
+    // with no subtasks and can add them from it. A series' first copy got its
+    // checklist in the same transaction (#5119).
+    if (subtaskTitles.length > 0 && !repeat) {
       try {
         await this.taskRepo.createSubtasks(
           subtaskTitles.map((title, position) => ({
@@ -730,11 +780,29 @@ export class TaskService {
   }
 
   /**
+   * A new task's repeat (#5119): its rule, checked, and the schedule its
+   * series starts with. Null for a task that doesn't repeat.
+   */
+  private checkedRepeat(input: CreateTaskInput, dueAt: string | null) {
+    if (input.recurrence_rule === undefined) return null;
+    const rule = readTaskRule(input.recurrence_rule);
+    if (!rule) throw new BadRequestException("That repeat rule can't be read");
+    const start = planSeriesStart(rule, input.due_date.slice(0, 10), dueAt);
+    if (!start) {
+      throw new BadRequestException(
+        'The end date leaves no task after the first. Choose a later end date',
+      );
+    }
+    return { rule: input.recurrence_rule, ...start };
+  }
+
+  /**
    * Tell a task's assignee it is theirs, named for the task with who assigned
    * it, when it is due and its points. Assigning yourself a task is a note to
-   * self, so the push would only echo the tap that made it.
+   * self, so the push would only echo the tap that made it. Also each new
+   * copy of a repeating task (#5119), from its series' creator.
    */
-  private async notifyAssigned(task: Task, assignerId: string): Promise<void> {
+  async notifyAssigned(task: Task, assignerId: string): Promise<void> {
     if (task.assignee_id === assignerId) return;
     const [assigner, creatorZone] = await Promise.all([
       this.displayNameOf(assignerId),
