@@ -6,7 +6,14 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  BackHandler,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -182,7 +189,8 @@ export default function ActivityScreen() {
   // Android's back button goes back to the page, as the Archive's own
   // control does, rather than leaving the tab.
   useEffect(() => {
-    if (!showArchive) return undefined;
+    // Android only: iOS has no back button, and web has no BackHandler.
+    if (!showArchive || Platform.OS !== "android") return undefined;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       setShowArchive(false);
       return true;
