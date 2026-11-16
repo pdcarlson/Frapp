@@ -1,4 +1,4 @@
-# 20261116143425_ai_corpus_chat_kind.sql
+# 20261116171551_ai_corpus_chat_kind.sql
 
 <!-- One page per migration: its promotion entry and its rollback recipe.
      check:migration-safety reads the two headings below. Shared procedure
