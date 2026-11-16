@@ -249,6 +249,57 @@ describe("SendBackSheet's kept reason (#5041)", () => {
     act(() => after.unmount());
   });
 
+  it("closes a sheet reopened mid-send when the send lands, and keeps nothing (#5086)", async () => {
+    const name = nextDraft();
+    let land: () => void = () => {};
+    const first = render(
+      "none",
+      vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            land = resolve;
+          }),
+      ),
+      name,
+    );
+    act(() => reasonField(first).props.onChangeText("Still sticky"));
+    await press(sendBack(first));
+    act(() => first.unmount());
+
+    const modal = { present: vi.fn(), dismiss: vi.fn() };
+    let during!: ReactTestRenderer;
+    act(() => {
+      during = create(
+        <FrappThemeProvider>
+          <SendBackSheet
+            title="Mop the kitchen"
+            proofKind="none"
+            keptDraft={name}
+            submittedAt={null}
+            onSubmit={vi.fn(async () => {})}
+            onClosed={() => {}}
+          />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal" ? modal : null,
+        },
+      );
+    });
+    act(() =>
+      during.root
+        .findByType("BottomSheetModal" as never)
+        .props.onAnimate(-1, 0),
+    );
+    await act(async () => land());
+    expect(modal.dismiss).toHaveBeenCalledTimes(1);
+    act(() => during.unmount());
+
+    const after = render("none", undefined, name);
+    expect(reasonField(after).props.value).toBe("");
+    act(() => after.unmount());
+  });
+
   it("doesn't bring back a reason kept for an earlier submission, and drops it", () => {
     const name = nextDraft();
     const first = render("none", undefined, name, "2026-11-14T10:00:00Z");

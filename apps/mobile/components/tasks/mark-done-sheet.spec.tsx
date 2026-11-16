@@ -465,6 +465,41 @@ describe("MarkDoneSheet's kept proof (#5041)", () => {
     act(() => after.unmount());
   });
 
+  it("stays held while its task reads done before the send lands, then closes (#5086)", async () => {
+    const name = nextDraft();
+    const send = await sentAndLeft(name);
+    const modal = { present: vi.fn(), dismiss: vi.fn() };
+    const sheet = (done: boolean) => (
+      <FrappThemeProvider>
+        <MarkDoneSheet
+          task={{ ...TASK, ...SENT_BACK, done }}
+          initialProblem={null}
+          keptDraft={name}
+          onComplete={vi.fn(async () => {})}
+          onClosed={() => {}}
+        />
+      </FrappThemeProvider>
+    );
+    let during!: ReactTestRenderer;
+    act(() => {
+      during = create(sheet(false), {
+        createNodeMock: (element) =>
+          (element.type as unknown) === "BottomSheetModal" ? modal : null,
+      });
+    });
+    act(() =>
+      during.root
+        .findByType("BottomSheetModal" as never)
+        .props.onAnimate(-1, 0),
+    );
+    // The status write's optimistic update reads the task done mid-send.
+    act(() => during.update(sheet(true)));
+    expect(field(during, "Link").props.editable).toBe(false);
+    await act(async () => send.land());
+    expect(modal.dismiss).toHaveBeenCalledTimes(1);
+    act(() => during.unmount());
+  });
+
   it("puts it back when it fails with no sheet open", async () => {
     const name = nextDraft();
     const send = await sentAndLeft(name);

@@ -84,7 +84,10 @@ export function writeKeptPanel(key: string, value: unknown): void {
  * Saves in flight, by key: what each `hold()` took out of the store, until its
  * save lands or fails. A form that mounts on the same key mid-save (a phone
  * sheet mounted per open, #5086) opens on it rather than blank, and waits for
- * the outcome with the form that sent it instead of offering it again.
+ * the outcome with the form that sent it instead of offering it again. A form
+ * whose save is a `mutate` callback can't settle it once it has gone, so its
+ * entry stays until a sign-out or chapter switch; only forms whose saves are
+ * awaited wait on an entry, so nothing waits on one of those.
  */
 const sends = new Map<string, unknown>();
 const sendOutcomes = new Map<string, "landed" | "failed">();
@@ -240,19 +243,23 @@ export function useKeptFormDraft<T>(
   // until its fill lands; writing that would put a stale draft back.
   const writingTo = useRef<string | null>(null);
 
-  // Waiting on the save it opened on, if any, until that save settles.
-  const [waiting, setWaiting] = useState(
-    () => options?.adoptsSend === true && key !== null,
+  // Waiting on the save it opened on, if any, until that save settles. The
+  // key is the one it opened on: a form whose name changes mid-save (Mark
+  // done's goes once its task reads done, which an optimistic write sets
+  // before the save lands) still hears that save's outcome.
+  const [waitKey] = useState(() =>
+    options?.adoptsSend === true && key !== null ? key : null,
   );
+  const [waiting, setWaiting] = useState(() => waitKey !== null);
   const [landedElsewhere, setLandedElsewhere] = useState(false);
   const sendOut = useSyncExternalStore(
     subscribeSends,
-    () => key !== null && sends.has(key),
+    () => waitKey !== null && sends.has(waitKey),
     () => false,
   );
   if (waiting && !sendOut) {
     setWaiting(false);
-    if (key !== null && sendOutcomes.get(key) === "landed") {
+    if (waitKey !== null && sendOutcomes.get(waitKey) === "landed") {
       // Sent: what the form shows is no longer a draft.
       setLandedElsewhere(true);
       setRestored(false);

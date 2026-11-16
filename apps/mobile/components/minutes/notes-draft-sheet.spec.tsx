@@ -532,18 +532,21 @@ describe("NotesDraftSheet's kept notes (#5041)", () => {
       }),
     );
     const first = render(draftState());
-    type(first, "Budget passed.");
+    // A trailing newline, as a multiline box often has: the server stores
+    // the notes trimmed.
+    type(first, "Budget passed.\n");
     await press(first, MEETING_NOTES_COPY.draft);
     leave(first);
     const during = render(draftState());
 
     await act(async () => land());
     expect(field(during).props.editable).toBe(true);
+    // What is typed after the landing is over the notes the server holds.
+    type(during, "Budget passed. Dues next.");
     leave(during);
 
-    // The server holds them now: nothing is kept over it.
     const after = render(draftState({ notes: "Budget passed." }));
-    expect(field(after).props.value).toBe("Budget passed.");
+    expect(field(after).props.value).toBe("Budget passed. Dues next.");
     leave(after);
   });
 

@@ -169,7 +169,9 @@ export const NotesDraftSheet = forwardRef<
   const [heardLanding, setHeardLanding] = useState(false);
   if (kept.landedElsewhere && !heardLanding) {
     setHeardLanding(true);
-    setBase(notes);
+    // What was sent, as the sending visit takes it: the server stores it
+    // trimmed.
+    setBase(notes.trim());
   }
   // The draft read's `blocked` is as old as that read. What the member just
   // answered on the sheet, or what the server just refused, is newer.

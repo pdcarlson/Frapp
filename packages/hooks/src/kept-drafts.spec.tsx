@@ -282,6 +282,38 @@ describe("a form mounted on another form's save in flight (#5086)", () => {
     const { key, reopened } = sendThenReopen();
     expect(reopened.result.current.sendingElsewhere).toBe(true);
     expect(hasKeptDraft(key)).toBe(false);
+    // Even a value that moves meanwhile keeps nothing while the save is out.
+    reopened.rerender({ value: { text: "Hi!" } });
+    expect(hasKeptDraft(key)).toBe(false);
+  });
+
+  it("hears the outcome when its own name goes mid-save", () => {
+    const keyOf = renderHook(() => useKeptDraftKeys(), { wrapper }).result
+      .current;
+    const sender = renderHook(
+      ({ value }: { value: Note }) => useKeptFormDraft("note", true, value),
+      { wrapper, initialProps: { value: { text: "" } } },
+    );
+    act(() => {
+      sender.result.current.take();
+    });
+    sender.rerender({ value: { text: "" } });
+    sender.rerender({ value: { text: "Hi" } });
+    act(() => sender.result.current.hold());
+    const opening = readKeptSend<Note>(keyOf.draft("note"))!;
+    const reopened = renderHook(
+      ({ name }: { name: string | null }) =>
+        useKeptFormDraft(name, true, opening, {
+          restoredAtMount: true,
+          adoptsSend: true,
+        }),
+      { wrapper, initialProps: { name: "note" as string | null } },
+    );
+    // Mark done's name goes once an optimistic write reads its task done.
+    reopened.rerender({ name: null });
+    expect(reopened.result.current.sendingElsewhere).toBe(true);
+    act(() => sender.result.current.drop());
+    expect(reopened.result.current.landedElsewhere).toBe(true);
   });
 
   it("keeps the draft a failed save puts back, through an edit", () => {

@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetModal,
@@ -159,9 +159,7 @@ export const UploadDocumentSheet = forwardRef<
   const confirmUpload = useConfirmDocumentUpload();
 
   // The draft kept from the screen's last visit (`keptDraft`), if any.
-  const opening = useKeptSheetOpening<KeptUpload>(keptDraft ?? null, {
-    waitsOnSend: true,
-  });
+  const opening = useKeptSheetOpening<KeptUpload>(keptDraft ?? null);
   const [picked, setPicked] = useState<PickedImage | null>(
     () => opening?.picked ?? null,
   );
@@ -192,6 +190,7 @@ export const UploadDocumentSheet = forwardRef<
   const [stored, setStored] = useState<SentUpload | null>(
     () => opening?.stored ?? null,
   );
+  const draftHeld = uploading || stored !== null;
   const kept = useKeptSheetDraft<KeptUpload>(
     keptDraft ?? null,
     { picked, title, chosenFolder, stored },
@@ -203,12 +202,6 @@ export const UploadDocumentSheet = forwardRef<
     ]),
     opening,
   );
-
-  // Opened while an earlier visit's upload is still out (#5086): it shows
-  // what that visit sent, held as the uploading sheet holds it until the
-  // upload settles.
-  const inFlight = uploading || kept.sendingElsewhere;
-  const draftHeld = inFlight || stored !== null;
 
   // A folder the chips can show: None, or one s12 still lists. A kept chip,
   // or s12's filter, can name one an officer deleted or renamed since.
@@ -227,7 +220,7 @@ export const UploadDocumentSheet = forwardRef<
   // answers with that row, wherever it now sits, so the folder sent is moot.
   const heldFolder = stored && listed(stored.folder) ? stored.folder : null;
   const folder = stored ? heldFolder : draftFolder;
-  const canUpload = picked !== null && !inFlight && !picking && !refusal;
+  const canUpload = picked !== null && !uploading && !picking && !refusal;
 
   const { clear: clearKept } = kept;
   const reset = useCallback(() => {
@@ -243,12 +236,6 @@ export const UploadDocumentSheet = forwardRef<
   }, [clearKept]);
 
   const { onAnimate, markClosed, dismiss } = useSheetVisit(ref);
-  // That upload filed: what the sheet shows has been sent.
-  useEffect(() => {
-    if (!kept.landedElsewhere) return;
-    reset();
-    dismiss();
-  }, [kept.landedElsewhere, reset, dismiss]);
   // Set the moment Upload sends, before `uploading` reaches a render, so two
   // taps in one batch send one upload.
   const sending = useRef(false);
@@ -285,7 +272,7 @@ export const UploadDocumentSheet = forwardRef<
   // or lose a failure no visit hears of. `sending` covers a tap in the same
   // batch as Upload, before `uploading` reaches a render.
   const cancel = () => {
-    if (sending.current || kept.sendingElsewhere) return;
+    if (sending.current) return;
     if (reported.current) {
       reported.current = false;
       onPending?.(null);
@@ -379,7 +366,7 @@ export const UploadDocumentSheet = forwardRef<
         <SheetHeader
           title="Upload document"
           onCancel={cancel}
-          cancelDisabled={inFlight}
+          cancelDisabled={uploading}
         />
 
         <Pressable
@@ -388,8 +375,8 @@ export const UploadDocumentSheet = forwardRef<
             picked ? `Change photo, ${picked.filename}` : "Choose a photo"
           }
           accessibilityHint="Opens your photo library."
-          accessibilityState={{ disabled: picking || inFlight }}
-          disabled={picking || inFlight}
+          accessibilityState={{ disabled: picking || uploading }}
+          disabled={picking || uploading}
           onPress={() => void choose()}
           style={({ pressed }) => [
             styles.fileCard,
@@ -472,7 +459,7 @@ export const UploadDocumentSheet = forwardRef<
         ) : null}
 
         <SheetPrimaryButton
-          label={inFlight ? "Uploading…" : "Upload"}
+          label={uploading ? "Uploading…" : "Upload"}
           onPress={() => void upload()}
           disabled={!canUpload}
           accessibilityHint={
