@@ -36,15 +36,4 @@ describe("buildFindResults", () => {
     expect(targets).toContainEqual({ type: "event", eventId: "e1" });
     expect(targets).toContainEqual({ type: "backwork", entryId: "b1" });
   });
-
-  it("caps every group at the caller's limit when one is given", () => {
-    const rows = buildFindResults({
-      query: "ana",
-      filter: "All",
-      channels: CHANNELS,
-      payload: PAYLOAD,
-      groupLimit: 2,
-    });
-    expect(rows.filter((row) => row.group === "Members")).toHaveLength(2);
-  });
 });

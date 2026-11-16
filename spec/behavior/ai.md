@@ -270,7 +270,7 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   On web the top bar's find field, which reads "Search or ask Frapp", asks from any page and opens the conversation as a dialog where Find opens (changed in #4904 by pdcarlson, 2026-11-13, Paul's pick;
   until then a button in the chat composer opened it over the thread;
   [`../ui/web-dashboard/README.md`](../ui/web-dashboard/README.md) § Top bar);
-  on the phone the Ask Frapp bar above the tab bar, on all four tabs, opens it as a full-height sheet whose field also lists places that match what is typed (#4904;
+  on the phone the Ask Frapp bar above the tab bar, on all four tabs, opens it as a full-height sheet whose field only asks, and the Search screen's last row opens it with the searched words (changed in #5139 by pdcarlson, 2026-11-16; from #4904 the field also listed places that matched what was typed;
   [`../ui/mobile/navigation.md`](../ui/mobile/navigation.md) § Global entries).
   With Ask off for the chapter, for a member without `ai:use`, or on a server with no AI, there is no entry anywhere.
   Changed in #4702 by pdcarlson, 2026-11-13 (Paul): until then web had a pill in the top bar that opened a panel on the right edge, and the phone had a bar inside the + panel.

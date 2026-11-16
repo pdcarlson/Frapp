@@ -385,6 +385,29 @@ export function UnreadBadge({
   );
 }
 
+/**
+ * A count that is not direct address, on the channel badge's own geometry in
+ * house gold (foundations.md §5): Chat home's Threads row (#5139) sits above
+ * the channels, so its count matches theirs in size, corner and type.
+ */
+export function InboxCountBadge({
+  count,
+  testID,
+}: {
+  count: number;
+  testID?: string;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View testID={testID} style={[styles.badge, styles.badgeInbox]}>
+      <Text style={[styles.badgeText, styles.badgeTextInbox]}>
+        {count > 99 ? "99+" : String(count)}
+      </Text>
+    </View>
+  );
+}
+
 /** Title-bar widths, cycled, so the placeholder list doesn't read as a grid. */
 const SKELETON_TITLE_WIDTHS = ["42%", "28%", "55%", "36%", "48%"] as const;
 
@@ -606,6 +629,12 @@ function createStyles(tokens: SignetTokens) {
     },
     badgeTextMention: {
       color: tokens.color.semantic.mentionForeground,
+    },
+    badgeInbox: {
+      backgroundColor: tokens.color.gold.house,
+    },
+    badgeTextInbox: {
+      color: tokens.color.gold.onHouse,
     },
   });
 }

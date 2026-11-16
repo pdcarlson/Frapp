@@ -186,18 +186,27 @@ vi.mock("@/lib/account/own-status", () => ({
 // a tapped row goes, is under test.
 const allThreads = vi.hoisted(() => ({
   data: [] as { unread_count: number }[],
-  onOpen: null as null | ((target: { channelId: string; rootId: string }) => void),
+  onOpen: null as
+    null | ((target: { channelId: string; rootId: string }) => void),
+  present: vi.fn(),
 }));
-vi.mock("@/components/chat/all-threads-sheet", () => ({
-  AllThreadsSheet: ({
-    onOpen,
-  }: {
-    onOpen: (target: { channelId: string; rootId: string }) => void;
-  }) => {
-    allThreads.onOpen = onOpen;
-    return null;
-  },
-}));
+vi.mock("@/components/chat/all-threads-sheet", async () => {
+  const { forwardRef, useImperativeHandle } = await import("react");
+  return {
+    AllThreadsSheet: forwardRef(function AllThreadsSheet(
+      {
+        onOpen,
+      }: {
+        onOpen: (target: { channelId: string; rootId: string }) => void;
+      },
+      ref,
+    ) {
+      allThreads.onOpen = onOpen;
+      useImperativeHandle(ref, () => ({ present: allThreads.present }));
+      return null;
+    }),
+  };
+});
 
 vi.mock("@repo/hooks", async () => {
   // The pure helpers run for real: the point is to catch the screen using
@@ -797,7 +806,9 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       ),
     ).toHaveLength(0);
 
-    act(() => pressableLabelled(tree, "Sort and filter channels").props.onPress());
+    act(() =>
+      pressableLabelled(tree, "Sort and filter channels").props.onPress(),
+    );
     const toggle = (label: string) =>
       tree.root
         .findByType(ChannelFilterMenu)
@@ -815,9 +826,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     act(() =>
       pressableLabelled(tree, "Sort and filter channels").props.onPress(),
     );
-    const sort = tree.root
-      .findByType(ChannelFilterMenu)
-      .findByType(Segmented);
+    const sort = tree.root.findByType(ChannelFilterMenu).findByType(Segmented);
     expect(sort.props.value).toBe("chapter");
     expect(
       sort.props.options.map((option: { label: string }) => option.label),
@@ -2616,7 +2625,7 @@ describe("Chat home: the swipe to Messages", () => {
   });
 });
 
-describe("Chat home's Threads door (#4960)", () => {
+describe("Chat home's Threads row (#4960, a row since #5139)", () => {
   const byTestId = (tree: ReactTestRenderer, testID: string) =>
     tree.root.findAllByProps({ testID });
   it("counts threads with new replies on its badge", () => {
@@ -2628,20 +2637,52 @@ describe("Chat home's Threads door (#4960)", () => {
       );
       expect(screenTextOf(badge!)).toBe("1");
       expect(
-        pressableLabelled(tree, "Threads").props.accessibilityValue,
-      ).toEqual({ text: "1 with new replies" });
+        pressableLabelled(tree, "Threads, 1 with new replies"),
+      ).toBeTruthy();
     } finally {
       allThreads.data = [];
     }
   });
 
+  it("is always there, first above the channels, and opens All threads", () => {
+    allThreads.data = [];
+    allThreads.present.mockClear();
+    const tree = render();
+    // No count while nothing is new.
+    expect(byTestId(tree, "threads-badge")).toHaveLength(0);
+    const row = pressableLabelled(tree, "Threads");
+    act(() => row.props.onPress());
+    expect(allThreads.present).toHaveBeenCalledTimes(1);
+    // Before the first section heading in the screen's own order.
+    const labels = tree.root
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string",
+      )
+      .map((node) => node.props.accessibilityLabel as string);
+    const threadsAt = labels.indexOf("Threads");
+    const firstChannelAt = labels.findIndex((label) =>
+      /general|announcements|random/i.test(label),
+    );
+    expect(threadsAt).toBeGreaterThanOrEqual(0);
+    expect(firstChannelAt).toBeGreaterThan(threadsAt);
+  });
+
+  it("puts Search in the title row, where Threads was", () => {
+    const tree = render();
+    act(() => pressableLabelled(tree, "Search").props.onPress());
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/search");
+  });
+
   it("opens a tapped thread over its channel", () => {
     render();
-    act(() => allThreads.onOpen?.({ channelId: "c-general", rootId: "root-1" }));
+    act(() =>
+      allThreads.onOpen?.({ channelId: "c-general", rootId: "root-1" }),
+    );
     expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
       pathname: "/chat-thread",
       params: { channelId: "c-general", threadRootId: "root-1" },
     });
   });
 });
-
