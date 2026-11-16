@@ -57,7 +57,6 @@ vi.mock("./push", () => ({
     mockState.clearRead(ids),
   clearReadNonChatNotifications: (ids: ReadonlySet<string>) =>
     mockState.clearReadNonChat(ids),
-  dismissPushesWithDeletedRows: async () => undefined,
 }));
 
 const { useBadgeSyncRuntime } = await import("./use-badge-sync");

@@ -1323,29 +1323,36 @@ class ChatRealtimeManager {
     const channel = this.ctx.supabase.channel(INBOX_TOPIC, {
       config: { postgres_changes_options: STREAMING_JOIN },
     });
+    // INSERT and UPDATE only, one binding each, never `*`: Realtime does not
+    // apply RLS to a DELETE, so `*` would hand every client every chapter's
+    // hard-deleted message ids (a channel delete, an import purge).
     channel.on(
       "postgres_changes",
-      { event: "*", schema: "public", table: "chat_messages" },
+      { event: "INSERT", schema: "public", table: "chat_messages" },
       (payload: RealtimePostgresChangesPayload<RawChatMessage>) => {
         const row = payload.new as RawChatMessage | undefined;
         if (!row?.channel_id) return;
         // RLS already keeps archive rows off the wire (see the per-channel
         // handler); an import is not traffic anyone should be told about.
         if (row.kind === "imported") return;
-        if (payload.eventType === "INSERT") {
-          this.reportActivity({
-            type: "message",
-            channelId: row.channel_id,
-            senderId: row.sender_id ?? null,
-          });
-          return;
-        }
+        this.reportActivity({
+          type: "message",
+          channelId: row.channel_id,
+          senderId: row.sender_id ?? null,
+        });
+      },
+    );
+    channel.on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "chat_messages" },
+      (payload: RealtimePostgresChangesPayload<RawChatMessage>) => {
+        const row = payload.new as RawChatMessage | undefined;
+        if (!row?.channel_id || !row.id || row.kind === "imported") return;
         // An edit or a soft delete can change a channel's latest line and its
         // unread count (#4442). Default replica identity sends no `old`, so an
         // UPDATE can't say what changed: any UPDATE of an edited or deleted row
         // counts (a later pin of an edited row re-reads too, harmlessly). A
         // pin, flag or reply-count bump of an untouched row doesn't.
-        if (payload.eventType !== "UPDATE" || !row.id) return;
         const deleted = Boolean(row.is_deleted) || row.deleted_at != null;
         if (deleted || row.edited_at != null) {
           this.reportActivity({

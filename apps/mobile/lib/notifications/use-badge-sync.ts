@@ -59,7 +59,6 @@ import {
   useChannels,
   useNotifications,
 } from "@repo/hooks";
-import { INBOX_FIRST_PAGE_SIZE } from "@repo/validation";
 import { isDirectChannel, selectChannels } from "../chat/channel-list";
 import { useShownUnreadCounts } from "../chat/unread-first-paint";
 import {
@@ -69,7 +68,6 @@ import {
 import {
   clearReadChatNotifications,
   clearReadNonChatNotifications,
-  dismissPushesWithDeletedRows,
   setBadgeCount,
 } from "./push";
 
@@ -133,21 +131,4 @@ export function useBadgeSyncRuntime(): void {
       selectReadNonChatIds(notifications.data),
     );
   }, [chapterId, notifications.data]);
-
-  // A chat push whose message was deleted while the app was closed (#4470):
-  // its in-app row went with the message (#4418), so a fresh page without
-  // it takes the push out of the tray. Live deletes are handled as they
-  // arrive (`useChatRealtimeBinding`).
-  const notificationsReadAt = notifications.dataUpdatedAt;
-  useEffect(() => {
-    if (!chapterId || !notifications.data || !channels.data) return;
-    void dismissPushesWithDeletedRows(
-      {
-        rows: notifications.data,
-        limit: INBOX_FIRST_PAGE_SIZE,
-        readAt: notificationsReadAt,
-      },
-      new Set(selectChannels(channels.data).map((channel) => channel.id)),
-    );
-  }, [chapterId, notifications.data, notificationsReadAt, channels.data]);
 }
