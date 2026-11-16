@@ -133,6 +133,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     phone: [
       "The Calendar has its own + at the top for adding an event from any view, and on the Calendar it starts on the day you've picked, today or later.",
       "Tasks now groups your tasks as Today, This week and Later, with anything overdue at the top of Today.",
+      "Dragging a sheet by its handle while its list was scrolled no longer crashes the app.",
     ],
   },
   {
