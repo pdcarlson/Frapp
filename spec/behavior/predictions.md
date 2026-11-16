@@ -25,9 +25,9 @@ Because the stake is house points, a market must be **zero-sum**: the points pai
 
 - **Spendable balance** is the member's points total for the current semester window (the same figure the leaderboard's "this semester" shows). A stake larger than that is refused; a stake never takes a balance below zero.
 - **Per-market cap:** a member's total stake on one market is capped at `chapter_points_config.prediction_max_stake`, default **25**, set by the same `chapter-config:manage` holders who set the other points limits ([`points.md`](points.md) § Anti-Fraud). Points carry standing, so the default is small next to a typical event award.
-- **The settler can't stake** on a market they settle (the Kalshi insider rule at chapter scale). Whoever creates a market settles it unless they name another member when creating it.
+- **Neither the creator nor the settler can stake** on the market (the Kalshi insider rule at chapter scale). Barring only the settler would let a creator stake and have a friend settle. Whoever creates a market settles it unless they name another member when creating it.
 - **A member named in a question can't stake on it.** "Will Jake pass orgo?" is Jake's to agree to, not his to bet on.
-- Alumni can stake, as they can vote on a poll card; a stake is a points write, so it is refused for a member the points rules would refuse.
+- **Alumni can't stake.** A payout earns points without an officer signing off, which alumni can't do ([`alumni.md`](alumni.md)), even though they can vote on a poll card. They can read cards and the list.
 
 ## Ledger rows
 
@@ -41,8 +41,8 @@ Every movement is a `point_transactions` row, under a new category `PREDICTION`,
 | Re-settle after a question | inverse rows for the earlier payouts, then the new payouts | `market_id`, `kind: "correction"` |
 
 - **A stake is idempotent** on `client_message_id`, as `POST /v1/points/adjust` is: a replay returns the original row and a reused key for a different stake is refused with 409.
-- **Stake and pool update commit together**, in one transaction with a row lock on the market, so two members staking at once can't both read a stale pool or both pass the cap.
-- **Anomaly flagging applies to payouts** like any row: a payout at or above the chapter's `anomaly_threshold` is flagged for the Audit tab.
+- **Stake and pool update commit together**, in one transaction that first locks the staker (a transaction-scoped lock keyed on chapter and member) and then the market row, always in that order. The member lock keeps two stakes on different markets from both passing the balance check; the market lock keeps two members from both reading a stale pool or passing the cap.
+- Payouts are not anomaly-flagged: `metadata.flagged` is written only by manual adjustments, and a payout is bounded by the pool, which the cap bounds.
 
 ## Lifecycle
 
@@ -53,7 +53,9 @@ Every movement is a `point_transactions` row, under a new category `PREDICTION`,
 5. **Question window.** For 24 hours any member who staked can tap "Question this" with a note. A questioned result waits for a member holding `predictions:manage` (on exec roles) to confirm it or re-settle it.
 6. **Paid.** After the window, or once a question is resolved, payouts are written and the card shows the result and the biggest winners.
 
-**Void** is open to the settler before payout and to `predictions:manage` at any point, including after payout (as correction rows). It refunds every stake. A market whose winning answer has no stakes is refunded the same way.
+**Void** is open to the settler before payout and to `predictions:manage` at any point. It refunds every stake. A market whose winning answer has no stakes is refunded the same way. After payout, only `predictions:manage` can void or re-settle, and either one writes correction rows: the inverse of each earlier payout, then the refunds or new payouts.
+
+**Deleting the card** is not open to its sender or to `channels:manage` once anyone has staked: the message's Delete is replaced by Void for `predictions:manage`, which voids first and then removes the card. Otherwise deleting a losing card would hand its creator a free refund.
 
 ## Where it lives
 
@@ -77,9 +79,9 @@ Every movement is a `point_transactions` row, under a new category `PREDICTION`,
 ## Edge cases
 
 - **Semester rollover with open markets:** stakes were taken from the old semester; payouts land when they land and count in the semester they are written. The settler is reminded before rollover.
-- **A member leaves the chapter with an open stake:** their stake stays in the pool and a payout is written to them as for any former member's ledger row.
+- **A member leaves the chapter with an open stake:** their open stakes are refunded as they are removed, while the ledger still accepts writes for them, so no stake in an open market belongs to a non-member. A correction after payout skips a winner who has since left: the points rules refuse a write to a non-member, so those points stay with them.
 - **Deleted card:** deleting the chat message voids the market first.
-- **Blocked creator:** the card is masked in place, as a poll card is; the viewer can still see the chances and their own stake.
+- **Blocked creator:** in chat the card follows chat's block rule like any message from that member (a tombstone with Unblock). In the Predictions list the row keeps its chances and the viewer's own stake and loses its question text, so a member never loses track of points they staked.
 - **Module off before settle:** see Module above.
 
 ## Not in scope for the first build
