@@ -84,6 +84,9 @@ export function DocumentList({
   onUpload,
   marks,
   onHoldRow,
+  isLimited,
+  canSetAccess,
+  onSetAccess,
 }: {
   listState: DocumentListState;
   /** The failed read behind `listState === "error"`, for its wording. */
@@ -128,6 +131,12 @@ export function DocumentList({
    * changes (#4290), so it doesn't vanish with focus on its Star.
    */
   onHoldRow?: (id: string) => void;
+  /** Not everyone can see this file (#3642 piece 1): it draws a lock. */
+  isLimited?: (doc: ChapterDocument) => boolean;
+  /** The member may set who can see this file. */
+  canSetAccess?: (doc: ChapterDocument) => boolean;
+  /** Opens Who can see for a file. */
+  onSetAccess?: (doc: ChapterDocument) => void;
 }) {
   // Starring a file inside a folder or a search moves its row to the head of
   // the list; this keeps focus on the Star that moved it (#3934).
@@ -422,6 +431,9 @@ export function DocumentList({
                     !row.pinned_at,
                   );
                 },
+                limited: isLimited?.(doc) ?? false,
+                onSetAccess:
+                  onSetAccess && canSetAccess?.(doc) ? onSetAccess : undefined,
               };
               return layout === "grid" ? (
                 <DocumentTile
