@@ -51,15 +51,26 @@ const agenda: EventAgendaItem[] = [
   { id: "a1", text: "Treasurer report", done: false },
   { id: "a2", text: "Rush recap", done: true },
 ];
-const attachments: EventAttachment[] = [
-  {
-    id: "x1",
-    kind: "link",
-    url: "https://docs.example.com/budget",
-    title: "Budget",
-  },
-  { id: "x2", kind: "document", document_id: "doc-1", title: "Bylaws" },
-];
+const budgetLink: EventAttachment = {
+  id: "x1",
+  kind: "link",
+  url: "https://docs.example.com/budget",
+  title: "Budget",
+};
+const bylaws: EventAttachment = {
+  id: "x2",
+  kind: "document",
+  document_id: "doc-1",
+  title: "Bylaws",
+};
+const attachments: EventAttachment[] = [budgetLink, bylaws];
+
+/** The entry at `index`, or a failure naming it. */
+function at<T>(list: readonly T[], index: number): T {
+  const entry = list[index];
+  if (entry === undefined) throw new Error(`nothing at ${index}`);
+  return entry;
+}
 
 /** Run each update the section hands up against `current`. */
 function applied<T>(onChange: ReturnType<typeof vi.fn>, current: T[]): T[][] {
@@ -113,13 +124,16 @@ describe("EventAgendaSection", () => {
     await user.click(
       screen.getByRole("button", { name: 'Remove "Treasurer report"' }),
     );
-    const [checked, added, moved, removed] = applied(onChange, agenda);
-    expect(checked[0].done).toBe(true);
-    expect(added).toHaveLength(3);
-    expect(added[2]).toMatchObject({ text: "New business", done: false });
-    expect(added[2].id).toEqual(expect.any(String));
-    expect(moved.map((item) => item.id)).toEqual(["a2", "a1"]);
-    expect(removed).toEqual([agenda[1]]);
+    const runs = applied(onChange, agenda);
+    expect(at(at(runs, 0), 0).done).toBe(true);
+    expect(at(runs, 1)).toHaveLength(3);
+    expect(at(at(runs, 1), 2)).toMatchObject({
+      text: "New business",
+      done: false,
+    });
+    expect(at(at(runs, 1), 2).id).toEqual(expect.any(String));
+    expect(at(runs, 2).map((item) => item.id)).toEqual(["a2", "a1"]);
+    expect(at(runs, 3)).toEqual([at(agenda, 1)]);
   });
 
   it("applies a move to the list as it stands when the update runs", async () => {
@@ -131,7 +145,7 @@ describe("EventAgendaSection", () => {
     );
     // A newer item landed first in the meantime.
     const newer = [{ id: "n", text: "New", done: false }, ...agenda];
-    expect(applied(onChange, newer)[0].map((item) => item.id)).toEqual([
+    expect(at(applied(onChange, newer), 0).map((item) => item.id)).toEqual([
       "n",
       "a2",
       "a1",
@@ -172,7 +186,7 @@ describe("EventAttachmentsSection", () => {
     state.signed.mockRejectedValue({ status: 404 });
     render(
       <EventAttachmentsSection
-        attachments={[attachments[1]]}
+        attachments={[bylaws]}
         canEdit={false}
         documentsOn
         onChange={vi.fn()}
@@ -189,7 +203,7 @@ describe("EventAttachmentsSection", () => {
   it("keeps a document openable while the module read can't say, and disables it only when it's off", () => {
     const { rerender } = render(
       <EventAttachmentsSection
-        attachments={[attachments[1]]}
+        attachments={[bylaws]}
         canEdit
         documentsOn={null}
         onChange={vi.fn()}
@@ -201,7 +215,7 @@ describe("EventAttachmentsSection", () => {
     ).toBeNull();
     rerender(
       <EventAttachmentsSection
-        attachments={[attachments[1]]}
+        attachments={[bylaws]}
         canEdit
         documentsOn={false}
         onChange={vi.fn()}
@@ -249,7 +263,7 @@ describe("EventAttachmentsSection", () => {
     await user.clear(field);
     await user.type(field, "https://www.docs.example.com/agenda");
     await user.click(screen.getByRole("button", { name: "Add link" }));
-    expect(applied(onChange, [])[0]).toEqual([
+    expect(at(applied(onChange, [] as EventAttachment[]), 0)).toEqual([
       expect.objectContaining({
         kind: "link",
         url: "https://www.docs.example.com/agenda",
@@ -268,7 +282,7 @@ describe("EventAttachmentsSection", () => {
     ];
     render(
       <EventAttachmentsSection
-        attachments={[attachments[1]]}
+        attachments={[bylaws]}
         canEdit
         documentsOn
         onChange={onChange}
@@ -280,9 +294,12 @@ describe("EventAttachmentsSection", () => {
     // Bylaws is attached already, so it isn't offered again.
     expect(screen.queryByRole("button", { name: "Bylaws" })).toBeNull();
     await user.click(screen.getByRole("button", { name: /^Spring budget/ }));
-    const [next] = applied(onChange, [attachments[1]]);
-    expect(next[1]).toMatchObject({ kind: "document", document_id: "doc-2" });
-    expect((next[1] as { title: string }).title).toHaveLength(120);
+    const next = at(applied(onChange, [bylaws]), 0);
+    expect(at(next, 1)).toMatchObject({
+      kind: "document",
+      document_id: "doc-2",
+    });
+    expect(at(next, 1).title).toHaveLength(120);
   });
 
   it("offers no add controls once the event holds ten", () => {
