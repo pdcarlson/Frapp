@@ -2,7 +2,6 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import * as WebBrowser from "expo-web-browser";
 import { Alert } from "react-native";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FloatingCreateButton } from "@/components/floating-create-button";
@@ -74,6 +73,27 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useSetDocumentStar: () => ({ mutateAsync: setStar }),
   useSetDocumentPin: () => ({ mutateAsync: setPin, isPending: false }),
+}));
+
+// The download and the share sheet (#4409) are `document-file.ts`'s, pinned
+// in its own spec. This stand-in presents at once, unless a spec holds the
+// sheet up (`holdSheet`), and records each document whose sheet appeared.
+const presented: string[] = [];
+let holdSheet: Promise<void> | null = null;
+async function presentAtOnce(
+  _id: string,
+  payload: unknown,
+  shouldPresent: () => boolean,
+): Promise<boolean> {
+  if (!shouldPresent()) return true;
+  presented.push((payload as { forcedDownloadUrl: string }).forcedDownloadUrl);
+  await holdSheet;
+  return true;
+}
+const shareDocument = vi.fn(presentAtOnce);
+vi.mock("@/lib/more/document-file", () => ({
+  shareDocumentFile: (...args: Parameters<typeof shareDocument>) =>
+    shareDocument(...args),
 }));
 
 // A purple stand-in, so a glyph painted house gold (`gold.askText`) fails.
@@ -149,11 +169,9 @@ afterEach(() => {
   starsFailed = false;
   setPin.mockReset();
   resetListLayoutsForTests();
-  // Back to the suite-wide stand-in (vitest.setup.ts), a browser dismissed at
-  // once, after a spec that held one open.
-  vi.mocked(WebBrowser.openBrowserAsync).mockResolvedValue({
-    type: "dismiss",
-  } as WebBrowser.WebBrowserResult);
+  presented.length = 0;
+  holdSheet = null;
+  shareDocument.mockReset().mockImplementation(presentAtOnce);
   act(() => {
     for (const tree of mounted.splice(0)) tree.unmount();
   });
@@ -388,14 +406,14 @@ describe("Documents states and rows", () => {
     ]);
 
     await act(async () => {
-      settle({ downloadUrl: "https://signed/bylaws" });
+      settle({ forcedDownloadUrl: "https://signed/bylaws" });
     });
     expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
   });
 
   // A tap on another row while one is opening used to be dropped without a
   // sign. Now the latest tap wins: the spinner moves, and the first row's
-  // URL, landing late, opens nothing.
+  // URL, landing late, presents nothing.
   it("lets a tap on another row win while the first is still opening", async () => {
     documentRows = [
       { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
@@ -408,8 +426,6 @@ describe("Documents states and rows", () => {
           settle[id] = resolve;
         }),
     );
-    const openBrowser = vi.mocked(WebBrowser.openBrowserAsync);
-    openBrowser.mockClear();
     const tree = render();
     const rows = () => tree.root.findAllByType(ListRow);
 
@@ -423,17 +439,71 @@ describe("Documents states and rows", () => {
     expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
 
     await act(async () => {
-      settle.d1!({ downloadUrl: "https://signed/bylaws" });
+      settle.d1!({ forcedDownloadUrl: "https://signed/bylaws" });
     });
-    expect(openBrowser).not.toHaveBeenCalled();
+    expect(shareDocument).not.toHaveBeenCalled();
     expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
 
     await act(async () => {
-      settle.d2!({ downloadUrl: "https://signed/minutes" });
+      settle.d2!({ forcedDownloadUrl: "https://signed/minutes" });
     });
-    expect(openBrowser).toHaveBeenCalledTimes(1);
-    expect(openBrowser).toHaveBeenCalledWith("https://signed/minutes");
+    expect(shareDocument).toHaveBeenCalledTimes(1);
+    expect(shareDocument).toHaveBeenCalledWith(
+      "d2",
+      { forcedDownloadUrl: "https://signed/minutes" },
+      expect.any(Function),
+    );
+    expect(presented).toEqual(["https://signed/minutes"]);
     expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
+  });
+
+  // The same race one step later (#4409): the first row's file is still
+  // downloading when the member taps another. Its sheet must not come up over
+  // the document asked for since.
+  it("presents no sheet for a file that lands after another row was tapped", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    download.mockImplementation(async (id: string) => ({
+      forcedDownloadUrl: `https://signed/${id}`,
+    }));
+    const landed: Record<string, () => void> = {};
+    shareDocument.mockImplementation(
+      (id: string, payload: unknown, shouldPresent: () => boolean) =>
+        new Promise((resolve) => {
+          landed[id] = () => {
+            if (shouldPresent()) {
+              presented.push(
+                (payload as { forcedDownloadUrl: string }).forcedDownloadUrl,
+              );
+            }
+            resolve(true);
+          };
+        }),
+    );
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    expect(rows().map((row) => row.props.busy)).toEqual([true, false]);
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+    expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
+
+    await act(async () => {
+      landed.d1!();
+    });
+    expect(presented).toEqual([]);
+    await act(async () => {
+      landed.d2!();
+    });
+    expect(presented).toEqual(["https://signed/d2"]);
+    expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
+    expect(screenText(tree)).not.toContain("couldn't be opened");
   });
 
   // The same race, settled by a failure: the first row's signed URL is
@@ -455,11 +525,6 @@ describe("Documents states and rows", () => {
           settle[id] = { resolve, reject };
         }),
     );
-    const openBrowser = vi.mocked(WebBrowser.openBrowserAsync);
-    openBrowser.mockClear();
-    openBrowser.mockResolvedValue({
-      type: "dismiss",
-    } as WebBrowser.WebBrowserResult);
     const tree = render();
     const rows = () => tree.root.findAllByType(ListRow);
 
@@ -477,34 +542,54 @@ describe("Documents states and rows", () => {
     expect(rows().map((row) => row.props.busy)).toEqual([false, true]);
 
     await act(async () => {
-      settle.d2!.resolve({ downloadUrl: "https://signed/minutes" });
+      settle.d2!.resolve({ forcedDownloadUrl: "https://signed/minutes" });
     });
-    expect(openBrowser).toHaveBeenCalledWith("https://signed/minutes");
+    expect(presented).toEqual(["https://signed/minutes"]);
     expect(screenText(tree)).not.toContain("couldn't be opened");
     expect(rows().map((row) => row.props.busy)).toEqual([false, false]);
   });
 
-  // Once a document's browser is on its way up, a tap that reaches another
-  // row does nothing. iOS refuses a second presentation, and that refusal
-  // would show "couldn't be opened" over the document that did open.
-  it("starts no second browser while the first is still being presented", async () => {
+  // A file that couldn't be downloaded or shared (an expired link, no
+  // network, a type the library doesn't take) says so under the list.
+  it("says the document couldn't be opened when the download or sheet fails", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
+    download.mockResolvedValue({ forcedDownloadUrl: "https://signed/d1" });
+    shareDocument.mockResolvedValueOnce(false);
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    expect(screenText(tree)).toContain("couldn't be opened");
+    expect(rows()[0]!.props.busy).toBe(false);
+  });
+
+  // A stale tap's failed download (an expired link, say) lands while the
+  // member waits on a newer row: it says nothing, and the newer row opens.
+  it("keeps a stale tap's failed download off the screen", async () => {
     documentRows = [
       { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
       { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
     ];
     download.mockImplementation(async (id: string) => ({
-      downloadUrl: `https://signed/${id}`,
+      forcedDownloadUrl: `https://signed/${id}`,
     }));
-    const openBrowser = vi.mocked(WebBrowser.openBrowserAsync);
-    openBrowser.mockClear();
-    let dismiss!: () => void;
-    openBrowser.mockImplementation(() =>
-      openBrowser.mock.calls.length === 1
-        ? new Promise((resolve) => {
-            dismiss = () =>
-              resolve({ type: "dismiss" } as WebBrowser.WebBrowserResult);
-          })
-        : Promise.reject(new Error("Another web browser is already open")),
+    const landed: Record<string, (ok: boolean) => void> = {};
+    shareDocument.mockImplementation(
+      (id: string, payload: unknown, shouldPresent: () => boolean) =>
+        new Promise((resolve) => {
+          landed[id] = (ok) => {
+            if (ok && shouldPresent()) {
+              presented.push(
+                (payload as { forcedDownloadUrl: string }).forcedDownloadUrl,
+              );
+            }
+            resolve(ok);
+          };
+        }),
     );
     const tree = render();
     const rows = () => tree.root.findAllByType(ListRow);
@@ -512,13 +597,129 @@ describe("Documents states and rows", () => {
     await act(async () => {
       rows()[0]!.props.onPress();
     });
-    expect(openBrowser).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+    await act(async () => {
+      landed.d1!(false);
+    });
+    expect(screenText(tree)).not.toContain("couldn't be opened");
+    await act(async () => {
+      landed.d2!(true);
+    });
+    expect(presented).toEqual(["https://signed/d2"]);
+    expect(screenText(tree)).not.toContain("couldn't be opened");
+  });
+
+  // A stale tap that finishes while a newer row's sheet is up must leave the
+  // one-sheet guard alone: clearing it would let a third tap start a second
+  // presentation, which iOS refuses with "couldn't be opened".
+  it("keeps the one-sheet guard while a stale tap finishes under another row's sheet", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+      { id: "d3", title: "Roster", created_at: "2026-09-01T12:00:00Z" },
+    ];
+    const settle: Record<string, (value: unknown) => void> = {};
+    download.mockImplementation(
+      (id: string) =>
+        new Promise((resolve) => {
+          settle[id] = resolve;
+        }),
+    );
+    let dismiss!: () => void;
+    holdSheet = new Promise((resolve) => {
+      dismiss = resolve;
+    });
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    await act(async () => {
+      rows()[1]!.props.onPress();
+    });
+    await act(async () => {
+      settle.d2!({ forcedDownloadUrl: "https://signed/d2" });
+    });
+    expect(presented).toEqual(["https://signed/d2"]);
+    // d1 lands now, stale, and finishes while d2's sheet is up.
+    await act(async () => {
+      settle.d1!({ forcedDownloadUrl: "https://signed/d1" });
+    });
+    await act(async () => {
+      rows()[2]!.props.onPress();
+    });
+    expect(download).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      dismiss();
+    });
+  });
+
+  // Back pops s12. A file still downloading then lands with no screen to
+  // present over: no sheet comes up over wherever the member went.
+  it("presents nothing for a file that lands after s12 has closed", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
+    download.mockResolvedValue({ forcedDownloadUrl: "https://signed/d1" });
+    let land!: () => void;
+    shareDocument.mockImplementation(
+      (_id: string, payload: unknown, shouldPresent: () => boolean) =>
+        new Promise((resolve) => {
+          land = () => {
+            if (shouldPresent()) {
+              presented.push(
+                (payload as { forcedDownloadUrl: string }).forcedDownloadUrl,
+              );
+            }
+            resolve(true);
+          };
+        }),
+    );
+    const tree = render();
+
+    await act(async () => {
+      tree.root.findAllByType(ListRow)[0]!.props.onPress();
+    });
+    act(() => tree.unmount());
+    mounted.splice(mounted.indexOf(tree), 1);
+    await act(async () => {
+      land();
+    });
+    expect(presented).toEqual([]);
+  });
+
+  // Once a document's sheet is up, a tap that reaches another row does
+  // nothing. iOS refuses a second presentation, and that refusal would show
+  // "couldn't be opened" over the document that did open.
+  it("starts no second sheet while the first is still up", async () => {
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+      { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
+    ];
+    download.mockImplementation(async (id: string) => ({
+      forcedDownloadUrl: `https://signed/${id}`,
+    }));
+    let dismiss!: () => void;
+    holdSheet = new Promise((resolve) => {
+      dismiss = resolve;
+    });
+    const tree = render();
+    const rows = () => tree.root.findAllByType(ListRow);
+
+    await act(async () => {
+      rows()[0]!.props.onPress();
+    });
+    expect(presented).toEqual(["https://signed/d1"]);
 
     await act(async () => {
       rows()[1]!.props.onPress();
     });
     expect(download).toHaveBeenCalledTimes(1);
-    expect(openBrowser).toHaveBeenCalledTimes(1);
+    expect(presented).toEqual(["https://signed/d1"]);
     expect(screenText(tree)).not.toContain("couldn't be opened");
     expect(rows().map((row) => row.props.busy)).toEqual([true, false]);
 
@@ -901,10 +1102,14 @@ describe("Documents pinned and starred (#3934)", () => {
           node.props.label === label,
       );
     press("Sort and filter");
-    expect(toggle("Starred").props.accessibilityState).toEqual({ checked: false });
+    expect(toggle("Starred").props.accessibilityState).toEqual({
+      checked: false,
+    });
 
     act(() => toggle("Starred").props.onPress());
-    expect(toggle("Starred").props.accessibilityState).toEqual({ checked: true });
+    expect(toggle("Starred").props.accessibilityState).toEqual({
+      checked: true,
+    });
     // Any filter swaps the cards for the list, the tiers leading it.
     expect(tree.root.findAllByType(MarkedCards)).toHaveLength(0);
     expect(rowLabels(tree)).toEqual(["Budget FY2026"]);
@@ -945,7 +1150,9 @@ describe("Documents pinned and starred (#3934)", () => {
         typeof node.props.action?.onPress === "function",
     );
     act(() => clear.props.action.onPress());
-    expect(toggle("Pinned").props.accessibilityState).toEqual({ checked: false });
+    expect(toggle("Pinned").props.accessibilityState).toEqual({
+      checked: false,
+    });
     expect(rowLabels(tree)).toEqual([
       "Alumni mixer flyer",
       "Budget FY2026",
@@ -1111,10 +1318,12 @@ describe("Documents pinned and starred (#3934)", () => {
     folderRows = FOLDERS;
     starRows = { folder_ids: ["f-3"], document_ids: [] };
     const tree = render();
-    const rush = (folderChips(tree).props.chips as {
-      label: string;
-      mark?: React.ReactElement<{ children: React.ReactNode }>;
-    }[]).find((chip) => chip.label === "Rush")!;
+    const rush = (
+      folderChips(tree).props.chips as {
+        label: string;
+        mark?: React.ReactElement<{ children: React.ReactNode }>;
+      }[]
+    ).find((chip) => chip.label === "Rush")!;
     const marks = React.Children.toArray(rush.mark!.props.children);
     expect(marks).toHaveLength(2);
   });
@@ -1136,9 +1345,9 @@ describe("Documents pinned and starred (#3934)", () => {
 
     permissions = ["chapter_docs:manage"];
     const officer = loaded();
-    expect(
-      card(officer, "Chapter bylaws").props.accessibilityActions,
-    ).toEqual([{ name: "longpress", label: "Star, pin or delete" }]);
+    expect(card(officer, "Chapter bylaws").props.accessibilityActions).toEqual([
+      { name: "longpress", label: "Star, pin or delete" },
+    ]);
   });
 
   it("takes no press on a card whose file is being deleted", async () => {
@@ -1192,18 +1401,32 @@ describe("Documents as a grid (#4175)", () => {
       );
 
   it("offers List and Grid on the title row, on List until picked", () => {
-    documentRows = [{ id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" }];
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
     const tree = render();
-    expect(tree.root.findByType(ListLayoutToggle).props.screen).toBe("documents");
+    expect(tree.root.findByType(ListLayoutToggle).props.screen).toBe(
+      "documents",
+    );
     expect(tree.root.findAllByType(DocumentTiles)).toHaveLength(0);
     expect(tree.root.findAllByType(ListRow)).toHaveLength(1);
   });
 
   it("lays the files out as tiles, two to a line, naming each file's type", () => {
     documentRows = [
-      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z", storage_path: "c/d1/bylaws.pdf" },
+      {
+        id: "d1",
+        title: "Bylaws",
+        created_at: "2026-10-02T12:00:00Z",
+        storage_path: "c/d1/bylaws.pdf",
+      },
       { id: "d2", title: "Minutes", created_at: "2026-10-01T12:00:00Z" },
-      { id: "d3", title: "Roster", created_at: "2026-09-01T12:00:00Z", storage_path: "c/d3/roster.xlsx" },
+      {
+        id: "d3",
+        title: "Roster",
+        created_at: "2026-09-01T12:00:00Z",
+        storage_path: "c/d3/roster.xlsx",
+      },
     ];
     act(() => setListLayout("documents", "grid"));
     const tree = render();
@@ -1219,8 +1442,10 @@ describe("Documents as a grid (#4175)", () => {
   });
 
   it("opens a file on a tap and its sheet on a long press, as a row does", async () => {
-    documentRows = [{ id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" }];
-    download.mockResolvedValue({ downloadUrl: "https://signed/bylaws" });
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
+    download.mockResolvedValue({ forcedDownloadUrl: "https://signed/bylaws" });
     act(() => setListLayout("documents", "grid"));
     const tree = render();
 
@@ -1230,7 +1455,9 @@ describe("Documents as a grid (#4175)", () => {
     expect(download).toHaveBeenCalledWith("d1");
 
     act(() => tiles(tree)[0]!.props.onLongPress());
-    expect(tree.root.findByType(DocumentActionsSheet).props.target).toMatchObject({
+    expect(
+      tree.root.findByType(DocumentActionsSheet).props.target,
+    ).toMatchObject({
       kind: "document",
       id: "d1",
       name: "Bylaws",
@@ -1239,7 +1466,12 @@ describe("Documents as a grid (#4175)", () => {
 
   it("marks a pinned or starred tile, on screen and for a screen reader", () => {
     documentRows = [
-      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z", pinned_at: "2026-10-03T12:00:00Z" },
+      {
+        id: "d1",
+        title: "Bylaws",
+        created_at: "2026-10-02T12:00:00Z",
+        pinned_at: "2026-10-03T12:00:00Z",
+      },
       { id: "d2", title: "Budget", created_at: "2026-10-01T12:00:00Z" },
       { id: "d3", title: "Flyer", created_at: "2026-09-01T12:00:00Z" },
     ];
@@ -1247,9 +1479,11 @@ describe("Documents as a grid (#4175)", () => {
     act(() => setListLayout("documents", "grid"));
     const tree = render();
     const value = (label: string) =>
-      tiles(tree).find((tile) => tile.props.accessibilityLabel === label)!
-        .props.accessibilityValue;
-    expect(value("Bylaws")).toEqual({ text: "Pinned for the chapter, Starred" });
+      tiles(tree).find((tile) => tile.props.accessibilityLabel === label)!.props
+        .accessibilityValue;
+    expect(value("Bylaws")).toEqual({
+      text: "Pinned for the chapter, Starred",
+    });
     expect(value("Budget")).toEqual({ text: "Starred" });
     expect(value("Flyer")).toBeUndefined();
     const grid = tree.root.findByType(DocumentTiles);
@@ -1259,7 +1493,9 @@ describe("Documents as a grid (#4175)", () => {
 
   it("keeps an upload in flight as a row above the tiles", () => {
     permissions = ["*"];
-    documentRows = [{ id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" }];
+    documentRows = [
+      { id: "d1", title: "Bylaws", created_at: "2026-10-02T12:00:00Z" },
+    ];
     act(() => setListLayout("documents", "grid"));
     const tree = render();
     act(() => {
@@ -1268,9 +1504,9 @@ describe("Documents as a grid (#4175)", () => {
         .props.onPending({ title: "Look at this", failed: null });
     });
     const rows = tree.root.findAllByType(ListRow);
-    expect(rows.map((row) => [row.props.label, row.props.description])).toEqual([
-      ["Look at this", "Uploading…"],
-    ]);
+    expect(rows.map((row) => [row.props.label, row.props.description])).toEqual(
+      [["Look at this", "Uploading…"]],
+    );
     expect(tiles(tree).map((tile) => tile.props.accessibilityLabel)).toEqual([
       "Bylaws",
     ]);

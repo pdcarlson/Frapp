@@ -24,6 +24,7 @@ import {
 } from "@repo/validation";
 import { errorCopy } from "./error-copy";
 import type { ActResponse } from "./use-act";
+import type { AiSuggestion } from "./use-ai-suggestions";
 import { aiConsentKey, isAiNotAvailable } from "./use-ai";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
@@ -149,17 +150,28 @@ export function useSetAskDiagnostics() {
 }
 
 /** How a proposal card ended, so its turn can say so in the card's place. */
-export type AskProposalResolution =
+export type AskProposalResolution = (
   | {
       kind: "done";
       /** "Task created", "Gave 5 points to 12 members". */
       line: string;
       /** The page the change can be seen on, or null for none. Open. */
       page: string | null;
+      /** What was made, when the card can link to it (an event). */
+      id?: string | null;
     }
   | { kind: "cancelled" }
   /** It stopped waiting before the member decided: a day passed, or it was decided elsewhere. */
-  | { kind: "gone" };
+  | { kind: "gone" }
+) & {
+  /**
+   * The card as it stood when it ended, with the member's changes on it, so
+   * it stays in the conversation greyed out rather than shrinking to a line
+   * (Paul, 2026-11-16, #5148). Absent when it is not known, such as an event
+   * made in the full form, whose details are the form's.
+   */
+  shown?: AiSuggestion | null;
+};
 
 /**
  * Where a turn was asked, when that was a chat composer (`@Frapp`, #4713).

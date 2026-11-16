@@ -394,8 +394,13 @@ The drawn payment-plan link, payment-method sub-labels and receipts line are omi
 Route: `(app)/documents.tsx`.
 
 Live — real folders and documents; web's search, Uploaded by, Date added, File type, Pinned and Starred filters and sort, run by the same shared code over the whole library ([`chapter-docs.md` § Search](../../behavior/chapter-docs.md#search), #3938), behind a "Sort & filter" chip that opens a panel of chip rows;
+<<<<<<< HEAD
 rows read "Uploaded Aug 12 by … · folder · type"; PINNED and STARRED cards above the list on All, folder chips ordered pinned, starred, then the rest, and a long press on a chip, card or row opening a sheet with Star, Pin for the chapter (`chapter_docs:manage`) and, on a file, Delete document after a confirm (`chapter_docs:manage`) ([`chapter-docs.md` § Pinned and starred](../../behavior/chapter-docs.md#pinned-and-starred), #3934); a copy of a file in the chapter's Google Drive folder reads "From Google Drive, added Aug 12 · …" and has no Delete document, since Drive owns it ([`chapter-docs.md` § Google Drive folder](../../behavior/chapter-docs.md#google-drive-folder), #5157; connecting the folder is web only);
 opens the signed `downloadUrl` in the system browser.
+=======
+rows read "Uploaded Aug 12 by … · folder · type"; PINNED and STARRED cards above the list on All, folder chips ordered pinned, starred, then the rest, and a long press on a chip, card or row opening a sheet with Star, Pin for the chapter (`chapter_docs:manage`) and, on a file, Delete document after a confirm (`chapter_docs:manage`) ([`chapter-docs.md` § Pinned and starred](../../behavior/chapter-docs.md#pinned-and-starred), #3934);
+a tap downloads the file and presents the system share sheet, to save it to Files or open it in an app that reads it, never opening it as a page ([`chapter-docs.md` § Two links](../../behavior/chapter-docs.md#two-links-inline-and-saved), #4409).
+>>>>>>> origin/main
 A List / Grid switch at the title row's trailing end ([`components.md` § Segmented control](../design-system/components.md), #4175) lays the files out two to a line as tiles, each a panel naming the file's type over its title and the row's meta line, wearing its pin and star, with the row's tap and long press; an upload in flight stays a row above them.
 The floating create button (Upload document) opens s21, drawn only for a viewer holding `chapter_docs:upload`.
 Upload closes s21 at once: the upload heads the list as a row with its title and a gray "Uploading…" until the filed document arrives in the list's order (Name A–Z by default, so not necessarily the same slot, since #3938), or "Didn't upload.
@@ -522,11 +527,11 @@ Nothing sits under the field; while the beta diagnostics window is on, one capti
 Whether a member has Ask is the server's answer (`lib/ai/availability.ts`); without it nothing is drawn and `ask.tsx` goes to Chat home ([#2259](https://github.com/pdcarlson/Frapp/issues/2259)).
 Web's twin is the Ask card over the chat (the Ask panel until #4702), and both read `ASK_COPY`.
 Draws no Cancel word: its header's X and the grabber are the dismissal (the grabber and the scrim were, as drawn, until #4702 made it a tall sheet).
-**A request** (2026-11-12, #718, [`../../behavior/ai.md` § Asking Frapp to do something](../../behavior/ai.md#asking-frapp-to-do-something)) typed in the same field comes back as a card in the thread (`components/ask/ask-proposal.tsx`) saying exactly what would happen and to whom, with Cancel, Edit and Confirm; every card in the thread stays live.
-Edit (#5117) opens New event (filled in from the card, More options open) on an event card, the New task sheet on a task card, and turns a points card's amount and reason into fields; a series adds a "Repeats" row written out in full.
+**A request** (2026-11-12, #718, [`../../behavior/ai.md` § Asking Frapp to do something](../../behavior/ai.md#asking-frapp-to-do-something)) typed in the same field comes back as a card in the thread (`components/ask/ask-proposal.tsx`) saying exactly what would happen and to whom, with a ··· menu (Dismiss, Report this) in its top line and Edit beside one named action ("Create event", "Give 5 points"); every card in the thread stays live (changed in #5148 by pdcarlson, 2026-11-16: until then Cancel, Edit and Confirm). Details are rows led by small marks, an event's day sits in a date tile, and an event whose points could not be filled shows an outlined points field the action waits on.
+Edit (#5117) opens New event (filled in from the card, More options open) on an event card, the New task sheet on a task card, and turns a points card's amount and reason into fields; a series adds a repeat row ("Every Sunday until February 7, 2027", "13 times" under it).
 A points card lists its members (folded behind Show when more than five), each with a remove control, and Add a member opens the roster in a tall sheet with a search field; "Which event?" is a list of the recent events to pick from.
 A task card's who and when open the New task sheet (s19) on the proposal, and Confirm opens it when either is missing.
-After Confirm or Cancel the card becomes a receipt in the same frame: what it was about, one line saying what was done (with how many were skipped when only some went through), and a link to Tasks or Events.
+After the action or Dismiss the card stays in the same frame, greyed (struck through when dismissed), under one line saying what was done (with how many were skipped when only some went through), and a link to Tasks or to the event itself (#5148).
 The members an officer left on a points card are kept through a close and reopen.
 
 ### Minutes

@@ -8728,6 +8728,14 @@ export interface components {
              */
             event_start_time: string | null;
         };
+        NewEventPointsFromDto: {
+            /**
+             * @description `type`: the chapter event type of that name. `event`: its latest event of that name.
+             * @enum {string}
+             */
+            kind: "type" | "event";
+            name: string;
+        };
         NewEventSuggestionDto: {
             name: string;
             description: string | null;
@@ -8736,8 +8744,15 @@ export interface components {
             start_time: string;
             /** Format: date-time */
             end_time: string;
-            /** @description Null leaves the chapter’s usual amount. */
+            /** @description Points for coming. Null when the caller did not say and nothing could be copied: accepting then needs `new_event.point_value`. */
             point_value: number | null;
+            /** @description Where points the caller did not say were copied from. Null when they were said, typed, or are missing. */
+            points_from: components["schemas"]["NewEventPointsFromDto"] | null;
+            /**
+             * Format: uuid
+             * @description The chapter event type the event is one of, when one matched.
+             */
+            event_type_id: string | null;
             is_mandatory: boolean;
             /** @description The repeat the series is made with (the `recurrence_rule` format of `POST /v1/events`), or null for one event. */
             recurrence_rule: string | null;
@@ -8816,9 +8831,11 @@ export interface components {
         NewEventSuggestionAcceptDto: {
             /**
              * Format: uuid
-             * @description The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller.
+             * @description The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller. When set, nothing else is read.
              */
-            event_id: string;
+            event_id?: string;
+            /** @description Points for coming, typed on the card: needed when the proposal has none. */
+            point_value?: number;
         };
         AcceptAiSuggestionDto: {
             /** @description Changes to a suggested task, for edit-then-accept. */

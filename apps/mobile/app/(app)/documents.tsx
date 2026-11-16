@@ -1,7 +1,6 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import * as WebBrowser from "expo-web-browser";
 import {
   useActiveChapterId,
   useDeleteDocument,
@@ -66,8 +65,8 @@ import {
   documentMeta,
   selectDocumentFolders,
   selectDocuments,
-  selectDownloadUrl,
 } from "@/lib/more/documents";
+import { shareDocumentFile } from "@/lib/more/document-file";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -140,6 +139,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * its spinner while the request runs and takes no second press.
  *
  * ## Opening a document
+ *
+ * A tap downloads the file and hands it to the system share sheet, where the
+ * member saves it to Files or opens it in an app that reads it (#4409,
+ * `lib/more/document-file.ts`). It used to open the inline `downloadUrl` in
+ * the in-app browser, the one place a member's upload was served as a page.
+ * The row's spinner runs from the tap until the sheet closes, and a file that
+ * lands after the member has left s12 presents nothing.
  *
  * There is no separate download endpoint: `GET /v1/documents/{id}` returns the
  * document with a freshly signed `downloadUrl`. That read runs through a
@@ -440,38 +446,45 @@ export default function DocumentsScreen() {
     setMarkFilter(NO_MARK_FILTER);
   }
 
-  // The latest tap's number, and whether a browser is already on its way up.
+  // The latest tap's number, and whether a share sheet is already up.
   const latestOpen = useRef(0);
   const presenting = useRef(false);
+  // Leaving s12 (back pops it) supersedes any tap still downloading, so its
+  // sheet never comes up over the screen the member went to.
+  useEffect(
+    () => () => {
+      latestOpen.current += 1;
+    },
+    [],
+  );
 
   async function open(id: string) {
-    // One browser at a time: iOS rejects a second presentation while one is
+    // One sheet at a time: iOS rejects a second presentation while one is
     // showing, which is a rejection worth not provoking rather than reporting.
     if (presenting.current) return;
     // Before that, the latest tap wins. A tap on another row while one is
-    // still fetching its signed URL moves the spinner to that row, and the
-    // earlier row's URL is dropped when it lands rather than opened over the
-    // document the member asked for since.
+    // still fetching its signed URL or downloading its file moves the spinner
+    // to that row, and the earlier row's file is dropped when it lands rather
+    // than presented over the document the member asked for since.
     const tap = ++latestOpen.current;
     const isLatest = () => tap === latestOpen.current;
+    let presented = false;
     setOpenFailed(false);
     setOpeningId(id);
     try {
-      const url = selectDownloadUrl(await openDocument.mutateAsync(id));
+      const payload = await openDocument.mutateAsync(id);
       if (!isLatest()) return;
-      if (!url) {
-        setOpenFailed(true);
-        return;
-      }
-      presenting.current = true;
-      try {
-        await WebBrowser.openBrowserAsync(url);
-      } finally {
-        presenting.current = false;
-      }
+      const shared = await shareDocumentFile(id, payload, () => {
+        if (!isLatest() || presenting.current) return false;
+        presented = true;
+        presenting.current = true;
+        return true;
+      });
+      if (!shared && isLatest()) setOpenFailed(true);
     } catch {
       if (isLatest()) setOpenFailed(true);
     } finally {
+      if (presented) presenting.current = false;
       if (isLatest()) setOpeningId(null);
     }
   }
@@ -649,7 +662,7 @@ export default function DocumentsScreen() {
             key={row.doc.id}
             label={row.doc.title}
             description={documentMeta(row)}
-            accessibilityHint="Opens in your browser."
+            accessibilityHint="Opens the share sheet to save it or open it in another app."
             // Only the row being opened, or deleted, shows it. The others
             // stay as they are and take a tap, which moves the spinner to
             // them (`open`).

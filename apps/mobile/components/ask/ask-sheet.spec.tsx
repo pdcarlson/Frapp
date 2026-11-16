@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
+import { ActionSheetIOS } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useRouter } from "expo-router";
@@ -685,10 +686,23 @@ describe("AskSheet", () => {
       expect(text).toContain("Give Ana 5 points");
       expect(text).toContain("Came to chapter");
       expect(text).toContain("Ana Ruiz");
-      await act(async () => byLabel(tree, ACT_COPY.cancel)[0].props.onPress());
-      expect(hooks.resolveProposal).toHaveBeenCalledWith("turn-3", {
-        kind: "cancelled",
-      });
+      // Dismiss lives in the card's ··· menu (#5148).
+      const sheetSpy = vi
+        .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+        .mockImplementation(() => undefined);
+      const more = tree.root.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          String(node.props.accessibilityLabel ?? "").startsWith("More: "),
+      )[0]!;
+      act(() => more.props.onPress());
+      const [options, pick] = sheetSpy.mock.calls.at(-1)!;
+      sheetSpy.mockRestore();
+      await act(async () => pick(options.options.indexOf(ACT_COPY.dismiss)));
+      expect(hooks.resolveProposal).toHaveBeenCalledWith(
+        "turn-3",
+        expect.objectContaining({ kind: "cancelled" }),
+      );
     });
 
     it("leaves for the screen a confirmed change shows on", () => {

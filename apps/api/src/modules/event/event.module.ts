@@ -48,6 +48,7 @@ import { RbacModule } from '../rbac/rbac.module';
       useClass: SupabaseChapterDocumentRepository,
     },
   ],
-  exports: [EventService],
+  // EventTypeService: Ask's proposed events copy a matching type (#5148).
+  exports: [EventService, EventTypeService],
 })
 export class EventModule {}

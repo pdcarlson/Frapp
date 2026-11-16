@@ -27871,6 +27871,26 @@
           "event_start_time"
         ]
       },
+      "NewEventPointsFromDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "type",
+              "event"
+            ],
+            "description": "`type`: the chapter event type of that name. `event`: its latest event of that name."
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ]
+      },
       "NewEventSuggestionDto": {
         "type": "object",
         "properties": {
@@ -27896,7 +27916,23 @@
           "point_value": {
             "type": "number",
             "nullable": true,
-            "description": "Null leaves the chapter’s usual amount."
+            "description": "Points for coming. Null when the caller did not say and nothing could be copied: accepting then needs `new_event.point_value`."
+          },
+          "points_from": {
+            "nullable": true,
+            "description": "Where points the caller did not say were copied from. Null when they were said, typed, or are missing.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewEventPointsFromDto"
+              }
+            ]
+          },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The chapter event type the event is one of, when one matched."
           },
           "is_mandatory": {
             "type": "boolean"
@@ -27914,6 +27950,8 @@
           "start_time",
           "end_time",
           "point_value",
+          "points_from",
+          "event_type_id",
           "is_mandatory",
           "recurrence_rule"
         ]
@@ -28131,12 +28169,15 @@
           "event_id": {
             "type": "string",
             "format": "uuid",
-            "description": "The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller."
+            "description": "The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller. When set, nothing else is read."
+          },
+          "point_value": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "Points for coming, typed on the card: needed when the proposal has none."
           }
-        },
-        "required": [
-          "event_id"
-        ]
+        }
       },
       "AcceptAiSuggestionDto": {
         "type": "object",
