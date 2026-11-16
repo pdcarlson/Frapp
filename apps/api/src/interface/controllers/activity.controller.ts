@@ -22,7 +22,10 @@ import {
 } from '@nestjs/swagger';
 import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
-import type { ActivityView } from '../../application/services/activity.service';
+import type {
+  ActivityArchive,
+  ActivityView,
+} from '../../application/services/activity.service';
 import {
   ActivityStandingService,
   acceptableWeekStart,
@@ -41,6 +44,7 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
+  ActivityArchiveDto,
   ActivityDto,
   ActivityItemRefDto,
   ActivityRecapDto,
@@ -106,6 +110,23 @@ export class ActivityController {
     // over a number at the top.
     return this.activityService.getActivity(chapterId, userId, enabledModules, {
       weekStart: query.week_start ? new Date(query.week_start) : undefined,
+      now: new Date(),
+    });
+  }
+
+  @Get('archive')
+  @ApiOperation({
+    summary: 'Get what the caller has finished',
+    description:
+      'The Activity Archive (`spec/behavior/activity.md` § Archive): what has left the caller’s Activity because it is over. `events`: events that invited them whose check-in has closed, in the last 30 days. `tasks`: their own tasks marked done in the last 30 days, and the confirmed tasks they assigned while they hold `tasks:manage`. `polls`: closed polls they posted or voted in. Each section reads through its module under that module’s rule for who may see it; a module the chapter has off contributes nothing, and a section that fails is served empty and named in `unavailable`. Its own read, apart from `GET /v1/activity`, made only when the Archive is opened.',
+  })
+  @ApiOkResponse({ type: ActivityArchiveDto })
+  async getArchive(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+  ): Promise<ActivityArchive> {
+    return this.activityService.getArchive(chapterId, userId, enabledModules, {
       now: new Date(),
     });
   }

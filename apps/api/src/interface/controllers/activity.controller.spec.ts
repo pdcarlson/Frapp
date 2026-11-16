@@ -20,6 +20,7 @@ describe('ActivityController', () => {
   let controller: ActivityController;
   const activityService = {
     getActivity: jest.fn(),
+    getArchive: jest.fn(),
     markRead: jest.fn(),
     startUnread: jest.fn(),
   };
@@ -151,6 +152,25 @@ describe('ActivityController', () => {
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(standingService.getStanding).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('archive (#5127)', () => {
+    it('hands the service the chapter, the caller and the toggles', async () => {
+      const archive = { events: [], tasks: [], polls: [], unavailable: [] };
+      activityService.getArchive.mockResolvedValue(archive);
+
+      const result = await controller.getArchive('chapter-1', 'user-1', {
+        polls: false,
+      });
+
+      expect(result).toBe(archive);
+      expect(activityService.getArchive).toHaveBeenCalledWith(
+        'chapter-1',
+        'user-1',
+        { polls: false },
+        { now: expect.any(Date) },
+      );
     });
   });
 

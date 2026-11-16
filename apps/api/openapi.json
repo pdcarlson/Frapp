@@ -15073,6 +15073,44 @@
         ]
       }
     },
+    "/v1/activity/archive": {
+      "get": {
+        "description": "The Activity Archive (`spec/behavior/activity.md` § Archive): what has left the caller’s Activity because it is over. `events`: events that invited them whose check-in has closed, in the last 30 days. `tasks`: their own tasks marked done in the last 30 days, and the confirmed tasks they assigned while they hold `tasks:manage`. `polls`: closed polls they posted or voted in. Each section reads through its module under that module’s rule for who may see it; a module the chapter has off contributes nothing, and a section that fails is served empty and named in `unavailable`. Its own read, apart from `GET /v1/activity`, made only when the Archive is opened.",
+        "operationId": "ActivityController_getArchive_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityArchiveDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get what the caller has finished",
+        "tags": [
+          "Activity"
+        ]
+      }
+    },
     "/v1/activity/standing": {
       "get": {
         "description": "The standing at the top of the Activity page (`spec/behavior/activity.md` § Standing): the caller’s points this semester and their place on the board, the required events they attended, their approved and pending service hours this semester, and their study time this week. Each part is the caller’s own, read through the module that owns it; a module the chapter has off is served null, and a part that fails is served null and named in `unavailable`.",
@@ -29839,14 +29877,14 @@
         "type": "object",
         "properties": {
           "polls": {
-            "description": "Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258).",
+            "description": "Open poll cards the caller posted, newest first, at most 25; the caller’s 100 newest poll cards are read to find them, so closed ones never push an open one out. A closed one is in `GET /v1/activity/archive` (#5127).",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityPollDto"
             }
           },
           "tasks": {
-            "description": "Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`.",
+            "description": "Tasks the caller assigned that are not yet confirmed, newest first; a confirmed one is in `GET /v1/activity/archive`. Empty unless the caller still holds `tasks:manage`.",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ActivityTaskDto"
@@ -30045,6 +30083,50 @@
           "unavailable",
           "week",
           "unread_since"
+        ]
+      },
+      "ActivityArchiveDto": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "description": "Events that invited the caller whose check-in has closed (15 minutes after the end), ending in the last 30 days, newest first, at most 25. Each meeting of a series is its own row. `checked_in` says whether the caller was marked present or late; `check_in_open` is always false.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEventDto"
+            }
+          },
+          "tasks": {
+            "description": "The caller’s own tasks marked done in the last 30 days, confirmed or still waiting on an officer, and, while the caller holds `tasks:manage`, the tasks they assigned that are confirmed. Most recently done first, at most 25.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityTaskDto"
+            }
+          },
+          "polls": {
+            "description": "Closed polls the caller posted, and closed polls from other members they voted in, from the chapter’s 100 newest poll cards and the caller’s own 100, in channels they can read. Most recently closed first, at most 25.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityPollDto"
+            }
+          },
+          "unavailable": {
+            "type": "array",
+            "description": "Sections that could not be read this time. Each is served empty; the others are unaffected.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "events",
+                "tasks",
+                "polls"
+              ]
+            }
+          }
+        },
+        "required": [
+          "events",
+          "tasks",
+          "polls",
+          "unavailable"
         ]
       },
       "StandingPointsDto": {

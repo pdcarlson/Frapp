@@ -491,11 +491,17 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   Waiting on others is what the member made, by kind (Polls you posted, Events you made, Tasks you assigned), three of each then **Show all N**, so 17 assigned tasks don't bury the rest; it was "Made by you" until #4766, renamed for what the member wants from it.
   Files you uploaded was a fourth kind until [#4291](https://github.com/pdcarlson/Frapp/issues/4291) (Shawn, 2026-11-11), since a member's uploads are already in Documents and Backwork.
   **Polls you posted lists open polls only** ([#4258](https://github.com/pdcarlson/Frapp/issues/4258), Shawn, 2026-11-11): a poll closed by hand or past its closing time leaves the list, the moment its time runs out if the page is open, for an **Archived polls (N)** text button at the foot of the group, which opens the closed ones newest closed first, each opening its card with the final result.
+  (Changed in [#5127](https://github.com/frapplive/Frapp/issues/5127) by shawnatomklein-eng, 2026-11-15: Archived polls is gone; a closed poll is in the Archive below with everything else that is over.)
+  Tasks you assigned likewise leaves out a confirmed task.
   To do likewise drops a poll whose time ran out since the read.
   A group with nothing in it is left out rather than drawn as an empty line.
   **A poll you posted, while open, and an event you made, once its check-in opens, say how far along they are** ([#4792](https://github.com/pdcarlson/Frapp/issues/4792)): a thin bar and "41 of 60" under the detail, as on the phone, the bar `aria-hidden` and the count read whole ("41 of 60 voted");
   the groove is `bg-card`, since the row sits on the page, where the meter's `bg-background` recess vanishes.
   The counts are [`activity.md` § Progress](../../behavior/activity.md#progress); with none, no bar.
+- **Archive** ([#5127](https://github.com/frapplive/Frapp/issues/5127), Shawn, 2026-11-15; what it holds is [`activity.md` § Archive](../../behavior/activity.md#archive)): an **Archive** text button at the foot of the page, under Snoozed, swaps the page for the Archive until **‹ Activity** takes it back (state for the visit, not a route).
+  It is a heading, "Events, tasks and polls that are over.", then Events, Tasks and Polls as the page draws its groups, each row its page row with no ask (an event says Checked in when the member did, a task its state, a poll Closed) and opening the same panel.
+  A section that failed says so; with nothing it says "Nothing finished in the last 30 days. Events, tasks and polls land here once they're over."
+  It follows Google Classroom's To-do, whose Done tab holds finished work apart from what is assigned, and Gmail's Archive, which keeps mail out of the inbox one press away.
 - **Gone from the page** (Changed in #4766 by `pdcarlson`, 2026-11-13): the "N things need you" headline and its count tiles ([#4173](https://github.com/pdcarlson/Frapp/issues/4173), Shawn, 2026-11-11, after Apple Reminders' count tiles), the filter chips, the Needs you chip and the chip remembered per browser ([#4402](https://github.com/pdcarlson/Frapp/issues/4402), Shawn, 2026-11-12), the Now and Later split (#4173), and the Coming up group, whose events are now on their days in To do.
   "Needs you" as a name went with them (Paul: not a fan of it).
 - **A row is one hit target:** a lead, a title, one line of detail (who and when), and a badge naming what it asks or where it stands.

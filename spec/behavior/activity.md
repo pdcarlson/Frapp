@@ -70,13 +70,14 @@ member's own answer, not the event's default:
 
 **Made by you**
 
-- **Polls:** poll cards the caller posted, newest first: up to 25 open and the 25 most recently
-  posted closed ones, each cut separately so a run of closed polls never pushes an open one out
-  ([#4258](https://github.com/pdcarlson/Frapp/issues/4258), Shawn, 2026-11-11: the page lists the
-  open ones and archives the closed, per
-  [`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity)). The
-  caller's 100 newest poll cards are read to find them.
-- **Tasks:** tasks the caller assigned, newest first. Only while the caller still holds
+- **Polls:** open poll cards the caller posted, newest first, at most 25. The caller's 100 newest
+  poll cards are read to find them, so a run of closed polls never pushes an open one out. A
+  closed one is in the [Archive](#archive) (Changed in
+  [#5127](https://github.com/frapplive/Frapp/issues/5127) by shawnatomklein-eng, 2026-11-15; until
+  then the read also served the 25 most recently posted closed ones, which the page kept behind
+  "Archived polls", [#4258](https://github.com/pdcarlson/Frapp/issues/4258), Shawn, 2026-11-11).
+- **Tasks:** tasks the caller assigned that are not yet confirmed, newest first; a confirmed one
+  is finished and in the [Archive](#archive) (#5127). Only while the caller still holds
   `tasks:manage`: without it `GET /v1/tasks/:id` refuses them a task they don't hold, and a row
   that opens to a refusal is worse than no row.
 - **Files:** none. The read listed the chapter documents and backwork the caller uploaded
@@ -117,7 +118,7 @@ page on both clients. See [Week](#week).
   (`tasks`, `hours`, `polls`, `events`) and does not read it while the
   chapter has it off ([`../product/modules.md`](../product/modules.md)). Links, sign-ups and forms
   come from chat, which has no switch, so they are always read.
-- **Each list carries at most 25 rows**, except Made by you's polls (25 open and 25 closed) and
+- **Each list carries at most 25 rows**, except
   Reminders (50 due and 50 waiting).
 - **One section failing does not fail the page.** The sections are read independently. One that
   fails is served empty and named in `unavailable`, so a client can say that part couldn't load
@@ -254,6 +255,37 @@ made). The clients draw it as a thin bar with "41 of 60" under the row
   read.
 - **A hint, not a section.** When a count can't be read the rows are served with
   `progress: null` and the failure is reported; nothing lands in `unavailable`.
+
+## Archive
+
+`GET /v1/activity/archive` is what the member has finished
+([#5127](https://github.com/frapplive/Frapp/issues/5127), Shawn, 2026-11-15: "stuff that have
+already happened, there's no reason why it should be on my activity page, but I would like to be
+able to still access that stuff"). The page lists only what is still live; a thing leaves it by
+the rules above, and this read lists it again from the same rules, so nothing new is stored and
+nothing is deleted. It is its own read, made only when the member opens the Archive, so the page's
+read, made on every app open, carries none of it.
+
+- **Events:** events that invite the caller (read as the caller, as Coming up reads them) whose
+  check-in has closed, 15 minutes after the end, the moment Coming up and Events you made let them
+  go. Each meeting of a series is its own row, since each happened. `checked_in` is whether the
+  caller was marked present or late; `check_in_open` is always false. Those ending in the last 30
+  days, newest first, at most 25.
+- **Tasks:** the caller's own tasks marked done in the last 30 days, confirmed or still waiting
+  on an officer (the member's part is finished, and To do already let them go), and, while the
+  caller holds `tasks:manage`, the tasks they assigned that are confirmed (or signed off
+  automatically). A completion waiting on the caller's own confirm is not finished for them: it
+  stays on the page, in To review and Tasks you assigned. Most recently done first, at most 25.
+- **Polls:** closed polls the caller posted, and closed polls from other members they voted in,
+  from the same cards the page scans (the chapter's 100 newest poll cards and the caller's own 100)
+  under chat's channel list and block list. Most recently closed first, at most 25.
+- **Rules as the page's:** a module that is off contributes nothing; each section is read
+  independently, and one that fails is served empty and named in `unavailable`.
+
+Both clients open it from one **Archive** control at the foot of Activity and draw it in place of
+the page, laid out as the page lays out its groups (Events, Tasks, Polls), each row opening what it
+opens on the page ([`../ui/web-dashboard/README.md` § Activity](../ui/web-dashboard/README.md#activity),
+[`../ui/mobile/screens.md`](../ui/mobile/screens.md)).
 
 ## Standing
 

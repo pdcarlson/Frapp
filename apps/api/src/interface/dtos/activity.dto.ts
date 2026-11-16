@@ -28,6 +28,7 @@ import type { ChannelType } from '#domain/entities/chat.entity';
 import {
   ACTIVITY_SECTIONS,
   ACTIVITY_WEEK_PARTS,
+  ARCHIVE_SECTIONS,
 } from '../../application/services/activity.service';
 import { STANDING_SECTIONS } from '../../application/services/activity-standing.service';
 import { RECAP_PARTS } from '../../application/services/activity-recap.service';
@@ -44,6 +45,7 @@ import type {
   StandingStudy,
 } from '../../application/services/activity-standing.service';
 import type {
+  ActivityArchive,
   ActivityCard,
   ActivityEvent,
   ActivityHoursEntry,
@@ -55,6 +57,7 @@ import type {
   ActivityWeek,
   ActivityWeekCount,
   ActivityWeekPart,
+  ArchiveSection,
 } from '../../application/services/activity.service';
 
 /**
@@ -773,14 +776,14 @@ export class ActivityMadeByYouDto {
   @ApiProperty({
     type: [ActivityPollDto],
     description:
-      'Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258).',
+      'Open poll cards the caller posted, newest first, at most 25; the caller’s 100 newest poll cards are read to find them, so closed ones never push an open one out. A closed one is in `GET /v1/activity/archive` (#5127).',
   })
   polls: ActivityPollDto[];
 
   @ApiProperty({
     type: [ActivityTaskDto],
     description:
-      'Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`.',
+      'Tasks the caller assigned that are not yet confirmed, newest first; a confirmed one is in `GET /v1/activity/archive`. Empty unless the caller still holds `tasks:manage`.',
   })
   tasks: ActivityTaskDto[];
 
@@ -1137,4 +1140,35 @@ export class ActivityRecapDto implements ActivityRecap {
       'Parts that could not be read this time. Each is served null; the others are unaffected.',
   })
   unavailable: RecapPart[];
+}
+
+export class ActivityArchiveDto implements ActivityArchive {
+  @ApiProperty({
+    type: [ActivityEventDto],
+    description:
+      'Events that invited the caller whose check-in has closed (15 minutes after the end), ending in the last 30 days, newest first, at most 25. Each meeting of a series is its own row. `checked_in` says whether the caller was marked present or late; `check_in_open` is always false.',
+  })
+  events: ActivityEventDto[];
+
+  @ApiProperty({
+    type: [ActivityTaskDto],
+    description:
+      'The caller’s own tasks marked done in the last 30 days, confirmed or still waiting on an officer, and, while the caller holds `tasks:manage`, the tasks they assigned that are confirmed. Most recently done first, at most 25.',
+  })
+  tasks: ActivityTaskDto[];
+
+  @ApiProperty({
+    type: [ActivityPollDto],
+    description:
+      'Closed polls the caller posted, and closed polls from other members they voted in, from the chapter’s 100 newest poll cards and the caller’s own 100, in channels they can read. Most recently closed first, at most 25.',
+  })
+  polls: ActivityPollDto[];
+
+  @ApiProperty({
+    enum: ARCHIVE_SECTIONS,
+    isArray: true,
+    description:
+      'Sections that could not be read this time. Each is served empty; the others are unaffected.',
+  })
+  unavailable: ArchiveSection[];
 }
