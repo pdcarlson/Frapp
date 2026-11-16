@@ -11,6 +11,7 @@ import {
   useDocumentAccessOptions,
   useRequestDocumentUploadUrl,
 } from "@repo/hooks";
+import { FILE_ALWAYS_LINE } from "@repo/hooks/document-library";
 import {
   describeChannelAccess,
   isEmptyChannelAccessChoice,
@@ -60,13 +61,9 @@ export interface PendingDocumentUpload {
   failed: string | null;
 }
 
-/** Why the title and folder stopped taking edits after a failed confirm. */
+/** Why the title, folder and Who can see stopped taking edits after a failed confirm. */
 export const RETRY_KEEPS_DRAFT =
-  "Trying again keeps this title and folder. Change the file to start over.";
-
-/** Under a file's list: its uploader passes too (#5216). */
-export const UPLOAD_ALWAYS_LINE =
-  "The President and whoever uploaded it can always see it.";
+  "Trying again keeps this title, folder and who can see it. Change the file to start over.";
 
 /** The Files row's second line: what it takes, and the cap. */
 export const FILES_ROW_META = `PDF, Word, Excel, PowerPoint or text, up to ${MAX_UPLOAD_LABEL}`;
@@ -90,6 +87,9 @@ export const FILES_ROW_META = `PDF, Word, Excel, PowerPoint or text, up to ${MAX
  *
  * ## What the board draws that this leaves out
  *
+ * - **The "Documents feed ✦ Ask answers" line.** Ask's reach is Ask's to
+ *   describe, not an upload sheet's.
+ *
  * ## Files and Photos
  *
  * With nothing picked, the card is two rows, Choose a file and Choose a photo,
@@ -100,8 +100,6 @@ export const FILES_ROW_META = `PDF, Word, Excel, PowerPoint or text, up to ${MAX
  * "· from Photos", and Change goes back to the two rows. A binary without the
  * file picker (a store build from before #3401) draws the photo card alone,
  * as it did before, where Change reopens the library.
- * - **The "Documents feed ✦ Ask answers" line.** Ask's reach is Ask's to
- *   describe, not an upload sheet's.
  *
  * The board draws no title field. A phone photo's name is `IMG_2041.jpg`, which
  * is a poor title in a chapter library, so the sheet has web's: blank means
@@ -684,7 +682,7 @@ export const UploadDocumentSheet = forwardRef<
               : "Everyone in the chapter can see it."
           }
           locked={access.locked}
-          alwaysLine={UPLOAD_ALWAYS_LINE}
+          alwaysLine={FILE_ALWAYS_LINE}
         />
       ) : null}
     </>

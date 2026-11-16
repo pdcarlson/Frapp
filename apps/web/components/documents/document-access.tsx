@@ -8,7 +8,12 @@ import {
   useSetDocumentAccess,
 } from "@repo/hooks";
 import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
-import { isDriveCopy } from "@repo/hooks/document-library";
+import {
+  FILE_ALWAYS_LINE,
+  FOLDER_ALWAYS_LINE,
+  LIMITED_LABEL,
+  isDriveCopy,
+} from "@repo/hooks/document-library";
 import { sameChannelAccessList } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,11 +30,8 @@ import type { ChapterDocument } from "@/components/documents/document-types";
 import { useToast } from "@/lib/hooks/use-toast";
 import { cn, getErrorMessage } from "@/lib/utils";
 
-/** Under a folder's list: who passes it anyway. */
-export const FOLDER_ALWAYS_LINE = "The President can always see it.";
-/** Under a file's list: its uploader passes too (a Drive copy has none). */
-export const FILE_ALWAYS_LINE =
-  "The President and whoever uploaded it can always see it.";
+// The lines under a list and the lock's label are shared with the phone.
+export { FILE_ALWAYS_LINE, FOLDER_ALWAYS_LINE };
 
 /**
  * What a Documents "Who can see" field offers (#3642 piece 1): the shared
@@ -63,7 +65,7 @@ export function canSetDocumentAccess(
  */
 export function LimitedMark({
   className,
-  label = "Not everyone can see this",
+  label = LIMITED_LABEL,
 }: {
   className?: string;
   label?: string;

@@ -416,6 +416,13 @@ describe("Documents states and rows", () => {
         folder: "Rush",
         created_at: "2026-10-01T12:00:00Z",
       },
+      // Their own upload in a folder they no longer pass, so not listed.
+      {
+        id: "d4",
+        title: "Ledger",
+        folder: "Treasury",
+        created_at: "2026-09-30T12:00:00Z",
+      },
     ];
     const tree = render();
     const values = Object.fromEntries(
@@ -427,6 +434,7 @@ describe("Documents states and rows", () => {
     expect(values.Budget).toContain("Not everyone can see this");
     expect(values.Bids).toContain("Not everyone can see this");
     expect(values.Schedule ?? "").not.toContain("Not everyone can see this");
+    expect(values.Ledger).toContain("Not everyone can see this");
   });
 
   it("marks only the opening row busy, and greys out none", async () => {
@@ -1578,5 +1586,108 @@ describe("Documents as a grid (#4175)", () => {
     // The other tile still takes both, as the other rows do.
     expect(idle!.props.disabled).toBe(false);
     expect(idle!.props.onLongPress).toBeInstanceOf(Function);
+  });
+});
+
+/**
+ * Who can see (#5216): the lock a list row wears (above) on the other places
+ * a file or folder shows: folder chips, grid tiles, and Pinned and Starred
+ * cards.
+ */
+describe("Documents locks beyond the list (#5216)", () => {
+  const locks = (node: { findAll: ReactTestRenderer["root"]["findAll"] }) =>
+    node.findAll((child) => child.props.testID === "document-limited").length;
+
+  const limitedLibrary = () => {
+    folderRows = [
+      {
+        id: "f1",
+        name: "Exec",
+        sort_order: 0,
+        who_can_see: ["tier:t-1"],
+        pinned_at: "2026-10-01T12:00:00Z",
+      },
+      { id: "f2", name: "Rush", sort_order: 1 },
+    ];
+    documentRows = [
+      {
+        id: "d1",
+        title: "Budget",
+        folder: "Exec",
+        created_at: "2026-10-03T12:00:00Z",
+        pinned_at: "2026-10-03T12:00:00Z",
+      },
+      {
+        id: "d2",
+        title: "Schedule",
+        folder: "Rush",
+        created_at: "2026-10-01T12:00:00Z",
+        pinned_at: "2026-10-03T12:00:00Z",
+      },
+    ];
+  };
+
+  it("locks a limited folder's chip and no other", () => {
+    limitedLibrary();
+    const tree = render();
+    const chips = tree.root
+      .findAllByType(FilterChips)
+      .find((node) => node.props.accessibilityLabel === "Filter by folder")!
+      .props.chips as { label: string; mark?: React.ReactElement }[];
+    const drawn = (mark: React.ReactElement) => {
+      let mounted!: ReactTestRenderer;
+      act(() => {
+        mounted = create(mark);
+      });
+      const count = locks(mounted.root);
+      act(() => mounted.unmount());
+      return count;
+    };
+    const marked = chips
+      .filter((chip) => chip.mark)
+      .map((chip) => [chip.label, drawn(chip.mark!)]);
+    expect(marked).toEqual([["Exec", 1]]);
+  });
+
+  it("locks a limited tile and says so", () => {
+    limitedLibrary();
+    act(() => setListLayout("documents", "grid"));
+    const tree = render();
+    const tiles = tree.root
+      .findByType(DocumentTiles)
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string",
+      );
+    const budget = tiles.find((t) => t.props.accessibilityLabel === "Budget")!;
+    const schedule = tiles.find(
+      (t) => t.props.accessibilityLabel === "Schedule",
+    )!;
+    expect(locks(budget)).toBe(1);
+    expect(budget.props.accessibilityValue.text).toContain(
+      "Not everyone can see this",
+    );
+    expect(locks(schedule)).toBe(0);
+  });
+
+  it("locks a limited Pinned card, folder or file", () => {
+    limitedLibrary();
+    const tree = render();
+    const cards = tree.root
+      .findByType(MarkedCards)
+      .findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string",
+      );
+    const limited = cards
+      .filter((card) => locks(card) > 0)
+      .map((card) => card.props.accessibilityValue?.text);
+    expect(limited).toEqual([
+      "Not everyone can see this",
+      "Not everyone can see this",
+    ]);
+    expect(cards.length).toBe(3);
   });
 });

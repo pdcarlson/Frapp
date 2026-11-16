@@ -24,6 +24,7 @@ import {
   deleteDocumentTitle,
   isActiveDateFilter,
   isDriveCopy,
+  limitedDocumentCheck,
   markedItems,
   NO_MARK_FILTER,
   tierByMarks,
@@ -67,10 +68,8 @@ import { InlineNote } from "@/components/inline-note";
 import { ErrorState, SkeletonRegion } from "@/components/state-block";
 import {
   documentMeta,
-  isLimitedDocument,
   selectDocumentFolders,
   selectDocuments,
-  type MobileDocument,
 } from "@/lib/more/documents";
 import { shareDocumentFile } from "@/lib/more/document-file";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -269,8 +268,12 @@ export default function DocumentsScreen() {
     () => selectDocumentFolders(foldersQuery.data),
     [foldersQuery.data],
   );
-  // A lock on a file with its own list or in a folder with one (#5216).
-  const isLimited = (doc: MobileDocument) => isLimitedDocument(doc, folders);
+  // A lock on a file not everyone can see (#5216), by web's rule.
+  const isLimited = useMemo(
+    () =>
+      limitedDocumentCheck(foldersQuery.data === undefined ? null : folders),
+    [foldersQuery.data, folders],
+  );
   const documents = useMemo(
     () =>
       selectDocuments(documentsQuery.data).filter(

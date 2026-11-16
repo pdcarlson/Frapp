@@ -1532,6 +1532,55 @@ describe("UploadDocumentSheet who can see (#5216)", () => {
     );
   });
 
+  it("keeps the chosen list with a draft past its screen", async () => {
+    const first = render(null, { keptDraft: "documents-upload" });
+    await choose(first);
+    act(() => {
+      accessSheet(first).props.onChange(["tier:t-exec"]);
+    });
+    act(() => first.unmount());
+
+    const second = render(null, { keptDraft: "documents-upload" });
+    expect(pressable(second, "Who can see: Executive board")).toBeTruthy();
+    act(() => {
+      pressable(second, "Cancel").props.onPress();
+    });
+  });
+
+  it("holds the list a failed confirm was sent with", async () => {
+    const tree = render(null);
+    await choose(tree);
+    act(() => {
+      accessSheet(tree).props.onChange(["tier:t-exec"]);
+    });
+    uploadDocumentPhoto.mockResolvedValue({
+      status: "refused",
+      reason: "Couldn't upload that photo. Try again in a moment.",
+      final: false,
+      sent: {
+        image: PHOTO,
+        uploaded: {
+          storagePath: "chapters/c/documents/d/IMG_2041.jpg",
+          filename: "IMG_2041.jpg",
+          contentType: "image/jpeg",
+          byteSize: PHOTO.byteSize,
+        },
+        title: "",
+        folder: null,
+        whoCanSee: ["tier:t-exec"],
+      },
+    });
+    await pressUpload(tree);
+
+    // The row is held; even a change that reached the draft isn't what's shown.
+    act(() => {
+      accessSheet(tree).props.onChange(null);
+    });
+    const row = pressable(tree, "Who can see: Executive board");
+    expect(row.props.accessibilityState).toMatchObject({ disabled: true });
+    expect(row.props.accessibilityHint).toBe(RETRY_KEEPS_DRAFT);
+  });
+
   it("offers no row to a member outside every tier", () => {
     accessQuery.data = { options: [EXEC], always: null };
     const tree = render(null);

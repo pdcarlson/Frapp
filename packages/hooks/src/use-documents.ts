@@ -177,15 +177,18 @@ export function documentAccessChoices(query: {
     query.data?.options,
   );
   const locked = query.data?.always ?? null;
+  // Decided by the data held, not the last fetch: a background refetch that
+  // fails leaves good options cached, and the field stays as it was.
+  const loaded = query.data !== undefined;
   return {
     options,
-    optionsState: query.isError
-      ? ("error" as const)
-      : query.isSuccess
-        ? ("ready" as const)
+    optionsState: loaded
+      ? ("ready" as const)
+      : query.isError
+        ? ("error" as const)
         : ("loading" as const),
     locked: locked ?? [],
-    canLimit: query.isSuccess && locked !== null,
+    canLimit: loaded && locked !== null,
   };
 }
 

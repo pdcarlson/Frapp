@@ -62,22 +62,6 @@ function accessList(row: Record<string, unknown>): string[] | undefined {
 }
 
 /**
- * Whether not everyone can see a file (#5216): it has its own list, or it
- * sits in a folder that has one. Drawn as a lock, the way Slack marks a
- * private channel and web's Documents marks the same file.
- */
-export function isLimitedDocument(
-  doc: Pick<MobileDocument, "who_can_see" | "folder">,
-  folders: readonly DocumentFolder[],
-): boolean {
-  if (doc.who_can_see) return true;
-  return (
-    doc.folder !== null &&
-    folders.some((folder) => folder.name === doc.folder && !!folder.who_can_see)
-  );
-}
-
-/**
  * Every drawable document. A row with no id cannot be opened and a row with
  * no title has nothing to show, so both are dropped. Order is left to the
  * library's sort.

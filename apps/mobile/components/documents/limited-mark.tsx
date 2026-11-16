@@ -1,8 +1,8 @@
 import { View } from "react-native";
 import { LockGlyph } from "@/components/chat/card-glyphs";
 
-/** What a screen reader hears on a row not everyone can see (#5216). */
-export const LIMITED_LABEL = "Not everyone can see this";
+// What a screen reader hears on a row not everyone can see, as on web.
+export { LIMITED_LABEL } from "@repo/hooks/document-library";
 
 /**
  * The quiet lock on a folder or file not everyone can see (#5216), the one
