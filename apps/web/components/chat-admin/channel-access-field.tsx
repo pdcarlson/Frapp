@@ -86,6 +86,9 @@ export function ChannelAccessField({
   options,
   optionsState,
   disabled = false,
+  everyoneLabel,
+  locked = [],
+  alwaysLine,
 }: {
   id: string;
   question: ChannelAccessQuestion;
@@ -96,18 +99,42 @@ export function ChannelAccessField({
   /** Whether the options have loaded; the field still shows what it holds. */
   optionsState: "ready" | "loading" | "error";
   disabled?: boolean;
+  /**
+   * The open choice's name, when `null` means something other than
+   * everyone: a document file's "Same as folder" (#3642 piece 1).
+   */
+  everyoneLabel?: string;
+  /**
+   * Entries every list keeps, drawn without a remove and added when the
+   * list starts: a document list keeps the setter's tier and those above.
+   */
+  locked?: readonly string[];
+  /** Who passes every list, said under the chips; the President by default. */
+  alwaysLine?: string;
 }) {
   const mode = value === null ? EVERYONE : CHOSEN;
+  const lockedSet = new Set(locked);
   const byEntry = useMemo(
     () => new Map(options.map((option) => [option.entry, option])),
     [options],
   );
-  const chosen = value ?? [];
+  const chosen =
+    value === null
+      ? []
+      : (normalizeChannelAccessList([...locked, ...value]) ?? []);
   const chosenSet = new Set(chosen);
   const remaining = options.filter(
     (option) => !chosenSet.has(option.entry) && !option.hidden,
   );
   const label = QUESTION_LABEL[question];
+  const modeOptions = MODE_OPTIONS[question].map((option) =>
+    option.value === EVERYONE && everyoneLabel
+      ? { ...option, label: everyoneLabel }
+      : option,
+  );
+  const always =
+    alwaysLine ??
+    `The President can always ${question === "see" ? "see it" : "post"}.`;
 
   function remove(entry: string) {
     onChange(chosen.filter((held) => held !== entry));
@@ -125,10 +152,10 @@ export function ChannelAccessField({
         </span>
         <SegmentedChoice
           label={label}
-          options={MODE_OPTIONS[question]}
+          options={modeOptions}
           value={mode}
           disabled={disabled}
-          onChange={(next) => onChange(next === EVERYONE ? null : [])}
+          onChange={(next) => onChange(next === EVERYONE ? null : [...locked])}
         />
       </div>
       {mode === CHOSEN ? (
@@ -148,7 +175,11 @@ export function ChannelAccessField({
                         : "Unavailable"
                   }
                   removeLabel={`Remove ${option?.name ?? "this entry"} from ${label.toLowerCase()}`}
-                  onRemove={disabled ? undefined : () => remove(entry)}
+                  onRemove={
+                    disabled || lockedSet.has(entry)
+                      ? undefined
+                      : () => remove(entry)
+                  }
                 />
               );
             })}
@@ -167,8 +198,8 @@ export function ChannelAccessField({
                 ? "Add a tier, role or group. Until you do, only the President can see it."
                 : "Add a tier, role or group. Until you do, only the President can post."
               : optionsState === "ready"
-                ? `Reaches ${peopleCount(channelAccessReach(chosen, options))}. The President can always ${question === "see" ? "see it" : "post"}.`
-                : `The President can always ${question === "see" ? "see it" : "post"}.`}
+                ? `Reaches ${peopleCount(channelAccessReach(chosen, options))}. ${always}`
+                : always}
           </p>
         </>
       ) : null}
