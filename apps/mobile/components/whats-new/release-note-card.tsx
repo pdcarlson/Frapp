@@ -1,12 +1,15 @@
 import { StyleSheet, Text, View } from "react-native";
 import {
+  FRESH_RELEASE_NOTE_CAPTION,
   formatReleaseNoteDate,
+  freshReleaseNoteLines,
   releaseNoteGroups,
   type ReleaseNote,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListSection, SectionHeader } from "@/components/list-section";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { useFreshReleaseLines } from "@/lib/whats-new-fresh";
 
 /**
  * One What's new entry: a date header (written out, never "Nov 7") over one
@@ -17,10 +20,23 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * The What's new screen (`app/(app)/whats-new.tsx`) lists every entry this
  * way, and the sheet that opens by itself after an update
  * (`components/whats-new/whats-new-host.tsx`) shows the new ones the same way.
+ *
+ * Lines that came with this phone's latest update are semibold, in the
+ * foreground color, under a one-line caption saying so, when the entry also
+ * holds older lines (`freshReleaseNoteLines`; Paul, 2026-11-16). `fresh`
+ * overrides what `lib/whats-new-fresh.ts` worked out, for tests.
  */
-export function ReleaseNoteCard({ note }: { note: ReleaseNote }) {
+export function ReleaseNoteCard({
+  note,
+  fresh,
+}: {
+  note: ReleaseNote;
+  fresh?: readonly string[];
+}) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  const phoneFresh = useFreshReleaseLines();
+  const marked = freshReleaseNoteLines(note, fresh ?? phoneFresh);
 
   return (
     <View>
@@ -30,6 +46,9 @@ export function ReleaseNoteCard({ note }: { note: ReleaseNote }) {
           <Text style={styles.title} accessibilityRole="header">
             {note.title}
           </Text>
+          {marked.size > 0 ? (
+            <Text style={styles.caption}>{FRESH_RELEASE_NOTE_CAPTION}</Text>
+          ) : null}
           {releaseNoteGroups(note).map((group) => (
             <View key={group.place} style={styles.group}>
               {group.label ? (
@@ -40,7 +59,17 @@ export function ReleaseNoteCard({ note }: { note: ReleaseNote }) {
               {group.lines.map((change) => (
                 <View key={change} style={styles.change}>
                   <View style={styles.dot} />
-                  <Text style={styles.changeText}>{change}</Text>
+                  <Text
+                    style={[
+                      styles.changeText,
+                      marked.has(change) && styles.freshText,
+                    ]}
+                    accessibilityLabel={
+                      marked.has(change) ? `New: ${change}` : undefined
+                    }
+                  >
+                    {change}
+                  </Text>
                 </View>
               ))}
             </View>
@@ -62,6 +91,12 @@ function createStyles(tokens: SignetTokens) {
     title: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.text.foreground,
+    },
+    // Says what the bold lines are, right under the title it belongs to.
+    caption: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+      marginTop: -tokens.spacing.xs,
     },
     group: {
       gap: tokens.spacing.sm,
@@ -90,6 +125,13 @@ function createStyles(tokens: SignetTokens) {
       ...body,
       flex: 1,
       color: tokens.color.text.mutedForeground,
+    },
+    // A line that came with the latest update: the body size at the
+    // semibold face, in the foreground color (a face, never `fontWeight`;
+    // `typeRole` says why).
+    freshText: {
+      fontFamily: fontFamilyFor(600),
+      color: tokens.color.text.foreground,
     },
   });
 }

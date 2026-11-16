@@ -216,6 +216,8 @@ This section holds only what is the web's own.
 - **Lines for both first, then Web and Mobile.**
   An entry lists the changes members get everywhere, then the web-only ones under a Web subheading and the phone-only ones under Mobile, the same on the phone, the public changelog and the pasted text (`releaseNoteGroups`; Paul, 2026-11-12: "just 2 subheadings").
   Entries from before 2026-11-12 are one list.
+- **The latest deploy's lines stand out**, in the dialog and on the page, as on the phone ([`mobile/screens.md` s16](../mobile/screens.md) states the rule; Paul, 2026-11-16).
+  The browser keeps its own memory of the last deploy's newest entry ([`lib/whats-new-fresh.ts`](../../../apps/web/lib/whats-new-fresh.ts)), worked out on every page load by the host so a deploy counts even when the notes aren't opened on it.
 - **A dialog, not a sheet**, mounted in the dashboard shell beside the first-run tour ([`whats-new-host.tsx`](../../../apps/web/components/whats-new/whats-new-host.tsx)).
   It holds the entries this browser hasn't shown, drawn as the What's new page draws them, and scrolls inside itself when they run long.
   Esc, the X and a click outside close it.
