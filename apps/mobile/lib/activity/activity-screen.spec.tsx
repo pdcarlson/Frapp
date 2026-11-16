@@ -181,6 +181,17 @@ const reminderWrites = vi.hoisted(() => ({
 }));
 /** Last week's recap (`GET /v1/activity/recap`), unread unless a test sets it. */
 const recap = vi.hoisted(() => ({ value: { data: undefined as unknown } }));
+/** The Archive's read (`GET /v1/activity/archive`, #5127) and whether it was asked for. */
+const archive = vi.hoisted(() => ({
+  enabled: false as boolean | undefined,
+  value: {
+    isPending: false,
+    isError: false,
+    isFetching: false,
+    data: undefined as unknown,
+    refetch: () => Promise.resolve(),
+  },
+}));
 /** The active chapter: the recap's dismissals are kept per chapter. */
 const activeChapter = vi.hoisted(() => ({ id: "chapter-1" }));
 
@@ -233,6 +244,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActivity: () => activity.value,
   useActivityStanding: () => standing.value,
   useActivityRecap: () => recap.value,
+  useActivityArchive: (options: { enabled?: boolean }) => {
+    archive.enabled = options.enabled;
+    return archive.value;
+  },
   useViewerUserId: () => "me",
   useActiveChapterId: () => activeChapter.id,
   useActivityUnread: () => ({ markRead: links.markRead }),
@@ -416,6 +431,8 @@ describe("Activity screen (#3897)", () => {
     };
     queryClient = new QueryClient();
     sheet.props = null;
+    archive.enabled = false;
+    archive.value = { ...archive.value, isPending: false, data: undefined };
     // Reset here, not at a test's end: a failing test must not leave the
     // next one rendering as an officer.
     links.permissions = [];
@@ -1034,7 +1051,7 @@ describe("Activity screen (#3897)", () => {
   describe("Waiting on others, and Links", () => {
     it("lists what the member made under its own name, by kind, with its count", () => {
       const tree = render();
-      // Open polls only: the closed one is archived, outside the count.
+      // Open polls only: the closed one is in the Archive, outside the count.
       expect(sectionCount(tree, "Waiting on others")).toBe(1);
       expect(screenText(tree)).toContain("Polls you posted");
       expect(hasSection(tree, "Made by you")).toBe(false);
@@ -2122,27 +2139,79 @@ describe("Activity screen (#3897)", () => {
     });
   });
 
-  it("keeps a closed poll behind Archived polls, which opens its card (#4258)", () => {
+  it("leaves a closed poll off the page, with no Archived polls button (#4258, #5127)", () => {
     const tree = render();
     expect(rowLabels(tree)).not.toContain("Old vote");
-    const toggle = tree.root
-      .findAll(
+    expect(screenText(tree)).not.toContain("Archived polls");
+  });
+
+  it("opens the Archive in place of the page, by kind, and goes back (#5127)", () => {
+    archive.value = {
+      ...archive.value,
+      data: {
+        events: [],
+        tasks: [],
+        polls: [
+          {
+            ...myPoll("p-closed", "Old vote", true),
+            closed_at: "2026-11-02T00:00:00.000Z",
+          },
+        ],
+        unavailable: ["events"],
+      },
+    };
+    const tree = render();
+    // Not read until it is opened.
+    expect(archive.enabled).toBe(false);
+    const pressables = () =>
+      tree.root.findAll(
         (node) =>
           (node.type as unknown) === "Pressable" &&
           node.props.accessibilityRole === "button",
-      )
-      .find((node) => drawnText(node) === "Archived polls (1)")!;
-    expect(toggle.props.accessibilityState).toEqual({ expanded: false });
-
+      );
     act(() => {
-      toggle.props.onPress();
+      pressables()
+        .find((node) => drawnText(node) === "Archive")!
+        .props.onPress();
     });
-    expect(rowLabels(tree)).toContain("Old vote");
+    expect(archive.enabled).toBe(true);
+    const text = screenText(tree);
+    expect(text).toContain("Events, tasks and polls that are over.");
+    expect(text).toContain("Couldn't load events. Pull down to try again.");
+    expect(hasSection(tree, "To do")).toBe(false);
     expect(row(tree, "Old vote").props.row.badge?.label).toBe("Closed");
     act(() => {
       row(tree, "Old vote").props.onPress();
     });
-    expect(sheet.props?.row?.key).toBe("made:poll:p-closed");
+    expect(sheet.props?.row?.key).toBe("archive:poll:p-closed");
+
+    act(() => {
+      pressables()
+        .find((node) => node.props.accessibilityLabel === "Back to Activity")!
+        .props.onPress();
+    });
+    expect(screenText(tree)).not.toContain(
+      "Events, tasks and polls that are over.",
+    );
+  });
+
+  it("says when the Archive holds nothing", () => {
+    archive.value = {
+      ...archive.value,
+      data: { events: [], tasks: [], polls: [], unavailable: [] },
+    };
+    const tree = render();
+    act(() => {
+      tree.root
+        .findAll(
+          (node) =>
+            (node.type as unknown) === "Pressable" &&
+            node.props.accessibilityRole === "button",
+        )
+        .find((node) => drawnText(node) === "Archive")!
+        .props.onPress();
+    });
+    expect(screenText(tree)).toContain("Nothing finished in the last 30 days");
   });
 
   it("says which section couldn't load instead of showing it as empty", () => {

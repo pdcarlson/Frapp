@@ -2937,4 +2937,299 @@ describe('ActivityService', () => {
       expect(findByEvents).not.toHaveBeenCalled();
     });
   });
+
+  describe('archive (#5127)', () => {
+    it('serves events that invited the caller once their check-in has closed, newest first, with whether they checked in', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      eventService.findByChapter.mockResolvedValue([
+        event({
+          id: 'older',
+          start_time: iso(-72 * HOUR),
+          end_time: iso(-71 * HOUR),
+        }),
+        event({
+          id: 'newer',
+          start_time: iso(-26 * HOUR),
+          end_time: iso(-25 * HOUR),
+        }),
+        // Ended five minutes ago: check-in is still open, so it is live.
+        event({
+          id: 'just-ended',
+          start_time: iso(-HOUR - 5 * 60 * 1000),
+          end_time: iso(-5 * 60 * 1000),
+        }),
+        // Leaves the member out.
+        event({
+          id: 'not-mine',
+          start_time: iso(-30 * HOUR),
+          end_time: iso(-29 * HOUR),
+          is_mandatory: false,
+          optional_role_ids: ['role-other'],
+          others_invited: false,
+        }),
+      ]);
+      attendanceRepo.findByUserForEvents.mockResolvedValue([
+        { event_id: 'newer', user_id: ME, status: 'PRESENT' },
+      ]);
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME, {
+        endsAfter: iso(-30 * 24 * HOUR),
+        startsBefore: NOW.toISOString(),
+      });
+      expect(archive.events.map((row) => [row.id, row.checked_in])).toEqual([
+        ['newer', true],
+        ['older', false],
+      ]);
+      expect(archive.events.every((row) => !row.check_in_open)).toBe(true);
+      expect(archive.unavailable).toEqual([]);
+    });
+
+    it('serves the caller’s own done tasks and the confirmed tasks they assigned, most recently done first', async () => {
+      const { service, taskService } = build([
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.TASKS_MANAGE,
+      ]);
+      serveTasks(
+        taskService,
+        [
+          task({ id: 'own-open' }),
+          task({
+            id: 'own-waiting',
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-2 * HOUR),
+          }),
+          task({
+            id: 'own-old',
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-40 * 24 * HOUR),
+            confirmed_at: iso(-39 * 24 * HOUR),
+          }),
+        ],
+        [
+          task({
+            id: 'assigned-confirmed',
+            assignee_id: OTHER,
+            created_by: ME,
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-HOUR),
+            confirmed_at: iso(-HOUR / 2),
+          }),
+          // Done six weeks ago, confirmed just now: it left Tasks you
+          // assigned now, so it is here, by when it was confirmed.
+          task({
+            id: 'assigned-late-confirm',
+            assignee_id: OTHER,
+            created_by: ME,
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-42 * 24 * HOUR),
+            confirmed_at: iso(-HOUR / 4),
+          }),
+          // Another officer's: never the caller's to list.
+          task({
+            id: 'someone-elses-confirmed',
+            assignee_id: 'user-third',
+            created_by: OTHER,
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-HOUR),
+            confirmed_at: iso(-HOUR),
+          }),
+          // Waits on the caller's confirm: still live, in To review.
+          task({
+            id: 'assigned-waiting',
+            assignee_id: OTHER,
+            created_by: ME,
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-3 * HOUR),
+          }),
+        ],
+      );
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.tasks.map((row) => row.id)).toEqual([
+        'assigned-late-confirm',
+        'assigned-confirmed',
+        'own-waiting',
+      ]);
+      expect(archive.tasks[0]).toMatchObject({
+        assignee_name: 'Other Member',
+        created_by_name: 'Me Member',
+      });
+    });
+
+    it('leaves out tasks the caller assigned once they lose tasks:manage', async () => {
+      const { service, taskService } = build();
+      serveTasks(
+        taskService,
+        [],
+        [
+          task({
+            id: 'assigned-confirmed',
+            assignee_id: OTHER,
+            created_by: ME,
+            stored_status: TaskStatus.COMPLETED,
+            completed_at: iso(-HOUR),
+            confirmed_at: iso(-HOUR),
+          }),
+        ],
+      );
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.tasks).toEqual([]);
+      for (const [, , isAdmin] of taskService.list.mock.calls) {
+        expect(isAdmin).toBe(false);
+      }
+    });
+
+    it('serves closed polls the caller posted or voted in, most recently closed first', async () => {
+      const { service, messageRepo, actionRepo } = build();
+      servePolls(
+        messageRepo,
+        [
+          pollCard({
+            id: 'voted-closed',
+            payload: {
+              question: 'Theme?',
+              options: [
+                { id: 'a', label: 'A' },
+                { id: 'b', label: 'B' },
+              ],
+              closes_at: iso(-HOUR),
+            },
+          }),
+          pollCard({
+            id: 'unvoted-closed',
+            payload: {
+              question: 'Snacks?',
+              options: [
+                { id: 'a', label: 'A' },
+                { id: 'b', label: 'B' },
+              ],
+              closes_at: iso(-HOUR),
+            },
+          }),
+          pollCard({ id: 'open' }),
+        ],
+        [
+          pollCard({
+            id: 'mine-closed',
+            sender_id: ME,
+            payload: {
+              question: 'Date?',
+              options: [
+                { id: 'a', label: 'A' },
+                { id: 'b', label: 'B' },
+              ],
+              closes_at: iso(-3 * HOUR),
+            },
+          }),
+          pollCard({ id: 'mine-open', sender_id: ME }),
+        ],
+      );
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'voted-closed', payload: { option_id: 'a' } },
+      ]);
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.polls.map((row) => row.message_id)).toEqual([
+        'voted-closed',
+        'mine-closed',
+      ]);
+      expect(archive.polls.every((row) => row.is_closed)).toBe(true);
+    });
+
+    it('leaves out events from before the caller joined', async () => {
+      const { service, eventService, memberRepo } = build();
+      memberRepo.findByUserAndChapter.mockResolvedValue({
+        user_id: ME,
+        role_ids: ['role-member'],
+        created_at: iso(-48 * HOUR),
+      });
+      eventService.findByChapter.mockResolvedValue([
+        event({
+          id: 'before-joining',
+          start_time: iso(-72 * HOUR),
+          end_time: iso(-71 * HOUR),
+        }),
+        event({
+          id: 'since-joining',
+          start_time: iso(-26 * HOUR),
+          end_time: iso(-25 * HOUR),
+        }),
+      ]);
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.events.map((row) => row.id)).toEqual(['since-joining']);
+    });
+
+    it('reads no events while the Events module is off', async () => {
+      const { service, eventService } = build();
+
+      const archive = await service.getArchive(CHAPTER, ME, { events: false });
+
+      expect(eventService.findByChapter).not.toHaveBeenCalled();
+      expect(archive.events).toEqual([]);
+      expect(archive.unavailable).toEqual([]);
+    });
+
+    it('never lists a closed poll from someone the caller blocked, even one they voted in', async () => {
+      const { service, messageRepo, actionRepo, chatBlocks } = build();
+      chatBlocks.listBlockedUserIds.mockResolvedValue([BLOCKED]);
+      const closedPayload = {
+        ...pollCard({ id: 'x' }).payload,
+        closes_at: iso(-HOUR),
+      };
+      servePolls(messageRepo, [
+        pollCard({
+          id: 'from-blocked',
+          sender_id: BLOCKED,
+          payload: closedPayload,
+        }),
+        pollCard({ id: 'from-other', payload: closedPayload }),
+      ]);
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'from-blocked', payload: { option_id: 'a' } },
+        { message_id: 'from-other', payload: { option_id: 'a' } },
+      ]);
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.polls.map((row) => row.message_id)).toEqual([
+        'from-other',
+      ]);
+    });
+
+    it('reads nothing for a module that is off, and serves a failed section empty and named', async () => {
+      const { service, taskService, eventService, messageRepo } = build();
+      eventService.findByChapter.mockRejectedValue(new Error('down'));
+      jest
+        .spyOn(caughtFailure, 'reportCaughtFailure')
+        .mockImplementation(() => undefined);
+
+      const archive = await service.getArchive(CHAPTER, ME, {
+        tasks: false,
+        polls: false,
+      });
+
+      expect(taskService.list).not.toHaveBeenCalled();
+      expect(messageRepo.findCardsByChapter).not.toHaveBeenCalled();
+      expect(archive).toEqual({
+        events: [],
+        tasks: [],
+        polls: [],
+        unavailable: ['events'],
+      });
+    });
+  });
 });

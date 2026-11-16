@@ -409,7 +409,9 @@ export interface ActivityView {
     /**
      * The caller's poll cards, newest first: up to 25 open and the 25 most
      * recent closed, so a run of closed polls never pushes an open one out
-     * (#4258). A client lists the open ones and archives the closed.
+     * (#4258). A current client lists the open ones and the Archive the
+     * closed (#5127); the closed are served for phone builds from before the
+     * Archive, which draw them as Archived polls.
      */
     polls: ActivityPoll[];
     tasks: ActivityTask[];
@@ -444,6 +446,31 @@ export interface ActivityView {
   unread_since: string | null;
 }
 
+/** The sections of the Archive's read (#5127), as `unavailable` names them. */
+export const ARCHIVE_SECTIONS = ['events', 'tasks', 'polls'] as const;
+export type ArchiveSection = (typeof ARCHIVE_SECTIONS)[number];
+
+/**
+ * What the member has finished, apart from the Activity page that lists what
+ * is still live (`spec/behavior/activity.md` § Archive, #5127).
+ */
+export interface ActivityArchive {
+  /**
+   * Events that invited the caller whose check-in has closed, in the last 30
+   * days, newest first. `checked_in` says whether they checked in.
+   */
+  events: ActivityEvent[];
+  /**
+   * The caller's own tasks marked done, and the tasks they assigned that are
+   * confirmed, in the last 30 days, most recently done first.
+   */
+  tasks: ActivityTask[];
+  /** Closed polls the caller posted or voted in, most recently closed first. */
+  polls: ActivityPoll[];
+  /** Sections that could not be read this time and are served empty. */
+  unavailable: ArchiveSection[];
+}
+
 /** Rows each list carries. The count in `needs_you_count` is taken before it. */
 const LIST_LIMIT = 25;
 /** How many of the chapter's newest poll cards are checked for "open and unvoted". */
@@ -459,6 +486,14 @@ const COMING_UP_LIMIT = 10;
  */
 const MADE_EVENTS_SCAN_LIMIT = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** How far back the Archive's events and tasks reach (#5127). */
+const ARCHIVE_WINDOW_MS = 30 * DAY_MS;
+/**
+ * Tasks each Archive read takes, newest made first, before the 25 most
+ * recently done are kept: the database orders by when a task was made, not
+ * when it was done.
+ */
+const ARCHIVE_TASK_SCAN_LIMIT = 100;
 const WEEK_MS = 7 * DAY_MS;
 /**
  * How long an ended snooze still counts for `unread`: a row that came back
@@ -565,6 +600,139 @@ function pollCardClosed(card: PollCardFields, now: Date): boolean {
 /** The Activity read kind a card's id is recorded under. */
 function cardReadKind(card: Pick<ActivityCard, 'kind'>): ActivityItemKind {
   return card.kind === 'form' ? 'form' : 'signup';
+}
+
+/**
+ * Other members' poll cards the caller may see: in a channel chat lists for
+ * them, not their own, and not from someone they blocked.
+ */
+function othersPollsOf(
+  recent: ChatMessage[],
+  userId: string,
+  channelById: Map<string, PollChannel>,
+  blocked: Set<string>,
+): ChatMessage[] {
+  return recent.filter((message) => {
+    if (!channelById.has(message.channel_id)) return false;
+    if (message.sender_id === userId) return false;
+    if (message.sender_id && blocked.has(message.sender_id)) return false;
+    return readPollCard(message) !== null;
+  });
+}
+
+/**
+ * Poll cards as Activity rows, in their order: a card that doesn't parse, or
+ * whose channel is not in `channelById`, is left out.
+ */
+function pollRowsOf(
+  messages: ChatMessage[],
+  channelById: Map<string, PollChannel>,
+  blocked: Set<string>,
+  votedIds: Set<string>,
+  now: Date,
+): ActivityPoll[] {
+  const rows: ActivityPoll[] = [];
+  for (const message of messages) {
+    const card = readPollCard(message);
+    const channel = channelById.get(message.channel_id);
+    if (!card || !channel) continue;
+    rows.push({
+      message_id: message.id,
+      channel_id: message.channel_id,
+      channel_name: channel.name,
+      channel_type: channel.type,
+      sender_id: message.sender_id,
+      question: card.question,
+      option_count: card.option_count,
+      closes_at: card.closes_at,
+      closed_at: card.closed_at,
+      is_closed: pollCardClosed(card, now),
+      has_voted: votedIds.has(message.id),
+      // Set on the caller's open polls (`withPollProgress`).
+      progress: null,
+      created_at: message.created_at,
+      unread: false,
+      snoozed_until: null,
+      // Through the mask every chat read uses, with the block list read by
+      // the caller. A blocked author's poll never reaches here; the mask is
+      // what gives the row chat's own shape (`sender_blocked` set).
+      message: maskBlockedMessages([message], blocked)[0],
+    });
+  }
+  return rows;
+}
+
+/**
+ * When a closed poll stopped taking votes, for the Archive's newest-first
+ * order: closed by hand, or its closing time; its posting as a last resort.
+ */
+function pollClosedAtMs(poll: ActivityPoll): number {
+  const at = new Date(poll.closed_at ?? poll.closes_at ?? poll.created_at);
+  return Number.isNaN(at.getTime()) ? 0 : at.getTime();
+}
+
+/**
+ * An event as an Activity row, with what it asks of this member. Progress is
+ * set on the caller's own events (`withEventProgress`), and `unread` on
+ * Coming up once the caller's reads are in (`withUnread`).
+ */
+function activityEventRow(
+  event: Event,
+  member: {
+    attendance: ActivityEvent['attendance'];
+    checkInOpen: boolean;
+    /** Read only while check-in is open: an officer's screen can only be live inside the window. */
+    needsCode: boolean;
+    /** Whether the member checked in; `null` when it wasn't (or couldn't be) read. */
+    checkedIn: boolean | null;
+  },
+): ActivityEvent {
+  return {
+    id: event.id,
+    name: event.name,
+    location: event.location,
+    start_time: event.start_time,
+    end_time: event.end_time,
+    attendance: member.attendance,
+    point_value: event.point_value,
+    check_in_opens_minutes: event.check_in_opens_minutes,
+    check_in_open: member.checkInOpen,
+    check_in_needs_location: event.check_in_zone != null,
+    check_in_needs_code: member.needsCode,
+    checked_in: member.checkedIn,
+    created_by: event.created_by,
+    progress: null,
+    created_at: event.created_at,
+    unread: false,
+    snoozed_until: null,
+  };
+}
+
+/** A task as an Activity row, with names from `names` (empty when unknown). */
+function activityTaskRow(
+  task: TaskView,
+  names: Map<string, string>,
+): ActivityTask {
+  return {
+    id: task.id,
+    title: task.title,
+    due_date: task.due_date,
+    due_at: task.due_at,
+    status: task.status,
+    stored_status: task.stored_status,
+    assignee_id: task.assignee_id,
+    assignee_name: names.get(task.assignee_id) ?? '',
+    created_by: task.created_by,
+    created_by_name: names.get(task.created_by) ?? '',
+    point_reward: task.point_reward,
+    completed_at: task.completed_at,
+    confirmed_at: task.confirmed_at,
+    sent_back_at: task.sent_back_at ?? null,
+    proof_kind: task.proof_kind ?? 'none',
+    created_at: task.created_at,
+    unread: false,
+    snoozed_until: null,
+  };
 }
 
 /** The later of two timestamps; one that is null or doesn't parse loses. */
@@ -698,18 +866,7 @@ export class ActivityService {
     // decides it, from the shared role id.
     let viewerRead: Promise<EventViewer> | null = null;
     const viewer = () =>
-      (viewerRead ??= Promise.all([
-        this.memberRepo.findByUserAndChapter(userId, chapterId),
-        chapter.alumniRoleId(),
-      ]).then(([member, alumniRoleId]) => {
-        const joined = member ? new Date(member.created_at).getTime() : NaN;
-        const roleIds = member?.role_ids ?? [];
-        return {
-          roleIds,
-          isAlumni: alumniRoleId !== null && roleIds.includes(alumniRoleId),
-          joinedAt: Number.isNaN(joined) ? null : joined,
-        };
-      }));
+      (viewerRead ??= this.readViewer(chapterId, userId, chapter.alumniRoleId));
 
     // Chat's channel list and the caller's block list, read once and shared
     // by the two sections that list chat messages (polls and links), and only
@@ -1231,6 +1388,242 @@ export class ActivityService {
   }
 
   /**
+   * The Archive (`spec/behavior/activity.md` § Archive, #5127): what the
+   * member has finished, by the same rules the page uses to drop it. Its own
+   * read, made only when the member opens the Archive, so the page's read
+   * (made on every app open) carries none of it. Each section is read under
+   * its module's switch and rule for who may see it, and fails alone.
+   */
+  async getArchive(
+    chapterId: string,
+    userId: string,
+    enabledModules: EnabledModules,
+    options: { now?: Date } = {},
+  ): Promise<ActivityArchive> {
+    const on = (moduleKey: string) =>
+      isModuleEnabled(enabledModules, moduleKey);
+    const now = (options.now ?? new Date()).getTime();
+    const since = now - ARCHIVE_WINDOW_MS;
+    const [events, tasks, polls] = await Promise.all([
+      this.settle('archive_events', chapterId, () =>
+        on('events')
+          ? this.readArchivedEvents(chapterId, userId, now, since)
+          : Promise.resolve([]),
+      ),
+      this.settle('archive_tasks', chapterId, () =>
+        on('tasks')
+          ? this.readArchivedTasks(chapterId, userId, since)
+          : Promise.resolve([]),
+      ),
+      this.settle('archive_polls', chapterId, () =>
+        on('polls')
+          ? this.readArchivedPolls(chapterId, userId, now)
+          : Promise.resolve([]),
+      ),
+    ]);
+    const unavailable: ArchiveSection[] = [];
+    const valueOf = <T>(section: ArchiveSection, result: Settled<T[]>): T[] => {
+      if (result.ok) return result.value;
+      unavailable.push(section);
+      return [];
+    };
+    return {
+      events: valueOf('events', events),
+      tasks: valueOf('tasks', tasks),
+      polls: valueOf('polls', polls),
+      unavailable,
+    };
+  }
+
+  /**
+   * What the event sections need to know about the caller: their roles,
+   * whether they are an alumnus (as `RbacService.hasAlumniRole` decides it,
+   * from the chapter's Alumni role), and when they joined.
+   */
+  private async readViewer(
+    chapterId: string,
+    userId: string,
+    alumniRoleId: () => Promise<string | null>,
+  ): Promise<EventViewer> {
+    const [member, alumniRole] = await Promise.all([
+      this.memberRepo.findByUserAndChapter(userId, chapterId),
+      alumniRoleId(),
+    ]);
+    const joined = member ? new Date(member.created_at).getTime() : NaN;
+    const roleIds = member?.role_ids ?? [];
+    return {
+      roleIds,
+      isAlumni: alumniRole !== null && roleIds.includes(alumniRole),
+      joinedAt: Number.isNaN(joined) ? null : joined,
+    };
+  }
+
+  /**
+   * Events that invited the caller and are over: their check-in has closed
+   * (15 minutes after the end), the moment Coming up and Events you made let
+   * them go. Each meeting of a series is its own row, since each happened.
+   * Read as the caller, so an event that leaves them out is never here, and
+   * never one that started before they joined.
+   */
+  private async readArchivedEvents(
+    chapterId: string,
+    userId: string,
+    now: number,
+    since: number,
+  ): Promise<ActivityEvent[]> {
+    const [events, { roleIds, isAlumni, joinedAt }] = await Promise.all([
+      this.eventService.findByChapter(chapterId, userId, {
+        endsAfter: new Date(since).toISOString(),
+        startsBefore: new Date(now).toISOString(),
+      }),
+      this.readViewer(chapterId, userId, () =>
+        this.rbacService.getAlumniRoleId(chapterId),
+      ),
+    ]);
+    const kept = events
+      .map((event) => ({
+        event,
+        window: this.checkInWindowOf(event),
+        answer: attendanceFor(event, roleIds),
+      }))
+      .filter(
+        ({ event, window, answer }) =>
+          answer.status !== 'not_invited' &&
+          window !== null &&
+          window.closesAt <= now &&
+          // Not one from before they joined: it was never theirs, and with no
+          // Checked in it would read as one they missed.
+          (joinedAt === null ||
+            new Date(event.start_time).getTime() > joinedAt),
+      )
+      .sort(
+        (a, b) =>
+          new Date(b.event.start_time).getTime() -
+          new Date(a.event.start_time).getTime(),
+      )
+      .slice(0, LIST_LIMIT);
+    if (kept.length === 0) return [];
+    const attendance = await this.attendanceRepo.findByUserForEvents(
+      userId,
+      kept.map(({ event }) => event.id),
+    );
+    const statusOf = new Map(
+      attendance.map((row) => [row.event_id, row.status]),
+    );
+    return kept.map(({ event, answer }) => {
+      const status = statusOf.get(event.id);
+      return activityEventRow(event, {
+        attendance:
+          answer.status === 'required' && !(isAlumni && !answer.byRole)
+            ? 'required'
+            : 'optional',
+        checkInOpen: false,
+        needsCode: false,
+        checkedIn: status === 'PRESENT' || status === 'LATE',
+      });
+    });
+  }
+
+  /**
+   * The caller's own tasks marked done (confirmed or still waiting on an
+   * officer: their part is finished) and, while they hold `tasks:manage`,
+   * the tasks they assigned that are confirmed. A completion that waits on
+   * the caller's own confirm stays on the page, in To review. Most recently
+   * done first, of the 100 most recently made of each kind.
+   */
+  private async readArchivedTasks(
+    chapterId: string,
+    userId: string,
+    since: number,
+  ): Promise<ActivityTask[]> {
+    const permissions = await this.rbacService.getEffectivePermissions(
+      chapterId,
+      userId,
+    );
+    const completedSince = new Date(since).toISOString();
+    const [own, assigned] = await Promise.all([
+      // Each read capped, newest made first, so a busy month never reads
+      // (with every task's subtasks and photos) hundreds of rows to keep 25.
+      this.taskService.list(chapterId, userId, false, {
+        status: TaskStatus.COMPLETED,
+        completedSince,
+        limit: ARCHIVE_TASK_SCAN_LIMIT,
+      }),
+      can(SystemPermissions.TASKS_MANAGE, permissions)
+        ? this.taskService.list(chapterId, userId, true, {
+            createdBy: userId,
+            status: TaskStatus.COMPLETED,
+            confirmed: true,
+            // Not by when it was done: one confirmed today that was done 40
+            // days ago leaves Tasks you assigned today, so it lands here.
+            limit: ARCHIVE_TASK_SCAN_LIMIT,
+          })
+        : Promise.resolve([]),
+    ]);
+    const byId = new Map<string, TaskView>();
+    for (const task of [...own, ...assigned]) byId.set(task.id, task);
+    // When it last finished: confirmed, or marked done.
+    const doneAt = (task: TaskView) =>
+      new Date(
+        latest(task.completed_at ?? task.created_at, task.confirmed_at),
+      ).getTime() || 0;
+    const finished = [...byId.values()]
+      .sort((a, b) => doneAt(b) - doneAt(a))
+      .slice(0, LIST_LIMIT);
+    const names = await this.namesOf(
+      finished.flatMap((task) => [task.assignee_id, task.created_by]),
+    );
+    return finished.map((task) => activityTaskRow(task, names));
+  }
+
+  /**
+   * Closed polls the caller posted, and closed polls from other members they
+   * voted in, among the same cards the page scans (the chapter's 100 newest
+   * poll cards and the caller's own 100), under chat's channel list and
+   * block list as the page reads them. Most recently closed first.
+   */
+  private async readArchivedPolls(
+    chapterId: string,
+    userId: string,
+    now: number,
+  ): Promise<ActivityPoll[]> {
+    const nowDate = new Date(now);
+    const [channels, blockedUserIds, [recent, own]] = await Promise.all([
+      this.chatService.getChannels(chapterId, userId),
+      this.chatBlocks.listBlockedUserIds(chapterId, userId),
+      this.pollScans(chapterId, userId),
+    ]);
+    const channelById = new Map(
+      channels.map((channel) => [channel.id, channel]),
+    );
+    const blocked = new Set(blockedUserIds);
+    const closed = (message: ChatMessage) => {
+      const card = readPollCard(message);
+      return !!card && pollCardClosed(card, nowDate);
+    };
+    const mine = own.filter(
+      (message) => channelById.has(message.channel_id) && closed(message),
+    );
+    const others = othersPollsOf(recent, userId, channelById, blocked).filter(
+      closed,
+    );
+    const voted = new Set(
+      (await this.votesOn([...mine, ...others], userId)).map(
+        (row) => row.message_id,
+      ),
+    );
+    return pollRowsOf(
+      [...mine, ...others.filter((message) => voted.has(message.id))],
+      channelById,
+      blocked,
+      voted,
+      nowDate,
+    )
+      .sort((a, b) => pollClosedAtMs(b) - pollClosedAtMs(a))
+      .slice(0, LIST_LIMIT);
+  }
+
+  /**
    * Run one section; a failure is logged and reported, never thrown.
    *
    * At `error` level: the member sees the section named in `unavailable`
@@ -1239,7 +1632,7 @@ export class ActivityService {
    * as a quiet gap on the page for as long as it stays broken (#4096).
    */
   private async settle<T>(
-    section: ActivitySection | 'week_events',
+    section: ActivitySection | 'week_events' | `archive_${ArchiveSection}`,
     chapterId: string,
     read: () => Promise<T>,
   ): Promise<Settled<T>> {
@@ -1254,6 +1647,44 @@ export class ActivityService {
       });
       return { ok: false };
     }
+  }
+
+  /**
+   * The poll cards Activity reads: the chapter's 100 newest, and the caller's
+   * own 100 newest, so the caller's own are found however busy the chapter.
+   */
+  private pollScans(
+    chapterId: string,
+    userId: string,
+  ): Promise<[ChatMessage[], ChatMessage[]]> {
+    return Promise.all([
+      this.messageRepo.findCardsByChapter(chapterId, {
+        kind: 'poll',
+        limit: POLL_SCAN_LIMIT,
+      }),
+      this.messageRepo.findCardsByChapter(chapterId, {
+        kind: 'poll',
+        senderId: userId,
+        limit: POLL_SCAN_LIMIT,
+      }),
+    ]);
+  }
+
+  /**
+   * The caller's votes on `messages`. A vote row with no picks is a cleared
+   * vote, not a vote: a member who clears every pick on a multi-choice card
+   * keeps the row with an empty list (#3793), and the poll goes back to
+   * needing them.
+   */
+  private async votesOn(messages: ChatMessage[], userId: string) {
+    const rows = await this.actionRepo.findActionsOnMessages(
+      messages.map((message) => message.id),
+      userId,
+      CARD_VOTE_ACTION_TYPE,
+    );
+    return rows.filter(
+      (row) => cardVoteSelection(row.payload ?? undefined).length > 0,
+    );
   }
 
   private async readTasks(
@@ -1326,26 +1757,7 @@ export class ActivityService {
         task.created_by,
       ]),
     );
-    const toRow = (task: TaskView): ActivityTask => ({
-      id: task.id,
-      title: task.title,
-      due_date: task.due_date,
-      due_at: task.due_at,
-      status: task.status,
-      stored_status: task.stored_status,
-      assignee_id: task.assignee_id,
-      assignee_name: names.get(task.assignee_id) ?? '',
-      created_by: task.created_by,
-      created_by_name: names.get(task.created_by) ?? '',
-      point_reward: task.point_reward,
-      completed_at: task.completed_at,
-      confirmed_at: task.confirmed_at,
-      sent_back_at: task.sent_back_at ?? null,
-      proof_kind: task.proof_kind ?? 'none',
-      created_at: task.created_at,
-      unread: false,
-      snoozed_until: null,
-    });
+    const toRow = (task: TaskView) => activityTaskRow(task, names);
     return {
       mine: mine.map(toRow),
       confirmations: confirmations.map(toRow),
@@ -1403,19 +1815,9 @@ export class ActivityService {
     // that cannot be read is not an empty block list", so a failure fails the
     // section (served empty and named `unavailable`) rather than listing a
     // blocked member's question.
-    const [{ channels, blockedUserIds }, recent, own] = await Promise.all([
+    const [{ channels, blockedUserIds }, [recent, own]] = await Promise.all([
       chatReads(),
-      this.messageRepo.findCardsByChapter(chapterId, {
-        kind: 'poll',
-        limit: POLL_SCAN_LIMIT,
-      }),
-      this.messageRepo.findCardsByChapter(chapterId, {
-        kind: 'poll',
-        senderId: userId,
-        // Wider than the list: the open and closed lists are cut apart below,
-        // so closed polls can't crowd an open one out of the read.
-        limit: POLL_SCAN_LIMIT,
-      }),
+      this.pollScans(chapterId, userId),
     ]);
     const nowDate = new Date(now);
     // No deadline sorts last: it is the least pressing.
@@ -1430,11 +1832,7 @@ export class ActivityService {
       channelById.has(message.channel_id);
     // Other members' polls the caller can read, open or closed: the closed
     // ones only to count a vote cast this week on a poll that has since ended.
-    const others = recent.filter((message) => {
-      if (!readable(message) || message.sender_id === userId) return false;
-      if (message.sender_id && blocked.has(message.sender_id)) return false;
-      return readPollCard(message) !== null;
-    });
+    const others = othersPollsOf(recent, userId, channelById, blocked);
     const openOthers = others.filter((message) => {
       const card = readPollCard(message);
       return !!card && !pollCardClosed(card, nowDate);
@@ -1444,13 +1842,7 @@ export class ActivityService {
     // A vote row with no picks is a cleared vote, not a vote: a member who
     // clears every pick on a multi-choice card keeps the row with an empty
     // list (#3793), and the poll goes back to needing them.
-    const voteRows = (
-      await this.actionRepo.findActionsOnMessages(
-        [...others, ...mine].map((message) => message.id),
-        userId,
-        CARD_VOTE_ACTION_TYPE,
-      )
-    ).filter((row) => cardVoteSelection(row.payload ?? undefined).length > 0);
+    const voteRows = await this.votesOn([...others, ...mine], userId);
     const votedIds = new Set(voteRows.map((row) => row.message_id));
     // By the vote row's `created_at`, which is when the member last voted:
     // changing a vote rewrites it (`updateForVote`, ADR-07). So a vote counts
@@ -1461,35 +1853,8 @@ export class ActivityService {
       (row) => otherIds.has(row.message_id) && since(row.created_at, weekStart),
     ).length;
 
-    const toRow = (message: ChatMessage): ActivityPoll | null => {
-      const card = readPollCard(message);
-      const channel = channelById.get(message.channel_id);
-      if (!card || !channel) return null;
-      return {
-        message_id: message.id,
-        channel_id: message.channel_id,
-        channel_name: channel.name,
-        channel_type: channel.type,
-        sender_id: message.sender_id,
-        question: card.question,
-        option_count: card.option_count,
-        closes_at: card.closes_at,
-        closed_at: card.closed_at,
-        is_closed: pollCardClosed(card, nowDate),
-        has_voted: votedIds.has(message.id),
-        // Set on the caller's open polls below (`withPollProgress`).
-        progress: null,
-        created_at: message.created_at,
-        unread: false,
-        snoozed_until: null,
-        // Through the mask every chat read uses, with the block list read
-        // above. A blocked author's poll never reaches this line; the mask is
-        // what gives the row chat's own shape (`sender_blocked` set).
-        message: maskBlockedMessages([message], blocked)[0],
-      };
-    };
     const rowsOf = (messages: ChatMessage[]): ActivityPoll[] =>
-      messages.map(toRow).filter((row): row is ActivityPoll => row !== null);
+      pollRowsOf(messages, channelById, blocked, votedIds, nowDate);
 
     const mineRows = rowsOf(mine);
     return {
@@ -1497,6 +1862,9 @@ export class ActivityService {
         .filter((row) => !row.has_voted)
         .sort((a, b) => closesAtMs(a) - closesAtMs(b)),
       // Newest first, as read: the open ones, then the closed, 25 of each.
+      // Only a phone build from before the Archive (#5127) draws the closed
+      // ones, as its Archived polls; a current client lists them from the
+      // Archive.
       mine: [
         ...(await this.withPollProgress(
           chapterId,
@@ -2035,33 +2403,15 @@ export class ActivityService {
               this.eventService.checkInNeedsCode(event, new Date(now)),
             ])
           : [null, false];
-        return {
-          id: event.id,
-          name: event.name,
-          location: event.location,
-          start_time: event.start_time,
-          end_time: event.end_time,
+        return activityEventRow(event, {
           attendance:
             answer.status === 'required' && !alumniByDefault
               ? 'required'
               : 'optional',
-          point_value: event.point_value,
-          check_in_opens_minutes: event.check_in_opens_minutes,
-          check_in_open: checkInOpen,
-          check_in_needs_location: event.check_in_zone != null,
-          // Read only while check-in is open, like `checked_in`: an
-          // officer's screen can only be live inside the window.
-          check_in_needs_code: needsCode,
-          checked_in: checkedIn,
-          created_by: event.created_by,
-          // Set on the caller's own events (`withEventProgress`).
-          progress: null,
-          created_at: event.created_at,
-          // Set for Coming up once the caller's reads are in
-          // (`withUnread`); an event in Made by you is never unread.
-          unread: false,
-          snoozed_until: null,
-        };
+          checkInOpen,
+          needsCode,
+          checkedIn,
+        });
       }),
     );
   }

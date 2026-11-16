@@ -4394,9 +4394,29 @@ export interface paths {
         };
         /**
          * Get what needs the caller and what they made
-         * @description The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
+         * @description The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned; a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.
          */
         get: operations["ActivityController_getActivity_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/activity/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get what the caller has finished
+         * @description The Activity Archive (`spec/behavior/activity.md` § Archive): what has left the caller’s Activity because it is over. `events`: events that invited them whose check-in has closed, in the last 30 days. `tasks`: their own tasks marked done in the last 30 days, and the confirmed tasks they assigned while they hold `tasks:manage`. `events` leaves out any that started before they joined. `polls`: closed polls they posted or voted in. Each section reads through its module under that module’s rule for who may see it; a module the chapter has off contributes nothing, and a section that fails is served empty and named in `unavailable`. Its own read, apart from `GET /v1/activity`, made only when the Archive is opened.
+         */
+        get: operations["ActivityController_getArchive_v1"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9550,9 +9570,9 @@ export interface components {
             created_at: string;
         };
         ActivityMadeByYouDto: {
-            /** @description Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out. A client lists the open ones and keeps the closed ones behind an archive (#4258). */
+            /** @description Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out of the read. A current client lists the open ones and finds the closed in `GET /v1/activity/archive` (#5127); the closed ones are served for phone builds from before it, which draw them as Archived polls (#4258). */
             polls: components["schemas"]["ActivityPollDto"][];
-            /** @description Tasks the caller assigned, newest first. Empty unless the caller still holds `tasks:manage`. */
+            /** @description Tasks the caller assigned, newest first. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`. */
             tasks: components["schemas"]["ActivityTaskDto"][];
             /**
              * @deprecated
@@ -9610,6 +9630,16 @@ export interface components {
              * @description When the caller’s unread dots began in this chapter. Null until a client that draws dots calls `PUT /v1/activity/unread-since`, and every `unread` is false until then. Nothing that appeared before it is unread. Also served null, with every row read, when the caller’s unread state couldn’t be loaded.
              */
             unread_since: string | null;
+        };
+        ActivityArchiveDto: {
+            /** @description Events that invited the caller whose check-in has closed (15 minutes after the end), ending in the last 30 days and starting after the caller joined, newest first, at most 25. Each meeting of a series is its own row. `checked_in` says whether the caller was marked present or late; `check_in_open` is always false. */
+            events: components["schemas"]["ActivityEventDto"][];
+            /** @description The caller’s own tasks marked done in the last 30 days, confirmed or still waiting on an officer, and, while the caller holds `tasks:manage`, the tasks they assigned that are confirmed. Most recently finished (confirmed or marked done) first, at most 25, from the 100 most recently made of each kind. */
+            tasks: components["schemas"]["ActivityTaskDto"][];
+            /** @description Closed polls the caller posted, and closed polls from other members they voted in, from the chapter’s 100 newest poll cards and the caller’s own 100, in channels they can read. Most recently closed first, at most 25. */
+            polls: components["schemas"]["ActivityPollDto"][];
+            /** @description Sections that could not be read this time. Each is served empty; the others are unaffected. */
+            unavailable: ("events" | "tasks" | "polls")[];
         };
         StandingPointsDto: {
             /** @description Points earned this semester. */
@@ -20852,6 +20882,34 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ActivityController_getArchive_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityArchiveDto"];
+                };
             };
             /** @description Error */
             default: {

@@ -22,7 +22,10 @@ import {
 } from '@nestjs/swagger';
 import { ActivityService } from '../../application/services/activity.service';
 import { ActivityLinkService } from '../../application/services/activity-link.service';
-import type { ActivityView } from '../../application/services/activity.service';
+import type {
+  ActivityArchive,
+  ActivityView,
+} from '../../application/services/activity.service';
 import {
   ActivityStandingService,
   acceptableWeekStart,
@@ -41,6 +44,7 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
+  ActivityArchiveDto,
   ActivityDto,
   ActivityItemRefDto,
   ActivityRecapDto,
@@ -87,7 +91,7 @@ export class ActivityController {
   @ApiOperation({
     summary: 'Get what needs the caller and what they made',
     description:
-      'The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.',
+      'The Activity page’s read (`spec/behavior/activity.md`). `week`: how much of the caller’s week is done, by kind, counted from `week_start`; a `week_start` more than eight days back or a day ahead is not refused but ignored, and `week.start` says which week was counted. `needs_you`: the caller’s open tasks, finished tasks they can confirm, service entries they can approve, open polls they can read and haven’t voted on, and open sign-up sheets, headcounts and forms from others that they haven’t answered (`cards`). `coming_up`: their upcoming events, with whether check-in is open. `made_by_you`: their poll cards, the events they made that invite them and have not closed, and the tasks they assigned; a current client lists the closed polls and confirmed tasks from `GET /v1/activity/archive` instead. `links`: sign-up links (forms, sheets, booking pages) posted in the last 30 days in channels they can read that an officer has not left out of Activity, minus their own, blocked members’, removed ones and ones they marked Done or Hidden. A read-only aggregation: every row comes from its own module under that module’s rule for who may see it, a module the chapter has off contributes nothing, and a poll is listed only from a channel the caller can read in chat. Not `GET /v1/activity-feed`, which is a feed of what happened in the chapter.',
   })
   @ApiOkResponse({ type: ActivityDto })
   @ApiBadRequestResponse({
@@ -106,6 +110,23 @@ export class ActivityController {
     // over a number at the top.
     return this.activityService.getActivity(chapterId, userId, enabledModules, {
       weekStart: query.week_start ? new Date(query.week_start) : undefined,
+      now: new Date(),
+    });
+  }
+
+  @Get('archive')
+  @ApiOperation({
+    summary: 'Get what the caller has finished',
+    description:
+      'The Activity Archive (`spec/behavior/activity.md` § Archive): what has left the caller’s Activity because it is over. `events`: events that invited them whose check-in has closed, in the last 30 days. `tasks`: their own tasks marked done in the last 30 days, and the confirmed tasks they assigned while they hold `tasks:manage`. `events` leaves out any that started before they joined. `polls`: closed polls they posted or voted in. Each section reads through its module under that module’s rule for who may see it; a module the chapter has off contributes nothing, and a section that fails is served empty and named in `unavailable`. Its own read, apart from `GET /v1/activity`, made only when the Archive is opened.',
+  })
+  @ApiOkResponse({ type: ActivityArchiveDto })
+  async getArchive(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
+  ): Promise<ActivityArchive> {
+    return this.activityService.getArchive(chapterId, userId, enabledModules, {
       now: new Date(),
     });
   }

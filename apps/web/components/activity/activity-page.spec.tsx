@@ -11,16 +11,25 @@ const mockRecap = vi.fn<() => { data?: unknown }>(() => ({
   data: undefined,
 }));
 const mockChapterId = vi.fn(() => "chap-1");
+const mockArchive = vi.fn<
+  () => {
+    isPending: boolean;
+    isError?: boolean;
+    data?: unknown;
+    refetch?: () => void;
+  }
+>(() => ({ isPending: true }));
 const mockInvalidate = vi.fn();
 /**
  * How many times the page re-read its list. Each re-read also re-reads the
- * standing ("This semester"), so counting every invalidation would double.
+ * standing ("This semester") and the Archive, so counting every invalidation
+ * would triple.
  */
 const listRereads = () =>
   mockInvalidate.mock.calls.filter(
     ([options]) =>
       Array.isArray(options?.queryKey) &&
-      !JSON.stringify(options.queryKey).includes("standing"),
+      options.queryKey[0] === "activity",
   ).length;
 const standingRereads = () =>
   mockInvalidate.mock.calls.filter(([options]) =>
@@ -42,6 +51,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     // the groups and the gauges (`activity-agenda.ts`, `activity-rows.ts`,
     // `activity-standing.ts`). Only the reads are stood in for.
     ACTIVITY_GLYPH_NAV: actual.ACTIVITY_GLYPH_NAV,
+    ACTIVITY_ARCHIVE_EMPTY: actual.ACTIVITY_ARCHIVE_EMPTY,
+    ACTIVITY_ARCHIVE_SECTION_NAMES: actual.ACTIVITY_ARCHIVE_SECTION_NAMES,
+    activityArchiveGroups: actual.activityArchiveGroups,
     ACTIVITY_REVIEW_OPEN_LIMIT: actual.ACTIVITY_REVIEW_OPEN_LIMIT,
     ACTIVITY_REVIEW_ROW_LIMIT: actual.ACTIVITY_REVIEW_ROW_LIMIT,
     ACTIVITY_SHOW_EVERYTHING: actual.ACTIVITY_SHOW_EVERYTHING,
@@ -68,6 +80,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityStandingGauges: actual.activityStandingGauges,
     activityWeekSummary: actual.activityWeekSummary,
     findActivityTaskRow: actual.findActivityTaskRow,
+    activityArchiveKeys: actual.activityArchiveKeys,
     activityKeys: actual.activityKeys,
     activityStandingKeys: actual.activityStandingKeys,
     useNowDate: actual.useNowDate,
@@ -75,6 +88,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useActivity: () => mockActivity(),
     useActivityStanding: () => mockStanding(),
     useActivityRecap: () => mockRecap(),
+    useActivityArchive: () => mockArchive(),
     activityRecapCard: actual.activityRecapCard,
     recapDismissalKey: actual.recapDismissalKey,
     recapDismissed: actual.recapDismissed,
@@ -1357,7 +1371,7 @@ describe("ActivityPage", () => {
     expect(screen.queryByRole("region", { name: "Links" })).toBeNull();
   });
 
-  it("lists open polls only, and keeps closed ones behind Archived polls (#4258)", () => {
+  it("lists open polls only: a closed one is in the Archive (#4258, #5127)", () => {
     mockActivity.mockReturnValue(
       loaded({
         made_by_you: {
@@ -1367,14 +1381,6 @@ describe("ActivityPage", () => {
               message_id: "m1",
               question: "Open one",
               sender_id: "me",
-            },
-            {
-              ...poll,
-              message_id: "m2",
-              question: "Closed one",
-              sender_id: "me",
-              is_closed: true,
-              closed_at: "2026-11-02T00:00:00.000Z",
             },
           ],
           tasks: [],
@@ -1386,53 +1392,92 @@ describe("ActivityPage", () => {
 
     const made = screen.getByRole("region", { name: "Waiting on others" });
     expect(within(made).getByText("Open one")).toBeInTheDocument();
-    expect(within(made).queryByText("Closed one")).toBeNull();
-    const toggle = within(made).getByRole("button", {
-      name: "Archived polls (1)",
-    });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    const archive = within(made).getByRole("list", { name: "Archived polls" });
-    expect(within(archive).getByText("Closed one")).toBeInTheDocument();
-    expect(within(archive).getByText("Closed")).toBeInTheDocument();
-
-    // A closed poll opens its card, with its result, like any other row.
-    fireEvent.click(
-      within(archive).getByRole("button", { name: /Closed one/ }),
-    );
-    expect(screen.getByTestId("panel")).toHaveTextContent("panel:Closed one");
+    expect(screen.queryByRole("button", { name: /Archived polls/ })).toBeNull();
   });
 
-  it("keeps Waiting on others while every posted poll is closed, for its archive", () => {
-    mockActivity.mockReturnValue(
-      loaded({
-        made_by_you: {
-          polls: [
-            {
-              ...poll,
-              message_id: "m-closed",
-              question: "All done",
-              sender_id: "me",
-              is_closed: true,
-              closed_at: "2026-11-02T00:00:00.000Z",
-            },
-          ],
-          tasks: [],
-          events: [],
-        },
-      }),
-    );
+  it("opens the Archive in place of the page, laid out by kind, and goes back (#5127)", () => {
+    mockActivity.mockReturnValue(loaded({}));
+    mockArchive.mockReturnValue({
+      isPending: false,
+      data: {
+        events: [
+          {
+            id: "e-past",
+            name: "Last week's meeting",
+            location: null,
+            start_time: "2026-11-02T19:00:00.000Z",
+            end_time: "2026-11-02T20:00:00.000Z",
+            attendance: "required",
+            point_value: 10,
+            check_in_opens_minutes: 10,
+            check_in_open: false,
+            check_in_needs_location: false,
+            check_in_needs_code: false,
+            checked_in: true,
+            created_by: null,
+            progress: null,
+            created_at: "2026-10-01T00:00:00.000Z",
+            unread: false,
+            snoozed_until: null,
+          },
+        ],
+        tasks: [],
+        polls: [
+          {
+            ...poll,
+            message_id: "m2",
+            question: "Closed one",
+            sender_id: "me",
+            is_closed: true,
+            closed_at: "2026-11-02T00:00:00.000Z",
+          },
+        ],
+        unavailable: ["tasks"],
+      },
+    });
     render(<ActivityPage />);
 
-    const made = screen.getByRole("region", { name: "Waiting on others" });
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
     expect(
-      within(made).getByRole("button", { name: "Archived polls (1)" }),
+      screen.getByRole("heading", { name: "Archive" }),
+    ).toBeInTheDocument();
+    const events = screen.getByRole("region", { name: "Events" });
+    expect(within(events).getByText("Last week's meeting")).toBeInTheDocument();
+    expect(within(events).getByText("Checked in")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Tasks" })).getByText(
+        /Couldn't load tasks/,
+      ),
+    ).toBeInTheDocument();
+    const polls = screen.getByRole("region", { name: "Polls" });
+    expect(within(polls).getByText("Closed")).toBeInTheDocument();
+
+    // A closed poll opens its card, with its result, as on the page.
+    fireEvent.click(within(polls).getByRole("button", { name: /Closed one/ }));
+    expect(screen.getByTestId("panel")).toHaveTextContent("panel:Closed one");
+
+    fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+    expect(screen.queryByRole("heading", { name: "Archive" })).toBeNull();
+  });
+
+  it("says when the Archive holds nothing", () => {
+    mockActivity.mockReturnValue(loaded({}));
+    mockArchive.mockReturnValue({
+      isPending: false,
+      data: { events: [], tasks: [], polls: [], unavailable: [] },
+    });
+    render(<ActivityPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    expect(
+      screen.getByText(/Nothing finished in the last 30 days/),
     ).toBeInTheDocument();
   });
 
-  it("moves a poll to the archive when its time runs out while the page is open", () => {
+  it("takes a poll off the page when its time runs out while the page is open", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     try {
       vi.setSystemTime(new Date("2026-11-11T12:00:00.000Z"));
@@ -1454,18 +1499,14 @@ describe("ActivityPage", () => {
         }),
       );
       render(<ActivityPage />);
-      const made = screen.getByRole("region", { name: "Waiting on others" });
-      expect(within(made).getByText("Closing soon")).toBeInTheDocument();
+      expect(screen.getByText("Closing soon")).toBeInTheDocument();
 
       // One tick of the shared clock, past the closing time, with no re-read.
       act(() => {
         vi.advanceTimersByTime(31_000);
       });
 
-      expect(within(made).queryByText("Closing soon")).toBeNull();
-      expect(
-        within(made).getByRole("button", { name: "Archived polls (1)" }),
-      ).toBeInTheDocument();
+      expect(screen.queryByText("Closing soon")).toBeNull();
     } finally {
       vi.useRealTimers();
     }

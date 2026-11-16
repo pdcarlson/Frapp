@@ -10,7 +10,7 @@ import {
 } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { describeLoadFailure } from "@repo/hooks/error-copy";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -68,9 +68,12 @@ import { RecapCard } from "./recap-card";
 import { SemesterStrip, SemesterStripSkeleton } from "./semester-strip";
 import { WeekCard } from "./week-card";
 import {
+  ACTIVITY_ARCHIVE_EMPTY,
+  ACTIVITY_ARCHIVE_SECTION_NAMES,
   ACTIVITY_SHOW_EVERYTHING,
   ACTIVITY_TO_DO_EMPTY,
   activityAgenda,
+  activityArchiveGroups,
   activityAwake,
   activityCouldNotLoad,
   activityNarrowedNote,
@@ -82,10 +85,12 @@ import {
   activityWeekSummary,
   findActivityTaskRow,
   activityRowAction,
+  activityArchiveKeys,
   activityKeys,
   activityStandingKeys,
   useActiveChapterId,
   useActivity,
+  useActivityArchive,
   useActivityRecap,
   useActivityStanding,
   useActivityUnread,
@@ -94,13 +99,17 @@ import {
   useNowDate,
   useMyPermissions,
   type ActivityAgendaDay,
+  type ActivityArchiveGroup,
   type ActivityAgendaFilter,
   type ActivityGroup,
   type ActivityPart,
   type ActivityRow,
   type ActivityRowProgress,
 } from "@repo/hooks";
-import { ActivityPageSkeleton } from "./activity-skeleton";
+import {
+  ActivityArchiveSkeleton,
+  ActivityPageSkeleton,
+} from "./activity-skeleton";
 
 /**
  * The row's lead (the face of who it's from, its kind's glyph, or an event's
@@ -546,57 +555,98 @@ function GroupSection({ group, kit }: { group: ActivityGroup; kit: RowKit }) {
       {group.parts.map((part) => (
         <GroupPart key={part.id} groupId={group.id} part={part} kit={kit} />
       ))}
-      {group.archive ? (
-        <ArchivePart
-          groupId={group.id}
-          part={group.archive}
-          onOpen={kit.onOpen}
-        />
-      ) : null}
     </section>
   );
 }
 
 /**
- * The rows a group keeps behind one control (#4258): the member's closed
- * polls, under Waiting on others. Closed until pressed, the way Slack keeps
- * archived channels behind "Show archived" and Google Forms puts closed
- * forms apart from open ones; each row opens the poll's card with its
- * final result.
+ * The Archive (#5127, `spec/behavior/activity.md` § Archive): what the
+ * member has finished, apart from the page, which lists only what is still
+ * live. Laid out as the page lays out its groups (Events, Tasks, Polls), each
+ * row opening the same panel it opens on the page. Its own read, made only
+ * while it is open. Google Classroom keeps finished work under its To-do's
+ * Done tab and Gmail keeps archived mail out of the inbox, one press away,
+ * the same way.
  */
-function ArchivePart({
-  groupId,
-  part,
+function ArchiveView({
+  viewerId,
+  now,
+  onBack,
   onOpen,
 }: {
-  groupId: ActivityGroup["id"];
-  part: ActivityPart;
+  viewerId: string | null;
+  now: Date;
+  onBack: () => void;
   onOpen: (row: ActivityRow) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const listId = `activity-${groupId}-${part.id}`;
+  const archive = useActivityArchive();
+  const groups = useMemo(
+    () =>
+      archive.data ? activityArchiveGroups(archive.data, viewerId, now) : null,
+    [archive.data, viewerId, now],
+  );
   return (
-    <div className="space-y-1">
-      <Button
-        type="button"
-        variant="link"
-        size="sm"
-        className="px-2"
-        aria-expanded={open}
-        aria-controls={open ? listId : undefined}
-        onClick={() => setOpen((shown) => !shown)}
-      >
-        {open
-          ? `Hide ${part.label?.toLowerCase() ?? "archive"}`
-          : `${part.label ?? "Archive"} (${part.rows.length})`}
-      </Button>
-      {open ? (
-        <ul
-          id={listId}
-          aria-label={part.label ?? undefined}
-          className={denseListClassName}
+    <div className="space-y-6">
+      <div className="space-y-1">
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="gap-1 px-0"
+          onClick={onBack}
+          autoFocus
         >
-          {part.rows.map((row) => (
+          <ChevronLeft aria-hidden="true" className="size-4" />
+          Activity
+        </Button>
+        <h2 className="text-title font-semibold">Archive</h2>
+        <p className="text-caption text-muted-foreground">
+          Events, tasks and polls that are over.
+        </p>
+      </div>
+      {archive.isPending ? (
+        <ActivityArchiveSkeleton />
+      ) : archive.isError && !archive.data ? (
+        <ErrorState
+          title="Couldn't load your archive"
+          description={describeLoadFailure(archive.error)}
+          onRetry={() => void archive.refetch()}
+        />
+      ) : groups && groups.length === 0 ? (
+        <p className="px-2 text-body text-muted-foreground">
+          {ACTIVITY_ARCHIVE_EMPTY}
+        </p>
+      ) : (
+        groups?.map((group) => (
+          <ArchiveSection key={group.id} group={group} onOpen={onOpen} />
+        ))
+      )}
+    </div>
+  );
+}
+
+function ArchiveSection({
+  group,
+  onOpen,
+}: {
+  group: ActivityArchiveGroup;
+  onOpen: (row: ActivityRow) => void;
+}) {
+  const labelId = `activity-archive-${group.id}`;
+  return (
+    <section aria-labelledby={labelId} className="space-y-3">
+      <SectionLabel id={labelId} count={group.rows.length || null}>
+        {group.label}
+      </SectionLabel>
+      {group.unavailable ? (
+        <InlineNote className="text-warning">
+          Couldn&apos;t load {ACTIVITY_ARCHIVE_SECTION_NAMES[group.id]}. Try
+          again in a moment.
+        </InlineNote>
+      ) : null}
+      {group.rows.length > 0 ? (
+        <ul className={denseListClassName}>
+          {group.rows.map((row) => (
             <li key={row.key}>
               <button
                 type="button"
@@ -609,7 +659,7 @@ function ArchivePart({
           ))}
         </ul>
       ) : null}
-    </div>
+    </section>
   );
 }
 
@@ -874,6 +924,8 @@ export function ActivityPage() {
   // A read when the soonest snooze ends, for its dot and the badge.
   useActivitySnoozeWake(activity.data);
   const [opened, setOpened] = useState<ActivityRow | null>(null);
+  // The Archive (#5127) in place of the page, for this visit; never stored.
+  const [showArchive, setShowArchive] = useState(false);
   // Dots (#4405): opening a row from here is what reads it; scrolling past
   // doesn't, and neither does acting on the item elsewhere in Frapp.
   const { markRead } = useActivityUnread(activity.data);
@@ -944,10 +996,7 @@ export function ActivityPage() {
   const below =
     filter === "all"
       ? groups.filter(
-          (group) =>
-            group.rows.length > 0 ||
-            group.archive !== null ||
-            group.unavailable.length > 0,
+          (group) => group.rows.length > 0 || group.unavailable.length > 0,
         )
       : [];
   // The waiting reviews a review steps through (#4693), however the list is
@@ -963,10 +1012,7 @@ export function ActivityPage() {
         : ([
             ...(agenda?.rows ?? []),
             ...(review?.rows ?? []),
-            ...groups.flatMap((group) => [
-              ...group.rows,
-              ...(group.archive?.rows ?? []),
-            ]),
+            ...groups.flatMap((group) => group.rows),
             ...snoozedRows,
           ].find((row) => row.key === opened.key) ?? opened),
     [agenda, review, groups, snoozedRows, opened],
@@ -1011,6 +1057,12 @@ export function ActivityPage() {
             queryKey: activityStandingKeys.chapter(chapterId),
             exact: true,
           }),
+          // And the Archive (#5127): acting on a row can finish it, or
+          // change one opened from the Archive.
+          queryClient.invalidateQueries({
+            queryKey: activityArchiveKeys.chapter(chapterId),
+            exact: true,
+          }),
         ])
       : Promise.resolve();
   const refresh = () => void reread();
@@ -1035,48 +1087,69 @@ export function ActivityPage() {
   return (
     <ActivityFaces.Provider value={faceFor}>
       <div className="@container">
-        <div className="space-y-8">
-          {summary && agenda ? (
-            <WeekCard
-              summary={summary}
-              next={agenda.next ? rowOnCard(agenda.next) : null}
-              nextLabel={agenda.nextLabel}
-              filter={filter}
-              onFilter={setPicked}
-            />
-          ) : null}
-          {recap.data ? <RecapCard recap={recap.data} now={now} /> : null}
-          {standing.isPending ? (
-            <SemesterStripSkeleton />
-          ) : standing.data ? (
-            <SemesterStrip standing={standing.data} />
-          ) : null}
-          {review ? <ReviewCard review={review} renderRow={rowOnCard} /> : null}
-          {agenda ? (
-            <ToDoSection
-              days={agenda.days}
-              unavailable={agenda.unavailable}
-              filter={filter}
-              // The one thing left is already on the week card.
-              onCard={agenda.next !== null}
-              onShowAll={() => {
-                // The note and its button leave with the narrowing, so the
-                // week line that set it takes the focus they held.
-                document
-                  .getElementById(`activity-week-line-${filter}`)
-                  ?.focus();
-                setPicked("all");
-              }}
-              kit={kit}
-            />
-          ) : null}
-          {below.map((group) => (
-            <GroupSection key={group.id} group={group} kit={kit} />
-          ))}
-          {snoozedRows.length > 0 ? (
-            <SnoozedSection rows={snoozedRows} kit={kit} />
-          ) : null}
-        </div>
+        {showArchive ? (
+          <ArchiveView
+            viewerId={userId}
+            now={now}
+            onBack={() => setShowArchive(false)}
+            onOpen={openFromList}
+          />
+        ) : (
+          <div className="space-y-8">
+            {summary && agenda ? (
+              <WeekCard
+                summary={summary}
+                next={agenda.next ? rowOnCard(agenda.next) : null}
+                nextLabel={agenda.nextLabel}
+                filter={filter}
+                onFilter={setPicked}
+              />
+            ) : null}
+            {recap.data ? <RecapCard recap={recap.data} now={now} /> : null}
+            {standing.isPending ? (
+              <SemesterStripSkeleton />
+            ) : standing.data ? (
+              <SemesterStrip standing={standing.data} />
+            ) : null}
+            {review ? (
+              <ReviewCard review={review} renderRow={rowOnCard} />
+            ) : null}
+            {agenda ? (
+              <ToDoSection
+                days={agenda.days}
+                unavailable={agenda.unavailable}
+                filter={filter}
+                // The one thing left is already on the week card.
+                onCard={agenda.next !== null}
+                onShowAll={() => {
+                  // The note and its button leave with the narrowing, so the
+                  // week line that set it takes the focus they held.
+                  document
+                    .getElementById(`activity-week-line-${filter}`)
+                    ?.focus();
+                  setPicked("all");
+                }}
+                kit={kit}
+              />
+            ) : null}
+            {below.map((group) => (
+              <GroupSection key={group.id} group={group} kit={kit} />
+            ))}
+            {snoozedRows.length > 0 ? (
+              <SnoozedSection rows={snoozedRows} kit={kit} />
+            ) : null}
+            {/* What is finished left the page; it is one press away (#5127). */}
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="px-2"
+              onClick={() => setShowArchive(true)}
+            >
+              Archive
+            </Button>
+          </div>
+        )}
 
         <Suspense fallback={null}>
           <ReviewParam open={openReview} />

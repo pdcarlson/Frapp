@@ -1,12 +1,29 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  BackHandler,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { SignetTokens } from "@repo/theme/signet";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  ACTIVITY_ARCHIVE_EMPTY,
+  ACTIVITY_ARCHIVE_SECTION_NAMES,
   ACTIVITY_SHOW_EVERYTHING,
   ACTIVITY_TO_DO_EMPTY,
   activityAgenda,
+  activityArchiveGroups,
   activityAwake,
   activitySnoozedRows,
   activityCouldNotLoad,
@@ -16,6 +33,7 @@ import {
   activityWeekSummary,
   findActivityTaskRow,
   useActivity,
+  useActivityArchive,
   useActivitySnoozeWake,
   useActivityRecap,
   useActivityStanding,
@@ -35,6 +53,7 @@ import {
   useClearMessageReminder,
   type ActivityAgendaDay,
   type ActivityAgendaFilter,
+  type ActivityArchiveGroup,
   type ActivityGroup,
   type ActivityPart,
   type ActivityRow,
@@ -163,7 +182,24 @@ export default function ActivityScreen() {
       router.push(destination);
     }
   };
-  const refresh = useRefetchAll([activity, standing]);
+  // The Archive (#5127) in place of the page until the member goes back.
+  // Read only while it is open; never stored.
+  const [showArchive, setShowArchive] = useState(false);
+  const archive = useActivityArchive({ enabled: showArchive });
+  // Android's back button goes back to the page, as the Archive's own
+  // control does, rather than leaving the tab.
+  useEffect(() => {
+    // Android only: iOS has no back button, and web has no BackHandler.
+    if (!showArchive || Platform.OS !== "android") return undefined;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      setShowArchive(false);
+      return true;
+    });
+    return () => sub.remove();
+  }, [showArchive]);
+  const refreshPage = useRefetchAll([activity, standing]);
+  const refreshArchive = useRefetchAll([archive]);
+  const refresh = showArchive ? refreshArchive : refreshPage;
   const { linkActions, undo, rereadOnClose, skipNextCloseReread } =
     useLinkActions();
   const reminderActions = useReminderActions(skipNextCloseReread);
@@ -236,10 +272,7 @@ export default function ActivityScreen() {
   const below =
     filter === "all"
       ? groups.filter(
-          (group) =>
-            group.rows.length > 0 ||
-            group.archive !== null ||
-            group.unavailable.length > 0,
+          (group) => group.rows.length > 0 || group.unavailable.length > 0,
         )
       : [];
   // The open row as the latest read has it. A row that has left the list (a
@@ -251,10 +284,7 @@ export default function ActivityScreen() {
     const row = [
       ...(agenda?.rows ?? []),
       ...(review?.rows ?? []),
-      ...groups.flatMap((group) => [
-        ...group.rows,
-        ...(group.archive?.rows ?? []),
-      ]),
+      ...groups.flatMap((group) => group.rows),
       ...snoozedRows,
     ].find((candidate) => candidate.key === openedKey);
     return row ?? null;
@@ -358,6 +388,17 @@ export default function ActivityScreen() {
   };
 
   function renderBody() {
+    if (showArchive) {
+      return (
+        <ArchiveView
+          query={archive}
+          viewerId={viewerId}
+          now={now}
+          onBack={() => setShowArchive(false)}
+          onOpen={open}
+        />
+      );
+    }
     if (activity.isPending) {
       return (
         <SkeletonRegion label="Loading activity">
@@ -447,6 +488,8 @@ export default function ActivityScreen() {
             menuFor={snoozeMenu.wakeMenuFor}
           />
         ) : null}
+        {/* What is finished left the page; it is one press away (#5127). */}
+        <ArchiveLink onPress={() => setShowArchive(true)} />
       </View>
     );
   }
@@ -839,54 +882,139 @@ function GroupSection({
           onOpen={onOpen}
         />
       ))}
-      {group.archive ? (
-        <ArchivePart part={group.archive} onOpen={onOpen} />
-      ) : null}
     </View>
   );
 }
 
+/** The door to the Archive, at the foot of the page. */
+function ArchiveLink({ onPress }: { onPress: () => void }) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityHint="Shows the events, tasks and polls that are over."
+      onPress={onPress}
+      style={styles.showAll}
+    >
+      <Text style={[styles.showAllText, { color: accent }]}>Archive</Text>
+    </Pressable>
+  );
+}
+
 /**
- * The rows a group keeps behind one control (#4258): the member's closed
- * polls, under Waiting on others, closed until pressed, as web draws them. Each
- * row opens the poll's card with its final result.
+ * The Archive (#5127, `spec/behavior/activity.md` § Archive): what the
+ * member has finished, in place of the page, which lists only what is still
+ * live. Laid out as the page lays out its groups (Events, Tasks, Polls), each
+ * row opening the same sheet it opens on the page, as web draws it. Google
+ * Classroom keeps finished work under its To-do's Done tab the same way.
  */
-function ArchivePart({
-  part,
+function ArchiveView({
+  query,
+  viewerId,
+  now,
+  onBack,
   onOpen,
 }: {
-  part: ActivityPart;
+  query: ReturnType<typeof useActivityArchive>;
+  viewerId: string | null;
+  now: Date;
+  onBack: () => void;
   onOpen: (row: ActivityRow) => void;
 }) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
-  const [open, setOpen] = useState(false);
-  const label = part.label ?? "Archive";
-  return (
-    <View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
-        onPress={() => setOpen((shown) => !shown)}
-        style={styles.showAll}
-      >
-        <Text style={[styles.showAllText, { color: accent }]}>
-          {open
-            ? `Hide ${label.toLowerCase()}`
-            : `${label} (${part.rows.length})`}
-        </Text>
-      </Pressable>
-      {open
-        ? part.rows.map((row, index) => (
-            <ActivityListRow
-              key={row.key}
-              row={row}
+  const groups = useMemo(
+    () =>
+      query.data ? activityArchiveGroups(query.data, viewerId, now) : null,
+    [query.data, viewerId, now],
+  );
+  let content: ReactNode;
+  if (query.isPending) {
+    content = (
+      <SkeletonRegion label="Loading your archive">
+        <View>
+          <SectionHeader>Events</SectionHeader>
+          {Array.from({ length: 3 }, (_, index) => (
+            <ActivityRowSkeleton
+              key={index}
+              index={index}
               isFirst={index === 0}
-              onPress={() => onOpen(row)}
             />
-          ))
-        : null}
+          ))}
+        </View>
+      </SkeletonRegion>
+    );
+  } else if (query.isError && !query.data) {
+    content = (
+      <ErrorState
+        title="Couldn't load your archive"
+        body={describeLoadFailure(query.error)}
+        onRetry={() => void query.refetch()}
+        isRetrying={query.isFetching}
+      />
+    );
+  } else if (groups && groups.length === 0) {
+    content = <Text style={styles.archiveEmpty}>{ACTIVITY_ARCHIVE_EMPTY}</Text>;
+  } else {
+    content = groups?.map((group) => (
+      <ArchiveSection key={group.id} group={group} onOpen={onOpen} />
+    ));
+  }
+  return (
+    <View style={styles.body}>
+      <View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back to Activity"
+          onPress={onBack}
+          style={styles.showAll}
+        >
+          <Text style={[styles.showAllText, { color: accent }]}>
+            {"\u2039 Activity"}
+          </Text>
+        </Pressable>
+        <Text accessibilityRole="header" style={styles.archiveTitle}>
+          Archive
+        </Text>
+        <Text style={styles.archiveEmpty}>
+          Events, tasks and polls that are over.
+        </Text>
+      </View>
+      {content}
+    </View>
+  );
+}
+
+function ArchiveSection({
+  group,
+  onOpen,
+}: {
+  group: ActivityArchiveGroup;
+  onOpen: (row: ActivityRow) => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return (
+    <View style={styles.group}>
+      <SectionHeader count={group.rows.length || null}>
+        {group.label}
+      </SectionHeader>
+      {group.unavailable ? (
+        <InlineNote tone="warning">
+          {`Couldn't load ${ACTIVITY_ARCHIVE_SECTION_NAMES[group.id]}. Pull down to try again.`}
+        </InlineNote>
+      ) : null}
+      {group.rows.map((row, index) => (
+        <ActivityListRow
+          key={row.key}
+          row={row}
+          isFirst={index === 0}
+          onPress={() => onOpen(row)}
+        />
+      ))}
     </View>
   );
 }
@@ -1044,6 +1172,14 @@ function createStyles(tokens: SignetTokens) {
       alignSelf: "flex-start",
       minHeight: tokens.touch.minimum,
       justifyContent: "center",
+    },
+    archiveTitle: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+    },
+    archiveEmpty: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
     },
     showAllText: {
       ...typeRole({
