@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
@@ -10,6 +10,7 @@ import {
 } from '@repo/validation';
 import { SystemPermissions, WILDCARD } from '#domain/constants/permissions';
 import type { Event } from '#domain/entities/event.entity';
+import type { EventType } from '#domain/entities/event-type.entity';
 import {
   localDateIn,
   parseLocalDate,
@@ -19,6 +20,8 @@ import {
 import { POINTS_SUGGESTION_MAX_MEMBERS } from '../ai-suggestion-points-kind';
 import { AttendanceService } from '../attendance.service';
 import { EventService } from '../event.service';
+import { reportCaughtFailure } from '../../../infrastructure/observability/report-caught-failure';
+import { EventTypeService } from '../event-type.service';
 import { ActPeopleResolver } from './act-people';
 import {
   NEW_EVENT_SUGGESTION_NAME_MAX_LENGTH,
@@ -66,10 +69,8 @@ function words(text: string): string[] {
     .filter((word) => word.length > 1 && word !== 'the');
 }
 
-/** "chapter" fits "Chapter Meeting"; "formal" fits "Winter Formal". */
-function eventNamed(typed: string, event: Event): boolean {
-  const want = words(typed);
-  const have = words(event.name);
+/** Every word of `want` begins, or is begun by, a word of `have`. */
+function wordsFit(want: string[], have: string[]): boolean {
   return (
     want.length > 0 &&
     want.every((word) =>
@@ -77,6 +78,14 @@ function eventNamed(typed: string, event: Event): boolean {
     )
   );
 }
+
+/** "chapter" fits "Chapter Meeting"; "formal" fits "Winter Formal". */
+function eventNamed(typed: string, event: Event): boolean {
+  return wordsFit(words(typed), words(event.name));
+}
+
+/** How far back an earlier event of the same name is looked for. */
+const SAME_NAME_BACK_DAYS = 180;
 
 function holds(context: ActToolContext, permission: string): boolean {
   return (
@@ -417,11 +426,14 @@ export class CreateEventActTool implements ActTool {
   readonly effect = 'propose' as const;
   readonly kind = 'new_event' as const;
 
-  draft(plan: ActPlan, context: ActToolContext): Promise<ActDraft> {
-    return Promise.resolve(this.draftSync(plan, context));
-  }
+  private readonly logger = new Logger(CreateEventActTool.name);
 
-  private draftSync(plan: ActPlan, context: ActToolContext): ActDraft {
+  constructor(
+    private readonly events: EventService,
+    private readonly eventTypes: EventTypeService,
+  ) {}
+
+  async draft(plan: ActPlan, context: ActToolContext): Promise<ActDraft> {
     const name = titled(clean(plan.title, EVENT_NAME_MAX_LENGTH));
     if (!name) return { status: 'unclear', missing: 'title' };
     if (!plan.date || !parseLocalDate(plan.date)) {
@@ -438,13 +450,41 @@ export class CreateEventActTool implements ActTool {
     if (!end) end = new Date(start.getTime() + HOUR_MS);
     else if (end <= start) end = new Date(end.getTime() + DAY_MS);
 
-    const points =
+    const said =
       plan.amount !== null &&
       Number.isInteger(plan.amount) &&
       plan.amount >= 0 &&
       plan.amount <= POINTS_ADJUSTMENT_MAX
         ? plan.amount
         : null;
+    // Only a member who may change events sets an event's points or makes
+    // it required; anyone else's is made with none and optional
+    // (`EventService.create`), so their card says so and asks nothing.
+    const setsRequirements = holds(context, SystemPermissions.EVENTS_UPDATE);
+    // Points the member did not say are copied from the chapter's own
+    // records, and the card says from where (Paul, 2026-11-16: never "the
+    // chapter's usual amount"). With nothing to copy they stay empty, and
+    // the card asks for them before it can be confirmed.
+    const type = await this.matchingType(name, context);
+    const earlier =
+      setsRequirements && said === null && !type
+        ? await this.earlierNamed(name, context)
+        : null;
+    const points = setsRequirements
+      ? (said ?? type?.point_value ?? earlier?.point_value ?? null)
+      : 0;
+    const pointsFrom =
+      !setsRequirements || said !== null
+        ? null
+        : type
+          ? { kind: 'type' as const, name: type.name }
+          : earlier
+            ? { kind: 'event' as const, name: earlier.name }
+            : null;
+    // Attendance not said follows the type, as the event form does.
+    const mandatory = setsRequirements
+      ? (plan.required ?? type?.is_mandatory ?? false)
+      : false;
     return {
       status: 'draft',
       payload: {
@@ -454,12 +494,85 @@ export class CreateEventActTool implements ActTool {
         start_time: start.toISOString(),
         end_time: end.toISOString(),
         point_value: points,
-        is_mandatory: plan.required === true,
+        points_from: pointsFrom,
+        event_type_id: type?.id ?? null,
+        is_mandatory: mandatory,
         recurrence_rule: plan.repeats
           ? proposedRepeatRule(plan.repeats, plan.date, context.timeZone)
           : null,
       },
       notes: [],
     };
+  }
+
+  /**
+   * The chapter's event type this event is one of: the type of that exact
+   * name, or the one type whose name the event's words fit ("Chapter" is a
+   * "Chapter meeting").
+   * None when two types fit, or the list cannot be read.
+   */
+  private async matchingType(
+    name: string,
+    context: ActToolContext,
+  ): Promise<EventType | null> {
+    let types: EventType[];
+    try {
+      types = await this.eventTypes.list(context.chapterId);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'ask-event-type-match',
+        message: `Ask could not read event types for chapter ${context.chapterId}; the card asks for points instead`,
+        error,
+      });
+      return null;
+    }
+    const lower = name.toLowerCase();
+    const exact = types.find((type) => type.name.toLowerCase() === lower);
+    if (exact) return exact;
+    const typed = words(name);
+    // Only the event's words fitting the type's, never the other way:
+    // a one-word type such as "Chapter" would otherwise claim "Chapter
+    // retreat planning call" and make it required (#5148 review).
+    const fits = types.filter((type) => wordsFit(typed, words(type.name)));
+    return fits.length === 1 ? fits[0] : null;
+  }
+
+  /**
+   * The latest event this member can see with the same name, in the last
+   * half year, for its points.
+   */
+  private async earlierNamed(
+    name: string,
+    context: ActToolContext,
+  ): Promise<Event | null> {
+    const lower = name.toLowerCase();
+    const nowIso = context.now.toISOString();
+    let events: Event[];
+    try {
+      events = await this.events.findByChapter(
+        context.chapterId,
+        context.userId,
+        {
+          endsAfter: new Date(
+            context.now.getTime() - SAME_NAME_BACK_DAYS * DAY_MS,
+          ).toISOString(),
+          startsBefore: nowIso,
+        },
+      );
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'ask-event-same-name',
+        message: `Ask could not read recent events for chapter ${context.chapterId}; the card asks for points instead`,
+        error,
+      });
+      return null;
+    }
+    return (
+      events
+        .filter((event) => event.name.trim().toLowerCase() === lower)
+        .sort((a, b) => b.start_time.localeCompare(a.start_time))[0] ?? null
+    );
   }
 }

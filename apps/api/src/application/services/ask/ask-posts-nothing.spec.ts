@@ -70,6 +70,8 @@ const CALLS = new Set([
   'corpus.indexedAmong',
   'events.findByChapter',
   'events.findById',
+  // The chapter's event types, for a proposed event's points (#5148).
+  'eventTypes.list',
   'invoices.findByUser',
   'meetings.listPostedSince',
   'members.findByUserAndChapter',
