@@ -1,8 +1,11 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { DocumentTypeRow } from "@repo/hooks";
-import { DOCUMENT_TYPES_MAX } from "@repo/validation";
+import { MemberFacingError, type DocumentTypeRow } from "@repo/hooks";
+import {
+  DOCUMENT_TYPE_NAME_MAX_LENGTH,
+  DOCUMENT_TYPES_MAX,
+} from "@repo/validation";
 import { DocumentTypesEditor } from "@/components/documents/document-types-editor";
 
 /*
@@ -17,14 +20,20 @@ const { mockCreate, mockUpdate, mockDelete, mockToast, pending } = vi.hoisted(
     mockUpdate: vi.fn(),
     mockDelete: vi.fn(),
     mockToast: vi.fn(),
-    pending: { delete: false },
+    pending: { create: false, update: false, delete: false },
   }),
 );
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useCreateDocumentType: () => ({ mutateAsync: mockCreate, isPending: false }),
-  useUpdateDocumentType: () => ({ mutateAsync: mockUpdate, isPending: false }),
+  useCreateDocumentType: () => ({
+    mutateAsync: mockCreate,
+    isPending: pending.create,
+  }),
+  useUpdateDocumentType: () => ({
+    mutateAsync: mockUpdate,
+    isPending: pending.update,
+  }),
   useDeleteDocumentType: () => ({
     mutateAsync: mockDelete,
     isPending: pending.delete,
@@ -39,6 +48,16 @@ const CHIP = "chip-class";
 
 function row(id: string, name: string): DocumentTypeRow {
   return { id, chapter_id: "chap-1", name, sort_order: 1, created_at: "" };
+}
+
+/*
+ * A failure whose words `getErrorMessage` shows as they are, so a toast that
+ * drops the error (and falls back to "Something went wrong") fails the spec.
+ * Raw API text is never shown (it goes through `SERVER_MESSAGE_COPY`), so a
+ * plain `Error` can't prove the error reaches the toast.
+ */
+function refusal(message: string) {
+  return new MemberFacingError(message);
 }
 
 const TYPES = [row("t-1", "Bylaws"), row("t-2", "Minutes")];
@@ -65,6 +84,8 @@ beforeEach(() => {
   mockUpdate.mockReset().mockResolvedValue({});
   mockDelete.mockReset().mockResolvedValue({});
   mockToast.mockReset();
+  pending.create = false;
+  pending.update = false;
   pending.delete = false;
 });
 
@@ -83,6 +104,8 @@ describe("DocumentTypesEditor", () => {
   it("renders the header, rows and Add type with the documents copy", async () => {
     const dialog = await openEditor();
     expect(dialog.className).toContain("w-[20rem] p-0");
+    // Opens from the trigger's start edge, not Popover's centred default.
+    expect(dialog).toHaveAttribute("data-align", "start");
 
     const title = within(dialog).getByText("Document types");
     expect(title).toHaveClass("text-sm", "font-semibold");
@@ -161,6 +184,10 @@ describe("DocumentTypesEditor", () => {
     const name = within(dialog).getByLabelText("Name");
     expect(name).toHaveAttribute("id", "document-type-new-name");
     expect(name).toHaveAttribute("placeholder", "Contract");
+    expect(name).toHaveAttribute(
+      "maxLength",
+      String(DOCUMENT_TYPE_NAME_MAX_LENGTH),
+    );
     expect(name).toHaveFocus();
     const form = name.closest("form")!;
     expect(form.className).toBe("grid gap-2");
@@ -202,7 +229,7 @@ describe("DocumentTypesEditor", () => {
   });
 
   it("renames one row at a time and keeps the form open when the save fails", async () => {
-    mockUpdate.mockRejectedValueOnce(new Error("That name is taken."));
+    mockUpdate.mockRejectedValueOnce(refusal("That name is taken."));
     const dialog = await openEditor();
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Rename Bylaws" }),
@@ -226,7 +253,7 @@ describe("DocumentTypesEditor", () => {
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith({
         title: "Couldn't rename the type",
-        description: expect.any(String),
+        description: "That name is taken.",
         variant: "destructive",
       }),
     );
@@ -239,8 +266,68 @@ describe("DocumentTypesEditor", () => {
     expect(within(dialog).queryByLabelText("Name")).toBeNull();
   });
 
+  it("renames a row with the trimmed name and closes its form", async () => {
+    const dialog = await openEditor();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Rename Bylaws" }),
+    );
+    const name = within(dialog).getByLabelText("Name");
+    expect(name).toHaveAttribute(
+      "maxLength",
+      String(DOCUMENT_TYPE_NAME_MAX_LENGTH),
+    );
+    await userEvent.clear(name);
+    await userEvent.type(name, "  Charter  ");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(within(dialog).queryByLabelText("Name")).toBeNull(),
+    );
+    expect(mockUpdate).toHaveBeenCalledTimes(1);
+    expect(mockUpdate).toHaveBeenCalledWith({ id: "t-1", name: "Charter" });
+    expect(mockToast).not.toHaveBeenCalled();
+    expect(
+      within(dialog).getByRole("button", { name: "Rename Bylaws" }),
+    ).toBeInTheDocument();
+  });
+
+  it("disables Add with a spinner while a create is in flight", async () => {
+    pending.create = true;
+    const dialog = await openEditor();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Add type" }),
+    );
+    const add = within(dialog).getByRole("button", { name: "Add" });
+    expect(add).toBeDisabled();
+    expect(add.querySelector("svg.animate-spin")).not.toBeNull();
+    expect(
+      within(dialog).getByRole("button", { name: "Cancel" }),
+    ).toBeEnabled();
+  });
+
+  it("disables Save with a spinner while an update is in flight", async () => {
+    pending.update = true;
+    const dialog = await openEditor();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Rename Bylaws" }),
+    );
+    const save = within(dialog).getByRole("button", { name: "Save" });
+    expect(save).toBeDisabled();
+    expect(save.querySelector("svg.animate-spin")).not.toBeNull();
+  });
+
+  it("leaves Add enabled without a spinner when nothing is in flight", async () => {
+    const dialog = await openEditor();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Add type" }),
+    );
+    const add = within(dialog).getByRole("button", { name: "Add" });
+    expect(add).toBeEnabled();
+    expect(add.querySelector("svg.animate-spin")).toBeNull();
+  });
+
   it("toasts an add that fails with the add title", async () => {
-    mockCreate.mockRejectedValueOnce(new Error("Nope."));
+    mockCreate.mockRejectedValueOnce(refusal("Nope."));
     const dialog = await openEditor();
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Add type" }),
@@ -248,9 +335,11 @@ describe("DocumentTypesEditor", () => {
     await userEvent.type(within(dialog).getByLabelText("Name"), "Contract");
     await userEvent.click(within(dialog).getByRole("button", { name: "Add" }));
     await waitFor(() =>
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Couldn't add the type" }),
-      ),
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Couldn't add the type",
+        description: "Nope.",
+        variant: "destructive",
+      }),
     );
   });
 
@@ -281,7 +370,7 @@ describe("DocumentTypesEditor", () => {
   });
 
   it("toasts a failed delete and drops back out of the confirm", async () => {
-    mockDelete.mockRejectedValueOnce(new Error("Gone."));
+    mockDelete.mockRejectedValueOnce(refusal("Gone."));
     const dialog = await openEditor();
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Delete Minutes" }),
@@ -292,7 +381,7 @@ describe("DocumentTypesEditor", () => {
     await waitFor(() =>
       expect(mockToast).toHaveBeenCalledWith({
         title: "Couldn't delete the type",
-        description: expect.any(String),
+        description: "Gone.",
         variant: "destructive",
       }),
     );
