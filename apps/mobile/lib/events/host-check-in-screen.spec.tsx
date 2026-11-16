@@ -719,6 +719,8 @@ describe("Host check-in on the real code request", () => {
     for (let turn = 0; turn < 100 && queryClient.isFetching() > 0; turn++) {
       await tick();
     }
+    // Say so when the request never answered, rather than fail on the screen.
+    expect(queryClient.isFetching()).toBe(0);
     await tick();
   };
 

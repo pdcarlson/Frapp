@@ -46,10 +46,11 @@ concurrency:
 # Every job but `changes` and `packages-build` also skips on a push to main whose
 # commit the merge queue already passed (#5084): `changes` sets `queue_tested`
 # when a successful `merge_group` run of this workflow exists for the same SHA,
-# which the queue fast-forwarded main to, so the push run would repeat it job for
-# job. The skips report Success, so the run stays green and Deploy staging still
-# fires on it; validate-deploy-sha.mjs judges a production deploy on the queue
-# run's check runs, which sit on the same commit. `packages-build` still runs so
+# which the queue fast-forwarded main to, so the push run would repeat it. The
+# skips report Success, so the run stays green and Deploy staging still fires on
+# it; validate-deploy-sha.mjs judges a production deploy on the queue run's check
+# runs, which sit on the same commit (a gated job the entry's own files didn't
+# reach is `skipped` there too, #5195). `packages-build` still runs so
 # main keeps seeding the node_modules and turbo caches every PR restores, and
 # `main-caches` runs in the suite's place to seed the tool caches the skipped
 # jobs used to write. A commit that reached main without the queue, and any
@@ -99,13 +100,13 @@ jobs:
       # `continue-on-error`) answers 'true', so the job runs rather than skips;
       # on a PR the failure fails `changes` instead, and on a push the steps skip
       # and the jobs' push arm runs them anyway.
-      web: ${{ steps.filter.outputs.web == 'true' || steps.filter.outcome == 'failure' }}
-      landing: ${{ steps.filter.outputs.landing == 'true' || steps.filter.outcome == 'failure' }}
       pglite: ${{ steps.filter.outputs.pglite == 'true' || steps.filter.outcome == 'failure' }}
       # Either an area the job reads changed, or one of the few files it reads
       # from an area it otherwise skips (`apps` below), or the PR is past the
       # 3000 files GitHub's file list returns, so the filter saw only part of it
       # (a queue entry is diffed with git, which has no such cap).
+      web: ${{ steps.apps.outputs.web == 'true' || steps.filter.outputs.web_reads == 'true' || github.event.pull_request.changed_files > 3000 || steps.apps.outcome == 'failure' || steps.filter.outcome == 'failure' }}
+      landing: ${{ steps.apps.outputs.landing == 'true' || github.event.pull_request.changed_files > 3000 || steps.apps.outcome == 'failure' }}
       mobile: ${{ steps.apps.outputs.mobile == 'true' || steps.filter.outputs.mobile_reads == 'true' || github.event.pull_request.changed_files > 3000 || steps.apps.outcome == 'failure' || steps.filter.outcome == 'failure' }}
       api: ${{ steps.apps.outputs.api == 'true' || steps.filter.outputs.api_reads == 'true' || github.event.pull_request.changed_files > 3000 || steps.apps.outcome == 'failure' || steps.filter.outcome == 'failure' }}
     steps:
@@ -141,23 +142,6 @@ jobs:
         uses: dorny/paths-filter@v4
         with:
           filters: |
-            web:
-              - 'apps/web/**'
-              - 'packages/**'
-              - 'package-lock.json'
-              - 'turbo.json'
-              # Gated jobs build through local actions, and a skipped required job reports Success.
-              - '.github/actions/**'
-            landing:
-              - 'apps/landing/**'
-              - 'packages/**'
-              - 'package-lock.json'
-              - 'turbo.json'
-              # Same reason as `web`.
-              - '.github/actions/**'
-              # Not in `web:`: the landing webServer runs `npm run build`, which runs repo
-              # scripts (sync-brand-assets, next-build, brand-pixels). apps/web runs `npm run dev`.
-              - 'scripts/**'
             pglite:
               - 'supabase/migrations/**'
               - 'scripts/pglite/**'
@@ -201,6 +185,9 @@ jobs:
             api_reads:
               - 'apps/mobile/app.json'
               - 'spec/behavior/observability.md'
+            # What a web spec reads from spec/, which `web` skips.
+            web_reads:
+              - 'spec/ui/design-system/writing.md'
             # The docs a job that skips on a docs-only change reads (#5141;
             # pinned by docs-only-skip.test.mjs). Changing one runs the suite.
             docs_reads:
@@ -211,11 +198,14 @@ jobs:
       # The other way round from `filter`: these skip a PR only when EVERY file it
       # changes is in an area the job never reads, so a file nobody listed (a new
       # root config, a script) runs the job rather than slipping past a required
-      # check. mobile-validate and api-tests were the slowest jobs every PR ran.
+      # check. mobile-validate and api-tests were the slowest jobs every PR ran;
+      # web and landing moved here from `filter`'s allowlists (#5195) once the
+      # queue stopped running them in full behind those lists' gaps (their own
+      # job steps in ci.yml, root scripts, a spec they read).
       #
       # `outside_docs` is the docs-only test: 'false' when every file is under
       # docs/ or spec/. Same queue fallback as `filter`.
-      - name: Detect changes the mobile and API jobs read
+      - name: Detect changes the app jobs read
         id: apps
         if: github.event_name != 'push'
         continue-on-error: ${{ github.event_name == 'merge_group' }}
@@ -227,6 +217,25 @@ jobs:
               - '**'
               - '!apps/web/**'
               - '!apps/landing/**'
+              - '!apps/api/**'
+              - '!apps/desktop/**'
+              - '!docs/**'
+              - '!spec/**'
+              - '!supabase/**'
+            # web-tests and web-responsive-floor. Not `!supabase/**`: a web
+            # spec reads the migrations directory (change-topics.spec.ts).
+            web:
+              - '**'
+              - '!apps/landing/**'
+              - '!apps/mobile/**'
+              - '!apps/api/**'
+              - '!apps/desktop/**'
+              - '!docs/**'
+              - '!spec/**'
+            landing:
+              - '**'
+              - '!apps/web/**'
+              - '!apps/mobile/**'
               - '!apps/api/**'
               - '!apps/desktop/**'
               - '!docs/**'

@@ -93,13 +93,15 @@ describe("docs-only changes skip the CI suite (#5141)", () => {
     assert.deepEqual(docReadsOf(file, "// per `spec/ui/assets.md` §7"), []);
   });
 
-  it("the filters run on PRs and in the queue, and only the queue's can fail open to the full suite", () => {
+  it("the filters run on PRs and in the queue, and only the queue's can fail open to running the jobs", () => {
     for (const id of ["filter", "apps"]) {
       const body = changesStep(id);
       assert.match(body, /^\s*if:\s*github\.event_name != 'push'\s*$/m, `${id} runs on pull_request and merge_group`);
       // On a PR a failed filter must fail `changes`: its path outputs gate jobs
-      // there, and an empty one would skip them. In the queue the gated jobs run
-      // in full and an empty output can't read as 'false', so it runs the suite.
+      // there, and an empty one would skip them. In the queue an empty output
+      // can't read as 'false', so it runs the suite, and each path output
+      // answers 'true' on the step's failed outcome (#5195;
+      // merge-queue-triggers.test.mjs).
       assert.match(body, /^\s*continue-on-error:\s*\$\{\{ github\.event_name == 'merge_group' \}\}\s*$/m, id);
     }
   });

@@ -5,13 +5,15 @@ import { join } from "node:path";
 
 import { CI, REPO, changesStep, filterList, relativeReads, sourceFiles } from "./helpers/source-reads.mjs";
 
-// `mobile-validate`, `mobile-tests-tokyo` and `api-tests` are required checks
-// that a PR skips when every file it changes is in an area the job never reads
+// `mobile-validate`, `mobile-tests-tokyo`, `api-tests`, `web-tests`,
+// `web-responsive-floor` and `landing-fold` are required checks that a PR or
+// merge queue entry skips when every file it changes is in an area the job never reads
 // (ci.yml, `changes`, the `apps` step). A skipped required job reports Success,
 // so a spec that reads a file from one of those areas would let a PR that
 // breaks it merge green, and the break would first show on `main`.
 //
-// Those reads are listed in the `filter` step's `mobile_reads` and `api_reads`,
+// Those reads are listed in the `filter` step's `mobile_reads`, `api_reads` and
+// `web_reads` (landing reads nothing from the areas it skips, so it has none),
 // and this test finds them (helpers/source-reads.mjs): every quoted path in an
 // app's sources that starts with `../` (or `${__dirname}/../`) is resolved from
 // its file, and one that lands in an area the app's filter skips must be listed.
@@ -28,6 +30,13 @@ const APPS = {
     jobs: ["mobile-validate", "mobile-tests-tokyo"],
   },
   api: { dir: "apps/api", reads: "api_reads", jobs: ["api-tests"] },
+  web: {
+    dir: "apps/web",
+    reads: "web_reads",
+    jobs: ["web-tests", "web-responsive-floor"],
+  },
+  // A landing source that reads a skipped area needs a `landing_reads` list.
+  landing: { dir: "apps/landing", reads: null, jobs: ["landing-fold"] },
 };
 
 // A file that reads another area through a helper: the helper's name and the
@@ -54,7 +63,7 @@ function readsOf(file) {
   return paths;
 }
 
-describe("the mobile and API path filters list every file their specs read from a skipped area", () => {
+describe("the app path filters list every file their specs read from a skipped area", () => {
   for (const [name, app] of Object.entries(APPS)) {
     it(`${name}: skips only whole areas, and lists what it reads from them`, () => {
       const patterns = filterList(changesStep("apps"), name);
@@ -71,7 +80,7 @@ describe("the mobile and API path filters list every file their specs read from 
         !skipped.some((s) => app.dir.startsWith(s)),
         `${name} must not skip its own app`,
       );
-      const listed = new Set(filterList(changesStep("filter"), app.reads));
+      const listed = new Set(app.reads ? filterList(changesStep("filter"), app.reads) : []);
 
       const missing = [];
       for (const file of sourceFiles(app.dir)) {
@@ -92,7 +101,7 @@ describe("the mobile and API path filters list every file their specs read from 
       assert.deepEqual(
         missing,
         [],
-        `add these to ${app.reads} in ci.yml's changes job`,
+        `add these to ${app.reads ?? `a new ${name}_reads list`} in ci.yml's changes job`,
       );
       for (const path of listed)
         assert.ok(
@@ -105,12 +114,18 @@ describe("the mobile and API path filters list every file their specs read from 
   it("gates each job on its filter, and still runs it on push", () => {
     const text = readFileSync(CI, "utf8");
     for (const [name, app] of Object.entries(APPS)) {
-      assert.match(
-        text,
-        new RegExp(
-          `^ {6}${name}: \\$\\{\\{ steps\\.apps\\.outputs\\.${name} == 'true' \\|\\| steps\\.filter\\.outputs\\.${app.reads} == 'true' \\|\\| github\\.event\\.pull_request\\.changed_files > 3000 \\|\\| steps\\.apps\\.outcome == 'failure' \\|\\| steps\\.filter\\.outcome == 'failure' \\}\\}$`,
-          "m",
-        ),
+      // Exact form. The last arms run the job when a filter step failed in
+      // the merge queue (its `continue-on-error`), whose outputs are empty.
+      const arms = [
+        `steps.apps.outputs.${name} == 'true'`,
+        ...(app.reads ? [`steps.filter.outputs.${app.reads} == 'true'`] : []),
+        "github.event.pull_request.changed_files > 3000",
+        "steps.apps.outcome == 'failure'",
+        ...(app.reads ? ["steps.filter.outcome == 'failure'"] : []),
+      ];
+      assert.ok(
+        text.includes(`\n      ${name}: \${{ ${arms.join(" || ")} }}\n`),
+        `ci.yml's changes output ${name} must be: ${arms.join(" || ")}`,
       );
       for (const job of app.jobs) {
         const block = text.slice(text.indexOf(`\n  ${job}:\n`));

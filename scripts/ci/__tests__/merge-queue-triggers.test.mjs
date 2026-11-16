@@ -68,7 +68,7 @@ describe("a queue run is not a pull_request run", () => {
       for (const job of workflowJobs(file.path)) {
         if (!ALL_REQUIRED_CHECKS.includes(job.jobId) || job.if === null) continue;
         assert.doesNotMatch(
-          job.if.replace(/github\.event_name == 'push' \|\| needs\.changes\.outputs\.\w+ == 'true'/, ""),
+          job.if.replace(/github\.event_name == 'push' \|\| needs\.changes\.outputs\.(?!(?:queue_tested|skip_suite)\b)\w+ == 'true'/, ""),
           /event_name\s*==\s*'push'/,
           `${job.jobId}: a push-only arm skips it in the queue`,
         );
@@ -130,13 +130,13 @@ describe("queue runs take the path and diff arms", () => {
     assert.ok(gated.size >= 5, `expected the gated jobs' outputs, saw ${[...gated]}`);
     for (const name of gated) {
       const value = outputs.get(name);
+      // A top-level OR of arms, so the failure arm alone turns the job on.
+      assert.doesNotMatch(value, /&&|!/, `${name}: OR its arms only`);
+      const arms = value.replace(/^\$\{\{ | \}\}$/g, "").split(" || ");
       for (const id of ["filter", "apps"]) {
         if (!value.includes(`steps.${id}.outputs.`)) continue;
-        assert.ok(value.includes(`steps.${id}.outcome == 'failure'`), `${name} must run its jobs when ${id} fails`);
+        assert.ok(arms.includes(`steps.${id}.outcome == 'failure'`), `${name} must run its jobs when ${id} fails`);
       }
-    }
-    for (const step of workflowSteps(ci).filter((s) => s.jobId === "changes" && /^\s+id: (filter|apps)$/m.test(s.body))) {
-      assert.match(step.body, /^\s*if:\s*github\.event_name != 'push'\s*$/m, step.name);
     }
   });
 

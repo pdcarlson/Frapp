@@ -144,7 +144,8 @@ export function isFullSha(value) {
  * The one exception: a `skipped` run never supersedes an older run of the same
  * name that ran. Since #5084 the push run on `main` skips every CI job for a
  * commit the merge queue already passed, and the queue run's check runs sit on
- * the same commit underneath those skips.
+ * the same commit underneath those skips (a path-gated job the entry's own
+ * files don't reach is `skipped` there too, #5195).
  *
  * `defined` is the set of job ids the deployed commit's own workflows declare,
  * and `currentlyDefined` the set the TRUSTED ref declares. A required check is

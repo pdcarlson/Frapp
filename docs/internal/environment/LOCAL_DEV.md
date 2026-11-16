@@ -119,8 +119,8 @@ width against the budget, and its classes, so there is no artifact to download â
 the log is the diagnosis.
 
 The gate runs as **`web-responsive-floor`**, a required check. It is path-gated:
-every push to `main` the queue didn't already test runs it, and a pull request or merge queue entry only when the `web` filter in `ci.yml` matches
-(`apps/web/**`, `packages/**` and the other build-affecting paths listed there), so a docs- or
+every push to `main` the queue didn't already test runs it, and a pull request or merge queue entry unless every file it changes is in an area web never reads
+(the other apps, `docs/`, `spec/`: the `web` filter in `ci.yml`'s `apps` step), so a docs- or
 API-only PR skips it, on its PR and in the queue.
 
 > **The `web-visual-regression` snapshot job is gone.** It compared each route
