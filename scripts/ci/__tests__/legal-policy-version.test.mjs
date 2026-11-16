@@ -41,7 +41,8 @@
 //   day, before any 0.13.0 build), moved only the Privacy pin on those
 //   precedents. The 2026-11-16 privacy-copy pass (#5129 push-token device
 //   label, #4611 task photos, #4530 the study zone map's providers, #4914
-//   Ask's 90-day trace) moved only the Privacy pin on those precedents too,
+//   Ask's 90-day trace, #4787 groups, class year, service hours and study time in the AI data
+//   list) moved only the Privacy pin on those precedents too,
 //   pending the owner's ruling in its PR; whether each of these is material, and
 //   what each ruling does, is spec/behavior/legal.md § Acceptance record's.
 //
@@ -82,7 +83,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "September 2026",
-    fingerprint: "5a7238d9361a2a0e",
+    fingerprint: "2cf8b46feac7fb17",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

@@ -64,14 +64,17 @@ export const AI_CONSENT_SHEET = {
       key: 'chapter_records',
       // Events and tasks named 2026-11-16 (#4787): Ask's `events` and
       // `my_tasks` tools send them, and the privacy policy's Frapp AI section
-      // already named both. A label change, not a new kind, so not a new
-      // version. `ai-consent-sheet.spec.ts` maps every Ask source to a row.
+      // already named both. The key is unchanged.
+      // `ask-consent-coverage.spec.ts` maps every Ask tool to a row.
       label: 'Chapter documents, announcements, events and tasks',
     },
     {
       key: 'roster',
+      // Groups, class year, service hours and study time named 2026-11-16
+      // (#4787): Ask's `find_member`, `roster`, `my_hours`, `service_hours`
+      // and `my_standing` tools send them. The key is unchanged.
       label:
-        'Roster details: name, role, points, dues status and attendance. Never your phone number, email or address.',
+        'Roster details: name, role, groups, class year, points, service hours and what they were for, study time, dues status and attendance. Never your phone number, email or address.',
     },
     {
       key: 'channel_messages',

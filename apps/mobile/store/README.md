@@ -650,6 +650,14 @@ Advertising Data, Browsing History, Search History.
 > linked to the user, and its product page preview has only a "Data Linked to You" section,
 > so nothing is declared as tracking. Crash Data and Performance Data are both
 > App Functionality, linked. Photos or Videos (†) is still declared.
+>
+> **Push-token device label (#5129, open in [#5159](https://github.com/pdcarlson/Frapp/issues/5159)).**
+> Since #5097 the push token's row also stores the platform, OS version and model
+> (`lib/notifications/push-device-name.ts`), linked to the member, and the privacy policy
+> names them beside the push token from 2026-11-16. Apple defines Device ID as "the
+> device's advertising identifier, or other device-level ID", which a model and OS
+> version are not, so the Identifiers → Device ID row above stands. Whether to add
+> *Diagnostics → Other Diagnostic Data* is the owner's console decision in #5159.
 
 Where each answer comes from:
 
