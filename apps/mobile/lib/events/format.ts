@@ -40,7 +40,7 @@ export function formatEventWindow(
   return sharedEventWindow(startTime, endTime, now) ?? "";
 }
 
-export type CheckInWindowState =
+type CheckInWindowState =
   /** Before check-in opens (the event's lead before `start_time`). */
   | "upcoming"
   /** From the lead before `start_time` to `end_time + grace` — the only state that checks in. */

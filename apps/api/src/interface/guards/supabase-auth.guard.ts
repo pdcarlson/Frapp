@@ -18,6 +18,7 @@ import { VERIFY_SESSION_LOCALLY_KEY } from '../decorators/session-check.decorato
 import { JWKS_VERIFIED_ALGS } from './custom-throttler.guard';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { createHash } from 'node:crypto';
+import { decodeJwtSegment } from '#domain/utils/jwt-segment';
 import { isAuthOutage, lookupUnavailable } from './guard-lookup';
 import { InFlightLookups } from '../../infrastructure/supabase/in-flight-lookups';
 import {
@@ -61,7 +62,7 @@ const sessionLookups = new InFlightLookups<
  * `getClaims` would ask Auth instead, so such a token takes the `getUser` path
  * and is never accepted on its claims.
  */
-export const LOCALLY_VERIFIABLE_ALGS = JWKS_VERIFIED_ALGS;
+const LOCALLY_VERIFIABLE_ALGS = JWKS_VERIFIED_ALGS;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -107,18 +108,13 @@ export function failedClaimCheck(
 function tokenAlg(token: string): string | undefined {
   const [headerSeg] = token.split('.');
   if (!headerSeg) return undefined;
-  try {
-    const header = JSON.parse(
-      Buffer.from(headerSeg, 'base64url').toString('utf8'),
-    ) as { alg?: unknown };
-    return typeof header.alg === 'string' ? header.alg : undefined;
-  } catch {
-    return undefined;
-  }
+  const header = decodeJwtSegment(headerSeg) as
+    { alg?: unknown } | null | undefined;
+  return typeof header?.alg === 'string' ? header.alg : undefined;
 }
 
 /** The key `sessionLookups` shares a token's session check under. */
-export function sessionLookupKey(token: string): string {
+function sessionLookupKey(token: string): string {
   return createHash('sha256').update(token).digest('base64url');
 }
 

@@ -59,7 +59,7 @@ export interface NewEventSuggestionPayload {
   recurrence_rule: string | null;
 }
 
-export interface NewEventPointsFrom {
+interface NewEventPointsFrom {
   /** The chapter's event type of that name, or its last event of that name. */
   kind: 'type' | 'event';
   name: string;

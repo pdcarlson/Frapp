@@ -39,6 +39,7 @@ import {
 import {
   CheckGlyph,
   CopyGlyph,
+  DownloadGlyph,
   FlagGlyph,
   LightbulbGlyph,
   ThumbDownGlyph,
@@ -934,6 +935,8 @@ function SourceChip({
   const styles = createStyles(tokens);
   // A quoted message says whose it is and when (`askSourceChip`, #4904).
   const { name, when, meta } = askSourceChip(source);
+  // A backwork file downloads (#5209), and says so.
+  const download = source.kind === "backwork" && !!source.target;
   const label = `Source ${number}: ${name}. ${meta}`;
   const body = (
     <>
@@ -945,6 +948,9 @@ function SourceChip({
         <Text numberOfLines={1} style={styles.sourceWhen}>
           {when}
         </Text>
+      ) : null}
+      {download ? (
+        <DownloadGlyph color={tokens.color.text.mutedForeground} size={14} />
       ) : null}
     </>
   );
@@ -959,7 +965,9 @@ function SourceChip({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityHint="Opens this source."
+      accessibilityHint={
+        download ? "Downloads this file." : "Opens this source."
+      }
       accessibilityState={{ busy: opening }}
       hitSlop={{ top: 4, bottom: 4 }}
       onPress={onPress}

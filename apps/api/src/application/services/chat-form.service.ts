@@ -19,7 +19,7 @@ import {
 import { ChannelAccessService } from './channel-access.service';
 
 /** The refusal on a form that takes no more answers, keyed by member copy. */
-export const FORM_CLOSED = 'This form is closed';
+const FORM_CLOSED = 'This form is closed';
 
 /** The refusal on a message that is not a form card. */
 const NOT_A_FORM = 'Message is not a form card';
@@ -31,11 +31,10 @@ export interface OwnFormResponse {
 }
 
 /** The refusal to anyone but a form's creator reading its responses. */
-export const NOT_FORM_CREATOR =
-  'Only the person who posted a form sees its answers';
+const NOT_FORM_CREATOR = 'Only the person who posted a form sees its answers';
 
 /** One member's answers, as the form's creator reads them. */
-export interface FormResponseEntry {
+interface FormResponseEntry {
   user_id: string;
   answers: ChatFormResponse['answers'];
   created_at: string;

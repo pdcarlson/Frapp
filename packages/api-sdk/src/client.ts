@@ -1,5 +1,6 @@
 import createClient, { Middleware } from "openapi-fetch";
 import { failureOf } from "./api-error";
+import { CLIENT_VERSION_HEADER, TIME_ZONE_HEADER } from "@repo/validation";
 import { createFirstScreenBatchMiddleware } from "./first-screen-batch";
 import { mintRequestId, REQUEST_ID_HEADER } from "./request-id";
 
@@ -94,7 +95,7 @@ const TIMEOUT_BY_ROUTE: Readonly<Record<string, number>> = {
 };
 
 /** The limit {@link REQUEST_TIMEOUT_MS} sets for one request. */
-export const requestTimeoutMs = (method: string, schemaPath: string): number =>
+const requestTimeoutMs = (method: string, schemaPath: string): number =>
   TIMEOUT_BY_ROUTE[`${method.toUpperCase()} ${schemaPath}`] ??
   (method.toUpperCase() === "GET" || method.toUpperCase() === "HEAD"
     ? REQUEST_TIMEOUT_MS.read
@@ -197,11 +198,9 @@ const REQUEST_METHODS = [
 
 type CallResult = { error?: unknown; response: Response };
 
-/**
- * Matches the API's `TIME_ZONE_HEADER`. The API records it per member so a
- * push can name an event's time the way the member's phone shows it.
- */
-export const TIME_ZONE_HEADER = "x-time-zone";
+// The request headers this client sets, defined once in `@repo/validation`,
+// which the API reads them from too. Re-exported for the SDK's consumers.
+export { CLIENT_VERSION_HEADER, TIME_ZONE_HEADER };
 
 /** This runtime's IANA zone, or null where `Intl` cannot say. */
 const runtimeTimeZone = (): string | null => {
@@ -212,9 +211,6 @@ const runtimeTimeZone = (): string | null => {
     return null;
   }
 };
-
-/** Matches the API's `CLIENT_VERSION_HEADER` (`#domain/constants/client-version`). */
-export const CLIENT_VERSION_HEADER = "x-client-version";
 
 /**
  * Ensure `x-request-id` is present. Honours a caller-supplied value.

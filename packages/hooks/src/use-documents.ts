@@ -228,7 +228,7 @@ export function useDeleteDocumentType() {
 }
 
 /** Ids one `GET /v1/documents/previews` signs; the API refuses more. */
-export const DOCUMENT_PREVIEW_BATCH = 100;
+const DOCUMENT_PREVIEW_BATCH = 100;
 
 /**
  * Inline preview links for the web Documents grid (#4647), as a map from

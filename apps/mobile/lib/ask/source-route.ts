@@ -13,6 +13,8 @@ import type { NotificationTarget } from "@/lib/notifications/targets";
  *
  * - A document opens in the in-app browser from where the member is
  *   (`AskSheet` fetches its signed link), so it is `{ document }`, not a route.
+ * - A backwork file (#5209) is fetched the same way and downloads: the phone
+ *   has no Backwork screen yet (#357), and the member wanted the file.
  * - Minutes open the minutes screen.
  * - A channel message opens its channel. The phone's channel screen has no
  *   jump-to-message yet, so the member lands at the newest message.
@@ -24,6 +26,7 @@ import type { NotificationTarget } from "@/lib/notifications/targets";
  */
 export type AskSourceOpening =
   | { kind: "document"; documentId: string }
+  | { kind: "backwork"; backworkId: string }
   | { kind: "route"; target: NotificationTarget };
 
 const PAGES: Record<string, NotificationTarget> = {
@@ -61,5 +64,7 @@ export function askSourceOpening(source: AskSource): AskSourceOpening | null {
       const page = PAGES[target.page];
       return page ? { kind: "route", target: page } : null;
     }
+    case "backwork":
+      return { kind: "backwork", backworkId: target.backwork_id };
   }
 }

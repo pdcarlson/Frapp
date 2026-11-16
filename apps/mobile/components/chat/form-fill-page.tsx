@@ -100,7 +100,7 @@ import { FormResponsesPage } from "./form-responses-page";
  * Responses (#3926 step 4). One host draws both, so neither can be closed by
  * the virtualized row that opened it scrolling away.
  */
-export type FormPageMode = "fill" | "responses";
+type FormPageMode = "fill" | "responses";
 
 export interface FormFillState {
   /** The open form's message id, or `null`. */
@@ -130,7 +130,7 @@ export function useOpenForm(): FormFillState["open"] | null {
  * and the iOS edge swipe holds while it is up, so neither pops the thread
  * from under a half-answered form.
  */
-export function useFormFill(): FormFillState {
+function useFormFill(): FormFillState {
   const [target, setTarget] = useState<{
     messageId: string;
     mode: FormPageMode;
@@ -162,7 +162,7 @@ export function useFormFill(): FormFillState {
  * deleted, and a form the phone can draw. The host closes the page when it
  * isn't.
  */
-export function formFillLive(message: ChatMessage | null | undefined): boolean {
+function formFillLive(message: ChatMessage | null | undefined): boolean {
   return (
     !!message &&
     message.kind === "form" &&

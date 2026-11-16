@@ -13,7 +13,7 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
 import { toReportableError } from '../../infrastructure/observability/reportable-error';
 
 /** Connections taken per tick, across every chapter. */
-export const GOOGLE_SYNC_BATCH = 24;
+const GOOGLE_SYNC_BATCH = 24;
 /** Connections synced at once within a tick. */
 const CONCURRENCY = 4;
 /**

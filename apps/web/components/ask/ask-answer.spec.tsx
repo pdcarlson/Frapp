@@ -18,6 +18,11 @@ import {
   type AskAnswer,
 } from "@repo/validation";
 
+const backwork = vi.hoisted(() => ({
+  fetch: vi.fn<(id: string) => Promise<{ downloadUrl: string }>>(async () => ({
+    downloadUrl: "https://storage.test/f.pdf",
+  })),
+}));
 const channelList = vi.hoisted(() => ({ reads: 0 }));
 const thumbs = vi.hoisted(() => ({
   state: { rating: null, reason: null } as {
@@ -63,6 +68,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   // The hook has its own spec (`use-ask-feedback.spec.tsx`); here it is what
   // the row draws from.
   useAskSignal: () => thumbs.signal,
+  // A backwork file's link is fetched when its chip is pressed (#5209).
+  useFetchBackworkResource: () => backwork.fetch,
   useAskThumbs: (askId: string | null | undefined) => {
     thumbs.askId = askId;
     return {
@@ -129,7 +136,7 @@ vi.mock("./ask-proposal", async (importOriginal) => ({
 }));
 
 const { AskTurn } = await import("./ask-answer");
-import { askSourceHref } from "./ask-source-link";
+import { askSourceBackworkId, askSourceHref } from "./ask-source-link";
 
 /**
  * An answer on screen (#451): each cited sentence carries a marker that opens
@@ -235,6 +242,17 @@ describe("askSourceHref", () => {
     ).toBe("/events");
   });
 
+  it("downloads a backwork file instead of linking to a page (#5209)", () => {
+    const file = {
+      ...ANSWER.sources[0]!,
+      kind: "backwork",
+      target: { type: "backwork", backwork_id: "bw1" },
+    };
+    expect(askSourceHref(file)).toBeNull();
+    expect(askSourceBackworkId(file)).toBe("bw1");
+    expect(askSourceBackworkId(ANSWER.sources[0]!)).toBeNull();
+  });
+
   it("has no link for a target this build has no page for", () => {
     expect(askSourceHref(ANSWER.sources[2]!)).toBeNull();
     expect(
@@ -248,6 +266,44 @@ describe("askSourceHref", () => {
 });
 
 describe("AskTurn", () => {
+  it("downloads a backwork file Frapp found from its chip, fetching the link only then (#5209)", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    show(
+      exchange({
+        askId: "a-1",
+        answer: {
+          ...ANSWER,
+          text: "Yes, there is one.",
+          citations: [{ source: 0, at: 18, quote: "Midterm 2" }],
+          sources: [
+            {
+              id: "backwork:bw1",
+              kind: "backwork",
+              title: "Midterm 2 · CSCI 1200",
+              detail: "CSCI 1200 · Fall 2025",
+              date: null,
+              target: { type: "backwork", backwork_id: "bw1" },
+            },
+          ],
+        },
+      }),
+    );
+    expect(backwork.fetch).not.toHaveBeenCalled();
+    // The marker in the sentence and the chip under it both download it.
+    const buttons = screen.getAllByRole("button", {
+      name: /^Source 1: Midterm 2 · CSCI 1200.*\. Download$/,
+    });
+    expect(buttons).toHaveLength(2);
+    await userEvent.click(buttons[1]!);
+    expect(backwork.fetch).toHaveBeenCalledWith("bw1");
+    expect(open).toHaveBeenCalledWith(
+      "https://storage.test/f.pdf",
+      "_blank",
+      "noopener",
+    );
+    open.mockRestore();
+  });
+
   // The icon is named for what it reports; its tooltip is the plain action.
   const REPORT = AI_REPORT_COPY.titles.ask_answer;
 

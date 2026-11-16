@@ -9,10 +9,9 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export type ChapterGoals = components["schemas"]["ChapterGoalsDto"];
 export type GoalSet = components["schemas"]["GoalSetDto"];
-export type MyGoals = components["schemas"]["MyGoalsDto"];
 
 /** Chapter-scoped keys; the read is `chapterGoalKeys.chapter(chapterId)`. */
-export const chapterGoalKeys = createChapterQueryKeys("chapter-goals");
+const chapterGoalKeys = createChapterQueryKeys("chapter-goals");
 
 /**
  * The chapter's goals for points, service hours and study hours (#1062),
@@ -34,7 +33,7 @@ export function useChapterGoals(options: { enabled?: boolean } = {}) {
 }
 
 /** Keys for the caller's own goals; the read is `myGoalKeys.chapter(chapterId)`. */
-export const myGoalKeys = createChapterQueryKeys("my-goals");
+const myGoalKeys = createChapterQueryKeys("my-goals");
 
 /**
  * The caller's own goal on each measure (`GET /v1/goals/mine`), for a screen

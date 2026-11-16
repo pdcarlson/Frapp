@@ -123,7 +123,7 @@ export const SETUP_CHECKLIST_LINES: readonly SetupChecklistDefinition[] = [
   },
 ];
 
-export interface SetupChecklistLine {
+interface SetupChecklistLine {
   key: SetupChecklistKey;
   label: string;
   done: boolean;

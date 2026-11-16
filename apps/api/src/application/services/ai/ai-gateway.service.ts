@@ -77,7 +77,7 @@ export interface AiUnavailable {
 }
 
 /** The provider declined under its own policy. */
-export interface AiRefused {
+interface AiRefused {
   status: 'refused';
   category: string | null;
 }

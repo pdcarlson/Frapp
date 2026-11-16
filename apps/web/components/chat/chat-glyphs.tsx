@@ -15,9 +15,9 @@
  *   a channel as a **text `#`** at 17px/700 and a DM as an initials avatar, not
  *   as icons. The reference wins over a tidier all-icons row.
  *
- * The eight silhouettes chat shares with the shell's nav intents (events, tasks,
- * points, polls, search, service hours, the directory as the member list toggle,
- * and roles as the + menu's Role picker) are re-exported rather than redrawn — a second
+ * The seven silhouettes chat shares with the shell's nav intents (events, tasks,
+ * points, polls, service hours, the directory as the member list toggle, and
+ * roles as the + menu's Role picker) are re-exported rather than redrawn — a second
  * copy of the same path data is exactly the drift §1 rule 1 bans.
  */
 
@@ -37,7 +37,6 @@ export {
   PointsGlyph,
   PollsGlyph,
   RolesGlyph,
-  SearchGlyph,
   ServiceGlyph,
   TasksGlyph,
 } from "@/components/layout/nav-glyphs";
@@ -91,7 +90,7 @@ export function BookmarkGlyph({ className, active }: ChatGlyphProps) {
 /**
  * Attach a file.
  *
- * Stroke-only, like the shell's `MenuGlyph`: a paperclip is an
+ * Stroke-only: a paperclip is an
  * open curve with no silhouette, and SVG closes an open path implicitly when it
  * fills one — an earlier cut spread `fillProps` over `detail` here and painted a
  * lens-shaped wedge across the clip.

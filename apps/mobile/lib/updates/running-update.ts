@@ -23,7 +23,7 @@ export interface RunningUpdateSource {
   createdAt: Date | null;
 }
 
-export type AppLaunchKind =
+type AppLaunchKind =
   "store_build" | "update" | "emergency" | "development";
 
 export interface RunningUpdateProperties {

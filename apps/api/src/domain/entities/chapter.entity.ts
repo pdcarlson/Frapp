@@ -1,5 +1,7 @@
-export type SubscriptionStatus =
-  'incomplete' | 'active' | 'past_due' | 'canceled';
+import type { SubscriptionStatus } from '@repo/validation';
+
+/** `@repo/validation`'s, the one declaration the clients read too. */
+export type { SubscriptionStatus };
 
 export interface Chapter {
   id: string;

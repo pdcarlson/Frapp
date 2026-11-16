@@ -131,11 +131,14 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A message deleted after it was sent no longer lingers as the last line under a conversation in your messages list.",
       "Officers can now only invite people into roles ranked below their own, and an invite stops working if the person who sent it can no longer give that role.",
       "What's new now shows in bold the lines that came with your latest update, so on a busy day you can spot what just arrived.",
+      "Tapping a chat notification now opens the conversation right at the message it's about.",
     ],
     web: [
       "Tasks now groups your own tasks as Today, This week and Later, and officers can switch between My tasks and All tasks, group the chapter's tasks by person, and filter them by assignee, status and due date.",
       "Officers can now add an agenda to any event and check items off during the meeting, and attach links or Chapter Files documents, all right on the event, where everyone invited can read them.",
       "Officers can connect the chapter's Google Drive folder to Documents, and every file in it shows up for the chapter and stays in sync.",
+      "Several people can take notes on the same meeting, and the minutes draft reads everyone's notes and the recording, shows whose line each item came from, and lists where the notes disagreed.",
+      "A new document's effective date starts on Today, so you only touch it when the file took effect on another day.",
     ],
     phone: [
       "The Calendar has its own + at the top for adding an event from any view, and on the Calendar it starts on the day you've picked, today or later.",
@@ -147,6 +150,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Tapping a document now opens your phone's share sheet, where you can save it to Files or open it in an app that reads it.",
       "In a chat, Members, a member's profile, Pinned and Saved, and the + menu and its forms open again after you leave a chat or switch channels, instead of sometimes showing nothing.",
       "Officers can now build an event's agenda, check items off during the meeting, and attach links or Chapter Files documents right on the event, where everyone invited can read them and its notes.",
+      "You can take notes on someone else's meeting from its event, and the minutes draft reads everyone's notes and the recording and lists where they disagreed.",
+      "Search has its own button on Chat home for everyone, with your recent searches, and Ask Frapp is now just for asking.",
+      "Threads moved from the top of Chat home into the first row of your channel list, with the same count of new replies.",
     ],
   },
   {

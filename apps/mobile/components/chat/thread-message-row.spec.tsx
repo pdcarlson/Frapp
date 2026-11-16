@@ -72,6 +72,7 @@ vi.mock("@repo/hooks", async () => {
     useBidRushCandidate: () => ({ mutateAsync: vi.fn(), isPending: false }),
     // A posted answer's document sources (#4713); its own spec covers them.
     useDocumentDownloadUrl: () => ({ mutateAsync: vi.fn() }),
+    useFetchBackworkResource: () => vi.fn(),
     // The role picker card's reads and write (#4958); its own spec covers them.
     usePickableRoles: () => ({
       roles: [],

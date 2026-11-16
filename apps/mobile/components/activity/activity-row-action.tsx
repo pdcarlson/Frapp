@@ -47,7 +47,7 @@ const DONE: Record<ActivityRowAction, string> = {
  * a check-in or an officer's mark, so it says no more than that (web's
  * `useSelfCheckIn` says the same, "Already on the list").
  */
-export const ALREADY_ON_LIST_COPY =
+const ALREADY_ON_LIST_COPY =
   "You're already on the attendance list for this event.";
 
 /** What the screen hands its rows, or `null` while those writes are refused. */

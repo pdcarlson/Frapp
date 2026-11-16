@@ -138,7 +138,7 @@ export function useConfirmDiscordConnect() {
 }
 
 /** One channel or thread the scan found in the connected server. */
-export interface DiscoveredDiscordChannel {
+interface DiscoveredDiscordChannel {
   id: string;
   discord_channel_id: string;
   discord_channel_name: string;
@@ -178,7 +178,7 @@ export interface DiscoveredDiscordChannel {
   read_only_in_discord?: boolean | null;
 }
 
-export interface DiscordDiscoveryResult {
+interface DiscordDiscoveryResult {
   channels: DiscoveredDiscordChannel[];
   /** The roles the chapter can map, highest first; no @everyone, no bot roles. */
   roles: { discord_role_id: string; discord_role_name: string }[];

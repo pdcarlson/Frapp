@@ -37,6 +37,7 @@ describe('ChapterAgentToolsModule (e2e)', () => {
       'my_hours',
       'service_hours',
       'my_dues',
+      'find_backwork',
     ]);
     await moduleRef.close();
   });

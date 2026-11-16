@@ -122,7 +122,7 @@ export class ConfirmDocumentUploadDto {
  * minute) still lets it move up to 250 files a minute: it mints links ahead
  * in full batches and gathers filings into batches.
  */
-export const DOCUMENT_BATCH_MAX = 25;
+const DOCUMENT_BATCH_MAX = 25;
 
 export class RequestDocumentUploadUrlsDto {
   @ApiProperty({

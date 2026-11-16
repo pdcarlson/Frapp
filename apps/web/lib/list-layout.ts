@@ -27,7 +27,7 @@ export type ListLayoutScreen = "directory" | "documents" | "tasks";
  * Tasks: its board of status columns was its only view and is its Grid, so
  * nobody's Tasks page changes until they flip it (#4175).
  */
-export const DEFAULT_LIST_LAYOUT: Record<ListLayoutScreen, ListLayout> = {
+const DEFAULT_LIST_LAYOUT: Record<ListLayoutScreen, ListLayout> = {
   directory: "list",
   documents: "list",
   tasks: "grid",
