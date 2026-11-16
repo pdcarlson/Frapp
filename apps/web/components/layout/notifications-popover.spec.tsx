@@ -801,7 +801,7 @@ describe("deepLinkFor: task notifications", () => {
   });
 });
 
-describe("deepLinkFor: message reminders (#4957)", () => {
+describe("deepLinkFor: opening at a message (#4957, #4977)", () => {
   const chat = (
     target: Record<string, string>,
     extra: { reminder?: boolean; chat_message_id?: string | null } = {},
@@ -831,10 +831,20 @@ describe("deepLinkFor: message reminders (#4957)", () => {
     ).toBe("/chat?channel=c1&message=root-1");
   });
 
-  it("opens any other chat row on its channel", () => {
+  it("opens any chat row tied to a message on that message (#4977)", () => {
     expect(deepLinkFor(chat({}, { chat_message_id: "m1" }))).toBe(
-      "/chat?channel=c1",
+      "/chat?channel=c1&message=m1",
     );
+  });
+
+  it("opens a thread reply's row at the thread's first message (#4977)", () => {
+    expect(
+      deepLinkFor(chat({ threadRootId: "root-1" }, { chat_message_id: "r1" })),
+    ).toBe("/chat?channel=c1&message=root-1");
+  });
+
+  it("opens a bundle, which quotes no one message, on its channel", () => {
+    expect(deepLinkFor(chat({}))).toBe("/chat?channel=c1");
   });
 });
 

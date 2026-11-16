@@ -134,12 +134,12 @@ type Notification = {
  * links never dead-end.
  *
  * A chat notification's `target` never carries a `messageId` (a chat push
- * carries one beside `target` for the phone's tray, and the in-app row keeps
- * it in a column, `spec/behavior/notifications.md` § Deep Linking). Only a
- * reminder (#4957) forwards it (its `data.messageId`, or the column on a
- * row written before that field), so it opens on the message the
- * member asked about: its thread's first message for a reply, which is what
- * the channel's timeline holds. Any other chat row opens the channel.
+ * carries one beside `target`, and the in-app row keeps it in a column,
+ * `spec/behavior/notifications.md` § Deep Linking). A row tied to one
+ * message opens on it (#4977; a reminder since #4957, from its
+ * `data.messageId` or the column): its thread's first message for a reply,
+ * which is what the channel's timeline holds. A bundle quotes none and
+ * opens the channel.
  */
 export function deepLinkFor(notification: Notification): string {
   const target = notification.data?.target;
@@ -148,11 +148,11 @@ export function deepLinkFor(notification: Notification): string {
     case "chat":
       return chatDeepLink({
         channelId: target.channelId,
-        messageId: notification.data?.reminder
-          ? (target.threadRootId ??
-            notification.data?.messageId ??
-            notification.chat_message_id)
-          : null,
+        messageId:
+          target.threadRootId ??
+          notification.data?.messageId ??
+          notification.chat_message_id ??
+          null,
       });
     case "events":
       return target.meetingId ? `/meetings/${target.meetingId}` : "/events";

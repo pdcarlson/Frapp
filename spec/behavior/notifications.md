@@ -89,14 +89,19 @@ bundled chat burst adds `bundled: true` and `count` (`chat-push-worker.service.t
 `messageId`, the `chat_messages.id` it quotes, at the top level of its data beside
 `notificationId`, never inside `target`, so a phone can take the push out of its tray
 when the message is deleted (#4418). The in-app row records the same id in its
-`chat_message_id` column instead, not in `data`, so the list's rows carry none; a
-client deep-links from `target` alone.
+`chat_message_id` column instead, not in `data`, so the list's rows carry none.
 
-A **reminder** (#4957, [`chat/README.md`](./chat/README.md) § Reminders (personal)) is the
-one chat row that opens at its message rather than the channel. Its `data` adds
-`reminder: true` and the message as `messageId`, in the row as well as the push, and a
-client that sees `reminder` opens chat at that message (the phone through
-`focusMessageId`; web through `?message=`, at the thread's first message for a reply).
+**A chat push or row tied to one message opens chat at it** (#4977, Shawn's ask, as
+Slack and Discord open a mention or reply notification scrolled to it): the phone
+through `focusMessageId` (from the push's `messageId`, or the row's `chat_message_id`),
+web through `?message=`, at the thread's first message for a thread reply, which is what
+the channel's timeline holds. A bundle quotes no one message and opens the channel at
+its newest messages, as does a row written before rows carried the id.
+
+A **reminder** (#4957, [`chat/README.md`](./chat/README.md) § Reminders (personal)) was
+the first chat row to open at its message, and opens there as every tied row now does.
+Its `data` adds `reminder: true` and the message as `messageId`, in the row as well as
+the push, so it opens at the message even when its row is not tied to it (below).
 Its `senderId` is the message's author, or the member themselves for an imported author
 with no account, so the in-app list keeps it for a member with a block list and
 withholds it as it does that author's chat when they blocked the author. Its row is tied
