@@ -905,7 +905,7 @@ export interface Database {
         Returns: Task[];
       };
       /**
-       * `20261112170000` (#4314) — a chat window's readable messages, oldest
+       * `20261112170000` (#4314), `kind` since `20261116143425` — a chat window's readable messages, oldest
        * conversation first; one row with a null `message_id` when it holds
        * none, no row when it is gone or its channel is a DM.
        */
@@ -922,6 +922,8 @@ export interface Database {
           created_at: string | null;
           thread_root_id: string | null;
           conversation_at: string | null;
+          /** `20261116143425` (#4915): the message's `chat_messages.kind`. */
+          kind: string | null;
         }[];
       };
       /**

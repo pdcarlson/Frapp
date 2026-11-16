@@ -153,6 +153,8 @@ describe('SupabaseChatCatchUpRepository — tenant scope', () => {
       created_at: '2026-11-10T19:00:00.000Z',
       thread_root_id: null,
       mentions: [USER_SHARED],
+      // Selected since #4915, so a line can say it was an announcement.
+      kind: 'text',
     });
     expect(filtersOf(0)).toContainEqual([
       'chat_channels.chapter_id',

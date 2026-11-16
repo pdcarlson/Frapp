@@ -156,6 +156,60 @@ describe('buildChatWindowChunks', () => {
     expect(built.passages[1].anchorId).toBe(evening.id);
   });
 
+  it('says when a line was posted as an announcement or imported, so the model can weigh it (#4915)', () => {
+    const notice = message({
+      at: '2026-11-09T22:00:00Z',
+      content: 'Dues are due November 20.',
+      kind: 'announcement',
+    });
+    const question = message({
+      at: '2026-11-09T22:05:00Z',
+      senderId: LEE,
+      senderName: 'Lee Park',
+      content: 'Is that firm?',
+      threadRootId: notice.id,
+      conversationAt: notice.createdAt,
+      kind: 'text',
+    });
+    const old = message({
+      at: '2026-11-09T22:06:00Z',
+      content: 'from the old server',
+      kind: 'imported',
+    });
+    const built = buildChatWindowChunks(
+      {
+        channelName: 'announcements',
+        day: '2026-11-09',
+        messages: [notice, question, old],
+      },
+      yes,
+    );
+    expect(built.passages.map((p) => p.content)).toEqual([
+      [
+        'Sam Ortiz, posting an announcement: Dues are due November 20.',
+        'Lee Park, replying in a thread: Is that firm?',
+        'Sam Ortiz, in history imported from Discord: from the old server',
+      ].join('\n'),
+    ]);
+  });
+
+  it('still leaves out an announcement whose author has not said yes: it is chat (#4915)', () => {
+    const notice = message({
+      at: '2026-11-09T22:00:00Z',
+      senderId: QUIET,
+      senderName: 'Quinn Officer',
+      content: 'Formal is Saturday.',
+      kind: 'announcement',
+    });
+    const built = buildChatWindowChunks(
+      { channelName: 'announcements', day: '2026-11-09', messages: [notice] },
+      yes,
+    );
+    expect(built.passages).toEqual([]);
+    expect(built.leftOutCount).toBe(1);
+    expect(built.leftOutAuthorIds).toEqual([QUIET]);
+  });
+
   it('closes a passage before it grows past the largest size, and never splits a message across two', () => {
     const long = 'word '.repeat(150).trim(); // ~750 characters
     const messages = Array.from({ length: 8 }, (_, i) =>

@@ -9,6 +9,7 @@ import { ChatModule } from '../chat/chat.module';
 import { CorpusModule } from '../corpus/corpus.module';
 import { MeetingModule } from '../meeting/meeting.module';
 import { MemberModule } from '../member/member.module';
+import { RbacModule } from '../rbac/rbac.module';
 import { SearchModule } from '../search/search.module';
 
 /**
@@ -41,6 +42,8 @@ import { SearchModule } from '../search/search.module';
     MeetingModule,
     // `MemberService`: the roster, for a name the model wrote.
     MemberModule,
+    // `RbacService`: the roles a message's author holds, as roster names them.
+    RbacModule,
   ],
   providers: [
     ChatChannelReadsService,

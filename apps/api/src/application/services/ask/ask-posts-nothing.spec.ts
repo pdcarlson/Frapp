@@ -134,6 +134,7 @@ const CALLS = new Set([
   'meetings.get',
   'meetings.list',
   'retrieval.readSource',
+  'scope.authorRoles',
   'scope.findChannel',
   'scope.findMember',
   'scope.openChannels',

@@ -25,7 +25,10 @@
  * - Documents, minutes and announcements are one passage each and readable
  *   by every member of their chapter: the fixtures have no private document.
  *   Their access rules are covered by the adapters' own specs. Announcements
- *   count as official here, which the product does not do yet (#4381).
+ *   count as official here, which the product does not do: Paul decided on
+ *   2026-11-16 (#4915) that an announcement is chat, under chat consent,
+ *   with its line saying it was posted as an announcement. Moving these
+ *   fixtures into chat windows is #5182.
  * - A window is one channel's whole conversation, not one day of it.
  */
 import type { CorpusCandidate } from '#domain/entities/corpus.entity';

@@ -104,11 +104,31 @@ function scopeWith(
       { user_id: DANA, display_name: 'Dana Reyes' },
       { user_id: 'd', display_name: 'Sam Whitfield' },
     ]),
+    // The roles behind a message's author (#5170): Dana is the treasurer,
+    // and everyone holds the Everyone role, which no line names.
+    findProfilesByChapter: jest.fn(async () => [
+      { user_id: SAM, role_ids: ['role-everyone'], custom_role_ids: [] },
+      {
+        user_id: DANA,
+        role_ids: ['role-everyone', 'role-treasurer'],
+        custom_role_ids: [],
+      },
+    ]),
+  };
+  const rbac = {
+    findByChapter: jest.fn(async () => [
+      { id: 'role-everyone', name: 'Everyone', system_key: 'MEMBER' },
+      { id: 'role-treasurer', name: 'Treasurer', system_key: null },
+    ]),
   };
   return {
     chat,
     members,
-    scope: new ConversationScope(chat as never, members as never),
+    scope: new ConversationScope(
+      chat as never,
+      members as never,
+      rbac as never,
+    ),
   };
 }
 
@@ -225,9 +245,12 @@ describe('conversation and record tools', () => {
       'channelReads.unreadCounts',
       'meetings.get',
       'meetings.list',
+      'members.findProfilesByChapter',
       'members.findRosterByChapter',
+      'rbac.findByChapter',
       'retrieval.readSource',
       'retrieval.retrieve',
+      'scope.authorRoles',
       'scope.findChannel',
       'scope.findMember',
       'scope.openChannels',
@@ -588,6 +611,45 @@ describe('conversation and record tools', () => {
       ]);
       expect(result.leftOutMessages).toBe(3);
       expect(result.note).toBeNull();
+    });
+
+    it('says what kind of message it was, the roles its author holds, and which thread a reply is in (#4915, #5170)', async () => {
+      const root = said(DANA, 'Dana Reyes', 'Dues are due November 20.', {
+        kind: 'announcement',
+      });
+      const reply = said(SAM, 'Sam Ortiz', 'Is that firm?', {
+        threadRootId: root.id,
+      });
+      const imported = said(SAM, 'Sam Ortiz', 'old server days', {
+        kind: 'imported',
+      });
+      const { tool } = build(stretchOf([root, reply, imported]));
+      const result = await tool.run({ ...args, channel: 'general' }, context);
+      const before = (text: string) => text.slice(0, text.indexOf(': '));
+      const [first, second, third] = result.sources.map((source) =>
+        before(source.text),
+      );
+      expect(first).toMatch(
+        /^Dana Reyes \(Treasurer\) in #general on .+, posting an announcement$/,
+      );
+      // Everyone is not a role worth naming; Sam holds no other.
+      expect(second).toMatch(
+        new RegExp(
+          `^Sam Ortiz in #general on .+, replying in the thread of message ${root.id}$`,
+        ),
+      );
+      expect(third).toMatch(/, in history imported from Discord$/);
+      // Past the clock time, the tool's part of each line holds no colon,
+      // so the member's words always start after the first ": ".
+      for (const source of result.sources) {
+        expect(before(source.text).replace(/\d:\d\d/, '')).not.toContain(':');
+      }
+      // The author entity is the name alone, so @Dana Reyes still links.
+      expect(result.entities).toContainEqual({
+        type: 'member',
+        id: DANA,
+        name: 'Dana Reyes',
+      });
     });
 
     it('keeps a message with a line break and a colon on its own one line, under its real author', async () => {

@@ -363,6 +363,8 @@ describe('SupabaseCorpusRepository — tenant scope', () => {
               createdAt: '2026-11-09T22:00:00.000Z',
               threadRootId: null,
               conversationAt: '2026-11-09T22:00:00.000Z',
+              // The fixture row has no kind, as before #4915: plain text.
+              kind: 'text',
             },
           ],
         },

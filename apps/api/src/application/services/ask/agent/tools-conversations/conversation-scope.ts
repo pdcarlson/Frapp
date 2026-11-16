@@ -2,7 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { CHAPTER_CHANNEL_TYPES } from '#domain/utils/chat-catch-up';
 import { ChatChannelReadsService } from '../../../chat-channel-reads.service';
 import { MemberService } from '../../../member.service';
+import { RbacService } from '../../../rbac.service';
 import type { AgentToolContext } from '../agent-tool';
+import { roleNames, rolesHeld } from '../tools-chapter/people';
 
 /** A chapter channel the asker can open. */
 export interface OpenChannel {
@@ -47,7 +49,36 @@ export class ConversationScope {
   constructor(
     private readonly channelReads: ChatChannelReadsService,
     private readonly members: MemberService,
+    private readonly rbac: RbacService,
   ) {}
+
+  /**
+   * The roles each of these members holds, by user id, as the roster tool
+   * names them (#5170): an officer's announcement reads as the treasurer's,
+   * and the model weighs it as that. Every tool that shows messages already
+   * needs `members:view`, the roster's own permission, so this shows nothing
+   * the asker could not read with `roster`. A member with no role but
+   * Everyone has no entry. Never a contact detail: only role names.
+   */
+  async authorRoles(
+    context: AgentToolContext,
+    userIds: readonly string[],
+  ): Promise<Map<string, string[]>> {
+    const wanted = new Set(userIds);
+    if (wanted.size === 0) return new Map();
+    const [profiles, roles] = await Promise.all([
+      this.members.findProfilesByChapter(context.chapterId),
+      this.rbac.findByChapter(context.chapterId),
+    ]);
+    const names = roleNames(roles);
+    const held = new Map<string, string[]>();
+    for (const profile of profiles) {
+      if (!wanted.has(profile.user_id)) continue;
+      const list = rolesHeld(profile, names);
+      if (list.length > 0) held.set(profile.user_id, list);
+    }
+    return held;
+  }
 
   /**
    * The chapter channels this asker can open, as their channel list has

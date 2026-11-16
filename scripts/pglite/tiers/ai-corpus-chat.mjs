@@ -197,6 +197,11 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
       { read: read.map((r) => [r.message_id, r.sender_name]) },
     );
     check(
+      "the window read says what kind each message is, so a line can name an announcement (#4915)",
+      read.every((r) => typeof r.kind === "string" && r.kind !== ""),
+      { kinds: read.map((r) => r.kind) },
+    );
+    check(
       "the window read refuses the window from another chapter",
       (await rows(`select * from read_chat_corpus_window($1, $2)`, [CH2, genWin.id])).length === 0,
       {},
