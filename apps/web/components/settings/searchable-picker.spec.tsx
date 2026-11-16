@@ -49,6 +49,23 @@ describe("a searchable picker", () => {
     expect(screen.getByText("Officers")).toBeInTheDocument();
   });
 
+  it("matches the start of a word, not the middle of one", async () => {
+    const user = userEvent.setup();
+    renderPicker({});
+    await user.click(screen.getByRole("button", { name: "Pick" }));
+    const input = screen.getByPlaceholderText("Find a role");
+    await user.type(input, "hair");
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Nothing matches “hair”.",
+    );
+    await user.clear(input);
+    await user.type(input, "cha");
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual(["Rush chair", "Social chair"]);
+  });
+
   it("lists flat without groups, and hands back the pick", async () => {
     const onPick = vi.fn();
     const user = userEvent.setup();

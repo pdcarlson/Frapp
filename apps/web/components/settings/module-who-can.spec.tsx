@@ -41,10 +41,10 @@ vi.mock("@/components/roles/use-roles-data", () => ({
     tiers: [tier("t-exec", "Exec board", 1), tier("t-chairs", "Chairs", 2)],
     reach: { wildcard: true, known: true, rank: 0, held: new Set<string>() },
     words: {
-      Singular: "Tier",
-      Plural: "Tiers",
-      singular: "tier",
-      plural: "tiers",
+      Singular: "Board",
+      Plural: "Boards",
+      singular: "board",
+      plural: "boards",
     },
   }),
 }));
@@ -89,32 +89,52 @@ describe("a module page's Who can picker", () => {
 
   it("lists the tiers under the chapter's word, then the roles", async () => {
     await openAdd();
+    // The chapter calls its tiers "boards", not the default "tiers", so a
+    // heading or placeholder that ignored the chapter's word would show here.
+    expect(screen.getByRole("combobox")).toHaveAttribute(
+      "placeholder",
+      "Find a board or role",
+    );
     const groups = screen.getAllByRole("group");
     expect(groups.map((group) => group.parentElement?.textContent)).toEqual([
-      "TiersExec boardChairs",
+      "BoardsExec boardChairs",
       "RolesSocial ChairNew Member",
     ]);
   });
 
   it("filters by the start of a word", async () => {
     const user = await openAdd();
-    await user.type(screen.getByPlaceholderText("Find a tier or role"), "cha");
+    await user.type(screen.getByPlaceholderText("Find a board or role"), "cha");
     expect(
       screen.getAllByRole("option").map((option) => option.textContent),
     ).toEqual(["Chairs", "Social Chair"]);
   });
 
+  it("doesn't match the middle of a word", async () => {
+    const user = await openAdd();
+    await user.type(screen.getByPlaceholderText("Find a board or role"), "air");
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Nothing matches “air”.",
+    );
+  });
+
   it("says when nothing matches", async () => {
     const user = await openAdd();
-    await user.type(screen.getByPlaceholderText("Find a tier or role"), "zz ");
+    await user.type(screen.getByPlaceholderText("Find a board or role"), "zz ");
     expect(screen.getByRole("status")).toHaveTextContent(
       "Nothing matches “zz”.",
     );
+    expect(markupLines(screen.getByRole("status"))).toMatchInlineSnapshot(`
+      [
+        "<p class="px-2 py-3 text-sm text-muted" role="status">Nothing matches “zz”.",
+      ]
+    `);
   });
 
   it("clears the search on Escape before it closes", async () => {
     const user = await openAdd();
-    const input = screen.getByPlaceholderText("Find a tier or role");
+    const input = screen.getByPlaceholderText("Find a board or role");
     await user.type(input, "exec");
     await user.keyboard("{Escape}");
     expect(input).toHaveValue("");
@@ -151,11 +171,11 @@ describe("a module page's Who can picker", () => {
         "    <label cmdk-label="" style="position: absolute; width: 1px; height: 1px; padding: 0px; margin: -1px; overflow: hidden; clip: rect(0px, 0px, 0px, 0px); white-space: nowrap; border-width: 0px;">Who to add to Create events",
         "    <div class="flex items-center border-b border-border px-3" cmdk-input-wrapper="">",
         "      <svg aria-hidden="true" class="lucide lucide-search mr-2 h-4 w-4 shrink-0 text-muted">",
-        "      <input aria-autocomplete="list" aria-expanded="true" autocomplete="off" autocorrect="off" class="flex w-full rounded-md bg-transparent text-foreground caret-primary outline-none placeholder:text-muted disabled:cursor-not-allowed disabled:text-disabled h-9 py-2 text-sm pointer-coarse:h-11 pointer-coarse:text-base" cmdk-input="" placeholder="Find a tier or role" role="combobox" spellcheck="false" type="text" value="">",
+        "      <input aria-autocomplete="list" aria-expanded="true" autocomplete="off" autocorrect="off" class="flex w-full rounded-md bg-transparent text-foreground caret-primary outline-none placeholder:text-muted disabled:cursor-not-allowed disabled:text-disabled h-9 py-2 text-sm pointer-coarse:h-11 pointer-coarse:text-base" cmdk-input="" placeholder="Find a board or role" role="combobox" spellcheck="false" type="text" value="">",
         "    <div aria-label="Suggestions" class="overflow-y-auto overflow-x-hidden max-h-72 p-1" cmdk-list="" role="listbox" tabindex="-1">",
         "      <div cmdk-list-sizer="">",
-        "        <div class="overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-caption [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-muted-foreground" cmdk-group="" data-value="Tiers" role="presentation">",
-        "          <div aria-hidden="true" cmdk-group-heading="">Tiers",
+        "        <div class="overflow-hidden p-1 text-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-caption [&_[cmdk-group-heading]]:font-semibold [&_[cmdk-group-heading]]:text-muted-foreground" cmdk-group="" data-value="Boards" role="presentation">",
+        "          <div aria-hidden="true" cmdk-group-heading="">Boards",
         "          <div cmdk-group-items="" role="group">",
         "            <div aria-disabled="false" aria-selected="true" class="relative flex cursor-default select-none items-center rounded-xs px-2 py-1.5 outline-none transition-colors data-[disabled=true]:pointer-events-none data-[selected=true]:bg-card-hover data-[selected=true]:text-foreground data-[disabled=true]:text-disabled [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 min-h-8 gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base" cmdk-item="" data-disabled="false" data-selected="true" data-value="tier-t-exec" role="option">",
         "              <span class="min-w-0 flex-1 break-words">Exec board",

@@ -164,11 +164,35 @@ describe("a module page's goals", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "Nothing matches “memx”.",
     );
+    expect(markupLines(screen.getByRole("status"))).toMatchInlineSnapshot(`
+      [
+        "<p class="px-2 py-3 text-sm text-muted" role="status">Nothing matches “memx”.",
+      ]
+    `);
     await user.keyboard("{Escape}");
     expect(input).toHaveValue("");
     expect(screen.getByRole("listbox")).toBeInTheDocument();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("doesn't match the middle of a word", async () => {
+    const user = userEvent.setup();
+    render(<ModuleGoals metrics={["points"]} canManage />);
+    await user.click(
+      screen.getByRole("button", { name: "Different goal for a role" }),
+    );
+    const input = screen.getByPlaceholderText("Find a role");
+    await user.type(input, "ember");
+    expect(screen.queryByRole("option", { name: "New Member" })).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Nothing matches “ember”.",
+    );
+    await user.clear(input);
+    await user.type(input, "new mem");
+    expect(
+      screen.getAllByRole("option").map((option) => option.textContent),
+    ).toEqual(["New Member"]);
   });
 
   it("draws the role picker exactly as before", async () => {
