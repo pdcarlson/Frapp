@@ -497,7 +497,7 @@ Every model call goes through the API's AI gateway (`AiGatewayService`, [ADR-28]
 
 | Property | Meaning |
 | --- | --- |
-| `task`, `family`, `kind` | The catalog task (`minutes.draft`), its feature family (`meetings`, `ask`, `corpus`), and what it returns (`structured`, `cited`, `embedding`, or `transcription` for a recording sent through `AiTranscriptionService`) |
+| `task`, `family`, `kind` | The catalog task (`minutes.draft`), its feature family (`meetings`, `ask`, `corpus`, `backwork`), and what it returns (`structured`, `cited`, `embedding`, or `transcription` for a recording sent through `AiTranscriptionService`) |
 | `provider`, `model` | From the model catalog (`domain/constants/ai-model-catalog.ts`) |
 | `prompt_version` | The calling feature's prompt version, such as `ask@v1` |
 | `outcome`, `error_kind` | `completed`, `refused` (the provider declined), `invalid_output` (the reply did not match the schema) or `error`; for an error, its kind, such as `rate_limited` |

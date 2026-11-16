@@ -18566,6 +18566,59 @@
         ]
       }
     },
+    "/v1/backwork/drafts/{id}/fill": {
+      "post": {
+        "description": "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted` and is not read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.",
+        "operationId": "BackworkFillController_fill_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackworkDraftFillResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Frapp AI turned off (`ai.chapter_off`)."
+          },
+          "404": {
+            "description": "AI is off on this server (`ai.not_available`), or the draft is not the caller's or is gone."
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Propose fields for one of the caller's drafts from its redacted text",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
     "/v1/nudges/current": {
       "post": {
         "description": "Returns the one card to show, or null. A POST because it may write a new card, which costs a model call, so it must never be cached or prefetched. A card already showing is returned as it is, after checking it against the task as it stands. Answers null, never an error, when AI is off for the chapter or the member has not said yes: a card is an extra, and its absence needs no explaining.",
@@ -34523,6 +34576,42 @@
         "required": [
           "posted",
           "restricted"
+        ]
+      },
+      "BackworkDraftFillResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "filled",
+              "nothing_found",
+              "unreadable",
+              "not_redacted",
+              "refused",
+              "unavailable",
+              "invalid_output"
+            ],
+            "description": "`filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again)."
+          },
+          "filled": {
+            "description": "The fields this fill set. Absent when the draft is unchanged.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "draft": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "The draft as it now stands. `draft_fields.ai_filled` lists the fields an AI fill set that nobody has edited since."
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
         ]
       },
       "MemberNudgeDto": {

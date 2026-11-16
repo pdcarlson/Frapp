@@ -408,3 +408,38 @@ export class BackworkDownloadUrlsResponseDto {
   })
   files: BackworkDownloadUrlDto[];
 }
+
+export class BackworkDraftFillResponseDto {
+  @ApiProperty({
+    enum: [
+      'filled',
+      'nothing_found',
+      'unreadable',
+      'not_redacted',
+      'refused',
+      'unavailable',
+      'invalid_output',
+    ],
+    description:
+      '`filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).',
+  })
+  status: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'The fields this fill set. Absent when the draft is unchanged.',
+  })
+  filled?: string[];
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    description:
+      'The draft as it now stands. `draft_fields.ai_filled` lists the fields an AI fill set that nobody has edited since.',
+  })
+  draft?: object;
+
+  @ApiPropertyOptional()
+  reason?: string;
+}

@@ -1445,6 +1445,98 @@ describe('BackworkService', () => {
       expect(rows.map((row) => row.id)).toEqual(['a', 'b']);
     });
 
+    it('an edit takes the edited fields off the AI-filled list', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({
+          id: 'a',
+          draft_fields: {
+            title: 'T',
+            year: 2024,
+            semester: 'Spring',
+            ai_filled: ['title', 'year', 'semester'],
+            ai_fill: 'filled',
+          },
+        }),
+      ]);
+      mockResourceRepo.updateDraftFields.mockImplementation(
+        async (id, _chapter, _uploader, fields) =>
+          draftRow({ id, draft_fields: fields }),
+      );
+
+      await service.updateDrafts('ch-1', 'user-1', ['a'], {
+        title: 'Mine',
+        year: null,
+      });
+
+      expect(mockResourceRepo.updateDraftFields).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        'user-1',
+        {
+          title: 'Mine',
+          semester: 'Spring',
+          ai_filled: ['semester'],
+          ai_fill: 'filled',
+        },
+      );
+    });
+
+    it('an AI fill sets only fields that are still empty when it lands', async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValue([
+        draftRow({ id: 'a', draft_fields: { title: 'Typed meanwhile' } }),
+      ]);
+      mockResourceRepo.updateDraftFields.mockImplementation(
+        async (id, _chapter, _uploader, fields) =>
+          draftRow({ id, draft_fields: fields }),
+      );
+
+      await service.applyAiFill('a', 'ch-1', 'user-1', {
+        fields: { title: 'AI title', semester: 'Fall' },
+        outcome: 'filled',
+      });
+
+      expect(mockResourceRepo.updateDraftFields).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        'user-1',
+        {
+          title: 'Typed meanwhile',
+          semester: 'Fall',
+          ai_filled: ['semester'],
+          ai_fill: 'filled',
+        },
+      );
+    });
+
+    it("downloads a redacted draft's own stored file, and refuses one uploaded as-is", async () => {
+      const bytes = new Uint8Array([1]);
+      mockStorageProvider.downloadFile.mockResolvedValueOnce(bytes);
+      const redacted = draftRow({ id: 'a', is_redacted: true });
+      await expect(service.redactedDraftFile(redacted)).resolves.toBe(bytes);
+      expect(mockStorageProvider.downloadFile).toHaveBeenCalledWith(
+        'backwork',
+        redacted.storage_path,
+      );
+
+      mockStorageProvider.downloadFile.mockClear();
+      await expect(
+        service.redactedDraftFile(draftRow({ id: 'b', is_redacted: false })),
+      ).rejects.toThrow('uploaded as-is');
+      expect(mockStorageProvider.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it("finds only the caller's own draft", async () => {
+      mockResourceRepo.findDraftsByIds.mockResolvedValueOnce([]);
+      await expect(
+        service.findOwnDraft('a', 'ch-1', 'user-1'),
+      ).resolves.toBeNull();
+      expect(mockResourceRepo.findDraftsByIds).toHaveBeenCalledWith(
+        ['a'],
+        'ch-1',
+        'user-1',
+      );
+    });
+
     it('publishes a draft the way a confirm files one', async () => {
       mockResourceRepo.findDraftsByIds.mockResolvedValue([
         draftRow({
