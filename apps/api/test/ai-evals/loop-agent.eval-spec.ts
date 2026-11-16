@@ -125,8 +125,8 @@ describe("the term chapter behind the loop's tools", () => {
       EVAL_NOW,
     );
     const names = world.readTools.map((tool) => tool.name);
-    expect(names).toHaveLength(22);
-    expect(new Set(names).size).toBe(22);
+    expect(names).toHaveLength(23);
+    expect(new Set(names).size).toBe(23);
     expect(world.proposeTools.map((tool) => tool.name).sort()).toEqual([
       'create_event',
       'create_task',

@@ -932,6 +932,116 @@ export const TERM_CORPUS: readonly CorpusDocument[] = [
  * (#4899) backs its tools' services with this instead of a database. The
  * one-shot Ask reads the same records through `harness/term-reads.ts`.
  */
+/**
+ * The backwork library's catalog (#5209): what Ask's `find_backwork` reads.
+ * Never a file: the catalog is all a model may see.
+ */
+export interface TermBackworkFile {
+  id: string;
+  department: string;
+  course: string;
+  professor: string | null;
+  type: 'Exam' | 'Midterm' | 'Final Exam' | 'Quiz' | 'Homework' | 'Notes';
+  number: number | null;
+  semester: 'Fall' | 'Spring';
+  year: number;
+  copy: 'Student Copy' | 'Blank Copy' | 'Answer Key';
+}
+
+/** Where a file is stored, and its hash: never to reach a model. */
+export const backworkStorageKey = (id: string) =>
+  `backwork/${id}-storage-key.pdf`;
+export const backworkFileHash = (id: string) => `hash-${id}`;
+
+export const TERM_BACKWORK = {
+  departments: [
+    { code: 'CSCI', name: 'Computer Science' },
+    { code: 'MATH', name: 'Mathematics' },
+  ],
+  courses: [
+    {
+      department: 'CSCI',
+      number: '1200',
+      name: 'Data Structures',
+      nicknames: ['ds'],
+    },
+    {
+      department: 'MATH',
+      number: '1010',
+      name: 'Calculus I',
+      nicknames: ['calc 1', 'calc one'],
+    },
+  ],
+  files: [
+    {
+      id: 'bw-ds-mt1-f25',
+      department: 'CSCI',
+      course: '1200',
+      professor: 'Cutler',
+      type: 'Midterm',
+      number: 1,
+      semester: 'Fall',
+      year: 2025,
+      copy: 'Student Copy',
+    },
+    {
+      id: 'bw-ds-mt2-f25',
+      department: 'CSCI',
+      course: '1200',
+      professor: 'Cutler',
+      type: 'Midterm',
+      number: 2,
+      semester: 'Fall',
+      year: 2025,
+      copy: 'Blank Copy',
+    },
+    {
+      id: 'bw-ds-mt1-s25',
+      department: 'CSCI',
+      course: '1200',
+      professor: 'Holzbauer',
+      type: 'Midterm',
+      number: 1,
+      semester: 'Spring',
+      year: 2025,
+      copy: 'Student Copy',
+    },
+    {
+      id: 'bw-ds-final-s25',
+      department: 'CSCI',
+      course: '1200',
+      professor: 'Holzbauer',
+      type: 'Final Exam',
+      number: null,
+      semester: 'Spring',
+      year: 2025,
+      copy: 'Answer Key',
+    },
+    {
+      id: 'bw-calc-q3-f25',
+      department: 'MATH',
+      course: '1010',
+      professor: 'Lee',
+      type: 'Quiz',
+      number: 3,
+      semester: 'Fall',
+      year: 2025,
+      copy: 'Student Copy',
+    },
+    {
+      id: 'bw-calc-ex2-f24',
+      department: 'MATH',
+      course: '1010',
+      professor: 'Lee',
+      type: 'Exam',
+      number: 2,
+      semester: 'Fall',
+      year: 2024,
+      copy: 'Student Copy',
+    },
+  ] satisfies TermBackworkFile[],
+} as const;
+
 export interface TermChapter {
   chapterId: string;
   members: readonly SyntheticMember[];
@@ -950,6 +1060,7 @@ export interface TermChapter {
   serviceEntries: readonly ServiceEntry[];
   noServiceHoursThisMonth: readonly string[];
   unpaidDues: Readonly<Record<string, number>>;
+  backwork: typeof TERM_BACKWORK;
 }
 
 export const TERM_CHAPTER: TermChapter = {
@@ -968,4 +1079,5 @@ export const TERM_CHAPTER: TermChapter = {
   serviceEntries: SERVICE_ENTRIES,
   noServiceHoursThisMonth: NO_SERVICE_HOURS_IN_NOVEMBER,
   unpaidDues: UNPAID_DUES,
+  backwork: TERM_BACKWORK,
 };
