@@ -6,6 +6,7 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import type {
+  CreateTaskSeriesInput,
   ITaskRepository,
   ReopenCompletionOptions,
   TaskListFilter,
@@ -15,6 +16,7 @@ import {
   Task,
   TaskStatus,
   type TaskPhoto,
+  type TaskSeries,
   type TaskSubtask,
 } from '#domain/entities/task.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
@@ -301,6 +303,92 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId);
 
     if (error) throw new SupabaseQueryError(error);
+  }
+
+  async createSeries(input: CreateTaskSeriesInput): Promise<Task> {
+    const { data, error } = await this.supabase.rpc('create_task_series', {
+      p_chapter_id: input.chapter_id,
+      p_created_by: input.created_by,
+      p_title: input.title,
+      p_description: input.description,
+      p_assignee_id: input.assignee_id,
+      p_point_reward: input.point_reward,
+      p_proof_kind: input.proof_kind,
+      p_subtask_titles: input.subtask_titles,
+      p_due_time: input.due_time,
+      p_recurrence_rule: input.recurrence_rule,
+      p_first_due_date: input.first_due_date,
+      p_first_due_at: input.first_due_at,
+      p_latest_due_at: input.latest_due_at,
+      p_next_due_date: input.next_due_date,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    const [task] = data ?? [];
+    if (!task) {
+      throw new Error('create_task_series returned no task');
+    }
+    return task;
+  }
+
+  async findSeries(chapterId: string, ids: string[]): Promise<TaskSeries[]> {
+    if (ids.length === 0) return [];
+    const series: TaskSeries[] = [];
+    for (let i = 0; i < ids.length; i += SUBTASK_READ_BATCH) {
+      const { data, error } = await this.supabase
+        .from('task_series')
+        .select('*')
+        .eq('chapter_id', chapterId)
+        .in('id', ids.slice(i, i + SUBTASK_READ_BATCH));
+      if (error) throw new SupabaseQueryError(error);
+      series.push(...(data ?? []));
+    }
+    return series;
+  }
+
+  async findLatestSeriesCopy(
+    chapterId: string,
+    seriesId: string,
+  ): Promise<Task | null> {
+    const { data, error } = await this.supabase
+      .from('tasks')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('series_id', seriesId)
+      .order('occurrence_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async updateSeriesIfNext(
+    chapterId: string,
+    id: string,
+    expectedNext: string,
+    data: TablesUpdate<'task_series'>,
+  ): Promise<TaskSeries | null> {
+    const { data: updated, error } = await this.supabase
+      .from('task_series')
+      .update(data)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('next_due_date', expectedNext)
+      .is('ended_at', null)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return updated;
+  }
+
+  async hasCheckedSubtask(chapterId: string, taskId: string): Promise<boolean> {
+    const { count, error } = await this.supabase
+      .from('task_subtasks')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .eq('task_id', taskId)
+      .not('done_at', 'is', null);
+    if (error) throw new SupabaseQueryError(error);
+    return (count ?? 0) > 0;
   }
 
   async isPhotoPathInUse(chapterId: string, path: string): Promise<boolean> {

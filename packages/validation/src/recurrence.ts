@@ -1,6 +1,6 @@
 /**
- * The repeat rules a Frapp event may carry, and how a series is stepped from
- * one: the one place the API's series generator and both apps' Repeat
+ * The repeat rules a Frapp event or task may carry, and how a series is
+ * stepped from one: the one place the API's series generator and both apps' Repeat
  * controls read, so the meetings the server makes and the caption an officer
  * reads cannot describe different series.
  *
@@ -27,7 +27,8 @@
  *   `BYDAY` (weekly: the days, `MO,TH`; monthly: the nth weekday, `2TU`, or
  *   `-1FR` for the last), exactly one of `COUNT` (meetings, the first
  *   included) or `UNTIL` (`YYYYMMDD`, the last day a meeting may fall on, in
- *   the rule's zone), and `TZID` (the zone whose wall clock the series keeps,
+ *   the rule's zone) for an event, and at most one for a repeating task,
+ *   which with neither never ends (§ Repeating tasks below, #5119), and `TZID` (the zone whose wall clock the series keeps,
  *   so a 7 PM meeting stays at 7 PM across a DST change). Chapters keep no
  *   zone of their own, so the zone is the creating officer's, which is
  *   the chapter's in practice. A monthly rule without `BYDAY` meets on its
@@ -130,6 +131,13 @@ export type RepeatEnd =
   /** `until` is `YYYY-MM-DD`, inclusive, in the rule's zone. */
   | { kind: "until"; until: string };
 
+/**
+ * How a repeating task's series ends (#5119): an event's two ends, or never.
+ * Only one task copy exists at a time, so an open-ended task series writes
+ * nothing ahead; an event series makes every meeting up front and must end.
+ */
+export type TaskRepeatEnd = RepeatEnd | { kind: "never" };
+
 /** A structured rule as the editors build it. */
 export interface RepeatRule {
   freq: RepeatFrequency;
@@ -204,6 +212,20 @@ function validDate(y: number, m: number, d: number): boolean {
 export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
   if (typeof value !== "string") return null;
   if (isRecurrenceRule(value)) return legacyRule(value);
+  const parsed = parseStructuredRule(value, false);
+  if (!parsed || parsed.end.kind === "never") return null;
+  return { ...parsed, end: parsed.end, legacy: null };
+}
+
+/**
+ * A structured rule, its end possibly "never" when `allowOpenEnded`. The one
+ * reader behind {@link parseRepeatRule} (events, which always end) and
+ * {@link parseTaskRepeatRule} (a repeating task, which may not).
+ */
+function parseStructuredRule(
+  value: string,
+  allowOpenEnded: boolean,
+): (Omit<RepeatRule, "end"> & { end: TaskRepeatEnd }) | null {
   if (value.length === 0 || value.length > MAX_REPEAT_RULE_LENGTH) return null;
 
   const fields = new Map<string, string>();
@@ -245,9 +267,12 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
 
   const countText = fields.get("COUNT");
   const untilText = fields.get("UNTIL");
-  if ((countText === undefined) === (untilText === undefined)) return null;
-  let end: RepeatEnd;
-  if (countText !== undefined) {
+  if (countText !== undefined && untilText !== undefined) return null;
+  let end: TaskRepeatEnd;
+  if (countText === undefined && untilText === undefined) {
+    if (!allowOpenEnded) return null;
+    end = { kind: "never" };
+  } else if (countText !== undefined) {
     if (!POSITIVE_INT.test(countText)) return null;
     const count = Number(countText);
     if (count < 2 || count > MAX_SERIES_MEETINGS) return null;
@@ -291,7 +316,6 @@ export function parseRepeatRule(value: unknown): ParsedRepeatRule | null {
   }
 
   return {
-    legacy: null,
     freq: freq as RepeatFrequency,
     interval,
     byDay,
@@ -1009,4 +1033,211 @@ export function shiftRepeatRule(
     return rule;
   }
   return formatRepeatRule(next);
+}
+
+// ---------------------------------------------------------------------------
+// Repeating tasks (#5119)
+// ---------------------------------------------------------------------------
+
+/**
+ * A repeating task's rule: the event rule format, except that it may name
+ * neither `COUNT` nor `UNTIL` and then never ends. Legacy tokens are not
+ * task rules: no client ever sent one for a task.
+ */
+export type TaskRepeatRule = Omit<RepeatRule, "end"> & { end: TaskRepeatEnd };
+
+/**
+ * Read a task's `recurrence_rule` (#5119). `null` for a legacy token or
+ * anything this module can't step, so the API refuses it with a 400.
+ */
+export function parseTaskRepeatRule(value: unknown): TaskRepeatRule | null {
+  if (typeof value !== "string" || isRecurrenceRule(value)) return null;
+  return parseStructuredRule(value, true);
+}
+
+/** Whether the API accepts `value` as a task's `recurrence_rule`. */
+export function isTaskRepeatRule(value: unknown): value is string {
+  return parseTaskRepeatRule(value) !== null;
+}
+
+/** Write a task rule in its canonical spelling; "never" writes no end. */
+export function formatTaskRepeatRule(rule: TaskRepeatRule): string {
+  if (rule.end.kind !== "never") {
+    return formatRepeatRule({ ...rule, end: rule.end });
+  }
+  // Format with a placeholder end, then drop it: one spelling of the rest.
+  const text = formatRepeatRule({ ...rule, end: { kind: "count", count: 2 } });
+  return text
+    .split(";")
+    .filter((part) => !part.startsWith("COUNT="))
+    .join(";");
+}
+
+const DATE_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+function dayNumberOfKey(key: string): number | null {
+  const match = DATE_KEY.exec(key.slice(0, 10));
+  if (!match) return null;
+  const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (!validDate(y, m, d)) return null;
+  return dayNumber(y, m, d);
+}
+
+function dateKeyOf(n: number): string {
+  const { year, month, day } = fromDayNumber(n);
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+/**
+ * The day a repeating task's next copy is due: the first day of the pattern
+ * strictly after `after`, counted from the series' first copy on `first`
+ * (both `YYYY-MM-DD`, calendar days in the rule's zone). `null` once the
+ * rule's end is reached (`COUNT` copies, the first included, or past
+ * `UNTIL`), or for a rule or day this module can't read.
+ *
+ * The first copy is the pattern's start even when it falls off the pattern
+ * (a weekly Monday rule first due on a Sunday), as an event series' head is.
+ * Works by arithmetic from `first` rather than by stepping every copy, so an
+ * open-ended series is as cheap to step in its tenth year as its first.
+ */
+export function nextTaskRepeatDate(
+  rule: string | TaskRepeatRule,
+  first: string,
+  after: string,
+): string | null {
+  const parsed = typeof rule === "string" ? parseTaskRepeatRule(rule) : rule;
+  const firstDay = dayNumberOfKey(first);
+  const afterDay = dayNumberOfKey(after);
+  if (!parsed || firstDay === null || afterDay === null) return null;
+  if (afterDay < firstDay) return dateKeyOf(firstDay);
+
+  const found = nextPatternDay(parsed, firstDay, afterDay);
+  if (!found) return null;
+  const { day, index } = found;
+  if (parsed.end.kind === "count" && index > parsed.end.count - 1) {
+    return null;
+  }
+  if (parsed.end.kind === "until") {
+    const until = dayNumberOfKey(parsed.end.until);
+    if (until === null || day > until) return null;
+  }
+  return dateKeyOf(day);
+}
+
+/**
+ * The first pattern day after `afterDay` (`afterDay >= firstDay`) and its
+ * place in the series, the first copy being 0.
+ */
+function nextPatternDay(
+  rule: TaskRepeatRule,
+  firstDay: number,
+  afterDay: number,
+): { day: number; index: number } | null {
+  const n = rule.interval;
+  if (rule.freq === "DAILY") {
+    const k = Math.floor((afterDay - firstDay) / n) + 1;
+    return { day: firstDay + k * n, index: k };
+  }
+  if (rule.freq === "WEEKLY") {
+    const weekdays = (
+      rule.byDay.length > 0
+        ? rule.byDay.map((code) => WEEKDAY_CODES.indexOf(code))
+        : [weekdayOf(firstDay)]
+    ).sort((a, b) => a - b);
+    const weekStart = firstDay - weekdayOf(firstDay);
+    // Pattern days in the first copy's own week that come after it.
+    const firstWeek = weekdays.filter((wd) => weekStart + wd > firstDay).length;
+    const from = Math.max(0, Math.floor((afterDay - weekStart) / 7 / n));
+    for (let i = from; i <= from + 1; i++) {
+      for (let j = 0; j < weekdays.length; j++) {
+        const day = weekStart + i * n * 7 + weekdays[j]!;
+        if (day <= firstDay || day <= afterDay) continue;
+        const index =
+          i === 0
+            ? weekdays.slice(0, j + 1).filter((wd) => weekStart + wd > firstDay)
+                .length
+            : firstWeek + (i - 1) * weekdays.length + j + 1;
+        return { day, index };
+      }
+    }
+    return null;
+  }
+  // MONTHLY
+  const first = fromDayNumber(firstDay);
+  const after = fromDayNumber(afterDay);
+  const monthsApart =
+    (after.year - first.year) * 12 + (after.month - first.month);
+  const dayIn = (i: number) => {
+    const monthIndex = first.month - 1 + i * n;
+    const year = first.year + Math.floor(monthIndex / 12);
+    const month = (monthIndex % 12) + 1;
+    const dayOfMonth = rule.nthWeekday
+      ? nthWeekdayOfMonth(
+          year,
+          month,
+          rule.nthWeekday.n,
+          WEEKDAY_CODES.indexOf(rule.nthWeekday.day),
+        )
+      : Math.min(rule.monthDay ?? first.day, daysInMonth(year, month));
+    return dayNumber(year, month, dayOfMonth);
+  };
+  // Whether the pattern meets again in the first copy's own month.
+  const firstMonth = dayIn(0) > firstDay ? 1 : 0;
+  const from = Math.max(0, Math.floor(monthsApart / n));
+  for (let i = from; i <= from + 2; i++) {
+    const day = dayIn(i);
+    if (day <= firstDay || day <= afterDay) continue;
+    return { day, index: i === 0 ? 1 : i - 1 + firstMonth + 1 };
+  }
+  return null;
+}
+
+/**
+ * The instant a task copy is due: `date` (`YYYY-MM-DD`) at `time` (`HH:MM`
+ * or `HH:MM:SS`) on the wall clock of `timeZone`, so a 9 PM weekly task stays
+ * at 9 PM across a DST change. With no time, the end of that day there: the
+ * moment an untimed copy becomes overdue in its series' zone.
+ */
+export function taskCopyDueInstant(
+  date: string,
+  time: string | null,
+  timeZone: string,
+): Date {
+  const day = dayNumberOfKey(date);
+  if (day === null) return new Date(Number.NaN);
+  if (time === null) {
+    const next = fromDayNumber(day + 1);
+    return new Date(
+      instantAt({ ...next, hour: 0, minute: 0, second: 0, ms: 0 }, timeZone),
+    );
+  }
+  const [hour, minute, second] = time.split(":").map(Number);
+  return new Date(
+    instantAt(
+      {
+        ...fromDayNumber(day),
+        hour: hour ?? 0,
+        minute: minute ?? 0,
+        second: second ?? 0,
+        ms: 0,
+      },
+      timeZone,
+    ),
+  );
+}
+
+/**
+ * The calendar day and time of day (`HH:MM:SS`) `instant` reads on the wall
+ * clock of `timeZone`: how a timed copy's due moment is kept on a series.
+ */
+export function zonedDateAndTime(
+  instant: Date | string,
+  timeZone: string,
+): { date: string; time: string } {
+  const clock = wallClockAt(new Date(instant).getTime(), timeZone);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return {
+    date: dateKeyOf(dayNumber(clock.year, clock.month, clock.day)),
+    time: `${pad(clock.hour)}:${pad(clock.minute)}:${pad(clock.second)}`,
+  };
 }

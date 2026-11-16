@@ -78,10 +78,11 @@ describe(`${JOB}: the mobile bundle step (#2388)`, () => {
     assert.ok(job, `${JOB} job not found`);
     // Path-gated on a PR since 2026-11-11 (ci.yml `changes.mobile`, whose
     // coverage app-filter-coverage.test.mjs pins); every push still runs it,
-    // except one whose commit the merge queue already passed (#5084).
+    // except one whose commit the merge queue already passed (#5084), and so
+    // does every queue entry that isn't docs-only (#5141).
     assert.equal(
       job.if,
-      "${{ needs.changes.outputs.queue_tested != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}",
+      "${{ needs.changes.outputs.skip_suite != 'true' && (github.event_name != 'pull_request' || needs.changes.outputs.mobile == 'true') }}",
       `${JOB} runs on every merge queue entry, every push the queue didn't test, and every PR that touches what it reads`,
     );
     assert.doesNotMatch(String(job.keys.get("continue-on-error") ?? ""), /true/);

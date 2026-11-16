@@ -109,6 +109,7 @@ import type {
   StudySession,
   Task,
   TaskPhoto,
+  TaskSeries,
   TaskSubtask,
   User,
   UserAiConsent,
@@ -256,6 +257,7 @@ export interface Database {
       study_geofences: TableDefinition<StudyGeofence>;
       study_sessions: TableDefinition<StudySession>;
       task_photos: TableDefinition<TaskPhoto>;
+      task_series: TableDefinition<TaskSeries>;
       task_subtasks: TableDefinition<TaskSubtask>;
       tasks: TableDefinition<Task>;
       user_ai_consents: TableDefinition<UserAiConsent>;
@@ -463,6 +465,29 @@ export interface Database {
       /** `20260602210000` — `returns setof tasks`. */
       confirm_task_completion: {
         Args: { p_task_id: string; p_chapter_id: string };
+        Returns: Task[];
+      };
+      /**
+       * `20261116044044` (#5119) — a repeating task's series and its first
+       * copy in one transaction. Returns the first copy.
+       */
+      create_task_series: {
+        Args: {
+          p_chapter_id: string;
+          p_created_by: string;
+          p_title: string;
+          p_description: string | null;
+          p_assignee_id: string;
+          p_point_reward: number | null;
+          p_proof_kind: string;
+          p_subtask_titles: string[];
+          p_due_time: string | null;
+          p_recurrence_rule: string;
+          p_first_due_date: string;
+          p_first_due_at: string | null;
+          p_latest_due_at: string;
+          p_next_due_date: string;
+        };
         Returns: Task[];
       };
       /**
@@ -861,6 +886,23 @@ export interface Database {
           p_until?: string;
         };
         Returns: CorpusCandidate[];
+      };
+      /**
+       * `20261116044044` (#5119) — the sweep's next copy, compare-and-set on
+       * the series' `next_due_date` and `latest_due_at`. Empty when another write got there first.
+       */
+      materialize_task_series_copy: {
+        Args: {
+          p_series_id: string;
+          p_expected_next: string;
+          p_expected_latest_due_at: string;
+          p_occurrence_date: string;
+          p_due_at: string | null;
+          p_latest_due_at: string;
+          p_next_due_date: string | null;
+          p_end: boolean;
+        };
+        Returns: Task[];
       };
       /**
        * `20261112170000` (#4314) — a chat window's readable messages, oldest

@@ -457,6 +457,12 @@ function AskAnswerBody({
       {answer.text ? (
         <AnswerText answer={answer} onFollowMessage={onFollowMessage} />
       ) : null}
+      {/* A sentence that rests on no source says so, where a source would be. */}
+      {answer.own_words ? (
+        <p className="text-caption text-muted-foreground">
+          {ASK_COPY.own_words}
+        </p>
+      ) : null}
       {/* Where the step line was while it worked, in the same tone. */}
       {readLine ? (
         <p className="text-caption text-muted-foreground">{readLine}</p>
