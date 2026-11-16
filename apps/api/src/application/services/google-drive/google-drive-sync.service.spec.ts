@@ -148,7 +148,7 @@ describe('GoogleDriveSyncService', () => {
     folderRows = [];
     let made = 0;
     folders = {
-      findByChapter: jest.fn(() =>
+      findByChapter: jest.fn((_chapter: string) =>
         Promise.resolve(folderRows.map((row) => ({ ...row }))),
       ),
       findById: jest.fn(),
@@ -177,7 +177,7 @@ describe('GoogleDriveSyncService', () => {
         row.name = name;
         return Promise.resolve({ ...row });
       }),
-      deleteMovingDocuments: jest.fn((id: string) => {
+      deleteMovingDocuments: jest.fn((id: string, _chapter: string) => {
         folderRows = folderRows.filter((row) => row.id !== id);
         return Promise.resolve(true);
       }),
