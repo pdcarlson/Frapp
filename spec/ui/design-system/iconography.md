@@ -14,8 +14,9 @@ recipe is one module — [`apps/web/components/ui/duotone.tsx`](../../../apps/we
 while looking like it complies. On mobile it is
 [`apps/mobile/components/glyph-recipe.tsx`](../../../apps/mobile/components/glyph-recipe.tsx)
 (`paint` and `Frame`, #3428), which every mobile stroke-recipe glyph draws
-through; the tab bar and the chat cards' eyebrows keep `tab-glyphs.tsx`'s own
-recipe, whose active fill is 18%. The navigation glyphs, and the in-screen
+through; the tab bar, the chat cards' eyebrows and the composer + sheet's rows
+keep `tab-glyphs.tsx`'s own recipe, which shares its stroke width and neutral
+fill and differs only in its 18% active fill. The navigation glyphs, and the in-screen
 glyphs that sit beside them, draw the two-tone nav set instead (§1.1):
 
 | Layer | Spec |

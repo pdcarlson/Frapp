@@ -98,11 +98,14 @@ describe("the §1 stroke recipe (#3428)", () => {
       expect(body!.props.stroke).toBe(HUE);
       expect(body!.props.strokeWidth).toBe(1.6);
       expect(body!.props.fill).toBe(fill);
+      expect(body!.props.strokeLinejoin).toBe("round");
       expect(details.length).toBeGreaterThan(0);
       for (const detail of details) {
         expect(detail.props.stroke).toBe(HUE);
         expect(detail.props.strokeWidth).toBe(1.6);
         expect(detail.props.fill ?? "none").toBe("none");
+        expect(detail.props.strokeLinecap).toBe("round");
+        expect(detail.props.strokeLinejoin).toBe("round");
       }
     },
   );

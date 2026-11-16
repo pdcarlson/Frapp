@@ -20,11 +20,11 @@ import {
   GlyphFrame,
   glyphPaint,
   PhotoGlyph,
-  STROKE_WIDTH,
   TabGlyph,
   TasksGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
+import { STROKE_WIDTH } from "@/components/glyph-recipe";
 import { RolePickerGlyph, ServiceHoursGlyph } from "./card-glyphs";
 
 /**

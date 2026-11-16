@@ -170,6 +170,40 @@ describe("RemindSheet (#4957)", () => {
     expect(onRemind).not.toHaveBeenCalled();
     expect(screenText(tree)).toContain(REMINDER_PAST_NOTE);
   });
+
+  it("opens a later visit with the presets from its own now and no past-time note (#5173)", () => {
+    const handle = createRef<GuardedSheetHandle>();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <RemindSheet
+            ref={handle}
+            messageId="m1"
+            onRemind={vi.fn()}
+            platform="android"
+          />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal" ? modal : null,
+        },
+      );
+    });
+    act(() => handle.current?.present());
+    press(tree, REMINDER_CUSTOM_LABEL);
+    act(() => androidCall(0).onValueChange({}, new Date(2026, 10, 14, 0, 0)));
+    act(() => androidCall(1).onValueChange({}, new Date(2026, 0, 1, 9, 0)));
+    expect(screenText(tree)).toContain(REMINDER_PAST_NOTE);
+    expect(screenText(tree)).toContain("2:20 PM");
+
+    vi.setSystemTime(new Date(NOW.getTime() + 60 * 60_000));
+    act(() => handle.current?.present());
+    const text = screenText(tree);
+    expect(text).not.toContain(REMINDER_PAST_NOTE);
+    expect(text).toContain("3:20 PM");
+    expect(text).not.toContain("2:20 PM");
+  });
 });
 
 describe("RemindSheet — dismissed by the menu while closed (#3795, #5173)", () => {

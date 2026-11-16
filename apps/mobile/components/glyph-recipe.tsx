@@ -9,21 +9,24 @@ import { tint } from "@/lib/theme";
  * unfilled. One definition, so a glyph can't drift off it while looking like
  * it complies (#3428); web's is `apps/web/components/ui/duotone.tsx`.
  *
- * The tab bar and the chat cards' eyebrows draw a deliberate second recipe,
- * `glyphPaint` / `GlyphFrame` in `tab-glyphs.tsx`, whose active fill is 18%,
- * so a card's eyebrow and the tab it belongs to read as one family.
+ * The tab bar, the chat cards' eyebrows and the composer + sheet's rows draw
+ * a deliberate second recipe, `glyphPaint` / `GlyphFrame` in `tab-glyphs.tsx`,
+ * whose active fill is 18%, so a card's eyebrow and the tab it belongs to read
+ * as one family. It shares this file's stroke width and neutral fill.
  */
 
-const STROKE_WIDTH = 1.6;
+export const STROKE_WIDTH = 1.6;
 
 /** iconography.md §1: the emphasis fill is the stroke hue at 16–18%. */
 const EMPHASIS_FILL_ALPHA = 0.16;
 
 /**
- * iconography.md §1's neutral fill, "white at 6%". A literal for the reason
- * `tab-glyphs.tsx` gives: no token carries it.
+ * iconography.md §1's neutral fill, "white at 6%" (also the tab bar's inactive
+ * fill). A literal rather than a token read because no token carries it: the
+ * nearest, `border.hairline`, is 8% and semantically a border, so borrowing it
+ * would drift the glyph the next time hairlines are retuned.
  */
-const NEUTRAL_FILL = "rgba(255,255,255,0.06)";
+export const NEUTRAL_FILL = "rgba(255,255,255,0.06)";
 
 /** §2's size for a list row's leading icon, {@link Frame}'s default. */
 const DEFAULT_SIZE = 20;

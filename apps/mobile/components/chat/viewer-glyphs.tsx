@@ -8,7 +8,7 @@ import { Frame, paint } from "@/components/glyph-recipe";
  * `components/control-glyphs.tsx`, drawn at {@link VIEWER_GLYPH_SIZE}. They
  * are control furniture, a verb on a button, so they draw only the stroke
  * recipe's detail strokes, with no silhouette fill. Drawn from
- * `more-glyphs.tsx`'s `Frame` and `paint`, so a change to the recipe reaches
+ * `glyph-recipe.tsx`'s `Frame` and `paint`, so a change to the recipe reaches
  * them too.
  */
 
