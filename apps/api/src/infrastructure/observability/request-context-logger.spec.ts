@@ -140,5 +140,17 @@ describe('RequestContextLogger', () => {
         log.mockRestore();
       }
     });
+
+    it('keeps an Error message readable instead of printing {}', () => {
+      const log = jest
+        .spyOn(console, 'log')
+        .mockImplementation(() => undefined);
+      try {
+        jsonLogger.log(new Error('db timeout'), 'Sweep');
+        expect(String(printed(log).message)).toContain('db timeout');
+      } finally {
+        log.mockRestore();
+      }
+    });
   });
 });

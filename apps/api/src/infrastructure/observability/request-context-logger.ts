@@ -54,7 +54,7 @@ export class RequestContextLogger extends ConsoleLogger {
   protected printAsJson(message: unknown, options: JsonLogOptions): void {
     const { timestamp, ...logObject } = this.getJsonLogObject(message, options);
     const data = parsedObject(message);
-    const line = stringifyRecord({
+    const line = this.stringifyRecord({
       severity: CLOUD_LOGGING_SEVERITY[options.logLevel] ?? 'DEFAULT',
       time: new Date(timestamp).toISOString(),
       ...logObject,
@@ -68,23 +68,27 @@ export class RequestContextLogger extends ConsoleLogger {
     process[options.writeStreamType ?? 'stdout'].write(`${line}\n`);
   }
 
+  /**
+   * Nest's own JSON serializer (Errors, Maps and BigInts inspected, long
+   * output truncated); a record it can't serialize, such as one holding a
+   * cycle, prints with its message inspected instead of being lost.
+   */
+  private stringifyRecord(record: Record<string, unknown>): string {
+    try {
+      return this.stringifyJsonLogObject(record);
+    } catch {
+      return this.stringifyJsonLogObject({
+        ...record,
+        message: inspect(record.message, { breakLength: Infinity }),
+        data: undefined,
+      });
+    }
+  }
+
   protected getJsonLogObject(message: unknown, options: JsonLogOptions) {
     const logObject = super.getJsonLogObject(message, options);
     const requestId = getRequestId();
     return requestId ? { ...logObject, requestId } : logObject;
-  }
-}
-
-/** One line of JSON; a value JSON can't hold (a cycle, a BigInt) prints inspected. */
-function stringifyRecord(record: Record<string, unknown>): string {
-  try {
-    return JSON.stringify(record);
-  } catch {
-    return JSON.stringify({
-      ...record,
-      message: inspect(record.message, { breakLength: Infinity }),
-      data: undefined,
-    });
   }
 }
 
