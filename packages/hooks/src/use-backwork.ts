@@ -276,6 +276,12 @@ export function useConfirmBackworkUpload() {
       is_redacted: boolean;
       /** Save as a draft only the uploader sees, to publish later (#5208). */
       draft?: boolean;
+      /**
+       * `false` for a draft saved with suggested boxes nobody looked at
+       * (#5252): it waits for its uploader's check before the AI fill reads
+       * it or it can be published.
+       */
+      pages_checked?: boolean;
     }) => {
       const result = await client.POST("/v1/backwork", { body });
       // On the status (see `throwUnlessOk`): an empty-bodied failure must not
@@ -306,6 +312,11 @@ export type BackworkDraft = {
     ai_filled?: string[];
     /** How the last AI fill ended, when one ran. */
     ai_fill?: "filled" | "nothing_found" | "unreadable";
+    /**
+     * Saved from a folder with suggested boxes nobody has looked at yet
+     * (#5252): no AI fill and no publish until its uploader checks the pages.
+     */
+    pages_unchecked?: true;
   };
 };
 
@@ -446,6 +457,66 @@ export function useFillBackworkDraft() {
     },
     onSuccess: ({ draft }) => {
       if (!draft) return;
+      queryClient.setQueryData(
+        ["backwork", chapterId, "drafts"],
+        (current: unknown) =>
+          Array.isArray(current)
+            ? current.map((row: BackworkDraft) =>
+                row.id === draft.id ? draft : row,
+              )
+            : current,
+      );
+    },
+  });
+}
+
+/**
+ * A five-minute link to one of the caller's drafts' stored file, for showing
+ * its pages to check (#5252). Fetched on demand rather than cached: it
+ * expires, and the page reads it once.
+ */
+export function useFetchBackworkDraftFileUrl() {
+  const client = useFrappClient();
+  return useCallback(
+    async (id: string, signal?: AbortSignal) => {
+      const result = await client.GET("/v1/backwork/drafts/{id}/file", {
+        params: { path: { id } },
+        signal,
+      });
+      throwUnlessOk(result);
+      return (result.data as { url: string }).url;
+    },
+    [client],
+  );
+}
+
+/**
+ * Marks a draft's pages checked (#5252), so the AI fill may read it and it
+ * can be published. When the uploader added boxes, `replacement` is the file
+ * flattened again and uploaded through `upload-url`, which replaces the
+ * stored one. Puts the checked draft in the cached list at once.
+ */
+export function useCheckBackworkDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["backwork", "check-backwork-draft"],
+    mutationFn: async ({
+      id,
+      replacement,
+    }: {
+      id: string;
+      replacement?: { storage_path: string; file_hash: string };
+    }) => {
+      const result = await client.POST("/v1/backwork/drafts/{id}/check", {
+        params: { path: { id } },
+        body: replacement ?? {},
+      });
+      throwUnlessOk(result);
+      return result.data as unknown as BackworkDraft;
+    },
+    onSuccess: (draft) => {
       queryClient.setQueryData(
         ["backwork", chapterId, "drafts"],
         (current: unknown) =>

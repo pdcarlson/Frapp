@@ -188,9 +188,8 @@ export class ConfirmBackworkUploadDto extends BackworkFieldsDto {
   draft?: boolean;
 
   @ApiPropertyOptional({
-    default: true,
     description:
-      'For a draft: false when it was saved without anyone looking at its pages (bulk upload\'s "Save the rest"). Such a draft is not read by the AI fill and can\'t be published until POST /v1/backwork/drafts/{id}/check.',
+      'For a draft: false when it was saved without anyone looking at its pages (bulk upload\'s "Save the rest"). Such a draft is not read by the AI fill and can\'t be published until POST /v1/backwork/drafts/{id}/check. Left out, the draft counts as checked.',
   })
   @IsOptional()
   @IsStrictBoolean()

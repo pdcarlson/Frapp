@@ -8618,11 +8618,8 @@ export interface components {
             is_redacted: boolean;
             /** @description Save as a draft: the fields are kept as sent, not filed, and only the uploader sees the file until it is published (POST /v1/backwork/drafts/publish). */
             draft?: boolean;
-            /**
-             * @description For a draft: false when it was saved without anyone looking at its pages (bulk upload's "Save the rest"). Such a draft is not read by the AI fill and can't be published until POST /v1/backwork/drafts/{id}/check.
-             * @default true
-             */
-            pages_checked: boolean;
+            /** @description For a draft: false when it was saved without anyone looking at its pages (bulk upload's "Save the rest"). Such a draft is not read by the AI fill and can't be published until POST /v1/backwork/drafts/{id}/check. Left out, the draft counts as checked. */
+            pages_checked?: boolean;
         };
         BackworkFieldsDto: {
             title?: string | null;

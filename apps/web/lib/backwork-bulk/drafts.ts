@@ -94,6 +94,9 @@ export function cellPatch(
  * the press: a Student Copy has to have been flattened.
  */
 export function publishBlocker(draft: BackworkDraft): string | null {
+  if (draft.draft_fields?.pages_unchecked) {
+    return "Check its pages before you publish it.";
+  }
   if (isUnredactedStudentCopy(draft.draft_fields?.document_variant, draft.is_redacted)) {
     return "Uploaded as-is, so it can't be a Student Copy.";
   }
