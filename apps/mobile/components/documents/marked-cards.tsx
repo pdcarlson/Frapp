@@ -147,7 +147,7 @@ function CardList({
             accessibilityHint={
               item.kind === "folder"
                 ? "Shows this folder's files."
-                : "Opens in your browser."
+                : "Opens it to preview, save or share."
             }
             accessibilityState={busy ? { busy: true } : undefined}
             accessibilityActions={
