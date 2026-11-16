@@ -717,11 +717,20 @@ const AGGREGATION_RB = `
     end
 `;
 
+// What a roster pod's source holds by default: one use of each category it was
+// audited for, so the fixture passes until a test changes it.
+const SAMPLE_USE = {
+  [UD]: "UserDefaults.standard",
+  NSPrivacyAccessedAPICategoryFileTimestamp: "let d = attrs[.modificationDate]; url.creationDate",
+};
+const auditedSource = (name) =>
+  MANIFESTLESS_REQUIRED_REASON_USERS.get(name).map((category) => SAMPLE_USE[category]).join("; ");
+
 function fixture({
   infoPlist = rosterInfoPlist(),
   manifest = currentManifest(),
   declared = DECLARED,
-  podSource = "UserDefaults.standard",
+  podSource,
   modules,
   location = "requestForegroundPermissionsAsync();",
   reactNativeSource = "[[NSUserDefaults standardUserDefaults] boolForKey:k]; mach_absolute_time();",
@@ -744,7 +753,7 @@ function fixture({
   put("node_modules/expo-location/ios/Requesters/MotionActivityPermissionRequester.swift", motionRequester);
   for (const name of MANIFESTLESS_REQUIRED_REASON_USERS.keys()) {
     podDirs[name] = join(root, "node_modules", name, "ios");
-    put(`node_modules/${name}/ios/Module.swift`, podSource);
+    put(`node_modules/${name}/ios/Module.swift`, podSource ?? auditedSource(name));
   }
   put("node_modules/react-native/React/Base/RCTThing.mm", reactNativeSource);
   if (aggregation !== null) put("node_modules/react-native/scripts/cocoapods/privacy_manifest_utils.rb", aggregation);
