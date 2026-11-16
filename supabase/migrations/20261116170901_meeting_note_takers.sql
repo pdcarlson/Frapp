@@ -68,7 +68,7 @@ create index if not exists idx_meeting_notes_chapter
   on public.meeting_notes (chapter_id);
 
 comment on table public.meeting_notes is
-  'Each note-taker''s own notes for one meeting''s unposted minutes. Kept only while the minutes are a draft. See 20261116134926_meeting_note_takers.sql.';
+  'Each note-taker''s own notes for one meeting''s unposted minutes. Kept only while the minutes are a draft. See 20261116170901_meeting_note_takers.sql.';
 
 -- 2. ------------------------------------------------------------------------
 
@@ -86,10 +86,10 @@ alter table public.meeting_drafts
   );
 
 comment on column public.meeting_drafts.sources is
-  'What this draft was written from: each note-taker''s notes and the transcript, with how each ranks. Kept only with the draft. See 20261116134926_meeting_note_takers.sql.';
+  'What this draft was written from: each note-taker''s notes and the transcript, with how each ranks. Kept only with the draft. See 20261116170901_meeting_note_takers.sql.';
 
 comment on column public.meeting_drafts.source_user_ids is
-  'The members whose notes this draft was written from. The draft goes with any of their accounts. See 20261116134926_meeting_note_takers.sql.';
+  'The members whose notes this draft was written from. The draft goes with any of their accounts. See 20261116170901_meeting_note_takers.sql.';
 
 create index if not exists idx_meeting_drafts_source_user_ids
   on public.meeting_drafts using gin (source_user_ids);
