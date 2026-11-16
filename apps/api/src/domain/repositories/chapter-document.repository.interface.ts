@@ -42,6 +42,7 @@ export interface IChapterDocumentRepository {
       | 'byte_size'
       | 'drive_modified_at'
       | 'drive_url'
+      | 'drive_held_folder_id'
     >,
   ): Promise<void>;
   /**

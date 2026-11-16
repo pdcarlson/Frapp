@@ -5881,6 +5881,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/google-drive/copies/{id}/open-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move a Drive copy that sync held back into the folder Drive put it in, which more people may see. */
+        post: operations["GoogleDriveController_openUp_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/google-drive/sync": {
         parameters: {
             query?: never;
@@ -9530,6 +9547,8 @@ export interface components {
             drive_modified_at: string | null;
             /** @description The file's page in Google Drive */
             drive_url: string | null;
+            /** @description Set on a Drive copy that Drive moved into a folder more people may see (#5220): that folder's id. The copy stays in its folder until someone who manages documents opens it up (`POST /v1/google-drive/copies/:id/open-up`). */
+            drive_held_folder_id: string | null;
             /** @description Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's */
             who_can_see: string[] | null;
         };
@@ -9579,6 +9598,8 @@ export interface components {
             pinned_at: string | null;
             /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents */
             who_can_see: string[] | null;
+            /** @description The Google Drive folder it mirrors, or null (#5220). Its name follows Drive, so it is renamed and deleted there, not here. */
+            drive_folder_id: string | null;
         };
         DocumentAccessOptionsDto: {
             options: components["schemas"]["ChannelAccessOptionDto"][];
@@ -11407,6 +11428,8 @@ export interface components {
             skipped_count: number;
             /** @description Whether a sync is due or running now */
             syncing: boolean;
+            /** @description Who sees what it brings in (#5220): the list its top folder in Documents started with. Null for everyone who can open Documents. The folder's own list counts from then on. */
+            who_can_see: string[] | null;
         };
         GoogleDriveStatusDto: {
             /** @description Whether this server offers Google Drive. False until its service account is set; clients then hide the option. */
@@ -11421,6 +11444,8 @@ export interface components {
              * @example https://drive.google.com/drive/folders/1AbC...
              */
             folder_link: string;
+            /** @description Who sees what the folder brings in (#5220): null or left out for everyone who can open Documents, or the tiers, roles and groups named. Its top folder in Documents starts with this list and each new subfolder with its parent's. Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
         };
         MeetingRecordingUploadDto: {
             /** Format: uuid */
@@ -24972,6 +24997,36 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_openUp_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
             };
             /** @description Error */
             default: {

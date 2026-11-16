@@ -19760,6 +19760,52 @@
         ]
       }
     },
+    "/v1/google-drive/copies/{id}/open-up": {
+      "post": {
+        "operationId": "GoogleDriveController_openUp_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Move a Drive copy that sync held back into the folder Drive put it in, which more people may see.",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/google-drive/sync": {
       "post": {
         "operationId": "GoogleDriveController_syncNow_v1",
@@ -30301,6 +30347,11 @@
             "nullable": true,
             "description": "The file's page in Google Drive"
           },
+          "drive_held_folder_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Set on a Drive copy that Drive moved into a folder more people may see (#5220): that folder's id. The copy stays in its folder until someone who manages documents opens it up (`POST /v1/google-drive/copies/:id/open-up`)."
+          },
           "who_can_see": {
             "nullable": true,
             "description": "Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's",
@@ -30327,6 +30378,7 @@
           "drive_file_id",
           "drive_modified_at",
           "drive_url",
+          "drive_held_folder_id",
           "who_can_see"
         ]
       },
@@ -30475,6 +30527,11 @@
             "items": {
               "type": "string"
             }
+          },
+          "drive_folder_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Google Drive folder it mirrors, or null (#5220). Its name follows Drive, so it is renamed and deleted there, not here."
           }
         },
         "required": [
@@ -30484,7 +30541,8 @@
           "sort_order",
           "created_at",
           "pinned_at",
-          "who_can_see"
+          "who_can_see",
+          "drive_folder_id"
         ]
       },
       "DocumentAccessOptionsDto": {
@@ -35326,6 +35384,14 @@
           "syncing": {
             "type": "boolean",
             "description": "Whether a sync is due or running now"
+          },
+          "who_can_see": {
+            "nullable": true,
+            "description": "Who sees what it brings in (#5220): the list its top folder in Documents started with. Null for everyone who can open Documents. The folder's own list counts from then on.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -35336,7 +35402,8 @@
           "last_synced_at",
           "synced_count",
           "skipped_count",
-          "syncing"
+          "syncing",
+          "who_can_see"
         ]
       },
       "GoogleDriveStatusDto": {
@@ -35374,6 +35441,15 @@
             "type": "string",
             "description": "The Drive folder link (or its id)",
             "example": "https://drive.google.com/drive/folders/1AbC..."
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who sees what the folder brings in (#5220): null or left out for everyone who can open Documents, or the tiers, roles and groups named. Its top folder in Documents starts with this list and each new subfolder with its parent's. Not empty. The caller's own tier and every tier above it are always kept.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [

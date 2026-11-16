@@ -28,7 +28,7 @@ const ACCESS_ENTRY_MESSAGE =
   'each entry must be tier:<id>, role:<id> or group:<id>, as GET /v1/documents/access-options lists them';
 
 /** The decorators every who-can-see field shares (#3642), as a channel's list. */
-function WhoCanSee(description: string): PropertyDecorator {
+export function WhoCanSee(description: string): PropertyDecorator {
   return (target, key) => {
     ApiPropertyOptional({
       type: [String],
@@ -372,6 +372,13 @@ export class ChapterDocumentDto {
   })
   drive_url: string | null;
   @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "Set on a Drive copy that Drive moved into a folder more people may see (#5220): that folder's id. The copy stays in its folder until someone who manages documents opens it up (`POST /v1/google-drive/copies/:id/open-up`).",
+  })
+  drive_held_folder_id: string | null;
+  @ApiProperty({
     type: [String],
     nullable: true,
     description:
@@ -400,6 +407,13 @@ export class DocumentFolderDto {
       'Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents',
   })
   who_can_see: string[] | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The Google Drive folder it mirrors, or null (#5220). Its name follows Drive, so it is renamed and deleted there, not here.',
+  })
+  drive_folder_id: string | null;
 }
 
 /** One grid preview link (#4647): the document and its inline signed URL. */

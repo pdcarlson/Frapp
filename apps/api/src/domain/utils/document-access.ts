@@ -124,3 +124,23 @@ export function tiersAListKeeps(
     .filter((tier) => tier.position <= actor.rank)
     .map((tier) => channelAccessEntry('tier', tier.id));
 }
+
+/**
+ * Whether moving a file from a folder with list `current` into one with list
+ * `next` can't let anyone new see it (#5220, Drive sync never widens).
+ * Judged by entries alone, so it errs toward "wider": `null` (everyone) is
+ * no wider than anything only when `current` is also `null`, and a list is no
+ * wider when every entry it holds is also in `current`. A `role:` entry
+ * whose role sits in a tier `current` names still counts as wider, which
+ * holds a move a person would call safe rather than ever letting one through
+ * that isn't.
+ */
+export function listNoWiderThan(
+  next: readonly string[] | null | undefined,
+  current: readonly string[] | null | undefined,
+): boolean {
+  if (current == null) return true;
+  if (next == null) return false;
+  const held = new Set(current);
+  return next.every((entry) => held.has(entry));
+}

@@ -34,4 +34,10 @@ export interface ChapterDriveConnection {
   /** Files the last finished sync left out (type, size, or the limit). */
   skipped_count: number;
   created_at: string;
+  /**
+   * The list the connection's top folder starts with (#5220): `null` is
+   * everyone who can open Documents. After that, the folder's own list is the
+   * one that counts, and officers change it in Documents.
+   */
+  who_can_see: string[] | null;
 }

@@ -117,6 +117,8 @@ export interface DocumentAccessOptions {
 
 const NOT_FOUND_DOCUMENT = 'Document not found';
 const NOT_FOUND_FOLDER = 'Folder not found';
+const SYNCED_FOLDER_IS_DRIVES =
+  'This folder comes from Google Drive. Rename or delete it in Drive, and Documents follows.';
 
 @Injectable()
 export class ChapterDocumentService {
@@ -275,7 +277,7 @@ export class ChapterDocumentService {
    * keeps the caller's tier and every tier above (Paul's pick 3), so nobody
    * hides a file from those who outrank them, or from themselves.
    */
-  private async checkedList(
+  async checkedList(
     chapterId: string,
     userId: string,
     list: string[] | null | undefined,
@@ -321,6 +323,37 @@ export class ChapterDocumentService {
     const updated = await this.documentRepo.setWhoCanSee(id, chapterId, list);
     if (!updated) throw new NotFoundException(NOT_FOUND_DOCUMENT);
     return updated;
+  }
+
+  /**
+   * Moves a held Drive copy into the folder Drive put it in (#5220): sync
+   * left it where it was because more people may see that folder. Only for
+   * a member who manages documents (the route's permission) and sees both
+   * the copy and that folder. The next sync finds it where Drive has it.
+   */
+  async openUpDriveCopy(
+    id: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChapterDocument> {
+    const document = await this.visibleDocument(id, chapterId, userId);
+    if (document.drive_held_folder_id === null) {
+      throw new ConflictException(
+        'This file is already where Google Drive has it',
+      );
+    }
+    const folder = await this.visibleFolder(
+      document.drive_held_folder_id,
+      chapterId,
+      userId,
+    );
+    await this.documentRepo.updateDriveCopy(id, chapterId, {
+      folder: folder.name,
+      drive_held_folder_id: null,
+    });
+    const moved = await this.documentRepo.findById(id, chapterId);
+    if (!moved) throw new NotFoundException(NOT_FOUND_DOCUMENT);
+    return moved;
   }
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
@@ -736,6 +769,11 @@ export class ChapterDocumentService {
     }
 
     const isRename = rename !== undefined && rename !== folder.name;
+    // A synced folder's name follows Drive's (#5220): the next sync would put
+    // it back, so the rename belongs in Drive.
+    if (isRename && folder.drive_folder_id !== null) {
+      throw new ConflictException(SYNCED_FOLDER_IS_DRIVES);
+    }
 
     if (isRename) {
       const conflict = await this.folderRepo.findByName(chapterId, rename);
@@ -751,18 +789,6 @@ export class ChapterDocumentService {
       userId,
       changes.who_can_see,
     );
-    // Drive sync still files its copies by folder name, so a rename in Drive
-    // would move a limited synced folder's copies into a new open one. Until
-    // sync keeps lists across renames (#5220), a folder holding Drive copies
-    // can't be limited.
-    if (whoCanSee) {
-      const copies = await this.documentRepo.findDriveCopies(chapterId);
-      if (copies.some((copy) => copy.folder === folder.name)) {
-        throw new ConflictException(
-          "A folder synced from Google Drive can't be limited yet",
-        );
-      }
-    }
     const patch = {
       ...(changes.sort_order !== undefined
         ? { sort_order: changes.sort_order }
@@ -805,7 +831,11 @@ export class ChapterDocumentService {
     chapterId: string,
     userId: string,
   ): Promise<void> {
-    await this.visibleFolder(id, chapterId, userId);
+    const folder = await this.visibleFolder(id, chapterId, userId);
+    // The next sync would only make it again (#5220).
+    if (folder.drive_folder_id !== null) {
+      throw new ConflictException(SYNCED_FOLDER_IS_DRIVES);
+    }
 
     // Spec: deleting a folder moves its documents to the root level — no
     // cascading delete of files — and a restricted folder's list goes with
