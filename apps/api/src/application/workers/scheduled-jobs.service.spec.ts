@@ -895,6 +895,7 @@ describe('ScheduledJobsService', () => {
       expect(materializeTaskSeriesCopy).toHaveBeenCalledWith({
         seriesId: 'series-1',
         expectedNext: '2026-11-23',
+        expectedLatestDueAt: '2026-11-17T02:00:00.000Z',
         occurrenceDate: '2026-11-23',
         dueAt: '2026-11-24T02:00:00.000Z',
         latestDueAt: '2026-11-24T02:00:00.000Z',

@@ -16,6 +16,7 @@ import {
   type TaskView,
 } from '#domain/entities/task.entity';
 import { nextTaskRepeatDate, type TaskRepeatRule } from '@repo/validation';
+import { taskDueInstant } from '#domain/utils/member-nudge';
 import { TaskService, type UpdateTaskInput } from './task.service';
 import {
   copyDueInstant,
@@ -61,9 +62,13 @@ export class TaskSeriesService {
    *   that copy; `null` ends the series after it.
    * - A new rule or time of day re-steps the next copy's day and moment.
    * - The open copy takes the edit as a task edit does (a new assignee
-   *   starts it over, a moved due releases its reminders), unless it is
-   *   marked done. Its day moves only when it is the task being edited and
-   *   `due_date` is sent.
+   *   starts it over, a new time releases its reminders), unless it is
+   *   marked done or already past due: an overdue copy is a record.
+   * - It keeps its day. Moving one copy's day is "This task only", so a
+   *   `due_date` other than the copy's own is refused rather than leaving
+   *   the schedule on the old day.
+   * - Every check runs before anything is written, so a refused edit
+   *   changes nothing.
    * - Reference photos aren't part of a series; sent here they go on the
    *   edited task alone, when it is the open copy.
    */
@@ -75,7 +80,19 @@ export class TaskSeriesService {
   ): Promise<TaskView> {
     const { task, series } = await this.liveSeriesOf(taskId, chapterId);
     const oldRule = this.ruleOf(series);
-    const open = await this.taskRepo.findLatestSeriesCopy(chapterId, series.id);
+    const latest = await this.taskRepo.findLatestSeriesCopy(
+      chapterId,
+      series.id,
+    );
+    const open = latest && this.isOpenForEdit(latest) ? latest : null;
+    if (
+      input.due_date !== undefined &&
+      input.due_date?.slice(0, 10) !== (open ?? task).due_date.slice(0, 10)
+    ) {
+      throw new BadRequestException(
+        'To move one task to another day, choose This task only',
+      );
+    }
 
     const patch: Partial<TaskSeries> = {};
     if (input.title !== undefined) {
@@ -138,11 +155,13 @@ export class TaskSeriesService {
       if (dueTime !== series.due_time) patch.due_time = dueTime;
     }
 
-    // The open copy's day: where a new rule counts from and the next copy is
-    // stepped from.
+    // The latest copy's day in the pattern: where a new rule counts from
+    // and the next copy is stepped from. A copy past due still marks the
+    // series' place; its trigger then fires at once, and the sweep makes the
+    // next copy still to come.
     const openDay = (
-      open?.occurrence_date ??
-      open?.due_date ??
+      latest?.occurrence_date ??
+      latest?.due_date ??
       series.next_due_date
     ).slice(0, 10);
     if (ending) {
@@ -182,7 +201,7 @@ export class TaskSeriesService {
     }
 
     const editedIsOpen = open?.id === task.id;
-    if (open && this.isOpenForEdit(open)) {
+    if (open) {
       const copyInput: UpdateTaskInput = {
         title: input.title,
         description: input.description,
@@ -190,10 +209,9 @@ export class TaskSeriesService {
         point_reward: input.point_reward,
         proof_kind: input.proof_kind,
       };
-      if (editedIsOpen && input.due_date !== undefined) {
-        copyInput.due_date = input.due_date;
-        copyInput.due_at = input.due_at;
-      } else if ('due_time' in patch) {
+      if ('due_time' in patch) {
+        // On the copy's own day, in the series' zone: built here, so it
+        // always falls on that day and the copy edit can't refuse it.
         copyInput.due_date = open.due_date;
         copyInput.due_at = dueTime
           ? copyDueInstant(
@@ -206,22 +224,29 @@ export class TaskSeriesService {
       if (editedIsOpen && input.reference_photo_paths !== undefined) {
         copyInput.reference_photo_paths = input.reference_photo_paths;
       }
-      const updated = await this.taskService.update(
-        open.id,
-        chapterId,
-        actorId,
-        copyInput,
-      );
-      if (editedIsOpen) return updated;
+      try {
+        const updated = await this.taskService.update(
+          open.id,
+          chapterId,
+          actorId,
+          copyInput,
+        );
+        if (editedIsOpen) return updated;
+      } catch (error) {
+        // The one way the checked edit still fails: an officer confirmed the
+        // copy in the meantime, and a done copy never changes. The series
+        // change stands, as it would have for a copy confirmed first.
+        if (!(error instanceof BadRequestException)) throw error;
+      }
     }
     return this.taskService.findById(task.id, chapterId);
   }
 
   /**
    * Delete "All upcoming tasks": end the series, and delete its open copy
-   * when no one has started it (to do, no proof, no step checked). Every
-   * other copy stays, done or not. A series already ended is only the
-   * second half.
+   * when it is still to come and no one has started it (to do, no proof, no
+   * step checked). Every other copy stays: done, confirmed or overdue. A
+   * series already ended is only the second half.
    */
   async delete(
     taskId: string,
@@ -259,7 +284,11 @@ export class TaskSeriesService {
       chapterId,
       task.series_id,
     );
-    if (!open || !(await this.isUntouched(chapterId, open))) {
+    if (
+      !open ||
+      !this.isOpenForEdit(open) ||
+      !(await this.isUntouched(chapterId, open))
+    ) {
       return { deleted_task_id: null };
     }
     await this.taskService.delete(open.id, chapterId);
@@ -296,9 +325,17 @@ export class TaskSeriesService {
     return rule;
   }
 
-  /** "All upcoming tasks" reaches the open copy until it is marked done. */
+  /**
+   * Whether "All upcoming tasks" reaches this copy: still to come (not past
+   * its due) and not marked done. An overdue copy is a missed record, which
+   * the series never changes or deletes.
+   */
   private isOpenForEdit(copy: Task): boolean {
-    return copy.status !== TaskStatus.COMPLETED && !copy.points_awarded;
+    return (
+      copy.status !== TaskStatus.COMPLETED &&
+      !copy.points_awarded &&
+      taskDueInstant(copy) > Date.now()
+    );
   }
 
   private async isUntouched(chapterId: string, copy: Task): Promise<boolean> {

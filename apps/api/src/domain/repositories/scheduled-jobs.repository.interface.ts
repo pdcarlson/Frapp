@@ -93,6 +93,11 @@ export interface MaterializeTaskSeriesCopyInput {
   seriesId: string;
   /** The `next_due_date` the sweep read: the compare-and-set. */
   expectedNext: string;
+  /**
+   * The `latest_due_at` the sweep read, compared too: an officer's change of
+   * the time of day moves it without moving `next_due_date`.
+   */
+  expectedLatestDueAt: string;
   /** The copy's day. Later than `expectedNext` when days were skipped. */
   occurrenceDate: string;
   /** The copy's due moment, when it has a time of day. */

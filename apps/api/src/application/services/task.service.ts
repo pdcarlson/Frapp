@@ -164,7 +164,7 @@ export interface CreateTaskInput {
    * Repeat on this rule (#5119): the task is the first copy of a new series,
    * and the sweep makes each next copy once the latest one is due.
    */
-  recurrence_rule?: string;
+  recurrence_rule?: string | null;
   /**
    * When set together with `client_message_id`, an interactive task card is
    * posted to this chat channel after the row commits (the `/task` slash
@@ -784,7 +784,8 @@ export class TaskService {
    * series starts with. Null for a task that doesn't repeat.
    */
   private checkedRepeat(input: CreateTaskInput, dueAt: string | null) {
-    if (input.recurrence_rule === undefined) return null;
+    // Null, like omitted, is a task that doesn't repeat.
+    if (input.recurrence_rule == null) return null;
     const rule = readTaskRule(input.recurrence_rule);
     if (!rule) throw new BadRequestException("That repeat rule can't be read");
     const start = planSeriesStart(rule, input.due_date.slice(0, 10), dueAt);

@@ -238,6 +238,7 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
       {
         p_series_id: input.seriesId,
         p_expected_next: input.expectedNext,
+        p_expected_latest_due_at: input.expectedLatestDueAt,
         p_occurrence_date: input.occurrenceDate,
         p_due_at: input.dueAt,
         p_latest_due_at: input.latestDueAt,

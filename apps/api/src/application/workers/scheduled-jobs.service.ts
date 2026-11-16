@@ -993,6 +993,7 @@ export class ScheduledJobsService {
     const copy = await this.repository.materializeTaskSeriesCopy({
       seriesId: series.id,
       expectedNext: series.next_due_date,
+      expectedLatestDueAt: series.latest_due_at,
       occurrenceDate: plan.occurrenceDate,
       dueAt: plan.dueAt,
       latestDueAt: plan.latestDueAt,

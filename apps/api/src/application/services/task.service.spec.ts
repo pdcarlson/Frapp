@@ -243,6 +243,15 @@ describe('TaskService', () => {
       expect(mockTaskRepo.createSeries).not.toHaveBeenCalled();
     });
 
+    it('makes a plain task for a null rule', async () => {
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+
+      await create({ recurrence_rule: null });
+
+      expect(mockTaskRepo.create).toHaveBeenCalled();
+      expect(mockTaskRepo.createSeries).not.toHaveBeenCalled();
+    });
+
     it('refuses a rule it cannot read, writing nothing', async () => {
       await expect(create({ recurrence_rule: 'WEEKLY' })).rejects.toThrow(
         BadRequestException,

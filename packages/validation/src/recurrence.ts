@@ -1,6 +1,6 @@
 /**
- * The repeat rules a Frapp event may carry, and how a series is stepped from
- * one: the one place the API's series generator and both apps' Repeat
+ * The repeat rules a Frapp event or task may carry, and how a series is
+ * stepped from one: the one place the API's series generator and both apps' Repeat
  * controls read, so the meetings the server makes and the caption an officer
  * reads cannot describe different series.
  *
@@ -27,7 +27,8 @@
  *   `BYDAY` (weekly: the days, `MO,TH`; monthly: the nth weekday, `2TU`, or
  *   `-1FR` for the last), exactly one of `COUNT` (meetings, the first
  *   included) or `UNTIL` (`YYYYMMDD`, the last day a meeting may fall on, in
- *   the rule's zone), and `TZID` (the zone whose wall clock the series keeps,
+ *   the rule's zone) for an event, and at most one for a repeating task,
+ *   which with neither never ends (§ Repeating tasks below, #5119), and `TZID` (the zone whose wall clock the series keeps,
  *   so a 7 PM meeting stays at 7 PM across a DST change). Chapters keep no
  *   zone of their own, so the zone is the creating officer's, which is
  *   the chapter's in practice. A monthly rule without `BYDAY` meets on its

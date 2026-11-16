@@ -889,12 +889,13 @@ export interface Database {
       };
       /**
        * `20261116044044` (#5119) — the sweep's next copy, compare-and-set on
-       * the series' `next_due_date`. Empty when another write got there first.
+       * the series' `next_due_date` and `latest_due_at`. Empty when another write got there first.
        */
       materialize_task_series_copy: {
         Args: {
           p_series_id: string;
           p_expected_next: string;
+          p_expected_latest_due_at: string;
           p_occurrence_date: string;
           p_due_at: string | null;
           p_latest_due_at: string;

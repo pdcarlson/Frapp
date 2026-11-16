@@ -25,14 +25,14 @@ A lightweight task management system for chapter operations.
   - **Edit wherever a task is shown** (#4512, Shawn, 2026-11-12: a task made from Activity couldn't be edited there). The task card, which is how chat and Activity show a task on both apps, offers the same Edit to a `tasks:manage` holder once its live task is read, until the task is confirmed (`canEditCardTask` in `packages/hooks/src/task-card.ts`, the board's rule). On web it is a pencil beside the card's status badge that turns the card into the board's edit form (Escape or Cancel puts it back); on mobile it is an Edit button after the card's actions that opens the board's Edit task sheet. Anyone else, and a confirmed task, gets no Edit.
 - **A task can carry photos and ask for proof** (Shawn, 2026-11-12, #4565; Paul, 2026-11-12, #4635), the way Asana and Todoist tasks carry attachments and TaskRabbit and Thumbtack ask for a photo of the finished job. See § Photos.
 - Task statuses: TODO → IN_PROGRESS → COMPLETED. Tasks past their due date that are not COMPLETED are flagged as OVERDUE.
-- **OVERDUE is derived, not stored.** `toDisplayStatus` synthesizes it on every read for a task whose stored status is TODO or IN_PROGRESS and whose `due_date` is before today (UTC), or, for a task with a time, whose `due_at` has passed (#4003). An optimistic write must therefore predict the *rendered* status, or an overdue row visibly flips back on the next refetch.
-- **Read paths carry `stored_status` alongside `status`.** Because TODO+past-due and IN_PROGRESS+past-due both render as OVERDUE with `completed_at: null`, the rendered value alone cannot tell a client which transition is legal — and the assignee transition table (`VALID_ASSIGNEE_TRANSITIONS` in `apps/api/src/application/services/task.service.ts`) is checked against the *stored* status. So every read returns both: `status` (rendered, what to display and group by) and `stored_status` (persisted, what to compute the next action from). `POST /v1/tasks` returns the freshly created row and does **not** derive, so it carries no `stored_status`; the next read does. The field is additive — the server remains the only authority on whether a transition is accepted.
+- **OVERDUE is derived, not stored.** `toDisplayStatus` synthesizes it on every read for a task whose stored status is TODO or IN_PROGRESS and whose `due_date` is before today (UTC), or, for a task with a time, whose `due_at` has passed (#4003). An optimistic write must therefore predict the _rendered_ status, or an overdue row visibly flips back on the next refetch.
+- **Read paths carry `stored_status` alongside `status`.** Because TODO+past-due and IN_PROGRESS+past-due both render as OVERDUE with `completed_at: null`, the rendered value alone cannot tell a client which transition is legal — and the assignee transition table (`VALID_ASSIGNEE_TRANSITIONS` in `apps/api/src/application/services/task.service.ts`) is checked against the _stored_ status. So every read returns both: `status` (rendered, what to display and group by) and `stored_status` (persisted, what to compute the next action from). `POST /v1/tasks` returns the freshly created row and does **not** derive, so it carries no `stored_status`; the next read does. The field is additive — the server remains the only authority on whether a transition is accepted.
 
   Three rules follow for clients, and all three are load-bearing:
 
   1. **Badges and grouping read `status`; every action affordance reads `stored_status`.** Mixing the two on one row lets a task sit in the Overdue column offering an action its rendered status contradicts.
-  2. **An optimistic write must patch *both*.** Patching only `status` leaves the affordance keyed to a stale value, so after a successful write the control does not change, the member acts again, and the second attempt is rejected — a failure reported for something that already worked.
-  3. **A stored `OVERDUE` maps to the same affordance as `TODO`** (`VALID_ASSIGNEE_TRANSITIONS` accepts `OVERDUE → IN_PROGRESS`), and an *absent* `stored_status` — a client talking to a pre-#1051 server — is ambiguous only when `status` is `OVERDUE`, since derivation can produce no other value. Offer nothing in that one case rather than guessing.
+  2. **An optimistic write must patch _both_.** Patching only `status` leaves the affordance keyed to a stale value, so after a successful write the control does not change, the member acts again, and the second attempt is rejected — a failure reported for something that already worked.
+  3. **A stored `OVERDUE` maps to the same affordance as `TODO`** (`VALID_ASSIGNEE_TRANSITIONS` accepts `OVERDUE → IN_PROGRESS`), and an _absent_ `stored_status` — a client talking to a pre-#1051 server — is ambiguous only when `status` is `OVERDUE`, since derivation can produce no other value. Offer nothing in that one case rather than guessing.
 
 ## Photos
 
@@ -61,7 +61,7 @@ Photos and proof (#4565, Shawn, 2026-11-12; reshaped by #4635, Paul, 2026-11-12)
 
 (#4295 step 4, Paul, 2026-11-11: "Repeat on a schedule, as event series do." Shawn picked one copy at a time on the calendar, 2026-11-15, #5119.)
 
-- **The schedule** is the event rule format ([events.md](events.md) § Recurring events; `packages/validation/src/recurrence.ts`): `FREQ` daily, weekly or monthly, every 1 to 30, the weekdays or the day or nth weekday of the month, and the officer's zone (`TZID`). It ends after `COUNT` copies (2 to 120, the first included), on an `UNTIL` day, or **never**, which events don't allow (`parseTaskRepeatRule`). A copy keeps its time of day on that zone's wall clock across a DST change.
+- **The schedule** is the event rule format ([events.md § Event Creation](events.md#event-creation), its Recurring events bullet; `packages/validation/src/recurrence.ts`): `FREQ` daily, weekly or monthly, every 1 to 30, the weekdays or the day or nth weekday of the month, and the officer's zone (`TZID`). It ends after `COUNT` copies (2 to 120, the first included), on an `UNTIL` day, or **never**, which events don't allow (`parseTaskRepeatRule`). A copy keeps its time of day on that zone's wall clock across a DST change.
 - **Each time is its own task** (a copy): its own due, status, proof, send-back, sign-off and points, confirmed through `confirm_task_completion` like any task, so points are paid per copy. A copy carries `series_id` and `occurrence_date`; reads add `series` (`recurrence_rule`, `next_due_date`, `ended`) so a client can say "Every Monday · next Nov 24". A build that knows nothing of series sees ordinary tasks.
 - **One copy at a time.** Creating a task with a rule makes the series and its first copy in one transaction (`create_task_series`); the assignee gets the usual assignment push. Once the latest copy's due moment passes (its `due_at`, or the end of its day in the rule's zone), the 5-minute timed-task sweep makes the next copy, done or not (`materializeDueTaskSeries`), and pushes it the same way. Days the sweep missed while stopped are skipped rather than made at once, already overdue.
 - **A missed copy stays missed**: overdue, reminded, and confirmed, sent back or deleted by an officer as any task is. It never blocks or carries into the next copy. A copy is a task, so it leaves Activity by Activity's rule like any other, and no future copy exists to fill the Archive.
@@ -69,8 +69,8 @@ Photos and proof (#4565, Shawn, 2026-11-12; reshaped by #4635, Paul, 2026-11-12)
 - **The series stops** when its rule runs out, when an officer ends it, or when its assignee leaves the chapter, which also tells the series' creator. Copies already made stay.
 - **Scopes** on a copy of a live series, worded as the event editors do ("This task only" / "All upcoming tasks"):
   - `instance` (the default) edits or deletes that one copy.
-  - `series` edits the template the next copies are made from and the **open copy** (the latest one) unless it is marked done. A new rule counts from the open copy's day, so its `COUNT` includes it; a new rule or time of day re-steps the next copy. A null rule ends the series after the open copy. If the sweep makes a copy mid-edit, the edit is refused (409) to be retried. Done and earlier copies never change.
-  - Deleting with `series` ends the series and deletes the open copy only if no one has started it (to do, no proof, no step checked). Done, confirmed and overdue copies stay. There is no "this and past".
+  - `series` edits the template the next copies are made from and the **open copy**: the latest copy, while it is still to come (not past its due) and not marked done. A new rule counts from the latest copy's day, so its `COUNT` includes it; a new rule or time of day re-steps the next copy. A null rule ends the series after the latest copy. The open copy keeps its day: moving one copy to another day is `instance` (a `series` edit with another `due_date` is a 400), and the series keeps its schedule either way. Every check runs before anything is written. If the sweep makes a copy mid-edit, the edit is refused (409) to be retried. Done, overdue and earlier copies never change.
+  - Deleting with `series` ends the series and deletes the open copy only if it is still to come and no one has started it (to do, no proof, no step checked). Done, confirmed and overdue copies stay. There is no "this and past".
 - **Reference photos aren't copied**: one stored photo belongs to one task (§ Photos), so photos go on the copy they were added to. The checklist is copied, unchecked.
 - **One assignee** per series. Taking turns through a group is #4295 step 3's to define (#5119 Part 2).
 
@@ -146,14 +146,14 @@ Tasks are surfaced inline in chat as a [chat integration](integrations.md) (slas
 rich renderer + server-originated card).
 
 - **Slash command.** `/task "<title>" @assignee <due date> [points]` (gated on the `tasks`
-  module) creates and assigns a task, mirroring the existing dashboard create. It is a *heavy*
+  module) creates and assigns a task, mirroring the existing dashboard create. It is a _heavy_
   command: the client posts an optimistic `loading` placeholder, calls `POST /v1/tasks` with the
   active `channel_id` + `client_message_id`, and the server posts the rich card after the row
   commits. `tasks:manage` is re-checked server-side and the assignee must be a chapter member.
 - **Assignment card.** The posted `kind="task"` message is an immutable creation-time snapshot
   (`assigner → assignee`, title, due date, point reward). It is server-originated — a client
-  cannot forge it (see `integrations.md` → *Server-originated kinds*).
-- **Live status + inline actions.** The card reads the task's *live* status back through the task
+  cannot forge it (see `integrations.md` → _Server-originated kinds_).
+- **Live status + inline actions.** The card reads the task's _live_ status back through the task
   query (so OVERDUE and lifecycle changes render without mutating the chat row) and carries the
   same lifecycle controls as the dashboard: the assignee can Start / Mark done and a
   `tasks:manage` admin can Confirm / Send back. Actions call the existing task REST endpoints

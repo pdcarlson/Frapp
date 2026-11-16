@@ -109,6 +109,7 @@ describeIntegration('Repeating tasks against live PostgREST (#5119)', () => {
     const input = {
       seriesId,
       expectedNext: '2026-11-23',
+      expectedLatestDueAt: '2026-11-17T02:00:00.000Z',
       occurrenceDate: '2026-11-23',
       dueAt: '2026-11-24T02:00:00.000Z',
       latestDueAt: '2026-11-24T02:00:00.000Z',
@@ -135,6 +136,20 @@ describeIntegration('Repeating tasks against live PostgREST (#5119)', () => {
     expect(await tasks.findSubtasks(chapterId, [latest!.id])).toHaveLength(2);
   });
 
+  it('makes no copy from a plan built on a time the officer has since changed', async () => {
+    const stale = await sweep.materializeTaskSeriesCopy({
+      seriesId,
+      expectedNext: '2026-11-30',
+      expectedLatestDueAt: '2026-11-17T02:00:00.000Z',
+      occurrenceDate: '2026-11-30',
+      dueAt: '2026-12-01T02:00:00.000Z',
+      latestDueAt: '2026-12-01T02:00:00.000Z',
+      nextDueDate: null,
+      end: true,
+    });
+    expect(stale).toBeNull();
+  });
+
   it('writes a series only while next_due_date still matches', async () => {
     expect(
       await tasks.updateSeriesIfNext(chapterId, seriesId, '2026-11-23', {
@@ -154,6 +169,7 @@ describeIntegration('Repeating tasks against live PostgREST (#5119)', () => {
     const last = await sweep.materializeTaskSeriesCopy({
       seriesId,
       expectedNext: '2026-11-30',
+      expectedLatestDueAt: '2026-11-24T02:00:00.000Z',
       occurrenceDate: '2026-11-30',
       dueAt: '2026-12-01T02:00:00.000Z',
       latestDueAt: '2026-12-01T02:00:00.000Z',

@@ -165,14 +165,17 @@ end;
 $$;
 
 -- The sweep's write: make the copy due on `p_occurrence_date` and move the
--- series on, only while the series is live and still expects
--- `p_expected_next` (compare-and-set under a row lock, so two instances
--- racing make one copy). `p_next_due_date` null with `p_end` ends it after
+-- series on, only while the series is live and still holds the
+-- `next_due_date` and `latest_due_at` the sweep planned from
+-- (compare-and-set under a row lock, so two instances racing make one copy,
+-- and an officer's edit of the time of day, which moves `latest_due_at`,
+-- turns a plan made from the old time into a no-op). `p_next_due_date` null with `p_end` ends it after
 -- this copy. Returns the new copy, or nothing when another write got there
 -- first.
 create or replace function public.materialize_task_series_copy(
   p_series_id uuid,
   p_expected_next date,
+  p_expected_latest_due_at timestamptz,
   p_occurrence_date date,
   p_due_at timestamptz,
   p_latest_due_at timestamptz,
@@ -193,6 +196,7 @@ begin
    where id = p_series_id
      and ended_at is null
      and next_due_date = p_expected_next
+     and latest_due_at = p_expected_latest_due_at
    for update;
   if not found then
     return;
@@ -219,7 +223,7 @@ $$;
 -- The roles are absent in bare Postgres (PGlite in CI), so each is guarded.
 revoke execute on function public.insert_task_series_copy(public.task_series, date, timestamptz) from public;
 revoke execute on function public.create_task_series(uuid, uuid, text, text, uuid, int, text, text[], time, text, date, timestamptz, timestamptz, date) from public;
-revoke execute on function public.materialize_task_series_copy(uuid, date, date, timestamptz, timestamptz, date, boolean) from public;
+revoke execute on function public.materialize_task_series_copy(uuid, date, timestamptz, date, timestamptz, timestamptz, date, boolean) from public;
 
 do $$
 declare
@@ -228,7 +232,7 @@ begin
   foreach v_fn in array array[
     'public.insert_task_series_copy(public.task_series, date, timestamptz)',
     'public.create_task_series(uuid, uuid, text, text, uuid, int, text, text[], time, text, date, timestamptz, timestamptz, date)',
-    'public.materialize_task_series_copy(uuid, date, date, timestamptz, timestamptz, date, boolean)'
+    'public.materialize_task_series_copy(uuid, date, timestamptz, date, timestamptz, timestamptz, date, boolean)'
   ] loop
     if exists (select 1 from pg_roles where rolname = 'anon') then
       execute format('revoke execute on function %s from anon', v_fn);

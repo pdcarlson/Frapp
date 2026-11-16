@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { TaskStatus } from '#domain/entities/task.entity';
 import { TestingModule } from '@nestjs/testing';
 import { createUnguardedTestingModule } from '#test/helpers/guard-stubs.factory';
@@ -396,6 +397,66 @@ describe('TaskController', () => {
         'Blurry',
         { requirePhoto: true, actorUserId: 'admin-1' },
       );
+    });
+  });
+
+  describe('repeating tasks (#5119)', () => {
+    beforeEach(() => {
+      taskService.update = jest.fn().mockResolvedValue({ id: 'task-1' });
+    });
+
+    it('sends an "All upcoming tasks" edit, rule and all, to the series', async () => {
+      const rule = 'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=UTC';
+      await controller.update('chapter-1', 'user-1', 'task-1', {
+        scope: 'series',
+        title: 'Kitchen',
+        recurrence_rule: rule,
+      });
+
+      expect(taskSeriesService.update).toHaveBeenCalledWith(
+        'task-1',
+        'chapter-1',
+        'user-1',
+        { title: 'Kitchen', recurrence_rule: rule },
+      );
+      expect(taskService.update).not.toHaveBeenCalled();
+    });
+
+    it('sends a "This task only" edit to the task, without the scope', async () => {
+      await controller.update('chapter-1', 'user-1', 'task-1', {
+        scope: 'instance',
+        title: 'Kitchen',
+      });
+
+      expect(taskService.update).toHaveBeenCalledWith(
+        'task-1',
+        'chapter-1',
+        'user-1',
+        { title: 'Kitchen' },
+      );
+      expect(taskSeriesService.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a rule on a single-task edit', async () => {
+      await expect(
+        controller.update('chapter-1', 'user-1', 'task-1', {
+          recurrence_rule: null,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(taskService.update).not.toHaveBeenCalled();
+    });
+
+    it('sends a delete with scope=series to the series', async () => {
+      const result = await controller.delete('chapter-1', 'task-1', {
+        scope: 'series',
+      });
+
+      expect(taskSeriesService.delete).toHaveBeenCalledWith(
+        'task-1',
+        'chapter-1',
+      );
+      expect(taskService.delete).not.toHaveBeenCalled();
+      expect(result).toEqual({ success: true });
     });
   });
 

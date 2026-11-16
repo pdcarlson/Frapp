@@ -8448,7 +8448,7 @@ export interface components {
              */
             proof_kind?: "none" | "photo" | "link";
             /**
-             * @description On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, unless it is marked done. Done copies never change.
+             * @description On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`).
              * @enum {string}
              */
             scope?: "instance" | "series";
@@ -18232,7 +18232,7 @@ export interface operations {
     TaskController_delete_v1: {
         parameters: {
             query?: {
-                /** @description On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if no one has started it. Done and overdue copies stay. */
+                /** @description On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. */
                 scope?: "instance" | "series";
             };
             header?: never;

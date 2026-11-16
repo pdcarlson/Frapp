@@ -211,6 +211,67 @@ describe('TaskSeriesService (#5119)', () => {
       );
     });
 
+    it('never touches a latest copy that is already past due', async () => {
+      // Due Nov 9, before "now" (Nov 12): an overdue record.
+      repo.findLatestSeriesCopy.mockResolvedValue(
+        copy({
+          id: 'old',
+          due_date: '2026-11-09',
+          due_at: '2026-11-10T02:00:00.000Z',
+          occurrence_date: '2026-11-09',
+        }),
+      );
+
+      await service.update('open', 'ch-1', 'admin-1', {
+        title: 'Kitchen',
+        assignee_id: 'user-2',
+      });
+
+      expect(repo.updateSeriesIfNext).toHaveBeenCalled();
+      expect(tasks.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses moving the open copy to another day, writing nothing', async () => {
+      await expect(
+        service.update('open', 'ch-1', 'admin-1', {
+          due_date: '2026-11-18',
+          due_at: '2026-11-19T02:00:00.000Z',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(repo.updateSeriesIfNext).not.toHaveBeenCalled();
+      expect(tasks.update).not.toHaveBeenCalled();
+    });
+
+    it("accepts the copy's own day sent back with a new time", async () => {
+      await service.update('open', 'ch-1', 'admin-1', {
+        due_date: '2026-11-16',
+        due_at: '2026-11-17T01:00:00.000Z',
+      });
+
+      expect(tasks.update).toHaveBeenCalledWith(
+        'open',
+        'ch-1',
+        'admin-1',
+        expect.objectContaining({
+          due_date: '2026-11-16',
+          due_at: '2026-11-17T01:00:00.000Z',
+        }),
+      );
+    });
+
+    it('keeps the series change when the copy was confirmed mid-edit', async () => {
+      tasks.update.mockRejectedValue(
+        new BadRequestException(
+          'This task was confirmed while you were editing it',
+        ),
+      );
+
+      await expect(
+        service.update('open', 'ch-1', 'admin-1', { title: 'Kitchen' }),
+      ).resolves.toEqual({ id: 'old' });
+      expect(repo.updateSeriesIfNext).toHaveBeenCalled();
+    });
+
     it('refuses a rule it cannot read', async () => {
       await expect(
         service.update('open', 'ch-1', 'admin-1', { recurrence_rule: 'X' }),
@@ -270,6 +331,24 @@ describe('TaskSeriesService (#5119)', () => {
       ['with a link proof', { proof_link: 'https://x.test' }],
     ])('keeps an open copy that is %s', async (_label, over) => {
       repo.findLatestSeriesCopy.mockResolvedValue(copy(over));
+
+      const result = await service.delete('open', 'ch-1');
+
+      expect(tasks.delete).not.toHaveBeenCalled();
+      expect(result).toEqual({ deleted_task_id: null });
+    });
+
+    it('keeps a latest copy that is already overdue', async () => {
+      repo.findSeries.mockResolvedValue([
+        { ...SERIES, ended_at: '2026-11-10T00:00:00.000Z' },
+      ]);
+      repo.findLatestSeriesCopy.mockResolvedValue(
+        copy({
+          due_date: '2026-11-09',
+          due_at: '2026-11-10T02:00:00.000Z',
+          occurrence_date: '2026-11-09',
+        }),
+      );
 
       const result = await service.delete('open', 'ch-1');
 

@@ -478,7 +478,7 @@ export class UpdateTaskDto {
   @ApiPropertyOptional({
     enum: TASK_EDIT_SCOPES,
     description:
-      'On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, unless it is marked done. Done copies never change.',
+      'On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`).',
   })
   @IsOptional()
   @IsIn(TASK_EDIT_SCOPES)
@@ -502,7 +502,7 @@ export class DeleteTaskQueryDto {
   @ApiPropertyOptional({
     enum: TASK_EDIT_SCOPES,
     description:
-      'On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if no one has started it. Done and overdue copies stay.',
+      'On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay.',
   })
   @IsOptional()
   @IsIn(TASK_EDIT_SCOPES)
