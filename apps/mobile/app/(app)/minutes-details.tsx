@@ -48,7 +48,6 @@ import {
 import { StatusChip } from "@/components/status-chip";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { confirmAlert } from "@/lib/minutes/meetings-on";
 import { recorderMeetingId } from "@/lib/minutes/recorder/machine";
 import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -116,7 +115,9 @@ function MinutesDetailsScreenBody() {
           title={
             missing ? MEETING_COPY.missingTitle : MEETING_COPY.loadFailedTitle
           }
-          body={missing ? MEETING_COPY.missingBody : MEETING_COPY.loadFailedBody}
+          body={
+            missing ? MEETING_COPY.missingBody : MEETING_COPY.loadFailedBody
+          }
           onRetry={missing ? undefined : () => void meetingQuery.refetch()}
           isRetrying={meetingQuery.isFetching}
         />
@@ -206,12 +207,8 @@ function LoadedMinutes({
 
   async function handlePost() {
     setProblem(null);
-    const yes = await confirmAlert({
-      title: MEETING_COPY.postConfirmTitle,
-      body: MEETING_COPY.postConfirmBody,
-      confirmLabel: MEETING_COPY.post,
-    });
-    if (!yes) return;
+    // No "are you sure" (Paul, 2026-11-16): posting is the officer's plain
+    // intent, and posted minutes can still be edited.
     // No section is edited on the phone, so the version to post is whatever
     // the server holds now: the one this member just read.
     const fresh = await refetch();
@@ -297,7 +294,11 @@ function LoadedMinutes({
                 {draftState || draftLoading ? (
                   <OnboardingSecondaryButton
                     fill
-                    label={drafting ? MEETING_NOTES_COPY.drafting : MEETING_NOTES_COPY.draft}
+                    label={
+                      drafting
+                        ? MEETING_NOTES_COPY.drafting
+                        : MEETING_NOTES_COPY.draft
+                    }
                     disabled={!draftState}
                     onPress={() => notesRef.current?.present()}
                   />

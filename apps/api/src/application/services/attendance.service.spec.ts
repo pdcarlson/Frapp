@@ -884,9 +884,50 @@ describe('AttendanceService', () => {
       expect(mockAttendanceRepo.update).not.toHaveBeenCalled();
     });
 
-    it('should throw NotFoundException when attendance record does not exist', async () => {
+    it('writes the first row when nobody checked in and the person is a member', async () => {
       mockEventRepo.findById.mockResolvedValue(baseEvent);
       mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        user_id: 'user-1',
+      } as never);
+      const created: EventAttendance = {
+        ...baseAttendance,
+        status: 'PRESENT',
+        marked_by: 'admin-1',
+      };
+      mockAttendanceRepo.createMany.mockResolvedValue([created]);
+
+      const result = await service.updateStatus(
+        'evt-1',
+        'user-1',
+        'ch-1',
+        'PRESENT',
+        null,
+        'admin-1',
+      );
+
+      expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+      );
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledWith([
+        {
+          event_id: 'evt-1',
+          user_id: 'user-1',
+          status: 'PRESENT',
+          check_in_time: null,
+          excuse_reason: null,
+          marked_by: 'admin-1',
+        },
+      ]);
+      expect(mockAttendanceRepo.update).not.toHaveBeenCalled();
+      expect(result).toEqual(created);
+    });
+
+    it('should throw NotFoundException when there is no row and the person is not a member', async () => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
 
       await expect(
         service.updateStatus(
@@ -899,6 +940,7 @@ describe('AttendanceService', () => {
         ),
       ).rejects.toThrow(NotFoundException);
       expect(mockAttendanceRepo.update).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.createMany).not.toHaveBeenCalled();
     });
   });
 

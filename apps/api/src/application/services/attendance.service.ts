@@ -667,7 +667,28 @@ export class AttendanceService {
       userId,
     );
     if (!attendance) {
-      throw new NotFoundException('Attendance record not found');
+      // Nobody checked in and the event required nobody, so there is no row
+      // yet: an officer marking attendance by hand afterwards (minutes
+      // backfill, `spec/behavior/meetings.md` § Attendees) writes the first
+      // one. Only a member of this chapter can be marked.
+      const member = await this.memberRepo.findByUserAndChapter(
+        userId,
+        chapterId,
+      );
+      if (!member) {
+        throw new NotFoundException('Member not found');
+      }
+      const [created] = await this.attendanceRepo.createMany([
+        {
+          event_id: eventId,
+          user_id: userId,
+          status,
+          check_in_time: null,
+          excuse_reason: excuseReason,
+          marked_by: markedBy,
+        },
+      ]);
+      return created;
     }
 
     return this.attendanceRepo.update(attendance.id, {
