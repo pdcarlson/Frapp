@@ -79,6 +79,14 @@ export interface PredictionMarketView {
   my_stakes: PredictionStakerView[];
   /** Why the viewer can't stake right now, or `null` when they can. */
   stake_blocked_reason: string | null;
+  /** Unresolved questions about the result, for whoever decides them. */
+  open_questions: PredictionQuestionView[];
+}
+
+export interface PredictionQuestionView {
+  user_id: string;
+  note: string;
+  created_at: string;
 }
 
 /**
@@ -105,6 +113,10 @@ export class PredictionService {
    * Predictions are off unless a chapter turned them on: unlike the other
    * modules, an absent key means off (spec § Module and permissions). They
    * also need Points, since the stake is points.
+   *
+   * Only what puts points in (asking, staking, opening one) checks this.
+   * Reading, settling, questioning, confirming and voiding stay open with the
+   * module off, so turning it off never strands a stake.
    */
   assertEnabled(enabledModules: EnabledModules): void {
     for (const key of [PREDICTIONS_MODULE, 'points']) {
@@ -162,6 +174,13 @@ export class PredictionService {
     if (new Set(lowered).size !== lowered.length) {
       throw new BadRequestException('Two answers have the same label.');
     }
+    const question = input.question.trim();
+    const settleRule = input.settleRule.trim();
+    if (!question || !settleRule) {
+      throw new BadRequestException(
+        'A prediction needs a question and a rule.',
+      );
+    }
     if (new Date(input.closesAt).getTime() <= Date.now()) {
       throw new BadRequestException('The close time has to be in the future.');
     }
@@ -185,8 +204,8 @@ export class PredictionService {
         created_by: actor.userId,
         settler_id: settlerId,
         named_member_id: namedMemberId,
-        question: input.question.trim(),
-        settle_rule: input.settleRule.trim(),
+        question,
+        settle_rule: settleRule,
         closes_at: input.closesAt,
         // A question naming someone else waits for their OK. Naming yourself
         // is your OK.
@@ -215,12 +234,24 @@ export class PredictionService {
   ): Promise<PredictionMarketView[]> {
     let markets: PredictionMarket[];
     if (filter === 'mine') {
-      const ids = new Set(
-        await this.repo.listMarketIdsStakedBy(actor.chapterId, actor.userId),
+      // Read by id, not by recency: a member never loses track of points
+      // they staked, however many questions came after (spec § Where it lives).
+      const ids = await this.repo.listMarketIdsStakedBy(
+        actor.chapterId,
+        actor.userId,
       );
-      markets = (
-        await this.repo.listMarkets(actor.chapterId, { limit: LIST_LIMIT })
-      ).filter((m) => ids.has(m.id) || m.created_by === actor.userId);
+      const [staked, asked] = await Promise.all([
+        this.repo.listMarkets(actor.chapterId, { ids, limit: LIST_LIMIT }),
+        this.repo.listMarkets(actor.chapterId, {
+          createdBy: actor.userId,
+          limit: LIST_LIMIT,
+        }),
+      ]);
+      const byId = new Map([...staked, ...asked].map((m) => [m.id, m]));
+      markets = [...byId.values()].sort(
+        (a, b) =>
+          b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
+      );
     } else {
       const statuses: PredictionMarketStatus[] | undefined =
         filter === 'open'
@@ -240,6 +271,8 @@ export class PredictionService {
       actor.chapterId,
       actor.userId,
       [...new Set(markets.map((m) => m.channel_id))],
+      // An archived channel's questions still hold points; they stay listed.
+      { includeArchived: true },
     );
     // A question waiting on a named member is theirs and the creator's only.
     const shown = markets.filter(
@@ -257,6 +290,25 @@ export class PredictionService {
     marketId: string,
     input: { answerId: string; amount: number; clientMessageId: string },
   ): Promise<PredictionMarketView> {
+    // A replay returns what the first request did, even once the question
+    // has closed since; the key is checked again under the lock below.
+    const replayed = await this.repo.findStakeByClientMessageId(
+      actor.chapterId,
+      input.clientMessageId,
+    );
+    if (replayed) {
+      const same =
+        replayed.user_id === actor.userId &&
+        replayed.market_id === marketId &&
+        replayed.answer_id === input.answerId &&
+        replayed.amount === input.amount;
+      if (!same)
+        throw this.httpRefusal(
+          new PredictionRefusal('prediction.stake.key_reused'),
+        );
+      return this.get(actor, marketId);
+    }
+
     this.assertEnabled(actor.enabledModules);
     const market = await this.readable(actor, marketId, 'vote');
     const blocked = this.stakeBlockedReason(
@@ -287,33 +339,40 @@ export class PredictionService {
     return this.get(actor, marketId);
   }
 
+  /**
+   * The named member's answer. Agreeing opens the question; declining
+   * removes it (spec § Lifecycle step 2), so nobody else ever sees it.
+   * Returns `null` once removed.
+   */
   async consent(
     actor: PredictionActor,
     marketId: string,
     agree: boolean,
-  ): Promise<PredictionMarketView> {
-    this.assertEnabled(actor.enabledModules);
+  ): Promise<PredictionMarketView | null> {
+    if (agree) this.assertEnabled(actor.enabledModules);
     const market = await this.readable(actor, marketId);
     if (market.named_member_id !== actor.userId) {
       throw new ForbiddenException(
         'Only the member this question names can answer it.',
       );
     }
+    const stale = () =>
+      new ConflictException('This question is no longer waiting on you.');
+    if (!agree) {
+      const removed = await this.repo.deleteAwaitingConsent(
+        actor.chapterId,
+        marketId,
+      );
+      if (!removed) throw stale();
+      return null;
+    }
     const updated = await this.repo.updateMarketStatus(
       actor.chapterId,
       marketId,
       ['awaiting_consent'],
-      agree
-        ? { status: 'open' }
-        : {
-            status: 'voided',
-            voided_by: actor.userId,
-            voided_at: new Date().toISOString(),
-          },
+      { status: 'open' },
     );
-    if (!updated) {
-      throw new ConflictException('This question is no longer waiting on you.');
-    }
+    if (!updated) throw stale();
     return this.view(actor, updated);
   }
 
@@ -321,11 +380,17 @@ export class PredictionService {
     actor: PredictionActor,
     marketId: string,
     input: { answerId: string; note?: string | null; knownAt?: string | null },
+    { manages }: { manages: boolean },
   ): Promise<PredictionMarketView> {
-    this.assertEnabled(actor.enabledModules);
     const market = await this.readable(actor, marketId);
+    // The settler, or an officer who has nothing staked on it: with the
+    // module off, or a settler gone quiet, the points can't be stranded.
     if (market.settler_id !== actor.userId) {
-      throw new ForbiddenException('Only the member settling this can.');
+      if (!manages || (await this.hasStaked(actor, marketId))) {
+        throw new ForbiddenException(
+          'Only the member settling this, or an officer with nothing staked on it, can.',
+        );
+      }
     }
     const answers = await this.repo.listAnswers(actor.chapterId, [marketId]);
     if (!answers.some((a) => a.id === input.answerId)) {
@@ -364,7 +429,6 @@ export class PredictionService {
     marketId: string,
     note: string,
   ): Promise<PredictionMarketView> {
-    this.assertEnabled(actor.enabledModules);
     const market = await this.readable(actor, marketId);
     const inWindow =
       (market.status === 'settled' || market.status === 'questioned') &&
@@ -375,36 +439,54 @@ export class PredictionService {
         'The window to question this result has closed.',
       );
     }
-    const staked = await this.repo.listMarketIdsStakedBy(
-      actor.chapterId,
-      actor.userId,
-    );
-    if (!staked.includes(marketId)) {
+    if (!(await this.hasStaked(actor, marketId))) {
       throw new ForbiddenException(
         'Only members who staked on this can question it.',
       );
     }
-    await this.repo.addQuestion(actor.chapterId, marketId, actor.userId, note);
+    // Status first: once it reads questioned, the sweep can't pay it, so the
+    // note below is never left on a market that paid in between.
     const updated = await this.repo.updateMarketStatus(
       actor.chapterId,
       marketId,
       ['settled', 'questioned'],
       { status: 'questioned' },
     );
-    return this.view(actor, updated ?? market);
+    if (!updated) {
+      throw new ConflictException(
+        'The window to question this result has closed.',
+      );
+    }
+    await this.repo.addQuestion(actor.chapterId, marketId, actor.userId, note);
+    return this.view(actor, updated);
   }
 
   /**
    * `predictions:manage`: confirm a questioned result, or settle it again.
-   * A paid market whose winner changes is reversed and paid again.
+   * A paid market whose winner changes is reversed and paid again. A settled
+   * one nobody questioned waits out its window: an officer can't cut it short.
+   * An officer who staked on it can't decide it.
    */
   async confirm(
     actor: PredictionActor,
     marketId: string,
     answerId: string | null,
   ): Promise<PredictionMarketView> {
-    this.assertEnabled(actor.enabledModules);
-    await this.readable(actor, marketId);
+    const market = await this.readable(actor, marketId);
+    if (
+      market.status === 'settled' &&
+      market.question_window_ends_at !== null &&
+      new Date(market.question_window_ends_at).getTime() > Date.now()
+    ) {
+      throw new ConflictException(
+        'Stakers can still question this result; it pays when the window ends.',
+      );
+    }
+    if (await this.hasStaked(actor, marketId)) {
+      throw new ForbiddenException(
+        'You staked on this question, so another officer has to decide it.',
+      );
+    }
     try {
       const paid = await this.repo.pay(actor.chapterId, marketId, answerId);
       return this.view(actor, paid);
@@ -418,7 +500,6 @@ export class PredictionService {
     marketId: string,
     { manages }: { manages: boolean },
   ): Promise<PredictionMarketView> {
-    this.assertEnabled(actor.enabledModules);
     const market = await this.readable(actor, marketId);
     const settlerBeforePayout =
       market.settler_id === actor.userId &&
@@ -430,10 +511,13 @@ export class PredictionService {
       );
     }
     try {
+      // The read above can be stale by the time the lock is taken: the
+      // function itself refuses a settler's void once the sweep has paid.
       const voided = await this.repo.void(
         actor.chapterId,
         marketId,
         actor.userId,
+        { beforePayoutOnly: !manages },
       );
       return this.view(actor, voided);
     } catch (err) {
@@ -477,6 +561,14 @@ export class PredictionService {
   }
 
   // ── helpers ────────────────────────────────────────────────────────────
+
+  private async hasStaked(
+    actor: PredictionActor,
+    marketId: string,
+  ): Promise<boolean> {
+    const stakes = await this.repo.listStakes(actor.chapterId, [marketId]);
+    return stakes.some((s) => s.user_id === actor.userId);
+  }
 
   private async assertMember(chapterId: string, userId: string): Promise<void> {
     const member = await this.memberRepo.findByUserAndChapter(
@@ -565,6 +657,10 @@ export class PredictionService {
         );
       case 'prediction.market.not_settled':
         return new ConflictException('This question has not been settled yet.');
+      case 'prediction.market.paid':
+        return new ConflictException(
+          'This question has paid; only an officer can void it now.',
+        );
       case 'prediction.market.questioned':
         return new ConflictException(
           'This result was questioned; an officer decides it.',
@@ -588,13 +684,21 @@ export class PredictionService {
   ): Promise<PredictionMarketView[]> {
     if (markets.length === 0) return [];
     const ids = markets.map((m) => m.id);
-    const [answers, stakes, isAlumni] = await Promise.all([
+    const [answers, stakes, questions, isAlumni] = await Promise.all([
       this.repo.listAnswers(actor.chapterId, ids),
       this.repo.listStakes(actor.chapterId, ids),
+      this.repo.listOpenQuestions(actor.chapterId, ids),
       this.rbac.isAlumni(actor.chapterId, actor.userId),
     ]);
     return markets.map((market) => ({
       market,
+      open_questions: questions
+        .filter((q) => q.market_id === market.id)
+        .map((q) => ({
+          user_id: q.user_id,
+          note: q.note,
+          created_at: q.created_at,
+        })),
       ...summarize(
         answers.filter((a) => a.market_id === market.id),
         stakes.filter((s) => s.market_id === market.id),
@@ -610,7 +714,10 @@ export function summarize(
   answers: PredictionAnswer[],
   stakes: PredictionStake[],
   viewerId: string,
-): Omit<PredictionMarketView, 'market' | 'stake_blocked_reason'> {
+): Omit<
+  PredictionMarketView,
+  'market' | 'stake_blocked_reason' | 'open_questions'
+> {
   const total = stakes.reduce((sum, s) => sum + s.amount, 0);
   const byKey = new Map<string, PredictionStakerView>();
   for (const s of stakes) {

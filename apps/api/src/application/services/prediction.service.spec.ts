@@ -104,6 +104,8 @@ function build() {
     listStakes: jest.fn().mockResolvedValue([]),
     listMarketIdsStakedBy: jest.fn().mockResolvedValue([]),
     listOpenQuestions: jest.fn().mockResolvedValue([]),
+    findStakeByClientMessageId: jest.fn().mockResolvedValue(null),
+    deleteAwaitingConsent: jest.fn().mockResolvedValue(true),
     createMarket: jest
       .fn()
       .mockImplementation((input) => Promise.resolve(market(input))),
@@ -152,6 +154,9 @@ function build() {
   );
   return { service, repo, memberRepo, channelAccess, rbac };
 }
+
+const NOT_OFFICER = { manages: false };
+const OFFICER = { manages: true };
 
 const createInput = {
   channelId: 'channel-1',
@@ -227,6 +232,7 @@ describe('PredictionService', () => {
       ['one answer', { answers: ['Yes'] }],
       ['a blank answer', { answers: ['Yes', '  '] }],
       ['two answers alike', { answers: ['Yes', ' yes'] }],
+      ['a question of only spaces', { question: '   ' }],
       ['a close time already past', { closesAt: '2020-01-01T00:00:00Z' }],
       [
         'a named member who also settles',
@@ -304,14 +310,20 @@ describe('PredictionService', () => {
 
     it('lists the questions a member staked on or asked under mine', async () => {
       const { service, repo } = build();
-      repo.listMarkets.mockResolvedValue([
-        market({ id: 'staked' }),
-        market({ id: 'asked', created_by: MEMBER }),
-        market({ id: 'other' }),
-      ]);
       repo.listMarketIdsStakedBy.mockResolvedValue(['staked']);
+      repo.listMarkets.mockImplementation((_c, options) =>
+        Promise.resolve(
+          options.ids
+            ? [market({ id: 'staked', created_at: '2026-11-01T00:00:00Z' })]
+            : [market({ id: 'asked', created_by: MEMBER })],
+        ),
+      );
       const views = await service.list(actor(MEMBER), 'mine');
-      expect(views.map((v) => v.market.id)).toEqual(['staked', 'asked']);
+      expect(views.map((v) => v.market.id)).toEqual(['asked', 'staked']);
+      expect(repo.listMarkets).toHaveBeenCalledWith(
+        CHAPTER,
+        expect.objectContaining({ ids: ['staked'] }),
+      );
     });
 
     it('looks up whether the viewer is alumni once per list, not once per question', async () => {
@@ -401,8 +413,34 @@ describe('PredictionService', () => {
     );
   });
 
+  describe('stake replay', () => {
+    const input = { answerId: 'yes', amount: 5, clientMessageId: 'key' };
+
+    it('returns the original result for a replayed key, even after the question closed', async () => {
+      const { service, repo } = build();
+      repo.findStakeByClientMessageId.mockResolvedValue(
+        stake(MEMBER, 'yes', 5),
+      );
+      repo.findMarket.mockResolvedValue(
+        market({ closes_at: '2020-01-01T00:00:00Z' }),
+      );
+      await expect(
+        service.stake(actor(MEMBER), 'market-1', input),
+      ).resolves.toEqual(expect.objectContaining({ total_staked: 0 }));
+      expect(repo.placeStake).not.toHaveBeenCalled();
+    });
+
+    it('refuses a key already used for a different stake', async () => {
+      const { service, repo } = build();
+      repo.findStakeByClientMessageId.mockResolvedValue(stake(MEMBER, 'no', 5));
+      await expect(
+        service.stake(actor(MEMBER), 'market-1', input),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
   describe('consent', () => {
-    it('opens the question when the named member agrees, and voids it when they decline', async () => {
+    it('opens the question when the named member agrees, and removes it when they decline', async () => {
       const { service, repo } = build();
       repo.findMarket.mockResolvedValue(
         market({ status: 'awaiting_consent', named_member_id: NAMED }),
@@ -414,12 +452,14 @@ describe('PredictionService', () => {
         ['awaiting_consent'],
         { status: 'open' },
       );
-      await service.consent(actor(NAMED), 'market-1', false);
-      expect(repo.updateMarketStatus).toHaveBeenLastCalledWith(
+      // Declining removes it, so the chapter never sees a question its
+      // subject refused.
+      await expect(
+        service.consent(actor(NAMED), 'market-1', false),
+      ).resolves.toBeNull();
+      expect(repo.deleteAwaitingConsent).toHaveBeenCalledWith(
         CHAPTER,
         'market-1',
-        ['awaiting_consent'],
-        expect.objectContaining({ status: 'voided', voided_by: NAMED }),
       );
     });
 
@@ -438,11 +478,21 @@ describe('PredictionService', () => {
     it('lets only the settler name the winner, and opens a 24-hour window', async () => {
       const { service, repo } = build();
       await expect(
-        service.settle(actor(CREATOR), 'market-1', { answerId: 'yes' }),
+        service.settle(
+          actor(CREATOR),
+          'market-1',
+          { answerId: 'yes' },
+          NOT_OFFICER,
+        ),
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       const before = Date.now();
-      await service.settle(actor(SETTLER), 'market-1', { answerId: 'yes' });
+      await service.settle(
+        actor(SETTLER),
+        'market-1',
+        { answerId: 'yes' },
+        NOT_OFFICER,
+      );
       const patch = repo.updateMarketStatus.mock.calls[0][3];
       expect(repo.updateMarketStatus.mock.calls[0][2]).toEqual(['open']);
       expect(patch).toEqual(
@@ -459,13 +509,20 @@ describe('PredictionService', () => {
     it('refuses an answer from another question, and a known time in the future', async () => {
       const { service } = build();
       await expect(
-        service.settle(actor(SETTLER), 'market-1', { answerId: 'maybe' }),
+        service.settle(
+          actor(SETTLER),
+          'market-1',
+          { answerId: 'maybe' },
+          NOT_OFFICER,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
       await expect(
-        service.settle(actor(SETTLER), 'market-1', {
-          answerId: 'yes',
-          knownAt: FUTURE,
-        }),
+        service.settle(
+          actor(SETTLER),
+          'market-1',
+          { answerId: 'yes', knownAt: FUTURE },
+          NOT_OFFICER,
+        ),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -473,7 +530,12 @@ describe('PredictionService', () => {
       const { service, repo } = build();
       repo.updateMarketStatus.mockResolvedValue(null);
       await expect(
-        service.settle(actor(SETTLER), 'market-1', { answerId: 'yes' }),
+        service.settle(
+          actor(SETTLER),
+          'market-1',
+          { answerId: 'yes' },
+          NOT_OFFICER,
+        ),
       ).rejects.toBeInstanceOf(ConflictException);
     });
   });
@@ -489,7 +551,7 @@ describe('PredictionService', () => {
     it('lets a staker question a result inside the window', async () => {
       const { service, repo } = build();
       repo.findMarket.mockResolvedValue(settled(60_000));
-      repo.listMarketIdsStakedBy.mockResolvedValue(['market-1']);
+      repo.listStakes.mockResolvedValue([stake(MEMBER, 'yes', 5)]);
       await service.question(actor(MEMBER), 'market-1', 'The score was wrong');
       expect(repo.addQuestion).toHaveBeenCalledWith(
         CHAPTER,
@@ -513,10 +575,88 @@ describe('PredictionService', () => {
       ).rejects.toBeInstanceOf(ForbiddenException);
 
       repo.findMarket.mockResolvedValue(settled(-60_000));
-      repo.listMarketIdsStakedBy.mockResolvedValue(['market-1']);
+      repo.listStakes.mockResolvedValue([stake(MEMBER, 'yes', 5)]);
       await expect(
         service.question(actor(MEMBER), 'market-1', 'Hm'),
       ).rejects.toBeInstanceOf(ConflictException);
+    });
+  });
+
+  describe('question races', () => {
+    it('files nothing when the sweep paid the market first', async () => {
+      const { service, repo } = build();
+      repo.findMarket.mockResolvedValue(
+        market({
+          status: 'settled',
+          question_window_ends_at: new Date(Date.now() + 1000).toISOString(),
+        }),
+      );
+      repo.listStakes.mockResolvedValue([stake(MEMBER, 'yes', 5)]);
+      repo.updateMarketStatus.mockResolvedValue(null);
+      await expect(
+        service.question(actor(MEMBER), 'market-1', 'Late'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(repo.addQuestion).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('officer settle and confirm', () => {
+    it('lets an officer with nothing staked settle, and not one who staked', async () => {
+      const { service, repo } = build();
+      await service.settle(
+        actor(MEMBER),
+        'market-1',
+        { answerId: 'yes' },
+        OFFICER,
+      );
+      expect(repo.updateMarketStatus).toHaveBeenCalledTimes(1);
+
+      repo.listStakes.mockResolvedValue([stake(MEMBER, 'no', 5)]);
+      await expect(
+        service.settle(actor(MEMBER), 'market-1', { answerId: 'yes' }, OFFICER),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('confirms a questioned result, and pays it in the market’s chapter', async () => {
+      const { service, repo, channelAccess } = build();
+      repo.findMarket.mockResolvedValue(market({ status: 'questioned' }));
+      await service.confirm(actor(MEMBER), 'market-1', 'no');
+      expect(channelAccess.assertChannelAccess).toHaveBeenCalled();
+      expect(repo.pay).toHaveBeenCalledWith(CHAPTER, 'market-1', 'no');
+    });
+
+    it('works with the module off, so a stake is never stranded', async () => {
+      const { service, repo } = build();
+      repo.findMarket.mockResolvedValue(market({ status: 'questioned' }));
+      await service.confirm(actor(MEMBER, {}), 'market-1', null);
+      expect(repo.pay).toHaveBeenCalled();
+      await service.void(actor(MEMBER, {}), 'market-1', OFFICER);
+      expect(repo.void).toHaveBeenCalled();
+      await service.get(actor(MEMBER, {}), 'market-1');
+    });
+
+    it('won’t cut an unquestioned window short', async () => {
+      const { service, repo } = build();
+      repo.findMarket.mockResolvedValue(
+        market({
+          status: 'settled',
+          question_window_ends_at: new Date(Date.now() + 60_000).toISOString(),
+        }),
+      );
+      await expect(
+        service.confirm(actor(MEMBER), 'market-1', null),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(repo.pay).not.toHaveBeenCalled();
+    });
+
+    it('refuses an officer who staked on it', async () => {
+      const { service, repo } = build();
+      repo.findMarket.mockResolvedValue(market({ status: 'paid' }));
+      repo.listStakes.mockResolvedValue([stake(MEMBER, 'no', 5)]);
+      await expect(
+        service.confirm(actor(MEMBER), 'market-1', 'no'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repo.pay).not.toHaveBeenCalled();
     });
   });
 
@@ -524,14 +664,19 @@ describe('PredictionService', () => {
     it('lets the settler void before payout, and only predictions:manage after', async () => {
       const { service, repo } = build();
       await service.void(actor(SETTLER), 'market-1', { manages: false });
-      expect(repo.void).toHaveBeenCalledWith(CHAPTER, 'market-1', SETTLER);
+      // The function re-checks payout under its lock for the settler.
+      expect(repo.void).toHaveBeenCalledWith(CHAPTER, 'market-1', SETTLER, {
+        beforePayoutOnly: true,
+      });
 
       repo.findMarket.mockResolvedValue(market({ status: 'paid' }));
       await expect(
         service.void(actor(SETTLER), 'market-1', { manages: false }),
       ).rejects.toBeInstanceOf(ForbiddenException);
       await service.void(actor(MEMBER), 'market-1', { manages: true });
-      expect(repo.void).toHaveBeenLastCalledWith(CHAPTER, 'market-1', MEMBER);
+      expect(repo.void).toHaveBeenLastCalledWith(CHAPTER, 'market-1', MEMBER, {
+        beforePayoutOnly: false,
+      });
     });
 
     it('refuses any other member', async () => {

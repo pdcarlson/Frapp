@@ -37,6 +37,7 @@ import {
   ListPredictionsQueryDto,
   PlacePredictionStakeDto,
   PredictionConsentDto,
+  PredictionConsentResultDto,
   PredictionMarketViewDto,
   QuestionPredictionDto,
   SettlePredictionDto,
@@ -71,7 +72,6 @@ export class PredictionController {
     @Query() query: ListPredictionsQueryDto,
   ): Promise<PredictionMarketView[]> {
     const actor = this.actor(chapterId, userId, enabledModules);
-    this.predictions.assertEnabled(enabledModules);
     return this.predictions.list(actor, query.filter ?? 'open');
   }
 
@@ -85,7 +85,6 @@ export class PredictionController {
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
   ): Promise<PredictionMarketView> {
     const actor = this.actor(chapterId, userId, enabledModules);
-    this.predictions.assertEnabled(enabledModules);
     return this.predictions.get(actor, id);
   }
 
@@ -134,9 +133,10 @@ export class PredictionController {
 
   @Post(':id/consent')
   @ApiOperation({
-    summary: 'The member a prediction names agrees to it, or withdraws it',
+    summary:
+      'The member a prediction names agrees to it, or declines and it is removed',
   })
-  @ApiOkResponse({ type: PredictionMarketViewDto })
+  @ApiOkResponse({ type: PredictionConsentResultDto })
   @HttpCode(200)
   async consent(
     @Param('id', ParseUUIDPipe) id: string,
@@ -144,14 +144,17 @@ export class PredictionController {
     @CurrentUser('id') userId: string,
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
     @Body() dto: PredictionConsentDto,
-  ): Promise<PredictionMarketView> {
+  ): Promise<{ prediction: PredictionMarketView | null }> {
     const actor = this.actor(chapterId, userId, enabledModules);
-    return this.predictions.consent(actor, id, dto.agree);
+    return {
+      prediction: await this.predictions.consent(actor, id, dto.agree),
+    };
   }
 
   @Post(':id/settle')
   @ApiOperation({
-    summary: 'The settler names the winning answer; it pays after 24 hours',
+    summary:
+      'The settler (or predictions:manage with nothing staked) names the winning answer; it pays after 24 hours',
   })
   @ApiOkResponse({ type: PredictionMarketViewDto })
   @HttpCode(200)
@@ -163,11 +166,16 @@ export class PredictionController {
     @Body() dto: SettlePredictionDto,
   ): Promise<PredictionMarketView> {
     const actor = this.actor(chapterId, userId, enabledModules);
-    return this.predictions.settle(actor, id, {
-      answerId: dto.answer_id,
-      note: dto.note ?? null,
-      knownAt: dto.known_at ?? null,
-    });
+    return this.predictions.settle(
+      actor,
+      id,
+      {
+        answerId: dto.answer_id,
+        note: dto.note ?? null,
+        knownAt: dto.known_at ?? null,
+      },
+      { manages: await this.manages(chapterId, userId) },
+    );
   }
 
   @Post(':id/questions')
@@ -219,18 +227,22 @@ export class PredictionController {
     @CurrentUser('id') userId: string,
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
   ): Promise<PredictionMarketView> {
+    return this.predictions.void(
+      this.actor(chapterId, userId, enabledModules),
+      id,
+      { manages: await this.manages(chapterId, userId) },
+    );
+  }
+
+  /** Whether the caller holds `predictions:manage` (or `*`). */
+  private async manages(chapterId: string, userId: string): Promise<boolean> {
     const permissions = await this.rbac.getEffectivePermissions(
       chapterId,
       userId,
     );
-    return this.predictions.void(
-      this.actor(chapterId, userId, enabledModules),
-      id,
-      {
-        manages:
-          permissions.includes('*') ||
-          permissions.includes(SystemPermissions.PREDICTIONS_MANAGE),
-      },
+    return (
+      permissions.includes('*') ||
+      permissions.includes(SystemPermissions.PREDICTIONS_MANAGE)
     );
   }
 

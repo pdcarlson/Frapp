@@ -72,13 +72,21 @@ export class SupabasePredictionRepository implements IPredictionRepository {
 
   async listMarkets(
     chapterId: string,
-    options: { statuses?: PredictionMarketStatus[]; limit: number },
+    options: {
+      statuses?: PredictionMarketStatus[];
+      ids?: string[];
+      createdBy?: string;
+      limit: number;
+    },
   ): Promise<PredictionMarket[]> {
+    if (options.ids && options.ids.length === 0) return [];
     let q = this.supabase
       .from('prediction_markets')
       .select('*')
       .eq('chapter_id', chapterId);
     if (options.statuses?.length) q = q.in('status', options.statuses);
+    if (options.ids) q = q.in('id', options.ids);
+    if (options.createdBy) q = q.eq('created_by', options.createdBy);
     const { data, error } = await q
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
@@ -132,17 +140,47 @@ export class SupabasePredictionRepository implements IPredictionRepository {
 
   async listOpenQuestions(
     chapterId: string,
-    marketId: string,
+    marketIds: string[],
   ): Promise<PredictionQuestion[]> {
+    if (marketIds.length === 0) return [];
     const { data, error } = await this.supabase
       .from('prediction_questions')
       .select('*')
       .eq('chapter_id', chapterId)
-      .eq('market_id', marketId)
+      .in('market_id', marketIds)
       .is('resolved_at', null)
       .order('created_at', { ascending: true });
     if (error) throw new SupabaseQueryError(error);
     return data ?? [];
+  }
+
+  async findStakeByClientMessageId(
+    chapterId: string,
+    clientMessageId: string,
+  ): Promise<PredictionStake | null> {
+    const { data, error } = await this.supabase
+      .from('prediction_stakes')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('client_message_id', clientMessageId)
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async deleteAwaitingConsent(
+    chapterId: string,
+    marketId: string,
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('prediction_markets')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('id', marketId)
+      .eq('status', 'awaiting_consent')
+      .select('id');
+    if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
   }
 
   async createMarket(
@@ -266,11 +304,13 @@ export class SupabasePredictionRepository implements IPredictionRepository {
     chapterId: string,
     marketId: string,
     by: string,
+    options: { beforePayoutOnly?: boolean } = {},
   ): Promise<PredictionMarket> {
     const { data, error } = await this.supabase.rpc('void_prediction_market', {
       p_chapter_id: chapterId,
       p_market_id: marketId,
       p_by: by,
+      p_before_payout_only: options.beforePayoutOnly ?? false,
     });
     if (error) throw refusalOrQueryError(error);
     return data;

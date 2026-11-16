@@ -1,6 +1,6 @@
 # Predictions
 
-Status: **intent, not built** ([#5133](https://github.com/frapplive/Frapp/issues/5133)). Nothing below exists in code yet; each rule is what the build has to meet.
+Status: **partly built** ([#5133](https://github.com/frapplive/Frapp/issues/5133)). Built: the tables, the stake, pay and void functions, the API under `/v1/predictions`, the payout sweep and the two permissions. Not built yet: the chat card, the Predictions list on web and phone, the module's place in Chapter settings, @mention naming, and the notifications. Until those land, a rule below about a screen is what the build has to meet.
 
 Members stake house points on the outcome of a chapter question ("Will at least 90% of members check in at chapter on Sunday?", "Who wins the IM football final?") and watch a live chance move as people stake, the way Kalshi, Polymarket and Manifold show a price as a percent. The person who settles the question picks the answer once it is known, and the points staked on the losing answers go to the members who staked on the winning one.
 
@@ -37,7 +37,8 @@ Every movement is a `point_transactions` row, under a new category `PREDICTION`,
 | --- | --- | --- |
 | Stake | `-stake` for the staker | `market_id`, `answer_id` |
 | Payout | `+payout` for each winner | `market_id`, `answer_id`, `kind: "payout"` |
-| Refund (void, or nobody on the winner) | `+stake` back to each staker | `market_id`, `kind: "refund"` |
+| Refund (nobody on the winner, or a stake after the answer was known) | `+stake` back to each staker | `market_id`, `kind: "refund"` |
+| Void | `+stake` back to each staker, after any correction rows | `market_id`, `kind: "void_refund"` (kept apart from `refund` so a void reads as one in the ledger) |
 | Re-settle after a question | inverse rows for the earlier payouts, then the new payouts | `market_id`, `kind: "correction"` |
 
 - **A stake is idempotent** on `client_message_id`, as `POST /v1/points/adjust` is: a replay returns the original row and a reused key for a different stake is refused with 409.
@@ -47,13 +48,15 @@ Every movement is a `point_transactions` row, under a new category `PREDICTION`,
 ## Lifecycle
 
 1. **Open.** Anyone holding `predictions:create` (on the default Member role, as `polls:create` is) makes a market in a channel they can post in, with a question, answers, a written settle rule ("Yes if the chapter event on Sunday, November 22 shows at least 90% of active members checked in") and a close time.
-2. **Waiting for a named member.** A question naming a member stays closed to stakes until that member taps Agree; Decline removes it. A member is named by @mention in the question; an officer can also mark a question as naming someone the creator didn't mention.
+2. **Waiting for a named member.** A question naming a member stays closed to stakes until that member taps Agree; Decline removes it. Until then only its creator and that member can see it. A member is named by @mention in the question; an officer can also mark a question as naming someone the creator didn't mention. (Built so far: the creator names the member directly; the @mention and the officer's mark come with the card.)
 3. **Closed.** At the close time staking stops. The card says "Waiting to settle".
-4. **Settled.** The settler picks the winning answer and may add a note ("We raised $4,210"). They may also set **when the answer became known**; stakes made after that moment are refunded before payout, so nobody stakes on a sure thing.
-5. **Question window.** For 24 hours any member who staked can tap "Question this" with a note. A questioned result waits for a member holding `predictions:manage` (on exec roles) to confirm it or re-settle it.
+4. **Settled.** The settler, or a `predictions:manage` holder with nothing staked on it, picks the winning answer and may add a note ("We raised $4,210"). They may also set **when the answer became known**; stakes made after that moment are refunded before payout, so nobody stakes on a sure thing.
+5. **Question window.** For 24 hours any member who staked can tap "Question this" with a note. A questioned result waits for a member holding `predictions:manage` (on exec roles), who has nothing staked on it, to confirm it or re-settle it. An unquestioned result can't be confirmed early: it pays when the window ends.
 6. **Paid.** After the window, or once a question is resolved, payouts are written and the card shows the result and the biggest winners.
 
 **Void** is open to the settler before payout and to `predictions:manage` at any point. It refunds every stake. A market whose winning answer has no stakes is refunded the same way. After payout, only `predictions:manage` can void or re-settle, and either one writes correction rows: the inverse of each earlier payout, then the refunds or new payouts.
+
+**Deleting the channel** a market lives in voids every market in it that hasn't paid, refunding its stakes, before the channel goes; a paid market's rows already net out.
 
 **Deleting the card** is not open to its sender or to `channels:manage` once anyone has staked: the message's Delete is replaced by Void for `predictions:manage`, which voids first and then removes the card. Otherwise deleting a losing card would hand its creator a free refund.
 
@@ -72,7 +75,7 @@ Every movement is a `point_transactions` row, under a new category `PREDICTION`,
 
 ## Module and permissions
 
-- A `predictions` module, **off by default**, turned on in Chapter settings, Modules. Turning it off freezes staking and creating, keeps cards readable, and never strands points: open markets can still be settled or voided by `predictions:manage`.
+- A `predictions` module, **off by default**, turned on in Chapter settings, Modules. Turning it off freezes staking and creating, keeps cards readable, and never strands points: open markets can still be settled or voided by `predictions:manage`. Unlike the other modules, a chapter that never set the key has it off, so a client must read it as `enabled_modules.predictions === true`, not through `isModuleEnabled`.
 - New permissions: `predictions:create` (Member), `predictions:manage` (exec roles).
 - Reporting a card works as it does for any chat message; `predictions:manage` removing a market voids and refunds it.
 

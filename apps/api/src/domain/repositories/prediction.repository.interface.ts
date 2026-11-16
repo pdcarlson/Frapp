@@ -48,9 +48,15 @@ export interface IPredictionRepository {
     chapterId: string,
     clientMessageId: string,
   ): Promise<PredictionMarket | null>;
+  /** Newest first. `ids` and `createdBy` narrow it further when given. */
   listMarkets(
     chapterId: string,
-    options: { statuses?: PredictionMarketStatus[]; limit: number },
+    options: {
+      statuses?: PredictionMarketStatus[];
+      ids?: string[];
+      createdBy?: string;
+      limit: number;
+    },
   ): Promise<PredictionMarket[]>;
   /** Answers of these markets, ordered by position. */
   listAnswers(
@@ -64,10 +70,21 @@ export interface IPredictionRepository {
   ): Promise<PredictionStake[]>;
   /** Market ids this member has staked on. */
   listMarketIdsStakedBy(chapterId: string, userId: string): Promise<string[]>;
+  /** Unresolved questions on these markets, oldest first. */
   listOpenQuestions(
     chapterId: string,
-    marketId: string,
+    marketIds: string[],
   ): Promise<PredictionQuestion[]>;
+  /** The stake a replay key placed, if any. */
+  findStakeByClientMessageId(
+    chapterId: string,
+    clientMessageId: string,
+  ): Promise<PredictionStake | null>;
+  /**
+   * Removes a market still waiting on its named member's consent; `false` when
+   * it no longer is. No stake can exist on one yet.
+   */
+  deleteAwaitingConsent(chapterId: string, marketId: string): Promise<boolean>;
 
   /** Inserts the market and its answers; answers in the order given. */
   createMarket(
@@ -105,10 +122,12 @@ export interface IPredictionRepository {
     answerId: string | null,
     options?: { unquestionedOnly?: boolean },
   ): Promise<PredictionMarket>;
+  /** `beforePayoutOnly` (the settler) refuses a market that has paid. */
   void(
     chapterId: string,
     marketId: string,
     by: string,
+    options?: { beforePayoutOnly?: boolean },
   ): Promise<PredictionMarket>;
 }
 
@@ -122,6 +141,7 @@ export const PREDICTION_REFUSAL_CODES = [
   'prediction.stake.insufficient_points',
   'prediction.market.not_settled',
   'prediction.market.questioned',
+  'prediction.market.paid',
   'prediction.market.voided',
 ] as const;
 

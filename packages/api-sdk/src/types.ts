@@ -4307,7 +4307,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** The member a prediction names agrees to it, or withdraws it */
+        /** The member a prediction names agrees to it, or declines and it is removed */
         post: operations["PredictionController_consent_v1"];
         delete?: never;
         options?: never;
@@ -4324,7 +4324,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** The settler names the winning answer; it pays after 24 hours */
+        /** The settler (or predictions:manage with nothing staked) names the winning answer; it pays after 24 hours */
         post: operations["PredictionController_settle_v1"];
         delete?: never;
         options?: never;
@@ -9375,6 +9375,12 @@ export interface components {
             answer_id: string;
             amount: number;
         };
+        PredictionQuestionViewDto: {
+            /** Format: uuid */
+            user_id: string;
+            note: string;
+            created_at: string;
+        };
         PredictionMarketViewDto: {
             market: components["schemas"]["PredictionMarketDto"];
             answers: components["schemas"]["PredictionAnswerViewDto"][];
@@ -9383,6 +9389,8 @@ export interface components {
             my_stakes: components["schemas"]["PredictionStakerViewDto"][];
             /** @description Why the viewer can't stake right now; null when they can */
             stake_blocked_reason: string | null;
+            /** @description Unresolved questions about the result */
+            open_questions: components["schemas"]["PredictionQuestionViewDto"][];
         };
         CreatePredictionDto: {
             /**
@@ -9432,6 +9440,10 @@ export interface components {
         PredictionConsentDto: {
             /** @description true opens the question; false withdraws it */
             agree: boolean;
+        };
+        PredictionConsentResultDto: {
+            /** @description The opened question, or null once a decline removed it */
+            prediction: components["schemas"]["PredictionMarketViewDto"] | null;
         };
         SettlePredictionDto: {
             /**
@@ -21043,7 +21055,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                    "application/json": components["schemas"]["PredictionConsentResultDto"];
                 };
             };
             /** @description Error */

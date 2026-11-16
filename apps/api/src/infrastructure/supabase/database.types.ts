@@ -1307,7 +1307,12 @@ export interface Database {
       };
       /** `20261116135639` (#5133) — refunds every stake; a paid market's payouts are reversed first. */
       void_prediction_market: {
-        Args: { p_chapter_id: string; p_market_id: string; p_by: string };
+        Args: {
+          p_chapter_id: string;
+          p_market_id: string;
+          p_by: string | null;
+          p_before_payout_only?: boolean;
+        };
         Returns: PredictionMarket;
       };
       /**

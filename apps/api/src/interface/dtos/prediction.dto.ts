@@ -243,6 +243,12 @@ export class PredictionStakerViewDto {
   @ApiProperty() amount: number;
 }
 
+export class PredictionQuestionViewDto {
+  @ApiProperty({ format: 'uuid' }) user_id: string;
+  @ApiProperty() note: string;
+  @ApiProperty() created_at: string;
+}
+
 export class PredictionMarketViewDto {
   @ApiProperty({ type: PredictionMarketDto }) market: PredictionMarketDto;
   @ApiProperty({ type: [PredictionAnswerViewDto] })
@@ -258,4 +264,18 @@ export class PredictionMarketViewDto {
     description: "Why the viewer can't stake right now; null when they can",
   })
   stake_blocked_reason: string | null;
+  @ApiProperty({
+    type: [PredictionQuestionViewDto],
+    description: 'Unresolved questions about the result',
+  })
+  open_questions: PredictionQuestionViewDto[];
+}
+
+export class PredictionConsentResultDto {
+  @ApiProperty({
+    type: PredictionMarketViewDto,
+    nullable: true,
+    description: 'The opened question, or null once a decline removed it',
+  })
+  prediction: PredictionMarketViewDto | null;
 }

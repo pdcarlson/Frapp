@@ -9,11 +9,14 @@
 -- keys added to existing tiers.
 
 -- ── Ledger category ──────────────────────────────────────────────────────────
+-- Added NOT VALID, then validated: the validation scan takes only a SHARE
+-- UPDATE EXCLUSIVE lock, so points reads and writes go on while it runs.
 alter table point_transactions drop constraint if exists point_transactions_category_check;
 alter table point_transactions add constraint point_transactions_category_check
   check (category in (
     'ATTENDANCE', 'ACADEMIC', 'SERVICE', 'FINE', 'MANUAL', 'STUDY', 'PREDICTION'
-  ));
+  )) not valid;
+alter table point_transactions validate constraint point_transactions_category_check;
 
 -- ── Per-market stake cap ─────────────────────────────────────────────────────
 -- An absent chapter_points_config row is the default, as for the other limits.
@@ -357,7 +360,10 @@ $$;
 create or replace function void_prediction_market(
   p_chapter_id uuid,
   p_market_id  uuid,
-  p_by         uuid
+  p_by         uuid,
+  -- The settler voids only before payout; under this lock, a market the
+  -- sweep paid a moment ago is refused rather than reversed.
+  p_before_payout_only boolean default false
 ) returns prediction_markets
 language plpgsql
 security invoker
@@ -374,6 +380,9 @@ begin
   end if;
   if v_market.status = 'voided' then
     raise exception 'prediction.market.voided';
+  end if;
+  if p_before_payout_only and v_market.status = 'paid' then
+    raise exception 'prediction.market.paid';
   end if;
 
   if v_market.status = 'paid' then
@@ -404,7 +413,43 @@ revoke all on function place_prediction_stake(uuid, uuid, uuid, uuid, int, uuid,
 revoke all on function prediction_write_payouts(prediction_markets) from public, anon, authenticated;
 revoke all on function prediction_reverse_round(prediction_markets) from public, anon, authenticated;
 revoke all on function pay_prediction_market(uuid, uuid, uuid, boolean) from public, anon, authenticated;
-revoke all on function void_prediction_market(uuid, uuid, uuid) from public, anon, authenticated;
+revoke all on function void_prediction_market(uuid, uuid, uuid, boolean) from public, anon, authenticated;
+
+-- ── A deleted channel voids what it holds ───────────────────────────────────
+-- Markets cascade away with their channel, but the ledger rows of their stakes
+-- don't. So before a channel goes, every market in it that hasn't paid or
+-- voided is voided, which refunds its stakes; a paid market's rows already net
+-- out. Covers every path that deletes a channel (Delete channel, the Discord
+-- import purge).
+create or replace function prediction_void_channel_markets()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  -- A whole chapter being deleted takes its ledger with it: nothing to refund,
+  -- and a refund row would point at a chapter that is already gone.
+  if not exists (select 1 from chapters where id = old.chapter_id) then
+    return old;
+  end if;
+  for v_id in
+    select id from prediction_markets
+     where channel_id = old.id and status not in ('paid', 'voided')
+  loop
+    perform void_prediction_market(old.chapter_id, v_id, null);
+  end loop;
+  return old;
+end;
+$$;
+revoke all on function prediction_void_channel_markets() from public, anon, authenticated;
+
+drop trigger if exists chat_channels_void_predictions on chat_channels;
+create trigger chat_channels_void_predictions
+  before delete on chat_channels
+  for each row execute function prediction_void_channel_markets();
 
 -- ── Permissions for existing chapters ───────────────────────────────────────
 -- predictions:create goes wherever polls:create already is (every member tier
@@ -419,3 +464,23 @@ update public.role_tiers
    set permissions = permissions || array['predictions:manage']
  where permissions @> array['chapter-config:manage']
    and not (permissions @> array['predictions:manage']);
+
+-- After the tiers: a role holding the source key on its own (outside the
+-- tiers, or switched on for that role alone) gets the new key the same way,
+-- as 20261113040007_chapter_groups.sql did for groups:manage. A role that
+-- already switched the new key off keeps that.
+update public.roles
+   set permission_overrides =
+         permission_overrides || jsonb_build_object('predictions:create', true)
+ where permissions @> array['polls:create']
+   and not ('*' = any (permissions))
+   and not ('predictions:create' = any (permissions))
+   and not (permission_overrides ? 'predictions:create');
+
+update public.roles
+   set permission_overrides =
+         permission_overrides || jsonb_build_object('predictions:manage', true)
+ where permissions @> array['chapter-config:manage']
+   and not ('*' = any (permissions))
+   and not ('predictions:manage' = any (permissions))
+   and not (permission_overrides ? 'predictions:manage');

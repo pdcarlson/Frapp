@@ -154,7 +154,7 @@ describe('SupabasePredictionRepository — tenant scope', () => {
     ).toHaveLength(1);
     expect(
       await harness.expectTenantScoped(CHAPTER_A, () =>
-        repo.listOpenQuestions(CHAPTER_A, A),
+        repo.listOpenQuestions(CHAPTER_A, [A]),
       ),
     ).toHaveLength(1);
   });
@@ -210,6 +210,36 @@ describe('SupabasePredictionRepository — tenant scope', () => {
     ]);
   });
 
+  it('findStakeByClientMessageId reads only inside the chapter', async () => {
+    const found = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findStakeByClientMessageId(CHAPTER_A, KEY),
+    );
+    expect(found).toEqual(expect.objectContaining({ chapter_id: CHAPTER_A }));
+  });
+
+  it('deleteAwaitingConsent removes only the chapter’s market, and only while it waits', async () => {
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.deleteAwaitingConsent(CHAPTER_A, A),
+      ),
+    ).resolves.toBe(false);
+    expect(harness.rows('prediction_markets')).toHaveLength(2);
+  });
+
+  it('listMarkets narrows by ids and creator inside the chapter', async () => {
+    const rows = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.listMarkets(CHAPTER_A, {
+        ids: [A],
+        createdBy: USER_SHARED,
+        limit: 5,
+      }),
+    );
+    expect(rows.map((r) => r.id)).toEqual([A]);
+    await expect(
+      repo.listMarkets(CHAPTER_A, { ids: [], limit: 5 }),
+    ).resolves.toEqual([]);
+  });
+
   it('addQuestion writes into the chapter', async () => {
     await harness.expectTenantScoped(CHAPTER_A, () =>
       repo.addQuestion(CHAPTER_A, A, USER_SHARED, 'Look again'),
@@ -233,7 +263,7 @@ describe('SupabasePredictionRepository — tenant scope', () => {
       repo.pay(CHAPTER_A, A, null, { unquestionedOnly: true }),
     );
     await harness.expectTenantScoped(CHAPTER_A, () =>
-      repo.void(CHAPTER_A, A, USER_SHARED),
+      repo.void(CHAPTER_A, A, USER_SHARED, { beforePayoutOnly: true }),
     );
     expect(harness.rpcCalls.map((c) => [c.fn, c.args.p_chapter_id])).toEqual([
       ['place_prediction_stake', CHAPTER_A],
@@ -241,6 +271,7 @@ describe('SupabasePredictionRepository — tenant scope', () => {
       ['void_prediction_market', CHAPTER_A],
     ]);
     expect(harness.rpcCalls[1].args.p_unquestioned_only).toBe(true);
+    expect(harness.rpcCalls[2].args.p_before_payout_only).toBe(true);
   });
 
   // One sweep serves every chapter; each market it returns is then paid in

@@ -14822,7 +14822,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                  "$ref": "#/components/schemas/PredictionConsentResultDto"
                 }
               }
             }
@@ -14843,7 +14843,7 @@
             "bearer": []
           }
         ],
-        "summary": "The member a prediction names agrees to it, or withdraws it",
+        "summary": "The member a prediction names agrees to it, or declines and it is removed",
         "tags": [
           "Predictions"
         ]
@@ -14899,7 +14899,7 @@
             "bearer": []
           }
         ],
-        "summary": "The settler names the winning answer; it pays after 24 hours",
+        "summary": "The settler (or predictions:manage with nothing staked) names the winning answer; it pays after 24 hours",
         "tags": [
           "Predictions"
         ]
@@ -29737,6 +29737,26 @@
           "amount"
         ]
       },
+      "PredictionQuestionViewDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "note",
+          "created_at"
+        ]
+      },
       "PredictionMarketViewDto": {
         "type": "object",
         "properties": {
@@ -29768,6 +29788,13 @@
             "type": "string",
             "nullable": true,
             "description": "Why the viewer can't stake right now; null when they can"
+          },
+          "open_questions": {
+            "description": "Unresolved questions about the result",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PredictionQuestionViewDto"
+            }
           }
         },
         "required": [
@@ -29776,7 +29803,8 @@
           "total_staked",
           "stakers",
           "my_stakes",
-          "stake_blocked_reason"
+          "stake_blocked_reason",
+          "open_questions"
         ]
       },
       "CreatePredictionDto": {
@@ -29869,6 +29897,24 @@
         },
         "required": [
           "agree"
+        ]
+      },
+      "PredictionConsentResultDto": {
+        "type": "object",
+        "properties": {
+          "prediction": {
+            "nullable": true,
+            "description": "The opened question, or null once a decline removed it",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PredictionMarketViewDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "prediction"
         ]
       },
       "SettlePredictionDto": {
