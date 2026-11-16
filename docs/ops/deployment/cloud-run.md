@@ -2,7 +2,7 @@
 
 The API is moving from Render to Google Cloud Run ([#5228](https://github.com/frapplive/Frapp/issues/5228)). Paul decided this on 2026-11-16, which changes [ADR-24](../../../spec/architecture/adr/adr-24.md) decision 1. This page is the runbook for the Google side. Until the cutover finishes, [`render.md`](render.md) still describes what serves traffic.
 
-**State (2026-11-16):** the setup script exists, but no project has run it yet. Nothing on Google serves traffic.
+**State (2026-11-16):** staging's project has run the setup script (project number `211663803311`); production's hasn't yet. Nothing on Google serves traffic.
 
 ## Shape
 
