@@ -124,6 +124,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     title: "New in this update",
     changes: [
       "Excuses on an event now sit on one tidy line each, and you can edit yours after sending it.",
+      "Cards Ask Frapp proposes have Edit, so you can change an event's time, attendance, notes or repeat in the event form before it is added, and an event you ask for every week now comes back as a repeating series.",
     ],
     web: [
       "Tasks now groups your own tasks as Today, This week and Later, and officers can switch between My tasks and All tasks, group the chapter's tasks by person, and filter them by assignee, status and due date.",
