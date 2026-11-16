@@ -19037,6 +19037,153 @@
         ]
       }
     },
+    "/v1/google-drive": {
+      "get": {
+        "operationId": "GoogleDriveController_status_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether Google Drive is offered here, and the chapter's connected folder.",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "put": {
+        "operationId": "GoogleDriveController_connect_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectGoogleDriveDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Connect a Google Drive folder shared with Frapp; its files are copied into Documents and kept in sync.",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "GoogleDriveController_disconnect_v1",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Disconnect the folder. Its copies leave Documents; the files in Drive are untouched.",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/google-drive/sync": {
+      "post": {
+        "operationId": "GoogleDriveController_syncNow_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Sync the connected folder now.",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/meetings/{id}/recording": {
       "get": {
         "operationId": "MeetingRecordingController_get_v1",
@@ -29281,6 +29428,21 @@
             "type": "string",
             "nullable": true,
             "description": "When an officer pinned it for the whole chapter, or null"
+          },
+          "drive_file_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Google Drive file this is a copy of, or null for an upload. Drive owns a copy: it cannot be deleted in Frapp (#5157)"
+          },
+          "drive_modified_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Drive file's modified time when it was last copied"
+          },
+          "drive_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "The file's page in Google Drive"
           }
         },
         "required": [
@@ -29296,7 +29458,10 @@
           "byte_size",
           "document_type",
           "effective_date",
-          "pinned_at"
+          "pinned_at",
+          "drive_file_id",
+          "drive_modified_at",
+          "drive_url"
         ]
       },
       "DocumentConfirmResultDto": {
@@ -33841,6 +34006,99 @@
         "required": [
           "state",
           "code"
+        ]
+      },
+      "GoogleDriveConnectionDto": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string"
+          },
+          "folder_name": {
+            "type": "string",
+            "description": "The folder's name in Drive"
+          },
+          "folder_url": {
+            "type": "string",
+            "description": "The folder's page in Google Drive"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "no_access"
+            ],
+            "description": "`no_access` once Google answered that Frapp can no longer see the folder (unshared or deleted); copies stay as they were until it is shared again"
+          },
+          "last_synced_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When the last sync finished. Null before the first."
+          },
+          "synced_count": {
+            "type": "number",
+            "description": "Files the last sync left in Documents"
+          },
+          "skipped_count": {
+            "type": "number",
+            "description": "Files the last sync left out: a type Documents does not take, over 25 MB, or past 500 files"
+          },
+          "syncing": {
+            "type": "boolean",
+            "description": "Whether a sync is due or running now"
+          }
+        },
+        "required": [
+          "folder_id",
+          "folder_name",
+          "folder_url",
+          "status",
+          "last_synced_at",
+          "synced_count",
+          "skipped_count",
+          "syncing"
+        ]
+      },
+      "GoogleDriveStatusDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether this server offers Google Drive. False until its service account is set; clients then hide the option."
+          },
+          "service_account_email": {
+            "type": "string",
+            "nullable": true,
+            "description": "The address a chapter shares its folder with"
+          },
+          "connection": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoogleDriveConnectionDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "available",
+          "service_account_email",
+          "connection"
+        ]
+      },
+      "ConnectGoogleDriveDto": {
+        "type": "object",
+        "properties": {
+          "folder_link": {
+            "type": "string",
+            "description": "The Drive folder link (or its id)",
+            "example": "https://drive.google.com/drive/folders/1AbC..."
+          }
+        },
+        "required": [
+          "folder_link"
         ]
       },
       "MeetingRecordingUploadDto": {

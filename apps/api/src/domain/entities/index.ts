@@ -14,6 +14,7 @@ export * from './chapter-audit-log.entity';
 export * from './chapter-custom-field.entity';
 export * from './chapter-directory.entity';
 export * from './chapter-document.entity';
+export * from './chapter-drive-connection.entity';
 export * from './chapter-dues-config.entity';
 export * from './chapter-goal.entity';
 export * from './chapter-group.entity';

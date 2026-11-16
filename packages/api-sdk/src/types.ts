@@ -5673,6 +5673,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/google-drive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether Google Drive is offered here, and the chapter's connected folder. */
+        get: operations["GoogleDriveController_status_v1"];
+        /** Connect a Google Drive folder shared with Frapp; its files are copied into Documents and kept in sync. */
+        put: operations["GoogleDriveController_connect_v1"];
+        post?: never;
+        /** Disconnect the folder. Its copies leave Documents; the files in Drive are untouched. */
+        delete: operations["GoogleDriveController_disconnect_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync the connected folder now. */
+        post: operations["GoogleDriveController_syncNow_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/meetings/{id}/recording": {
         parameters: {
             query?: never;
@@ -9229,6 +9265,12 @@ export interface components {
             effective_date: string | null;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+            /** @description The Google Drive file this is a copy of, or null for an upload. Drive owns a copy: it cannot be deleted in Frapp (#5157) */
+            drive_file_id: string | null;
+            /** @description The Drive file's modified time when it was last copied */
+            drive_modified_at: string | null;
+            /** @description The file's page in Google Drive */
+            drive_url: string | null;
         };
         DocumentConfirmResultDto: {
             /** @description The storage path this result is for */
@@ -10953,6 +10995,43 @@ export interface components {
             state: string;
             /** @description The `gcal_code` the sign-in returned with. */
             code: string;
+        };
+        GoogleDriveConnectionDto: {
+            folder_id: string;
+            /** @description The folder's name in Drive */
+            folder_name: string;
+            /** @description The folder's page in Google Drive */
+            folder_url: string;
+            /**
+             * @description `no_access` once Google answered that Frapp can no longer see the folder (unshared or deleted); copies stay as they were until it is shared again
+             * @enum {string}
+             */
+            status: "active" | "no_access";
+            /**
+             * Format: date-time
+             * @description When the last sync finished. Null before the first.
+             */
+            last_synced_at: string | null;
+            /** @description Files the last sync left in Documents */
+            synced_count: number;
+            /** @description Files the last sync left out: a type Documents does not take, over 25 MB, or past 500 files */
+            skipped_count: number;
+            /** @description Whether a sync is due or running now */
+            syncing: boolean;
+        };
+        GoogleDriveStatusDto: {
+            /** @description Whether this server offers Google Drive. False until its service account is set; clients then hide the option. */
+            available: boolean;
+            /** @description The address a chapter shares its folder with */
+            service_account_email: string | null;
+            connection: components["schemas"]["GoogleDriveConnectionDto"] | null;
+        };
+        ConnectGoogleDriveDto: {
+            /**
+             * @description The Drive folder link (or its id)
+             * @example https://drive.google.com/drive/folders/1AbC...
+             */
+            folder_link: string;
         };
         MeetingRecordingUploadDto: {
             /** Format: uuid */
@@ -24013,6 +24092,120 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GoogleCalendarStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_status_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_connect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConnectGoogleDriveDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_disconnect_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_syncNow_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GoogleDriveStatusDto"];
                 };
             };
             /** @description Error */

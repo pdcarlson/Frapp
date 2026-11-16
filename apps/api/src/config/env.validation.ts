@@ -8,6 +8,7 @@ import { validateAiEnv } from './ai-config';
 import { validateAiSpendEnv } from './ai-spend-config';
 import { validateAiStoredTextEnv } from './ai-stored-text-config';
 import { validateGoogleCalendarEnv } from './google-calendar-config';
+import { validateGoogleDriveEnv } from './google-drive-config';
 import { classifySupabaseKey } from './supabase-key';
 
 const REQUIRED_ENV_VARS = [
@@ -175,6 +176,13 @@ export function validateEnv(config: Record<string, unknown>) {
   const googleCalendarProblems = validateGoogleCalendarEnv(config);
   if (googleCalendarProblems.length > 0) {
     throw new Error(googleCalendarProblems.join(' '));
+  }
+
+  // Optional: the service account behind Google Drive folders (#5157). Unset
+  // turns the feature off; set, it must be a real key file.
+  const googleDriveProblems = validateGoogleDriveEnv(config);
+  if (googleDriveProblems.length > 0) {
+    throw new Error(googleDriveProblems.join(' '));
   }
 
   const aiProblems = [

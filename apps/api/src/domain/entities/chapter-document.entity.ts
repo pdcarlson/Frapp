@@ -27,6 +27,17 @@ export interface ChapterDocument {
    * `spec/behavior/chapter-docs.md` § Pinned and starred (#3934).
    */
   pinned_at: string | null;
+  /**
+   * The Google Drive file this document is a copy of, or null for an upload
+   * (#5157; `spec/behavior/chapter-docs.md` § Google Drive folder). Drive owns
+   * a copy: the sync replaces, refiles and removes it, and nobody deletes it
+   * in Frapp.
+   */
+  drive_file_id: string | null;
+  /** The Drive file's modified time when it was last copied. */
+  drive_modified_at: string | null;
+  /** The file's page in Google Drive. */
+  drive_url: string | null;
 }
 
 /**
