@@ -518,11 +518,38 @@ describe("deploy-staging.yml: the deploy-outcome alert", () => {
   });
 
   it("grants issues: write to the alert job only", () => {
-    // The deploy job handles every staging credential; it stays read-only.
+    // The deploy job handles every staging credential; it writes nothing on
+    // GitHub but the API image (#2506). That write adds nothing a compromised
+    // job couldn't already ship: it holds RENDER_API_KEY, which deploys anything.
     assert.equal(workflowKeys(WORKFLOW).get("permissions").get("contents"), "read");
     assert.equal((uncommented.match(/issues: write/g) ?? []).length, 1, "exactly one job may hold issues: write");
     assert.equal(workflowKeys(SHARED).get("permissions").get("contents"), "read");
-    assert.doesNotMatch(sharedUncommented, /: write/, "the shared deploy job writes nothing on GitHub");
+    assert.deepEqual(
+      workflowJobs(SHARED).map((j) => j.jobId),
+      ["deploy"],
+      "a second job in _deploy.yml needs its own permissions check here",
+    );
+    // Parsed, so a flow-style map or a quoted key reads differently and fails.
+    assert.deepEqual(
+      Object.fromEntries(sharedJob().keys.get("permissions")),
+      { contents: "read", packages: "write" },
+      "the shared deploy job writes nothing on GitHub but the API image",
+    );
+    // And any `write` value anywhere else in the file, trailing comment or not.
+    assert.equal(
+      (sharedUncommented.match(/:\s*["']?write\b/g) ?? []).length,
+      1,
+      "the shared deploy job's packages: write is the file's only write grant",
+    );
+    // A called job gets no more than its caller grants, so both callers must
+    // grant exactly what it asks, or GitHub refuses the run at startup.
+    for (const caller of [WORKFLOW, join(WORKFLOW_DIR, "deploy-production.yml")]) {
+      assert.deepEqual(
+        Object.fromEntries(jobIn(caller, "deploy").keys.get("permissions")),
+        { contents: "read", packages: "write" },
+        `${caller.split("/").pop()}'s deploy job must grant what _deploy.yml's job asks`,
+      );
+    }
     assert.equal(job("deploy-outcome").keys.get("permissions").get("issues"), "write");
   });
 

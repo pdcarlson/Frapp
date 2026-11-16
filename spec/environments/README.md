@@ -146,7 +146,10 @@ The same file holds each environment's Render service id (`renderServiceId`) and
 project ids (its `vercel` block), since [#2806](https://github.com/pdcarlson/Frapp/issues/2806). Every
 workflow reads them through `scripts/ci/provider-ids.mjs`, and a test fails on a literal id anywhere under
 `.github/workflows` or `.github/actions`. They are not secrets either: each grants nothing without
-`RENDER_API_KEY` or `VERCEL_API_KEY`.
+`RENDER_API_KEY` or `VERCEL_API_KEY`. Each environment's `renderDeploySource` says how its service takes a
+deploy, `commit` (Render builds it) or `image` (it pulls the image the deploy job built and pushed to the
+top-level `apiImage`, [#2506](https://github.com/pdcarlson/Frapp/issues/2506)); it moves with
+`renderServiceId`, because a service is one or the other. Only staging may be `image` so far.
 
 Three consequences worth holding together:
 
@@ -271,7 +274,7 @@ secrets.
 - API deploys are gated behind CI success using `workflow_run` triggers.
 - Production: a human dispatches **Deploy production** → the workflow calls the Render API with the commit it validated as the `commitId` (no deploy hook, and no push involved).
 - Push to `main` (after CI) → `deploy-staging.yml` first plans from the commit staging serves, then builds web and landing when they will ship and runs the staging migration: when anything the API image is built from changed since the served commit, it calls the Render API with that push's `commitId` and waits until `/health/ready` reports it; otherwise, when anything ships, it verifies the served commit. A run `main` has moved past deploys only forward (its commit newer than the served one), never an older commit; its migrations still run. No deploy hook, and Render auto-deploy must be off (#2505, #2679).
-- Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
+- The image is built from `apps/api/Dockerfile`, and Render performs a zero-downtime swap. For a git-backed service (`renderDeploySource: commit`) Render builds it from the `commitId`. Staging's deploy also builds it on GitHub and pushes it to `apiImage` tagged with the commit; an image-backed service (`image`) is sent that image by digest instead of a commit, and reads its config from Infisical when it starts rather than from a sync (#2506, [`SECRETS_MANAGEMENT.md` § Image-backed API](../../docs/internal/environment/SECRETS_MANAGEMENT.md#image-backed-api-read-at-boot-not-synced)).
 - Database migrations run automatically before deploy (see Section 8).
 - See `render.yaml` for the infrastructure-as-code definition.
 

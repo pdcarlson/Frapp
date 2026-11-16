@@ -1,5 +1,7 @@
 /**
- * The git SHA Render injects on every deploy (`RENDER_GIT_COMMIT`).
+ * The deployed git SHA, `RENDER_GIT_COMMIT`: Render injects it on every deploy
+ * of a git-backed service, and the deploy job's image build stamps it into the
+ * image (`apps/api/Dockerfile`'s runner stage) for an image-backed one (#2506).
  *
  * This is a platform env, not an Infisical secret — do not add a `GIT_SHA`
  * slug to invent a second home. Local and CI leave it unset, so `/health`
