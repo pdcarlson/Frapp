@@ -63,7 +63,7 @@ layers are that job's steps named `inputs.environment == 'production'`:
 8. **Store builds and OTA updates, only when asked** — with `mobile_build` set to `ios`,
    `android`, `all` or `auto`, and only after a `full` ship and its tag succeed, `mobile-plan`
    decides per platform ([`mobile.md` § 6.6](mobile.md#66-store-submission)). A store build:
-   `_mobile-build.yml` builds the same commit on EAS, uploads it without releasing it, and opens
+   `_mobile-build.yml` builds the same commit on GitHub's runners with `eas build --local` (#5162), uploads it without releasing it, and opens
    the `shipped-builds.json` PR. An OTA update (`auto` only, where the native inputs still match
    the recorded store build): `_mobile-update.yml` publishes the same commit through the guard
    ([`mobile.md` § 6.7](mobile.md#67-ota-updates)). A failure there leaves production and the tag

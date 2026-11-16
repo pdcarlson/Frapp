@@ -64,10 +64,12 @@
 // the token reaches no code from the built commit.
 //
 // Env:
-//   EXPO_TOKEN          — the robot token the build job uses
+//   EXPO_TOKEN          — the robot token the build jobs use
 //   IOS_UPLOAD          — the iOS upload step's outcome (`success` when EAS accepted it)
 //   IOS_SUBMISSION      — that step's submission id, empty when none
-//   IOS_BUILD           — the iOS EAS build id, for the summary's re-upload command
+//   IOS_BUILD           — the iOS EAS build id, for the summary's re-upload command;
+//                         unset from `_mobile-build.yml`, whose builds run on GitHub's
+//                         runners and have no EAS build id (#5162)
 //   ANDROID_UPLOAD, ANDROID_SUBMISSION, ANDROID_BUILD — the same for Android
 //   RETRY_ANY_ERROR     — `true` retries any failed submission EAS allows, not
 //                         only a store server error (the hand-dispatched retry)
