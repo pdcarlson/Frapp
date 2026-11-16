@@ -167,20 +167,24 @@ jobs:
           package-manager-cache: false
 
       # Before any secret is injected (#2801). A migrations-only run builds nothing.
+      # `env -u`: with the job's `id-token: write` (#5228), GitHub hands every
+      # step what it needs to ask for an OIDC token, which Google trades for the
+      # environment's deployer. Code that installs or builds a dependency gets
+      # no credential (#2801), so these steps run without it.
       - name: Install dependencies
         if: ${{ inputs.scope != 'migrations-only' }}
-        run: npm ci
+        run: env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN npm ci
 
       # Pinned, like every CLI that CI installs.
       - name: Install Vercel CLI
         if: ${{ inputs.scope != 'migrations-only' }}
-        run: npm install --global vercel@59.11.7
+        run: env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN npm install --global vercel@59.11.7
 
       # For the config check's boot check (#3112), before any secret (#2801). None
       # under migrations-only, or for a commit from before the boot check (c7c698fc).
       - name: Build the API, for its boot check
         if: ${{ inputs.scope != 'migrations-only' && hashFiles('apps/api/src/config/env.validation.ts') != '' }}
-        run: npx --no-install turbo run build --filter=api
+        run: env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN npx --no-install turbo run build --filter=api
 
       # The local actions and the checks run from `github.sha` (`main`). `--force` and
       # the null hooksPath keep an install script's edits and hooks out of the trusted
@@ -280,7 +284,15 @@ jobs:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
           VERCEL_STAGING_HOSTS: app.staging.frapp.live staging.frapp.live
-        run: node scripts/ci/plan-staging-deploy.mjs
+          API_HOST: ${{ steps.ids.outputs.api_host }}
+          CLOUD_RUN_URL: ${{ steps.ids.outputs.cloud_run_url }}
+        # On Cloud Run the plan compares against what the service itself serves,
+        # not the staging host, which can point elsewhere while it moves (#5228).
+        # No service yet reads as "can't tell", and the tip deploys.
+        run: |
+          set -euo pipefail
+          if [ "$API_HOST" = cloud-run ]; then export API_HEALTHCHECK_URL="$CLOUD_RUN_URL/health"; fi
+          node scripts/ci/plan-staging-deploy.mjs
 
       # ── Refuse a config this run would fail on after the apply (#3112) ──────
       # Each environment's flags restate the `if:` of the steps they stand in for.
@@ -418,8 +430,10 @@ jobs:
       # build until the owner moves it. Built before anything is applied, so a
       # failed build ships nothing.
       #
-      # While staging's service is still git-backed nothing pulls the image, so
-      # the push only keeps one ready for the move: a failure then is a warning,
+      # Staging on Cloud Run (`apiHost: cloud-run`, #5228) deploys this image, so
+      # there it must succeed and it gets the Sentry token, as for an
+      # image-backed service. While a git-backed service is what serves,
+      # nothing pulls the image, so the push only keeps one ready: a failure then is a warning,
       # not a failed deploy (handled in the script: no step in this job may
       # `continue-on-error`), and the build gets no Sentry token, because only
       # the build that serves may upload source maps
@@ -640,7 +654,9 @@ jobs:
       # project's own registry, deployed as a new revision that takes traffic
       # only once its own URL serves this commit (deploy-cloud-run.mjs). The
       # job signs in to Google as the project's deployer with GitHub's OIDC
-      # token, no key; the access token goes to a file the step deletes.
+      # token, no key; the access token goes to a file the step deletes. Both
+      # scripts run from the trusted copy, so a deploy of a commit from before
+      # them still has them.
       - name: Deploy the API to Cloud Run (staging)
         id: cloud-run
         if: inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'cloud-run'
@@ -660,13 +676,20 @@ jobs:
           CLOUD_RUN_PROVIDER: ${{ steps.ids.outputs.cloud_run_provider }}
           CLOUD_RUN_MIN_INSTANCES: ${{ steps.ids.outputs.cloud_run_min_instances }}
           CLOUD_RUN_MAX_INSTANCES: ${{ steps.ids.outputs.cloud_run_max_instances }}
+          CLOUD_RUN_URL: ${{ steps.ids.outputs.cloud_run_url }}
           SERVICE_LABEL: frapp-api-staging (Cloud Run)
+          # The trusted ref's scripts, like the checks: which tree they run from
+          # can't depend on whether the deployed commit predates them.
+          TRUSTED_CI: ${{ runner.temp }}/trusted-ci
+          # Infisical's keys are the names the injection added to it; a secret
+          # Secret Manager still holds after Infisical dropped it is left out.
+          ENV_BASELINE: ${{ runner.temp }}/env-names-before-infisical.json
         run: |
           set -euo pipefail
           REGISTRY_HOST="${CLOUD_RUN_IMAGE%%/*}"
           TOKEN_FILE="$(mktemp)"
           trap 'rm -f "$TOKEN_FILE"; docker logout "$REGISTRY_HOST" >/dev/null 2>&1 || true' EXIT
-          TOKEN_FILE="$TOKEN_FILE" node scripts/ci/gcp-access-token.mjs
+          TOKEN_FILE="$TOKEN_FILE" node "$TRUSTED_CI/gcp-access-token.mjs"
           docker login --username oauth2accesstoken --password-stdin "$REGISTRY_HOST" < "$TOKEN_FILE"
           rm -f "$TOKEN_FILE"
 
@@ -680,7 +703,7 @@ jobs:
             exit 1
           fi
           echo "Pushed $TAG as $IMAGE_REF."
-          IMAGE_REF="$IMAGE_REF" node scripts/ci/deploy-cloud-run.mjs
+          IMAGE_REF="$IMAGE_REF" node "$TRUSTED_CI/deploy-cloud-run.mjs"
 
       - name: Deploy the commit to Render (production)
         id: render
@@ -701,19 +724,16 @@ jobs:
 
       # Render's `live` can still be the old instance, so poll /health/ready for the
       # commit, whenever anything ships and before any frontend: docs/ops/deployment/ci-cd.md § Deploy verification.
-      # On Cloud Run, the service's own URL: the staging API host can still
-      # point at Render until its DNS moves (#5228, cloud-run.md).
+      # The staging host every client calls, so on Cloud Run this fails until
+      # the host points there, and no web ships against an API it can't reach
+      # (#5228). The Cloud Run step has already checked the service's own URL.
       - name: Verify staging serves the commit
         if: steps.plan.outputs.verify_sha != ''
         env:
           SERVICE_LABEL: frapp-api-staging
           DEPLOY_SHA: ${{ steps.plan.outputs.verify_sha }}
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
-          CLOUD_RUN_URL: ${{ steps.cloud-run.outputs.url }}
-        run: |
-          set -euo pipefail
-          if [ -n "$CLOUD_RUN_URL" ]; then export API_HEALTHCHECK_URL="$CLOUD_RUN_URL/health"; fi
-          node "$TRUSTED_CI/verify-served-commit.mjs"
+        run: node "$TRUSTED_CI/verify-served-commit.mjs"
 
       # What the API's clients ask (#3113, #2990), judged against the trusted ref:
       # docs/ops/deployment/ci-cd.md § Deploy verification.
@@ -724,11 +744,7 @@ jobs:
           SERVICE_LABEL: frapp-api-staging
           TRUSTED_SHA: ${{ github.sha }}
           TRUSTED_CI: ${{ runner.temp }}/trusted-ci
-          CLOUD_RUN_URL: ${{ steps.cloud-run.outputs.url }}
-        run: |
-          set -euo pipefail
-          if [ -n "$CLOUD_RUN_URL" ]; then export API_HEALTHCHECK_URL="$CLOUD_RUN_URL/health"; fi
-          node "$TRUSTED_CI/smoke-deployed-api.mjs"
+        run: node "$TRUSTED_CI/smoke-deployed-api.mjs"
 
       # Not scope-gated: a migrations-only run moved the schema under the running
       # API, so check that the commit production already serves is still ready.

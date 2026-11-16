@@ -43,6 +43,7 @@ export const PROVIDER_ID_OUTPUTS = [
   ["cloudRunProvider", "cloud_run_provider"],
   ["cloudRunMinInstances", "cloud_run_min_instances"],
   ["cloudRunMaxInstances", "cloud_run_max_instances"],
+  ["cloudRunUrl", "cloud_run_url"],
   ["vercelTeamId", "vercel_team_id"],
   ["vercelWebProjectId", "vercel_web_project_id"],
   ["vercelLandingProjectId", "vercel_landing_project_id"],

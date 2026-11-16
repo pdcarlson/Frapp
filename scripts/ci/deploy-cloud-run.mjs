@@ -34,16 +34,18 @@
 //
 // Env inputs (all required): GCP_PROJECT_ID, GCP_REGION, CLOUD_RUN_SERVICE,
 // CLOUD_RUN_RUNTIME, CLOUD_RUN_DEPLOYER, CLOUD_RUN_PROVIDER,
-// CLOUD_RUN_MIN_INSTANCES, CLOUD_RUN_MAX_INSTANCES, IMAGE_REF (a digest
-// reference), DEPLOY_SHA. Optional: SERVICE_LABEL, GITHUB_OUTPUT (gets `url=`
+// CLOUD_RUN_MIN_INSTANCES, CLOUD_RUN_MAX_INSTANCES, CLOUD_RUN_URL (the address
+// environments.mjs derives), IMAGE_REF (a digest reference), DEPLOY_SHA, and
+// ENV_BASELINE (the names recorded before the Infisical injection). Optional: SERVICE_LABEL, GITHUB_OUTPUT (gets `url=`
 // and `revision=`).
 //
 // Unit tests: `scripts/ci/__tests__/deploy-cloud-run.test.mjs`.
 
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 
 import { requireEnv } from "./lib/env.mjs";
-import { deployerAccessToken } from "./lib/gcp.mjs";
+import { deployerAccessToken, readGoogleJson } from "./lib/gcp.mjs";
+import { parseEnvBaseline } from "./lib/vercel-build-env.mjs";
 import { fetchWithRetry } from "./lib/http.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
 import { createClock, pollUntilTerminal } from "./lib/polling.mjs";
@@ -68,11 +70,6 @@ const REVISION = "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION";
 
 const shortName = (resource) => (typeof resource === "string" ? resource.split("/").pop() : "");
 
-async function readJson(response, what) {
-  const text = await response.text();
-  if (!response.ok) throw new Error(`${what} answered HTTP ${response.status}: ${text.slice(0, 800)}`);
-  return text ? JSON.parse(text) : {};
-}
 
 function authed(token, init = {}) {
   return { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${token}`, Accept: "application/json" } };
@@ -82,15 +79,20 @@ function authed(token, init = {}) {
  * Every secret in the project, pinned to its current version. A secret with
  * no enabled version, or a name that can't be a variable, is left out and
  * named in `skipped`, so the log says what the API won't see.
+ *
+ * `infisicalKeys`, when given, is what Infisical holds now. Its sync never
+ * deletes a secret (deletion protection, SECRETS_MANAGEMENT.md § Cloud Run
+ * API), so one removed in Infisical stays in Secret Manager; it is left out
+ * here, as Render dropped a variable Infisical stopped syncing.
  */
-export async function pinnedSecrets({ project, token, fetchImpl = fetch }) {
+export async function pinnedSecrets({ project, token, infisicalKeys = null, fetchImpl = fetch }) {
   const names = [];
   let pageToken = "";
   do {
     const url = new URL(`${SECRETS_API}/projects/${project}/secrets`);
     url.searchParams.set("pageSize", "250");
     if (pageToken) url.searchParams.set("pageToken", pageToken);
-    const body = await readJson(await fetchWithRetry(url.toString(), authed(token), { fetchImpl }), "Secret Manager's list");
+    const body = await readGoogleJson(await fetchWithRetry(url.toString(), authed(token), { fetchImpl }), "Secret Manager's list");
     for (const secret of body.secrets ?? []) names.push(secret.name);
     pageToken = body.nextPageToken ?? "";
   } while (pageToken);
@@ -107,12 +109,16 @@ export async function pinnedSecrets({ project, token, fetchImpl = fetch }) {
       skipped.push({ id, reason: "not a variable name" });
       continue;
     }
+    if (infisicalKeys && !infisicalKeys.has(id)) {
+      skipped.push({ id, reason: "no longer in Infisical" });
+      continue;
+    }
     const response = await fetchWithRetry(`${SECRETS_API}/${resource}/versions/latest`, authed(token), { fetchImpl });
     if (response.status === 404) {
       skipped.push({ id, reason: "no version" });
       continue;
     }
-    const version = await readJson(response, `Secret Manager, for ${id}`);
+    const version = await readGoogleJson(response, `Secret Manager, for ${id}`);
     if (version.state !== "ENABLED") {
       skipped.push({ id, reason: `latest version is ${version.state ?? "unknown"}` });
       continue;
@@ -120,6 +126,23 @@ export async function pinnedSecrets({ project, token, fetchImpl = fetch }) {
     pinned.push({ id, version: shortName(version.name) });
   }
   return { pinned, skipped };
+}
+
+/**
+ * The names the Infisical injection added to the job: everything set now that
+ * the baseline, recorded just before it, did not hold.
+ */
+export function injectedNames(env, baselineText) {
+  const baseline = parseEnvBaseline(baselineText);
+  return new Set(Object.keys(env).filter((name) => !baseline.has(name)));
+}
+
+/** A digest reference, never a tag: a tag can be pushed again between push and deploy. */
+export function assertDigestRef(image) {
+  if (!/@sha256:[0-9a-f]{64}$/.test(image)) {
+    throw new Error(`IMAGE_REF must name an image by digest, not tag (got ${image}).`);
+  }
+  return image;
 }
 
 /** `frapp-api-<sha7>-<time>`: unique per deploy, and says which commit it runs. */
@@ -194,7 +217,7 @@ async function waitForOperation({ operation, token, what, fetchImpl = fetch, clo
     overallTimeoutMs: OPERATION_TIMEOUT_MS,
     fetchOne: async () => {
       try {
-        return await readJson(await fetchWithRetry(`${RUN_API}/${operation.name}`, authed(token), { fetchImpl }), what);
+        return await readGoogleJson(await fetchWithRetry(`${RUN_API}/${operation.name}`, authed(token), { fetchImpl }), what);
       } catch (error) {
         return { readError: error.message };
       }
@@ -222,7 +245,7 @@ async function waitForOperation({ operation, token, what, fetchImpl = fetch, clo
 async function getService({ name, token, fetchImpl }) {
   const response = await fetchWithRetry(`${RUN_API}/${name}`, authed(token), { fetchImpl });
   if (response.status === 404) return null;
-  return readJson(response, `Cloud Run, reading ${shortName(name)}`);
+  return readGoogleJson(response, `Cloud Run, reading ${shortName(name)}`);
 }
 
 async function writeService({ name, body, token, what, fetchImpl, clock, logger }) {
@@ -235,7 +258,7 @@ async function writeService({ name, body, token, what, fetchImpl, clock, logger 
     authed(token, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
     { fetchImpl },
   );
-  const operation = await readJson(response, what);
+  const operation = await readGoogleJson(response, what);
   await waitForOperation({ operation, token, what, fetchImpl, clock, logger });
 }
 
@@ -250,6 +273,8 @@ export async function deployCloudRun({
   maxInstances,
   image,
   sha,
+  expectedUrl,
+  infisicalKeys = null,
   label = "Cloud Run",
   env = process.env,
   fetchImpl = fetch,
@@ -261,7 +286,7 @@ export async function deployCloudRun({
   const name = `projects/${project}/locations/${region}/services/${service}`;
   const token = await deployerAccessToken({ provider, serviceAccount: deployerAccount, env, fetchImpl });
 
-  const { pinned, skipped } = await pinnedSecrets({ project, token, fetchImpl });
+  const { pinned, skipped } = await pinnedSecrets({ project, token, infisicalKeys, fetchImpl });
   if (pinned.length === 0) {
     throw new Error(`Secret Manager in ${project} holds no usable secret. Check Infisical's sync into this project.`);
   }
@@ -296,6 +321,16 @@ export async function deployCloudRun({
 
   const served = await getService({ name, token, fetchImpl });
   if (!served?.uri) throw new Error(`Cloud Run reports no URL for ${service}.`);
+  // The deploy plan reads this address before a run deploys anything
+  // (environments.mjs derives it), so a service that doesn't answer on it
+  // would leave every plan unable to tell what staging serves.
+  const urls = [served.uri, ...(served.urls ?? [])];
+  if (expectedUrl && !urls.includes(expectedUrl)) {
+    throw new Error(
+      `${service} answers on ${urls.join(", ")}, not ${expectedUrl}, the address scripts/ci/lib/environments.mjs ` +
+        `derives for the deploy plan. Fix the derivation there.`,
+    );
+  }
   const checked = await verify({ healthUrl: `${served.uri}/health`, sha, label, clock, logger });
   if (checked.status !== "success") throw new Error(checked.message);
   logger.log?.(`[${label}] ${checked.message}`);
@@ -311,10 +346,7 @@ function wholeNumber(name) {
 }
 
 async function main() {
-  const image = requireEnv("IMAGE_REF");
-  if (!/@sha256:[0-9a-f]{64}$/.test(image)) {
-    throw new Error(`IMAGE_REF must name an image by digest, not tag (got ${image}).`);
-  }
+  const image = assertDigestRef(requireEnv("IMAGE_REF"));
   const result = await deployCloudRun({
     project: requireEnv("GCP_PROJECT_ID"),
     region: requireEnv("GCP_REGION"),
@@ -326,6 +358,8 @@ async function main() {
     maxInstances: wholeNumber("CLOUD_RUN_MAX_INSTANCES"),
     image,
     sha: requireEnv("DEPLOY_SHA"),
+    expectedUrl: requireEnv("CLOUD_RUN_URL"),
+    infisicalKeys: injectedNames(process.env, readFileSync(requireEnv("ENV_BASELINE"), "utf8")),
     label: process.env.SERVICE_LABEL ?? "Cloud Run",
   });
   if (process.env.GITHUB_OUTPUT) {

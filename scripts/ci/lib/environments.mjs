@@ -179,6 +179,7 @@ function cloudRunIds(block, name, source) {
       cloudRunProvider: "",
       cloudRunMinInstances: "",
       cloudRunMaxInstances: "",
+      cloudRunUrl: "",
     };
   }
   const check = (value, pattern, what) => {
@@ -209,6 +210,10 @@ function cloudRunIds(block, name, source) {
       `/providers/${WORKLOAD_IDENTITY_PROVIDER}`,
     cloudRunMinInstances: String(minInstances),
     cloudRunMaxInstances: String(maxInstances),
+    // Cloud Run's deterministic address for a service, known before the first
+    // deploy creates it. deploy-cloud-run.mjs refuses a service that doesn't
+    // answer on it.
+    cloudRunUrl: `https://${CLOUD_RUN_SERVICE}-${projectNumber}.${region}.run.app`,
   };
 }
 

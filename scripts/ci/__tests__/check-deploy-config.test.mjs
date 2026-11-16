@@ -536,7 +536,7 @@ describe("_deploy.yml: the config check's place and wiring (#3112)", () => {
     const build = step(BUILD);
     // Skipped where the check would skip: no source, nothing to build.
     assert.equal(build.if, `\${{ inputs.scope != 'migrations-only' && hashFiles('${BOOT_CHECK_SOURCE}') != '' }}`);
-    assert.match(build.body, /run: npx --no-install turbo run build --filter=api$/m);
+    assert.match(build.body, /run: (env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN )?npx --no-install turbo run build --filter=api$/m);
     assert.doesNotMatch(build.body, /secrets\./);
     assert.ok(at("Install dependencies") < at(BUILD), "it builds before the install");
     assert.ok(at(BUILD) < at("Move the workspace to the trusted ref"), "it builds in the trusted window");

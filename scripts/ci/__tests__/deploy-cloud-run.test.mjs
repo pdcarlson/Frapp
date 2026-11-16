@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 
 import {
   CANDIDATE_TAG,
+  assertDigestRef,
   buildService,
+  injectedNames,
   deployCloudRun,
   pinnedSecrets,
   revisionName,
@@ -63,7 +65,9 @@ function fakeGoogle({ service = null, secrets = [], versions = {} } = {}) {
         current = {
           ...body,
           name: SERVICE_NAME,
+          etag: '"e2"',
           uri: "https://frapp-api-x.a.run.app",
+          urls: ["https://frapp-api-123.us-east4.run.app", "https://frapp-api-x.a.run.app"],
           latestReadyRevision: `${SERVICE_NAME}/revisions/${revision}`,
           trafficStatuses: traffic,
         };
@@ -86,6 +90,7 @@ const baseArgs = (overrides = {}) => ({
   maxInstances: 1,
   image: `us-east4-docker.pkg.dev/nonprod-1/frapp/api@sha256:${"a".repeat(64)}`,
   sha: SHA,
+  expectedUrl: "https://frapp-api-123.us-east4.run.app",
   env: OIDC_ENV,
   clock: noSleep,
   logger: quiet,
@@ -125,6 +130,26 @@ describe("pinnedSecrets", () => {
       skipped.map((s) => s.id),
       ["EMPTY_ONE", "OLD_ONE", "PORT"],
     );
+  });
+});
+
+describe("what the deploy takes", () => {
+  it("takes an image by digest only", () => {
+    const digest = `us-east4-docker.pkg.dev/p/frapp/api@sha256:${"b".repeat(64)}`;
+    assert.equal(assertDigestRef(digest), digest);
+    assert.throws(() => assertDigestRef("us-east4-docker.pkg.dev/p/frapp/api:abc123"), /by digest, not tag/);
+  });
+
+  it("leaves out a secret Infisical no longer holds", async () => {
+    const { fetchImpl } = fakeGoogle({
+      secrets: ["API_URL", "GONE"],
+      versions: { API_URL: { n: 2 }, GONE: { n: 1 } },
+    });
+    const infisicalKeys = injectedNames({ PATH: "/bin", HOME: "/h", API_URL: "x" }, JSON.stringify(["HOME", "PATH"]));
+    assert.deepEqual([...infisicalKeys], ["API_URL"]);
+    const { pinned, skipped } = await pinnedSecrets({ project: "p", token: "t", infisicalKeys, fetchImpl });
+    assert.deepEqual(pinned, [{ id: "API_URL", version: "2" }]);
+    assert.deepEqual(skipped, [{ id: "GONE", reason: "no longer in Infisical" }]);
   });
 });
 
@@ -200,6 +225,10 @@ describe("deployCloudRun", () => {
     assert.deepEqual(writes[1].body.traffic, [
       { type: "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", revision: result.revision, percent: 100 },
     ]);
+    // The same template, so no second revision, and the etag of the read it
+    // was made from, so a change made in between refuses the write.
+    assert.deepEqual(writes[1].body.template, writes[0].body.template);
+    assert.equal(writes[1].body.etag, '"e2"');
     assert.equal(result.url, "https://frapp-api-x.a.run.app");
   });
 
@@ -214,6 +243,15 @@ describe("deployCloudRun", () => {
     const { fetchImpl, calls } = fakeGoogle({ service: existingService() });
     await assert.rejects(deployCloudRun(baseArgs({ fetchImpl })), /holds no usable secret/);
     assert.equal(calls.filter((c) => c.method === "PATCH").length, 0);
+  });
+
+  it("refuses a service that doesn't answer on the address the deploy plan reads", async () => {
+    const { fetchImpl } = google();
+    const verify = async () => ({ status: "success", message: "ok" });
+    await assert.rejects(
+      deployCloudRun(baseArgs({ fetchImpl, verify, expectedUrl: "https://frapp-api-999.us-east4.run.app" })),
+      /Fix the derivation/,
+    );
   });
 
   it("sends a first deploy's traffic at once and checks the service URL", async () => {

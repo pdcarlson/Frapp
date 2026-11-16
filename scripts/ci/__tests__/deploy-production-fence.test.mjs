@@ -826,8 +826,7 @@ describe("installs run before any secret, and the trust split holds", () => {
       assert.equal(at(step.name), at(verifies[i]) + 1, `"${step.name}" runs right after "${verifies[i]}"`);
       assert.equal(step.if, verify.if, `"${step.name}" runs whenever "${verifies[i]}" does`);
       assert.equal(step.env.get("TRUSTED_CI"), copy.env.get("TRUSTED_CI"), `"${step.name}" reads another copy`);
-      // On Cloud Run the step first points the check at the service's own URL (#5228).
-      assert.match(step.body, /^\s+(run: )?node "\$TRUSTED_CI\/smoke-deployed-api\.mjs"$/m);
+      assert.match(step.body, /run: node "\$TRUSTED_CI\/smoke-deployed-api\.mjs"/);
       assert.doesNotMatch(step.body, /node scripts\/ci\/smoke-deployed-api/, `"${step.name}" runs the deployed tree's copy`);
       // The dashboard origins come from the trusted ref's source, not the deployed tree's.
       assert.equal(step.env.get("TRUSTED_SHA"), "${{ github.sha }}");

@@ -23,13 +23,15 @@ export function providerAudience(provider) {
   return `https://iam.googleapis.com/${provider}`;
 }
 
-async function readJson(response, what) {
+/** A Google API response's JSON body; a non-2xx or a body that isn't JSON throws, naming `what`. */
+export async function readGoogleJson(response, what) {
   const text = await response.text();
   if (!response.ok) {
     // Google's error bodies name the refusal (an unmet condition, a missing
     // binding) and never echo a token, so they are safe to show.
     throw new Error(`${what} answered HTTP ${response.status}: ${text.slice(0, 500)}`);
   }
+  if (!text) return {};
   try {
     return JSON.parse(text);
   } catch {
@@ -54,7 +56,7 @@ async function githubOidcToken({ audience, env = process.env, fetchImpl = fetch 
     { headers: { Authorization: `Bearer ${requestToken}`, Accept: "application/json" } },
     { fetchImpl },
   );
-  const body = await readJson(response, "GitHub's OIDC token endpoint");
+  const body = await readGoogleJson(response, "GitHub's OIDC token endpoint");
   if (typeof body.value !== "string" || !body.value) throw new Error("GitHub's OIDC token endpoint returned no token.");
   return body.value;
 }
@@ -77,7 +79,7 @@ async function federatedToken({ oidcToken, provider, fetchImpl = fetch }) {
     },
     { fetchImpl, retryMethods: TOKEN_RETRY_METHODS },
   );
-  const body = await readJson(response, "Google's token exchange");
+  const body = await readGoogleJson(response, "Google's token exchange");
   if (typeof body.access_token !== "string" || !body.access_token) {
     throw new Error("Google's token exchange returned no access token.");
   }
@@ -98,7 +100,7 @@ async function serviceAccountToken({ federated, serviceAccount, fetchImpl = fetc
     },
     { fetchImpl, retryMethods: TOKEN_RETRY_METHODS },
   );
-  const body = await readJson(response, `Google's token service, for ${serviceAccount}`);
+  const body = await readGoogleJson(response, `Google's token service, for ${serviceAccount}`);
   if (typeof body.accessToken !== "string" || !body.accessToken) {
     throw new Error(`Google's token service returned no access token for ${serviceAccount}.`);
   }
