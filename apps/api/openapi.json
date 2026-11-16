@@ -9077,7 +9077,8 @@
                 "SERVICE",
                 "FINE",
                 "MANUAL",
-                "STUDY"
+                "STUDY",
+                "PREDICTION"
               ]
             }
           },
@@ -14589,6 +14590,479 @@
         ]
       }
     },
+    "/v1/predictions": {
+      "get": {
+        "operationId": "PredictionController_list_v1",
+        "parameters": [
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "open",
+              "type": "string",
+              "enum": [
+                "open",
+                "mine",
+                "settled",
+                "all"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PredictionMarketViewDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List predictions the caller can see",
+        "tags": [
+          "Predictions"
+        ]
+      },
+      "post": {
+        "operationId": "PredictionController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePredictionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ask a prediction in a channel",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}": {
+      "get": {
+        "operationId": "PredictionController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "One prediction with its pools and stakers",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/stakes": {
+      "post": {
+        "operationId": "PredictionController_stake_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlacePredictionStakeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Stake points on an answer",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/consent": {
+      "post": {
+        "operationId": "PredictionController_consent_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionConsentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionConsentResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The member a prediction names agrees to it, or declines and it is removed",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/settle": {
+      "post": {
+        "operationId": "PredictionController_settle_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlePredictionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The settler (or predictions:manage with nothing staked) names the winning answer; it pays after 24 hours",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/questions": {
+      "post": {
+        "operationId": "PredictionController_question_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionPredictionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A staker questions the result within its 24-hour window",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/confirm": {
+      "post": {
+        "operationId": "PredictionController_confirm_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmPredictionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pay a settled result now, or settle it again on another answer (reverses a paid round)",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/void": {
+      "post": {
+        "operationId": "PredictionController_void_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Void a prediction and refund every stake (its settler before payout, predictions:manage any time)",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
     "/v1/chapters/current/rollover": {
       "post": {
         "operationId": "SemesterRolloverController_rollover_v1",
@@ -19647,6 +20121,13 @@
             "minimum": 1,
             "maximum": 100000,
             "example": 100
+          },
+          "prediction_max_stake": {
+            "type": "number",
+            "description": "Most one member may stake in total on one prediction (default 25). Must be between 1 and 100000.",
+            "minimum": 1,
+            "maximum": 100000,
+            "example": 25
           }
         }
       },
@@ -29073,6 +29554,411 @@
         "required": [
           "option_indexes"
         ]
+      },
+      "PredictionMarketDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "settler_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "named_member_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "question": {
+            "type": "string"
+          },
+          "settle_rule": {
+            "type": "string"
+          },
+          "closes_at": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting_consent",
+              "open",
+              "settled",
+              "questioned",
+              "paid",
+              "voided"
+            ]
+          },
+          "winning_answer_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "known_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "settle_note": {
+            "type": "string",
+            "nullable": true
+          },
+          "settled_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "settled_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "question_window_ends_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "payout_round": {
+            "type": "number"
+          },
+          "paid_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "voided_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "voided_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "channel_id",
+          "message_id",
+          "created_by",
+          "settler_id",
+          "named_member_id",
+          "question",
+          "settle_rule",
+          "closes_at",
+          "status",
+          "winning_answer_id",
+          "known_at",
+          "settle_note",
+          "settled_by",
+          "settled_at",
+          "question_window_ends_at",
+          "payout_round",
+          "paid_at",
+          "voided_by",
+          "voided_at",
+          "client_message_id",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "PredictionAnswerViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string"
+          },
+          "pool": {
+            "type": "number",
+            "description": "Points staked on this answer"
+          },
+          "chance": {
+            "type": "number",
+            "nullable": true,
+            "description": "Whole-percent share of all points staked; null before any"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "pool",
+          "chance"
+        ]
+      },
+      "PredictionStakerViewDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "answer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "user_id",
+          "answer_id",
+          "amount"
+        ]
+      },
+      "PredictionQuestionViewDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "note",
+          "created_at"
+        ]
+      },
+      "PredictionMarketViewDto": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "$ref": "#/components/schemas/PredictionMarketDto"
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PredictionAnswerViewDto"
+            }
+          },
+          "total_staked": {
+            "type": "number"
+          },
+          "stakers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PredictionStakerViewDto"
+            }
+          },
+          "my_stakes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PredictionStakerViewDto"
+            }
+          },
+          "stake_blocked_reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why the viewer can't stake right now; null when they can"
+          },
+          "open_questions": {
+            "description": "Unresolved questions about the result",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PredictionQuestionViewDto"
+            }
+          }
+        },
+        "required": [
+          "market",
+          "answers",
+          "total_staked",
+          "stakers",
+          "my_stakes",
+          "stake_blocked_reason",
+          "open_questions"
+        ]
+      },
+      "CreatePredictionDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel its card goes in"
+          },
+          "question": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "settle_rule": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "How the answer will be decided, shown on the card"
+          },
+          "answers": {
+            "description": "Answers (2-10), in order",
+            "example": [
+              "Yes",
+              "No"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "closes_at": {
+            "type": "string",
+            "description": "When staking stops (ISO 8601 with a zone)"
+          },
+          "settler_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Who settles it; the creator when omitted"
+          },
+          "named_member_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A member the question is about; it waits for their OK before it opens"
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Replay key: a retry with the same key returns the same question"
+          }
+        },
+        "required": [
+          "channel_id",
+          "question",
+          "settle_rule",
+          "answers",
+          "closes_at"
+        ]
+      },
+      "PlacePredictionStakeDto": {
+        "type": "object",
+        "properties": {
+          "answer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Replay key: a retry with the same key places nothing more and returns the same result"
+          }
+        },
+        "required": [
+          "answer_id",
+          "amount",
+          "client_message_id"
+        ]
+      },
+      "PredictionConsentDto": {
+        "type": "object",
+        "properties": {
+          "agree": {
+            "type": "boolean",
+            "description": "true opens the question; false withdraws it"
+          }
+        },
+        "required": [
+          "agree"
+        ]
+      },
+      "PredictionConsentResultDto": {
+        "type": "object",
+        "properties": {
+          "prediction": {
+            "nullable": true,
+            "description": "The opened question, or null once a decline removed it",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PredictionMarketViewDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "prediction"
+        ]
+      },
+      "SettlePredictionDto": {
+        "type": "object",
+        "properties": {
+          "answer_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The answer that won"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "known_at": {
+            "type": "string",
+            "description": "When the answer became known, if before now; stakes after it are refunded"
+          }
+        },
+        "required": [
+          "answer_id"
+        ]
+      },
+      "QuestionPredictionDto": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "ConfirmPredictionDto": {
+        "type": "object",
+        "properties": {
+          "answer_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Settle on this answer instead; omitted confirms the result as settled"
+          }
+        }
       },
       "RolloverDto": {
         "type": "object",

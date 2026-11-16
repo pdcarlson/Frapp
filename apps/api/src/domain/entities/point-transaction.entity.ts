@@ -1,5 +1,12 @@
 export type PointCategory =
-  'ATTENDANCE' | 'ACADEMIC' | 'SERVICE' | 'FINE' | 'MANUAL' | 'STUDY';
+  | 'ATTENDANCE'
+  | 'ACADEMIC'
+  | 'SERVICE'
+  | 'FINE'
+  | 'MANUAL'
+  | 'STUDY'
+  // Stakes, payouts, refunds and corrections from predictions (#5133).
+  | 'PREDICTION';
 
 export interface PointTransaction {
   id: string;

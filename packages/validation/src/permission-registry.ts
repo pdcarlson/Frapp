@@ -224,6 +224,18 @@ export const PERMISSION_REGISTRY: readonly PermissionDefinition[] = [
     "See every member's points",
     "See every member's point history, not only their own.",
   ),
+  chapterPermission(
+    "predictions:create",
+    "points",
+    "Ask predictions",
+    "Ask a question members can stake points on.",
+  ),
+  chapterPermission(
+    "predictions:manage",
+    "points",
+    "Manage predictions",
+    "Confirm, settle again or void any prediction, including after it pays.",
+  ),
 
   chapterPermission(
     "service:log",

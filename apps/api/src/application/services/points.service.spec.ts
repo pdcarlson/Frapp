@@ -1248,6 +1248,7 @@ describe('PointsService', () => {
         mockChapterPointsConfig.getConfig.mockResolvedValue({
           adjustment_rate_limit_per_hour: 50,
           anomaly_threshold: 100,
+          prediction_max_stake: 25,
         });
         mockPointTxnRepo.countRecentAdjustments.mockResolvedValue(50);
         mockPointTxnRepo.findByClientMessageId
@@ -1264,6 +1265,7 @@ describe('PointsService', () => {
         mockChapterPointsConfig.getConfig.mockResolvedValue({
           adjustment_rate_limit_per_hour: 50,
           anomaly_threshold: 100,
+          prediction_max_stake: 25,
         });
         mockPointTxnRepo.countRecentAdjustments.mockResolvedValue(50);
         mockPointTxnRepo.findByClientMessageId.mockResolvedValue(null);

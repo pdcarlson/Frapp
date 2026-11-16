@@ -138,6 +138,11 @@ export class ChapterPointsConfigService {
         'anomaly_threshold',
         chapterId,
       ),
+      prediction_max_stake: this.sane(
+        row.prediction_max_stake,
+        'prediction_max_stake',
+        chapterId,
+      ),
     };
   }
 

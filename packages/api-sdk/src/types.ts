@@ -4246,6 +4246,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/predictions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List predictions the caller can see */
+        get: operations["PredictionController_list_v1"];
+        put?: never;
+        /** Ask a prediction in a channel */
+        post: operations["PredictionController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One prediction with its pools and stakers */
+        get: operations["PredictionController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/stakes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stake points on an answer */
+        post: operations["PredictionController_stake_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The member a prediction names agrees to it, or declines and it is removed */
+        post: operations["PredictionController_consent_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/settle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The settler (or predictions:manage with nothing staked) names the winning answer; it pays after 24 hours */
+        post: operations["PredictionController_settle_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** A staker questions the result within its 24-hour window */
+        post: operations["PredictionController_question_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pay a settled result now, or settle it again on another answer (reverses a paid round) */
+        post: operations["PredictionController_confirm_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/predictions/{id}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Void a prediction and refund every stake (its settler before payout, predictions:manage any time) */
+        post: operations["PredictionController_void_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chapters/current/rollover": {
         parameters: {
             query?: never;
@@ -5925,6 +6062,11 @@ export interface components {
              * @example 100
              */
             anomaly_threshold?: number;
+            /**
+             * @description Most one member may stake in total on one prediction (default 25). Must be between 1 and 100000.
+             * @example 25
+             */
+            prediction_max_stake?: number;
         };
         WorkflowConfigDto: {
             /** @description Workflow key from the chapter catalog */
@@ -9178,6 +9320,150 @@ export interface components {
              *     ]
              */
             option_indexes: number[];
+        };
+        PredictionMarketDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            chapter_id: string;
+            /** Format: uuid */
+            channel_id: string;
+            /** Format: uuid */
+            message_id: string | null;
+            /** Format: uuid */
+            created_by: string;
+            /** Format: uuid */
+            settler_id: string;
+            /** Format: uuid */
+            named_member_id: string | null;
+            question: string;
+            settle_rule: string;
+            closes_at: string;
+            /** @enum {string} */
+            status: "awaiting_consent" | "open" | "settled" | "questioned" | "paid" | "voided";
+            /** Format: uuid */
+            winning_answer_id: string | null;
+            known_at: string | null;
+            settle_note: string | null;
+            /** Format: uuid */
+            settled_by: string | null;
+            settled_at: string | null;
+            question_window_ends_at: string | null;
+            payout_round: number;
+            paid_at: string | null;
+            /** Format: uuid */
+            voided_by: string | null;
+            voided_at: string | null;
+            /** Format: uuid */
+            client_message_id: string | null;
+            created_at: string;
+            updated_at: string;
+        };
+        PredictionAnswerViewDto: {
+            /** Format: uuid */
+            id: string;
+            label: string;
+            /** @description Points staked on this answer */
+            pool: number;
+            /** @description Whole-percent share of all points staked; null before any */
+            chance: number | null;
+        };
+        PredictionStakerViewDto: {
+            /** Format: uuid */
+            user_id: string;
+            /** Format: uuid */
+            answer_id: string;
+            amount: number;
+        };
+        PredictionQuestionViewDto: {
+            /** Format: uuid */
+            user_id: string;
+            note: string;
+            created_at: string;
+        };
+        PredictionMarketViewDto: {
+            market: components["schemas"]["PredictionMarketDto"];
+            answers: components["schemas"]["PredictionAnswerViewDto"][];
+            total_staked: number;
+            stakers: components["schemas"]["PredictionStakerViewDto"][];
+            my_stakes: components["schemas"]["PredictionStakerViewDto"][];
+            /** @description Why the viewer can't stake right now; null when they can */
+            stake_blocked_reason: string | null;
+            /** @description Unresolved questions about the result */
+            open_questions: components["schemas"]["PredictionQuestionViewDto"][];
+        };
+        CreatePredictionDto: {
+            /**
+             * Format: uuid
+             * @description The channel its card goes in
+             */
+            channel_id: string;
+            question: string;
+            /** @description How the answer will be decided, shown on the card */
+            settle_rule: string;
+            /**
+             * @description Answers (2-10), in order
+             * @example [
+             *       "Yes",
+             *       "No"
+             *     ]
+             */
+            answers: string[];
+            /** @description When staking stops (ISO 8601 with a zone) */
+            closes_at: string;
+            /**
+             * Format: uuid
+             * @description Who settles it; the creator when omitted
+             */
+            settler_id?: string;
+            /**
+             * Format: uuid
+             * @description A member the question is about; it waits for their OK before it opens
+             */
+            named_member_id?: string;
+            /**
+             * Format: uuid
+             * @description Replay key: a retry with the same key returns the same question
+             */
+            client_message_id?: string;
+        };
+        PlacePredictionStakeDto: {
+            /** Format: uuid */
+            answer_id: string;
+            amount: number;
+            /**
+             * Format: uuid
+             * @description Replay key: a retry with the same key places nothing more and returns the same result
+             */
+            client_message_id: string;
+        };
+        PredictionConsentDto: {
+            /** @description true opens the question; false withdraws it */
+            agree: boolean;
+        };
+        PredictionConsentResultDto: {
+            /** @description The opened question, or null once a decline removed it */
+            prediction: components["schemas"]["PredictionMarketViewDto"] | null;
+        };
+        SettlePredictionDto: {
+            /**
+             * Format: uuid
+             * @description The answer that won
+             */
+            answer_id: string;
+            note?: string;
+            /** @description When the answer became known, if before now; stakes after it are refunded */
+            known_at?: string;
+        };
+        QuestionPredictionDto: {
+            note: string;
+        };
+        ConfirmPredictionDto: {
+            /**
+             * Format: uuid
+             * @description Settle on this answer instead; omitted confirms the result as settled
+             */
+            answer_id?: string;
         };
         RolloverDto: {
             /** @description Semester label (e.g. "Fall 2025") */
@@ -16902,7 +17188,7 @@ export interface operations {
             query?: {
                 /** @description Filter to a single member */
                 user_id?: string;
-                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY" | "PREDICTION";
                 /** @description Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`. */
                 flagged?: "true" | "false" | "1" | "0";
                 /** @description ISO8601 cursor — return transactions created before this timestamp */
@@ -20611,6 +20897,298 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_list_v1: {
+        parameters: {
+            query?: {
+                filter?: "open" | "mine" | "settled" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"][];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_stake_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlacePredictionStakeDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_consent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PredictionConsentDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionConsentResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_settle_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettlePredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_question_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuestionPredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_confirm_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmPredictionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    PredictionController_void_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PredictionMarketViewDto"];
+                };
             };
             /** @description Error */
             default: {
