@@ -95,7 +95,7 @@ function todayInput(now = new Date()): string {
 }
 
 /** A local `YYYY-MM-DD` and `HH:MM` as an instant, or null. */
-function localIso(date: string, time: string): string | null {
+export function localIso(date: string, time: string): string | null {
   if (!date || !time) return null;
   const at = new Date(`${date}T${time}`);
   return Number.isNaN(at.getTime()) ? null : at.toISOString();
@@ -138,7 +138,10 @@ function StartMinutesForm({ onDone }: { onDone: () => void }) {
   const meetingsQuery = useMeetings();
   const rolesQuery = useRoles();
   const permissions = useMyPermissions().data?.permissions ?? [];
-  const canCreateEvents = can("events:create", permissions);
+  // Starting minutes is enough to make the quiet after-the-fact event
+  // (#4935): it requires nobody, earns no points and pushes nothing.
+  const canCreateEvents =
+    can("events:create", permissions) || can("meetings:record", permissions);
   const start = useStartMeeting();
 
   const [now] = useState(() => Date.now());
