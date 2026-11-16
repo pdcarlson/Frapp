@@ -11,7 +11,10 @@ import {
 import {
   calendarAppLinks,
   errorCopy,
+  GOOGLE_CALENDAR_RETURN_COPY,
   GOOGLE_CALENDAR_RETURN_PARAMS,
+  googleCalendarDisconnectCopy,
+  googleCalendarFootnote,
   readGoogleCalendarReturn,
   useActiveChapterId,
   useCalendarFeedLink,
@@ -20,7 +23,6 @@ import {
   useGoogleCalendarStatus,
   useResetCalendarFeedLink,
   useStartGoogleCalendarConnect,
-  type GoogleCalendarReturn,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
@@ -86,12 +88,8 @@ export function CalendarSubscribeMenu() {
   }
 
   async function disconnectGoogleCalendar() {
-    const account = googleConnect?.google_email;
     const ok = await confirm({
-      title: "Disconnect Google Calendar?",
-      description: `Frapp's calendar is removed from ${
-        account ? `your Google account (${account})` : "your Google account"
-      }. Your other calendars aren't touched.`,
+      ...googleCalendarDisconnectCopy(googleConnect?.google_email),
       confirmLabel: "Disconnect",
       tone: "destructive",
     });
@@ -240,11 +238,7 @@ export function CalendarSubscribeMenu() {
             Reset link
           </DropdownMenuItem>
           <p className="px-2 pt-1 pb-1.5 text-caption text-muted-foreground">
-            {googleConnect?.connected && googleConnect.google_email
-              ? `Google Calendar is connected as ${googleConnect.google_email} and updates within minutes. Other calendar apps check on their own schedule.`
-              : googleConnect
-                ? "Google Calendar updates within minutes once connected. Other calendar apps check on their own schedule."
-                : "Your calendar app checks for changes on its own schedule. Google Calendar can take several hours."}
+            {googleCalendarFootnote(googleConnect)}
           </p>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -252,15 +246,6 @@ export function CalendarSubscribeMenu() {
     </>
   );
 }
-
-const GOOGLE_RETURN_COPY: Record<
-  Exclude<GoogleCalendarReturn["kind"], "confirm">,
-  string
-> = {
-  denied: "Google Calendar wasn't connected.",
-  expired: "That Google sign-in expired. Connect Google Calendar again.",
-  failed: "Google didn't finish the sign-in. Connect Google Calendar again.",
-};
 
 /**
  * Finishes a Google sign-in when Google sends the member back to Events.
@@ -288,7 +273,7 @@ function useGoogleCalendarReturn() {
     } else {
       toast({
         variant: outcome.kind === "denied" ? undefined : "destructive",
-        description: GOOGLE_RETURN_COPY[outcome.kind],
+        description: GOOGLE_CALENDAR_RETURN_COPY[outcome.kind],
       });
     }
     for (const param of GOOGLE_CALENDAR_RETURN_PARAMS) {
@@ -311,7 +296,7 @@ function useGoogleCalendarReturn() {
       .catch((error: unknown) =>
         toast({
           variant: "destructive",
-          description: errorCopy(error, GOOGLE_RETURN_COPY.failed, {
+          description: errorCopy(error, GOOGLE_CALENDAR_RETURN_COPY.failed, {
             serverWritesForMembers: true,
           }),
         }),
