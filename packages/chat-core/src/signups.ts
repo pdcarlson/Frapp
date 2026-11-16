@@ -12,8 +12,12 @@ import {
   SIGNUP_TITLE_MAX_LENGTH,
   joinNames,
 } from "@repo/validation";
-import { checkCardEnd, foldOptionLabel, isCardClosed } from "./card-closing";
-import { canActOnMessage, isOwnMessage } from "./message-actions";
+import {
+  checkCardEnd,
+  foldOptionLabel,
+  isCardClosed,
+  isCardOrganizer,
+} from "./card-closing";
 import {
   currentPollPicks,
   makePollOptionId,
@@ -267,10 +271,7 @@ export function canExportSignup(
   viewerId: string | null,
   canManageChannels: boolean,
 ): boolean {
-  return (
-    (isOwnMessage(message, viewerId) || (canManageChannels && !!viewerId)) &&
-    canActOnMessage(message)
-  );
+  return isCardOrganizer(message, viewerId, canManageChannels);
 }
 
 /** A sign-up's export columns. */

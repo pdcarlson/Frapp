@@ -118,6 +118,10 @@ describe("checkCardEnd", () => {
       ok: false,
       problem: FORM_END_TOO_FAR_PROBLEM,
     });
+    expect(checkFormDraft({ ...form, closesAt: new Date(NOW) }, NOW)).toEqual({
+      ok: false,
+      problem: CARD_END_PASSED_PROBLEM,
+    });
     const signup = {
       ...emptySignupDraft(),
       format: "headcount" as const,

@@ -32,9 +32,26 @@ export function isCardClosed(card: ClosableCard, now: number): boolean {
 }
 
 /**
+ * Whether the viewer organizes this card: they posted it or hold
+ * `channels:manage`, on a card the server has and that isn't deleted
+ * (`canActOnMessage`). Close is offered to them while the card is open
+ * ({@link canCloseCard}), and a sign-up's Export always (`canExportSignup`).
+ */
+export function isCardOrganizer(
+  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
+  viewerId: string | null,
+  canManageChannels: boolean,
+): boolean {
+  return (
+    (isOwnMessage(message, viewerId) || (canManageChannels && !!viewerId)) &&
+    canActOnMessage(message)
+  );
+}
+
+/**
  * Whether the viewer is offered Close on this card: it is on the server and
  * not deleted (`canActOnMessage`), still open, and the viewer posted it or
- * holds `channels:manage`. The API enforces it (`ChatService.closeCard`,
+ * holds `channels:manage` ({@link isCardOrganizer}). The API enforces it (`ChatService.closeCard`,
  * `PollService.close`); this only keeps the card honest. A poll also needs
  * its module on (`canClosePoll` in `./polls`).
  */
@@ -46,8 +63,7 @@ export function canCloseCard(
   canManageChannels: boolean,
 ): boolean {
   return (
-    (isOwnMessage(message, viewerId) || (canManageChannels && !!viewerId)) &&
-    canActOnMessage(message) &&
+    isCardOrganizer(message, viewerId, canManageChannels) &&
     !isCardClosed(card, now)
   );
 }

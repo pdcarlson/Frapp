@@ -161,6 +161,19 @@ describe("checkFormDraft", () => {
       ok: false,
       questionKey: q.key,
     });
+    // Runs of whitespace fold too (`foldOptionLabel`), as on the poll draft.
+    const base = written();
+    const bq = base.questions[0]!;
+    const beds = setFormOption(
+      setFormOption(base, bq.key, bq.options[0]!.key, "Two  Beds"),
+      bq.key,
+      bq.options[1]!.key,
+      "two beds",
+    );
+    expect(checkFormDraft(beds, NOW)).toMatchObject({
+      ok: false,
+      questionKey: bq.key,
+    });
   });
 
   it("refuses an end time that has passed or is more than a year out", () => {

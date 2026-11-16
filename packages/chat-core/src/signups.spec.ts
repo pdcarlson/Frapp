@@ -357,6 +357,16 @@ describe("the New sign-up sheet draft", () => {
     expect(
       checkSignupDraft(setSignupSlot(draft, key, { label: "saturday" })),
     ).toMatchObject({ ok: false, slotKey: draft.slots[1]!.key });
+    // Runs of whitespace fold too (`foldOptionLabel`), as on the poll draft.
+    const nights = setSignupSlot(
+      setSignupSlot(draft, key, { label: "Friday  Night" }),
+      draft.slots[1]!.key,
+      { label: "friday night" },
+    );
+    expect(checkSignupDraft(nights)).toMatchObject({
+      ok: false,
+      slotKey: draft.slots[1]!.key,
+    });
   });
 
   it("keeps at least one row", () => {
@@ -540,6 +550,22 @@ describe("sign-up export (#3926 step 4)", () => {
     expect(canExportSignup({ ...own, _status: "pending" }, "u1", true)).toBe(
       false,
     );
+  });
+
+  it("is offered to exactly the people Close sign-ups is for on an open card", () => {
+    const base = { sender_id: "u1", is_deleted: false } as const;
+    for (const status of ["confirmed", "pending"] as const) {
+      for (const deleted of [false, true]) {
+        for (const viewer of ["u1", "u2", null]) {
+          for (const manage of [false, true]) {
+            const msg = { ...base, _status: status, is_deleted: deleted };
+            expect(canExportSignup(msg, viewer, manage)).toBe(
+              canCloseCard(msg, {}, viewer, 0, manage),
+            );
+          }
+        }
+      }
+    }
   });
 
   it("lists each member per slot, in slot order and then sign-up order", () => {
