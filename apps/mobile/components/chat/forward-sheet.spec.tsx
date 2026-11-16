@@ -89,6 +89,8 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import { ForwardSheet } from "./forward-sheet";
+import type { GuardedSheetHandle } from "@/components/sheet-scaffold";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 import {
   FORWARD_COMMENT_PLACEHOLDER,
   FORWARD_DONE_ANNOUNCEMENT,
@@ -430,5 +432,22 @@ describe("ForwardSheet (#4864)", () => {
     expect(flat(tree)).toContain("Reconnect to make changes");
     act(() => send.props.onPress());
     expect(forward.mutateAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("ForwardSheet — dismissed by the menu while closed (#3795, #5173)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded<GuardedSheetHandle>((ref) => (
+      <QueryClientProvider client={queryClient}>
+        <FrappThemeProvider>
+          <ForwardSheet
+            ref={ref}
+            target={TARGET}
+            nameFor={() => null}
+            viewerId={VIEWER}
+          />
+        </FrappThemeProvider>
+      </QueryClientProvider>
+    ));
   });
 });

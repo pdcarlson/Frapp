@@ -110,4 +110,8 @@ export const AI_FAMILY_SWITCH: Readonly<
   ask: 'ask',
   meetings: 'meeting_notes',
   corpus: 'ask',
+  // The upload-time draft fill (#5233) reads only a file's redacted text, a
+  // chapter document the sheet's `chapter_records` row already names, so it
+  // stands behind the same switch and the uploader's own Yes.
+  backwork: 'ask',
 };

@@ -2,8 +2,10 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsDefined,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -12,9 +14,11 @@ import {
   MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
+  MAX_BACKWORK_DRAFT_BATCH,
   MAX_BACKWORK_ZIP_FILES,
   MAX_COURSE_NAME_LENGTH,
   MAX_COURSE_NICKNAMES,
@@ -79,34 +83,37 @@ export class BackworkUploadUrlResponseDto {
   resource_id: string;
 }
 
-export class ConfirmBackworkUploadDto {
-  @ApiProperty({ description: 'Storage path returned from upload-url' })
-  @IsString()
-  storage_path: string;
-
-  @ApiProperty({ description: 'SHA-256 hash of the uploaded file' })
-  @IsString()
-  file_hash: string;
-
-  @ApiPropertyOptional()
+/**
+ * A document's metadata, shared by the confirm body and a draft edit (#5208).
+ * Every field is optional. In a draft edit, a field sent as `null` clears it.
+ */
+export class BackworkFieldsDto {
+  @ApiPropertyOptional({ nullable: true })
   @IsOptional()
   @IsString()
   @MaxLength(255)
   title?: string;
 
-  @ApiPropertyOptional({ description: 'Department code (e.g. "CS")' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Department code (e.g. "CS")',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   department_code?: string;
 
-  @ApiPropertyOptional({ description: 'Course number (e.g. "101")' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Course number (e.g. "101")',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   course_number?: string;
 
   @ApiPropertyOptional({
+    nullable: true,
     description:
       'The course\'s name ("Calculus I"). Saved only when the course has no name yet; an upload never renames a course.',
     maxLength: MAX_COURSE_NAME_LENGTH,
@@ -116,51 +123,118 @@ export class ConfirmBackworkUploadDto {
   @MaxLength(MAX_COURSE_NAME_LENGTH)
   course_name?: string;
 
-  @ApiPropertyOptional({ description: 'Professor name' })
+  @ApiPropertyOptional({ nullable: true, description: 'Professor name' })
   @IsOptional()
   @IsString()
   @MaxLength(255)
   professor_name?: string;
 
-  @ApiPropertyOptional({ maximum: YEAR_MAX })
+  @ApiPropertyOptional({ nullable: true, maximum: YEAR_MAX })
   @IsOptional()
   @IsInt()
   @Min(1900)
   @Max(YEAR_MAX)
   year?: number;
 
-  @ApiPropertyOptional({ enum: SEMESTERS })
+  @ApiPropertyOptional({ nullable: true, enum: SEMESTERS })
   @IsOptional()
   @IsIn(SEMESTERS)
   semester?: string;
 
-  @ApiPropertyOptional({ enum: ASSIGNMENT_TYPES })
+  @ApiPropertyOptional({ nullable: true, enum: ASSIGNMENT_TYPES })
   @IsOptional()
   @IsIn(ASSIGNMENT_TYPES)
   assignment_type?: string;
 
-  @ApiPropertyOptional({ maximum: INT4_MAX })
+  @ApiPropertyOptional({ nullable: true, maximum: INT4_MAX })
   @IsOptional()
   @IsInt()
   @Min(1)
   @Max(INT4_MAX)
   assignment_number?: number;
 
-  @ApiPropertyOptional({ enum: DOCUMENT_VARIANTS })
+  @ApiPropertyOptional({ nullable: true, enum: DOCUMENT_VARIANTS })
   @IsOptional()
   @IsIn(DOCUMENT_VARIANTS)
   document_variant?: string;
 
-  @ApiPropertyOptional({ type: [String] })
+  @ApiPropertyOptional({ nullable: true, type: [String] })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+}
+
+export class ConfirmBackworkUploadDto extends BackworkFieldsDto {
+  @ApiProperty({ description: 'Storage path returned from upload-url' })
+  @IsString()
+  storage_path: string;
+
+  @ApiProperty({ description: 'SHA-256 hash of the uploaded file' })
+  @IsString()
+  file_hash: string;
 
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsStrictBoolean()
   is_redacted?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Save as a draft: the fields are kept as sent, not filed, and only the uploader sees the file until it is published (POST /v1/backwork/drafts/publish).',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  draft?: boolean;
+}
+
+/** Ids of the caller's own drafts, for an edit or a publish. */
+class BackworkDraftIdsDto {
+  @ApiProperty({
+    type: [String],
+    maxItems: MAX_BACKWORK_DRAFT_BATCH,
+    description: "The caller's drafts. Other ids are left out.",
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_BACKWORK_DRAFT_BATCH)
+  @IsUUID(undefined, { each: true })
+  ids: string[];
+}
+
+export class UpdateBackworkDraftsDto extends BackworkDraftIdsDto {
+  @ApiProperty({
+    type: BackworkFieldsDto,
+    description:
+      'Fields to set on every listed draft. Fields left out keep their value; a field sent as null clears it.',
+  })
+  @IsDefined()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => BackworkFieldsDto)
+  fields: BackworkFieldsDto;
+}
+
+export class PublishBackworkDraftsDto extends BackworkDraftIdsDto {}
+
+export class BackworkDraftFailureDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ description: 'Why it stayed a draft, in words to show.' })
+  message: string;
+}
+
+export class PublishBackworkDraftsResponseDto {
+  @ApiProperty({
+    type: 'array',
+    items: { type: 'object' },
+    description: 'The filed resources.',
+  })
+  published: object[];
+
+  @ApiProperty({ type: [BackworkDraftFailureDto] })
+  failed: BackworkDraftFailureDto[];
 }
 
 export class UpdateDepartmentDto {
@@ -333,4 +407,39 @@ export class BackworkDownloadUrlsResponseDto {
       'In the order asked. An id not in this chapter, or that could not be signed, is left out.',
   })
   files: BackworkDownloadUrlDto[];
+}
+
+export class BackworkDraftFillResponseDto {
+  @ApiProperty({
+    enum: [
+      'filled',
+      'nothing_found',
+      'unreadable',
+      'not_redacted',
+      'refused',
+      'unavailable',
+      'invalid_output',
+    ],
+    description:
+      '`filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).',
+  })
+  status: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'The fields this fill set. Absent when the draft is unchanged.',
+  })
+  filled?: string[];
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    description:
+      'The draft as it now stands. `draft_fields.ai_filled` lists the fields an AI fill set that nobody has edited since.',
+  })
+  draft?: object;
+
+  @ApiPropertyOptional()
+  reason?: string;
 }

@@ -19,7 +19,7 @@ import {
   parseInstant,
 } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
-import { SkeletonText } from "@/components/shared/async-states";
+import { SkeletonText, pausedRead } from "@/components/shared/async-states";
 import { SectionSkeleton } from "@/components/shared/page-skeletons";
 import {
   SubscriptionNotice,
@@ -206,8 +206,7 @@ export function MyCheckIn({
     eventUnavailable,
     // Not while the read is paused offline: then the window is still worth
     // saying, and the server refuses a repeat anyway.
-    ownLoading:
-      (mine.isPending && mine.fetchStatus !== "paused") || eventPending,
+    ownLoading: (mine.isPending && !pausedRead(mine)) || eventPending,
     start,
     end,
     opensMinutes,

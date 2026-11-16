@@ -19,6 +19,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { FOCUS_RING } from "@/components/ui/focus";
+import { pausedRead } from "@/components/shared/async-states";
 
 import {
   channelAccessKindHeading,
@@ -35,6 +36,28 @@ export {
   type ChannelAccessOption,
   type ChannelAccessQuestion,
 } from "@repo/hooks/channel-access";
+
+/** Whether a field's options have loaded, as `ChannelAccessField` reads it. */
+export type ChannelAccessOptionsState = "ready" | "loading" | "error";
+
+/**
+ * The options read's state for `ChannelAccessField`, so the channel page and
+ * the create sheet answer it the same way. A paused read is `"error"`, not
+ * `"loading"`: nothing settles it until reconnect, so a spinner would hold
+ * for the whole outage.
+ */
+export function channelAccessOptionsState(query: {
+  data: unknown;
+  isError: boolean;
+  isPending: boolean;
+  fetchStatus: string;
+}): ChannelAccessOptionsState {
+  return query.data !== undefined
+    ? "ready"
+    : query.isError || pausedRead(query)
+      ? "error"
+      : "loading";
+}
 
 const EVERYONE = "everyone";
 const CHOSEN = "chosen";
@@ -86,6 +109,10 @@ export function ChannelAccessField({
   options,
   optionsState,
   disabled = false,
+  everyoneLabel,
+  locked = [],
+  alwaysLine,
+  canChoose = true,
 }: {
   id: string;
   question: ChannelAccessQuestion;
@@ -94,27 +121,63 @@ export function ChannelAccessField({
   onChange: (next: string[] | null) => void;
   options: readonly ChannelAccessOption[];
   /** Whether the options have loaded; the field still shows what it holds. */
-  optionsState: "ready" | "loading" | "error";
+  optionsState: ChannelAccessOptionsState;
   disabled?: boolean;
+  /**
+   * The open choice's name, when `null` means something other than
+   * everyone: a document file's "Same as folder" (#3642 piece 1).
+   */
+  everyoneLabel?: string;
+  /**
+   * Entries every list this member writes keeps: a document list keeps the
+   * setter's tier and those above. They start a new list and join a stored
+   * one at its first edit, the way the API adds them on save, and are drawn
+   * without a remove. A stored list is shown as it is until then, so an
+   * officer looking at a list someone else set sees who it really reaches.
+   */
+  locked?: readonly string[];
+  /** Who passes every list, said under the chips; the President by default. */
+  alwaysLine?: string;
+  /**
+   * False when this member may not write a list at all (a document list
+   * from outside every tier): the open choice stays on offer, so they can
+   * still lift a list, but Chosen roles and its chips are read-only.
+   */
+  canChoose?: boolean;
 }) {
   const mode = value === null ? EVERYONE : CHOSEN;
+  const lockedSet = new Set(locked);
   const byEntry = useMemo(
     () => new Map(options.map((option) => [option.entry, option])),
     [options],
   );
-  const chosen = value ?? [];
+  const chosen = value === null ? [] : [...value];
+  const editable = !disabled && canChoose;
   const chosenSet = new Set(chosen);
   const remaining = options.filter(
     (option) => !chosenSet.has(option.entry) && !option.hidden,
   );
   const label = QUESTION_LABEL[question];
+  const modeOptions = MODE_OPTIONS[question].map((option) =>
+    option.value === EVERYONE && everyoneLabel
+      ? { ...option, label: everyoneLabel }
+      : option,
+  );
+  const always =
+    alwaysLine ??
+    `The President can always ${question === "see" ? "see it" : "post"}.`;
 
   function remove(entry: string) {
-    onChange(chosen.filter((held) => held !== entry));
+    onChange(
+      normalizeChannelAccessList([
+        ...locked,
+        ...chosen.filter((held) => held !== entry),
+      ]) ?? [],
+    );
   }
 
   function add(entry: string) {
-    onChange(normalizeChannelAccessList([...chosen, entry]) ?? []);
+    onChange(normalizeChannelAccessList([...locked, ...chosen, entry]) ?? []);
   }
 
   return (
@@ -125,10 +188,18 @@ export function ChannelAccessField({
         </span>
         <SegmentedChoice
           label={label}
-          options={MODE_OPTIONS[question]}
+          options={
+            canChoose
+              ? modeOptions
+              : modeOptions.map((option) =>
+                  option.value === CHOSEN
+                    ? { ...option, disabled: true }
+                    : option,
+                )
+          }
           value={mode}
           disabled={disabled}
-          onChange={(next) => onChange(next === EVERYONE ? null : [])}
+          onChange={(next) => onChange(next === EVERYONE ? null : [...locked])}
         />
       </div>
       {mode === CHOSEN ? (
@@ -148,11 +219,15 @@ export function ChannelAccessField({
                         : "Unavailable"
                   }
                   removeLabel={`Remove ${option?.name ?? "this entry"} from ${label.toLowerCase()}`}
-                  onRemove={disabled ? undefined : () => remove(entry)}
+                  onRemove={
+                    !editable || lockedSet.has(entry)
+                      ? undefined
+                      : () => remove(entry)
+                  }
                 />
               );
             })}
-            {disabled ? null : (
+            {!editable ? null : (
               <AddEntry
                 label={label}
                 options={remaining}
@@ -167,8 +242,8 @@ export function ChannelAccessField({
                 ? "Add a tier, role or group. Until you do, only the President can see it."
                 : "Add a tier, role or group. Until you do, only the President can post."
               : optionsState === "ready"
-                ? `Reaches ${peopleCount(channelAccessReach(chosen, options))}. The President can always ${question === "see" ? "see it" : "post"}.`
-                : `The President can always ${question === "see" ? "see it" : "post"}.`}
+                ? `Reaches ${peopleCount(channelAccessReach(chosen, options))}. ${always}`
+                : always}
           </p>
         </>
       ) : null}
@@ -237,7 +312,7 @@ function AddEntry({
 }: {
   label: string;
   options: readonly ChannelAccessOption[];
-  optionsState: "ready" | "loading" | "error";
+  optionsState: ChannelAccessOptionsState;
   onAdd: (entry: string) => void;
 }) {
   const [open, setOpen] = useState(false);

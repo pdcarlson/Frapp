@@ -1,4 +1,5 @@
 import { UnauthorizedException } from '@nestjs/common';
+import { readUnverifiedJwtPayload } from '#domain/utils/jwt-segment';
 import type {
   AuthFailureDetail,
   AuthFailureReason,
@@ -57,19 +58,9 @@ export function tokenExpired(
   token: string,
   now: number = Date.now(),
 ): boolean | undefined {
-  const parts = token.split('.');
-  if (parts.length !== 3) return undefined;
-  try {
-    const payload: unknown = JSON.parse(
-      Buffer.from(parts[1], 'base64url').toString('utf8'),
-    );
-    if (!payload || typeof payload !== 'object') return undefined;
-    const { exp } = payload as { exp?: unknown };
-    if (typeof exp !== 'number' || !Number.isFinite(exp)) return undefined;
-    return exp * 1000 <= now;
-  } catch {
-    return undefined;
-  }
+  const exp = readUnverifiedJwtPayload(token)?.exp;
+  if (typeof exp !== 'number' || !Number.isFinite(exp)) return undefined;
+  return exp * 1000 <= now;
 }
 
 export function authRejected(

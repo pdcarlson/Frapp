@@ -24,8 +24,9 @@ type Env = Record<string, unknown>;
  *   and the gateway answers "not available" for the tasks routed to it.
  *
  * A new provider is one more entry here, behind its own environment
- * variables. Google needs a project and a service account's key together
- * (`googleVertexSettings`); boot refuses one without the other.
+ * variables. Google needs a project and a service account's key together,
+ * except on Cloud Run, where the project alone signs in as the service's
+ * own identity (`googleVertexSettings`).
  */
 export function buildLanguageModelRegistry(
   env: Env = process.env,

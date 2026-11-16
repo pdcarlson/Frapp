@@ -27,7 +27,7 @@ export interface AiCallContext {
  * The chapter switch a task sits behind (`spec/behavior/ai.md` § Consent,
  * gate 1): the president turns each family on separately.
  */
-export type AiFeatureFamily = 'meetings' | 'ask' | 'corpus';
+export type AiFeatureFamily = 'meetings' | 'ask' | 'corpus' | 'backwork';
 
 /**
  * What the gateway tells each seam about the call it is about to make, or

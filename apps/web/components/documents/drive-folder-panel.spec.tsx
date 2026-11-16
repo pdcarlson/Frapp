@@ -47,6 +47,7 @@ const connected = (
     synced_count: 12,
     skipped_count: 2,
     syncing: false,
+    who_can_see: null,
     ...over,
   },
 });

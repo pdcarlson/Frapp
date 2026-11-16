@@ -247,7 +247,7 @@ type CachedRead = {
  * nothing about `/health`. So there are two outcomes, not one:
  *
  * - **The link dropped after load.** The `offline` event fired and the read
- *   **pauses**: `isPending && fetchStatus === "paused"`, neither `isLoading`
+ *   **pauses** (`pausedRead`: pending, `fetchStatus` `"paused"`), neither `isLoading`
  *   nor `isError`, and nothing settles it until reconnect. Every loading and
  *   error guard *below* the offline branch is dead for it.
  * - **The document mounted offline** (a bfcache restore, a restored tab), **or
@@ -258,7 +258,7 @@ type CachedRead = {
  * A surface handles both. One that covers only the pause leaves the failure to
  * whatever error guard it happens to have below; one that covers only the
  * failure renders a paused read as nothing, for as long as the outage lasts.
- * Test the paused state as `isPending && fetchStatus === "paused"`, never as
+ * Test the paused state with `pausedRead`, never as
  * `isPending && !isFetching`: a query that was never started is `"idle"` and
  * satisfies the second form too, which conflates "we could not ask" with
  * "we did not ask" (`spec/ui/design-system/README.md` § 4, State completeness standard).
@@ -302,8 +302,29 @@ export function anyReadUncached(
 }
 
 /**
+ * Whether a read is paused: pending, with TanStack holding its fetch until the
+ * link comes back (the first case in the note above `anyReadUncached`).
+ *
+ * The one spelling of the rule: no surface writes `isPending && fetchStatus
+ * === "paused"`, or its negation, by hand (a loading-but-not-paused branch is
+ * `isPending && !pausedRead(q)`). `async-states.spec.tsx` greps `apps/web`
+ * for a hand-written copy.
+ * Both halves are load-bearing. `isPending` alone is also true of a read that
+ * is merely loading; `fetchStatus === "paused"` alone is also true of a cached
+ * read whose refetch paused, which has data to show. And never `isPending &&
+ * !isFetching`: a query that was never started is `"idle"` and satisfies that
+ * too, conflating "we could not ask" with "we did not ask".
+ */
+export function pausedRead(read: {
+  isPending: boolean;
+  fetchStatus: string;
+}): boolean {
+  return read.isPending && read.fetchStatus === "paused";
+}
+
+/**
  * Whether one read with nothing to show is offline, either way the note above
- * describes: paused (`isPending && fetchStatus === "paused"`), or uncached
+ * describes: paused (`pausedRead`), or uncached
  * while `useNetwork()` reports OFFLINE, where it fails instead.
  *
  * For a slot that owns a single read and draws its own offline state (a
@@ -316,10 +337,7 @@ export function readIsOffline(
   isOffline: boolean,
   read: CachedRead & { isPending: boolean; fetchStatus: string },
 ): boolean {
-  return (
-    (isOffline && anyReadUncached(read)) ||
-    (read.isPending && read.fetchStatus === "paused")
-  );
+  return (isOffline && anyReadUncached(read)) || pausedRead(read);
 }
 
 export function OfflineState({

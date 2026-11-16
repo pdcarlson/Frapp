@@ -61,6 +61,7 @@ import { AskPostModule } from './modules/ask-post/ask-post.module';
 import { AskObserveModule } from './modules/ask-observe/ask-observe.module';
 import { ActModule } from './modules/act/act.module';
 import { ChatCatchUpModule } from './modules/chat-catch-up/chat-catch-up.module';
+import { BackworkFillModule } from './modules/backwork-fill/backwork-fill.module';
 import { AiReportModule } from './modules/ai-report/ai-report.module';
 import { CalendarFeedModule } from './modules/calendar-feed/calendar-feed.module';
 import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
@@ -137,6 +138,7 @@ import { validateEnv } from './config/env.validation';
     AskObserveModule,
     ActModule,
     ChatCatchUpModule,
+    BackworkFillModule,
     MemberNudgeModule,
     AiReportModule,
     CalendarFeedModule,

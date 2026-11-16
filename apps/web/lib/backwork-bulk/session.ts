@@ -223,10 +223,11 @@ function createSession(userId: string, chapterId: string): BulkSession {
       }
     },
     release: releasePrepared,
-    // A 409 means the file is already in the library: nothing to save.
+    // A 409 means the chapter already has the file, filed or as someone's
+    // draft (the API says which): nothing to save.
     isFinal: (error) => statusOf(error) === 409,
     describeError: (error, stage) => {
-      if (statusOf(error) === 409) return "Already in the library.";
+      if (statusOf(error) === 409) return getErrorMessage(error, "Already in the library.");
       return getErrorMessage(
         error,
         stage === "prepare" ? "This PDF couldn't be loaded." : "The upload failed. Retry it.",

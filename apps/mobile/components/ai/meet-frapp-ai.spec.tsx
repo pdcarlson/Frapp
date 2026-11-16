@@ -4,7 +4,7 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FRAPP_AI_COPY } from "@repo/validation";
-import { FrappThemeProvider } from "@/lib/theme";
+import { FrappThemeProvider, tint } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 
 /**
@@ -92,6 +92,38 @@ describe("MeetFrappAiSheet", () => {
       FRAPP_AI_COPY.disclosure("Anthropic and Google", false),
     );
     expect(text).toContain(FRAPP_AI_COPY.privacyLink);
+  });
+
+  it("draws Ask's spark in the §1 stroke recipe, visible to the screen reader as before (#3428)", () => {
+    const tree = render(<MeetFrappAiSheet />);
+    const spark = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Path" &&
+        String(node.props.d).startsWith("M12 3.5c.5 4.3"),
+    );
+    const frame = tree.root.find(
+      (node) =>
+        (node.type as unknown) === "Svg" &&
+        node.findAll((child) => child === spark).length > 0,
+    );
+    expect(frame.props.width).toBe(22);
+    expect(frame.props.viewBox).toBe("0 0 24 24");
+    expect(frame.props.accessibilityElementsHidden).toBeUndefined();
+    expect(frame.props.importantForAccessibility).toBeUndefined();
+    const [body, detail] = frame.findAll(
+      (node) => (node.type as unknown) === "Path",
+    );
+    expect(body!.props).toMatchObject({
+      stroke: "#F4CB63",
+      strokeWidth: 1.6,
+      strokeLinejoin: "round",
+    });
+    expect(body!.props.fill).toBe(tint(body!.props.stroke, 0.16));
+    expect(detail!.props).toMatchObject({
+      fill: "none",
+      strokeWidth: 1.6,
+      strokeLinecap: "round",
+    });
   });
 
   it("tells a president whose chapter never set its switches that it covers the chapter", () => {

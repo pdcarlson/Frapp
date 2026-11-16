@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bareUrls, isOpenableHref, isSafeHref } from "./links";
+import { countingReads } from "./test/counting-reads";
 
 describe("isSafeHref", () => {
   it.each([
@@ -92,10 +93,13 @@ describe("bareUrls", () => {
       "(https://a ".repeat(909),
       "h".repeat(10_000),
     ];
-    for (const body of bodies) {
-      const started = performance.now();
+    // Counted, not timed: a clock bound false-fails on a loaded runner. A
+    // rescan per character reads the rest of the body each time, so its count
+    // grows with the square of the body, far past this bound.
+    for (const text of bodies) {
+      const { body, reads } = countingReads(text);
       bareUrls(body);
-      expect(performance.now() - started).toBeLessThan(200);
+      expect(reads()).toBeLessThan(10 * text.length);
     }
   });
 });

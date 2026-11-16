@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import { Circle, Path } from "react-native-svg";
-import { Frame, paint } from "@/components/more/more-glyphs";
+import { Frame, paint } from "@/components/glyph-recipe";
 
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`
@@ -8,7 +8,7 @@ import { Frame, paint } from "@/components/more/more-glyphs";
  * all read, try again, share, and back. Share also leads a labelled button (setup's
  * `Share invite`), and the invite link's own mark, `LinkGlyph`, lives here
  * beside it. Control furniture, so they draw only the §1 stroke recipe's
- * detail strokes, with no silhouette fill, from `more-glyphs.tsx`'s `Frame`
+ * detail strokes, with no silhouette fill, from `glyph-recipe.tsx`'s `Frame`
  * and `paint`, so a change to the recipe reaches them too. Back keeps the
  * recipe but draws a heavier stroke.
  *

@@ -3,6 +3,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { captureException } = vi.hoisted(() => ({ captureException: vi.fn() }));
+// The live-meeting card has its own spec (#5219).
+vi.mock("@/components/meetings/live-meeting-card", () => ({
+  LiveMeetingCard: () => null,
+}));
+
 vi.mock("@sentry/nextjs", () => ({ captureException }));
 
 const { wizard } = vi.hoisted(() => ({

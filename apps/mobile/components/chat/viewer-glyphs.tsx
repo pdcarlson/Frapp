@@ -1,5 +1,5 @@
 import { Path } from "react-native-svg";
-import { Frame, paint } from "@/components/more/more-glyphs";
+import { Frame, paint } from "@/components/glyph-recipe";
 
 /**
  * The image viewer's own controls (`image-viewer.tsx`): the two step
@@ -8,7 +8,7 @@ import { Frame, paint } from "@/components/more/more-glyphs";
  * `components/control-glyphs.tsx`, drawn at {@link VIEWER_GLYPH_SIZE}. They
  * are control furniture, a verb on a button, so they draw only the stroke
  * recipe's detail strokes, with no silhouette fill. Drawn from
- * `more-glyphs.tsx`'s `Frame` and `paint`, so a change to the recipe reaches
+ * `glyph-recipe.tsx`'s `Frame` and `paint`, so a change to the recipe reaches
  * them too.
  */
 
