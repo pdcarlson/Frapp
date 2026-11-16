@@ -491,22 +491,6 @@ export interface Database {
         Returns: Task[];
       };
       /**
-       * `20261116044044` (#5119) — the sweep's next copy, compare-and-set on
-       * the series' `next_due_date`. Empty when another write got there first.
-       */
-      materialize_task_series_copy: {
-        Args: {
-          p_series_id: string;
-          p_expected_next: string;
-          p_occurrence_date: string;
-          p_due_at: string | null;
-          p_latest_due_at: string;
-          p_next_due_date: string | null;
-          p_end: boolean;
-        };
-        Returns: Task[];
-      };
-      /**
        * `20261113040003` (#3735) — move a PENDING excuse to a decision and
        * write the attendance it implies in the same transaction. Empty when
        * the excuse was no longer pending.
@@ -902,6 +886,22 @@ export interface Database {
           p_until?: string;
         };
         Returns: CorpusCandidate[];
+      };
+      /**
+       * `20261116044044` (#5119) — the sweep's next copy, compare-and-set on
+       * the series' `next_due_date`. Empty when another write got there first.
+       */
+      materialize_task_series_copy: {
+        Args: {
+          p_series_id: string;
+          p_expected_next: string;
+          p_occurrence_date: string;
+          p_due_at: string | null;
+          p_latest_due_at: string;
+          p_next_due_date: string | null;
+          p_end: boolean;
+        };
+        Returns: Task[];
       };
       /**
        * `20261112170000` (#4314) — a chat window's readable messages, oldest
