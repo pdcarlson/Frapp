@@ -1,5 +1,6 @@
 "use client";
 
+import { pausedRead } from "@/components/shared/async-states";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -366,7 +367,7 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
   if (
     subscriptionPending &&
     statusQuery.isPending &&
-    statusQuery.fetchStatus !== "paused"
+    !pausedRead(statusQuery)
   ) {
     return <PlanPanelSkeleton />;
   }

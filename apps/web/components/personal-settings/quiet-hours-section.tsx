@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { anyReadUncached, pausedRead } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { getErrorMessage } from "@/lib/utils";
@@ -192,8 +192,7 @@ export function QuietHoursSection() {
    * defaults off. The loading branch is `QuietHoursSkeleton`, which carries
    * its own one-line status.
    */
-  const settingsPaused =
-    settingsQuery.isPending && settingsQuery.fetchStatus === "paused";
+  const settingsPaused = pausedRead(settingsQuery);
   let preferencesState: React.ReactNode = null;
   if (isOffline && anyReadUncached(settingsQuery)) {
     preferencesState = (
