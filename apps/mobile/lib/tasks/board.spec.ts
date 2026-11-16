@@ -35,8 +35,7 @@ describe("selectTaskRows — identity", () => {
     // Not "no tasks" — /v1/users/me has not answered. The screen renders this
     // as still-loading, or every cold start flashes an empty state.
     expect(selectTaskRows([task()], null, NOW)).toEqual({
-      dueThisWeek: [],
-      later: [],
+      groups: { today: [], week: [], later: [] },
       total: 0,
     });
   });
@@ -52,7 +51,7 @@ describe("selectTaskRows — identity", () => {
       NOW,
     );
     expect(board.total).toBe(1);
-    expect(titles(board.dueThisWeek)).toEqual(["Mine"]);
+    expect(titles(board.groups.week)).toEqual(["Mine"]);
   });
 });
 
@@ -139,13 +138,13 @@ describe("selectTaskRows — narrowing", () => {
       ME,
       NOW,
     );
-    expect(board.dueThisWeek[0]?.isOverdue).toBe(true);
-    expect(board.dueThisWeek[0]?.storedStatus).toBe("TODO");
+    expect(board.groups.today[0]?.isOverdue).toBe(true);
+    expect(board.groups.today[0]?.storedStatus).toBe("TODO");
   });
 });
 
 describe("selectTaskRows — grouping", () => {
-  it("puts today through six days out in DUE THIS WEEK", () => {
+  it("puts today in TODAY and the next six days in THIS WEEK (#4295 step 5)", () => {
     const board = selectTaskRows(
       [
         task({ id: "a", title: "Today", due_date: "2026-08-17" }),
@@ -155,8 +154,9 @@ describe("selectTaskRows — grouping", () => {
       ME,
       NOW,
     );
-    expect(titles(board.dueThisWeek)).toEqual(["Today", "Tomorrow", "Six"]);
-    expect(board.later).toEqual([]);
+    expect(titles(board.groups.today)).toEqual(["Today"]);
+    expect(titles(board.groups.week)).toEqual(["Tomorrow", "Six"]);
+    expect(board.groups.later).toEqual([]);
   });
 
   it("puts seven days out and beyond in LATER", () => {
@@ -168,11 +168,12 @@ describe("selectTaskRows — grouping", () => {
       ME,
       NOW,
     );
-    expect(board.dueThisWeek).toEqual([]);
-    expect(titles(board.later)).toEqual(["Seven", "Far"]);
+    expect(board.groups.today).toEqual([]);
+    expect(board.groups.week).toEqual([]);
+    expect(titles(board.groups.later)).toEqual(["Seven", "Far"]);
   });
 
-  it("leads with the most overdue row, above anything still ahead", () => {
+  it("leads TODAY with the most overdue row", () => {
     const board = selectTaskRows(
       [
         task({ id: "a", title: "Today", due_date: "2026-08-17" }),
@@ -192,7 +193,7 @@ describe("selectTaskRows — grouping", () => {
       ME,
       NOW,
     );
-    expect(titles(board.dueThisWeek)).toEqual(["Latest", "Late", "Today"]);
+    expect(titles(board.groups.today)).toEqual(["Latest", "Late", "Today"]);
   });
 
   it("keeps an undateable row in LATER rather than dropping it", () => {
@@ -206,7 +207,7 @@ describe("selectTaskRows — grouping", () => {
       NOW,
     );
     // Hiding a task the member owes is worse than an odd-looking row.
-    expect(titles(board.later)).toEqual(["Dated", "Blank", "Garbage"]);
+    expect(titles(board.groups.later)).toEqual(["Dated", "Blank", "Garbage"]);
   });
 
   it("orders same-day rows stably by title", () => {
@@ -218,7 +219,7 @@ describe("selectTaskRows — grouping", () => {
       ME,
       NOW,
     );
-    expect(titles(board.dueThisWeek)).toEqual(["Alpha", "Beta"]);
+    expect(titles(board.groups.week)).toEqual(["Alpha", "Beta"]);
   });
 });
 
@@ -240,13 +241,14 @@ describe("selectTaskRows — completed rows", () => {
           due_date: "2026-08-14",
           completed_at: at(2026, 8, 15).toISOString(),
         }),
-        task({ id: "b", title: "Open", due_date: "2026-08-18" }),
+        task({ id: "b", title: "Open", due_date: "2026-08-17" }),
       ],
       ME,
       NOW,
     );
-    expect(titles(board.dueThisWeek)).toEqual(["Open", "Paid dues"]);
-    expect(board.dueThisWeek[1]?.isDone).toBe(true);
+    // A finished row whose day passed stays in TODAY, under open work.
+    expect(titles(board.groups.today)).toEqual(["Open", "Paid dues"]);
+    expect(board.groups.today[1]?.isDone).toBe(true);
   });
 
   it("retires a task finished more than a week ago", () => {
