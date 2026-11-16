@@ -1,4 +1,5 @@
 import {
+  BackworkDraftFields,
   BackworkResource,
   BackworkDepartment,
   BackworkProfessor,
@@ -21,8 +22,34 @@ export interface BackworkResourceFilter {
   search?: string;
 }
 
+/** The columns a draft's fields resolve to when it is published. */
+export type BackworkPublishedColumns = Pick<
+  BackworkResource,
+  | 'title'
+  | 'department_id'
+  | 'course_number'
+  | 'professor_id'
+  | 'year'
+  | 'semester'
+  | 'assignment_type'
+  | 'assignment_number'
+  | 'document_variant'
+  | 'tags'
+>;
+
+/**
+ * Every read here but the `*Draft*` methods and `findByFileHash` leaves drafts
+ * out (#5208): a draft is visible only to its uploader, through the draft
+ * methods, which take the uploader. `findByFileHash` sees drafts so a file
+ * already sitting in someone's drafts is still a duplicate.
+ */
 export interface IBackworkResourceRepository {
-  findById(id: string, chapterId: string): Promise<BackworkResource | null>;
+  /** A published resource. `includeDrafts` also finds a draft, for the admin delete. */
+  findById(
+    id: string,
+    chapterId: string,
+    options?: { includeDrafts?: boolean },
+  ): Promise<BackworkResource | null>;
   findByChapter(
     chapterId: string,
     filters?: BackworkResourceFilter,
@@ -35,6 +62,41 @@ export interface IBackworkResourceRepository {
   ): Promise<BackworkResource | null>;
   create(data: Partial<BackworkResource>): Promise<BackworkResource>;
   delete(id: string, chapterId: string): Promise<void>;
+  /** The uploader's drafts in the chapter, oldest first (upload order). */
+  findDrafts(
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<BackworkResource[]>;
+  /** The uploader's drafts among `ids`; anything else is simply not returned. */
+  findDraftsByIds(
+    ids: string[],
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<BackworkResource[]>;
+  /** Replaces a draft's fields. Null when it is no longer the uploader's draft. */
+  updateDraftFields(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    fields: BackworkDraftFields,
+  ): Promise<BackworkResource | null>;
+  /**
+   * Writes the resolved columns and clears `draft_fields`, only while the row
+   * is still the uploader's draft. Null when it isn't (published by another
+   * tab, deleted), so a publish never runs twice.
+   */
+  publishDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    columns: BackworkPublishedColumns,
+  ): Promise<BackworkResource | null>;
+  /** Deletes the row only while it is the uploader's draft; false when it wasn't. */
+  deleteDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<boolean>;
   /** Count of resources still tagged with this department, for the delete guard. */
   countByDepartment(chapterId: string, departmentId: string): Promise<number>;
   /** Count of resources still tagged with this professor, for the delete guard. */

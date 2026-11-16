@@ -10015,6 +10015,160 @@
         ]
       }
     },
+    "/v1/backwork/drafts": {
+      "get": {
+        "operationId": "BackworkController_listDrafts_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The caller's backwork drafts, in upload order",
+        "tags": [
+          "Backwork"
+        ]
+      },
+      "patch": {
+        "operationId": "BackworkController_updateDrafts_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateBackworkDraftsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set fields on several of the caller's drafts at once",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/drafts/publish": {
+      "post": {
+        "operationId": "BackworkController_publishDrafts_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishBackworkDraftsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishBackworkDraftsResponseDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "File the caller's drafts; ones that can't be filed stay drafts",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/drafts/{id}": {
+      "delete": {
+        "operationId": "BackworkController_deleteDraft_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete one of the caller's drafts and its file",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
     "/v1/backwork/download-urls": {
       "get": {
         "operationId": "BackworkController_downloadUrls_v1",
@@ -13882,6 +14036,43 @@
         ]
       }
     },
+    "/v1/documents/access-options": {
+      "get": {
+        "operationId": "ChapterDocumentController_accessOptions_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentAccessOptionsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What a who-can-see list may hold, and the tiers the caller's lists always keep",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/documents/stars": {
       "get": {
         "operationId": "ChapterDocumentController_listStars_v1",
@@ -13962,7 +14153,7 @@
             "bearer": []
           }
         ],
-        "summary": "Rename or reorder a document folder",
+        "summary": "Rename or reorder a document folder, or set who can see it",
         "tags": [
           "Documents"
         ]
@@ -14242,6 +14433,62 @@
           }
         ],
         "summary": "Delete a document",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/{id}/access": {
+      "put": {
+        "operationId": "ChapterDocumentController_setAccess_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDocumentAccessDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set who can see one document",
         "tags": [
           "Documents"
         ]
@@ -27186,40 +27433,39 @@
       "ConfirmBackworkUploadDto": {
         "type": "object",
         "properties": {
-          "storage_path": {
-            "type": "string",
-            "description": "Storage path returned from upload-url"
-          },
-          "file_hash": {
-            "type": "string",
-            "description": "SHA-256 hash of the uploaded file"
-          },
           "title": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "department_code": {
             "type": "string",
+            "nullable": true,
             "description": "Department code (e.g. \"CS\")"
           },
           "course_number": {
             "type": "string",
+            "nullable": true,
             "description": "Course number (e.g. \"101\")"
           },
           "course_name": {
             "type": "string",
+            "nullable": true,
             "description": "The course's name (\"Calculus I\"). Saved only when the course has no name yet; an upload never renames a course.",
             "maxLength": 255
           },
           "professor_name": {
             "type": "string",
+            "nullable": true,
             "description": "Professor name"
           },
           "year": {
             "type": "number",
+            "nullable": true,
             "maximum": 9999
           },
           "semester": {
             "type": "string",
+            "nullable": true,
             "enum": [
               "Spring",
               "Summer",
@@ -27229,6 +27475,7 @@
           },
           "assignment_type": {
             "type": "string",
+            "nullable": true,
             "enum": [
               "Exam",
               "Midterm",
@@ -27244,10 +27491,12 @@
           },
           "assignment_number": {
             "type": "number",
+            "nullable": true,
             "maximum": 2147483647
           },
           "document_variant": {
             "type": "string",
+            "nullable": true,
             "enum": [
               "Student Copy",
               "Blank Copy",
@@ -27255,19 +27504,193 @@
             ]
           },
           "tags": {
+            "nullable": true,
             "type": "array",
             "items": {
               "type": "string"
             }
           },
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path returned from upload-url"
+          },
+          "file_hash": {
+            "type": "string",
+            "description": "SHA-256 hash of the uploaded file"
+          },
           "is_redacted": {
             "type": "boolean",
             "default": false
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "Save as a draft: the fields are kept as sent, not filed, and only the uploader sees the file until it is published (POST /v1/backwork/drafts/publish)."
           }
         },
         "required": [
           "storage_path",
           "file_hash"
+        ]
+      },
+      "BackworkFieldsDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "nullable": true
+          },
+          "department_code": {
+            "type": "string",
+            "nullable": true,
+            "description": "Department code (e.g. \"CS\")"
+          },
+          "course_number": {
+            "type": "string",
+            "nullable": true,
+            "description": "Course number (e.g. \"101\")"
+          },
+          "course_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "The course's name (\"Calculus I\"). Saved only when the course has no name yet; an upload never renames a course.",
+            "maxLength": 255
+          },
+          "professor_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Professor name"
+          },
+          "year": {
+            "type": "number",
+            "nullable": true,
+            "maximum": 9999
+          },
+          "semester": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "Spring",
+              "Summer",
+              "Fall",
+              "Winter"
+            ]
+          },
+          "assignment_type": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "Exam",
+              "Midterm",
+              "Final Exam",
+              "Quiz",
+              "Homework",
+              "Lab",
+              "Project",
+              "Study Guide",
+              "Notes",
+              "Other"
+            ]
+          },
+          "assignment_number": {
+            "type": "number",
+            "nullable": true,
+            "maximum": 2147483647
+          },
+          "document_variant": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "Student Copy",
+              "Blank Copy",
+              "Answer Key"
+            ]
+          },
+          "tags": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "UpdateBackworkDraftsDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "maxItems": 50,
+            "description": "The caller's drafts. Other ids are left out.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fields": {
+            "description": "Fields to set on every listed draft. Fields left out keep their value; a field sent as null clears it.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BackworkFieldsDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ids",
+          "fields"
+        ]
+      },
+      "PublishBackworkDraftsDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "maxItems": 50,
+            "description": "The caller's drafts. Other ids are left out.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "BackworkDraftFailureDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "description": "Why it stayed a draft, in words to show."
+          }
+        },
+        "required": [
+          "id",
+          "message"
+        ]
+      },
+      "PublishBackworkDraftsResponseDto": {
+        "type": "object",
+        "properties": {
+          "published": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "The filed resources."
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BackworkDraftFailureDto"
+            }
+          }
+        },
+        "required": [
+          "published",
+          "failed"
         ]
       },
       "BackworkDownloadUrlDto": {
@@ -29889,6 +30312,15 @@
           "effective_date": {
             "type": "string",
             "description": "Date this document took effect (ISO date), distinct from the upload timestamp"
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -29976,6 +30408,14 @@
             "type": "string",
             "nullable": true,
             "description": "The file's page in Google Drive"
+          },
+          "who_can_see": {
+            "nullable": true,
+            "description": "Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -29994,7 +30434,8 @@
           "pinned_at",
           "drive_file_id",
           "drive_modified_at",
-          "drive_url"
+          "drive_url",
+          "who_can_see"
         ]
       },
       "DocumentConfirmResultDto": {
@@ -30134,6 +30575,14 @@
             "type": "string",
             "nullable": true,
             "description": "When an officer pinned it for the whole chapter, or null"
+          },
+          "who_can_see": {
+            "nullable": true,
+            "description": "Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -30142,7 +30591,31 @@
           "name",
           "sort_order",
           "created_at",
-          "pinned_at"
+          "pinned_at",
+          "who_can_see"
+        ]
+      },
+      "DocumentAccessOptionsDto": {
+        "type": "object",
+        "properties": {
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelAccessOptionDto"
+            }
+          },
+          "always": {
+            "nullable": true,
+            "description": "The tiers every list the caller sets keeps (their own and those above), shown fixed; empty for the President, null when the caller ranks outside the tiers and can't set a list",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "options",
+          "always"
         ]
       },
       "DocumentStarsDto": {
@@ -30179,6 +30652,15 @@
             "type": "number",
             "description": "Display position. Defaults to the end of the list.",
             "maximum": 1000000000
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -30196,6 +30678,29 @@
             "type": "number",
             "description": "New display position",
             "maximum": 1000000000
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept. Left out, it stays as it is; null opens it to everyone.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SetDocumentAccessDto": {
+        "type": "object",
+        "properties": {
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

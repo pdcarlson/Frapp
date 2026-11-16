@@ -153,6 +153,21 @@ const CASES: Record<string, Partial<Record<FeatureEventName, Case[]>>> = {
       ],
     ],
   },
+  'BackworkController.publishDrafts': {
+    'backwork-drafts-published': [
+      [
+        'two filed, one refused',
+        {
+          result: {
+            published: [{ id: 'a' }, { id: 'b' }],
+            failed: [{ id: 'c', message: 'no' }],
+          },
+        },
+        { count: 2, failed_count: 1 },
+      ],
+      ['no response', {}, { count: 0, failed_count: 0 }],
+    ],
+  },
   'ChapterConfigController.patchConfig': {
     'chapter-config-updated': [
       [
