@@ -50,6 +50,7 @@ import {
   assertHttpsJoinOrigin,
   chapterTextMark,
   dedupeEmails,
+  EVERYONE_ROLE_NAME,
   MEMBER_JOINED_AUDIENCE,
 } from '@repo/validation';
 import { orgHidingGreekLettersIn } from '@repo/org-archetypes';
@@ -76,6 +77,8 @@ export interface InvitePreview {
    * the redeem may add Everyone beside it (`resolveRedeemRoles`). Null when
    * it would grant none (the invite's role is gone and the chapter has no
    * Everyone role to fall back to), or only Everyone, which no card names.
+   * An invite the redeem would refuse (#1830) gets no preview: `preview`
+   * answers 403 and `/mine` leaves it out.
    */
   role: string | null;
   expires_at: string;
@@ -313,9 +316,14 @@ export class InviteService {
     requested?: string,
   ): Promise<string> {
     const explicit = requested?.trim();
-    if (explicit === LEGACY_MEMBER_ROLE_NAME) {
+    if (
+      explicit === LEGACY_MEMBER_ROLE_NAME ||
+      explicit === EVERYONE_ROLE_NAME
+    ) {
       // Mobile builds already in the stores send "Member", the seeded role's
-      // name before it became Everyone (#4191). Stored as sent, a role
+      // name before it became Everyone (#4191), and the founding wizard sends
+      // "Everyone" by name; both mean the chapter's Everyone role, whatever
+      // it is called, so neither meets the unknown-role 400 (#1830). Stored as sent, a role
       // created later under that freed name would capture the invite at
       // redeem, unchecked against the inviter's rank, so it names the
       // Everyone role instead, unless a role still carries that name.
@@ -563,7 +571,7 @@ export class InviteService {
    */
   private async resolveRedeemRole(invite: Invite) {
     const { role, refusal } = await this.resolveRedeemRoles(invite);
-    return refusal ? undefined : role;
+    return { role, refused: refusal !== null };
   }
 
   /**
@@ -592,7 +600,14 @@ export class InviteService {
     const role = context.roles.find((r) => r.name === invite.role) ?? member;
     // Fails closed: an invite for a role carrying `*`, or one its sender can
     // no longer grant, joins nobody, rather than quietly joining as Everyone.
-    const refusal = inviteRefusal(context, role);
+    // A sender who has since left the chapter or lost `members:invite` can no
+    // longer invite anyone, the Everyone role included.
+    const senderCanInvite =
+      context.reach.wildcard ||
+      context.reach.permissions.has(SystemPermissions.MEMBERS_INVITE);
+    const refusal = senderCanInvite
+      ? inviteRefusal(context, role)
+      : 'The sender of this invite can no longer invite members.';
     if (!role) return { role, roleIds: [] as string[], refusal };
     const roleIds = [role.id];
     if (member && member.id !== role.id && lacksBaseAccess(role)) {
@@ -614,18 +629,23 @@ export class InviteService {
    */
   async preview(token: string): Promise<InvitePreview> {
     const invite = await this.findLiveInvite(token);
-    const preview = await this.describe(invite);
+    const described = await this.describe(invite);
     // A chapter deleted under a live invite: as dead as the link gets.
-    if (!preview) throw new GoneException('Invite not found');
-    return preview;
+    if (!described) throw new GoneException('Invite not found');
+    // One the redeem would refuse (#1830) says so now, with the redeem's own
+    // refusal, rather than offering a Join that can't work.
+    if (described.refused) throw inviteRoleOutOfReach();
+    return described.preview;
   }
 
   /**
    * The confirm card's facts for one live invite, or null when its chapter is
    * gone. Shared by `preview` and `findPendingForVerifiedEmail`.
    */
-  private async describe(invite: Invite): Promise<InvitePreview | null> {
-    const [chapter, inviter, role] = await Promise.all([
+  private async describe(
+    invite: Invite,
+  ): Promise<{ preview: InvitePreview; refused: boolean } | null> {
+    const [chapter, inviter, { role, refused }] = await Promise.all([
       this.chapterRepo.findById(invite.chapter_id),
       this.userRepo.findById(invite.created_by),
       this.resolveRedeemRole(invite),
@@ -640,7 +660,7 @@ export class InviteService {
     const branding = orgHidingGreekLettersIn(chapter.name)
       ? { ...chapter.branding, show_greek_letters: false }
       : chapter.branding;
-    return {
+    const preview: InvitePreview = {
       chapter_name: chapter.name,
       university: chapter.university,
       mark_text: chapterTextMark(branding)?.text ?? null,
@@ -652,6 +672,7 @@ export class InviteService {
         role && role.system_key !== SystemRoleKeys.MEMBER ? role.name : null,
       expires_at: invite.expires_at,
     };
+    return { preview, refused };
   }
 
   /**
@@ -676,23 +697,27 @@ export class InviteService {
     if (invites.length === 0) return [];
     const memberships = await this.memberRepo.findByUser(userId);
     const joined = new Set(memberships.map((m) => m.chapter_id));
-    // One card per chapter: the newest invite wins. Sending again revokes the
-    // older one (`replaceOlderInvites`), but two officers can each send one.
-    const seen = new Set<string>();
-    const live = invites.filter((invite) => {
-      if (joined.has(invite.chapter_id) || seen.has(invite.chapter_id)) {
-        return false;
-      }
-      seen.add(invite.chapter_id);
-      return true;
-    });
-    const described = await Promise.all(
-      live.map(async (invite) => {
-        const preview = await this.describe(invite);
-        return preview ? { ...preview, token: invite.token } : null;
-      }),
+    const candidates = invites.filter(
+      (invite) => !joined.has(invite.chapter_id),
     );
-    return described.filter((row): row is PendingInvite => row !== null);
+    const described = await Promise.all(
+      candidates.map(async (invite) => ({
+        invite,
+        described: await this.describe(invite),
+      })),
+    );
+    // One card per chapter: the newest invite the redeem would honour wins.
+    // Sending again revokes the older one (`replaceOlderInvites`), but two
+    // officers can each send one, and a newer one the redeem would refuse
+    // (#1830) must not hide an older one that works.
+    const seen = new Set<string>();
+    const rows: PendingInvite[] = [];
+    for (const { invite, described: row } of described) {
+      if (!row || row.refused || seen.has(invite.chapter_id)) continue;
+      seen.add(invite.chapter_id);
+      rows.push({ ...row.preview, token: invite.token });
+    }
+    return rows;
   }
 
   /**
@@ -753,12 +778,7 @@ export class InviteService {
     // Before the claim, so a roles outage does not consume the token (#1863),
     // and a refusal leaves it for an officer to revoke.
     const { roleIds, refusal } = await this.resolveRedeemRoles(invite);
-    if (refusal) {
-      throw new ForbiddenException({
-        code: 'invite.role_out_of_reach',
-        message: INVITE_REDEEM_REFUSAL,
-      });
-    }
+    if (refusal) throw inviteRoleOutOfReach();
 
     const claimedAt = await this.inviteRepo.markUsedAtomically(invite.id);
     if (!claimedAt) throw new GoneException('Invite already used');
@@ -972,6 +992,14 @@ export class InviteService {
 const INVITE_REDEEM_REFUSAL =
   "This invite is for a role its sender can't give. Ask an officer for a new invite.";
 
+/** The 403 preview and redeem answer for such an invite. */
+function inviteRoleOutOfReach(): ForbiddenException {
+  return new ForbiddenException({
+    code: 'invite.role_out_of_reach',
+    message: INVITE_REDEEM_REFUSAL,
+  });
+}
+
 /**
  * The invite rule (`inviteRefusal`, #4071, #1830) at create: the President's
  * role never, and otherwise only a role ranked below the inviter whose
@@ -987,10 +1015,6 @@ function assertInviteRoleWithinReach(
 }
 
 /**
- * The role an invite naming `roleName` is checked as when it is minted: the
- * role of that name, or the Member (Everyone) role when none carries it.
- */
-/**
  * Refuses (400) a role name the chapter has no role for (#1830). Stored as
  * typed, it would be matched by name at redeem, so a role created later under
  * that name would capture the invite.
@@ -1003,6 +1027,12 @@ function assertInviteRoleExists(context: RankContext, roleName: string): void {
   });
 }
 
+/**
+ * The role an invite naming `roleName` is checked as when it is minted: the
+ * role of that name, or the Everyone role when none carries it. Only a chapter
+ * default can reach the fallback (`resolveInviteRole`), since a named role
+ * must exist (`assertInviteRoleExists`).
+ */
 function namedRole(context: RankContext, roleName: string): Role | undefined {
   return (
     context.roles.find((candidate) => candidate.name === roleName) ??

@@ -45,8 +45,10 @@ import type { Member } from '#domain/entities/member.entity';
 import { SystemRoleKeys } from '#domain/constants/permissions';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
+import type { RankContext } from '#domain/utils/rank-context';
 import {
   CHAPTER_ID,
+  TIER,
   USER,
   tieredChapterRoles,
   tieredRankContext,
@@ -2466,6 +2468,123 @@ describe('InviteService', () => {
       expect(mockMemberRepo.create).not.toHaveBeenCalled();
     });
 
+    /** The tiered chapter plus its Everyone role, in the brothers' tier. */
+    function withEveryone(context: RankContext): RankContext {
+      return {
+        ...context,
+        roles: [
+          ...context.roles,
+          roleFixture({
+            id: 'role-everyone',
+            chapter_id: CHAPTER_ID,
+            name: 'Everyone',
+            system_key: SystemRoleKeys.MEMBER,
+            is_system: true,
+            tier_id: TIER.brothers,
+            permissions: ['members:view'],
+          }),
+        ],
+      };
+    }
+
+    it('refuses an Everyone invite once its sender has left the chapter', async () => {
+      mockInviteRepo.findByToken.mockResolvedValue(
+        liveInvite('Everyone', 'user-gone'),
+      );
+      // No membership: holds nothing, so can no longer invite anyone.
+      mockRbac.getRankContext.mockResolvedValue(
+        withEveryone(tieredRankContext('user-gone')),
+      );
+
+      await expect(
+        service.redeem('old-token', 'user-joiner'),
+      ).rejects.toMatchObject({
+        response: { code: 'invite.role_out_of_reach' },
+      });
+      expect(mockMemberRepo.create).not.toHaveBeenCalled();
+    });
+
+    it("lets a member ranked with Everyone invite into it, but not into a peer's role", async () => {
+      // A brother the chapter gave members:invite: Everyone sits in their own
+      // tier, but it is the floor every member holds, so it stays invitable.
+      const context = withEveryone(tieredRankContext(USER.brother));
+      mockRbac.getRankContext.mockResolvedValue({
+        ...context,
+        reach: {
+          ...context.reach,
+          permissions: new Set([
+            ...context.reach.permissions,
+            'members:invite',
+          ]),
+        },
+      });
+      mockRoleRepo.findByChapter.mockResolvedValue(context.roles);
+
+      await expect(
+        service.create(CHAPTER_ID, USER.brother, 'Everyone'),
+      ).resolves.toMatchObject({ role: 'Everyone' });
+      await expect(
+        service.create(CHAPTER_ID, USER.brother, 'Brother'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(
+        await service.findInvitableRoleIds(CHAPTER_ID, USER.brother),
+      ).toContain('role-everyone');
+    });
+
+    it('previews a refused invite as the 403 the redeem would give', async () => {
+      mockInviteRepo.findByToken.mockResolvedValue(
+        liveInvite('President', USER.president),
+      );
+      mockRbac.getRankContext.mockResolvedValue(
+        tieredRankContext(USER.president),
+      );
+      mockChapterRepo.findById.mockResolvedValue({
+        id: CHAPTER_ID,
+        name: 'Tiered',
+        university: 'State',
+        accent_color: null,
+        branding: {},
+      } as unknown as Chapter);
+
+      await expect(service.preview('old-token')).rejects.toMatchObject({
+        response: { code: 'invite.role_out_of_reach' },
+      });
+    });
+
+    it('offers the older working invite when a newer one would be refused', async () => {
+      const older = {
+        ...liveInvite('Brother', USER.president),
+        id: 'inv-older',
+        token: 'older-token',
+        email: 'pat@example.com',
+      };
+      const newer = {
+        ...liveInvite('Social chair', USER.riskChair),
+        id: 'inv-newer',
+        token: 'newer-token',
+        email: 'pat@example.com',
+      };
+      mockInviteRepo.findPendingByEmail.mockResolvedValue([newer, older]);
+      mockMemberRepo.findByUser.mockResolvedValue([]);
+      mockChapterRepo.findById.mockResolvedValue({
+        id: CHAPTER_ID,
+        name: 'Tiered',
+        university: 'State',
+        accent_color: null,
+        branding: {},
+      } as unknown as Chapter);
+      mockRbac.getRankContext.mockImplementation((_chapter, userId) =>
+        Promise.resolve(tieredRankContext(userId)),
+      );
+
+      const rows = await service.findPendingForVerifiedEmail(
+        'pat@example.com',
+        'user-joiner',
+      );
+
+      expect(rows.map((row) => row.token)).toEqual(['older-token']);
+    });
+
     it('redeems an invite the inviter still outranks', async () => {
       mockInviteRepo.findByToken.mockResolvedValue(
         liveInvite('Brother', USER.riskChair),
@@ -2724,6 +2843,13 @@ describe('InviteService', () => {
       ]);
       await expect(
         service.create('ch-1', 'user-1', 'Member'),
+      ).resolves.toMatchObject({ role: 'Member' });
+    });
+
+    it('reads the founding wizard\'s "Everyone" as the Everyone role, whatever it is called (#1830)', async () => {
+      // The chapter's Everyone role still carries its old name.
+      await expect(
+        service.create('ch-1', 'user-1', 'Everyone'),
       ).resolves.toMatchObject({ role: 'Member' });
     });
 

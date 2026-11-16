@@ -466,7 +466,12 @@ export class ChapterConfigService {
         ]),
     );
     const context = rankContextFrom(chapterId, member, roles, tiers);
-    const role = context.roles.find((candidate) => candidate.id === roleId);
+    // Case-blind like the uuid lookup above, which `@IsUUID()` lets an
+    // upper-case id through to; an exact match would miss and refuse nothing.
+    const wanted = roleId.toLowerCase();
+    const role = context.roles.find(
+      (candidate) => candidate.id.toLowerCase() === wanted,
+    );
     const refusal = inviteRefusal(context, role);
     if (refusal === INVITE_PRESIDENT_REFUSAL) {
       throw new BadRequestException({

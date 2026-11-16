@@ -1592,6 +1592,21 @@ describe('ChapterConfigService default invite role (#422)', () => {
       expect(repos.chapterUpdate).not.toHaveBeenCalled();
     });
 
+    it('matches an upper-case role id, so it cannot slip past the rule', async () => {
+      const repos = tieredRepos(USER.riskChair, ROLE.vicePresident);
+      // `@IsUUID()` and the uuid lookup both accept any case.
+      const shouted = ROLE.vicePresident.toUpperCase();
+      repos.roleRepo.findByIds.mockImplementation(() =>
+        Promise.resolve(
+          tieredChapterRoles().filter((r) => r.id === ROLE.vicePresident),
+        ),
+      );
+      await expect(
+        patch(repos, USER.riskChair, shouted),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(repos.chapterUpdate).not.toHaveBeenCalled();
+    });
+
     it('lets a chair set a role ranked below their own', async () => {
       const repos = tieredRepos(USER.riskChair, ROLE.brother);
       await patch(repos, USER.riskChair, ROLE.brother);

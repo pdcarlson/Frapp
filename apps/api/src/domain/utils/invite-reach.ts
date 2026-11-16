@@ -35,7 +35,7 @@ export const INVITE_PRESIDENT_REFUSAL =
   'An invite cannot grant the President role; use Transfer presidency.';
 
 /** Why an invite can't grant a role at or above the inviter's rank. */
-export const INVITE_RANK_REFUSAL =
+const INVITE_RANK_REFUSAL =
   'You can only invite people into a role ranked below your own.';
 
 /** The chapter's Everyone role, by its rename-proof key. */
