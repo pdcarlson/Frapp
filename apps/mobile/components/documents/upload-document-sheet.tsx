@@ -193,6 +193,8 @@ export const UploadDocumentSheet = forwardRef<
   );
   // Which row's picker is opening, for its "Opening…"; `null` when none is.
   const [picking, setPicking] = useState<DocumentSource | null>(null);
+  // Change tapped with both sources: the two rows show over a pick still held.
+  const [changing, setChanging] = useState(false);
   // Asked once per mount: a binary either has the module or it doesn't.
   const filesAvailable = useMemo(() => canPickFiles(), []);
   const [title, setTitle] = useState(() => opening?.title ?? "");
@@ -259,6 +261,7 @@ export const UploadDocumentSheet = forwardRef<
     clearKept();
     setPicked(null);
     setSource(null);
+    setChanging(false);
     setTitle("");
     setChosenFolder(undefined);
     setTitleFocused(false);
@@ -292,6 +295,7 @@ export const UploadDocumentSheet = forwardRef<
   const closed = () => {
     markClosed();
     setTitleFocused(false);
+    setChanging(false);
     // Upload's own close lands while the upload runs, or just after a quick
     // failure; either way the reason stays for the pending row to reopen on.
     if (sending.current || reported.current) return;
@@ -325,6 +329,7 @@ export const UploadDocumentSheet = forwardRef<
       if (result.status === "picked") {
         setPicked(result.image);
         setSource(from);
+        setChanging(false);
         setStored(null);
         setFailure(null);
       } else if (result.status === "refused") {
@@ -336,16 +341,14 @@ export const UploadDocumentSheet = forwardRef<
     }
   };
 
-  // Change with both sources: back to the two rows, the pick given up as a
-  // new pick would give it up, bytes held for a retry included. Nothing has
-  // been sent for it but those, so nothing else is lost.
+  // Change with both sources shows the two rows again, with a Keep row for
+  // the file already picked. The pick, and any bytes held for a retry, stay
+  // until a new pick lands (`choose`), as when Change reopened the library:
+  // backing out of the picker loses nothing.
   const change = () => {
     if (uploading || pickingNow.current || sending.current) return;
-    setPicked(null);
-    setSource(null);
-    setStored(null);
-    setFailure(null);
     setPickRefusal(null);
+    setChanging(true);
   };
 
   const upload = async () => {
@@ -419,7 +422,7 @@ export const UploadDocumentSheet = forwardRef<
           cancelDisabled={uploading}
         />
 
-        {picked || !filesAvailable ? (
+        {(picked && !changing) || !filesAvailable ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
@@ -429,7 +432,7 @@ export const UploadDocumentSheet = forwardRef<
             }
             accessibilityHint={
               filesAvailable
-                ? "Goes back to choosing a file or a photo."
+                ? "Shows the choice of a file or a photo again."
                 : "Opens your photo library."
             }
             accessibilityState={{ disabled: pickDisabled }}
@@ -498,6 +501,28 @@ export const UploadDocumentSheet = forwardRef<
                 />
               }
             />
+            {picked ? (
+              <>
+                <View style={styles.sourceDivider} />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Keep ${picked.filename}`}
+                  disabled={pickDisabled}
+                  onPress={() => setChanging(false)}
+                  style={({ pressed }) => [
+                    styles.sourceRow,
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <Text
+                    style={[styles.fileMeta, styles.fileText]}
+                    numberOfLines={1}
+                  >
+                    {`Keep ${picked.filename}`}
+                  </Text>
+                </Pressable>
+              </>
+            ) : null}
           </View>
         )}
         {pickRefusal ? (

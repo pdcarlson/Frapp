@@ -289,7 +289,8 @@ Files pick (`lib/more/document-upload.ts`), in 0.13.0 before its first store bui
 needs no `plugins` entry (its plugin only touches iCloud entitlements, still unset) and
 no purpose string. It reads a picked file's modification date and ships no privacy
 manifest, so `ios.privacyManifests` declares FileTimestamp reason 3B52.1 (files the
-user picked) beside C617.1. s20's proof stays photos only for now.
+user picked) beside C617.1. s20's proof stays photos only until
+[#5149](https://github.com/frapplive/Frapp/issues/5149) decides.
 
 **`package.json` and `app.json` gained `expo-audio`** (2026-11-12, the meeting
 recorder). The dependency, its `plugins` entry (`microphonePermission`,

@@ -11,6 +11,7 @@ import {
   DOCUMENT_FILE_TYPE_REFUSAL,
   DOCUMENT_SIZE_REFUSAL,
   DOCUMENT_TYPE_REFUSAL,
+  PHOTO_FILE_FAILED,
   canPickFiles,
   documentPickerTypes,
   documentTitle,
@@ -164,19 +165,62 @@ describe("pickDocumentFile (#3401)", () => {
     expect(requestUploadUrl).not.toHaveBeenCalled();
   });
 
-  it("turns an iPhone HEIC saved to Files into a JPEG", async () => {
+  it("turns an iPhone HEIC saved to Files into a JPEG, shrunk and sized from disk", async () => {
+    const resize = vi.fn();
+    const manipulate = vi.mocked(ImageManipulator.manipulate);
+    const original = manipulate.getMockImplementation();
+    manipulate.mockImplementation((() => {
+      const context = {
+        resize: (arg: unknown) => {
+          resize(arg);
+          return context;
+        },
+        renderAsync: vi.fn().mockResolvedValue({
+          width: 8064,
+          height: 6048,
+          saveAsync: vi.fn().mockResolvedValue({ uri: "file:///out.jpg" }),
+        }),
+      };
+      return context;
+    }) as never);
+    fs.getInfoAsync.mockResolvedValue({ exists: true, size: 640_000 } as never);
     filePick({
       uri: "file:///cache/IMG_1.HEIC",
       name: "IMG_1.HEIC",
       mimeType: "image/heic",
-      size: 900_000,
+      size: 9_000_000,
     });
     const result = await pickDocumentFile();
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       status: "picked",
-      image: { filename: "IMG_1.jpg", contentType: "image/jpeg" },
+      image: {
+        uri: "file:///out.jpg",
+        filename: "IMG_1.jpg",
+        contentType: "image/jpeg",
+        // The JPEG's bytes, not the HEIC's the picker reported.
+        byteSize: 640_000,
+      },
     });
-    expect(ImageManipulator.manipulate).toHaveBeenCalled();
+    // The picker reports no pixel size, so the pick measures it, and a
+    // 48 MP photo comes down to the photo path's edge.
+    expect(resize).toHaveBeenCalledWith({ width: 2560 });
+    if (original) manipulate.mockImplementation(original);
+  });
+
+  it("reads a photo that won't decode as a photo failure, not a wrong type", async () => {
+    vi.mocked(ImageManipulator.manipulate).mockImplementationOnce((() => ({
+      renderAsync: vi.fn().mockRejectedValue(new Error("decode")),
+    })) as never);
+    filePick({
+      uri: "file:///cache/IMG_2.HEIC",
+      name: "IMG_2.HEIC",
+      mimeType: "image/heic",
+      size: 900_000,
+    });
+    await expect(pickDocumentFile()).resolves.toEqual({
+      status: "refused",
+      reason: PHOTO_FILE_FAILED,
+    });
   });
 
   it("reads a picker that throws as a sentence, never a rejection", async () => {
@@ -191,6 +235,10 @@ describe("pickDocumentFile (#3401)", () => {
 describe("canPickFiles", () => {
   it("is true when the binary has the picker, false when it doesn't", () => {
     expect(canPickFiles()).toBe(true);
+    // The name the package registers its native module under.
+    expect(requireOptionalNativeModule).toHaveBeenLastCalledWith(
+      "ExpoDocumentPicker",
+    );
     vi.mocked(requireOptionalNativeModule).mockReturnValueOnce(null);
     expect(canPickFiles()).toBe(false);
   });

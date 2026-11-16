@@ -1353,7 +1353,7 @@ describe("UploadDocumentSheet with Files (#3401)", () => {
     expect(uploadButton(tree).props.accessibilityState.disabled).toBe(true);
   });
 
-  it("goes back to both sources on Change, giving up the pick", async () => {
+  it("shows both sources again on Change, keeping the pick until a new one lands", async () => {
     pickDocumentFile.mockResolvedValue({ status: "picked", image: PDF });
     const tree = render();
     await act(async () => {
@@ -1362,10 +1362,79 @@ describe("UploadDocumentSheet with Files (#3401)", () => {
     act(() => {
       pressable(tree, `Change file, ${PDF.filename}`).props.onPress();
     });
-    const text = screenText(tree);
-    expect(text).not.toContain("Bylaws 2026.pdf");
-    expect(text).toContain("Choose a file");
-    expect(text).toContain("Choose a photo");
-    expect(uploadButton(tree).props.accessibilityState.disabled).toBe(true);
+    expect(screenText(tree)).toContain("Choose a photo");
+    // Still held: Upload stays on, and backing out of a picker loses nothing.
+    expect(uploadButton(tree).props.accessibilityState.disabled).toBe(false);
+    pickDocumentPhoto.mockResolvedValue({ status: "cancelled" });
+    await act(async () => {
+      pressable(tree, "Choose a photo").props.onPress();
+    });
+    act(() => {
+      pressable(tree, `Keep ${PDF.filename}`).props.onPress();
+    });
+    expect(screenText(tree)).toContain("from Files");
+
+    act(() => {
+      pressable(tree, `Change file, ${PDF.filename}`).props.onPress();
+    });
+    pickDocumentPhoto.mockResolvedValue({ status: "picked", image: PHOTO });
+    await act(async () => {
+      pressable(tree, "Choose a photo").props.onPress();
+    });
+    expect(screenText(tree)).toContain("IMG_2041.jpg");
+    expect(screenText(tree)).toContain("from Photos");
+    expect(screenText(tree)).not.toContain("Bylaws 2026.pdf");
+  });
+
+  it("keeps a held retry through Change until a new pick lands", async () => {
+    pickDocumentFile.mockResolvedValue({ status: "picked", image: PDF });
+    const tree = render();
+    await act(async () => {
+      pressable(tree, "Choose a file").props.onPress();
+    });
+    uploadDocumentPhoto.mockResolvedValueOnce({
+      status: "refused",
+      reason: "Couldn't upload that file. Try again in a moment.",
+      final: false,
+      sent: { ...SENT, image: PDF, title: PDF.filename },
+    });
+    await pressUpload(tree);
+    open(tree);
+    act(() => {
+      pressable(tree, `Change file, ${PDF.filename}`).props.onPress();
+    });
+    pickDocumentFile.mockResolvedValue({ status: "cancelled" });
+    await act(async () => {
+      pressable(tree, "Choose a file").props.onPress();
+    });
+    act(() => {
+      pressable(tree, `Keep ${PDF.filename}`).props.onPress();
+    });
+    uploadDocumentPhoto.mockResolvedValueOnce({
+      status: "uploaded",
+      title: PDF.filename,
+    });
+    await pressUpload(tree);
+    expect(uploadDocumentPhoto).toHaveBeenLastCalledWith(
+      PDF,
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ image: PDF }),
+    );
+  });
+
+  it("reopens a kept draft from Files reading from Files", async () => {
+    pickDocumentFile.mockResolvedValue({ status: "picked", image: PDF });
+    const first = render(null, { keptDraft: "documents-upload-files" });
+    await act(async () => {
+      pressable(first, "Choose a file").props.onPress();
+    });
+    act(() => first.unmount());
+    const second = render(null, { keptDraft: "documents-upload-files" });
+    expect(screenText(second)).toContain("Bylaws 2026.pdf");
+    expect(screenText(second)).toContain("from Files");
+    act(() => {
+      pressable(second, "Cancel").props.onPress();
+    });
   });
 });

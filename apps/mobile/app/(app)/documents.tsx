@@ -721,7 +721,7 @@ export default function DocumentsScreen() {
         canUpload
           ? {
               label: "Upload document",
-              hint: "Opens a sheet to upload a photo to the library.",
+              hint: "Opens a sheet to upload a file or a photo to the library.",
               onPress: () => uploadSheetRef.current?.present(),
             }
           : undefined

@@ -1,4 +1,5 @@
 import { requireOptionalNativeModule } from "expo";
+import { ImageManipulator } from "expo-image-manipulator";
 import { Platform } from "react-native";
 import type { components } from "@repo/api-sdk";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
@@ -128,6 +129,10 @@ export const DOCUMENT_FILE_TYPE_REFUSAL =
 export const DOCUMENT_UPLOAD_FAILED =
   "Couldn't upload that file. Try again in a moment.";
 
+/** A photo from Files that wouldn't decode or re-encode. */
+export const PHOTO_FILE_FAILED =
+  "Couldn't read that photo. Try again, or pick it from Photos instead.";
+
 /** A Files pick that threw: the picker or the copy it makes failed. */
 const FILE_PICK_FAILED = "Couldn't open that file. Try again in a moment.";
 
@@ -220,17 +225,28 @@ export async function pickDocumentFile(): Promise<ImagePickResult> {
     };
     if (isPhotoFile(name, asset.mimeType)) {
       try {
+        // The file picker reports no pixel size, which the photo path's
+        // shrink reads, so the image is measured here: without it a 48 MP
+        // photo from Files would go up at full size.
+        const measured = await ImageManipulator.manipulate(
+          asset.uri,
+        ).renderAsync();
         uploadable = await resolveUploadable(
           {
             uri: asset.uri,
             fileName: name,
             mimeType: asset.mimeType,
             fileSize: asset.size,
+            width: measured.width,
+            height: measured.height,
           },
           "document",
         );
       } catch {
-        return { status: "refused", reason: DOCUMENT_FILE_TYPE_REFUSAL };
+        // A photo that wouldn't decode or re-encode (out of memory on a huge
+        // one, or HEIC on an Android phone that can't read it) is not the
+        // wrong type, so it reads as a failure to try again or send as PDF.
+        return { status: "refused", reason: PHOTO_FILE_FAILED };
       }
     }
 
