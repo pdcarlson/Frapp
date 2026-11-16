@@ -64,7 +64,7 @@ const AUTHOR_RANK = 2 * EDITOR_OFFSET;
 /** Why a member's notes are left out of the next draft, if they are. */
 export type MeetingNoteHeld = 'consent_required' | null;
 
-export interface MeetingNoteTaker {
+interface MeetingNoteTaker {
   user_id: string;
   display_name: string;
   is_author: boolean;

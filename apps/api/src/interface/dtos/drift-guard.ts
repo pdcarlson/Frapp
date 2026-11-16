@@ -7,9 +7,9 @@
  * reverse for extra fields); when the two drift, the alias stops satisfying
  * the constraint and the build fails naming the field.
  *
- * The guard aliases are exported and tagged `@driftguard`: exported so
- * ESLint's no-unused-vars leaves them alone, tagged so knip does too
- * (`knip.jsonc` excludes the tag). Nothing imports a guard; tsc checking it
- * is the whole point.
+ * The guard aliases are exported and carry the `driftguard` JSDoc tag:
+ * exported so ESLint's no-unused-vars leaves them alone, tagged so knip does
+ * too (`knip.jsonc` excludes the tag). Nothing imports a guard; tsc checking
+ * it is the whole point.
  */
 export type AssertNever<T extends never> = T;

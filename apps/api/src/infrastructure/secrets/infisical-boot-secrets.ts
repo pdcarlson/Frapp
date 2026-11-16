@@ -52,14 +52,14 @@ export const FRAPP_INFISICAL_PROJECT_ID =
  * `production` (the trap `scripts/check-env-slugs.mjs` exists for), so any
  * other value is refused rather than read as an empty environment.
  */
-export const INFISICAL_BOOT_ENVIRONMENTS = ['staging', 'prod'] as const;
+const INFISICAL_BOOT_ENVIRONMENTS = ['staging', 'prod'] as const;
 
 /** Never taken from Infisical: the bootstrap's own names and the platform's. */
-export const RESERVED_ENV_PREFIXES = ['INFISICAL_', 'RENDER_'] as const;
+const RESERVED_ENV_PREFIXES = ['INFISICAL_', 'RENDER_'] as const;
 
 /** Attempts per start, and the waits between them (about a minute in all). */
 export const BOOT_FETCH_RETRY_DELAYS_MS = [2_000, 4_000, 8_000, 15_000, 30_000];
-export const BOOT_FETCH_TIMEOUT_MS = 10_000;
+const BOOT_FETCH_TIMEOUT_MS = 10_000;
 
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
