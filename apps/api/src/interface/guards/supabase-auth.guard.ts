@@ -4,7 +4,10 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
-import { GUARDS_METADATA } from '@nestjs/common/constants';
+import {
+  GUARDS_METADATA,
+  INTERCEPTORS_METADATA,
+} from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import type { JwtPayload } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -13,13 +16,25 @@ import type { FrappSupabaseClient } from '../../infrastructure/supabase/database
 import { createHash } from 'node:crypto';
 import { isAuthOutage, lookupUnavailable } from './guard-lookup';
 import { InFlightLookups } from '../../infrastructure/supabase/in-flight-lookups';
-import { sharesBurstLookups } from '../../infrastructure/supabase/request-reads';
+import {
+  requestReadsActive,
+  sharesBurstLookups,
+} from '../../infrastructure/supabase/request-reads';
 import {
   authRejected,
   safeAuthErrorCode,
   tokenExpired,
 } from './auth-rejected.exception';
-import { ChapterGuard, prefetchChapterContext } from './chapter.guard';
+import {
+  ChapterGuard,
+  prefetchAppUser,
+  prefetchChapterContext,
+  readAppUserId,
+} from './chapter.guard';
+import {
+  AuthSyncInterceptor,
+  hasSyncedSession,
+} from '../interceptors/auth-sync.interceptor';
 
 /**
  * Process-wide: requests that arrive together with one token share one
@@ -73,17 +88,27 @@ export class SupabaseAuthGuard implements CanActivate {
     const sessionCheck = sharesBurstLookups()
       ? sessionLookups.run(sessionLookupKey(token), checkSession)
       : checkSession();
+    // A route without `ChapterGuard` whose `AuthSyncInterceptor` resolves the
+    // caller's `users` row gets that row's lookup started the same way
+    // (`prefetchAppUser`, #3583), but only for a session the interceptor has
+    // synced before: any other session waits on its sync, which reads the
+    // row itself, so a prefetch would be a wasted read.
     const verified = request.throttlerVerifiedClaims;
-    if (
-      typeof verified?.sub === 'string' &&
-      this.chapterGuardFollows(context)
-    ) {
-      prefetchChapterContext(
-        this.supabase,
-        verified.sub,
-        verified,
-        request.headers,
-      );
+    let prefetchedAppUser: Promise<string | null> | undefined;
+    const chapterGuardFollows = this.chapterGuardFollows(context);
+    const authSyncFollows =
+      !chapterGuardFollows && this.authSyncFollows(context);
+    if (typeof verified?.sub === 'string') {
+      if (chapterGuardFollows) {
+        prefetchChapterContext(
+          this.supabase,
+          verified.sub,
+          verified,
+          request.headers,
+        );
+      } else if (authSyncFollows && hasSyncedSession(verified.sub)) {
+        prefetchedAppUser = prefetchAppUser(this.supabase, verified.sub);
+      }
     }
 
     const { data, error } = await sessionCheck;
@@ -102,6 +127,16 @@ export class SupabaseAuthGuard implements CanActivate {
     // A copy: the answer may be shared with other requests (`sessionLookups`).
     request.supabaseUser = structuredClone(data.user);
     request.jwtClaims = await this.readClaims(token);
+    if (authSyncFollows && requestReadsActive()) {
+      // Under the id `getUser` returned: a prefetch made for any other `sub`
+      // is not reused, and the lookup reads afresh instead.
+      const authId = request.supabaseUser.id;
+      const prefetched =
+        verified?.sub === authId ? prefetchedAppUser : undefined;
+      request.appUserLookup = prefetched
+        ? () => prefetched
+        : () => readAppUserId(this.supabase, authId);
+    }
     return true;
   }
 
@@ -116,6 +151,15 @@ export class SupabaseAuthGuard implements CanActivate {
       context.getClass(),
     ]);
     return guards.includes(ChapterGuard);
+  }
+
+  /** Whether `AuthSyncInterceptor` runs on the route (`prefetchAppUser`). */
+  private authSyncFollows(context: ExecutionContext): boolean {
+    const interceptors = this.reflector.getAllAndMerge<unknown[]>(
+      INTERCEPTORS_METADATA,
+      [context.getHandler(), context.getClass()],
+    );
+    return interceptors.includes(AuthSyncInterceptor);
   }
 
   /**

@@ -710,6 +710,9 @@ describe('asked of the one-shot Ask, with a scripted model', () => {
 
   it('names its agents, and says so when asked for one it does not have', () => {
     expect(() => findRealQuestionAgent('one-shot')).not.toThrow();
-    expect(() => findRealQuestionAgent('loop')).toThrow(/Unknown agent "loop"/);
+    expect(() => findRealQuestionAgent('loop')).not.toThrow();
+    expect(() => findRealQuestionAgent('swarm')).toThrow(
+      /Unknown agent "swarm"/,
+    );
   });
 });

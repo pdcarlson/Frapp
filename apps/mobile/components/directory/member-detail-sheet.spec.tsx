@@ -176,8 +176,14 @@ function render(userId: string | null): ReactTestRenderer {
         element.type === "BottomSheetModal" ? { dismiss, present } : null,
     });
   });
+  // What gorhom reports as `present()` starts bringing the sheet up.
+  act(() => modalOf(tree).props.onAnimate(-1, 0));
   return tree;
 }
+
+// The first modal is the profile; the role editor stacks after it.
+const modalOf = (tree: ReactTestRenderer) =>
+  tree.root.findAllByType("BottomSheetModal" as never)[0]!;
 
 function messageRows(tree: ReactTestRenderer) {
   return tree.root.findAll(
@@ -446,6 +452,30 @@ describe("MemberDetailSheet Message action (#2773)", () => {
     act(() => tree.unmount());
   });
 
+  it.each([
+    ["swiped away", false],
+    ["swiped away and reopened", true],
+  ])(
+    "neither dismisses nor opens the thread for a sheet %s mid-request (#3405)",
+    async (_, reopened) => {
+      const pending = deferred<unknown>();
+      state.mutateAsync.mockReturnValueOnce(pending.promise);
+      const tree = render(ADA);
+      await act(async () => {
+        messageRows(tree)[0].props.onPress();
+      });
+      act(() => modalOf(tree).props.onDismiss());
+      if (reopened) act(() => modalOf(tree).props.onAnimate(-1, 0));
+
+      await act(async () => {
+        pending.resolve({ id: "dm-ada" });
+      });
+      expect(dismiss).not.toHaveBeenCalled();
+      expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+      act(() => tree.unmount());
+    },
+  );
+
   it("drops a failure that lands after the sheet moved on", async () => {
     const pending = deferred<unknown>();
     state.mutateAsync.mockReturnValueOnce(pending.promise);
@@ -665,6 +695,43 @@ describe("MemberDetailSheet ⋯ menu", () => {
       expect.anything(),
     );
     expect(dismiss).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  // gorhom 5.2's `dismiss()` on a dismissed modal leaves it stuck, so the
+  // next open draws nothing; a sheet reopened since is a new visit (#3405).
+  it("doesn't dismiss a sheet swiped away mid-removal when it lands", () => {
+    state.removable = new Set([ADA]);
+    let land = () => {};
+    state.removeMutate.mockImplementation(
+      (_id: string, handlers: { onSuccess: () => void }) => {
+        land = handlers.onSuccess;
+      },
+    );
+    const tree = render(ADA);
+    openMenu(tree).pick("Remove from chapter");
+    pressAlert("Remove from chapter");
+    act(() => modalOf(tree).props.onDismiss());
+    act(() => land());
+    expect(dismiss).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("leaves a sheet reopened mid-removal open when it lands", () => {
+    state.removable = new Set([ADA]);
+    let land = () => {};
+    state.removeMutate.mockImplementation(
+      (_id: string, handlers: { onSuccess: () => void }) => {
+        land = handlers.onSuccess;
+      },
+    );
+    const tree = render(ADA);
+    openMenu(tree).pick("Remove from chapter");
+    pressAlert("Remove from chapter");
+    act(() => modalOf(tree).props.onDismiss());
+    act(() => modalOf(tree).props.onAnimate(-1, 0)); // reopened
+    act(() => land());
+    expect(dismiss).not.toHaveBeenCalled();
     act(() => tree.unmount());
   });
 

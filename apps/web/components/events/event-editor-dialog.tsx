@@ -45,6 +45,7 @@ import {
   leavesAfterSave,
   noRepeatDraft,
   REPEAT_PRESET_LABELS,
+  proposedRepeatDraft,
   repeatDraftFromRule,
   repeatEditAnchor,
   repeatEditDraft,
@@ -62,7 +63,10 @@ import {
   type RepeatEditSeries,
 } from "@repo/validation";
 import { MemberFacingError } from "@repo/hooks/error-copy";
-import { useKeptFormDraft } from "@repo/hooks/kept-drafts";
+import {
+  keepEditsOver as keepFieldEditsOver,
+  useKeptFormDraft,
+} from "@repo/hooks/kept-drafts";
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { editTargetOf } from "@/components/events/edit-target";
@@ -93,6 +97,7 @@ import {
   parseGuardedInt,
 } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
+import { isoToLocalInput } from "@/components/events/local-input";
 import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
   eventCardOutcomeCopy,
@@ -103,13 +108,6 @@ type EventRecord = Record<string, unknown>;
 
 const textOf = (value: unknown): string | null =>
   typeof value === "string" ? value : null;
-
-export function isoToLocalInput(value: unknown): string {
-  const date = parseInstant(value);
-  if (!date) return "";
-  const timezoneOffset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 16);
-}
 
 function localInputToIso(value: string): string {
   // The editor holds a day and a time apart; either may still be empty.
@@ -224,17 +222,22 @@ const EVENT_FIELD_KEYS = [
 ] as const satisfies readonly (keyof EventFields)[];
 
 /** A kept edit over the record as it is now: only what the officer changed. */
-function keepEditsOver(kept: EventFormDraft, now: EventFormDraft): EventFormDraft {
+function keepEditsOver(
+  kept: EventFormDraft,
+  now: EventFormDraft,
+): EventFormDraft {
   const base = kept.base;
   if (!base) return kept;
-  const merged = { ...now } as Record<string, unknown>;
-  for (const key of EVENT_FIELD_KEYS) {
-    if (JSON.stringify(kept[key]) !== JSON.stringify(base[key])) {
-      merged[key] = kept[key];
-    }
-  }
+  const merged = keepFieldEditsOver<EventFields>(
+    kept,
+    base,
+    now,
+    EVENT_FIELD_KEYS,
+    [["startAt", "endAt"]],
+  );
   return {
-    ...(merged as EventFormDraft),
+    ...now,
+    ...merged,
     typeFilledName: kept.typeFilledName,
     showMore: kept.showMore,
     showZone: kept.showZone,
@@ -252,6 +255,7 @@ function openingDraft({
   initialName,
   initialLocation,
   initialPointValue,
+  initialRepeatRule,
 }: {
   mode: "create" | "edit";
   event: EventRecord | null;
@@ -261,7 +265,11 @@ function openingDraft({
   initialName?: string;
   initialLocation?: string;
   initialPointValue?: number;
+  initialRepeatRule?: string | null;
 }): EventFormDraft {
+  const openingRepeat = initialRepeatRule
+    ? proposedRepeatDraft(initialRepeatRule)
+    : noRepeatDraft();
   const text = (value: unknown) => (typeof value === "string" ? value : "");
   const points = (value: unknown) =>
     String(typeof value === "number" ? value : 10);
@@ -305,7 +313,7 @@ function openingDraft({
       endAt: initialEndAt ?? "",
       pointValue: points(template.point_value),
       attendance: attendanceFromEvent(attendanceFieldsOf(template)),
-      repeat: noRepeatDraft(),
+      repeat: openingRepeat,
       notes: text(template.notes),
       eventTypeId:
         typeof template.event_type_id === "string"
@@ -328,7 +336,7 @@ function openingDraft({
     endAt: initialEndAt ?? "",
     pointValue: String(initialPointValue ?? 10),
     attendance: emptyAttendanceDraft(),
-    repeat: noRepeatDraft(),
+    repeat: openingRepeat,
     notes: "",
     eventTypeId: null,
     checkInZone: [],
@@ -499,10 +507,16 @@ type EventEditorDialogProps = {
    * An earlier event a fresh create starts as a copy of (#3930, "this time
    * last year"): its name, description, location, points, who it is for,
    * notes, type and check-in zone. Never its schedule or its repeat, which
-   * come from `initialStartAt` / `initialEndAt` and the officer. Ignored in
-   * edit mode.
+   * come from `initialStartAt` / `initialEndAt`, `initialRepeatRule` and the
+   * officer. Ignored in edit mode.
    */
   template?: EventRecord | null;
+  /**
+   * The repeat a fresh create opens with: the series Ask proposed (#5117),
+   * following the first meeting as the officer moves it. Ignored in edit
+   * mode.
+   */
+  initialRepeatRule?: string | null;
   /**
    * Keep what is typed when the officer leaves without saving (#4593), under
    * this name (`event-create`, `event-edit:<id>`): going back, Escape or
@@ -546,6 +560,7 @@ export function EventEditorDialog({
   initialLocation,
   initialPointValue,
   template,
+  initialRepeatRule,
   keptDraft,
   onCreated,
   postToChannelId,
@@ -675,12 +690,7 @@ export function EventEditorDialog({
   });
   const editTarget = useMemo(() => {
     if (mode !== "edit") return null;
-    const target = editTargetOf(
-      event,
-      parentQuery.data && typeof parentQuery.data === "object"
-        ? (parentQuery.data as EventRecord)
-        : null,
-    );
+    const target = editTargetOf(event, parentQuery.data ?? null);
     return target
       ? {
           ...target,
@@ -740,6 +750,7 @@ export function EventEditorDialog({
       initialName,
       initialLocation,
       initialPointValue,
+      initialRepeatRule,
     });
     const draft = takeKept();
     openedOnDraft.current = draft !== undefined;
@@ -776,6 +787,7 @@ export function EventEditorDialog({
     initialName,
     initialLocation,
     initialPointValue,
+    initialRepeatRule,
     takeKept,
     fillCount,
   ]);

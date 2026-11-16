@@ -110,10 +110,12 @@ import type { OutboxAttachment } from "@repo/chat-core/adapters";
 import type { PollPayload } from "@repo/chat-core/polls";
 import type { SignupPayload } from "@repo/chat-core/signups";
 import type { FormPayload } from "@repo/chat-core/forms";
+import type { RolePickerPayload } from "@repo/chat-core/role-pickers";
 import {
   postHours,
   postPoll,
   postSignup,
+  postRolePicker,
   postForm,
   postTask,
   SIGNED_OUT_POST_COPY,
@@ -304,6 +306,17 @@ export interface UseChatChannelResult {
     payload: SignupPayload;
   }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
   /**
+   * The + sheet's New role picker (#4958): a `kind: "role_picker"` card into
+   * this channel through the outbox like a sign-up sheet, with `sendPoll`'s
+   * outcomes. The send route refuses it without `roles:manage`, or for a
+   * role no longer marked Non-chapter business; that refusal lands on the
+   * failed row. Never rejects.
+   */
+  sendRolePicker: (picker: {
+    content: string;
+    payload: RolePickerPayload;
+  }) => Promise<{ ok: true; warning?: string } | { ok: false; error: string }>;
+  /**
    * The + sheet's New form (#3926 step 3): a `kind: "form"` card into this
    * channel through chat-core's `postForm`, with `sendPoll`'s outcomes.
    * Never rejects.
@@ -399,6 +412,13 @@ export interface UseChatChannelResult {
   retryPhoto: (key: string) => void;
   draft: string;
   setDraft: (body: string) => void;
+  /**
+   * Puts `body` back as `channelId`'s saved draft, unless the member has
+   * written another there since: for a message that left the composer and
+   * then didn't go (a scheduled one the API refused, #4956) after the screen
+   * moved to another channel.
+   */
+  restoreDraftFor: (channelId: string, body: string) => void;
   /**
    * Last send failure. `null` once a fresh `send` is attempted or the
    * member switches channels (#1431 — this used to outlive a channel
@@ -789,6 +809,15 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [channelId, cancelDraftTimer, drafts],
   );
 
+  const restoreDraftFor = useCallback(
+    (target: string, body: string) => {
+      void drafts.load(target).then((held) => {
+        if (!held.trim()) return drafts.save(target, body);
+      });
+    },
+    [drafts],
+  );
+
   /**
    * Bumped once per `send` dispatch, mirroring `reactionGenerationRef`.
    * `sendMessage` resolves asynchronously, so without this the catch below
@@ -1073,6 +1102,21 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     > => {
       if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
       const result = await postSignup(ctx, channelId, signup);
+      if (result.ok) return result;
+      return { ok: false, error: result.error };
+    },
+    [channelId, ctx],
+  );
+
+  const sendRolePicker = useCallback(
+    async (picker: {
+      content: string;
+      payload: RolePickerPayload;
+    }): Promise<
+      { ok: true; warning?: string } | { ok: false; error: string }
+    > => {
+      if (!channelId || !ctx) return { ok: false, error: SIGNED_OUT_POST_COPY };
+      const result = await postRolePicker(ctx, channelId, picker);
       if (result.ok) return result;
       return { ok: false, error: result.error };
     },
@@ -1482,6 +1526,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     sendPoll,
     sendGif,
     sendSignup,
+    sendRolePicker,
     sendForm,
     postTask: postTaskHere,
     postHours: postHoursHere,
@@ -1501,6 +1546,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     retryPhoto,
     draft,
     setDraft,
+    restoreDraftFor,
     sendError,
     reactionError,
     clearReactionError,

@@ -5,7 +5,9 @@ import {
   calendarTasksByDay,
   parseCalendarLayers,
   selectCalendarTasks,
+  serializeCalendarLayers,
   type CalendarAssignedTask,
+  type CalendarLayer,
 } from "./calendar-tasks";
 
 const ME = "user-me";
@@ -152,10 +154,32 @@ describe("calendarTasksByDay", () => {
   });
 });
 
+describe("stored layers since birthdays (#4959)", () => {
+  it("shows birthdays to a member whose list predates them", () => {
+    expect(parseCalendarLayers('["events","mine","assigned"]')).toEqual(
+      ALL_CALENDAR_LAYERS,
+    );
+  });
+
+  it("stores what's hidden, so a layer added later starts on", () => {
+    const shown = new Set<CalendarLayer>(["events", "assigned", "birthdays"]);
+    const raw = serializeCalendarLayers(shown);
+    expect(JSON.parse(raw)).toEqual({ hidden: ["mine"] });
+    expect(parseCalendarLayers(raw)).toEqual(shown);
+  });
+
+  it("keeps birthdays hidden once a member hides them", () => {
+    const shown = new Set<CalendarLayer>(["events", "mine", "assigned"]);
+    expect(parseCalendarLayers(serializeCalendarLayers(shown))).toEqual(shown);
+  });
+});
+
 describe("parseCalendarLayers", () => {
   it("reads back known layers and refuses junk", () => {
-    expect(parseCalendarLayers('["mine","nope"]')).toEqual(new Set(["mine"]));
-    expect(parseCalendarLayers("[]")).toEqual(new Set());
+    expect(parseCalendarLayers('["mine","nope"]')).toEqual(
+      new Set(["mine", "birthdays"]),
+    );
+    expect(parseCalendarLayers("[]")).toEqual(new Set(["birthdays"]));
     expect(parseCalendarLayers("{")).toBeNull();
     expect(parseCalendarLayers(null)).toBeNull();
   });

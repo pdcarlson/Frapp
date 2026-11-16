@@ -343,7 +343,7 @@ function MemberRowsSkeleton() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   return (
-    <SkeletonRegion label="Loading members">
+    <SkeletonRegion label="Loading members" flush>
       <SectionHeaderSkeleton />
       {SKELETON_NAME_WIDTHS.map((width, index) => (
         <View key={index} style={styles.row}>

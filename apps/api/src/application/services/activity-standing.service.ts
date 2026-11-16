@@ -9,7 +9,10 @@ import type { IAttendanceRepository } from '#domain/repositories/attendance.repo
 import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { Event } from '#domain/entities/event.entity';
-import type { StudySessionStatus } from '#domain/entities/study.entity';
+import type {
+  StudySession,
+  StudySessionStatus,
+} from '#domain/entities/study.entity';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 import { ChapterGoalService } from './chapter-goal.service';
 import type { GoalMetric } from '#domain/entities/chapter-goal.entity';
@@ -96,6 +99,25 @@ const ENDED_STUDY: ReadonlySet<StudySessionStatus> = new Set([
   'PAUSED_EXPIRED',
   'LOCATION_INVALID',
 ]);
+
+/**
+ * Study minutes as the Study screen counts them: sessions that have ended,
+ * by their foreground minutes, started before `before` when given. The one
+ * rule for the standing's week and the recap's (#4983).
+ */
+export function endedStudyMinutes(
+  sessions: readonly StudySession[],
+  before?: Date,
+): number {
+  return sessions
+    .filter(
+      (session) =>
+        ENDED_STUDY.has(session.status) &&
+        (before === undefined ||
+          new Date(session.start_time).getTime() < before.getTime()),
+    )
+    .reduce((sum, session) => sum + session.total_foreground_minutes, 0);
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -397,9 +419,7 @@ export class ActivityStandingService {
       chapterId,
       weekStart,
     );
-    const minutes = sessions
-      .filter((session) => ENDED_STUDY.has(session.status))
-      .reduce((sum, session) => sum + session.total_foreground_minutes, 0);
+    const minutes = endedStudyMinutes(sessions);
     return { minutes, week_start: weekStart.toISOString() };
   }
 

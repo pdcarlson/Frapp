@@ -162,4 +162,128 @@ describe('SupabaseFinancialInvoiceRepository — tenant scope', () => {
         .filter((r) => r.chapter_id === CHAPTER_A),
     ).toHaveLength(1);
   });
+
+  describe('payment-attempt state (#3460)', () => {
+    const invoiceA = () =>
+      harness.rows('financial_invoices').find((r) => r.id === INVOICE_A)!;
+    /** Both chapters' twins carry the same attempt state, as the harness needs. */
+    const seedBoth = (fields: Record<string, unknown>) => {
+      const [a, b] = seed().financial_invoices;
+      harness = createTenantHarness({
+        tables: {
+          financial_invoices: [
+            { ...a, ...fields },
+            { ...b, ...fields },
+          ],
+        },
+      });
+      repo = new SupabaseFinancialInvoiceRepository(harness.client);
+    };
+
+    it('setPaymentIntentIfOpen starts a new attempt and clears the last failure', async () => {
+      seedBoth({
+        stripe_payment_intent_id: 'pi_old',
+        last_payment_attempt_at: '2026-11-15T16:00:00.000Z',
+        last_payment_failed_at: '2026-11-15T16:01:00.000Z',
+        last_payment_failure_reason: 'Your card was declined.',
+      });
+
+      await repo.setPaymentIntentIfOpen(INVOICE_A, CHAPTER_A, 'pi_123');
+
+      expect(invoiceA().stripe_payment_intent_id).toBe('pi_123');
+      expect(invoiceA().last_payment_failed_at).toBeNull();
+      expect(invoiceA().last_payment_failure_reason).toBeNull();
+      expect(
+        Date.parse(String(invoiceA().last_payment_attempt_at)),
+      ).toBeGreaterThan(Date.parse('2026-11-15T16:00:00.000Z'));
+    });
+
+    const withAttempt = (attemptAt: string | null) =>
+      seedBoth({
+        stripe_payment_intent_id: 'pi_123',
+        last_payment_attempt_at: attemptAt,
+        last_payment_failed_at: null,
+        last_payment_failure_reason: null,
+      });
+
+    it('recordPaymentFailure writes the failure for the current attempt', async () => {
+      withAttempt('2026-11-15T17:00:00.000Z');
+
+      const row = await repo.recordPaymentFailure(
+        INVOICE_A,
+        CHAPTER_A,
+        'pi_123',
+        '2026-11-15T17:00:30.000Z',
+        'Your card was declined.',
+      );
+
+      expect(row).not.toBeNull();
+      expect(invoiceA().last_payment_failed_at).toBe(
+        '2026-11-15T17:00:30.000Z',
+      );
+      expect(invoiceA().last_payment_failure_reason).toBe(
+        'Your card was declined.',
+      );
+    });
+
+    it('recordPaymentFailure counts a failure in the same second as the stamp (Stripe rounds created down)', async () => {
+      withAttempt('2026-11-15T17:00:00.800Z');
+
+      const row = await repo.recordPaymentFailure(
+        INVOICE_A,
+        CHAPTER_A,
+        'pi_123',
+        '2026-11-15T17:00:00.000Z',
+        null,
+      );
+
+      expect(row).not.toBeNull();
+    });
+
+    it('recordPaymentFailure skips a failure from before the current attempt', async () => {
+      withAttempt('2026-11-15T17:00:05.000Z');
+
+      const row = await repo.recordPaymentFailure(
+        INVOICE_A,
+        CHAPTER_A,
+        'pi_123',
+        '2026-11-15T17:00:03.000Z',
+        null,
+      );
+
+      expect(row).toBeNull();
+      expect(invoiceA().last_payment_failed_at).toBeNull();
+    });
+
+    it('recordPaymentFailure skips a failure for another intent', async () => {
+      withAttempt('2026-11-15T17:00:00.000Z');
+
+      const row = await repo.recordPaymentFailure(
+        INVOICE_A,
+        CHAPTER_A,
+        'pi_other',
+        '2026-11-15T17:00:30.000Z',
+        null,
+      );
+
+      expect(row).toBeNull();
+    });
+
+    it('recordPaymentFailure will not write to another chapter invoice', async () => {
+      withAttempt(null);
+
+      const row = await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.recordPaymentFailure(
+          INVOICE_A,
+          CHAPTER_B,
+          'pi_123',
+          '2026-11-15T17:00:30.000Z',
+          null,
+        ),
+      );
+
+      expect(row).toBeNull();
+      expect(invoiceA().last_payment_failed_at).toBeNull();
+    });
+  });
 });

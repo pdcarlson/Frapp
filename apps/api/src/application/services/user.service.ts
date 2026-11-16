@@ -14,6 +14,7 @@ import {
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
   isLaterReleaseNoteVersion,
+  isValidBirthday,
 } from '@repo/validation';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
@@ -60,8 +61,8 @@ export class UserService {
   }
 
   async update(id: string, data: Partial<User>): Promise<User> {
-    await this.requireLiveUser(id);
-    return this.userRepo.update(id, data);
+    const current = await this.requireLiveUser(id);
+    return this.userRepo.update(id, birthdayPatch(current, data));
   }
 
   /** {@link findById} with `avatar_url` made renderable, for the caller's own profile. */
@@ -285,4 +286,57 @@ export class UserService {
       });
     }
   }
+}
+
+/**
+ * `data` with its birthday fields checked against the stored row (#4959), or a
+ * 400. The DTO has already bounded each number; this checks them together:
+ *
+ * - Month and day travel together. Null on both clears the birthday, and the
+ *   year with it, since a year means nothing without the day.
+ * - A year alone applies to the stored month and day, and needs them.
+ * - The day must exist in the month (and 29 February needs a leap year when a
+ *   year is given), the same rule as the `users_birthday_valid` check, so the
+ *   member reads why instead of a database error.
+ *
+ * Exported for its spec.
+ */
+export function birthdayPatch(
+  current: User,
+  data: Partial<User>,
+): Partial<User> {
+  const hasMonth = data.birthday_month !== undefined;
+  const hasDay = data.birthday_day !== undefined;
+  const hasYear = data.birthday_year !== undefined;
+  if (!hasMonth && !hasDay && !hasYear) return data;
+  if (hasMonth !== hasDay) {
+    throw new BadRequestException(
+      'Send birthday_month and birthday_day together.',
+    );
+  }
+  const month = hasMonth ? data.birthday_month : current.birthday_month;
+  const day = hasDay ? data.birthday_day : current.birthday_day;
+  if (month == null || day == null) {
+    if (month != null || day != null) {
+      throw new BadRequestException(
+        'Send birthday_month and birthday_day together.',
+      );
+    }
+    if (hasYear && data.birthday_year != null) {
+      throw new BadRequestException('A birth year needs a month and day.');
+    }
+    return {
+      ...data,
+      birthday_month: null,
+      birthday_day: null,
+      birthday_year: null,
+    };
+  }
+  const year = hasYear ? data.birthday_year : (current.birthday_year ?? null);
+  if (!isValidBirthday(month, day, year)) {
+    throw new BadRequestException(
+      'That birthday has a day its month does not have.',
+    );
+  }
+  return data;
 }

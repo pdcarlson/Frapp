@@ -2,10 +2,15 @@
 import React, { act, useState } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ActResponse, AskProposalResolution } from "@repo/hooks";
+import type {
+  ActResponse,
+  AskCardEnd,
+  AskProposalResolution,
+} from "@repo/hooks";
 import {
   ACT_COPY,
   AI_REPORT_COPY,
+  ASK_CARDS_COPY,
   actConfirmRefusalLine,
   actMissingLine,
   actNoteLine,
@@ -25,6 +30,13 @@ const hooks = vi.hoisted(() => ({
   accept: vi.fn(),
   dismiss: vi.fn(),
   seed: undefined as unknown,
+  eventForm: undefined as
+    | undefined
+    | {
+        template?: Record<string, unknown>;
+        onCreated?: (created: { id: string | null }) => void;
+      },
+  cards: { byId: new Map<string, unknown>(), settled: true, failed: false },
 }));
 // A purple chapter: Confirm takes its solid accent pair (#4702).
 vi.mock("@/lib/chapter-branding", () => ({
@@ -56,6 +68,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
   }),
   useCurrentUser: () => ({ data: { id: "me" } }),
+  // The hook has its own spec (`use-ask-cards.spec.tsx`).
+  useAskCards: () => hooks.cards,
 }));
 vi.mock("@/components/tasks/new-task-sheet", async () => {
   const { forwardRef } = await import("react");
@@ -69,7 +83,25 @@ vi.mock("@/components/tasks/new-task-sheet", async () => {
   };
 });
 
-import { AskProposal, type ActLink, type KeptTargets } from "./ask-proposal";
+vi.mock("@/components/events/new-event-sheet", async () => {
+  const { forwardRef } = await import("react");
+  return {
+    NewEventSheet: forwardRef(function NewEventSheet(props: {
+      template?: Record<string, unknown>;
+      onCreated?: (created: { id: string | null }) => void;
+    }) {
+      hooks.eventForm = props;
+      return null;
+    }),
+  };
+});
+
+import {
+  AskAnswerCards,
+  AskProposal,
+  type ActLink,
+  type KeptTargets,
+} from "./ask-proposal";
 
 const reporting = {
   offered: true,
@@ -175,6 +207,7 @@ const TASK = {
 beforeEach(() => {
   vi.clearAllMocks();
   hooks.seed = undefined;
+  hooks.eventForm = undefined;
   hooks.accept.mockResolvedValue({
     result: { outcome: { adjusted: 2, skipped: 0 } },
   });
@@ -374,6 +407,130 @@ describe("a proposal in the Ask conversation", () => {
     });
   });
 
+  describe("Edit (#5117)", () => {
+    // Paul's request on 2026-11-15: "Chapter, every Sunday night at 6:48 PM".
+    const EVENT = {
+      ...BASE,
+      status: "proposed",
+      action: "create_event",
+      suggestion: {
+        id: "sg-4",
+        kind: "new_event",
+        points: null,
+        task: null,
+        new_event: {
+          name: "Chapter",
+          start_time: "2026-11-15T23:48:00Z",
+          end_time: "2026-11-16T00:48:00Z",
+          location: null,
+          is_mandatory: false,
+          point_value: null,
+          description: null,
+          recurrence_rule:
+            "FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=13;TZID=America/New_York",
+        },
+      },
+    };
+
+    it("says a series repeats, written out", () => {
+      const text = screenText(show(EVENT));
+      expect(text).toContain(ACT_COPY.field_repeats);
+      expect(text).toContain(
+        "Every Sunday, 13 times, the last on Sunday, February 7, 2027",
+      );
+    });
+
+    it("opens New event filled in from the card, and Create there is the confirm", async () => {
+      const tree = show(EVENT);
+      expect(hooks.eventForm).toBeUndefined();
+      act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
+      const form = hooks.eventForm!;
+      expect(form.template).toMatchObject({
+        name: "Chapter",
+        start: new Date("2026-11-15T23:48:00Z"),
+        end: new Date("2026-11-16T00:48:00Z"),
+        attendance: { everyone: "optional", roles: {} },
+        showMore: true,
+      });
+      expect(form.template?.repeat).toMatchObject({
+        preset: "WEEKLY",
+        countInput: "13",
+        pristine: false,
+      });
+      expect(hooks.accept).not.toHaveBeenCalled();
+
+      await act(async () => form.onCreated?.({ id: "ev-1" }));
+      // Recorded, not made again.
+      expect(hooks.accept).toHaveBeenCalledWith({
+        id: "sg-4",
+        newEventId: "ev-1",
+      });
+      expect(screenText(tree)).toContain(ACT_COPY.done_event);
+    });
+
+    it("says the event was added even when the proposal can't record it", async () => {
+      hooks.accept.mockRejectedValueOnce(new Error("expired"));
+      const tree = show(EVENT);
+      act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
+      await act(async () => hooks.eventForm!.onCreated?.({ id: "ev-1" }));
+      // Taken down, so it is never drawn again with a Confirm that would
+      // make the event a second time.
+      expect(hooks.dismiss).toHaveBeenCalledWith("sg-4");
+      expect(screenText(tree)).toContain(ACT_COPY.done_event);
+    });
+
+    it("opens the task form on a complete task", () => {
+      const tree = show(TASK);
+      act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
+      expect(hooks.seed).toMatchObject({ title: "Book the bus" });
+      expect(hooks.accept).not.toHaveBeenCalled();
+    });
+
+    it("turns a points card's amount and reason into fields, and confirms only what changed", async () => {
+      const tree = show(POINTS);
+      act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
+      const field = (label: string) =>
+        tree.root.findAll(
+          (node) =>
+            node.props.accessibilityLabel === label &&
+            typeof node.props.onChangeText === "function",
+        )[0];
+      act(() => field(ACT_COPY.field_amount).props.onChangeText("10"));
+      expect(screenText(tree)).toContain(actPointsHeadline(10, 2));
+
+      act(() => field(ACT_COPY.field_reason).props.onChangeText("  "));
+      await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+      expect(hooks.accept).not.toHaveBeenCalled();
+      expect(screenText(tree)).toContain(ACT_COPY.no_reason);
+
+      act(() =>
+        field(ACT_COPY.field_reason).props.onChangeText("Came to chapter"),
+      );
+      await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+      expect(hooks.accept).toHaveBeenCalledWith({
+        id: "sg-1",
+        points: { amount: 10 },
+      });
+      expect(screenText(tree)).toContain(actPointsDoneLine(10, 2, 0));
+    });
+
+    it("won't send an amount that isn't a whole number other than 0", async () => {
+      const tree = show(POINTS);
+      act(() => byLabel(tree, ACT_COPY.edit).props.onPress());
+      const amount = tree.root.findAll(
+        (node) =>
+          node.props.accessibilityLabel === ACT_COPY.field_amount &&
+          typeof node.props.onChangeText === "function",
+      )[0];
+      for (const typed of ["0", "2.5", "five"]) {
+        act(() => amount.props.onChangeText(typed));
+        await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+        expect(screenText(tree)).toContain(ACT_COPY.bad_amount);
+      }
+      expect(hooks.accept).not.toHaveBeenCalled();
+    });
+  });
+
   it("says which names it couldn't place, above the control that adds them", () => {
     const tree = show({
       ...POINTS,
@@ -525,5 +682,95 @@ describe("a proposal in the Ask conversation", () => {
       subject: "ai_suggestion",
       subjectId: "sg-1",
     });
+  });
+});
+
+/** The cards an answer came with (`answer.proposals`, #4904). */
+describe("AskAnswerCards", () => {
+  const task = (id: string, title: string) => ({
+    ...TASK.suggestion,
+    id,
+    task: { ...TASK.suggestion.task, title },
+  });
+
+  function Cards({ ids }: { ids: string[] }) {
+    const [ended, setEnded] = useState<Record<string, AskCardEnd>>({});
+    return (
+      <AskAnswerCards
+        ids={ids}
+        ended={ended}
+        onEnded={(id, end) => setEnded((now) => ({ ...now, [id]: end }))}
+        kept={{}}
+        onKeep={() => undefined}
+        report={reporting as never}
+        onOpen={onOpen}
+      />
+    );
+  }
+  const showCards = (ids: string[]): ReactTestRenderer => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <Cards ids={ids} />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  };
+  const labelled = (tree: ReactTestRenderer, label: string) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        node.props.accessibilityLabel === label,
+    );
+
+  beforeEach(() => {
+    hooks.cards = { byId: new Map(), settled: true, failed: false };
+  });
+
+  it("draws each card, and one that ends becomes a line while the other waits", async () => {
+    hooks.cards = {
+      byId: new Map<string, unknown>([
+        ["s1", task("s1", "Buy cups")],
+        ["s2", task("s2", "Book the hall")],
+      ]),
+      settled: true,
+      failed: false,
+    };
+    hooks.dismiss.mockResolvedValue({});
+    const tree = showCards(["s1", "s2"]);
+    expect(screenText(tree)).toContain("Buy cups");
+    expect(screenText(tree)).toContain("Book the hall");
+    expect(labelled(tree, ACT_COPY.cancel)).toHaveLength(2);
+    await act(async () => labelled(tree, ACT_COPY.cancel)[0]!.props.onPress());
+    expect(hooks.dismiss).toHaveBeenCalledWith("s1");
+    const text = screenText(tree);
+    expect(text).toContain(ACT_COPY.cancelled);
+    // The line still says what the card was about.
+    expect(text).toContain("Buy cups");
+    expect(labelled(tree, ACT_COPY.confirm)).toHaveLength(1);
+  });
+
+  it("holds a frame while the cards are read, and says so when one is no longer waiting", () => {
+    hooks.cards = { byId: new Map(), settled: false, failed: false };
+    const waiting = showCards(["s1"]);
+    expect(screenText(waiting)).not.toContain(ACT_COPY.gone);
+    expect(
+      waiting.root.findAll(
+        (node) =>
+          (node.type as unknown) === "View" &&
+          node.props.accessibilityState?.busy === true,
+      ),
+    ).toHaveLength(1);
+    hooks.cards = { byId: new Map(), settled: true, failed: false };
+    expect(screenText(showCards(["s1"]))).toContain(ACT_COPY.gone);
+  });
+
+  it("does not call a card gone when the list could not be read", () => {
+    hooks.cards = { byId: new Map(), settled: false, failed: true };
+    const text = screenText(showCards(["s1"]));
+    expect(text).toContain(ASK_CARDS_COPY.unread);
+    expect(text).not.toContain(ACT_COPY.gone);
   });
 });

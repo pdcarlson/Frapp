@@ -81,8 +81,9 @@ export function useChatReports(
       chapterId!,
       channelId ? { status, channelId } : { status },
     ),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/chat/reports", {
+        signal,
         params: {
           query: channelId ? { status, channel_id: channelId } : { status },
         },
@@ -124,10 +125,10 @@ export function useChatReportAttachments(reportId: string, enabled: boolean) {
       ...chatReportKeys.detail(chapterId!, reportId),
       "attachments",
     ] as const,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/chat/reports/{id}/attachments",
-        { params: { path: { id: reportId } } },
+        { signal, params: { path: { id: reportId } } },
       );
       if (error) throw error;
       return data;

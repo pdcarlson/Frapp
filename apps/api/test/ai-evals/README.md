@@ -120,13 +120,15 @@ get the facts right and stay short.
 | `real-questions/paul-questions.json` | Paul's own questions, as data. Empty until he gives them |
 | `real-questions/code-grader.ts` | The checks code can make. Its header lists every rule |
 | `real-questions/judge-rubric.md`, `judge.ts`, `judge-sample.ts` | The judge model's instructions, the call, and the hand-graded answers it is checked against |
-| `real-questions/agents.ts` | The agents that can be asked. One today: `one-shot`, the Ask that shipped before the agent rebuild |
+| `real-questions/agents.ts` | The agents that can be asked: `one-shot`, the Ask that shipped before the agent rebuild, and `loop`, the tool loop that replaces it |
+| `harness/loop-agent.ts`, `harness/term-world.ts` | The loop as an agent under test: the product's Ask on its loop path with its real tools, and the term chapter's records behind those tools |
 | `real-questions/run.ts` | Asks every question of every model at every effort and prints the table |
 | `synthetic-chapter/term.ts` | The term the questions are asked of (below) |
 
 `real-questions.eval-spec.ts` runs on every build with no key: the term chapter is consistent, every
 reference answer passes every code check, every code rule has a test that proves it fires, and the
-whole set goes through the one-shot Ask with the scripted model.
+whole set goes through the one-shot Ask with the scripted model. `loop-agent.eval-spec.ts` puts the
+same set through the tool loop, and holds its tools to what they must never show a model.
 
 ### Asking a real model
 
@@ -142,10 +144,31 @@ path with no network. `--only id,id` asks a few questions, `--agent` picks what 
 `agents.ts`, or the absolute path of a module that exports `createRealQuestionAgent`), and `--json`
 writes every result for a result page.
 
-**Nothing here has been run against a real model yet.** No key is available to the evals
-([`ENV_REFERENCE.md`](../../../../docs/internal/environment/ENV_REFERENCE.md) lists
-`ANTHROPIC_API_KEY` as unset everywhere, #3279). The one-shot baseline, the judge's agreement and
-the model bake-off are numbers this README does not have.
+**First real run, 2026-11-15** (`claude-sonnet-5-5` at the catalog's effort, judged by
+`claude-opus-5-5`, each question asked once, so a few questions either way is noise):
+
+| Agent | Right | Code checks | Judge | Cost per question |
+| --- | --- | --- | --- | --- |
+| `one-shot` | 1/40 | 8/40 | 2/40 | $0.014 |
+| `loop` (`ask.agent@v6`) | 8/40 | 23/40 | 10/40 | $0.043 |
+
+What the loop's misses were, read answer by answer (`--json` keeps each answer and the tools it
+used):
+
+- **A decline reads as a miss.** Eight of the nine questions Frapp must decline, and a request to
+  act from a member who may not, came back as "I couldn't find that in your chapter's documents,
+  minutes or records." The model wrote the right sentence ("Frapp does not give out phone
+  numbers"), it cited nothing, and an answer with no source is replaced. The largest single cause.
+- **The set expects what a role does not hold.** A chair is expected to get task cards
+  (`ai:act` is the president's), and a House Manager to see who came to an event
+  (`event_attendance` takes `events:update`). Frapp said it could not, which is what ships.
+- **No queue of hours to approve.** `service_hours` counts approved hours only, so "which hours are
+  waiting on me" has nothing to read, and "who has logged none" names members whose hours wait.
+- **Length.** Most other code-check misses are an answer a few words over its question's limit.
+
+The run also found a request the provider refuses outright (a tool result with both sources and a
+note), fixed with it. The judge's agreement with the hand-graded sample and the model bake-off
+have not been run.
 
 ### Reading a result
 
@@ -171,6 +194,12 @@ With the scripted model the one-shot Ask passes 23 of 40 code checks, every miss
 planner asks for every read while Ask runs the first three, so `my_tasks` is never called. What it
 does show is where the one-shot Ask has no read at all (chapter tasks, attendance, service hours) and
 that it cannot propose a card. The baseline is this run with a real model.
+
+With `--agent loop` the scripted model passes 37 of 40. That is not the loop's score either: the
+script searches, asks for the reads a question expects when they take no argument, and answers with
+the reference. The three misses are the two questions that need cards (a card's content is a
+model's to write) and one read that needs an event named. It shows the tools run against the term
+chapter as the asker and return what the questions expect to find.
 
 ### The judge
 
@@ -237,13 +266,23 @@ not:
 tasks from the discussion were his, and the answer did not know who "me" was, pasted quotes and
 offered to narrow down.
 
-### Putting the agent loop under test
+### The agent loop under test
 
-`agents.ts` documents the contract. In short: the loop arrives as one more entry there (or a module
-passed to `--agent`), takes each question as an `AgentInvocation` carrying `asker`, `from` and
-`chapter`, makes every model call through the gateway it is handed, and reports the tools it ran in
-`toolCalls` and its cards in `proposals`. The questions name tools as the plan does (`KNOWN_TOOLS` in
-`types.ts`); a tool that ships under another name is added to `TOOL_ALIASES` in `code-grader.ts`.
+`--agent loop` asks the questions of the tool loop (#4899): `AskService` on its loop path, the
+product's loop and prompt, all 22 read tools and the three card tools, each built as the product
+builds it. `harness/term-world.ts` puts the term chapter behind them and says, at its top, what is
+the product's (the tools, the chat reader's consent and channel rules, the card service) and what
+stands in for the database (the services under the chapter tools, message search by words). The
+loop is switched on for the length of each question, so it and the one-shot Ask can run one after
+the other in a process, not at once.
+
+It reports the tools that ran in `toolCalls`, the cards the member would be shown in `proposals`,
+and each citation as the corpus document it quotes. The questions name tools as the plan does
+(`KNOWN_TOOLS` in `types.ts`); a tool that shipped under another name is in `TOOL_ALIASES` in
+`code-grader.ts`.
+
+`agents.ts` documents the contract for another agent: one more entry there, or a module passed to
+`--agent`.
 
 ## The synthetic chapter
 

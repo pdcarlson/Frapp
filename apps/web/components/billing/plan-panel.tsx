@@ -197,7 +197,8 @@ export function PlanPanel({ invoicesHref }: { invoicesHref?: string }) {
 
   /*
    * Active with no Stripe customer: a chapter Frapp switched on by hand, with
-   * no card and nothing to pay (Paul's own chapter in the beta). The Portal
+   * no card and nothing to pay (Paul's own chapter in the beta), or any
+   * chapter created while `CHAPTER_BILLING_BETA_OFF` is on. The Portal
    * refuses a chapter without a customer (`createPortalSession` 400s), so
    * "Manage in Stripe" here was a button that could only fail. Read only from
    * a billing read that answered: a member's 403 or a pending read says

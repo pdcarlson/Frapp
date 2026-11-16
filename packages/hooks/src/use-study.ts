@@ -26,8 +26,8 @@ export function useGeofences(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["geofences", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/geofences");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/geofences", { signal });
       if (error) throw error;
       return data;
     },
@@ -56,8 +56,10 @@ export function useStudySessions() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["study-sessions", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/study-sessions");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/study-sessions", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

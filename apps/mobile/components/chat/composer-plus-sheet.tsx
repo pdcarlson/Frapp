@@ -23,11 +23,12 @@ import {
   TasksGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
-import { ServiceHoursGlyph } from "./card-glyphs";
+import { RolePickerGlyph, ServiceHoursGlyph } from "./card-glyphs";
 
 /**
  * The composer's **+** on the phone (#3865): Photo, then a row per form the
- * member can open here (Poll, Sign-up sheet, Event, Task, Service hours), in web's + menu
+ * member can open here (Poll, Sign-up sheet, Event, Task, Service hours,
+ * Role picker), in web's + menu
  * order. What it offers, greys and explains is `plusMenuModel` in
  * `@repo/chat-core/plus-menu`, web's own rule, so the two can't drift:
  *
@@ -71,6 +72,7 @@ const ROW_GLYPH: Record<PlusMenuCommand, ComponentType<TabGlyphProps>> = {
   task: TasksGlyph,
   hours: ServiceHoursGlyph,
   points: PointsRowGlyph,
+  roles: RolePickerGlyph,
 };
 
 export const ComposerPlusSheet = forwardRef<

@@ -15,6 +15,7 @@
  */
 import { parseInstant } from "@repo/formatting";
 import { formatGraduationYear, memberLabel } from "@repo/hooks";
+import { formatBirthday } from "@repo/validation";
 import {
   initialsFor,
   isRecord,
@@ -27,7 +28,7 @@ import {
 export interface MemberCustomField {
   fieldId: string;
   label: string;
-  /** Already display-formatted — booleans as Yes/No, empty as "—". */
+  /** Already display-formatted, booleans as Yes/No. Never empty: unset fields are left out. */
   value: string;
 }
 
@@ -48,6 +49,8 @@ export interface MemberDetail {
   email: string | null;
   /** The member's own phone (#3711), as they typed it, or `null`. */
   phone: string | null;
+  /** "March 4" when they share their birthday with the chapter (#4959), else `null`. */
+  birthday: string | null;
   /** Their graduation year, the value the officer's editor opens on. */
   graduationYear: number | null;
   bio: string | null;
@@ -96,6 +99,10 @@ export function selectMemberDetail(data: unknown): MemberDetail | null {
     initials: initialsFor(rawDisplayName),
     email: str(data, "email"),
     phone: str(data, "phone"),
+    birthday: birthdayLabel(
+      num(data, "birthday_month"),
+      num(data, "birthday_day"),
+    ),
     graduationYear: num(data, "graduation_year"),
     bio: str(data, "bio"),
     meta: metaLine([
@@ -132,20 +139,27 @@ function formatJoinedDate(value: string | null): string | null {
 
 /**
  * `MemberProfileDto.custom_fields`, already tier-filtered server-side. A
- * field missing an id or label is dropped rather than rendered blank.
+ * field missing an id or label is dropped rather than rendered blank, and so
+ * is one with no value (`spec/behavior/members.md` § Custom Fields).
  */
 function parseCustomFields(data: unknown): MemberCustomField[] {
   if (!Array.isArray(data)) return [];
   return records(data).flatMap((row) => {
     const fieldId = str(row, "field_id");
     const label = str(row, "label");
-    if (!fieldId || !label) return [];
-    return [{ fieldId, label, value: formatCustomFieldValue(row) }];
+    const raw = str(row, "value");
+    if (!fieldId || !label || !raw) return [];
+    const value =
+      str(row, "type") === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
+    return [{ fieldId, label, value }];
   });
 }
 
-function formatCustomFieldValue(row: Record<string, unknown>): string {
-  const raw = str(row, "value");
-  if (raw === null) return "—";
-  return str(row, "type") === "boolean" ? (raw === "true" ? "Yes" : "No") : raw;
+/** The shared birthday as "March 4", or `null` (#4959). */
+function birthdayLabel(
+  month: number | null,
+  day: number | null,
+): string | null {
+  if (month === null || day === null) return null;
+  return formatBirthday(month, day) || null;
 }

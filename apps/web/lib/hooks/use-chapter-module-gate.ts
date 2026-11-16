@@ -106,11 +106,7 @@ function useGateRead(): GateRead {
   });
   const { isOffline } = useNetwork();
   const loaded = chapterQuery.data !== undefined;
-  const enabledModules = (
-    chapterQuery.data as
-      | { enabled_modules?: Record<string, boolean> | null }
-      | undefined
-  )?.enabled_modules;
+  const enabledModules = chapterQuery.data?.enabled_modules;
 
   const gate = useCallback(
     (moduleKey: string) => isModuleEnabled(enabledModules, moduleKey),

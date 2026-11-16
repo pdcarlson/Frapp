@@ -52,6 +52,24 @@ export interface MentionRoleView extends MentionRole {
 }
 
 /**
+ * One row of `GET /v1/channels/mention-roles`: the picker's fields only, not
+ * `open_to_all`. Shared by that route and `GET /v1/bootstrap` (#4709) so the
+ * two answer alike.
+ */
+export function toMentionRoleEntry({
+  role_id,
+  kind,
+  name,
+  color,
+  mentionable,
+}: MentionRoleView): Pick<
+  MentionRoleView,
+  'role_id' | 'kind' | 'name' | 'color' | 'mentionable'
+> {
+  return { role_id, kind, name, color, mentionable };
+}
+
+/**
  * Who a chat message `@`-mentions, and which roles a member may `@`.
  *
  * Split out of `ChatService` when roles became mentionable (2026-11-06, owner

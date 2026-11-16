@@ -112,8 +112,9 @@ export function useSearch(query: string, filters?: SearchFilters) {
       before ?? null,
       has,
     ],
-    queryFn: async (): Promise<SearchResponse<unknown>> => {
+    queryFn: async ({ signal }): Promise<SearchResponse<unknown>> => {
       const { data, error, response } = await client.GET("/v1/search", {
+        signal,
         params: {
           query: {
             q: query,

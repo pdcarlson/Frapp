@@ -98,7 +98,7 @@ describe("useAttendance", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    expect(mockGet).toHaveBeenCalledWith("/v1/events/{eventId}/attendance", {
+    expect(mockGet).toHaveBeenCalledWith("/v1/events/{eventId}/attendance", { signal: expect.any(AbortSignal),
       params: { path: { eventId: "event-123" } },
     });
     expect(result.current.data).toEqual(mockAttendance);
@@ -956,7 +956,7 @@ describe("useMyAttendance", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual({ attendance: row });
-    expect(mockGet).toHaveBeenCalledWith("/v1/events/{eventId}/attendance/me", {
+    expect(mockGet).toHaveBeenCalledWith("/v1/events/{eventId}/attendance/me", { signal: expect.any(AbortSignal),
       params: { path: { eventId: "event-1" } },
     });
   });

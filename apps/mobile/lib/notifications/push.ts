@@ -5,6 +5,7 @@ import { createIsolatedModule } from "../isolated-module";
 import { requireNotifications } from "./push-module";
 import { isRecord, str } from "../more/narrow";
 import { chatChannelIdFrom, isThreadChatPush } from "./targets";
+import { PUSH_ACTION_CATEGORIES } from "./push-actions";
 import type {
   NotificationsModule,
   PushNotificationResponse,
@@ -417,6 +418,31 @@ export function configureForegroundPresentation(): void {
       shouldSetBadge: false,
     }),
   });
+}
+
+/**
+ * Registers the action-button categories (`push-actions.ts`), once at boot,
+ * before any push that names one can arrive while the app runs. The OS keeps
+ * them across launches, so once the app has opened once after an install or
+ * update, a push shows its buttons even while the app is killed; only a push
+ * that arrives before that first open shows none. A failure is logged,
+ * not thrown: the push still arrives, only without its buttons.
+ */
+export async function registerPushActionCategories(): Promise<void> {
+  const mod = localOnlyModule();
+  if (!mod) return;
+  await Promise.all(
+    PUSH_ACTION_CATEGORIES.map((category) =>
+      mod
+        .setNotificationCategoryAsync(category.id, category.actions)
+        .catch((error: unknown) => {
+          console.warn(
+            `[push] could not register the ${category.id} actions`,
+            error,
+          );
+        }),
+    ),
+  );
 }
 
 /**

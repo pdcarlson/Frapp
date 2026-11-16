@@ -112,6 +112,7 @@ describe('maskBlockedMessages', () => {
         content: '',
         kind: null,
         attachment_count: 0,
+        has_gif: false,
         created_at: '2026-03-01T00:05:00.000Z',
         sender_blocked: true,
       });

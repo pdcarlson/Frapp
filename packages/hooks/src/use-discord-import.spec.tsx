@@ -131,7 +131,10 @@ describe("useDiscordImportProgress (#2857)", () => {
       expect(mock.GET).toHaveBeenCalledTimes(1);
       expect(mock.GET).toHaveBeenCalledWith(
         "/v1/discord-imports/{id}/progress",
-        { params: { path: { id: "import-1" } } },
+        {
+          signal: expect.any(AbortSignal),
+          params: { path: { id: "import-1" } },
+        },
       );
     } finally {
       vi.useRealTimers();

@@ -81,13 +81,19 @@ const CALLS = new Set([
   'rbac.getEffectivePermissions',
   'retrieval.retrieve',
   'roles.findByChapterAndSystemKey',
+  'tasks.findById',
   'tasks.list',
   'users.findDisplayIdentitiesByIds',
   // Consent, permission and the lanes' own plumbing.
   'act.availableActions',
+  // A card from the tool loop: `ActService.proposePlanned`, which saves a
+  // proposal for the asker alone (`act-agent-tools.ts`).
+  'act.proposePlanned',
   'actService.act',
   'askService.ask',
   'askService.assertMayAsk',
+  // What the member had open, looked up as them (`AskFromService`).
+  'from.read',
   'consent.check',
   'consent.getConsentState',
   'consent.onConsentWithdrawn',
@@ -100,10 +106,13 @@ const CALLS = new Set([
   'suggestions.suggest',
   'people.resolve',
   'tools.filter',
+  'proposeTools.filter',
   // The tool loop (epic #4898): which reads to offer, and the loop itself,
   // which runs only what it was offered (`agent/agent-loop.service.ts`).
   'agentTools.filter',
   'loop.run',
+  // The turn's trace (#4902): names, sizes and counts, and no text.
+  'trace.record',
   // The agent's chapter tools (#4901, `agent/tools-chapter/`): reads of
   // people, tasks, events, attendance, points, hours and dues, each through
   // the service its own page's route calls. The ones above that these tools
@@ -178,7 +187,6 @@ function sourcesIn(dir: string): string[] {
 describe('Asking never posts to a channel or notifies (#4713)', () => {
   const sources = [
     ...sourcesIn(join(SERVICES, 'ask')),
-    ...sourcesIn(join(SERVICES, 'ask', 'agent', 'tools-chapter')),
     ...sourcesIn(join(SERVICES, 'act')),
     join(CONTROLLERS, 'ask.controller.ts'),
   ];
@@ -188,7 +196,7 @@ describe('Asking never posts to a channel or notifies (#4713)', () => {
     expect(named).toContain('ask.service.ts');
     expect(named).toContain('ask-conversation.service.ts');
     expect(named).toContain('agent-loop.service.ts');
-    expect(named).toContain('interim-tools.ts');
+    expect(named).toContain('agent-turn-trace.ts');
     expect(named).toContain('act.service.ts');
     expect(named).toContain('ask.controller.ts');
   });

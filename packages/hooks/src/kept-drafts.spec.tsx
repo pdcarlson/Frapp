@@ -14,6 +14,7 @@ import {
   useKeptPanel,
   writeKeptDraft,
   writeKeptPanel,
+  keepEditsOver,
 } from "./kept-drafts";
 
 const client = createFrappClient({ baseUrl: "http://localhost" });
@@ -54,8 +55,9 @@ describe("kept drafts (#4593)", () => {
 
   it("holds a draft out of the store while a save runs, and puts it back if it fails", () => {
     const wrapper = inChapter("chapter-a");
-    const key = renderHook(() => useKeptDraftKeys(), { wrapper }).result
-      .current.draft("note");
+    const key = renderHook(() => useKeptDraftKeys(), {
+      wrapper,
+    }).result.current.draft("note");
     const form = renderHook(
       ({ value }: { value: { text: string } }) =>
         useKeptFormDraft("note", true, value),
@@ -74,8 +76,9 @@ describe("kept drafts (#4593)", () => {
 
   it("reopens on what it sent while the save is in flight, and the outcome settles it", () => {
     const wrapper = inChapter("chapter-a");
-    const key = renderHook(() => useKeptDraftKeys(), { wrapper }).result
-      .current.draft("note");
+    const key = renderHook(() => useKeptDraftKeys(), {
+      wrapper,
+    }).result.current.draft("note");
     const form = renderHook(
       ({ value, open }: { value: { text: string }; open: boolean }) =>
         useKeptFormDraft("note", open, value),
@@ -133,8 +136,9 @@ describe("kept drafts (#4593)", () => {
 
   it("keeps an edited form, and nothing for one left as it opened", () => {
     const wrapper = inChapter("chapter-a");
-    const key = renderHook(() => useKeptDraftKeys(), { wrapper }).result
-      .current.draft("note");
+    const key = renderHook(() => useKeptDraftKeys(), {
+      wrapper,
+    }).result.current.draft("note");
     const form = renderHook(
       ({ value }: { value: { text: string } }) => {
         const kept = useKeptFormDraft("note", true, value);
@@ -195,5 +199,46 @@ describe("kept drafts (#4593)", () => {
     expect(readKeptPanel(keys.panel("meetings"))).toBe(true);
     waiting.view.rerender({ ready: true });
     expect(waiting.opened()).toBe(true);
+  });
+});
+
+describe("keepEditsOver (#4872)", () => {
+  type Fields = {
+    name: string;
+    start: string;
+    end: string;
+    roles: Record<string, string>;
+  };
+  const KEYS = ["name", "start", "end", "roles"] as const;
+  const base: Fields = {
+    name: "Chapter",
+    start: "18:45",
+    end: "20:15",
+    roles: { a: "required", b: "required" },
+  };
+
+  it("keeps what the member changed and takes the rest as it is now", () => {
+    const kept = { ...base, name: "Chapter meeting" };
+    const now = { ...base, end: "21:00" };
+    expect(keepEditsOver(kept, base, now, KEYS)).toEqual({
+      ...base,
+      name: "Chapter meeting",
+      end: "21:00",
+    });
+  });
+
+  it("doesn't count keys set and set back in another order as an edit", () => {
+    // `withRole` deletes a role set to the default and adds it back last.
+    const kept = { ...base, roles: { b: "required", a: "required" } };
+    const now = { ...base, roles: { a: "required", b: "required", c: "out" } };
+    expect(keepEditsOver(kept, base, now, KEYS).roles).toEqual(now.roles);
+  });
+
+  it("moves fields in one group together", () => {
+    const kept = { ...base, end: "21:15" };
+    const now = { ...base, start: "17:00", end: "18:30" };
+    expect(
+      keepEditsOver(kept, base, now, KEYS, [["start", "end"]]),
+    ).toMatchObject({ start: "18:45", end: "21:15" });
   });
 });

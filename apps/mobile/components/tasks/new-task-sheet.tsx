@@ -86,6 +86,7 @@ import {
 } from "@/lib/tasks/create-task";
 import { successHaptic } from "@/lib/haptics";
 import {
+  keepEditsOver,
   useKeptSheetDraft,
   useKeptSheetOpening,
 } from "@/lib/kept-sheet-draft";
@@ -193,15 +194,17 @@ export interface NewTaskSheetProps {
   /** Fired when the sheet has closed, however it closed. */
   onClosed?: () => void;
   /**
-   * Keeps a new task's draft past this sheet's host, under this name
-   * (#4593): the Tasks screen's sheet goes when the member goes back, and its
-   * draft is there the next time they make a task from that screen. Not for
-   * an edit or a suggestion, whose sheets start from what they open on.
+   * Keeps the sheet's draft past its host, under this name (#4593): the
+   * Tasks screen's sheet goes when the member goes back, and its draft is
+   * there the next time they make a task from that screen. An edit names its
+   * task (`task-edit:<id>`, #4872), and its draft keeps only what the member
+   * changed, over the task as it is when the sheet opens again. Not for a
+   * suggestion, whose sheet starts from what it opens on.
    */
   keptDraft?: string;
 }
 
-/** What a kept new-task draft holds (`keptDraft`). */
+/** What a kept task draft holds (`keptDraft`). */
 type KeptTask = {
   title: string;
   pointsInput: string;
@@ -212,7 +215,81 @@ type KeptTask = {
   assigneeId: string | null;
   proofKind: TaskProofKind;
   pickedPhotos: PendingTaskPhoto[];
+  /** An edit only: the task's own reference photos still kept, by id. */
+  keptPhotoIds?: string[];
+  /** An edit only: the task as the sheet opened on it (`keepEditsOver`). */
+  base?: TaskEditFields;
 };
+
+/** The fields an edit's kept draft is laid over the task by. */
+type TaskEditFields = Pick<
+  KeptTask,
+  "title" | "pointsInput" | "due" | "dueTime" | "assigneeId" | "proofKind"
+> & { keptPhotoIds: string[] };
+
+const TASK_EDIT_KEYS = [
+  "title",
+  "pointsInput",
+  "due",
+  "dueTime",
+  "assigneeId",
+  "proofKind",
+] as const satisfies readonly (keyof TaskEditFields)[];
+
+/** The task as an edit opens it, in the kept draft's terms. */
+function taskEditFieldsOf(task: TaskEditTarget): TaskEditFields {
+  const draft = editDraftOf(task);
+  return {
+    title: draft.title,
+    pointsInput: draft.pointsInput ?? "",
+    due: { kind: "date", date: draft.dueDate },
+    dueTime: draft.dueTime ?? null,
+    assigneeId: draft.assigneeId,
+    proofKind: draft.proofKind ?? "none",
+    keptPhotoIds: task.referencePhotos.map((photo) => photo.id),
+  };
+}
+
+/**
+ * An edit's kept draft over the task as it is now (#4872): what the member
+ * changed wins, and the rest is the task's. A photo they removed stays
+ * removed; one added on another device since stays.
+ */
+function keptEditOver(kept: KeptTask, task: TaskEditTarget): KeptTask {
+  const now = taskEditFieldsOf(task);
+  const base = kept.base ?? now;
+  const fields = keepEditsOver<TaskEditFields>(
+    { ...base, ...pickEditFields(kept) },
+    base,
+    now,
+    TASK_EDIT_KEYS,
+  );
+  const removed = new Set(
+    base.keptPhotoIds.filter((id) => !kept.keptPhotoIds?.includes(id)),
+  );
+  const keptPhotoIds = now.keptPhotoIds.filter((id) => !removed.has(id));
+  return {
+    ...kept,
+    ...fields,
+    keptPhotoIds,
+    // Photos added on another device since can leave less room than the
+    // member's picks took: the task's own come first, and the picks fill
+    // what is left, so Save never sends more than the server takes.
+    pickedPhotos: kept.pickedPhotos.slice(0, photoRoom(keptPhotoIds.length)),
+    base: now,
+  };
+}
+
+function pickEditFields(kept: KeptTask): Omit<TaskEditFields, "keptPhotoIds"> {
+  return {
+    title: kept.title,
+    pointsInput: kept.pointsInput,
+    due: kept.due,
+    dueTime: kept.dueTime,
+    assigneeId: kept.assigneeId,
+    proofKind: kept.proofKind,
+  };
+}
 
 export interface TaskSuggestionSeed {
   title: string;
@@ -316,22 +393,30 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const at = useMemo(() => now ?? new Date(), [now]);
     const presets = useMemo(() => duePresets(at), [at]);
 
-    // A new task's draft kept from the screen's last visit (`keptDraft`).
-    const opening = useKeptSheetOpening<KeptTask>(
-      keptDraft && !editing && !suggestion ? keptDraft : null,
+    // The draft kept from the screen's last visit (`keptDraft`); an edit's
+    // over the task as it is now.
+    const keptName = keptDraft && !suggestion ? keptDraft : null;
+    const keptOpening = useKeptSheetOpening<KeptTask>(keptName);
+    const [opening] = useState(() =>
+      keptOpening && editing ? keptEditOver(keptOpening, editing) : keptOpening,
+    );
+    // The task as this sheet opened on it: what an edit's fields start from,
+    // and what its kept draft is measured against.
+    const [editBase] = useState(() =>
+      editing ? taskEditFieldsOf(editing) : undefined,
     );
     const [title, setTitle] = useState(
-      opening?.title ?? original?.title ?? suggestion?.title ?? "",
+      opening?.title ?? editBase?.title ?? suggestion?.title ?? "",
     );
     const [pointsInput, setPointsInput] = useState(
-      opening?.pointsInput ?? original?.pointsInput ?? "",
+      opening?.pointsInput ?? editBase?.pointsInput ?? "",
     );
     // The chip as the draft holds it, resolved against today's below.
     const [due, setDue] = useState<DueChoice>(
       opening
         ? opening.due
-        : original
-        ? { kind: "date", date: original.dueDate }
+        : editBase
+        ? editBase.due
         : suggested
           ? { kind: "date", date: suggested.dueDate }
           : DEFAULT_DUE_CHOICE,
@@ -340,7 +425,9 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [dueTime, setDueTime] = useState<string | null>(
       opening
         ? opening.dueTime
-        : (original?.dueTime ?? suggested?.dueTime ?? null),
+        : editBase
+          ? editBase.dueTime
+          : (suggested?.dueTime ?? null),
     );
     // The steps (#4003), and the one being typed, which sends as the last.
     const [subtasks, setSubtasks] = useState<string[]>(() => [
@@ -353,22 +440,26 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const [assigneeId, setAssigneeId] = useState<string | null>(
       opening
         ? opening.assigneeId
-        : (original?.assigneeId ?? suggestion?.assigneeId ?? null),
+        : editBase
+          ? editBase.assigneeId
+          : (suggestion?.assigneeId ?? null),
     );
     // Photos and proof (#4635): the task's own reference photos still kept
     // (an edit), the ones picked here, which go up on Save, and the proof
     // control. A suggestion carries none, so its form leaves them out.
     const [proofKind, setProofKind] = useState<TaskProofKind>(
-      opening?.proofKind ?? original?.proofKind ?? "none",
+      opening?.proofKind ?? editBase?.proofKind ?? "none",
     );
-    const [keptPhotos, setKeptPhotos] = useState<LiveTaskPhoto[]>(
-      () => editing?.referencePhotos ?? [],
-    );
+    const [keptPhotos, setKeptPhotos] = useState<LiveTaskPhoto[]>(() => {
+      const photos = editing?.referencePhotos ?? [];
+      const ids = opening?.keptPhotoIds;
+      return ids ? photos.filter((photo) => ids.includes(photo.id)) : photos;
+    });
     const [pickedPhotos, setPickedPhotos] = useState<PendingTaskPhoto[]>(
       () => opening?.pickedPhotos ?? [],
     );
     const kept = useKeptSheetDraft<KeptTask>(
-      keptDraft && !editing && !suggestion ? keptDraft : null,
+      keptName,
       {
         title,
         pointsInput,
@@ -379,6 +470,12 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         assigneeId,
         proofKind,
         pickedPhotos,
+        ...(editBase
+          ? {
+              keptPhotoIds: keptPhotos.map((photo) => photo.id),
+              base: editBase,
+            }
+          : {}),
       },
       JSON.stringify([
         title,
@@ -390,6 +487,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         assigneeId,
         proofKind,
         pickedPhotos.map(({ image }) => image.uri),
+        keptPhotos.map((photo) => photo.id),
       ]),
       opening,
     );
@@ -606,11 +704,13 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     // `isPending` reaches a render.
     const cancel = useCallback(() => {
       if (sending.current) return;
-      // An edit's draft goes with its sheet (the host unmounts it on close),
-      // so its fields keep the task's values while the sheet slides away.
-      if (!editing) reset();
+      // An edit's sheet goes with the close (the host unmounts it), so its
+      // fields keep what they show while it slides away; only the kept draft
+      // is given up.
+      if (editing) clearKept();
+      else reset();
       dismiss();
-    }, [reset, dismiss, editing]);
+    }, [reset, dismiss, editing, clearKept]);
 
     /** Sends the body, photos already up, by whichever route opened the sheet. */
     const dispatchBody = useCallback(
@@ -626,6 +726,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           const changes = taskEditBody(editing, body);
           if (Object.keys(changes).length === 0) {
             sending.current = false;
+            clearKept();
             dismiss();
             return;
           }
@@ -635,6 +736,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
               onSuccess: () => {
                 sending.current = false;
                 successHaptic();
+                // Saved: nothing left to keep for this task.
+                clearKept();
                 if (isSameVisit(sentFrom)) dismiss();
                 onSaved?.();
               },
@@ -697,6 +800,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
         updateTask,
         onSaved,
         suggestion,
+        clearKept,
       ],
     );
 

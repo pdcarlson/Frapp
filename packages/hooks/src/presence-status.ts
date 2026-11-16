@@ -69,7 +69,8 @@ export const PRESENCE_HEARTBEAT_MS = 30 * 1000;
  * invisible member publishes nothing, so everyone else sees them Offline, and
  * only the member's own client says `invisible`, about themselves.
  */
-export type PresenceStatus = "online" | "idle" | "dnd" | "invisible" | "offline";
+export type PresenceStatus =
+  "online" | "idle" | "dnd" | "invisible" | "offline";
 
 /**
  * The status a member picked that rides their presence entry. Online is the
@@ -93,7 +94,6 @@ export type PresenceEntry = {
   away: boolean;
 };
 
-
 /**
  * Status for a member, given the presence entry we hold for them.
  *
@@ -113,7 +113,6 @@ export function presenceStatusFor(
   // fresh rather than letting a negative age fall through to another branch.
   return now - entry.ts > IDLE_AFTER_MS ? "idle" : "online";
 }
-
 
 /** Human-readable label. Also the accessible name — screen readers get these words. */
 export function presenceLabel(status: PresenceStatus): string {
@@ -137,8 +136,10 @@ function presenceLineFrom(value: unknown): string | null {
   if (typeof value !== "string") return null;
   // Control characters and the Unicode line and paragraph separators become
   // spaces, so a crafted payload cannot break the row it renders in.
-  // eslint-disable-next-line no-control-regex
-  const flat = value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ").trim();
+  const flat = value
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    .trim();
   if (flat.length === 0) return null;
   return Array.from(flat).slice(0, CUSTOM_STATUS_MAX).join("");
 }

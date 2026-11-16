@@ -38,6 +38,7 @@ vi.mock("@repo/hooks", () => ({
   useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useChannels: () => ({ data: [] }),
   useOrgConfig: () => ({
     data: mockOrgConfig(),
     isPending: false,

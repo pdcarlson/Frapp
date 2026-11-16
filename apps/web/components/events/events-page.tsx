@@ -19,6 +19,7 @@ import {
 } from "@/components/events/chapter-ops-glyphs";
 import {
   useAutoAbsent,
+  useCalendarBirthdays,
   useCalendarTasks,
   useChapterRoster,
   useEvents,
@@ -90,10 +91,8 @@ import {
   useRecordPlannedEvent,
   type EventPlan,
 } from "@/components/ai/suggested-events";
-import {
-  EventEditorDialog,
-  isoToLocalInput,
-} from "@/components/events/event-editor-dialog";
+import { EventEditorDialog } from "@/components/events/event-editor-dialog";
+import { isoToLocalInput } from "@/components/events/local-input";
 import {
   hasKeptDraft,
   readKeptPanel,
@@ -341,12 +340,10 @@ export function EventsPage() {
     enabled: Boolean(activeChapterId),
   });
 
-  const events = useMemo(() => {
-    if (Array.isArray(eventsQuery.data)) {
-      return eventsQuery.data as EventRow[];
-    }
-    return [];
-  }, [eventsQuery.data]);
+  const events = useMemo<EventRow[]>(
+    () => eventsQuery.data ?? [],
+    [eventsQuery.data],
+  );
 
   // Reopen the editor the page was left with (#4593), once this viewer could
   // open it from the page: the create or edit permission and the
@@ -449,14 +446,20 @@ export function EventsPage() {
   }
   const shownLayers: ReadonlySet<CalendarLayer> =
     storedLayers ?? ALL_CALENDAR_LAYERS;
+  // Members' shared birthdays (#4959), all-day on their day, with a toggle.
+  const calendarBirthdays = useCalendarBirthdays(calendarAnchor);
+  const hasBirthdays = calendarBirthdays.length > 0;
   const offeredLayers = useMemo(() => {
     const offered = new Set<CalendarLayer>();
-    if (!calendarTasks.hasMine && !calendarTasks.hasAssigned) return offered;
+    if (!calendarTasks.hasMine && !calendarTasks.hasAssigned && !hasBirthdays) {
+      return offered;
+    }
     offered.add("events");
     if (calendarTasks.hasMine) offered.add("mine");
     if (calendarTasks.hasAssigned) offered.add("assigned");
+    if (hasBirthdays) offered.add("birthdays");
     return offered;
-  }, [calendarTasks.hasMine, calendarTasks.hasAssigned]);
+  }, [calendarTasks.hasMine, calendarTasks.hasAssigned, hasBirthdays]);
   function toggleLayer(layer: CalendarLayer) {
     const next = new Set(shownLayers);
     if (next.has(layer)) next.delete(layer);
@@ -465,8 +468,12 @@ export function EventsPage() {
     writeCalendarLayers(userId, next);
   }
   const tasksByDay = useMemo(
-    () => calendarTasksByDay(calendarTasks.items, shownLayers),
-    [calendarTasks.items, shownLayers],
+    () =>
+      calendarTasksByDay(
+        [...calendarTasks.items, ...calendarBirthdays],
+        shownLayers,
+      ),
+    [calendarTasks.items, calendarBirthdays, shownLayers],
   );
   const nameOf = useMemo(() => {
     const names = new Map(

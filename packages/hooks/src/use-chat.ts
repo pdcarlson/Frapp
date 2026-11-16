@@ -6,6 +6,7 @@ import {
   isDirectChannel,
   type ChatChapterLevel,
   type ChatNotificationLevel,
+  type MentionPick,
 } from "@repo/validation";
 
 import { useEffect, useMemo, useRef } from "react";
@@ -14,6 +15,7 @@ import {
   useQuery,
   useMutation,
   useQueryClient,
+  type QueryClient,
 } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
@@ -36,8 +38,8 @@ export function useChannels(options?: { enabled?: boolean }) {
   const scope = useChapterScope({ enabled });
   return useQuery({
     queryKey: CHANNEL_LIST_KEY,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels", { signal });
       if (error) throw error;
       return data;
     },
@@ -74,8 +76,10 @@ export function useChannelUnreadCounts(options?: { enabled?: boolean }) {
   const scope = useChapterScope({ enabled });
   return useQuery({
     queryKey: CHANNEL_UNREAD_COUNTS_KEY,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/unread");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels/unread", {
+        signal,
+      });
       if (error) throw error;
       return (data ?? []) as ChannelUnreadCount[];
     },
@@ -95,9 +99,10 @@ export const CHANNEL_LATEST_MESSAGES_KEY = ["channels", "latest"] as const;
  * has no row. Draw the line with `channelPreviewLine` in
  * `@repo/chat-core/channel-preview`.
  *
- * Under the `["channels"]` prefix and on the unread counts' 15s staleness, so
- * a preview refreshes whenever its row's badge does: the same invalidations
- * (opening a channel marks it read) and the same refetch on focus.
+ * On the unread counts' 15s staleness and refreshed with them by
+ * {@link invalidateChannelSummaries}, so a preview refreshes whenever its
+ * row's badge does: the same invalidations (opening a channel marks it read)
+ * and the same refetch on focus.
  */
 export function useChannelLatestMessages(options?: { enabled?: boolean }) {
   const client = useFrappClient();
@@ -106,8 +111,10 @@ export function useChannelLatestMessages(options?: { enabled?: boolean }) {
   const scope = useChapterScope({ enabled });
   return useQuery({
     queryKey: CHANNEL_LATEST_MESSAGES_KEY,
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/latest");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels/latest", {
+        signal,
+      });
       if (error) throw error;
       return data ?? [];
     },
@@ -116,12 +123,30 @@ export function useChannelLatestMessages(options?: { enabled?: boolean }) {
   });
 }
 
+/**
+ * Re-read the per-channel summaries every unread badge and preview draws
+ * from: the unread counts and the latest-message previews, by exact key. One
+ * helper so a badge and its preview can't be refreshed on different paths
+ * (`useChannelLatestMessages` promises they move together).
+ */
+export function invalidateChannelSummaries(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({
+    queryKey: CHANNEL_UNREAD_COUNTS_KEY,
+    exact: true,
+  });
+  void queryClient.invalidateQueries({
+    queryKey: CHANNEL_LATEST_MESSAGES_KEY,
+    exact: true,
+  });
+}
+
 export function useChannel(id: string) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["channels", id],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/channels/{id}", {
+        signal,
         params: { path: { id } },
       });
       if (error) throw error;
@@ -136,8 +161,9 @@ export function usePinnedMessages(channelId: string) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["channels", channelId, "pins"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/channels/{id}/pins", {
+        signal,
         params: { path: { id: channelId } },
       });
       if (error) throw error;
@@ -156,10 +182,10 @@ export function usePinnedMessages(channelId: string) {
  *
  * Keyed under `["members", chapterId, …]`, not `["channels", …]`, on purpose.
  * Every member and role mutation invalidates the members prefix (a role grant
- * changes who reads a ROLE_GATED channel), while the channels prefix is
- * invalidated by every read receipt, so under it this chapter-wide read would
- * refetch twice on each channel switch. A channel edit names it explicitly
- * (`useUpdateChannel`).
+ * changes who reads a ROLE_GATED channel), while a read receipt re-reads
+ * several `["channels", …]` keys, and the whole prefix until #4709, so under
+ * it this chapter-wide read would have refetched twice on each channel
+ * switch. A channel edit names it explicitly (`useUpdateChannel`).
  */
 export function useChannelMembers(
   channelId: string | null | undefined,
@@ -169,8 +195,9 @@ export function useChannelMembers(
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["members", chapterId, "channel", channelId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/channels/{id}/members", {
+        signal,
         params: { path: { id: channelId as string } },
       });
       if (error) throw error;
@@ -186,8 +213,10 @@ export function useCategories() {
   const scope = useChapterScope();
   return useQuery({
     queryKey: ["channels", "categories"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/categories/list");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels/categories/list", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -301,15 +330,18 @@ export function useChannelNotificationPreferences() {
 
   return useQuery({
     // Deliberately NOT nested under ["channels"]. `useMarkChannelRead`
-    // invalidates that whole prefix, and TanStack Query matches prefixes
-    // non-exactly, so nesting made this endpoint refetch on every channel open
-    // AND close — two extra round trips per channel switch, each one re-running
-    // the accessible-channel predicate server-side. Mute state does not change
-    // when a read receipt is written, so it should not be invalidated by one.
+    // invalidated that whole prefix until #4709, and TanStack Query matches
+    // prefixes non-exactly, so nesting made this endpoint refetch on every
+    // channel open AND close — two extra round trips per channel switch, each
+    // one re-running the accessible-channel predicate server-side. Mute state
+    // does not change when a read receipt is written, so it should not be
+    // invalidated by one. The channel-list refetch a read still causes is what
+    // re-reads it when the channel set changes (the fingerprint above).
     queryKey: CHANNEL_NOTIFICATION_PREFERENCES_KEY,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/channels/notification-preferences",
+        { signal },
       );
       if (error) throw error;
       return (data ?? []) as ChannelNotificationPreference[];
@@ -377,9 +409,10 @@ export function useChapterChatLevel() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: chapterChatLevelKeys.chapter(chapterId ?? ""),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/channels/notification-preferences/chapter",
+        { signal },
       );
       if (error) throw error;
       return (data as { level: ChatChapterLevel }).level;
@@ -737,7 +770,26 @@ export function useMarkChannelRead() {
       return result.data;
     },
     onSuccess: (_data, id) => {
-      queryClient.invalidateQueries({ queryKey: ["channels"] });
+      // The read moves the badges and previews. Opening a channel is also
+      // the routine moment the rail catches up with channels other members
+      // created, renamed or locked, so the list, its categories and the
+      // opened channel's detail are re-read too: nothing pushes channel
+      // metadata, and the list's refetch is what moves the notification
+      // preferences' fingerprint (`spec/behavior/notifications.md`).
+      //
+      // Exact keys, not the `["channels"]` prefix (#4709): the prefix also
+      // holds every mounted attachment read, the imported-author avatars, the
+      // pins and the per-channel member lists, which a read doesn't change,
+      // and refetching those on every open (a signed URL re-minted per
+      // attachment) was part of the open burst.
+      invalidateChannelSummaries(queryClient);
+      for (const queryKey of [
+        CHANNEL_LIST_KEY,
+        CATEGORY_LIST_KEY,
+        ["channels", id],
+      ]) {
+        void queryClient.invalidateQueries({ queryKey, exact: true });
+      }
       // The read also cleared this channel's chat notifications on the server
       // (#3788). Mirror that in the inbox's cache, and refetch it only when it
       // was showing one, so a busy channel's reads don't each cost a list GET.
@@ -876,10 +928,10 @@ export function useMessageAttachments(
     // Comfortably inside the API's 3600s signed-URL TTL, so a link handed to the
     // DOM is still live when it is used.
     staleTime: 10 * 60_000,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/channels/{id}/messages/{messageId}/attachments",
-        { params: { path: { id: channelId, messageId } } },
+        { signal, params: { path: { id: channelId, messageId } } },
       );
       if (error) throw error;
       return (data ?? []) as MessageAttachment[];
@@ -961,11 +1013,12 @@ export function useAuthorAvatars(
     // Comfortably inside the API's signed-URL TTL, so a URL handed to the DOM
     // is still live when it renders.
     staleTime: 10 * 60_000,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const chunks = chunk(messageIdsByDistinctPath, AVATAR_REQUEST_CHUNK_SIZE);
       const settled = await Promise.allSettled(
         chunks.map((ids) =>
           client.POST("/v1/channels/{id}/messages/avatars", {
+            signal,
             params: { path: { id: channelId! } },
             body: { message_ids: ids },
           }),
@@ -1285,8 +1338,8 @@ export function useBookmarks() {
     // `chapterId!` is safe under `enabled` below: the factory refuses a null
     // chapter by design, and the query never runs without one.
     queryKey: bookmarkKeys.list(chapterId!),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/bookmarks");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/bookmarks", { signal });
       if (error) throw error;
       return data;
     },
@@ -1365,6 +1418,12 @@ export interface ForwardMessageInput {
    * made instead of posting a second; a fresh one is drawn when omitted.
    */
   clientMessageId?: string;
+  /**
+   * The members picked from the comment's `@` list (#4907), as a post's
+   * `mention_picks`: each reaches its member while the comment still writes
+   * its label. Sent only with a comment.
+   */
+  mentionPicks?: readonly MentionPick[];
 }
 
 /**
@@ -1392,8 +1451,13 @@ export function useForwardMessage() {
       channelId,
       content,
       clientMessageId,
+      mentionPicks,
     }: ForwardMessageInput) => {
       const comment = content?.trim() ? content : undefined;
+      const picks =
+        comment !== undefined && mentionPicks && mentionPicks.length > 0
+          ? [...mentionPicks]
+          : undefined;
       const result = await client.POST(
         "/v1/channels/messages/{messageId}/forward",
         {
@@ -1401,6 +1465,7 @@ export function useForwardMessage() {
           body: {
             channel_id: channelId,
             ...(comment !== undefined ? { content: comment } : {}),
+            ...(picks !== undefined ? { mention_picks: picks } : {}),
             client_message_id: clientMessageId ?? randomClientId(),
           },
         },
@@ -1433,8 +1498,10 @@ export function useChannelAccessOptions(enabled = true) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["roles", chapterId, "channel-access-options"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/access-options");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels/access-options", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

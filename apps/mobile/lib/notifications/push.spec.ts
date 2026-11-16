@@ -67,6 +67,7 @@ function fakeModule() {
       .mockResolvedValue([]),
     setNotificationHandler: vi.fn(),
     setBadgeCountAsync: vi.fn().mockResolvedValue(true),
+    setNotificationCategoryAsync: vi.fn().mockResolvedValue({}),
   };
 }
 
@@ -305,6 +306,44 @@ describe("push isolation module", () => {
 
     expect(push.takeLastNotificationResponse()).toBeNull();
     expect(mod.clearLastNotificationResponse).not.toHaveBeenCalled();
+  });
+
+  // #4686: the excuse push's Approve and Decline, both opening the app.
+  it("registers the excuse push's actions, needing no EAS project id", async () => {
+    constantsState.projectId = undefined;
+    const push = await importPush();
+    const mod = fakeModule();
+    push.setPushLoaderForTests(() => mod);
+
+    await push.registerPushActionCategories();
+
+    expect(mod.setNotificationCategoryAsync).toHaveBeenCalledWith(
+      "event-excuse",
+      [
+        {
+          identifier: "excuse-approve",
+          buttonTitle: "Approve",
+          options: { opensAppToForeground: true },
+        },
+        {
+          identifier: "excuse-decline",
+          buttonTitle: "Decline",
+          options: { opensAppToForeground: true, isDestructive: true },
+        },
+      ],
+    );
+  });
+
+  it("keeps going when a category fails to register", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const push = await importPush();
+    const mod = fakeModule();
+    mod.setNotificationCategoryAsync.mockRejectedValue(new Error("nope"));
+    push.setPushLoaderForTests(() => mod);
+
+    await expect(push.registerPushActionCategories()).resolves.toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("sets the badge count, needing no EAS project id", async () => {

@@ -780,6 +780,22 @@ export const EDITED_MIGRATION_EXCEPTIONS = Object.freeze([
       "20261113132007, before either reached staging; staging applied 132007 first and " +
       "db push then refused 130014. Neither hosted database had applied it at the rename.",
   },
+  {
+    file: "supabase/migrations/20261113234732_chat_scheduled_messages.sql",
+    removed: true,
+    reason:
+      "Renamed to 20261114055810 with the same SQL. #4972 merged 13 seconds after #4974's " +
+      "20261114003341; staging applied 003341 first and db push then refused 234732 (#2835, " +
+      "the #4795 race). Neither hosted database had applied it at the rename.",
+  },
+  {
+    file: "supabase/migrations/20261114043300_self_assignable_roles.sql",
+    removed: true,
+    reason:
+      "Renamed to 20261114171856 with the same SQL. #4991 merged at 15:43Z after #4986 and " +
+      "#4989's 20261114144355/144356 had reached staging, so db push refused 043300 and every " +
+      "Deploy staging run halted (the #4795 race). Neither hosted database had applied it at the rename.",
+  },
 ]);
 
 /** A dollar-quote tag, `$$` or `$name$`, matched at `lastIndex`. */

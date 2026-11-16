@@ -38,6 +38,10 @@ const PROFILE: ViewerProfile = {
   currentCompany: null,
   bio: null,
   photoUrl: null,
+  birthdayMonth: null,
+  birthdayDay: null,
+  birthdayYear: null,
+  birthdayVisibility: "nobody",
 };
 
 /** Stands in for gorhom's modal instance, so a spec can see `dismiss()`. */
@@ -83,7 +87,9 @@ const saveButton = (tree: ReactTestRenderer) =>
   tree.root.find(
     (node) =>
       (node.type as unknown) === "Pressable" &&
-      node.props.accessibilityState !== undefined,
+      node.props.accessibilityState !== undefined &&
+      // The birthday's audience segments (#4959) carry a state too.
+      node.props.accessibilityRole !== "radio",
   );
 
 /** What the screen hands the sheet when `/v1/users/me` refetches. */

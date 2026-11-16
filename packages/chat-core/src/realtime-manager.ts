@@ -186,6 +186,10 @@ export interface ManagerContext {
  * - `resync`: the manager may have missed messages (the inbox rejoined after a
  *   drop, or the app came back from the background) and anything derived from
  *   them should be read again.
+ * - `joined`: the inbox's first join went straight through. Nothing was
+ *   dropped, but a message that landed after the summaries were read and
+ *   before this join reached no one (#4961). The client decides whether to
+ *   read them again (`createChatActivityHandler` in `@repo/hooks`).
  */
 export type MessageActivity =
   | {
@@ -193,7 +197,8 @@ export type MessageActivity =
       channelId: string;
       senderId: string | null;
     }
-  | { type: "resync" };
+  | { type: "resync" }
+  | { type: "joined" };
 
 /**
  * How often `resume()`'s probe looks at the socket's outstanding heartbeat. A
@@ -218,6 +223,37 @@ export const RESUME_PROBE_LOOKS = 3;
  * authorised row by row, not at the join.
  */
 export const INBOX_TOPIC = "chat:inbox:global";
+
+/**
+ * Holds a channel's `SUBSCRIBED` until the server says its `postgres_changes`
+ * are streaming (#5022). Without it Realtime reports `SUBSCRIBED` once the
+ * channel itself has joined, which can come before the replication behind it
+ * is live, and a row written in between reaches no one: the thread's
+ * gap-recovery read has already run on that `SUBSCRIBED`, and the inbox has
+ * already reported `joined`. Both treat `SUBSCRIBED` as "every row from here
+ * on arrives", so this is what makes that true. Against local Realtime
+ * (v2.130.0), the first join after a restart missed a row written straight
+ * after its `SUBSCRIBED` in three tries out of three without this and in
+ * none of two with it, which held that `SUBSCRIBED` back 200–350 ms.
+ *
+ * If the stream can't be set up, the join fails with `CHANNEL_ERROR` instead
+ * (`PostgresChangesSubscribeTimeout`). That lands about 20 s in: the server's
+ * wait (15 s by default) plus the few seconds it pauses before refusing, and
+ * realtime-js stretches the join's own timeout to 25 s to outlast it. A
+ * thread then goes to the reconnect backoff and, past
+ * `POLL_DEGRADE_AFTER_MS`, the polling fallback, as with any failed join. The
+ * inbox is never polled: it has its backoff, and the `resync` its next join
+ * reports, so badges are stale until a join succeeds, as they were (silently)
+ * when a stream died behind an early `SUBSCRIBED`. A thread's typing and presence ride the same
+ * join, so they go down with it; a member not receiving the channel live then
+ * gets its pushes, which is right. A server too old to know the option
+ * ignores it and reports `SUBSCRIBED` early, as before.
+ *
+ * The actions channel goes without: it has no status handling of its own and
+ * nothing reads back what it missed (#3039), so a failed join there would
+ * cost more than the window does.
+ */
+const STREAMING_JOIN = { wait: true } as const;
 
 /** The broadcast event for typing inside a message thread (#3785). */
 const THREAD_TYPING_EVENT = "thread_typing";
@@ -368,6 +404,12 @@ class ChatRealtimeManager {
    * every SUBSCRIBED after either follows a gap and owes a resync.
    */
   private inboxOwesResync = false;
+  /**
+   * Whether any `configure` since the last `destroy()` named a viewer. The
+   * first viewer to resolve is the one whose session already joined, so it
+   * owes the inbox no rejoin (#4961); any later change does.
+   */
+  private viewerBound = false;
   private inboxBackoffStep = 0;
   private inboxRetryTimer: ReturnType<typeof setTimeout> | null = null;
   /** The second heartbeat of a `resume()` probe, pending. */
@@ -442,12 +484,22 @@ class ChatRealtimeManager {
     */
     const before = previous ? (previous.viewerId ?? null) : null;
     const after = ctx.viewerId ?? null;
+    const firstViewer = !this.viewerBound && after !== null;
+    if (after !== null) this.viewerBound = true;
     // The inbox's rows are filtered by RLS against the session that joined.
-    // A viewer resolving or changing usually means a new session (a sign-out
-    // rebinds with `null`, a sign-in with the member), so rejoin rather than
-    // trust the token refresh to re-scope a subscription made under the old
-    // one.
-    if (previous !== null && before !== after) this.reopenInbox();
+    // A viewer changing usually means a new session (a sign-out rebinds with
+    // `null`, a sign-in with the member), so rejoin rather than trust the
+    // token refresh to re-scope a subscription made under the old one.
+    //
+    // The first viewer to resolve is the exception (#4961). Web configures at
+    // mount, before `GET /v1/users/me` answers, and that read is answered for
+    // the very session the inbox joined with: nothing to re-scope. Rejoining
+    // there cost a read stamp and an unread re-read on every cold open,
+    // through the rejoin's resync. A viewer who resolves after another was
+    // bound (sign-out through `null`, then a sign-in) still rejoins.
+    if (previous !== null && before !== after && !firstViewer) {
+      this.reopenInbox();
+    }
     for (const state of this.channels.values()) {
       if (state.attachSeq === 0) {
         this.reopenChannel(state);
@@ -485,6 +537,7 @@ class ChatRealtimeManager {
     }
     this.inboxLive = false;
     this.inboxOwesResync = false;
+    this.viewerBound = false;
     this.inboxBackoffStep = 0;
     if (this.typingTickHandle) clearInterval(this.typingTickHandle);
     this.typingTickHandle = null;
@@ -940,11 +993,16 @@ class ChatRealtimeManager {
     // `presence-contract.spec.ts`. `postgres_changes` bound below still
     // deliver on a private channel; verified against local Realtime before the
     // flip.
+    //
+    // `postgres_changes_options` is not part of that contract (it names no
+    // room) and the worker binds no `postgres_changes`, so it goes without:
+    // see `STREAMING_JOIN`.
     const channel = supabase.channel(topic, {
       config: {
         private: true,
         broadcast: { self: false },
         presence: { key: "" },
+        postgres_changes_options: STREAMING_JOIN,
       },
     });
 
@@ -1250,7 +1308,9 @@ class ChatRealtimeManager {
 
   private installInboxChannel(): void {
     if (!this.ctx) return;
-    const channel = this.ctx.supabase.channel(INBOX_TOPIC);
+    const channel = this.ctx.supabase.channel(INBOX_TOPIC, {
+      config: { postgres_changes_options: STREAMING_JOIN },
+    });
     channel.on(
       "postgres_changes",
       { event: "INSERT", schema: "public", table: "chat_messages" },
@@ -1278,10 +1338,13 @@ class ChatRealtimeManager {
           clearTimeout(this.inboxRetryTimer);
           this.inboxRetryTimer = null;
         }
-        // A first join that went straight through has nothing to catch up on:
-        // the summaries were read when their screens mounted. A rejoin, or a
-        // first join that only landed after failing, follows a gap.
-        if (this.inboxOwesResync) this.reportActivity({ type: "resync" });
+        // A rejoin, or a first join that only landed after failing, follows a
+        // gap. A first join that went straight through dropped nothing, but
+        // the summaries may have been read before it, so it says so and the
+        // client decides whether they need reading again (#4961).
+        this.reportActivity({
+          type: this.inboxOwesResync ? "resync" : "joined",
+        });
         this.inboxOwesResync = true;
       } else if (
         status === "CHANNEL_ERROR" ||

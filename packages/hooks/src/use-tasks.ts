@@ -425,8 +425,9 @@ export function useTask(id: string) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: taskKeys.detail(chapterId, id),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/tasks/{id}", {
+        signal,
         params: { path: { id } },
       });
       if (error) throw error;
@@ -668,10 +669,10 @@ export function useTaskPhotoUrl(taskId: string, photoId: string | null) {
     staleTime: 45 * 60 * 1000,
     gcTime: 50 * 60 * 1000,
     refetchOnWindowFocus: false,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/tasks/{id}/photos/{photoId}/url",
-        { params: { path: { id: taskId, photoId: photoId! } } },
+        { signal, params: { path: { id: taskId, photoId: photoId! } } },
       );
       if (error) throw error;
       return data.url;

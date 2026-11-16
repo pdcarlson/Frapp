@@ -8,6 +8,7 @@ import {
   TASK_NEEDS_CHANGES_LABEL,
   TASK_STATUS_LABELS,
 } from "./task-card";
+import type { CalendarBirthday } from "./calendar-birthdays";
 import { useTasks } from "./use-tasks";
 import { useViewerUserId } from "./use-user";
 
@@ -35,7 +36,7 @@ import { useViewerUserId } from "./use-user";
 export type CalendarTaskState = "open" | "overdue" | "waiting" | "confirmed";
 
 /** Which kinds of thing the calendar is showing. */
-export type CalendarLayer = "events" | "mine" | "assigned";
+export type CalendarLayer = "events" | "mine" | "assigned" | "birthdays";
 
 export const CALENDAR_LAYERS: ReadonlyArray<{
   value: CalendarLayer;
@@ -44,28 +45,70 @@ export const CALENDAR_LAYERS: ReadonlyArray<{
   { value: "events", label: "Events" },
   { value: "mine", label: "My tasks" },
   { value: "assigned", label: "Assigned by me" },
+  // Members' shared birthdays (#4959, `calendar-birthdays.ts`).
+  { value: "birthdays", label: "Birthdays" },
 ];
 
 export const ALL_CALENDAR_LAYERS: ReadonlySet<CalendarLayer> = new Set(
   CALENDAR_LAYERS.map((layer) => layer.value),
 );
 
-/** Reads a stored layer list back, keeping only names it knows. */
+/**
+ * Layers added after the stored list was a list of what's shown: a list saved
+ * before one existed can't name it, so it reads as on (#4959).
+ */
+const LAYERS_ADDED_SINCE_SHOWN_LISTS: readonly CalendarLayer[] = ["birthdays"];
+
+/**
+ * Reads the stored layer choice back as the layers to show, keeping only
+ * names it knows; `null` when nothing (or nothing readable) is stored.
+ *
+ * Stored as `{ "hidden": [...] }` since #4959, so a layer added later starts
+ * on for everyone, as a new calendar does in Google Calendar. A bare array is
+ * the older form, the shown layers, and gains the layers added since.
+ */
 export function parseCalendarLayers(
   raw: string | null | undefined,
 ): Set<CalendarLayer> | null {
   if (!raw) return null;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    return new Set(
-      parsed.filter((value): value is CalendarLayer =>
-        ALL_CALENDAR_LAYERS.has(value as CalendarLayer),
-      ),
-    );
+    if (Array.isArray(parsed)) {
+      const shown = new Set(knownLayers(parsed));
+      for (const layer of LAYERS_ADDED_SINCE_SHOWN_LISTS) shown.add(layer);
+      return shown;
+    }
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      Array.isArray((parsed as { hidden?: unknown }).hidden)
+    ) {
+      const hidden = new Set(
+        knownLayers((parsed as { hidden: unknown[] }).hidden),
+      );
+      return new Set(
+        [...ALL_CALENDAR_LAYERS].filter((layer) => !hidden.has(layer)),
+      );
+    }
+    return null;
   } catch {
     return null;
   }
+}
+
+/** The stored form of `shown`: the layers it hides. */
+export function serializeCalendarLayers(
+  shown: ReadonlySet<CalendarLayer>,
+): string {
+  return JSON.stringify({
+    hidden: [...ALL_CALENDAR_LAYERS].filter((layer) => !shown.has(layer)),
+  });
+}
+
+function knownLayers(values: unknown[]): CalendarLayer[] {
+  return values.filter((value): value is CalendarLayer =>
+    ALL_CALENDAR_LAYERS.has(value as CalendarLayer),
+  );
 }
 
 export interface CalendarTaskAssignee {
@@ -109,6 +152,13 @@ export interface CalendarAssignedTask extends CalendarTaskBase {
 }
 
 export type CalendarTask = CalendarOwnTask | CalendarAssignedTask;
+
+/**
+ * Anything on the calendar that isn't an event, filed by day: a task, or a
+ * member's birthday (#4959). The day lists and the layer toggles take them
+ * together, so every view that draws a task draws a birthday beside it.
+ */
+export type CalendarItem = CalendarTask | CalendarBirthday;
 
 function str(row: Record<string, unknown>, key: string): string | null {
   const value = row[key];
@@ -261,15 +311,29 @@ export function selectCalendarTasks(
 }
 
 /**
- * The tasks shown, by due day, in the order a day lists them: the viewer's
- * own before what they assigned, then most in need of attention first
- * (overdue, open, waiting, confirmed), then by title.
+ * A day's birthdays first, all-day as Google Calendar lists them, then the
+ * viewer's own tasks, then what they assigned.
+ */
+const KIND_ORDER: Record<CalendarItem["kind"], number> = {
+  birthdays: 0,
+  mine: 1,
+  assigned: 2,
+};
+
+function itemStateOrder(item: CalendarItem): number {
+  return item.kind === "birthdays" ? 0 : STATE_ORDER[item.state];
+}
+
+/**
+ * The items shown, by day, in the order a day lists them: birthdays, then
+ * the viewer's own tasks before what they assigned, each most in need of
+ * attention first (overdue, open, waiting, confirmed), then by title.
  */
 export function calendarTasksByDay(
-  items: CalendarTask[],
+  items: readonly CalendarItem[],
   layers: ReadonlySet<CalendarLayer>,
-): Map<string, CalendarTask[]> {
-  const map = new Map<string, CalendarTask[]>();
+): Map<string, CalendarItem[]> {
+  const map = new Map<string, CalendarItem[]>();
   for (const item of items) {
     if (!layers.has(item.kind)) continue;
     const bucket = map.get(item.day);
@@ -279,8 +343,8 @@ export function calendarTasksByDay(
   for (const bucket of map.values()) {
     bucket.sort(
       (first, second) =>
-        (first.kind === second.kind ? 0 : first.kind === "mine" ? -1 : 1) ||
-        STATE_ORDER[first.state] - STATE_ORDER[second.state] ||
+        KIND_ORDER[first.kind] - KIND_ORDER[second.kind] ||
+        itemStateOrder(first) - itemStateOrder(second) ||
         first.title.localeCompare(second.title),
     );
   }

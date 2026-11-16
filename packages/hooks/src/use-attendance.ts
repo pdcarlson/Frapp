@@ -32,8 +32,9 @@ export function useAttendance(
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const result = await client.GET("/v1/events/{eventId}/attendance", {
+        signal,
         params: { path: { eventId } },
       });
       // On the status, not `error` (see `throwUnlessOk`). An empty-bodied 5xx
@@ -66,8 +67,9 @@ export function useMyAttendance(
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId, "me"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const result = await client.GET("/v1/events/{eventId}/attendance/me", {
+        signal,
         params: { path: { eventId } },
       });
       throwUnlessOk(result);
@@ -182,9 +184,10 @@ export function useCheckIn() {
         "/v1/events/{eventId}/attendance/check-in",
         { params: { path: { eventId } }, body: payload },
       );
-      // On the status, not `error`: openapi-fetch returns an empty error body
-      // as `undefined` or `""`, so an edge's empty-bodied 502 during a deploy
-      // would read as a check-in, and with no outbox the member would leave
+      // On the status, not `error`: openapi-fetch alone returns an empty
+      // error body as `undefined` or `""` (`createFrappClient` fills it in
+      // since #3394), and an edge's empty-bodied 502 during a deploy must
+      // never read as a check-in: with no outbox the member would leave
       // believing they were on the roster.
       throwUnlessOk(result);
       return result.data;
@@ -384,11 +387,11 @@ export function useMintCheckInToken(eventId: string, enabled = true) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["attendance", eventId, "check-in-token"],
-    queryFn: async (): Promise<MintedCheckInTokenResult> => {
+    queryFn: async ({ signal }): Promise<MintedCheckInTokenResult> => {
       const requestedAt = deviceNow();
       const result = await client.GET(
         "/v1/events/{eventId}/attendance/check-in-token",
-        { params: { path: { eventId } } },
+        { signal, params: { path: { eventId } } },
       );
       // On the status, not `error` (see `throwUnlessOk`). An empty-bodied
       // 5xx read as a success would replace the code on screen, which still

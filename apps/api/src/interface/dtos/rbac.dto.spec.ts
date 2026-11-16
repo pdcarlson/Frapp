@@ -75,3 +75,29 @@ describe('role and tier name', () => {
     expect(await validate(dto)).toEqual([]);
   });
 });
+
+// #4958 review: `null` on a not-null switch is refused at the edge (400),
+// not written (a 500); absent is fine.
+describe('role and tier switches', () => {
+  it.each([
+    [UpdateRoleDto, 'self_assignable'],
+    [UpdateRoleDto, 'mentionable'],
+    [CreateRoleDto, 'mentionable'],
+    [UpdateRoleTierDto, 'mentionable'],
+  ] as const)('%p refuses null for %s', async (cls, field) => {
+    const dto = plainToInstance(cls as ClassConstructor<object>, {
+      name: 'Intramurals',
+      permissions: [],
+      [field]: null,
+    });
+    const errors = await validate(dto);
+    expect(errors.map((e) => e.property)).toContain(field);
+  });
+
+  it('accepts a role update that leaves the switches out, or sends a boolean', async () => {
+    expect(await validate(plainToInstance(UpdateRoleDto, {}))).toEqual([]);
+    expect(
+      await validate(plainToInstance(UpdateRoleDto, { self_assignable: true })),
+    ).toEqual([]);
+  });
+});

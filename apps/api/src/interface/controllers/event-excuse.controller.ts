@@ -92,6 +92,22 @@ export class EventExcuseController {
     return this.excuses.getMine(eventId, userId, chapterId);
   }
 
+  @Patch('me')
+  @ApiOperation({
+    summary: 'Edit the reason on your own excuse',
+    description: `A pending excuse, until ${EVENT_EXCUSE_LATE_HOURS} hours after the event ends; it stays pending. A declined one, until check-in closes: it goes back to pending and the receiver is pushed again. 409 for an approved excuse (withdraw it and send a new one) or a declined one after check-in closes; 404 when there is none.`,
+  })
+  @ApiOkResponse({ type: EventExcuseDto })
+  @FeatureEvent('event-excuse-edited')
+  async edit(
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: SubmitEventExcuseDto,
+  ): Promise<EventExcuseDto> {
+    return this.excuses.edit(eventId, userId, chapterId, dto.reason);
+  }
+
   @Delete('me')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({

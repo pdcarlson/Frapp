@@ -61,8 +61,8 @@ export function useGifAvailability() {
   const chapterId = useActiveChapterId();
   const query = useQuery({
     queryKey: gifKeys.detail(chapterId!, "availability"),
-    queryFn: async () => {
-      const result = await client.GET("/v1/gifs/availability");
+    queryFn: async ({ signal }) => {
+      const result = await client.GET("/v1/gifs/availability", { signal });
       throwUnlessOk(result);
       return result.data!;
     },
@@ -88,13 +88,15 @@ export function useGifSearch(query: string, enabled = true) {
   const result = useInfiniteQuery({
     queryKey: gifKeys.list(chapterId!, { q: settled }),
     initialPageParam: 1,
-    queryFn: async ({ pageParam }) => {
+    queryFn: async ({ pageParam, signal }) => {
       const page = pageParam as number;
       const response = settled
         ? await client.GET("/v1/gifs/search", {
+            signal,
             params: { query: { q: settled, page } },
           })
         : await client.GET("/v1/gifs/trending", {
+            signal,
             params: { query: { page } },
           });
       throwUnlessOk(response);

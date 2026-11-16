@@ -13,18 +13,18 @@ import { withHereMention } from "@repo/validation";
 export type CreateRoleBody = components["schemas"]["CreateRoleDto"];
 export type UpdateRoleBody = components["schemas"]["UpdateRoleDto"];
 
-export function useRoles() {
+export function useRoles(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["roles", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/roles");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/roles", { signal });
       if (error) throw error;
       return data;
     },
     staleTime: 60_000,
-    enabled: !!chapterId,
+    enabled: (options?.enabled ?? true) && !!chapterId,
   });
 }
 
@@ -33,8 +33,11 @@ export function usePermissionsCatalog() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["roles", chapterId, "permissions-catalog"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/roles/permissions-catalog");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET(
+        "/v1/roles/permissions-catalog",
+        { signal },
+      );
       if (error) throw error;
       return data;
     },
@@ -159,9 +162,10 @@ export function usePresidencyClaimStatus(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["roles", chapterId, "presidency-claim-status"],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/roles/presidency-claim-status",
+        { signal },
       );
       if (error) throw error;
       return data;
@@ -218,8 +222,10 @@ export function useMentionRoles() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["roles", chapterId, "mention-roles"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/channels/mention-roles");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/channels/mention-roles", {
+        signal,
+      });
       if (error) throw error;
       return withHereMention(data);
     },

@@ -96,6 +96,7 @@ describe("useChatReportAttachments", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockGet).toHaveBeenCalledWith("/v1/chat/reports/{id}/attachments", {
+      signal: expect.any(AbortSignal),
       params: { path: { id: "r-1" } },
     });
     expect(result.current.data).toEqual(signed);
@@ -135,6 +136,7 @@ describe("useChatReports", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockGet).toHaveBeenCalledWith("/v1/chat/reports", {
+      signal: expect.any(AbortSignal),
       params: { query: { status: "open" } },
     });
   });
@@ -148,6 +150,7 @@ describe("useChatReports", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockGet).toHaveBeenCalledWith("/v1/chat/reports", {
+      signal: expect.any(AbortSignal),
       params: { query: { status: "dismissed" } },
     });
     expect(

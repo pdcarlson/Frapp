@@ -199,6 +199,8 @@ export const PatchChapterConfigSchema = z.object({
   // survive the parse, while absent means "don't touch it". The API rejects a
   // uuid that is not one of this chapter's roles with a 400.
   default_invite_role_id: z.string().uuid().nullable().optional(),
+  // #4959: where the happy-birthday posts go; null turns them off.
+  birthday_channel_id: z.string().uuid().nullable().optional(),
 });
 
 export type ChapterDuesConfig = z.infer<typeof ChapterDuesConfigSchema>;

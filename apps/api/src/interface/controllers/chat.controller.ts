@@ -21,7 +21,10 @@ import {
 } from '@nestjs/swagger';
 import { GifService } from '../../application/services/gif.service';
 import { ChatService } from '../../application/services/chat.service';
-import { ChatMentionService } from '../../application/services/chat-mention.service';
+import {
+  ChatMentionService,
+  toMentionRoleEntry,
+} from '../../application/services/chat-mention.service';
 import { ChatAttachmentService } from '../../application/services/chat-attachment.service';
 import { ChatNotificationPreferenceService } from '../../application/services/chat-notification-preference.service';
 import { ChatCategoryService } from '../../application/services/chat-category.service';
@@ -193,13 +196,7 @@ export class ChatController {
     @CurrentUser('id') userId: string,
   ): Promise<MentionRoleDto[]> {
     const roles = await this.mentions.listMentionRoles(chapterId, userId);
-    return roles.map(({ role_id, kind, name, color, mentionable }) => ({
-      role_id,
-      kind,
-      name,
-      color,
-      mentionable,
-    }));
+    return roles.map(toMentionRoleEntry);
   }
 
   // MUST stay above `@Get(':id')`, for the same reason as `unread` directly
@@ -660,6 +657,10 @@ export class ChatController {
       gif,
       mention_picks: dto.mention_picks,
       enabled_modules: enabledModules,
+      // A role picker (#4958) is an officer's post listing marked roles;
+      // the service calls this after its replay check.
+      assertRolePicker: (roleIds) =>
+        this.rbacService.assertMayPostRolePicker(chapterId, userId, roleIds),
     });
     // Tells the provider what got sent, which tunes its results; never fails
     // the send.

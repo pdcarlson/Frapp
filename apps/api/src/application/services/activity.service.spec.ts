@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import * as caughtFailure from '../../infrastructure/observability/report-caught-failure';
 import { ActivityService } from './activity.service';
 import type { ActivityLink } from './activity-link.service';
@@ -105,10 +106,33 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
       .fn()
       .mockResolvedValue([{ id: READABLE, name: 'general', type: 'PUBLIC' }]),
   };
-  const chatBlocks = { listBlockedUserIds: jest.fn().mockResolvedValue([]) };
+  const chatBlocks = {
+    listBlockedUserIds: jest.fn().mockResolvedValue([]),
+    filterOutBlockers: jest.fn(
+      (_chapterId: string, _sender: string, ids: string[]) =>
+        Promise.resolve(ids),
+    ),
+  };
+  // Everyone the tests name reads every channel unless a test says otherwise.
+  const channelAccess = {
+    readersOf: jest.fn(
+      (
+        _chapterId: string,
+        channels: { id: string }[],
+        _roster?: () => Promise<unknown>,
+      ) =>
+        Promise.resolve(
+          new Map(
+            channels.map((channel) => [channel.id, new Set([ME, OTHER])]),
+          ),
+        ),
+    ),
+  };
   const rbacService = {
     getEffectivePermissions: jest.fn().mockResolvedValue(permissions),
-    isAlumni: jest.fn().mockResolvedValue(false),
+    // The chapter's Alumni role; the caller holds it only when a test says
+    // so (`asAlumnus`).
+    getAlumniRoleId: jest.fn().mockResolvedValue('role-alumni'),
   };
   const messageRepo = {
     findCardsByChapter: jest.fn().mockResolvedValue([]),
@@ -118,6 +142,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     findAllActionsOnMessages: jest.fn().mockResolvedValue([]),
   };
   const linkService = { listFor: jest.fn().mockResolvedValue([]) };
+  const reminderService = { listFor: jest.fn().mockResolvedValue([]) };
   const userRepo = {
     findDisplayIdentitiesByIds: jest.fn().mockResolvedValue([
       { id: ME, display_name: 'Me Member', avatar_url: null },
@@ -125,6 +150,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     ]),
   };
   const memberRepo = {
+    findByChapter: jest.fn().mockResolvedValue([]),
     findByUserAndChapter: jest
       .fn()
       .mockResolvedValue({ user_id: ME, role_ids: ['role-member'] }),
@@ -142,6 +168,10 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     startUnread: jest.fn().mockResolvedValue(undefined),
     findReads: jest.fn().mockResolvedValue([]),
     markRead: jest.fn().mockResolvedValue(undefined),
+    // Nothing snoozed.
+    findSnoozes: jest.fn().mockResolvedValue([]),
+    snooze: jest.fn().mockResolvedValue(undefined),
+    unsnooze: jest.fn().mockResolvedValue(undefined),
   };
   const service = new ActivityService(
     taskService as never,
@@ -151,6 +181,7 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     chatBlocks as never,
     rbacService as never,
     linkService as never,
+    reminderService as never,
     messageRepo as never,
     actionRepo as never,
     userRepo as never,
@@ -158,9 +189,11 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     attendanceRepo as never,
     readRepo,
     formResponseRepo as never,
+    channelAccess as never,
   );
   return {
     service,
+    channelAccess,
     readRepo,
     formResponseRepo,
     taskService,
@@ -174,6 +207,13 @@ function build(permissions: string[] = [SystemPermissions.MEMBERS_VIEW]) {
     messageRepo,
     actionRepo,
     linkService,
+    reminderService,
+    /** The caller holds the chapter's Alumni role beside their member role. */
+    asAlumnus: () =>
+      memberRepo.findByUserAndChapter.mockResolvedValue({
+        user_id: ME,
+        role_ids: ['role-member', 'role-alumni'],
+      }),
   };
 }
 
@@ -376,7 +416,7 @@ describe('ActivityService', () => {
       expect(chatBlocks.listBlockedUserIds).toHaveBeenCalledWith(CHAPTER, ME);
     });
 
-    it('serves no polls, cards or links, and says so, when the block list cannot be read', async () => {
+    it('serves no polls, cards, links or reminders, and says so, when the block list cannot be read', async () => {
       const { service, messageRepo, chatBlocks } = build();
       chatBlocks.listBlockedUserIds.mockRejectedValue(new Error('db down'));
       servePolls(messageRepo, [pollCard({ id: 'poll-1' })]);
@@ -389,7 +429,13 @@ describe('ActivityService', () => {
       // fail with it rather than list a blocked member's card or link.
       expect(view.needs_you.cards).toEqual([]);
       expect(view.links).toEqual([]);
-      expect(view.unavailable).toEqual(['polls', 'cards', 'links']);
+      expect(view.reminders).toEqual([]);
+      expect(view.unavailable).toEqual([
+        'polls',
+        'cards',
+        'links',
+        'reminders',
+      ]);
     });
 
     it('serves the caller’s links, uncounted in needs_you_count (#3897)', async () => {
@@ -421,6 +467,39 @@ describe('ActivityService', () => {
       );
       expect(view.links).toEqual([row]);
       expect(view.needs_you_count).toBe(0);
+    });
+
+    it('serves the caller’s reminders and counts the due ones in needs_you_count (#4957)', async () => {
+      const { service, reminderService, chatService } = build();
+      const waiting = { id: 'rem-1', message_id: 'msg-1', due: false };
+      const due = { id: 'rem-2', message_id: 'msg-2', due: true };
+      reminderService.listFor.mockResolvedValue([due, waiting]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(reminderService.listFor).toHaveBeenCalledWith(
+        CHAPTER,
+        ME,
+        expect.any(Number),
+        {
+          channels: [{ id: READABLE, name: 'general', type: 'PUBLIC' }],
+          blockedUserIds: [],
+        },
+      );
+      expect(view.reminders).toEqual([due, waiting]);
+      expect(view.needs_you_count).toBe(1);
+      // Shares chat's channel read with polls and links.
+      expect(chatService.getChannels).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves no reminders, and says so, when the reminders read fails', async () => {
+      const { service, reminderService } = build();
+      reminderService.listFor.mockRejectedValue(new Error('db down'));
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.reminders).toEqual([]);
+      expect(view.unavailable).toEqual(['reminders']);
     });
 
     it('reads chat’s channel list and the block list once for polls and links', async () => {
@@ -1229,8 +1308,8 @@ describe('ActivityService', () => {
     });
 
     it('does not offer an alumnus a check-in the event’s default would refuse', async () => {
-      const { service, eventService, rbacService, attendanceRepo } = build();
-      rbacService.isAlumni.mockResolvedValue(true);
+      const { service, eventService, attendanceRepo, asAlumnus } = build();
+      asAlumnus();
       eventService.findByChapter.mockResolvedValue([openNow()]);
 
       const view = await service.getActivity(CHAPTER, ME, null);
@@ -1248,8 +1327,8 @@ describe('ActivityService', () => {
     });
 
     it('holds an alumnus to an event that lists a role of theirs', async () => {
-      const { service, eventService, rbacService } = build();
-      rbacService.isAlumni.mockResolvedValue(true);
+      const { service, eventService, asAlumnus } = build();
+      asAlumnus();
       eventService.findByChapter.mockResolvedValue([
         openNow({ required_role_ids: ['role-member'] }),
       ]);
@@ -1372,7 +1451,7 @@ describe('ActivityService', () => {
       expect(view.coming_up).toHaveLength(1);
       expect(view.made_by_you.events).toHaveLength(1);
       expect(memberRepo.findByUserAndChapter).toHaveBeenCalledTimes(1);
-      expect(rbacService.isAlumni).toHaveBeenCalledTimes(1);
+      expect(rbacService.getAlumniRoleId).toHaveBeenCalledTimes(1);
     });
 
     it('lists them soonest first, one row per recurring series, and counts none of them as waiting', async () => {
@@ -1570,6 +1649,7 @@ describe('ActivityService', () => {
       posted_by_name: 'Other Member',
       posted_at: at(-HOUR),
       unread: false,
+      snoozed_until: null,
       ...overrides,
     });
     const upcoming = (overrides: Partial<Event>) =>
@@ -1696,6 +1776,174 @@ describe('ActivityService', () => {
       expect(view.needs_you.polls[0].unread).toBe(false);
       expect(view.coming_up[0].unread).toBe(false);
       expect(view.links[0].unread).toBe(true);
+    });
+
+    describe('snooze (#4982)', () => {
+      const snooze = (kind: string, itemId: string, until: string) => ({
+        user_id: ME,
+        chapter_id: CHAPTER,
+        kind,
+        item_id: itemId,
+        until,
+        created_at: at(-2 * HOUR),
+      });
+
+      it('serves a snoozed row with its time and leaves it out of the count', async () => {
+        const { service, readRepo } = buildEverySection();
+        const before = await service.getActivity(CHAPTER, ME, null);
+        readRepo.findSnoozes.mockResolvedValue([
+          snooze('task', 'mine', at(3 * HOUR)),
+          snooze('task', 'to-confirm', at(3 * HOUR)),
+          snooze('poll', 'poll-1', at(3 * HOUR)),
+          snooze('link', 'link-1', at(3 * HOUR)),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.tasks[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.needs_you.task_confirmations[0].snoozed_until).toBe(
+          at(3 * HOUR),
+        );
+        expect(view.needs_you.polls[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.links[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.needs_you.hours_approvals[0].snoozed_until).toBeNull();
+        // Three fewer waiting: the task, the confirmation and the poll. A
+        // link was never counted.
+        expect(view.needs_you_count).toBe(before.needs_you_count - 3);
+        expect(readRepo.findSnoozes).toHaveBeenCalledWith(
+          CHAPTER,
+          ME,
+          at(-30 * 24 * HOUR),
+        );
+      });
+
+      it('brings a row back unread when its snooze ended after the caller last opened it', async () => {
+        const { service, readRepo } = buildEverySection();
+        // Opened, then snoozed until ten minutes ago.
+        readRepo.findReads.mockResolvedValue([
+          { kind: 'poll', item_id: 'poll-1', read_at: at(-30 * 60 * 1000) },
+          { kind: 'link', item_id: 'link-1', read_at: at(-30 * 60 * 1000) },
+        ]);
+        readRepo.findSnoozes.mockResolvedValue([
+          snooze('poll', 'poll-1', at(-10 * 60 * 1000)),
+          // Ended before the last open: read.
+          snooze('link', 'link-1', at(-40 * 60 * 1000)),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.polls[0]).toMatchObject({
+          snoozed_until: null,
+          unread: true,
+        });
+        expect(view.links[0]).toMatchObject({
+          snoozed_until: null,
+          unread: false,
+        });
+      });
+
+      it('leaves a snoozed hours entry, card and open check-in out of the count', async () => {
+        const { service, readRepo, messageRepo, eventService } =
+          buildEverySection();
+        serveCards(messageRepo, [
+          signupCard(
+            { id: 'sheet', created_at: at(-HOUR) },
+            { closes_at: at(48 * HOUR) },
+          ),
+        ]);
+        eventService.findByChapter.mockResolvedValue([
+          upcoming({
+            id: 'event-1',
+            start_time: at(-HOUR / 2),
+            end_time: at(HOUR / 2),
+          }),
+        ]);
+        const before = await service.getActivity(CHAPTER, ME, null);
+        expect(before.needs_you.cards).toHaveLength(1);
+        expect(before.coming_up[0].check_in_open).toBe(true);
+        readRepo.findSnoozes.mockResolvedValue([
+          snooze('hours_entry', 'entry-1', at(3 * HOUR)),
+          snooze('signup', 'sheet', at(3 * HOUR)),
+          snooze('event', 'event-1', at(3 * HOUR)),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.hours_approvals[0].snoozed_until).toBe(
+          at(3 * HOUR),
+        );
+        expect(view.needs_you.cards[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.coming_up[0].snoozed_until).toBe(at(3 * HOUR));
+        expect(view.needs_you_count).toBe(before.needs_you_count - 3);
+      });
+
+      it('serves a snoozed row after every row still waiting, so it never pushes one out', async () => {
+        const { service, readRepo, taskService } = buildStarted();
+        serveTasks(taskService, [
+          task({ id: 'first', due_date: '2026-11-14' }),
+          task({ id: 'second', due_date: '2026-11-15' }),
+          task({ id: 'third', due_date: '2026-11-16' }),
+        ]);
+        readRepo.findSnoozes.mockResolvedValue([
+          snooze('task', 'first', at(3 * HOUR)),
+        ]);
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.tasks.map((row) => row.id)).toEqual([
+          'second',
+          'third',
+          'first',
+        ]);
+      });
+
+      it('serves nothing as snoozed when the snoozes cannot be read', async () => {
+        const { service, readRepo } = buildEverySection();
+        const before = await service.getActivity(CHAPTER, ME, null);
+        readRepo.findSnoozes.mockRejectedValue(new Error('db down'));
+
+        const view = await service.getActivity(CHAPTER, ME, null);
+
+        expect(view.needs_you.tasks[0].snoozed_until).toBeNull();
+        expect(view.needs_you_count).toBe(before.needs_you_count);
+        expect(view.unavailable).toEqual([]);
+      });
+
+      it('stores a snooze in the future and refuses one in the past or too far ahead', async () => {
+        const { service, readRepo } = build();
+        const item = { kind: 'task' as const, item_id: 'mine' };
+
+        await service.snooze(CHAPTER, ME, item, new Date(at(HOUR)), LATER);
+        expect(readRepo.snooze).toHaveBeenCalledWith(
+          CHAPTER,
+          ME,
+          item,
+          at(HOUR),
+        );
+
+        await expect(
+          service.snooze(CHAPTER, ME, item, new Date(at(-HOUR)), LATER),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        await expect(
+          service.snooze(
+            CHAPTER,
+            ME,
+            item,
+            new Date(at(91 * 24 * HOUR)),
+            LATER,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(readRepo.snooze).toHaveBeenCalledTimes(1);
+      });
+
+      it('unsnoozes the caller’s own item', async () => {
+        const { service, readRepo } = build();
+        await service.unsnooze(CHAPTER, ME, { kind: 'link', item_id: 'l' });
+        expect(readRepo.unsnooze).toHaveBeenCalledWith(CHAPTER, ME, {
+          kind: 'link',
+          item_id: 'l',
+        });
+      });
     });
 
     it('dots a confirmation again when the task was completed after the caller last opened it', async () => {
@@ -2220,8 +2468,8 @@ describe('ActivityService', () => {
     });
 
     it('counts for an alumnus only what they can do: no event the default alone invites them to', async () => {
-      const { service, eventService, rbacService, attendanceRepo } = build();
-      rbacService.isAlumni.mockResolvedValue(true);
+      const { service, eventService, attendanceRepo, asAlumnus } = build();
+      asAlumnus();
       eventService.findByChapter.mockResolvedValue([
         event({
           id: 'missed',
@@ -2343,6 +2591,644 @@ describe('ActivityService', () => {
         polls: null,
         cards: null,
         unavailable: ['polls', 'cards'],
+      });
+    });
+  });
+
+  describe('progress on what the caller made (#4792)', () => {
+    const A = 'user-a';
+    const B = 'user-b';
+    const ALUMNUS = 'user-alumnus';
+    /** The vote reads only: the cards section reads its claims too. */
+    const voteReads = (actionRepo: { findAllActionsOnMessages: jest.Mock }) =>
+      actionRepo.findAllActionsOnMessages.mock.calls.filter(
+        ([, type]) => type === 'vote',
+      );
+    /** Who reads `READABLE`, as chat's reader rule would answer. */
+    const readersAre = (
+      channelAccess: { readersOf: jest.Mock },
+      readers: string[],
+    ) =>
+      channelAccess.readersOf.mockResolvedValue(
+        new Map([[READABLE, new Set(readers)]]),
+      );
+    const vote = (messageId: string, userId: string, picks = ['a']) => ({
+      message_id: messageId,
+      user_id: userId,
+      payload: { option_id: picks },
+    });
+
+    it('counts who voted on an open poll, of the other members who can read its channel, in one read for every poll', async () => {
+      const { service, messageRepo, actionRepo, channelAccess } = build();
+      readersAre(channelAccess, [ME, OTHER, A, B]);
+      servePolls(
+        messageRepo,
+        [pollCard({ id: 'theirs' })],
+        [
+          pollCard({ id: 'mine-open', sender_id: ME }),
+          pollCard({
+            id: 'mine-closed',
+            sender_id: ME,
+            payload: {
+              ...pollCard({ id: 'x' }).payload,
+              closed_at: iso(-HOUR),
+            },
+          }),
+        ],
+      );
+      actionRepo.findAllActionsOnMessages.mockResolvedValue([
+        vote('mine-open', OTHER),
+        // A cleared vote (#3793) is not a vote.
+        vote('mine-open', A, []),
+        // The poster's own vote is not something waiting on others.
+        vote('mine-open', ME, ['b']),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      const byId = new Map(
+        view.made_by_you.polls.map((poll) => [poll.message_id, poll]),
+      );
+      expect(byId.get('mine-open')?.progress).toEqual({ done: 1, total: 3 });
+      // A closed poll waits on nobody.
+      expect(byId.get('mine-closed')?.progress).toBeNull();
+      expect(view.needs_you.polls[0].progress).toBeNull();
+      expect(voteReads(actionRepo)).toEqual([[['mine-open'], 'vote']]);
+      // Chat's own reader rule, once for every channel.
+      expect(channelAccess.readersOf).toHaveBeenCalledTimes(1);
+      expect(channelAccess.readersOf).toHaveBeenCalledWith(
+        CHAPTER,
+        [expect.objectContaining({ id: READABLE })],
+        // The request's one roster read (#4908).
+        expect.any(Function),
+      );
+    });
+
+    it('leaves out of the count a member who blocked the poster, who can never vote', async () => {
+      const { service, messageRepo, actionRepo, channelAccess, chatBlocks } =
+        build();
+      readersAre(channelAccess, [ME, OTHER, A, B]);
+      chatBlocks.filterOutBlockers.mockImplementation(
+        (_chapterId: string, _sender: string, ids: string[]) =>
+          Promise.resolve(ids.filter((id) => id !== B)),
+      );
+      servePolls(messageRepo, [], [pollCard({ id: 'mine', sender_id: ME })]);
+      actionRepo.findAllActionsOnMessages.mockResolvedValue([
+        vote('mine', OTHER),
+        vote('mine', A),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      // Full, not "2 of 3" for good.
+      expect(view.made_by_you.polls[0].progress).toEqual({
+        done: 2,
+        total: 2,
+      });
+      expect(chatBlocks.filterOutBlockers).toHaveBeenCalledWith(
+        CHAPTER,
+        ME,
+        expect.arrayContaining([OTHER, A, B]),
+      );
+    });
+
+    it('serves no count, never 0 of 0, for a poll nobody else can read', async () => {
+      const { service, messageRepo, channelAccess } = build();
+      readersAre(channelAccess, [ME]);
+      servePolls(messageRepo, [], [pollCard({ id: 'mine', sender_id: ME })]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.polls).toEqual([
+        expect.objectContaining({ message_id: 'mine', progress: null }),
+      ]);
+    });
+
+    it('counts only voters who can still read the channel, so done never passes total', async () => {
+      const { service, messageRepo, actionRepo, channelAccess } = build();
+      readersAre(channelAccess, [ME, OTHER]);
+      servePolls(messageRepo, [], [pollCard({ id: 'mine', sender_id: ME })]);
+      actionRepo.findAllActionsOnMessages.mockResolvedValue([
+        vote('mine', OTHER),
+        vote('mine', A),
+      ]);
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.polls[0].progress).toEqual({
+        done: 1,
+        total: 1,
+      });
+    });
+
+    it('reads nothing more for a member who posted no open poll', async () => {
+      const { service, messageRepo, actionRepo, channelAccess } = build();
+      servePolls(messageRepo, [pollCard({ id: 'theirs' })]);
+
+      await service.getActivity(CHAPTER, ME, null);
+
+      expect(channelAccess.readersOf).not.toHaveBeenCalled();
+      expect(voteReads(actionRepo)).toEqual([]);
+    });
+
+    it('still lists the polls, without a count, when the count cannot be read', async () => {
+      const { service, messageRepo, actionRepo } = build();
+      jest.spyOn(caughtFailure, 'reportCaughtFailure').mockImplementation();
+      servePolls(messageRepo, [], [pollCard({ id: 'mine', sender_id: ME })]);
+      actionRepo.findAllActionsOnMessages.mockImplementation(
+        (_ids: string[], type: string) =>
+          type === 'vote'
+            ? Promise.reject(new Error('boom'))
+            : Promise.resolve([]),
+      );
+
+      const view = await service.getActivity(CHAPTER, ME, null);
+
+      expect(view.unavailable).toEqual([]);
+      expect(view.made_by_you.polls).toEqual([
+        expect.objectContaining({ message_id: 'mine', progress: null }),
+      ]);
+    });
+
+    /** An event the caller made, happening now, so its check-in is open. */
+    const happeningNow = (overrides: Partial<Event> = {}) =>
+      event({
+        id: 'now',
+        start_time: iso(-30 * 60 * 1000),
+        end_time: iso(30 * 60 * 1000),
+        created_by: ME,
+        ...overrides,
+      });
+    const serveEventCount = (
+      deps: ReturnType<typeof build>,
+      members: { user_id: string; role_ids: string[] }[],
+      attendance: { event_id: string; user_id: string; status: string }[],
+    ) => {
+      const findByChapter = jest.fn().mockResolvedValue(members);
+      const findByEvents = jest.fn().mockResolvedValue(attendance);
+      Object.assign(deps.memberRepo, { findByChapter });
+      Object.assign(deps.attendanceRepo, { findByEvents });
+      Object.assign(deps.rbacService, {
+        getAlumniRoleId: jest.fn().mockResolvedValue('role-alumni'),
+      });
+      return { findByChapter, findByEvents };
+    };
+    const officer = () =>
+      build([SystemPermissions.MEMBERS_VIEW, SystemPermissions.EVENTS_UPDATE]);
+
+    it('counts who checked in to an event the caller made once its check-in opens, of the others it holds to it', async () => {
+      const deps = officer();
+      deps.eventService.findCreatedBy.mockResolvedValue([happeningNow()]);
+      serveEventCount(
+        deps,
+        [
+          { user_id: ME, role_ids: ['role-member'] },
+          { user_id: OTHER, role_ids: ['role-member'] },
+          { user_id: A, role_ids: ['role-member'] },
+          { user_id: B, role_ids: ['role-member'] },
+          // Invited only by the default, so check-in refuses them.
+          { user_id: ALUMNUS, role_ids: ['role-alumni'] },
+        ],
+        [
+          { event_id: 'now', user_id: ME, status: 'PRESENT' },
+          { event_id: 'now', user_id: OTHER, status: 'LATE' },
+          // Excused: on neither side.
+          { event_id: 'now', user_id: B, status: 'EXCUSED' },
+        ],
+      );
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events[0].progress).toEqual({
+        done: 1,
+        total: 2,
+      });
+    });
+
+    it('counts an alumnus the event names by role, whom check-in admits', async () => {
+      const deps = officer();
+      deps.eventService.findCreatedBy.mockResolvedValue([
+        // The caller is listed only through a role the event names too.
+        happeningNow({ required_role_ids: ['role-alumni', 'role-member'] }),
+      ]);
+      serveEventCount(
+        deps,
+        [
+          { user_id: ME, role_ids: ['role-alumni'] },
+          { user_id: ALUMNUS, role_ids: ['role-alumni'] },
+          { user_id: OTHER, role_ids: ['role-alumni'] },
+        ],
+        [{ event_id: 'now', user_id: ALUMNUS, status: 'PRESENT' }],
+      );
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events[0].progress).toEqual({
+        done: 1,
+        total: 2,
+      });
+    });
+
+    it('serves no count, never 0 of 0, for an event that holds nobody else to it', async () => {
+      const deps = officer();
+      deps.eventService.findCreatedBy.mockResolvedValue([happeningNow()]);
+      serveEventCount(
+        deps,
+        [
+          { user_id: ME, role_ids: ['role-member'] },
+          { user_id: ALUMNUS, role_ids: ['role-alumni'] },
+        ],
+        [],
+      );
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events[0].progress).toBeNull();
+    });
+
+    it('counts every open event in one attendance read', async () => {
+      const deps = officer();
+      deps.eventService.findCreatedBy.mockResolvedValue([
+        happeningNow(),
+        happeningNow({ id: 'also-now', name: 'Rush table' }),
+      ]);
+      const { findByEvents, findByChapter } = serveEventCount(
+        deps,
+        [
+          { user_id: ME, role_ids: ['role-member'] },
+          { user_id: OTHER, role_ids: ['role-member'] },
+        ],
+        [{ event_id: 'also-now', user_id: OTHER, status: 'PRESENT' }],
+      );
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events.map((row) => row.progress)).toEqual([
+        { done: 0, total: 1 },
+        { done: 1, total: 1 },
+      ]);
+      expect(findByEvents).toHaveBeenCalledTimes(1);
+      expect(findByChapter).toHaveBeenCalledTimes(1);
+    });
+
+    it('gives no count to a maker without events:update, who cannot see the roster', async () => {
+      const deps = build();
+      deps.eventService.findCreatedBy.mockResolvedValue([happeningNow()]);
+      const { findByEvents } = serveEventCount(
+        deps,
+        [{ user_id: OTHER, role_ids: ['role-member'] }],
+        [{ event_id: 'now', user_id: OTHER, status: 'PRESENT' }],
+      );
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events[0].progress).toBeNull();
+      expect(findByEvents).not.toHaveBeenCalled();
+    });
+
+    // #4908: an officer with an open poll and an event open for check-in, both
+    // of which count, and both event sections answering for the viewer.
+    it('reads the roster and the Alumni role once, whichever counts run', async () => {
+      const deps = officer();
+      const now = happeningNow();
+      deps.eventService.findCreatedBy.mockResolvedValue([now]);
+      deps.eventService.findByChapter.mockResolvedValue([now]);
+      servePolls(
+        deps.messageRepo,
+        [],
+        [pollCard({ id: 'mine', sender_id: ME })],
+      );
+      const members = [
+        { user_id: ME, role_ids: ['role-member'] },
+        { user_id: OTHER, role_ids: ['role-member'] },
+      ];
+      const { findByChapter } = serveEventCount(deps, members, []);
+      const getAlumniRoleId = deps.rbacService.getAlumniRoleId;
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      // Both counts ran, and the viewer was resolved.
+      expect(view.made_by_you.polls[0].progress).toEqual({ done: 0, total: 1 });
+      expect(view.made_by_you.events[0].progress).toEqual({
+        done: 0,
+        total: 1,
+      });
+      expect(view.coming_up).toHaveLength(1);
+      // Before #4908: two roster reads and two Alumni role reads.
+      expect(findByChapter).toHaveBeenCalledTimes(1);
+      expect(getAlumniRoleId).toHaveBeenCalledTimes(1);
+      // The poll count's reader resolve was handed that same roster.
+      const [, , roster] = deps.channelAccess.readersOf.mock.calls[0];
+      await expect(roster?.()).resolves.toBe(members);
+      expect(findByChapter).toHaveBeenCalledTimes(1);
+    });
+
+    it('serves no count for an event whose check-in has not opened, and reads nothing for it', async () => {
+      const deps = officer();
+      deps.eventService.findCreatedBy.mockResolvedValue([
+        event({ id: 'later', created_by: ME }),
+      ]);
+      const { findByChapter, findByEvents } = serveEventCount(deps, [], []);
+
+      const view = await deps.service.getActivity(CHAPTER, ME, null);
+
+      expect(view.made_by_you.events[0].progress).toBeNull();
+      expect(findByChapter).not.toHaveBeenCalled();
+      expect(findByEvents).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('archive (#5127)', () => {
+    it('serves events that invited the caller once their check-in has closed, newest first, with whether they checked in', async () => {
+      const { service, eventService, attendanceRepo } = build();
+      eventService.findByChapter.mockResolvedValue([
+        event({
+          id: 'older',
+          start_time: iso(-72 * HOUR),
+          end_time: iso(-71 * HOUR),
+        }),
+        event({
+          id: 'newer',
+          start_time: iso(-26 * HOUR),
+          end_time: iso(-25 * HOUR),
+        }),
+        // Ended five minutes ago: check-in is still open, so it is live.
+        event({
+          id: 'just-ended',
+          start_time: iso(-HOUR - 5 * 60 * 1000),
+          end_time: iso(-5 * 60 * 1000),
+        }),
+        // Leaves the member out.
+        event({
+          id: 'not-mine',
+          start_time: iso(-30 * HOUR),
+          end_time: iso(-29 * HOUR),
+          is_mandatory: false,
+          optional_role_ids: ['role-other'],
+          others_invited: false,
+        }),
+      ]);
+      attendanceRepo.findByUserForEvents.mockResolvedValue([
+        { event_id: 'newer', user_id: ME, status: 'PRESENT' },
+      ]);
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(eventService.findByChapter).toHaveBeenCalledWith(CHAPTER, ME, {
+        endsAfter: iso(-30 * 24 * HOUR),
+        startsBefore: NOW.toISOString(),
+      });
+      expect(archive.events.map((row) => [row.id, row.checked_in])).toEqual([
+        ['newer', true],
+        ['older', false],
+      ]);
+      expect(archive.events.every((row) => !row.check_in_open)).toBe(true);
+      expect(archive.unavailable).toEqual([]);
+    });
+
+    it('serves the caller’s own done tasks and the confirmed tasks they assigned, most recently done first', async () => {
+      const { service, taskService } = build([
+        SystemPermissions.MEMBERS_VIEW,
+        SystemPermissions.TASKS_MANAGE,
+      ]);
+      serveTasks(
+        taskService,
+        [
+          task({ id: 'own-open' }),
+          task({
+            id: 'own-waiting',
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-2 * HOUR),
+          }),
+          task({
+            id: 'own-old',
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-40 * 24 * HOUR),
+            confirmed_at: iso(-39 * 24 * HOUR),
+          }),
+        ],
+        [
+          task({
+            id: 'assigned-confirmed',
+            assignee_id: OTHER,
+            created_by: ME,
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-HOUR),
+            confirmed_at: iso(-HOUR / 2),
+          }),
+          // Done six weeks ago, confirmed just now: it left Tasks you
+          // assigned now, so it is here, by when it was confirmed.
+          task({
+            id: 'assigned-late-confirm',
+            assignee_id: OTHER,
+            created_by: ME,
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-42 * 24 * HOUR),
+            confirmed_at: iso(-HOUR / 4),
+          }),
+          // Another officer's: never the caller's to list.
+          task({
+            id: 'someone-elses-confirmed',
+            assignee_id: 'user-third',
+            created_by: OTHER,
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-HOUR),
+            confirmed_at: iso(-HOUR),
+          }),
+          // Waits on the caller's confirm: still live, in To review.
+          task({
+            id: 'assigned-waiting',
+            assignee_id: OTHER,
+            created_by: ME,
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-3 * HOUR),
+          }),
+        ],
+      );
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.tasks.map((row) => row.id)).toEqual([
+        'assigned-late-confirm',
+        'assigned-confirmed',
+        'own-waiting',
+      ]);
+      expect(archive.tasks[0]).toMatchObject({
+        assignee_name: 'Other Member',
+        created_by_name: 'Me Member',
+      });
+    });
+
+    it('leaves out tasks the caller assigned once they lose tasks:manage', async () => {
+      const { service, taskService } = build();
+      serveTasks(
+        taskService,
+        [],
+        [
+          task({
+            id: 'assigned-confirmed',
+            assignee_id: OTHER,
+            created_by: ME,
+            stored_status: TaskStatus.COMPLETED,
+            completed_at: iso(-HOUR),
+            confirmed_at: iso(-HOUR),
+          }),
+        ],
+      );
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.tasks).toEqual([]);
+      for (const [, , isAdmin] of taskService.list.mock.calls) {
+        expect(isAdmin).toBe(false);
+      }
+    });
+
+    it('serves closed polls the caller posted or voted in, most recently closed first', async () => {
+      const { service, messageRepo, actionRepo } = build();
+      servePolls(
+        messageRepo,
+        [
+          pollCard({
+            id: 'voted-closed',
+            payload: {
+              question: 'Theme?',
+              options: [
+                { id: 'a', label: 'A' },
+                { id: 'b', label: 'B' },
+              ],
+              closes_at: iso(-HOUR),
+            },
+          }),
+          pollCard({
+            id: 'unvoted-closed',
+            payload: {
+              question: 'Snacks?',
+              options: [
+                { id: 'a', label: 'A' },
+                { id: 'b', label: 'B' },
+              ],
+              closes_at: iso(-HOUR),
+            },
+          }),
+          pollCard({ id: 'open' }),
+        ],
+        [
+          pollCard({
+            id: 'mine-closed',
+            sender_id: ME,
+            payload: {
+              question: 'Date?',
+              options: [
+                { id: 'a', label: 'A' },
+                { id: 'b', label: 'B' },
+              ],
+              closes_at: iso(-3 * HOUR),
+            },
+          }),
+          pollCard({ id: 'mine-open', sender_id: ME }),
+        ],
+      );
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'voted-closed', payload: { option_id: 'a' } },
+      ]);
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.polls.map((row) => row.message_id)).toEqual([
+        'voted-closed',
+        'mine-closed',
+      ]);
+      expect(archive.polls.every((row) => row.is_closed)).toBe(true);
+    });
+
+    it('leaves out events from before the caller joined', async () => {
+      const { service, eventService, memberRepo } = build();
+      memberRepo.findByUserAndChapter.mockResolvedValue({
+        user_id: ME,
+        role_ids: ['role-member'],
+        created_at: iso(-48 * HOUR),
+      });
+      eventService.findByChapter.mockResolvedValue([
+        event({
+          id: 'before-joining',
+          start_time: iso(-72 * HOUR),
+          end_time: iso(-71 * HOUR),
+        }),
+        event({
+          id: 'since-joining',
+          start_time: iso(-26 * HOUR),
+          end_time: iso(-25 * HOUR),
+        }),
+      ]);
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.events.map((row) => row.id)).toEqual(['since-joining']);
+    });
+
+    it('reads no events while the Events module is off', async () => {
+      const { service, eventService } = build();
+
+      const archive = await service.getArchive(CHAPTER, ME, { events: false });
+
+      expect(eventService.findByChapter).not.toHaveBeenCalled();
+      expect(archive.events).toEqual([]);
+      expect(archive.unavailable).toEqual([]);
+    });
+
+    it('never lists a closed poll from someone the caller blocked, even one they voted in', async () => {
+      const { service, messageRepo, actionRepo, chatBlocks } = build();
+      chatBlocks.listBlockedUserIds.mockResolvedValue([BLOCKED]);
+      const closedPayload = {
+        ...pollCard({ id: 'x' }).payload,
+        closes_at: iso(-HOUR),
+      };
+      servePolls(messageRepo, [
+        pollCard({
+          id: 'from-blocked',
+          sender_id: BLOCKED,
+          payload: closedPayload,
+        }),
+        pollCard({ id: 'from-other', payload: closedPayload }),
+      ]);
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'from-blocked', payload: { option_id: 'a' } },
+        { message_id: 'from-other', payload: { option_id: 'a' } },
+      ]);
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.polls.map((row) => row.message_id)).toEqual([
+        'from-other',
+      ]);
+    });
+
+    it('reads nothing for a module that is off, and serves a failed section empty and named', async () => {
+      const { service, taskService, eventService, messageRepo } = build();
+      eventService.findByChapter.mockRejectedValue(new Error('down'));
+      jest
+        .spyOn(caughtFailure, 'reportCaughtFailure')
+        .mockImplementation(() => undefined);
+
+      const archive = await service.getArchive(CHAPTER, ME, {
+        tasks: false,
+        polls: false,
+      });
+
+      expect(taskService.list).not.toHaveBeenCalled();
+      expect(messageRepo.findCardsByChapter).not.toHaveBeenCalled();
+      expect(archive).toEqual({
+        events: [],
+        tasks: [],
+        polls: [],
+        unavailable: ['events'],
       });
     });
   });

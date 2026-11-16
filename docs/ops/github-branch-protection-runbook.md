@@ -27,14 +27,15 @@ branch. This ensures:
 
 ## Prerequisites
 
-1. A GitHub Personal Access Token (PAT) with repository administration permissions:
-   - **Fine-grained PAT:** Repository administration: Read & write
-   - **Classic PAT:** `repo` scope
-2. Provide the token using the canonical hosted-agent name, either by exporting it or by putting it in an env file at the repo root. The token must have the permissions above; do not rely on the GitHub Actions runtime token unless it has equivalent administration scope.
+1. Your own GitHub token with repository administration permissions (a person's token on a laptop;
+   cloud sessions carry none since 2026-11-15):
+   - **Fine-grained token:** Repository administration: Read & write
+   - **Classic token:** `repo` scope
+2. Provide it by exporting it or by putting it in an env file at the repo root. Do not rely on the
+   GitHub Actions runtime token unless it has equivalent administration scope.
 
 ```bash
 export GITHUB_PAT=<token>
-export GH_TOKEN="$GITHUB_PAT"   # gh/git read GH_TOKEN, not GITHUB_PAT
 ```
 
 Or, to avoid re-exporting every shell — both files are gitignored:
@@ -45,44 +46,27 @@ echo 'GITHUB_PAT=<token>' >> .env
 
 > **Which env var the script reads.** `scripts/configure-branch-protection.mjs` resolves the token from,
 > in order: `GITHUB_PAT` → `GITHUB_TOKEN` → `GH_PAT` → `GH_TOKEN` (or `--token-env <NAME>` to name a
-> custom var). `GITHUB_PAT` is the canonical name. The repo slug comes from `--repo owner/repo`,
-> `GITHUB_REPOSITORY`, or the `origin` remote.
+> custom var). The repo slug comes from `--repo owner/repo`, `GITHUB_REPOSITORY`, or the `origin`
+> remote.
 >
 > **The value may come from `.env.local` or `.env` at the repo root**, not just from an exported
 > variable — the script loads them through `scripts/lib/env-file.mjs`. Precedence is the one
 > `apps/api/src/app.module.ts` already uses for the API: an **exported variable beats both files**,
 > and `.env.local` beats `.env`. So a stale `.env` left in a checkout can never shadow a token you
-> exported deliberately. Before this loading existed, a token sitting in `.env` failed with
-> "Missing GitHub token" and only worked once exported by hand.
+> exported deliberately.
 >
 > The same files also supply `GITHUB_REPOSITORY`, since they are loaded before the slug is
 > resolved — `--repo` still overrides both.
 
-> **Reads work from a hosted session; the apply is a human step by policy.** The hosted environment
-> injects `GITHUB_PAT`, and from a Claude Code cloud sandbox node's built-in `fetch` and
-> `curl --noproxy '*'` go direct and return **200** from GitHub itself. Requests that honour
-> `HTTPS_PROXY` take the agent proxy route instead, whose results say nothing about the PAT. The
-> rule and its measurements live in
-> [`agent-infra.md` — the `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule); this
-> runbook only consumes the rule. The 2026-08-27 403 once recorded here — against
-> `GET /repos/pdcarlson/Frapp/branches/main/protection` — was a `curl` probe, so it measured the
-> proxy route, not the PAT. [#680](https://github.com/pdcarlson/Frapp/issues/680)'s evidence table
-> records 403 and 200 for this endpoint class on the same day — but be honest about what that table
-> says: it is a **single row, and it attributes both the 403 and the 200 to `curl`**. So it does not
-> corroborate the route rule on its own; either the 200 was taken on a different route than the
-> row implies, the proxy route answered differently in two sessions, or the row is imprecise. The
-> direct measurement settles the read either way.
->
-> **Do not regenerate the PAT with broader scopes** — a proxy-route 403 is not an answer about the
-> PAT. It looked like one because `GET /user` *through* the proxy returns 200, so the token
-> appeared to work everywhere except the paths that mattered. Judge a 403 by its route, not its
-> headers: only a 403 on the direct route is a permission answer about the PAT (why:
-> [`agent-infra.md` → The `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule)). And **do not set
-> `NODE_USE_ENV_PROXY=1`** for these scripts: that puts node back on the proxy route. Check with
-> `npm run configure:branch-protection:verify`, which **fails loudly** rather than passing when a
-> read is refused — see `--verify` below for the dated result.
->
-> **Applying branch protection is still a human step with an admin PAT — by policy, not because it
+> **From a cloud session, `:verify` reads through the agent proxy (2026-11-15).** Sessions no longer
+> carry `GITHUB_PAT`. The `:verify` npm script runs node with `--use-env-proxy`, so in a session it
+> takes the proxy route with the proxy's own credential, which can read `branches/main/protection`
+> and `rules/branches/main`; on a laptop with no `HTTPS_PROXY` the flag does nothing. Run with plain
+> `node` and no switch, a session's request goes direct with the proxy's placeholder token and
+> GitHub answers 401 "Bad credentials", which is about the route, not the settings
+> ([`agent-infra.md` → The `api.github.com` route rule](../ci-cd/agent-infra.md#the-apigithubcom-route-rule)).
+
+> **Applying branch protection is still a human step with an admin token — by policy, not because it
 > is unreachable.** The GitHub MCP server is the sanctioned write path for issues, PRs and comments
 > and exposes no branch-protection tool; REST is a read channel for ground truth, not a write
 > fallback. That is why promoting a check to required is filed as a `[human]` issue rather than
@@ -112,8 +96,8 @@ This prints the exact configuration that will be applied without making any chan
 > differ by two characters and one is a governance write.
 >
 > **From an agent session, run `npm run configure:branch-protection:verify` and nothing else** —
-> never the bare command, never `--dry-run` without the `--`. Applying stays a human step with an
-> admin PAT (see **Prerequisites**).
+> never the bare command, never `--dry-run` without the `--`. Applying stays a human step with your
+> own admin token (see **Prerequisites**).
 
 A dry run also **reads live protection back and prints the difference**, so the output answers
 "what would this actually change?" rather than only "what would this write?". That read-back is a
@@ -211,6 +195,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Deletions                   | Blocked         |
 | Conversation resolution     | Disabled        |
 | Required approving reviews  | Disabled        |
+| Merge queue                 | Required, squash; set in the `main` ruleset, not here ([§ Merge queue](#merge-queue)) |
 
 Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requirement policy](../../CONTRIBUTING.md#pr-review-requirement-policy).
 
@@ -235,7 +220,7 @@ Why neither review setting is enabled: [`CONTRIBUTING.md` § PR review requireme
 | `chapter-directory-seed` | `supabase/seed/chapter_directory.csv`: canonical `#RRGGBB` colors, real archetypes, no duplicate natural keys (issue #840) |
 | `web-tests`          | `apps/web` + the shared packages only this suite covers (`packages/hooks`, `packages/chat-core`) |
 | `changes`            | Path filter deciding whether `web-tests`, `web-responsive-floor`, `landing-fold` and `pglite-migrations` run; required only because they need it |
-| `pglite-migrations`  | Every migration applied from empty to PGlite, with the RLS posture asserted on the result (`scripts/pglite/`), then the change-ping contract checked against the same replay (`apps/web/lib/realtime/change-topics.spec.ts`). Added to the roster by [#2538](https://github.com/pdcarlson/Frapp/issues/2538). `validate-deploy-sha` requires it for production deploys from the roster alone; a PR can merge past a red run until an admin applies the roster, which `--verify` shows |
+| `pglite-migrations`  | Every migration applied from empty to PGlite, with the RLS posture asserted on the result (`scripts/pglite/`), then the role-delete vs member-roles-save overlap run with two real connections on a Postgres service container (`scripts/db-race/`, #4862), then the change-ping contract checked against the same replay (`apps/web/lib/realtime/change-topics.spec.ts`). Added to the roster by [#2538](https://github.com/pdcarlson/Frapp/issues/2538). `validate-deploy-sha` requires it for production deploys from the roster alone; a PR can merge past a red run until an admin applies the roster, which `--verify` shows |
 | `dependency-cruiser` | Architectural boundaries (API layer direction, package/app separation, cycles) against a committed baseline — [`quality-gates.md`](../ci-cd/quality-gates.md) |
 | `web-production-build` | Builds web and landing on a devDependency-pruned tree, matching the Vercel production install — [`agent-infra.md`](../ci-cd/agent-infra.md) |
 | `web-responsive-floor` | Every dashboard route renders without horizontal scroll at 375px ([`responsive-floor.spec.ts`](../../apps/web/tests/visual/responsive-floor.spec.ts)). Playwright, but no baseline and no pixel comparison |
@@ -343,6 +328,29 @@ blocking `main` churn.
 There is **no AI-review required check.** Code review is a **repository-managed Git pre-push gate**
 ([`.githooks/pre-push`](../../.githooks/pre-push), installed by the root `prepare` script; requires
 exact-pushed-commit evidence from `/diff-review` before it publishes unreviewed work) — the former `claude-review-gate` CI check was removed (2026-06-04). See [`ai-code-review-runbook.md`](../ci-cd/ai-code-review-runbook.md).
+
+## Merge queue
+
+Paul chose the merge queue on 2026-11-14 ([#4795](https://github.com/pdcarlson/Frapp/issues/4795)), to stop two PRs that are each green, but break together, from landing on `main`. With it on, merging a PR (or turning on its auto-merge) adds it to a queue; GitHub builds a commit from `main` plus every PR ahead of it, runs the required checks there, and merges only when they pass. A PR that fails in the queue is removed from it, and the ones behind are rebuilt without it.
+
+**Where it lives.** Not in classic branch protection, whose REST API has no merge queue field, so `npm run configure:branch-protection` can neither write nor erase it. It is a rule in the repository ruleset named `main` (Settings → Rules → Rulesets → `main`), beside that ruleset's deletion and pull request rules. The settings this repo depends on are `MERGE_QUEUE` in [`required-checks.mjs`](../../scripts/ci/lib/required-checks.mjs), and `npm run configure:branch-protection:verify` reads the ruleset back (`GET /repos/{repo}/rules/branches/main`) and fails when the queue is off or differs from them.
+
+**What CI does for it.** Every workflow with a required check listens for `merge_group` (pinned by [`merge-queue-triggers.test.mjs`](../../scripts/ci/__tests__/merge-queue-triggers.test.mjs)), or a queued PR would wait out the timeout on checks nobody reports. A queue run is treated like a push to `main`: the path-gated jobs run in full, and the diff checks (secrets, migration safety, API contract, `migration-replay`'s did-migrations-change test) measure against `merge_group.base_sha`, the commit the entry was built on (`main` or the entry ahead), where a PR uses its own base. `migration-order` measures against `main`'s tip instead, so its introduced set includes the entries ahead ([`drift-and-ordering.md`](database/drift-and-ordering.md#migration-order--the-required-one)). `migration-drift`, which reports on staging rather than the change, skips there. Each queue entry has its own ref (`gh-readonly-queue/main/pr-<n>-<sha>`), so its runs share no concurrency group with anything. Deploy staging, PR base sync and CI wake all ignore queue runs.
+
+**Turning it on** (owner only, and only after the PR adding the `merge_group` triggers has merged): open the `main` ruleset, add **Require merge queue**, and set:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Merge method | Squash | Matches how PRs merge today; linear history forbids merge commits |
+| Only merge non-failing pull requests | On (`ALLGREEN`) | A red entry never merges on a later entry's green |
+| Status check timeout | 60 minutes | Outlasts `migration-replay`, the slowest required job (50-minute timeout). It does not cover a runner backlog: on a day when jobs wait an hour for a runner, entries time out and drop, and need re-queueing |
+| Build concurrency, group sizes, wait time | GitHub's defaults | Tuning, not correctness; not checked by `--verify` |
+
+Then run `npm run configure:branch-protection:verify` and confirm the merge queue line reads `Live merge queue matches the roster.`
+
+**Effect on deploys.** A queued PR's `main` commit is the queue's own commit, so it carries the queue run's check runs as well as the push run's. [`validate-deploy-sha.mjs`](../../scripts/ci/validate-deploy-sha.mjs) takes the latest run of each name that actually ran: since #5084 a push run for a commit the queue passed skips its jobs, and a `skipped` run gives way to the queue run's real result (`deployEvidenceByName`). So a refusal of such a commit names the queue run's failure, not anything on the push run, and re-running the push run tests the commit in full (a re-run never skips). When a burst of merges drops a push run from CI's per-ref group (see `ci.yml`'s concurrency comment), the queue run's green checks still stand for that commit, on the same tree. Deploy production's empty-`sha` pick still skips it, because it also requires a verified staging deploy, which that commit never got. A SHA pasted into Deploy production is checked by `validate-deploy-sha.mjs` only for ancestry and green required checks, so such a commit now passes there where it used to be refused as `missing`: check that its Deploy staging ran before pasting one from a burst of merges.
+
+**Turning it off** is removing the rule from the ruleset; nothing in CI needs to change back, since the `merge_group` triggers are inert without a queue. Do the same in an emergency where the queue itself is broken, and say so in the PR you merge.
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 

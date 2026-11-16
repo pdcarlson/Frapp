@@ -116,6 +116,7 @@ export class FindMemberAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: listSourceId(this.name, args.name),
         kind: 'roster',
+        audience: { type: 'chapter' },
         title: 'Roster',
         page: 'members',
         lines: [...summary, ...shown],

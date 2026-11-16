@@ -1,8 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
+  ASK_PROPOSALS_MAX,
   ASK_STREAM_VERSION,
   type AskAnswer,
+  type AskDoor,
+  type AskEffort,
+  type AskEntity,
+  type AskFrom,
   type AskHistoryTurn,
   type AskSource,
   type AskStep,
@@ -48,18 +53,28 @@ import { MemberService } from '../member.service';
 import { RbacService } from '../rbac.service';
 import {
   AgentLoopService,
+  type AgentLoopEvent,
   type AgentLoopOutcome,
 } from './agent/agent-loop.service';
+import { agentTurnTrace, type AgentTurnEnd } from './agent/agent-turn-trace';
 import {
+  AGENT_PROPOSE_TOOLS,
   AGENT_READ_TOOLS,
+  type AgentCard,
+  type AgentEntity,
+  type AgentProposeTool,
   type AgentReadTool,
   type AgentSource,
+  type AgentToolContext,
 } from './agent/agent-tool';
 import {
   ASK_AGENT_PROMPT_VERSION,
+  ASK_FROM_SOURCE_TITLE,
   askAgentSystem,
 } from './agent/ask-agent-prompt';
 import { AskDiagnosticsService } from './ask-diagnostics.service';
+import { AskFromService, type AskFromPart } from './agent/ask-from.service';
+import { AskTraceService } from './observe/ask-trace.service';
 import {
   ASK_ANSWER_PROMPT_VERSION,
   ASK_ASKER_SOURCE_TITLE,
@@ -73,6 +88,7 @@ import {
   askSearchQuery,
   earlierQuestions,
   looksLikeAskerSourceTitle,
+  titleStartsLike,
 } from './ask-prompt';
 import {
   ASK_MAX_TOOLS_PER_QUESTION,
@@ -149,6 +165,16 @@ export interface AskInput {
    * said, and it reaches only the asker's own answer.
    */
   history?: readonly AskHistoryTurn[];
+  /**
+   * What the member had open when they asked. Ids from the client: each is
+   * looked up as the asker before anything about it reaches a model
+   * (`AskFromService`). Read by the tool loop only.
+   */
+  from?: AskFrom;
+  /** How hard to work on it (`AGENT_LIMITS`). Read by the tool loop only. */
+  effort?: AskEffort;
+  /** Where the member asked from. Counted in the turn's trace, never read. */
+  door?: AskDoor;
   /** The chapter's module switches, as `ChapterGuard` read them. */
   enabledModules: Record<string, boolean> | null;
   /** The asker's IANA time zone. */
@@ -156,6 +182,14 @@ export interface AskInput {
   /** The client showed the "answers are being saved" line before sending. */
   savedNoticeShown: boolean;
   signal?: AbortSignal;
+  /**
+   * The client draws proposal cards, and how: `one` in place of an answer
+   * (a `proposal` event, every build since the conversation), `many` on the
+   * answer (`AskAnswer.proposals`). Read by the tool loop only, which then
+   * offers a member who may have Frapp act the cards it can propose. Left
+   * out, the turn only ever answers.
+   */
+  cards?: 'one' | 'many';
   /**
    * Asked once the search and the planning call are back, and before
    * anything else: no tool has run, nothing has been kept and no word has
@@ -165,6 +199,13 @@ export interface AskInput {
    */
   mayGoOn?: () => Promise<boolean>;
 }
+
+/**
+ * What a question yields: the stream's own events, or, from the tool loop
+ * for a client that draws cards, the card the turn ended in place of an
+ * answer. The route sends that one as a `proposal` event.
+ */
+export type AskTurnEvent = AskStreamEvent | { type: 'act'; outcome: AgentCard };
 
 /** One source handed to the model, with what a citation of it shows. */
 interface AskSourceEntry {
@@ -302,27 +343,108 @@ function agentSourceTitle(source: AgentSource, timeZone: string): string {
       : [source.title, source.detail, sourceDay(source.date, timeZone)]
           .filter(Boolean)
           .join(', ');
-  return looksLikeAskerSourceTitle(title) ? `Chapter source: ${title}` : title;
+  // Only the server's own blocks say who is asking or where from.
+  return looksLikeAskerSourceTitle(title) ||
+    titleStartsLike(title, ASK_FROM_SOURCE_TITLE)
+    ? `Chapter source: ${title}`
+    : title;
+}
+
+/**
+ * Who else may open a source the loop read, as the receipt keeps it for a
+ * post to a channel (#4713). The tool said it (`AgentSourceAudience`); one
+ * that said nothing is `other`, which is never treated as open to all, so
+ * the asker is warned about it.
+ */
+function agentSourceRef(source: AgentSource): AskGivenRef {
+  if (source.chat) return { type: 'chat' };
+  const audience = source.audience;
+  switch (audience?.type) {
+    case 'document':
+    case 'meeting':
+      return { type: audience.type, id: audience.id };
+    case 'chapter':
+    case 'asker':
+      return { type: 'tool', name: source.id, reach: audience.type };
+    case 'events':
+      return {
+        type: 'tool',
+        name: source.id,
+        reach: 'events',
+        ...(audience.limited.length > 0 ? { events: audience.limited } : {}),
+      };
+    default:
+      return { type: 'other' };
+  }
 }
 
 function agentSourceEntry(source: AgentSource, title: string): AskSourceEntry {
   return {
     chat: source.chat,
     authorIds: source.chat ? source.authorIds : [],
-    // An agent source does not say yet who else may open it, so an answer
-    // read through the loop can be reported but never posted to a channel
-    // (`AskGivenRef`: `other` is never treated as open to all).
-    ref: source.chat ? { type: 'chat' } : { type: 'other' },
+    ref: agentSourceRef(source),
     model: { id: source.id, title, text: source.text },
     view: {
       id: source.id,
       kind: source.kind,
       title: source.title,
-      detail: source.detail,
+      // A chat source's detail is whose message it is.
+      detail: source.chat ? null : source.detail,
       date: source.date,
       target: source.target,
+      ...(source.chat && source.detail ? { author: source.detail } : {}),
     },
   };
+}
+
+/**
+ * Of the members and channels the tools named, the ones the answer names:
+ * `@Name` for a member, `#name` for a channel, as the prompt asks for them.
+ * A client links only these, so a name the model made up is plain text, and
+ * so is a real name it did not mark.
+ */
+function namedIn(text: string, entities: readonly AgentEntity[]): AskEntity[] {
+  // One name, one thing: two members called the same cannot be told apart
+  // by a name in the text, so neither is linked.
+  const byMark = new Map<string, AskEntity | null>();
+  for (const entity of entities) {
+    const name = entity.name.trim();
+    if (!name) continue;
+    const mark = `${entity.type === 'member' ? '@' : '#'}${name}`;
+    const held = byMark.get(mark);
+    if (held === undefined) {
+      byMark.set(mark, { type: entity.type, id: entity.id, name });
+    } else if (held !== null && held.id !== entity.id) byMark.set(mark, null);
+  }
+  const marks = [...byMark.keys()];
+  return [...byMark].flatMap(([mark, entity]): AskEntity[] =>
+    entity !== null && marksText(text, mark, marks) ? [entity] : [],
+  );
+}
+
+/**
+ * Whether `text` has `mark` standing on its own: not running on into more
+ * of a word ("#general" in "#general-chat"), and not as the start of a
+ * longer mark the tools also named ("@Sam" in "@Sam Lee").
+ */
+function marksText(
+  text: string,
+  mark: string,
+  marks: readonly string[],
+): boolean {
+  const longer = marks.filter(
+    (other) => other.length > mark.length && other.startsWith(mark),
+  );
+  for (
+    let at = text.indexOf(mark);
+    at !== -1;
+    at = text.indexOf(mark, at + 1)
+  ) {
+    const rest = text.slice(at);
+    if (/^[\p{L}\p{N}_-]/u.test(rest.slice(mark.length))) continue;
+    if (!longer.some((other) => rest.startsWith(other))) return true;
+  }
+  return false;
 }
 
 /**
@@ -390,6 +512,10 @@ export class AskService {
     private readonly loop: AgentLoopService,
     @Inject(AGENT_READ_TOOLS)
     private readonly agentTools: readonly AgentReadTool[],
+    private readonly trace: AskTraceService,
+    private readonly from: AskFromService,
+    @Inject(AGENT_PROPOSE_TOOLS)
+    private readonly proposeTools: readonly AgentProposeTool[],
   ) {}
 
   /**
@@ -416,7 +542,7 @@ export class AskService {
   async *ask(
     input: AskInput,
     now: Date = new Date(),
-  ): AsyncGenerator<AskStreamEvent, void, void> {
+  ): AsyncGenerator<AskTurnEvent, void, void> {
     const askId = randomUUID();
     yield event({ type: 'start', ask_id: askId });
     yield this.step('searching');
@@ -571,8 +697,9 @@ export class AskService {
   /**
    * The same question, answered by the tool loop (epic #4898). The model is
    * offered the reads this member may use and decides what to read; what it
-   * reads may lead it to read more, as the asker and nothing else
-   * (`AgentLoopService` has the rules). Nothing is searched for it ahead of
+   * reads may lead it to read more, as the asker, or, for a member who may
+   * have Frapp act in a client that draws cards (`cards`), to prepare a
+   * card that member confirms (`AgentLoopService` has the rules). Nothing is searched for it ahead of
    * time, so there is no "nothing found, no model call" here: a miss is the
    * model saying so, or an answer left with no checked source.
    *
@@ -587,64 +714,168 @@ export class AskService {
     askId: string,
     held: ReadonlySet<string>,
     now: Date,
-  ): AsyncGenerator<AskStreamEvent, void, void> {
+  ): AsyncGenerator<AskTurnEvent, void, void> {
     const offered = toolsMemberMayUse(
       this.agentTools.filter((tool) => tool.effect === 'read'),
       held,
       input.enabledModules,
     );
+    // Cards: only for a client that draws them, and a member who holds
+    // `ai:act` with `members:view` (a card names members), as the request
+    // route's guard requires. Then each action on its own route's rule.
+    // `ActService` checks all of it again before it looks anything up.
+    const mayAct =
+      input.cards !== undefined &&
+      (held.has(WILDCARD) ||
+        (held.has(SystemPermissions.AI_ACT) &&
+          held.has(SystemPermissions.MEMBERS_VIEW)));
+    const proposable = mayAct
+      ? toolsMemberMayUse(
+          this.proposeTools.filter((tool) => tool.effect === 'propose'),
+          held,
+          input.enabledModules,
+        )
+      : [];
     const asker = await this.asker(input, held);
     // No tool has run and no model has been asked for a turn that became a
     // card, or whose member has left.
     if (input.mayGoOn && !(await input.mayGoOn())) return;
     if (input.signal?.aborted) return;
 
-    const context = asker ? [asker] : [];
+    const toolContext: AgentToolContext = {
+      chapterId: input.chapterId,
+      userId: input.userId,
+      now,
+      timeZone: input.timeZone,
+      permissions: held,
+      enabledModules: input.enabledModules,
+      ...(input.signal === undefined ? {} : { signal: input.signal }),
+    };
+    // What the member had open, each looked up as them (`AskFromService`).
+    const openAt = await this.from.read(input.from, toolContext);
+    if (input.signal?.aborted) return;
+    const context = [
+      ...(asker ? [asker] : []),
+      ...openAt.map(({ source }) => source),
+    ];
     const titleOf = (source: AgentSource) =>
       agentSourceTitle(source, input.timeZone);
+    // What the turn's trace says of it beside what the loop did (#4902).
+    // Every way out below this line records one, and none holds any text.
+    const began = Date.now();
+    let recorded = false;
+    const traced = (end: AgentTurnEnd): Promise<boolean> => {
+      recorded = true;
+      return this.trace.record(
+        agentTurnTrace(
+          {
+            askId,
+            chapterId: input.chapterId,
+            userId: input.userId,
+            door: input.door ?? 'ask',
+            effort: input.effort ?? 'default',
+            task: 'ask.agent',
+            promptVersion: ASK_AGENT_PROMPT_VERSION,
+            startedAt: now,
+            durationMs: Date.now() - began,
+            isFollowUp: (input.history?.length ?? 0) > 0,
+            toolsOffered: [...offered, ...proposable].map((tool) => tool.name),
+          },
+          end,
+        ),
+      );
+    };
     const reads: string[] = [];
     let pending = '';
     let writing = false;
     let outcome: AgentLoopOutcome | null = null;
-    for await (const part of this.loop.run({
+    const turn = this.loop.run({
       task: 'ask.agent',
       promptVersion: ASK_AGENT_PROMPT_VERSION,
-      system: askAgentSystem(longDate(now, input.timeZone), asker !== null),
-      messages: askAnswerMessages(input.question, input.history),
+      system: askAgentSystem(
+        longDate(now, input.timeZone),
+        {
+          asker: asker !== null,
+          from: openAt.length > 0,
+          cards: proposable.length > 0,
+        },
+        input.effort === 'more',
+      ),
+      messages: askAnswerMessages(
+        input.question,
+        // A question tapped from the opening suggestions is not the
+        // member's own words: it can name a record another member wrote.
+        // So it is not among the earlier turns of a model that may propose
+        // (C3), as it never was for the request reading.
+        proposable.length > 0
+          ? input.history?.filter((turn) => turn.suggested !== true)
+          : input.history,
+      ),
       context,
-      tools: offered,
-      toolContext: {
-        chapterId: input.chapterId,
-        userId: input.userId,
-        now,
-        timeZone: input.timeZone,
-        permissions: held,
-        enabledModules: input.enabledModules,
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
-      },
+      tools: [...offered, ...proposable],
+      // A client that draws a card only in place of an answer gets one.
+      maxCards: input.cards === 'many' ? ASK_PROPOSALS_MAX : 1,
+      toolContext,
       call: { chapterId: input.chapterId, actingUserId: input.userId },
       titleOf,
+      ...(input.effort === undefined ? {} : { effort: input.effort }),
       ...(input.signal === undefined ? {} : { signal: input.signal }),
-    })) {
-      if (part.type === 'text') {
-        pending += part.delta;
-        if (writing || pending.length >= AGENT_TEXT_HOLD_CHARS) {
-          if (!writing) {
-            writing = true;
-            yield this.step('writing');
-          }
-          yield event({ type: 'text', delta: pending });
-          pending = '';
+    });
+    try {
+      for (;;) {
+        let next: IteratorResult<AgentLoopEvent, void>;
+        try {
+          next = await turn.next();
+        } catch (error) {
+          const kind =
+            error instanceof LanguageModelError ? error.kind : 'unknown';
+          // A call cut off because the member left did not fail.
+          await traced(
+            kind === 'aborted' || input.signal?.aborted
+              ? { kind: 'stopped' }
+              : { kind: 'error', errorKind: kind },
+          );
+          throw error;
         }
-      } else if (part.type === 'discard') {
-        // Words before a call were not the answer. Any that already went out
-        // are replaced by the final answer, as every streamed word is.
-        pending = '';
-        writing = false;
-      } else if (part.type === 'tool') {
-        if (!reads.includes(part.name)) reads.push(part.name);
-        yield event({ type: 'status', step: 'reading', reads: [...reads] });
-      } else outcome = part.outcome;
+        if (next.done) break;
+        const part = next.value;
+        if (part.type === 'text') {
+          pending += part.delta;
+          if (writing || pending.length >= AGENT_TEXT_HOLD_CHARS) {
+            if (!writing) {
+              writing = true;
+              yield this.step('writing');
+            }
+            yield event({ type: 'text', delta: pending });
+            pending = '';
+          }
+        } else if (part.type === 'discard') {
+          // Words before a call were not the answer. Any that already went out
+          // are replaced by the final answer, as every streamed word is.
+          pending = '';
+          writing = false;
+        } else if (part.type === 'tool' && part.effect === 'propose') {
+          // Said from the loop's own progress: a card is being worked out.
+          yield this.step('proposing');
+        } else if (part.type === 'tool') {
+          if (!reads.includes(part.name)) reads.push(part.name);
+          yield event({
+            type: 'status',
+            step: 'reading',
+            reads: [...reads],
+            tool: part.name,
+            label: part.reading,
+          });
+        } else outcome = part.outcome;
+      }
+    } finally {
+      // Whoever was reading this stream stopped (the member left, or the
+      // turn became a card) while the loop was mid-round: close it, so the
+      // model call under it is settled, and say so in the trace.
+      if (outcome === null) {
+        await turn.return(undefined);
+        if (!recorded) await traced({ kind: 'stopped' });
+      }
     }
     // The loop ends with nothing for a member who left.
     if (outcome === null) return;
@@ -682,6 +913,53 @@ export class AskService {
     ) {
       answer = emptyAnswer('unavailable', { reason: 'not_available' });
     }
+    // What the turn's propose calls came to (`AgentProposeTool`).
+    const waiting = outcome.cards.filter(
+      (card): card is Extract<AgentCard, { status: 'proposed' }> =>
+        card.status === 'proposed',
+    );
+    // A card ends the turn in place of the answer, as a typed request's
+    // does, in two cases. A client that draws one card at a time got one:
+    // the card is the turn, whatever was written beside it. Or nothing was
+    // proposed and nothing written stands, and a propose call came back
+    // asking which event or for a detail left unsaid: the member is asked
+    // on the card, in the app's own words, not in a model's uncited ones.
+    // Beside an answer that stands, the model was told to say what it
+    // needs, and that sentence is in the answer. Beside other cards with no
+    // answer that stands, the ask is not shown: the cards are (#4899 notes
+    // this as a gap for the client that draws cards on an answer).
+    const inPlace: AgentCard | undefined =
+      (input.cards === 'many' ? undefined : waiting[0]) ??
+      (waiting.length === 0 && answer.status !== 'answered'
+        ? outcome.cards[outcome.cards.length - 1]
+        : undefined);
+    if (inPlace) {
+      // Nothing is kept and no receipt is made, as for a typed request.
+      await traced({
+        kind: 'ended',
+        outcome,
+        status: 'proposal',
+        citationsKept: 0,
+        readChat: entries.some((entry) => entry.chat),
+        truncated: false,
+      });
+      yield { type: 'act', outcome: inPlace };
+      return;
+    }
+    if (waiting.length > 0) {
+      // Cards under the answer. With no answer that stands, the cards are
+      // the whole of it: no text, because none the model wrote had a source.
+      if (answer.status !== 'answered') {
+        answer = emptyAnswer('answered', {
+          left_out_messages: outcome.leftOutMessages,
+          read_chat: entries.some((entry) => entry.chat),
+        });
+      }
+      answer.proposals = waiting.map((card) => card.suggestion.id);
+    }
+    if (answer.status === 'answered') {
+      answer.entities = namedIn(answer.text, outcome.entities);
+    }
     const written = outcome.result.status === 'ok' ? outcome.result.text : '';
     answer.saved = await this.keep(input, answer, written, entries, run, now);
     answer.report_receipt = this.receipt(
@@ -693,7 +971,19 @@ export class AskService {
       run,
       now,
       [...context, ...entries.map((entry) => entry.model)],
+      openAt,
     );
+    // An answer can be rated only when its trace was kept, so the id the
+    // thumbs name goes out only then (`AskFeedbackService`).
+    const kept = await traced({
+      kind: 'ended',
+      outcome,
+      status: answer.status,
+      citationsKept: answer.citations.length,
+      readChat: answer.read_chat === true,
+      truncated: answer.truncated,
+    });
+    if (kept) answer.ask_id = askId;
     yield this.done(answer);
   }
 
@@ -986,6 +1276,8 @@ export class AskService {
     now: Date,
     /** What the model was handed, when it was handed anything. */
     given: readonly LanguageModelSource[] = [],
+    /** What the member had open, which is in `given` beside the asker. */
+    openAt: readonly AskFromPart[] = [],
   ): string | null {
     if (answer.status === 'unavailable') return null;
     try {
@@ -1011,24 +1303,31 @@ export class AskService {
               detail: source.detail,
               date: source.date,
               target: source.target,
+              // What the chip showed, so a report holds what was seen.
+              ...(source.author ? { author: source.author } : {}),
             })),
             left_out_messages: answer.left_out_messages,
             unverified_citations: answer.unverified_citations,
             truncated: answer.truncated,
           },
-          // Who is asking is first when it was read, then `entries` in
-          // order (`sourcesForModel`). It is what the roster shows of the
-          // asker, so it is open to whoever may open the roster (#4713).
-          given: given.map(({ title, text }, index) => {
+          // Who is asking is first when it was read, then what they had
+          // open, then `entries` in order (`sourcesForModel`). Who is
+          // asking is what the roster shows of them, so it is open to
+          // whoever may open the roster (#4713).
+          given: given.map(({ id, title, text }, index) => {
             const source = entries[index - (given.length - entries.length)];
-            return source
-              ? {
-                  title,
-                  text,
-                  ref: source.ref,
-                  label: source.view.title,
-                  kind: source.view.kind,
-                }
+            if (source) {
+              return {
+                title,
+                text,
+                ref: source.ref,
+                label: source.view.title,
+                kind: source.view.kind,
+              };
+            }
+            const open = openAt.find((part) => part.source.id === id);
+            return open
+              ? { title, text, ref: open.ref, label: open.label }
               : { title, text, ref: ASKER_REF, label: 'Your name and roles' };
           }),
           tools: [...run.tools],

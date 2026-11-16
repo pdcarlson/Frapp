@@ -1614,6 +1614,34 @@ describe("MessageItem bookmark toggle (#462)", () => {
 });
 
 /**
+ * "Remind me about this" (#4957): Slack's presets and Custom… beside Save.
+ * The menu itself is `message-reminder-menu.spec.tsx`'s; the row owes the
+ * control, gated on its callback, and the message id with the pick.
+ */
+describe("MessageItem reminder (#4957)", () => {
+  it("offers no reminder control on a surface that doesn't wire one", () => {
+    renderItemWithProps();
+    expect(
+      screen.queryByRole("button", { name: "Remind me about this" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hands the picked time on with the message id", async () => {
+    const onRemind = vi.fn();
+    renderItemWithProps({ onRemind });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Remind me about this" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "In 1 hour" }),
+    );
+
+    expect(onRemind).toHaveBeenCalledWith("msg-1", expect.any(Date));
+  });
+});
+
+/**
  * #1733 — the `unconfirmed` row: a heavy command whose response was lost.
  *
  * The row must read as "we don't know", not as a failure, and its only action
@@ -2217,6 +2245,42 @@ describe("MessageItem reaction chip ownership (#2243)", () => {
   });
 });
 
+describe("MessageItem Forward (#4907)", () => {
+  it("offers Forward first behind More, on the viewer's own message too", async () => {
+    const onForward = vi.fn();
+    renderItemWithProps({
+      message: message({ sender_id: VIEWER }),
+      onForward,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(screen.getAllByRole("menuitem")[0]).toHaveTextContent("Forward");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Forward" }));
+    expect(onForward).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "msg-1" }),
+    );
+  });
+
+  it("puts Forward above Report and Block", async () => {
+    renderItemWithProps({
+      onForward: vi.fn(),
+      onReport: vi.fn(),
+      onBlock: vi.fn(),
+      isMember: () => true,
+    });
+    await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+    expect(
+      screen.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["Forward", "Report message", "Block Alice Chen"]);
+  });
+
+  it("isn't offered without a handler, so the viewer's own row keeps no More", () => {
+    renderItemWithProps({ message: message({ sender_id: VIEWER }) });
+    expect(
+      screen.queryByRole("button", { name: "More actions" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("MessageItem Report and Block (#2687)", () => {
   const everyoneIsMember = () => true;
 
@@ -2396,12 +2460,12 @@ describe("MessageItem opens profiles", () => {
     const name = screen.getByRole("button", { name: "Alice Chen" });
     expect(name.tagName).toBe("BUTTON");
     fireEvent.click(name);
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
 
     onOpenProfile.mockClear();
     name.focus();
     await userEvent.keyboard("{Enter}");
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
   });
 
   it("opens the author's profile from their photo, which is not a second Tab stop", () => {
@@ -2413,7 +2477,7 @@ describe("MessageItem opens profiles", () => {
     )!;
     expect(photo.tabIndex).toBe(-1);
     fireEvent.click(photo);
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
   });
 
   it("does not toggle the row's action bar when the name is clicked", () => {
@@ -2462,12 +2526,12 @@ describe("MessageItem opens profiles", () => {
     // The mark still paints the chip; the button sits inside it.
     expect(chip.closest("mark")).toHaveAttribute("data-mention", "AliceChen");
     fireEvent.click(chip);
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
 
     onOpenProfile.mockClear();
     chip.focus();
     await userEvent.keyboard(" ");
-    expect(onOpenProfile).toHaveBeenCalledWith(OTHER);
+    expect(onOpenProfile).toHaveBeenCalledWith(OTHER, expect.any(HTMLElement));
   });
 
   it("opens nothing from a role mention", () => {

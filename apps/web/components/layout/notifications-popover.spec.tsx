@@ -545,6 +545,22 @@ describe("NotificationsPopover: reading notifications (#3929)", () => {
       "/members",
     );
   });
+
+  it("sends the weekly recap push to Activity (#4985)", () => {
+    notifications.value = [
+      notification(
+        "n-recap",
+        "activity",
+        "2026-09-22T11:00:00Z",
+        "3 events · 2 tasks done",
+      ),
+    ];
+    renderDrawer();
+
+    expect(
+      screen.getByRole("link", { name: /3 events · 2 tasks done/ }),
+    ).toHaveAttribute("href", "/activity");
+  });
 });
 
 /**
@@ -782,6 +798,43 @@ describe("deepLinkFor: task notifications", () => {
   it("opens the board for every other task notification", () => {
     expect(deepLinkFor(task({ taskId: "t1" }))).toBe("/tasks");
     expect(deepLinkFor(task({ view: "review" }))).toBe("/tasks");
+  });
+});
+
+describe("deepLinkFor: message reminders (#4957)", () => {
+  const chat = (
+    target: Record<string, string>,
+    extra: { reminder?: boolean; chat_message_id?: string | null } = {},
+  ) => ({
+    ...notification("n-chat", "chat", "2026-11-13T01:00:00Z"),
+    data: {
+      target: { screen: "chat", channelId: "c1", ...target },
+      ...(extra.reminder ? { reminder: true } : {}),
+    },
+    chat_message_id: extra.chat_message_id ?? null,
+  });
+
+  it("opens a reminder on the message it was set on", () => {
+    expect(
+      deepLinkFor(chat({}, { reminder: true, chat_message_id: "m1" })),
+    ).toBe("/chat?channel=c1&message=m1");
+  });
+
+  it("opens a reminder on a thread reply at the thread's first message", () => {
+    expect(
+      deepLinkFor(
+        chat(
+          { threadRootId: "root-1" },
+          { reminder: true, chat_message_id: "reply-1" },
+        ),
+      ),
+    ).toBe("/chat?channel=c1&message=root-1");
+  });
+
+  it("opens any other chat row on its channel", () => {
+    expect(deepLinkFor(chat({}, { chat_message_id: "m1" }))).toBe(
+      "/chat?channel=c1",
+    );
   });
 });
 

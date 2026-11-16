@@ -424,6 +424,8 @@ describe('EventService', () => {
     expect(mockEventRepo.create).toHaveBeenCalledWith({
       chapter_id: 'ch-1',
       name: 'Chapter Meeting',
+      agenda: [],
+      attachments: [],
       description: null,
       location: null,
       start_time: baseEvent.start_time,

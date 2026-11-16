@@ -139,11 +139,14 @@ export function ActivityLinkRow({
   canRemove,
   actions,
   onOpen,
+  leadEntries = [],
 }: {
   row: LinkRow;
   rowClassName: string;
   canRemove: boolean;
   actions: ActivityLinkActions;
+  /** Entries before the link's own: the page's snooze times (#4982). */
+  leadEntries?: RowMenuEntry[];
   /** The link was opened (a click, or a middle-click to a new tab). */
   onOpen?: (row: LinkRow) => void;
 }) {
@@ -151,6 +154,10 @@ export function ActivityLinkRow({
   const { link } = row;
 
   const entries: RowMenuEntry[] = [
+    ...leadEntries,
+    ...(leadEntries.length > 0
+      ? ([{ type: "separator", key: "lead" }] satisfies RowMenuEntry[])
+      : []),
     {
       type: "item",
       key: "hide",

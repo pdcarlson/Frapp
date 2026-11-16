@@ -72,6 +72,7 @@ describe('find_member', () => {
     expect(result.sources[0]).toMatchObject({
       id: 'tool:find_member:dana',
       kind: 'roster',
+      audience: { type: 'chapter' },
       target: { type: 'page', page: 'members' },
       chat: false,
     });

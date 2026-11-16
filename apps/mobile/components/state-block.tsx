@@ -4,11 +4,9 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useState,
   useSyncExternalStore,
 } from "react";
 import {
-  AccessibilityInfo,
   type DimensionValue,
   Pressable,
   type StyleProp,
@@ -22,16 +20,16 @@ import Animated, {
   Easing,
   type SharedValue,
   useAnimatedStyle,
-  useReducedMotion,
   useSharedValue,
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
 import { NavigationContext } from "expo-router/react-navigation";
+import { useReduceMotion } from "@/lib/use-reduce-motion";
 import { SignetTokens, type SignetTypeRole } from "@repo/theme/signet";
 import { InlineNote } from "@/components/inline-note";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { useRaisedSurfaces } from "@/lib/surfaces";
+import { useInSheet, useRaisedSurfaces } from "@/lib/surfaces";
 
 /**
  * The skeleton / empty / error family, in one place.
@@ -97,7 +95,9 @@ type StateBlockProps = {
  * list: `card` (the default) where the skeleton
  * stands in for cards (the next-event card, the Ask answer) or a flush list,
  * `list` where it stands in for a `ListSection`, whose smaller `radius.card`
- * corners it takes.
+ * corners it takes. In a sheet the card drops its fill and keeps its edge
+ * (components.md §10 "Nested inside a card", #4690), and its bars take the
+ * card step instead.
  */
 export function SkeletonLines({
   lines = 3,
@@ -113,6 +113,7 @@ export function SkeletonLines({
 }) {
   const { tokens } = useFrappTheme();
   const surfaces = useRaisedSurfaces();
+  const inSheet = useInSheet();
   const styles = createStyles(tokens);
   // `as const` so each stays a percentage literal — RN's `DimensionValue`
   // accepts `` `${number}%` ``, not a widened `string`.
@@ -128,28 +129,31 @@ export function SkeletonLines({
       accessibilityLabel="Loading"
       style={[
         styles.card,
-        { backgroundColor: surfaces.card },
+        { backgroundColor: surfaces.stateCard },
         tone === "list" ? styles.listCard : null,
       ]}
     >
-      {/* Left-aligned inside the centred card, as the rows they stand for. */}
+      {/* Left-aligned inside the centred card, as the rows they stand for.
+          In a sheet the card has no fill, so its bars sit on the sheet's. */}
       <SkeletonPulse>
-        <View style={styles.skeletonStack}>
-          {showTile ? (
-            <SkeletonBlock
-              width={tokens.touch.minimum}
-              height={tokens.touch.minimum}
-              radius={tokens.radius.control}
-            />
-          ) : null}
-          {Array.from({ length: lines }, (_, index) => (
-            <SkeletonBlock
-              key={index}
-              width={widths[index % widths.length]}
-              height={tokens.spacing.md}
-            />
-          ))}
-        </View>
+        <SkeletonGroundContext.Provider value={inSheet}>
+          <View style={styles.skeletonStack}>
+            {showTile ? (
+              <SkeletonBlock
+                width={tokens.touch.minimum}
+                height={tokens.touch.minimum}
+                radius={tokens.radius.control}
+              />
+            ) : null}
+            {Array.from({ length: lines }, (_, index) => (
+              <SkeletonBlock
+                key={index}
+                width={widths[index % widths.length]}
+                height={tokens.spacing.md}
+              />
+            ))}
+          </View>
+        </SkeletonGroundContext.Provider>
       </SkeletonPulse>
     </View>
   );
@@ -212,6 +216,14 @@ export function SkeletonPulse({ children }: { children: ReactNode }) {
 /** The opacity of the {@link SkeletonPulse} a block sits in, if any. */
 const SkeletonPulseContext = createContext<SharedValue<number> | null>(null);
 
+/**
+ * Whether the blocks inside sit straight on a sheet's own fill
+ * (`true`) rather than on a card (`false`, the default). A block can't tell
+ * which from where it is drawn, so its caller says: {@link SkeletonRegion}'s
+ * `flush`, or {@link SkeletonLines} in a sheet, where its card drops its fill.
+ */
+const SkeletonGroundContext = createContext(false);
+
 type SkeletonBlockProps = {
   width: DimensionValue;
   height: number;
@@ -252,6 +264,7 @@ function PulsedBlock({
 }: SkeletonBlockProps & { opacity: SharedValue<number> }) {
   const { tokens } = useFrappTheme();
   const surfaces = useRaisedSurfaces();
+  const flush = useContext(SkeletonGroundContext);
   const styles = createStyles(tokens);
   const pulse = useAnimatedStyle(() => ({ opacity: opacity.get() }));
 
@@ -260,7 +273,15 @@ function PulsedBlock({
       style={[
         style,
         styles.skeletonBlock,
-        { backgroundColor: surfaces.raised, width, height },
+        {
+          // A bar is one step above what it sits on: the card's own step
+          // above a card, the card step straight on a sheet. A sheet's
+          // `raised` is its own fill, so a flush bar taking it was invisible
+          // (#4690).
+          backgroundColor: flush ? surfaces.card : surfaces.raised,
+          width,
+          height,
+        },
         radius === undefined ? null : { borderRadius: radius },
         pulse,
       ]}
@@ -283,14 +304,20 @@ function PulsedBlock({
  * more than "Loading". `style` is the region's own layout, usually
  * `ScreenShell`'s content gap so the frames inside sit where their real
  * counterparts land.
+ *
+ * `flush` is for rows that sit straight on a sheet's own
+ * fill, with no card frame under them (a sheet's member or thread list): their
+ * bars take the card step instead of the one above a card (#4690).
  */
 export function SkeletonRegion({
   label,
   style,
+  flush = false,
   children,
 }: {
   label: string;
   style?: StyleProp<ViewStyle>;
+  flush?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -303,7 +330,11 @@ export function SkeletonRegion({
       accessibilityLabel={label}
       style={style}
     >
-      <SkeletonPulse>{children}</SkeletonPulse>
+      <SkeletonPulse>
+        <SkeletonGroundContext.Provider value={flush}>
+          {children}
+        </SkeletonGroundContext.Provider>
+      </SkeletonPulse>
     </View>
   );
 }
@@ -349,41 +380,6 @@ export function SkeletonText({
       />
     </View>
   );
-}
-
-/**
- * The system's reduced-motion setting, as it is now. Reanimated's
- * `useReducedMotion` is the setting the app launched with and never changes,
- * so it only seeds the first frame here, before the system answers;
- * `AccessibilityInfo` reports the setting when the pulse mounts, and its
- * `reduceMotionChanged` every change after.
- */
-function useReduceMotion(): boolean {
-  const atLaunch = useReducedMotion();
-  // Seeded with the launch value, so an answer that matches it re-renders
-  // nothing.
-  const [now, setNow] = useState(atLaunch);
-
-  useEffect(() => {
-    // A change heard before the first read answers is newer than that read.
-    let heard = false;
-    const subscription = AccessibilityInfo.addEventListener(
-      "reduceMotionChanged",
-      (enabled) => {
-        heard = true;
-        setNow(enabled);
-      },
-    );
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (!heard) setNow(enabled);
-    });
-    return () => {
-      heard = true;
-      subscription.remove();
-    };
-  }, []);
-
-  return now;
 }
 
 /**
@@ -433,7 +429,7 @@ export function ErrorState({
     <View
       style={[
         styles.card,
-        { backgroundColor: surfaces.card },
+        { backgroundColor: surfaces.stateCard },
         styles.errorCard,
       ]}
     >
@@ -494,7 +490,9 @@ function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     // The fill is the card step for where the state is drawn
     // (`useRaisedSurfaces`): §10 specs a state that replaces a screen as a
-    // card, and on the phone a card is one step above the page (#4682).
+    // card, and on the phone a card is one step above the page (#4682). In a
+    // sheet the state drops its fill and keeps the hairline (§10 "Nested
+    // inside a card", #4690): `card` one step under the sheet reads as a hole.
     card: {
       borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
@@ -571,8 +569,8 @@ function createStyles(tokens: SignetTokens) {
       // foundations.md bans.
       // Its fill is the step above a card where it is drawn
       // (`useRaisedSurfaces`), so a loading screen is as quiet as a loaded
-      // one. Bars drawn straight on a sheet's own fill have no step above it
-      // (the channel member sheet's rows, #4690).
+      // one. Bars drawn straight on a sheet's own fill take the card step
+      // instead (`SkeletonGroundContext`, #4690).
       borderRadius: tokens.radius.chip,
     },
   });

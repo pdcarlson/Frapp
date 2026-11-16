@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
   ACTIVITY_GLYPH_NAV,
+  activityArchiveGroups,
   activityBadgeIsAsk,
   activityGroups,
   activityLinkKind,
@@ -15,6 +16,7 @@ import {
   activityToDos,
   findActivityTaskRow,
   type Activity,
+  type ActivityArchive,
   type ActivityRow,
 } from "./activity-rows";
 
@@ -210,7 +212,7 @@ describe("sign-up and form cards (#3926 step 4)", () => {
     });
     const rows = todoRows(withCards([soon, later, gone]), NOW);
 
-    expect(rows.map((row) => row.readRef.item_id)).toEqual(["soon", "later"]);
+    expect(rows.map((row) => row.readRef?.item_id)).toEqual(["soon", "later"]);
     expect(rows[0]!.soon).toBe("closes in 3 hours");
     expect(rows[1]!.soon).toBeNull();
   });
@@ -226,8 +228,65 @@ describe("sign-up and form cards (#3926 step 4)", () => {
 });
 
 describe("activityGroups", () => {
-  it("draws Waiting on others, then Links", () => {
+  it("carries how far along a poll or event the member made is, and nothing else does (#4792)", () => {
+    const data = activity({
+      needs_you: {
+        tasks: [],
+        task_confirmations: [],
+        hours_approvals: [],
+        polls: [poll({ message_id: "theirs", progress: null })],
+      },
+      made_by_you: {
+        polls: [
+          poll({ message_id: "mine", progress: { done: 41, total: 60 } }),
+          // A read from before the field has no count.
+          poll({ message_id: "old" }),
+          // Nobody else can answer: no bar, never "0 of 0".
+          poll({ message_id: "alone", progress: { done: 0, total: 0 } }),
+        ],
+        tasks: [],
+        events: [event({ id: "mine", progress: { done: 60, total: 60 } })],
+      },
+    });
+    const made = activityGroups(data).find((g) => g.id === "made-by-you")!.rows;
+    expect(made.map((row) => row.progress)).toEqual([
+      { done: 41, total: 60, label: "41 of 60", spoken: "41 of 60 voted" },
+      null,
+      null,
+      {
+        done: 60,
+        total: 60,
+        label: "60 of 60",
+        spoken: "60 of 60 checked in",
+      },
+    ]);
+    expect(todoRows(data).every((row) => row.progress === null)).toBe(true);
+  });
+
+  it("takes a poll and its count off the page on the tick it closes", () => {
+    const data = activity({
+      made_by_you: {
+        polls: [
+          poll({
+            closes_at: "2026-11-10T18:00:00.000Z",
+            progress: { done: 3, total: 5 },
+          }),
+        ],
+        tasks: [],
+        events: [],
+      },
+    });
+    // It leaves Waiting on others, bar and all: it is in the Archive (#5127).
+    const made = activityGroups(
+      data,
+      new Date("2026-11-10T18:00:01.000Z"),
+    ).find((g) => g.id === "made-by-you")!;
+    expect(made.rows).toEqual([]);
+  });
+
+  it("draws Reminders, Waiting on others, then Links", () => {
     expect(activityGroups(activity()).map((group) => group.label)).toEqual([
+      "Reminders",
       "Waiting on others",
       "Links",
     ]);
@@ -300,14 +359,14 @@ describe("activityGroups", () => {
     ]);
   });
 
-  it("gives a finished task no due countdown, and the shared word for where it stands", () => {
+  it("gives a finished task no due countdown, and leaves a confirmed one for the Archive (#5127)", () => {
     const done = {
       due_date: "2020-01-01",
       status: "COMPLETED",
       stored_status: "COMPLETED",
       assignee_name: "Ada",
     };
-    const [made] = activityGroups(
+    const [, made] = activityGroups(
       activity({
         made_by_you: {
           polls: [],
@@ -326,19 +385,25 @@ describe("activityGroups", () => {
 
     expect(made?.rows.map((row) => [row.detail, row.badge?.label])).toEqual([
       ["Ada", "Waiting on an officer"],
-      ["Ada", "Confirmed"],
     ]);
   });
 
   it("names each section that could not be read, under every group that draws it", () => {
     const groups = activityGroups(
       activity({
-        unavailable: ["tasks", "hours_approvals", "made_events", "links"],
+        unavailable: [
+          "tasks",
+          "hours_approvals",
+          "made_events",
+          "links",
+          "reminders",
+        ],
       }),
     );
 
     // Hours waiting on approval are the To review card's to name.
     expect(groups.map((group) => group.unavailable)).toEqual([
+      ["reminders"],
       ["made_events", "tasks"],
       ["links"],
     ]);
@@ -452,36 +517,12 @@ describe("activityGroups", () => {
       needs_you_count: 2,
     });
 
-    it("lists open polls only, and keeps the closed ones behind Archived polls, newest closed first", () => {
+    it("lists open polls only: a closed one is in the Archive (#5127)", () => {
       const groups = activityGroups(data, NOW);
       const made = groups.find((group) => group.id === "made-by-you");
 
       expect(todoRows(data, NOW).map((row) => row.title)).toEqual(["Open"]);
       expect(made?.rows.map((row) => row.title)).toEqual(["Still open"]);
-      expect(made?.archive?.label).toBe("Archived polls");
-      expect(
-        made?.archive?.rows.map((row) => [row.title, row.badge?.label]),
-      ).toEqual([
-        ["Ran out", "Closed"],
-        ["Closed by hand", "Closed"],
-      ]);
-      expect(groups.filter((group) => group.archive).map((g) => g.id)).toEqual([
-        "made-by-you",
-      ]);
-    });
-
-    it("has no archive while every poll is open", () => {
-      const made = activityGroups(
-        activity({
-          made_by_you: {
-            polls: [poll({ message_id: "m", closes_at: null })],
-            tasks: [],
-            events: [],
-          },
-        }),
-        NOW,
-      ).find((group) => group.id === "made-by-you");
-      expect(made?.archive).toBeNull();
     });
 
     it("reads a poll as open until its closing time and closed from then on", () => {
@@ -559,6 +600,7 @@ describe("activityGroups", () => {
     });
 
     expect(rowsOf(data)).toEqual({
+      reminders: [],
       "made-by-you": [],
       links: ["link:Google Form:-"],
     });
@@ -924,17 +966,18 @@ describe("faces and closing soon (#4402, item 4)", () => {
       rows(needsYou({ polls: [poll(overrides)] }))[0]!.soon;
     expect(soonOf({ closes_at: IN(24 * 60) })).toBeNull();
     expect(soonOf({ closes_at: null })).toBeNull();
-    // Closed by hand with time still on the clock: it sits in the archive.
-    const archived = activityGroups(
-      activity({
-        made_by_you: {
-          polls: [poll({ is_closed: true, closes_at: IN(30) })],
-          tasks: [],
-          events: [],
-        },
-      }),
+    // Closed by hand with time still on the clock: in the Archive, it
+    // says no countdown.
+    const archived = activityArchiveGroups(
+      {
+        events: [],
+        tasks: [],
+        polls: [poll({ is_closed: true, closes_at: IN(30) })],
+        unavailable: [],
+      } as unknown as ActivityArchive,
+      null,
       NOW,
-    ).flatMap((group) => group.archive?.rows ?? []);
+    ).flatMap((group) => group.rows);
     expect(archived).toHaveLength(1);
     expect(archived[0]!.soon).toBeNull();
     expect(archived[0]!.detail).toBe("#general");
@@ -1048,5 +1091,177 @@ describe("review steps (#4693)", () => {
     expect(findActivityTaskRow(feed, "both")?.key).toBe(
       "needs-confirm:task:both",
     );
+  });
+});
+
+describe("reminders (#4957)", () => {
+  const NOW = new Date("2026-11-14T12:00:00.000Z");
+  const reminder = (overrides: Record<string, unknown> = {}) => ({
+    id: "rem-1",
+    message_id: "msg-1",
+    thread_root_id: null,
+    channel_id: "ch-1",
+    channel_name: "general",
+    channel_type: "PUBLIC",
+    author_name: "Alex",
+    preview: "dues are due Friday",
+    message_created_at: "2026-11-13T12:00:00.000Z",
+    message_available: true,
+    remind_at: "2026-11-14T12:20:00.000Z",
+    fired_at: null,
+    due: false,
+    ...overrides,
+  });
+
+  it("lists the member's reminders, a due one badged Due", () => {
+    const data = activity({
+      reminders: [
+        reminder({
+          id: "due",
+          remind_at: "2026-11-14T11:00:00.000Z",
+          fired_at: "2026-11-14T11:00:00.000Z",
+          due: true,
+        }),
+        reminder({ id: "waiting", preview: "bring the banner" }),
+      ],
+    });
+    const group = activityGroups(data, NOW).find(
+      (candidate) => candidate.id === "reminders",
+    )!;
+    expect(group.rows.map(say)).toEqual([
+      "reminder:dues are due Friday:Due",
+      "reminder:bring the banner:-",
+    ]);
+    expect(group.rows[0]!.detail).toMatch(/^Alex · #general · Reminded /);
+    expect(group.rows[1]!.detail).toMatch(/^Alex · #general · Remind me /);
+    expect(group.rows[0]!.readRef).toBeNull();
+    expect(group.rows[0]!.unread).toBe(false);
+  });
+
+  it("names no channel for a reminder the member can no longer open", () => {
+    const data = activity({
+      reminders: [
+        reminder({
+          message_available: false,
+          channel_name: null,
+          channel_type: null,
+          author_name: "",
+        }),
+      ],
+    });
+    const [group] = activityGroups(data, NOW);
+    expect(group!.rows[0]!.detail).toMatch(/^Remind me /);
+  });
+
+  it("reads an API from before reminders as none", () => {
+    const [group] = activityGroups(activity(), NOW);
+    expect(group!.rows).toEqual([]);
+  });
+});
+
+describe("activityArchiveGroups (#5127)", () => {
+  const NOW = new Date("2026-11-16T18:00:00.000Z");
+  const archive = (
+    overrides: Partial<Record<keyof ActivityArchive, unknown>> = {},
+  ) =>
+    ({
+      events: [],
+      tasks: [],
+      polls: [],
+      unavailable: [],
+      ...overrides,
+    }) as unknown as ActivityArchive;
+
+  it("draws Events, Tasks, then Polls, leaving out an empty one", () => {
+    const groups = activityArchiveGroups(
+      archive({
+        events: [event({ start_time: "2026-11-14T19:00:00.000Z" })],
+        polls: [poll({ is_closed: true })],
+      }),
+      "me",
+      NOW,
+    );
+    expect(groups.map((group) => group.label)).toEqual(["Events", "Polls"]);
+    expect(activityArchiveGroups(archive(), "me", NOW)).toEqual([]);
+  });
+
+  it("says Checked in on an event the member checked in to, and asks nothing of one they didn't", () => {
+    const [group] = activityArchiveGroups(
+      archive({
+        events: [
+          event({ id: "went", checked_in: true }),
+          event({ id: "missed", checked_in: false }),
+        ],
+      }),
+      "me",
+      NOW,
+    );
+    expect(group!.rows.map((row) => row.badge?.label ?? null)).toEqual([
+      "Checked in",
+      null,
+    ]);
+  });
+
+  it("names a task's state, and who it was for when the member assigned it", () => {
+    const [group] = activityArchiveGroups(
+      archive({
+        tasks: [
+          task({
+            id: "mine",
+            status: "COMPLETED",
+            stored_status: "COMPLETED",
+            point_reward: 5,
+            completed_at: "2026-11-15T00:00:00.000Z",
+          }),
+          task({
+            id: "assigned",
+            assignee_id: "sam",
+            assignee_name: "Sam",
+            created_by: "me",
+            status: "COMPLETED",
+            stored_status: "COMPLETED",
+            point_reward: 5,
+            completed_at: "2026-11-14T00:00:00.000Z",
+            confirmed_at: "2026-11-14T01:00:00.000Z",
+          }),
+        ],
+      }),
+      "me",
+      NOW,
+    );
+    expect(
+      group!.rows.map((row) => [row.title, row.detail, row.badge?.label]),
+    ).toEqual([
+      ["Book the venue", "from Olive", "Waiting on an officer"],
+      ["Book the venue", "Sam", "Confirmed"],
+    ]);
+    expect(group!.rows.every((row) => row.key.startsWith("archive:"))).toBe(
+      true,
+    );
+  });
+
+  it("marks a poll Closed, with the member's own leading with its glyph", () => {
+    const [group] = activityArchiveGroups(
+      archive({
+        polls: [
+          poll({ message_id: "theirs", is_closed: true, has_voted: true }),
+          poll({ message_id: "mine", sender_id: "me", is_closed: true }),
+        ],
+      }),
+      "me",
+      NOW,
+    );
+    expect(
+      group!.rows.map((row) => [row.badge?.label, row.faceId, row.progress]),
+    ).toEqual([
+      ["Closed", "officer", null],
+      ["Closed", null, null],
+    ]);
+  });
+
+  it("keeps a section that couldn't load, to say so", () => {
+    expect(
+      activityArchiveGroups(archive({ unavailable: ["tasks"] }), "me", NOW),
+    ).toEqual([{ id: "tasks", label: "Tasks", rows: [], unavailable: true }]);
   });
 });

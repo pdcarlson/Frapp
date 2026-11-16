@@ -5,7 +5,7 @@ import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { forwardedFromOf } from "@repo/chat-core/types";
 import { FrappThemeProvider } from "@/lib/theme";
-import type { ForwardTarget } from "@/lib/chat/forward";
+import type { ForwardTarget } from "@repo/chat-core/forward";
 
 // The menu's Forward row (#4864): after Reply and Start thread, before Edit;
 // drawn only where the message can be forwarded and the thread wired the

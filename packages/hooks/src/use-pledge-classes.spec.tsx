@@ -57,7 +57,9 @@ describe("pledge class hooks", () => {
       wrapper: wrapperFor(client),
     });
     await waitFor(() => expect(result.current.data).toEqual(classes));
-    expect(client.GET).toHaveBeenCalledWith("/v1/pledge-classes");
+    expect(client.GET).toHaveBeenCalledWith("/v1/pledge-classes", {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("re-reads the list after a refused reorder, so a stale editor catches up", async () => {

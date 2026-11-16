@@ -1,4 +1,5 @@
-import { appUrl, type NativePlatform } from "./native-app";
+import { PRODUCTION_APP_ORIGIN } from "./invite-token";
+import { appLinkParams, appUrl, type NativePlatform } from "./native-app";
 
 /**
  * The check-in QR is a link (2026-11-13).
@@ -15,7 +16,8 @@ import { appUrl, type NativePlatform } from "./native-app";
  *
  * One home for the shape, because three workspaces meet on it: the API mints
  * it (`apps/api/src/domain/utils/check-in-token.ts`), the app reads it from its
- * route's params, and the web page reads it from its search params.
+ * route's params or from the code its own Scan code reads
+ * ({@link parseCheckInLink}), and the web page reads it from its search params.
  */
 
 /** The path the app claims and the web serves. Listed in `APP_LINK_PATHS`. */
@@ -91,6 +93,25 @@ export function checkInTargetFrom(
   const value = (Array.isArray(token) ? token[0] : token)?.trim();
   if (!eventId || !value) return null;
   return { eventId, token: value };
+}
+
+/**
+ * The event and token a scanned code names, or null for any other text: a
+ * link on one of `origins` (the caller's dashboard origin) to the check-in
+ * path with both parameters. The app's Scan code reads the same code the
+ * phone's camera opens, so a code that isn't one of these (a poster, a menu,
+ * another app's link) is not a check-in.
+ */
+export function parseCheckInLink(
+  raw: string,
+  origins: readonly string[] = [PRODUCTION_APP_ORIGIN],
+): CheckInLinkTarget | null {
+  const params = appLinkParams(raw, origins, CHECK_IN_LINK_PATH);
+  if (!params) return null;
+  return checkInTargetFrom(
+    params.get(CHECK_IN_LINK_EVENT_PARAM),
+    params.get(CHECK_IN_LINK_TOKEN_PARAM),
+  );
 }
 
 /**

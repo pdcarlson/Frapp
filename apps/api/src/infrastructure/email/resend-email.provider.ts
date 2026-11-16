@@ -64,6 +64,29 @@ function inviteEmailText(params: SendInviteEmailParams): string {
   return `${inviteHeadline(params)}.\n\nYou'll join as ${role}. The link works once and expires in 24 hours.\n\nAccept the invite: ${joinUrl}`;
 }
 
+/**
+ * Resend's own words for a refused send (`{ name, message }`), for the log:
+ * a bare 403 doesn't say whether the key, the domain or the recipient was
+ * refused (#2655). Addresses are masked, since a refusal can quote one, and
+ * the text is clipped. Never throws.
+ */
+async function refusalReason(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as {
+      name?: unknown;
+      message?: unknown;
+    };
+    const reason = [body.name, body.message]
+      .filter((part): part is string => typeof part === 'string')
+      .join(': ')
+      .replace(/[^\s<>"']+@[^\s<>"']+/g, '<address>')
+      .slice(0, 200);
+    return reason ? ` (${reason})` : '';
+  } catch {
+    return '';
+  }
+}
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -115,7 +138,7 @@ export class ResendEmailProvider implements IEmailProvider {
       });
       if (!response.ok) {
         this.logger.warn(
-          `Resend invite email send returned ${response.status} ${response.statusText}`,
+          `Resend invite email send returned ${response.status} ${response.statusText}${await refusalReason(response)}`,
         );
         return false;
       }

@@ -106,6 +106,7 @@ export class MyPointsAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: listSourceId(this.name, args.period),
         kind: 'points',
+        audience: { type: 'asker' },
         title: 'Your points',
         page: 'points',
         lines: [...summary, ...shown, ...(cutLine ? [cutLine] : [])],

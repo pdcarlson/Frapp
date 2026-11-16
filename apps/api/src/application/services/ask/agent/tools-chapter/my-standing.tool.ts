@@ -115,6 +115,7 @@ export class MyStandingAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: listSourceId(this.name),
         kind: 'points',
+        audience: { type: 'asker' },
         title: 'Your standing',
         page: null,
         lines,

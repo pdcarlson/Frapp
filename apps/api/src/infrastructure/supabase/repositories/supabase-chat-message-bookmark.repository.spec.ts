@@ -58,6 +58,16 @@ const message = (id: string, overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+/** `metadata.gif` as the projection's `gif:metadata->gif` reads it (#4657). */
+const GIF = {
+  provider: 'klipy',
+  id: 'g1',
+  title: 'wave',
+  url: 'https://static.klipy.com/g1.webp',
+  width: 200,
+  height: 150,
+};
+
 const seed = () => ({
   chat_message_bookmarks: [
     inA({
@@ -65,14 +75,14 @@ const seed = () => ({
       user_id: USER_SHARED,
       message_id: MESSAGE_A,
       created_at: '2026-01-02T00:00:00.000Z',
-      message: message(MESSAGE_A),
+      message: message(MESSAGE_A, { content: '', gif: GIF }),
     }),
     inB({
       id: BOOKMARK_B,
       user_id: USER_SHARED,
       message_id: MESSAGE_B,
       created_at: '2026-01-02T00:00:00.000Z',
-      message: message(MESSAGE_B),
+      message: message(MESSAGE_B, { content: '', gif: GIF }),
     }),
     inA({
       id: BOOKMARK_A_DELETED,
@@ -82,6 +92,7 @@ const seed = () => ({
       message: message(MESSAGE_A_DELETED, {
         content: '[message deleted]',
         is_deleted: true,
+        gif: GIF,
       }),
     }),
     inB({
@@ -92,6 +103,7 @@ const seed = () => ({
       message: message(MESSAGE_B_DELETED, {
         content: '[message deleted]',
         is_deleted: true,
+        gif: GIF,
       }),
     }),
     inA({
@@ -128,6 +140,7 @@ describe('BOOKMARK_MESSAGE_COLUMNS', () => {
       'content',
       'created_at',
       'forwarded_from',
+      'gif:metadata->gif',
       'id',
       'is_deleted',
       'sender_id',
@@ -192,6 +205,17 @@ describe('SupabaseChatMessageBookmarkRepository — tenant scope', () => {
     expect(deleted).toBeDefined();
     expect(deleted?.message.is_deleted).toBe(true);
     expect(deleted?.message.content).toBe('[message deleted]');
+  });
+
+  it('serves whether a message is a GIF as has_gif, and never the GIF (#4657)', async () => {
+    const rows = await repo.findByUserAndChapter(USER_SHARED, CHAPTER_A);
+
+    const gif = rows.find((r) => r.id === BOOKMARK_A);
+    expect(gif?.message.has_gif).toBe(true);
+    expect(gif?.message).not.toHaveProperty('gif');
+    // A deleted message is no GIF, whatever its metadata kept.
+    const deleted = rows.find((r) => r.id === BOOKMARK_A_DELETED);
+    expect(deleted?.message.has_gif).toBe(false);
   });
 
   it('delete removes only the caller own bookmark, not another member on the same message', async () => {

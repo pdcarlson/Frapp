@@ -10,9 +10,7 @@ export type MemberNudge = components["schemas"]["MemberNudgeDto"];
 
 /** Chapter-scoped keys; the read is `memberNudgeKeys.chapter(chapterId)`. */
 const memberNudgeKeys = createChapterQueryKeys("member-nudge");
-const memberNudgeSettingsKeys = createChapterQueryKeys(
-  "member-nudge-settings",
-);
+const memberNudgeSettingsKeys = createChapterQueryKeys("member-nudge-settings");
 
 /**
  * The member's card for Activity (`POST /v1/nudges/current`,
@@ -105,8 +103,10 @@ export function useMemberNudgeSettings(options: { enabled?: boolean } = {}) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: memberNudgeSettingsKeys.chapter(chapterId!),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/nudges/settings");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/nudges/settings", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

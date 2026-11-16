@@ -7,6 +7,7 @@ import {
   myExcuseView,
   sortExcusesForReview,
   useDecideEventExcuse,
+  useEditEventExcuse,
   useEventExcuses,
   useMyAttendance,
   useMyEventExcuse,
@@ -16,37 +17,36 @@ import {
 } from "@repo/hooks";
 import { EVENT_EXCUSE_REASON_MAX, statusLabel } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
-import {
-  SheetPrimaryButton,
-  sheetFieldStyles,
-} from "@/components/sheet-scaffold";
+import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { StatusChip } from "@/components/status-chip";
+import { createEventRowStyles } from "@/components/events/event-rows";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { eyebrowStyle } from "@/components/eyebrow";
-import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * Absence excuses on the event page (`spec/behavior/events.md` § Excuses,
- * #3735). Two blocks:
+ * #3735). Two blocks, both drawn as flat one-line rows split by hairlines,
+ * the way the series dates under them are, not as cards (#5115, Paul:
+ * "mostly one line, not cards"):
  *
- * - {@link MyExcuseCard}, for the member the event requires: **Can't make
- *   it** opens one line in place ("Exam review"), and after sending the card
- *   says where it went ("Excuse sent to Jake", or "to the officers" when the
- *   event has no creator to name) and then the decision. Calendar apps put
- *   "can't go, with a note" on the event itself (Google Calendar's Decline
- *   with a note, Outlook's Decline with a message), which is where a member
- *   who can't come already looks.
+ * - {@link MyExcuse}, for the member the event requires: a quiet **Can't make
+ *   it?** link opens one line in place ("Exam review"). Once sent it is one
+ *   row, the reason and where it stands, with **Edit** while the server
+ *   allows it. Calendar apps put "can't go, with a note" on the event itself
+ *   (Google Calendar's Decline with a note, Outlook's Decline with a
+ *   message), and let the note be changed there too.
  * - {@link ExcuseReviewSection}, for whoever decides: the event's creator or
- *   an `events:update` holder. Pending excuses first, each with Approve and
- *   Decline, as a leave request reads in Slack's or Teams' approvals.
+ *   an `events:update` holder. One row per excuse, pending first, with
+ *   Approve and Decline at the row's end, as a request row reads in Slack's
+ *   or Linear's inbox. Tapping a row shows the whole reason.
  *
  * What each offers is `myExcuseView`'s rule in `@repo/hooks`, which web's
  * event sheet reads too; the server enforces it either way. The writes have
  * no outbox, so they are disabled while a write would be lost.
  */
-export function MyExcuseCard({
+export function MyExcuse({
   eventId,
   required,
   start,
@@ -67,7 +67,7 @@ export function MyExcuseCard({
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
-  const field = sheetFieldStyles(tokens, accent);
+  const rows = createEventRowStyles(tokens);
   const { writeBlockedReason } = useConnection();
 
   // Read only for an event that requires the viewer: nobody else can have
@@ -75,10 +75,11 @@ export function MyExcuseCard({
   const mine = useMyEventExcuse(eventId, { enabled: required });
   const own = useMyAttendance(eventId);
   const send = useSendEventExcuse();
+  const edit = useEditEventExcuse();
   const withdraw = useWithdrawEventExcuse();
   const [writing, setWriting] = useState(startWriting);
-  const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [reasonOpen, setReasonOpen] = useState(false);
   const inFlight = useRef(false);
 
   const view = myExcuseView({
@@ -94,125 +95,280 @@ export function MyExcuseCard({
   });
   if (view.kind === "none") return null;
 
-  const trimmed = reason.trim();
-  const busy = send.isPending || withdraw.isPending;
-
-  const submit = async () => {
-    if (inFlight.current || !trimmed) return;
-    inFlight.current = true;
-    setError(null);
-    try {
-      await send.mutateAsync({ eventId, reason: trimmed });
-      setWriting(false);
-      setReason("");
-    } catch (failure) {
-      setError(
-        errorCopy(failure, "Couldn't send your excuse. Try again.", {
-          serverWritesForMembers: true,
-        }),
-      );
-    } finally {
-      inFlight.current = false;
-    }
-  };
-
-  const takeBack = async () => {
+  const run = async (write: () => Promise<unknown>, fallback: string) => {
     if (inFlight.current) return;
     inFlight.current = true;
     setError(null);
     try {
-      await withdraw.mutateAsync({ eventId });
+      await write();
+      setWriting(false);
     } catch (failure) {
-      setError(
-        errorCopy(failure, "Couldn't withdraw your excuse. Try again.", {
-          serverWritesForMembers: true,
-        }),
-      );
+      setError(errorCopy(failure, fallback, { serverWritesForMembers: true }));
     } finally {
       inFlight.current = false;
     }
   };
 
   if (view.kind === "offer") {
+    // Closed, the offer is one quiet underlined line: declining reads quieter
+    // than going (#4933, the way Google Calendar's and Luma's RSVP rows keep
+    // No secondary). Writing opens one field in its place, not a card.
+    if (!writing) {
+      return (
+        <TextAction
+          label="Can't make it?"
+          hint="Send an excuse for this event."
+          underline
+          onPress={() => setWriting(true)}
+        />
+      );
+    }
     return (
-      <View style={styles.card} accessibilityLabel="Can't make it">
-        {writing ? (
-          <>
-            <Text style={styles.title}>Can&apos;t make it</Text>
-            <Text style={styles.caption}>
-              Say why in one line. It goes to whoever runs this event.
-            </Text>
-            <TextInput
-              value={reason}
-              onChangeText={setReason}
-              placeholder="Exam review, away game, sick…"
-              placeholderTextColor={tokens.color.text.muted}
-              maxLength={EVENT_EXCUSE_REASON_MAX}
-              autoFocus
-              returnKeyType="send"
-              onSubmitEditing={() => void submit()}
-              accessibilityLabel="Reason"
-              // On the card, so a step above it: the field's own input step
-              // is the card's fill on a screen (`lib/surfaces.ts`).
-              style={[field.field, styles.fieldOnCard]}
-            />
-            {error ? <Text style={styles.error}>{error}</Text> : null}
-            <SheetPrimaryButton
-              label="Send excuse"
-              accent={accent}
-              onAccent={tokens.color.gold.onHouse}
-              onPress={() => void submit()}
-              busy={send.isPending}
-              disabled={!trimmed || busy || writeBlockedReason !== null}
-              accessibilityHint={writeBlockedReason ?? undefined}
-            />
-            <TextAction
-              label="Cancel"
-              onPress={() => {
-                setWriting(false);
-                setError(null);
-              }}
-            />
-          </>
-        ) : (
-          <TextAction
-            label="Can't make it"
-            hint="Send an excuse for this event."
-            color={accent}
-            onPress={() => setWriting(true)}
-          />
-        )}
-      </View>
+      <ExcuseComposer
+        label="Can't make it"
+        caption="Say why in one line. It goes to whoever runs this event."
+        submitLabel="Send"
+        submitA11y="Send excuse"
+        busy={send.isPending}
+        error={error}
+        onSubmit={(reason) =>
+          void run(
+            () => send.mutateAsync({ eventId, reason }),
+            "Couldn't send your excuse. Try again.",
+          )
+        }
+        onCancel={() => {
+          setWriting(false);
+          setError(null);
+        }}
+      />
     );
   }
 
-  const hue = excuseHue(tokens, view.status);
+  const declined = view.status === "DECLINED";
+  if (writing && view.canEdit) {
+    return (
+      <ExcuseComposer
+        label="Your excuse"
+        caption={
+          declined
+            ? "Change it and send it again. You're still expected until it's accepted."
+            : view.title
+        }
+        initial={view.reason}
+        submitLabel={declined ? "Send again" : "Save"}
+        submitA11y={declined ? "Send excuse again" : "Save excuse"}
+        busy={edit.isPending}
+        error={error}
+        onSubmit={(reason) =>
+          void run(
+            () => edit.mutateAsync({ eventId, reason }),
+            "Couldn't save your excuse. Try again.",
+          )
+        }
+        onCancel={() => {
+          setWriting(false);
+          setError(null);
+        }}
+        withdraw={
+          view.canWithdraw
+            ? {
+                pending: withdraw.isPending,
+                onPress: () =>
+                  void run(
+                    () => withdraw.mutateAsync({ eventId }),
+                    "Couldn't withdraw your excuse. Try again.",
+                  ),
+              }
+            : null
+        }
+      />
+    );
+  }
+
+  // One row: the reason, where it stands, and the one thing it allows. The
+  // receiver ("Sent to Jake") rides the section label, not a second line.
+  const action: "edit" | "withdraw" | null = view.canEdit
+    ? "edit"
+    : view.canWithdraw
+      ? "withdraw"
+      : null;
+  const takeBack = () =>
+    void run(
+      () => withdraw.mutateAsync({ eventId }),
+      "Couldn't withdraw your excuse. Try again.",
+    );
   return (
-    <View style={styles.card}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{view.title}</Text>
-        <StatusChip label={statusLabel("eventExcuse", view.status)} hue={hue} />
+    <View style={styles.section} accessibilityLabel="Your excuse">
+      <Text style={styles.sectionLabel}>
+        {view.status === "PENDING"
+          ? `Your excuse · ${view.title.replace(/^Excuse sent/, "Sent")}`
+          : "Your excuse"}
+      </Text>
+      <View style={[rows.flatRow, reasonOpen ? styles.rowTop : null]}>
+        {/* Cut to one line; a tap shows the whole reason, as on the
+            receiver's list. A sibling of the action, so each stays its own
+            control for VoiceOver. */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.grow,
+            pressed ? styles.pressed : null,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`${view.title}: ${view.reason}`}
+          accessibilityHint={
+            reasonOpen ? "Shows one line." : "Shows the whole reason."
+          }
+          accessibilityState={{ expanded: reasonOpen }}
+          onPress={() => setReasonOpen((value) => !value)}
+        >
+          <Text
+            style={styles.reason}
+            numberOfLines={reasonOpen ? undefined : 1}
+          >
+            {view.reason}
+          </Text>
+        </Pressable>
+        <StatusChip
+          label={statusLabel("eventExcuse", view.status)}
+          hue={excuseHue(tokens, view.status)}
+        />
+        {action ? (
+          <TextAction
+            label={
+              action === "edit"
+                ? "Edit"
+                : withdraw.isPending
+                  ? "Withdrawing…"
+                  : "Withdraw"
+            }
+            hint={
+              writeBlockedReason ??
+              (action === "withdraw"
+                ? "Take back your excuse."
+                : declined
+                  ? "Change your excuse and send it again."
+                  : "Change your excuse.")
+            }
+            color={accent}
+            compact
+            disabled={withdraw.isPending || writeBlockedReason !== null}
+            onPress={action === "edit" ? () => setWriting(true) : takeBack}
+          />
+        ) : null}
       </View>
-      <Text style={styles.reason}>“{view.reason}”</Text>
       {view.detail ? <Text style={styles.caption}>{view.detail}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {view.canWithdraw ? (
-        <TextAction
-          label={withdraw.isPending ? "Withdrawing…" : "Withdraw excuse"}
-          color={accent}
-          disabled={busy || writeBlockedReason !== null}
-          hint={writeBlockedReason ?? undefined}
-          onPress={() => void takeBack()}
-        />
-      ) : null}
     </View>
   );
 }
 
 /**
- * The receiver's list: "EXCUSES · 2 to decide · 12 excused", then each
- * excuse with the sender's name and reason. Mounted only for a viewer who
- * may decide (the event's creator or an `events:update` holder); any other
+ * The excuse line, new or being edited: one field with its button beside it,
+ * and a caption and Cancel under it. Flat on the page, so opening it moves
+ * nothing but the row it replaces.
+ */
+function ExcuseComposer({
+  label,
+  caption,
+  initial = "",
+  submitLabel,
+  submitA11y,
+  busy,
+  error,
+  onSubmit,
+  onCancel,
+  withdraw = null,
+}: {
+  label: string;
+  caption: string;
+  initial?: string;
+  submitLabel: string;
+  submitA11y: string;
+  busy: boolean;
+  error: string | null;
+  onSubmit: (reason: string) => void;
+  onCancel: () => void;
+  withdraw?: { pending: boolean; onPress: () => void } | null;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens);
+  const field = sheetFieldStyles(tokens, accent);
+  const { writeBlockedReason } = useConnection();
+  const [reason, setReason] = useState(initial);
+  const trimmed = reason.trim();
+  // Saving the words already there would ask the server for nothing.
+  const unchanged = initial !== "" && trimmed === initial.trim();
+  const blocked = !trimmed || unchanged || busy || writeBlockedReason !== null;
+
+  return (
+    <View style={styles.section} accessibilityLabel={label}>
+      <Text style={styles.sectionLabel}>{label}</Text>
+      <View style={styles.composerRow}>
+        <TextInput
+          value={reason}
+          onChangeText={setReason}
+          placeholder="Exam review, away game, sick…"
+          placeholderTextColor={tokens.color.text.muted}
+          maxLength={EVENT_EXCUSE_REASON_MAX}
+          autoFocus
+          returnKeyType="send"
+          onSubmitEditing={() => {
+            if (!blocked) onSubmit(trimmed);
+          }}
+          accessibilityLabel="Reason"
+          style={[field.field, styles.grow]}
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={submitA11y}
+          accessibilityState={{ disabled: blocked, busy }}
+          accessibilityHint={writeBlockedReason ?? undefined}
+          disabled={blocked}
+          onPress={() => onSubmit(trimmed)}
+          style={({ pressed }) => [
+            styles.submit,
+            { backgroundColor: accent },
+            pressed && !blocked ? styles.pressed : null,
+            blocked && !busy ? styles.disabled : null,
+          ]}
+        >
+          {/* The label keeps its width while saving, so nothing shifts. */}
+          <Text
+            style={[
+              styles.submitLabel,
+              { color: tokens.color.gold.onHouse },
+              busy ? styles.busyLabel : null,
+            ]}
+          >
+            {submitLabel}
+          </Text>
+        </Pressable>
+      </View>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
+      <View style={styles.composerFoot}>
+        <Text style={[styles.caption, styles.grow]}>{caption}</Text>
+        {withdraw ? (
+          <TextAction
+            label={withdraw.pending ? "Withdrawing…" : "Withdraw"}
+            compact
+            disabled={withdraw.pending || writeBlockedReason !== null}
+            hint={writeBlockedReason ?? "Take back your excuse."}
+            onPress={withdraw.onPress}
+          />
+        ) : null}
+        <TextAction label="Cancel" compact onPress={onCancel} />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The receiver's list: "EXCUSES · 2 to decide · 12 excused", then one row
+ * per excuse: the sender's name, the reason cut to the row, and either
+ * Approve and Decline or where it stands. Mounted only for a viewer who may
+ * decide (the event's creator or an `events:update` holder); any other
  * reader gets the route's 403, and the section then draws nothing.
  */
 export function ExcuseReviewSection({
@@ -225,11 +381,14 @@ export function ExcuseReviewSection({
   canUpdateEvents: boolean;
 }) {
   const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
+  const rowStyles = createEventRowStyles(tokens);
   const excuses = useEventExcuses(eventId);
   const decide = useDecideEventExcuse();
   const { writeBlockedReason } = useConnection();
   const [deciding, setDeciding] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Two taps in one frame both see `deciding` unset; the ref doesn't.
   const inFlight = useRef(false);
@@ -269,43 +428,96 @@ export function ExcuseReviewSection({
         {["Excuses", summary].filter(Boolean).join(" · ")}
       </Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {ordered.map((row) => {
-        const name = row.display_name.trim() || "A member";
-        // The creator's own excuse goes to the officers: shown, not decided.
-        const decidable = canDecideExcuse(row, decider);
-        const disabled = deciding !== null || writeBlockedReason !== null;
-        return (
-          <View key={row.id} style={styles.reviewRow}>
-            <View style={styles.header}>
-              <Text style={styles.title}>{name}</Text>
-              {decidable ? null : (
+      <View>
+        {ordered.map((row, index) => {
+          const name = row.display_name.trim() || "A member";
+          // The creator's own excuse goes to the officers: shown, not decided.
+          const decidable = canDecideExcuse(row, decider);
+          const disabled = deciding !== null || writeBlockedReason !== null;
+          const expanded = open === row.id;
+          return (
+            // The text and the decisions are siblings, not one pressable
+            // row: an accessible parent would hide Approve and Decline from
+            // VoiceOver.
+            <View
+              key={row.id}
+              style={[
+                rowStyles.flatRow,
+                expanded ? styles.rowTop : null,
+                index === 0 ? null : rowStyles.flatDivider,
+              ]}
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${name}: ${row.reason}. ${statusLabel("eventExcuse", row.status)}`}
+                accessibilityHint={
+                  expanded ? "Shows one line." : "Shows the whole reason."
+                }
+                accessibilityState={{ expanded }}
+                onPress={() => setOpen(expanded ? null : row.id)}
+                style={({ pressed }) => [
+                  styles.grow,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text
+                  style={[styles.line, expanded ? null : styles.lineCut]}
+                  numberOfLines={expanded ? undefined : 1}
+                >
+                  <Text style={styles.name}>{name}</Text>
+                  {"  "}
+                  <Text style={styles.reasonMuted}>{row.reason}</Text>
+                </Text>
+              </Pressable>
+              {decidable ? (
+                <View style={styles.decisions}>
+                  <TextAction
+                    label="Decline"
+                    compact
+                    disabled={disabled}
+                    hint={writeBlockedReason ?? `Keep ${name} required.`}
+                    onPress={() => void run(row, "DECLINED")}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{
+                      disabled,
+                      busy: deciding === row.user_id,
+                    }}
+                    accessibilityHint={writeBlockedReason ?? `Excuse ${name}.`}
+                    disabled={disabled}
+                    onPress={() => void run(row, "APPROVED")}
+                    hitSlop={tokens.spacing.sm}
+                    style={({ pressed }) => [
+                      styles.approve,
+                      { borderColor: accent },
+                      pressed && !disabled ? styles.pressed : null,
+                      disabled && deciding !== row.user_id
+                        ? styles.disabled
+                        : null,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.approveLabel,
+                        { color: accent },
+                        deciding === row.user_id ? styles.busyLabel : null,
+                      ]}
+                    >
+                      Approve
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : (
                 <StatusChip
                   label={statusLabel("eventExcuse", row.status)}
                   hue={excuseHue(tokens, row.status)}
                 />
               )}
             </View>
-            <Text style={styles.reason}>“{row.reason}”</Text>
-            {decidable ? (
-              <View style={styles.decisionRow}>
-                <DecisionButton
-                  label={deciding === row.user_id ? "Saving…" : "Approve"}
-                  primary
-                  disabled={disabled}
-                  hint={writeBlockedReason ?? `Excuse ${name}.`}
-                  onPress={() => void run(row, "APPROVED")}
-                />
-                <DecisionButton
-                  label="Decline"
-                  disabled={disabled}
-                  hint={writeBlockedReason ?? `Keep ${name} required.`}
-                  onPress={() => void run(row, "DECLINED")}
-                />
-              </View>
-            ) : null}
-          </View>
-        );
-      })}
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -330,12 +542,18 @@ function TextAction({
   color,
   disabled = false,
   hint,
+  underline = false,
+  compact = false,
 }: {
   label: string;
   onPress: () => void;
   color?: string;
   disabled?: boolean;
   hint?: string;
+  /** The standalone quiet link: underlined, centered, padded to 44×44. */
+  underline?: boolean;
+  /** At a row's end: hugs its label, and reaches 44pt through its slop. */
+  compact?: boolean;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -346,8 +564,10 @@ function TextAction({
       accessibilityHint={hint}
       disabled={disabled}
       onPress={onPress}
+      hitSlop={compact ? tokens.spacing.sm : undefined}
       style={({ pressed }) => [
-        styles.textAction,
+        compact ? styles.textActionCompact : styles.textAction,
+        underline ? styles.textLink : null,
         pressed && !disabled ? styles.pressed : null,
         disabled ? styles.disabled : null,
       ]}
@@ -355,6 +575,7 @@ function TextAction({
       <Text
         style={[
           styles.textActionLabel,
+          underline ? styles.textLinkLabel : null,
           { color: color ?? tokens.color.text.mutedForeground },
         ]}
       >
@@ -364,74 +585,41 @@ function TextAction({
   );
 }
 
-function DecisionButton({
-  label,
-  onPress,
-  primary = false,
-  disabled,
-  hint,
-}: {
-  label: string;
-  onPress: () => void;
-  primary?: boolean;
-  disabled: boolean;
-  hint: string;
-}) {
-  const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      accessibilityHint={hint}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.decision,
-        primary ? { backgroundColor: accent, borderColor: accent } : null,
-        pressed && !disabled ? styles.pressed : null,
-        disabled ? styles.disabled : null,
-      ]}
-    >
-      <Text
-        style={[
-          styles.decisionLabel,
-          primary ? { color: tokens.color.gold.onHouse } : null,
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
-  const surfaces = pageSurfaces(tokens);
   return StyleSheet.create({
-    fieldOnCard: {
-      backgroundColor: surfaces.raised,
+    section: {
+      gap: tokens.spacing.xs,
     },
-    card: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: surfaces.card,
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.sm,
+    sectionLabel: {
+      ...eyebrowStyle(tokens),
+      color: tokens.color.text.muted,
     },
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-    },
-    title: {
+    grow: {
       flex: 1,
+      minWidth: 0,
+    },
+    // An opened row reads from its top, so a long reason doesn't center
+    // the buttons against three lines.
+    rowTop: {
+      alignItems: "flex-start",
+    },
+    line: {
+      ...typeRole(tokens.typography.role.body),
+    },
+    lineCut: {
+      // A cut line never wraps under the name.
+      flexShrink: 1,
+    },
+    name: {
       color: tokens.color.text.foreground,
       ...typeRole(tokens.typography.role.label),
     },
     reason: {
       color: tokens.color.text.foreground,
+      ...typeRole(tokens.typography.role.body),
+    },
+    reasonMuted: {
+      color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.body),
     },
     caption: {
@@ -442,52 +630,69 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.semantic.destructiveText,
       ...typeRole(tokens.typography.role.caption),
     },
+    composerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
+    composerFoot: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+    },
+    submit: {
+      minHeight: tokens.touch.minimum,
+      minWidth: tokens.touch.minimum,
+      paddingHorizontal: tokens.spacing.md,
+      borderRadius: tokens.radius.control,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    submitLabel: {
+      ...typeRole(tokens.typography.role.label),
+    },
+    // Saving: the label dims in place rather than swapping for a spinner.
+    busyLabel: {
+      opacity: 0.6,
+    },
+    decisions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+    },
+    approve: {
+      borderWidth: 1,
+      borderRadius: tokens.radius.control,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.xs,
+    },
+    approveLabel: {
+      ...typeRole(tokens.typography.role.label),
+    },
     textAction: {
       minHeight: tokens.touch.minimum,
       alignItems: "center",
       justifyContent: "center",
     },
+    textActionCompact: {
+      paddingVertical: tokens.spacing.xs,
+    },
     textActionLabel: {
       ...typeRole(tokens.typography.role.label),
+    },
+    textLink: {
+      alignSelf: "center",
+      minWidth: tokens.touch.minimum,
+      paddingHorizontal: tokens.spacing.lg,
+    },
+    textLinkLabel: {
+      textDecorationLine: "underline",
     },
     pressed: {
       opacity: 0.7,
     },
     disabled: {
       opacity: 0.5,
-    },
-    section: {
-      gap: tokens.spacing.sm,
-    },
-    sectionLabel: {
-      ...eyebrowStyle(tokens),
-      color: tokens.color.text.muted,
-    },
-    reviewRow: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: surfaces.card,
-      padding: tokens.spacing.md,
-      gap: tokens.spacing.xs,
-    },
-    decisionRow: {
-      flexDirection: "row",
-      gap: tokens.spacing.sm,
-      marginTop: tokens.spacing.xs,
-    },
-    decision: {
-      flex: 1,
-      minHeight: tokens.touch.minimum,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.control,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    decisionLabel: {
-      color: tokens.color.text.foreground,
-      ...typeRole(tokens.typography.role.label),
     },
   });
 }

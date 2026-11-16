@@ -37,8 +37,9 @@ export function useActivityStanding(options: { enabled?: boolean } = {}) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: activityStandingKeys.chapter(chapterId!),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/activity/standing", {
+        signal,
         params: {
           query: { week_start: localWeekStart().toISOString() },
         },

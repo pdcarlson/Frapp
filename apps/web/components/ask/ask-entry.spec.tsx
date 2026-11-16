@@ -1,14 +1,14 @@
 import type React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ASK_COPY } from "@repo/validation";
 
 /**
- * The real host, slot, button and card together (#4702). `ask-host.spec.tsx`
+ * The real host, field stand-in and conversation together (#4904). `ask-host.spec.tsx`
  * and `ask-card.spec.tsx` each stand the other in, so neither sees what
  * passes between them: which element opened the conversation, where focus
- * goes when it closes, and what the card does when chat or Ask itself comes
+ * goes when it closes, and what the conversation does when Ask itself comes
  * and goes under it.
  */
 
@@ -54,37 +54,33 @@ vi.mock("@/components/ai/meet-frapp-ai", () => ({
   }),
 }));
 
-const { AskComposerButton, AskHost, AskSlot } = await import("./ask-host");
+const { AskHost, useAskEntry } = await import("./ask-host");
 
-/**
- * The dashboard as chat draws it: the slot stays, and the composer (with the
- * button in it) is a new one for each channel, as `chat-shell.tsx` keys it.
- * With `chat` off a tool page has taken chat's place.
- */
-function Page({
-  channel = "general",
-  chat = true,
-}: {
-  channel?: string;
-  chat?: boolean;
-}) {
+/** The top bar's field, as `find-bar.tsx` reaches Ask and takes focus back. */
+function Field() {
+  const ask = useAskEntry();
+  if (!ask) return null;
+  return (
+    <button
+      data-ask-entry=""
+      onClick={(event) => ask.openWith(undefined, event.currentTarget)}
+    >
+      Search or ask Frapp
+    </button>
+  );
+}
+
+function Page() {
   return (
     <AskHost>
-      <input aria-label="Search" />
-      {chat ? (
-        <section>
-          <AskSlot />
-          <form key={channel}>
-            <AskComposerButton />
-          </form>
-        </section>
-      ) : null}
+      <Field />
+      <input aria-label="Message" />
     </AskHost>
   );
 }
 
-const entry = () => screen.getByRole("button", { name: ASK_COPY.name });
-const card = () => screen.queryByRole("region", { name: ASK_COPY.name });
+const entry = () => screen.getByRole("button", { name: "Search or ask Frapp" });
+const card = () => screen.queryByRole("dialog", { name: ASK_COPY.name });
 const field = () => screen.getByRole("textbox", { name: ASK_COPY.placeholder });
 
 beforeEach(() => {
@@ -92,59 +88,24 @@ beforeEach(() => {
 });
 
 describe("the entry and the conversation together", () => {
-  it("opens from the composer's button with the cursor in the field, and gives focus back to that button", async () => {
+  it("opens from the field with the cursor in the conversation, and gives focus back to the field", async () => {
     const user = userEvent.setup();
     render(<Page />);
     expect(card()).toBeNull();
     await user.click(entry());
-    expect(entry()).toHaveAttribute("aria-expanded", "true");
     expect(field()).toHaveFocus();
     await user.click(screen.getByRole("button", { name: ASK_COPY.close }));
     expect(card()).toBeNull();
-    expect(entry()).toHaveFocus();
+    await waitFor(() => expect(entry()).toHaveFocus());
   });
 
-  it("gives focus to the button on screen now when the one that opened it went with its channel", async () => {
-    const user = userEvent.setup();
-    const view = render(<Page channel="general" />);
-    const opener = entry();
-    await user.click(opener);
-    view.rerender(<Page channel="rush" />);
-    // The composer is a new one; the conversation is the same one.
-    expect(opener).not.toBeInTheDocument();
-    expect(card()).toBeInTheDocument();
-    await user.keyboard("{Escape}");
-    expect(card()).toBeNull();
-    expect(entry()).toHaveFocus();
-  });
-
-  it("does not pull focus back to the entry from somewhere the member went on purpose", async () => {
+  it("closes on Escape, wherever in it the cursor is", async () => {
     const user = userEvent.setup();
     render(<Page />);
     await user.click(entry());
-    const search = screen.getByRole("textbox", { name: "Search" });
-    await user.click(search);
-    // Closed by its own button, from the keyboard's point of view elsewhere.
-    await user.click(entry());
+    await user.keyboard("{Escape}");
     expect(card()).toBeNull();
-    expect(entry()).toHaveFocus();
-    await user.click(entry());
-    await user.click(search);
-    expect(search).toHaveFocus();
-  });
-
-  it("comes back with chat without taking the cursor from the page the member is on", async () => {
-    const user = userEvent.setup();
-    const view = render(<Page />);
-    await user.click(entry());
-    view.rerender(<Page chat={false} />);
-    expect(card()).toBeNull();
-    const search = screen.getByRole("textbox", { name: "Search" });
-    await user.click(search);
-    view.rerender(<Page />);
-    expect(card()).toBeInTheDocument();
-    expect(entry()).toHaveAttribute("aria-expanded", "true");
-    expect(search).toHaveFocus();
+    await waitFor(() => expect(entry()).toHaveFocus());
   });
 
   it("closes for good when the member loses Ask: it does not open itself when Ask returns", async () => {
@@ -156,10 +117,12 @@ describe("the entry and the conversation together", () => {
     who.previewing = true;
     view.rerender(<Page />);
     expect(card()).toBeNull();
-    expect(screen.queryByRole("button", { name: ASK_COPY.name })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Search or ask Frapp" }),
+    ).toBeNull();
     who.previewing = false;
     view.rerender(<Page />);
-    expect(entry()).toHaveAttribute("aria-expanded", "false");
+    expect(entry()).toBeInTheDocument();
     expect(card()).toBeNull();
   });
 });

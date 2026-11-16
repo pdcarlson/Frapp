@@ -36,5 +36,7 @@ import { SupabaseStorageService } from '../../infrastructure/storage/supabase-st
     },
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
+  // `BootstrapModule` reads the document list from it (#4709).
+  exports: [ChapterDocumentService],
 })
 export class ChapterDocumentModule {}

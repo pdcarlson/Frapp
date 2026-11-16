@@ -8,11 +8,13 @@ import { errorCopy } from "@repo/hooks/error-copy";
  * or above yours"), so those read in their own words; anything else gets the
  * app's shared copy (`errorCopy`).
  */
-export function describeError(holderName: string, error: unknown): string {
-  const reason = errorCopy(
-    error,
-    "The permission was not changed. Try again in a moment.",
-    { serverWritesForMembers: true },
-  );
+export function describeError(
+  holderName: string,
+  error: unknown,
+  // What wasn't saved, for a save that isn't a permission (#4958's
+  // Non-chapter business switch).
+  fallback = "The permission was not changed. Try again in a moment.",
+): string {
+  const reason = errorCopy(error, fallback, { serverWritesForMembers: true });
   return `Couldn't update ${holderName}. ${reason}`;
 }

@@ -23,8 +23,8 @@ export function useSemesters() {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["semesters"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/semesters");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/semesters", { signal });
       if (error) throw error;
       return data;
     },

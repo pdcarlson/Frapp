@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { AskSourceKind, AskSourceTarget } from '@repo/validation';
 import type { AiUnavailable } from '../../ai/ai-gateway.service';
+import type { ActOutcome } from '../../act/act-tool';
 import type { AgentToolSpec } from '../ask-tool';
 
 /**
@@ -56,6 +57,30 @@ export interface AgentToolContext {
   signal?: AbortSignal;
 }
 
+/**
+ * Who else could open a source, which is what lets an answer built on it go
+ * to a channel without a warning (#4713, `spec/behavior/ai.md` § Posting an
+ * answer to the channel). The tool says it, because only the tool knows
+ * which route it mirrors:
+ *
+ * - `document`, `meeting`: the record by id; the post asks that record's
+ *   own rule about everyone in the channel.
+ * - `chapter`: the same for every member who holds `members:view` (the
+ *   roster, the standings). Never for a read an officer permission gates.
+ * - `asker`: the asker's own records. Nobody else can open them.
+ * - `events`: the calendar as the asker sees it; `limited` names the listed
+ *   events that leave some member out.
+ *
+ * Left off a source, nobody else is taken to be able to open it. A channel
+ * message never needs one: an answer that read chat is not posted at all.
+ */
+export type AgentSourceAudience =
+  | { type: 'document'; id: string }
+  | { type: 'meeting'; id: string }
+  | { type: 'chapter' }
+  | { type: 'asker' }
+  | { type: 'events'; limited: string[] };
+
 /** One thing a tool read, as the model reads it and as a citation shows it. */
 export interface AgentSource {
   /**
@@ -80,6 +105,8 @@ export interface AgentSource {
   chat: boolean;
   /** Chat: whose words are in it. Empty for every other source. */
   authorIds: readonly string[];
+  /** {@link AgentSourceAudience}. Left out: only the asker. */
+  audience?: AgentSourceAudience;
 }
 
 /** A member or channel a result mentions, by the name the result uses. */
@@ -120,6 +147,54 @@ export interface AgentReadTool<Args = unknown> extends AgentToolSpec {
 }
 
 /**
+ * What a turn can show for a propose call: a card to confirm, a choice of
+ * event, or what was left unsaid. The same three a typed request ends in.
+ */
+export type AgentCard = Extract<
+  ActOutcome,
+  { status: 'proposed' | 'needs_event' | 'unclear' }
+>;
+
+export interface AgentProposeResult {
+  /** The chapter the card was made in. The loop drops any other. */
+  chapterId: string;
+  /** What the turn shows for it, or null when nothing can be shown. */
+  card: AgentCard | null;
+  /**
+   * What the model is told came of it. Written by the tool from the
+   * outcome's kind alone: never a name, a title or any other member text,
+   * and never the card's contents, which the member reads on the card.
+   */
+  note: string;
+}
+
+/**
+ * A change the model can put in front of the asker as a card (#4899;
+ * `docs/security/ai-prompt-injection.md` C5 as changed 2026-11-13: the model
+ * that reads may also propose). **It changes nothing.** `propose` saves a
+ * proposal only the asker can open; the change is made when they press
+ * Confirm, through the ordinary service, after the action's permission is
+ * checked again. So what a turn read, including text someone planted, can at
+ * most put a card in front of the asker, who reads exactly what it would do
+ * before anything happens.
+ *
+ * Offered only to a member who holds `ai:act`, from a client that draws
+ * cards, and like a read only when the mirrored route's permission is held
+ * and its module is on. The arguments follow a read's rules: names and days
+ * the model wrote, never an id, a chapter or a user.
+ */
+export interface AgentProposeTool<Args = unknown> extends AgentToolSpec {
+  readonly effect: 'propose';
+  readonly input: z.ZodType<Args>;
+  /** The line under a working turn while the card is worked out. */
+  readonly reading: string;
+  propose(args: Args, context: AgentToolContext): Promise<AgentProposeResult>;
+}
+
+/** Anything the loop can be handed. */
+export type AgentTool = AgentReadTool | AgentProposeTool;
+
+/**
  * Thrown by a tool whose read went through the AI gateway and was not made:
  * the chapter or the member is past a cap, AI is off, or no provider is set
  * up. The loop ends the turn with that reason, as a refused model call
@@ -137,8 +212,15 @@ export class AgentToolUnavailableError extends Error {
 /** The most text one result may hand the model; the loop cuts past it. */
 export const AGENT_RESULT_MAX_CHARS = 12_000;
 
-/** The most sources one result may carry. */
-export const AGENT_RESULT_MAX_SOURCES = 20;
+/**
+ * The most sources one result may carry. A message is one source, so this
+ * is also the most messages one read of a channel hands over; the character
+ * cap is what bounds a result's cost.
+ */
+export const AGENT_RESULT_MAX_SOURCES = 60;
 
 /** Injection token for the read tools the agent loop may offer. */
 export const AGENT_READ_TOOLS = 'AGENT_READ_TOOLS';
+
+/** Injection token for the cards the agent loop may propose. */
+export const AGENT_PROPOSE_TOOLS = 'AGENT_PROPOSE_TOOLS';

@@ -4,7 +4,14 @@ import {
   MemberFacingError,
 } from "@repo/hooks/error-copy";
 import { statusOf } from "@repo/api-sdk";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   AccessibilityInfo,
@@ -26,6 +33,8 @@ import {
   useTasks,
   useUpdateTaskStatus,
   useViewerUserId,
+  MY_TASKS_GROUPS,
+  MY_TASKS_GROUP_LABELS,
   type TaskStatus,
 } from "@repo/hooks";
 import { nextUpLine } from "@repo/formatting";
@@ -201,10 +210,7 @@ export default function TasksScreen() {
   // chapter has Events on. The chapter must be read first, because an unread
   // `enabled_modules` counts as on and would fire a read Events-off refuses.
   const chapterQuery = useCurrentChapter();
-  const enabledModules = (
-    chapterQuery.data as
-      { enabled_modules?: Record<string, boolean> } | undefined
-  )?.enabled_modules;
+  const enabledModules = chapterQuery.data?.enabled_modules;
   const eventsOn =
     chapterQuery.isSuccess && isModuleEnabled(enabledModules, "events");
   const canCreate =
@@ -451,9 +457,9 @@ export default function TasksScreen() {
   const findRow = useCallback(
     (id: string | null): TaskRowModel | null => {
       if (id === null) return null;
-      const onBoard = [...board.dueThisWeek, ...board.later].find(
-        (row) => row.id === id,
-      );
+      const onBoard = MY_TASKS_GROUPS.flatMap(
+        (group) => board.groups[group],
+      ).find((row) => row.id === id);
       if (onBoard) return onBoard;
       // Opened from the Events calendar (#4144), which also shows a task the
       // board has let go of (finished more than a week ago): read it off the
@@ -656,8 +662,8 @@ export default function TasksScreen() {
     // start, a beat before the real rows land.
     if (tasksQuery.isPending || viewerUserId === null) {
       // A section caption over task-shaped rows, so the real board lands in
-      // place. The caption is a bar: which section comes first (DUE THIS WEEK
-      // or LATER) depends on the tasks.
+      // place. The caption is a bar: which section comes first (TODAY, THIS
+      // WEEK or LATER) depends on the tasks.
       return (
         <SkeletonRegion label="Loading chapter tasks" style={styles.skeleton}>
           <SectionHeaderSkeleton width="30%" />
@@ -697,19 +703,18 @@ export default function TasksScreen() {
 
     return (
       <>
-        {board.dueThisWeek.length > 0 ? (
-          <>
-            <SectionHeader>DUE THIS WEEK</SectionHeader>
-            {renderRows(board.dueThisWeek)}
-          </>
-        ) : null}
-
-        {board.later.length > 0 ? (
-          <>
-            <SectionHeader>LATER</SectionHeader>
-            {renderRows(board.later)}
-          </>
-        ) : null}
+        {/* Today, This week, Later (#4295 step 5), each only when it has a
+            task: on a phone an empty heading is a scroll for nothing. */}
+        {MY_TASKS_GROUPS.map((group) =>
+          board.groups[group].length > 0 ? (
+            <Fragment key={group}>
+              <SectionHeader>
+                {MY_TASKS_GROUP_LABELS[group].toUpperCase()}
+              </SectionHeader>
+              {renderRows(board.groups[group])}
+            </Fragment>
+          ) : null,
+        )}
       </>
     );
   }
@@ -794,6 +799,9 @@ export default function TasksScreen() {
       {marking && markingRow ? (
         <MarkDoneSheet
           key={marking.id}
+          // Kept past a close and this screen (#5041), shared with the task's
+          // chat card: Mark done on it again opens on what was added.
+          keptDraft={`mark-done:${marking.id}`}
           task={{
             id: markingRow.id,
             title: markingRow.title,
@@ -801,6 +809,7 @@ export default function TasksScreen() {
             sentBack: rowIsSentBack(markingRow),
             sentBackReason: markingRow.sentBackReason,
             done: markingRow.isDone,
+            sentBackAt: markingRow.sentBackAt,
           }}
           initialProblem={marking.problem}
           onComplete={(proof) => completeWithProof(markingRow, proof)}
@@ -814,6 +823,9 @@ export default function TasksScreen() {
           ref={editRef}
           now={now}
           editing={editing}
+          // Kept past a close and this screen (#4872): Edit on the same task
+          // again opens on what was typed, over the task as it is now.
+          keptDraft={`task-edit:${editing.id}`}
           onClosed={() => setEditing(null)}
         />
       ) : null}

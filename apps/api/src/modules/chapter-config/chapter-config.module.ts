@@ -24,6 +24,8 @@ import { SupabaseChapterConfigRepository } from '../../infrastructure/supabase/r
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
 import { ActivationModule } from '../activation/activation.module';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
+import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
 
 @Module({
   imports: [ActivationModule],
@@ -54,6 +56,12 @@ import { ActivationModule } from '../activation/activation.module';
     // decide who sees exec-only rows (#1773), and `ChapterConfigService`
     // checks a default invite role belongs to the chapter (#422).
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
+    // `ChapterConfigService` checks the birthday post channel is the
+    // chapter's own (#4959).
+    {
+      provide: CHAT_CHANNEL_REPOSITORY,
+      useClass: SupabaseChatChannelRepository,
+    },
     {
       provide: CHAPTER_CONFIG_REPOSITORY,
       useClass: SupabaseChapterConfigRepository,

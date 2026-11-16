@@ -252,7 +252,7 @@ describe("other sign-in refusals", () => {
     expect(call.variant).toBeUndefined();
   });
 
-  it("asks for the magic link with intent=sign-in-link, so a new account is caught and a confirmation stays good news (#3801)", async () => {
+  it("asks for the magic link with intent=sign-in-link, so a confirmation stays good news (#3801)", async () => {
     auth.signInWithOtp.mockResolvedValue({ data: { session: null, user: null }, error: null });
     render(<SignInScreen />);
     fill(/email/i, EMAIL);

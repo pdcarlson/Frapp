@@ -39,6 +39,11 @@ const captureMessage = jest.mocked(Sentry.captureMessage);
 const NOW = new Date('2026-08-05T12:00:00Z');
 const TODAY = '2026-08-05';
 const TOMORROW = '2026-08-06';
+/**
+ * The same day at 10:00 UTC: inside the daily reminder window (9 AM to noon)
+ * for a member whose zone is UTC, the default below. `NOW` is noon, past it.
+ */
+const MORNING = new Date('2026-08-05T10:00:00Z');
 
 describe('ScheduledJobsService', () => {
   let service: ScheduledJobsService;
@@ -46,6 +51,7 @@ describe('ScheduledJobsService', () => {
   let remindPending: jest.Mock;
   let excusedUserIds: jest.Mock;
   let notifyUser: jest.Mock;
+  let timeZonesFor: jest.Mock;
   let getDuesGraceDays: jest.Mock;
   let claimDispatch: jest.Mock;
   let releaseDispatch: jest.Mock;
@@ -88,6 +94,10 @@ describe('ScheduledJobsService', () => {
     remindPending = jest.fn().mockResolvedValue(undefined);
     excusedUserIds = jest.fn().mockResolvedValue(new Set());
     notifyUser = jest.fn().mockResolvedValue(undefined);
+    // Default: every member reads their clock in UTC.
+    timeZonesFor = jest.fn((ids: string[]) =>
+      Promise.resolve(new Map(ids.map((id) => [id, 'UTC']))),
+    );
     getDuesGraceDays = jest.fn().mockResolvedValue(0);
     // Default: the claim succeeds, i.e. this is the first sweep to see it.
     claimDispatch = jest.fn().mockResolvedValue(true);
@@ -135,7 +145,10 @@ describe('ScheduledJobsService', () => {
           provide: AttendanceService,
           useValue: { markAutoAbsent, resolveRequiredMembers, excusedUserIds },
         },
-        { provide: NotificationService, useValue: { notifyUser } },
+        {
+          provide: NotificationService,
+          useValue: { notifyUser, timeZonesFor },
+        },
         { provide: ChapterWorkflowsService, useValue: { getDuesGraceDays } },
         { provide: ReportRetentionService, useValue: { sweepExpiredReports } },
         { provide: PollService, useValue: { announceExpiry } },
@@ -639,7 +652,7 @@ describe('ScheduledJobsService', () => {
       mockBetaOff.keys = ['dues'];
       findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
 
-      await expect(service.sweepInvoiceReminders(NOW)).resolves.toEqual({
+      await expect(service.sweepInvoiceReminders(MORNING)).resolves.toEqual({
         sent: 0,
       });
       expect(findOpenInvoicesDueBetween).not.toHaveBeenCalled();
@@ -648,7 +661,7 @@ describe('ScheduledJobsService', () => {
     it('notifies the member about an invoice due tomorrow', async () => {
       findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
 
-      const result = await service.sweepInvoiceReminders(NOW);
+      const result = await service.sweepInvoiceReminders(MORNING);
 
       expect(result).toEqual({ sent: 1 });
       expect(claimDispatch).toHaveBeenCalledWith(
@@ -678,7 +691,7 @@ describe('ScheduledJobsService', () => {
         { ...INVOICE, due_date: TODAY },
       ]);
 
-      const result = await service.sweepInvoiceReminders(NOW);
+      const result = await service.sweepInvoiceReminders(MORNING);
 
       expect(result).toEqual({ sent: 1 });
       expect(notifyUser).toHaveBeenCalledWith(
@@ -706,7 +719,7 @@ describe('ScheduledJobsService', () => {
       ]);
       getDuesGraceDays.mockResolvedValue(7);
 
-      const result = await service.sweepInvoiceReminders(NOW);
+      const result = await service.sweepInvoiceReminders(MORNING);
 
       expect(result).toEqual({ sent: 0 });
       expect(notifyUser).not.toHaveBeenCalled();
@@ -718,7 +731,7 @@ describe('ScheduledJobsService', () => {
       ]);
       getDuesGraceDays.mockResolvedValue(7);
 
-      const result = await service.sweepInvoiceReminders(NOW);
+      const result = await service.sweepInvoiceReminders(MORNING);
 
       expect(result).toEqual({ sent: 1 });
       expect(claimDispatch).toHaveBeenCalledWith(
@@ -739,7 +752,7 @@ describe('ScheduledJobsService', () => {
       findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
       claimDispatch.mockResolvedValue(false);
 
-      const result = await service.sweepInvoiceReminders(NOW);
+      const result = await service.sweepInvoiceReminders(MORNING);
 
       expect(result).toEqual({ sent: 0 });
       expect(notifyUser).not.toHaveBeenCalled();
@@ -750,7 +763,7 @@ describe('ScheduledJobsService', () => {
         { ...INVOICE, due_date: '2026-06-01' },
       ]);
 
-      const result = await service.sweepInvoiceReminders(NOW);
+      const result = await service.sweepInvoiceReminders(MORNING);
 
       expect(result).toEqual({ sent: 0 });
       expect(notifyUser).not.toHaveBeenCalled();
@@ -762,9 +775,56 @@ describe('ScheduledJobsService', () => {
         { ...INVOICE, id: 'inv-2', due_date: '2026-07-27' },
       ]);
 
-      await service.sweepInvoiceReminders(NOW);
+      await service.sweepInvoiceReminders(MORNING);
 
       expect(getDuesGraceDays).toHaveBeenCalledTimes(1);
+    });
+
+    it("judges due and overdue by the member's own date (#4788)", async () => {
+      timeZonesFor.mockResolvedValue(
+        new Map([['user-1', 'America/Los_Angeles']]),
+      );
+      findOpenInvoicesDueBetween.mockResolvedValue([
+        { ...INVOICE, id: 'inv-today', due_date: TODAY },
+        { ...INVOICE, id: 'inv-late', due_date: '2026-08-04' },
+      ]);
+
+      // 16:00 UTC is 9 AM Aug 5 in Los Angeles.
+      const result = await service.sweepInvoiceReminders(
+        new Date('2026-08-05T16:00:00Z'),
+      );
+
+      expect(result).toEqual({ sent: 2 });
+      expect(notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'chap-1',
+        expect.objectContaining({ title: 'Payment due today' }),
+      );
+      expect(notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'chap-1',
+        expect.objectContaining({ title: 'Payment overdue' }),
+      );
+    });
+
+    it('leaves an invoice due after tomorrow for a later morning', async () => {
+      findOpenInvoicesDueBetween.mockResolvedValue([
+        { ...INVOICE, due_date: '2026-08-07' },
+      ]);
+
+      const result = await service.sweepInvoiceReminders(MORNING);
+
+      expect(result).toEqual({ sent: 0 });
+      expect(claimDispatch).not.toHaveBeenCalled();
+    });
+
+    it("waits for the member's morning", async () => {
+      findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
+
+      await expect(service.sweepInvoiceReminders(NOW)).resolves.toEqual({
+        sent: 0,
+      });
+      expect(claimDispatch).not.toHaveBeenCalled();
     });
 
     // Regression: the claim is taken before the send, so a send that fails
@@ -773,7 +833,7 @@ describe('ScheduledJobsService', () => {
       findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
       notifyUser.mockRejectedValue(new Error('supabase down'));
 
-      const result = await service.sweepInvoiceReminders(NOW);
+      const result = await service.sweepInvoiceReminders(MORNING);
 
       expect(result).toEqual({ sent: 0 });
       expect(releaseDispatch).toHaveBeenCalledWith(
@@ -857,7 +917,7 @@ describe('ScheduledJobsService', () => {
     it('notifies the assignee one day before the due date', async () => {
       findIncompleteTasksDueBetween.mockResolvedValue([TASK]);
 
-      const result = await service.sweepTaskReminders(NOW);
+      const result = await service.sweepTaskReminders(MORNING);
 
       expect(result).toEqual({ sent: 1 });
       expect(notifyUser).toHaveBeenCalledTimes(1);
@@ -878,7 +938,7 @@ describe('ScheduledJobsService', () => {
         { ...TASK, due_date: TODAY },
       ]);
 
-      const result = await service.sweepTaskReminders(NOW);
+      const result = await service.sweepTaskReminders(MORNING);
 
       expect(result).toEqual({ sent: 1 });
       expect(notifyUser).toHaveBeenCalledWith(
@@ -893,7 +953,7 @@ describe('ScheduledJobsService', () => {
         { ...TASK, due_date: '2026-08-04' },
       ]);
 
-      const result = await service.sweepTaskReminders(NOW);
+      const result = await service.sweepTaskReminders(MORNING);
 
       expect(result).toEqual({ sent: 1 });
       expect(notifyUser).toHaveBeenCalledTimes(2);
@@ -920,7 +980,7 @@ describe('ScheduledJobsService', () => {
       ]);
       findByUserAndChapter.mockResolvedValue(null);
 
-      const result = await service.sweepTaskReminders(NOW);
+      const result = await service.sweepTaskReminders(MORNING);
 
       expect(result).toEqual({ sent: 1 });
       expect(notifyUser).toHaveBeenCalledTimes(1);
@@ -936,7 +996,7 @@ describe('ScheduledJobsService', () => {
         { ...TASK, due_date: '2026-08-04', created_by: 'user-1' },
       ]);
 
-      await service.sweepTaskReminders(NOW);
+      await service.sweepTaskReminders(MORNING);
 
       expect(notifyUser).toHaveBeenCalledTimes(1);
       // A self-assigned task needs no membership lookup for the assigner.
@@ -951,7 +1011,7 @@ describe('ScheduledJobsService', () => {
       ]);
       notifyUser.mockRejectedValueOnce(new Error('push token rejected'));
 
-      const result = await service.sweepTaskReminders(NOW);
+      const result = await service.sweepTaskReminders(MORNING);
 
       expect(result).toEqual({ sent: 1 });
       expect(notifyUser).toHaveBeenCalledTimes(2);
@@ -971,21 +1031,170 @@ describe('ScheduledJobsService', () => {
       ]);
       claimDispatch.mockResolvedValue(false);
 
-      const result = await service.sweepTaskReminders(NOW);
+      const result = await service.sweepTaskReminders(MORNING);
 
       expect(result).toEqual({ sent: 0 });
       expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    // Tasks have no per-chapter grace, so the 7-day overdue lookback is
-    // enforced entirely by the query window rather than re-checked in code.
-    it('bounds the task query to the lookback and lead-time window', async () => {
-      await service.sweepTaskReminders(NOW);
+    // The query is a day wider on each side than any one member's window,
+    // so it holds every zone's today; each task is narrowed in code.
+    it('widens the task query by a day for zones either side of UTC', async () => {
+      await service.sweepTaskReminders(MORNING);
 
       expect(findIncompleteTasksDueBetween).toHaveBeenCalledWith(
-        '2026-07-29',
-        TOMORROW,
+        '2026-07-28',
+        '2026-08-07',
       );
+    });
+
+    it('ignores a task past the lookback or beyond tomorrow', async () => {
+      findIncompleteTasksDueBetween.mockResolvedValue([
+        { ...TASK, id: 'old', due_date: '2026-07-28' },
+        { ...TASK, id: 'far', due_date: '2026-08-07' },
+      ]);
+
+      const result = await service.sweepTaskReminders(MORNING);
+
+      expect(result).toEqual({ sent: 0 });
+      expect(claimDispatch).not.toHaveBeenCalled();
+    });
+
+    describe("in the assignee's own morning (#4788)", () => {
+      const inZone = (timeZone: string | null) =>
+        timeZonesFor.mockImplementation((ids: string[]) =>
+          Promise.resolve(new Map(ids.map((id) => [id, timeZone]))),
+        );
+
+      it('waits while it is not yet 9 AM, or already noon, for the assignee', async () => {
+        findIncompleteTasksDueBetween.mockResolvedValue([TASK]);
+
+        // 12:00 UTC is noon for a UTC assignee: the window has closed.
+        await expect(service.sweepTaskReminders(NOW)).resolves.toEqual({
+          sent: 0,
+        });
+        // 08:59 UTC is still before 9 AM.
+        await expect(
+          service.sweepTaskReminders(new Date('2026-08-05T08:59:00Z')),
+        ).resolves.toEqual({ sent: 0 });
+        expect(claimDispatch).not.toHaveBeenCalled();
+      });
+
+      it('reminds a member west of UTC at 9 AM their time, by their date', async () => {
+        inZone('America/Los_Angeles');
+        findIncompleteTasksDueBetween.mockResolvedValue([TASK]);
+
+        // 10:00 UTC is 3 AM in Los Angeles: nothing yet.
+        await expect(service.sweepTaskReminders(MORNING)).resolves.toEqual({
+          sent: 0,
+        });
+        // 16:00 UTC is 9 AM there, on Aug 5, so Aug 6 is tomorrow.
+        await expect(
+          service.sweepTaskReminders(new Date('2026-08-05T16:00:00Z')),
+        ).resolves.toEqual({ sent: 1 });
+        expect(notifyUser).toHaveBeenCalledTimes(1);
+        expect(notifyUser).toHaveBeenCalledWith(
+          'user-1',
+          'chap-1',
+          expect.objectContaining({ title: 'Task due tomorrow' }),
+        );
+      });
+
+      // Only a zone east of UTC+9 has a 9 AM-to-noon that falls on the
+      // previous UTC date, so Sydney (UTC+10 in August) is what tells "the
+      // member's date" apart from "the UTC date".
+      it('reminds a member east of UTC by their date, a day ahead of UTC', async () => {
+        inZone('Australia/Sydney');
+        findIncompleteTasksDueBetween.mockResolvedValue([
+          { ...TASK, due_date: TODAY },
+        ]);
+
+        // 22:00 UTC on Aug 4 is 8 AM on Aug 5 in Sydney: not yet.
+        await expect(
+          service.sweepTaskReminders(new Date('2026-08-04T22:00:00Z')),
+        ).resolves.toEqual({ sent: 0 });
+        // 23:30 UTC on Aug 4 is 9:30 AM on Aug 5 there. UTC still reads
+        // Aug 4, but the task is due today for this member, not tomorrow.
+        await expect(
+          service.sweepTaskReminders(new Date('2026-08-04T23:30:00Z')),
+        ).resolves.toEqual({ sent: 1 });
+        expect(notifyUser).toHaveBeenCalledWith(
+          'user-1',
+          'chap-1',
+          expect.objectContaining({ title: 'Task due today' }),
+        );
+        expect(claimDispatch).toHaveBeenCalledWith(
+          'chap-1',
+          'TASK',
+          'task-1',
+          'DUE_SOON',
+          TODAY,
+        );
+      });
+
+      it("calls a task overdue by the member's date while UTC is still on the due date", async () => {
+        inZone('Australia/Sydney');
+        findIncompleteTasksDueBetween.mockResolvedValue([
+          { ...TASK, due_date: '2026-08-04' },
+        ]);
+
+        // 23:30 UTC on Aug 4 is 9:30 AM on Aug 5 in Sydney: Aug 4 has passed.
+        await service.sweepTaskReminders(new Date('2026-08-04T23:30:00Z'));
+
+        expect(claimDispatch).toHaveBeenCalledWith(
+          'chap-1',
+          'TASK',
+          'task-1',
+          'OVERDUE',
+          '2026-08-04',
+        );
+      });
+
+      it("calls a task overdue only once the assignee's own day has passed", async () => {
+        inZone('America/Los_Angeles');
+        findIncompleteTasksDueBetween.mockResolvedValue([
+          { ...TASK, due_date: TODAY },
+        ]);
+
+        // 16:00 UTC on Aug 6 is 9 AM Aug 6 in Los Angeles: Aug 5 has passed.
+        await service.sweepTaskReminders(new Date('2026-08-06T16:00:00Z'));
+
+        expect(claimDispatch).toHaveBeenCalledWith(
+          'chap-1',
+          'TASK',
+          'task-1',
+          'OVERDUE',
+          TODAY,
+        );
+      });
+
+      it('places a member with no zone in New York', async () => {
+        inZone(null);
+        findIncompleteTasksDueBetween.mockResolvedValue([TASK]);
+
+        // 10:00 UTC is 6 AM in New York; 13:00 UTC is 9 AM.
+        await expect(service.sweepTaskReminders(MORNING)).resolves.toEqual({
+          sent: 0,
+        });
+        await expect(
+          service.sweepTaskReminders(new Date('2026-08-05T13:00:00Z')),
+        ).resolves.toEqual({ sent: 1 });
+      });
+
+      it('reads no zones when there are no tasks', async () => {
+        await service.sweepTaskReminders(MORNING);
+        expect(timeZonesFor).not.toHaveBeenCalled();
+      });
+
+      it('sends nothing on a tick whose zone read fails, so the next one retries', async () => {
+        findIncompleteTasksDueBetween.mockResolvedValue([TASK]);
+        timeZonesFor.mockRejectedValue(new Error('timeout'));
+
+        await expect(service.sweepTaskReminders(MORNING)).rejects.toThrow(
+          'timeout',
+        );
+        expect(claimDispatch).not.toHaveBeenCalled();
+      });
     });
   });
 

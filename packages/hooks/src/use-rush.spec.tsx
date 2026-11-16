@@ -60,7 +60,7 @@ describe("useRushCandidate", () => {
       wrapper: createWrapper(queryClient, { GET }),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(GET).toHaveBeenCalledWith("/v1/rush/candidates/{id}", {
+    expect(GET).toHaveBeenCalledWith("/v1/rush/candidates/{id}", { signal: expect.any(AbortSignal),
       params: { path: { id: "cand-1" } },
     });
     expect(result.current.data).toEqual(VIEW);

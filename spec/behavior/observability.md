@@ -523,7 +523,7 @@ Posting an answer to a channel ([`ai.md` § Posting an answer to the channel](ai
 
 ## AI answer events
 
-What a finished Ask turn, and the member's reaction to it, send to PostHog (#4902). All are sent by the API through `AnalyticsService.track`, attributed to the member and their chapter group like any server event, and none carries a word of a question, an answer, a tool's arguments or its result. The same facts are kept for 90 days in the database, where they can be joined ([`ai.md` § Stored AI text](ai.md#stored-ai-text)). None is sent until the agent loop (#4899) calls `AskTraceService.record` (2026-11-13).
+What a finished Ask turn, and the member's reaction to it, send to PostHog (#4902). All are sent by the API through `AnalyticsService.track`, attributed to the member and their chapter group like any server event, and none carries a word of a question, an answer, a tool's arguments or its result. The same facts are kept for 90 days in the database, where they can be joined ([`ai.md` § Stored AI text](ai.md#stored-ai-text)). Only a turn answered through the tool loop (#4899) calls `AskTraceService.record`, so none is sent by a server without `ASK_AGENT=on` (2026-11-13).
 
 | Event | Sent when | Properties |
 | --- | --- | --- |
@@ -550,7 +550,7 @@ AI suggestions ([`ai.md` § Suggestions](ai.md#suggestions), #4309) are proposed
 | `ai-suggestions-withdrawn` | A source that changed takes back waiting ones (#4313): the action item was removed, or its owner or day changed and it is proposed again. Also when a thing raised from this time last year has since shown up on this year's record (#3930) | Chapter | `kind`, `count` |
 | `ai-act-proposed` | An officer's typed request became a card to confirm (#718) | The member | `action`, `open_notes` |
 
-`kind` is a closed set (`task`, `event`, `points`, `new_event`). `action` is a closed set (`give_points`, `create_task`, `create_event`), and `open_notes` counts what the card flagged for the officer. No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed less withdrawn, by `kind` (a suggestion replaced after an edit to its minutes is proposed twice and withdrawn once), and how often officers change a suggestion first is `edited = true` over accepted. An accepted `event` is never `edited`: the officer makes the event in its own form, and what they changed there is not the suggestion's to know. A task made by accepting a suggestion is counted by `ai-suggestion-accepted`, not `task-created`: the task service's create path records no event of its own, and the task route's interceptor event never fires because the accept goes through the suggestion route.
+`kind` is a closed set (`task`, `event`, `points`, `new_event`). `action` is a closed set (`give_points`, `create_task`, `create_event`), and `open_notes` counts what the card flagged for the officer. No event carries a title, a quote, a source or another member's id. The accept rate is accepted over proposed less withdrawn, by `kind` (a suggestion replaced after an edit to its minutes is proposed twice and withdrawn once), and how often officers change a suggestion first is `edited = true` over accepted. An accepted `event` is never `edited`: the officer makes the event in its own form, and what they changed there is not the suggestion's to know. An accepted `new_event` made through the card's Edit is always `edited` (#5117): the officer opened the form because the card was not what they wanted, though what they changed there is not known either, so the rate for `new_event` counts reaching for the form, not proven changes. A task made by accepting a suggestion is counted by `ai-suggestion-accepted`, not `task-created`: the task service's create path records no event of its own, and the task route's interceptor event never fires because the accept goes through the suggestion route.
 
 ## Member Onboarding Funnel
 
@@ -614,6 +614,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 | `attendance-checked-in` | A member checks in. `method` is `qr` (a scanned token), `manual_code` (a typed code), `plain` (neither, as from the chat event card), or `qr_or_manual_code` when a request carries both, since either one admits it. A second check-in is a 409 | `method`, `has_location` |
 | `attendance-marked` | An officer sets a member's attendance. `status` is the attendance enum; counts requests | `status`, `has_excuse` |
 | `event-excuse-sent` | A member sends an excuse for an event that requires them ([`events.md` § Excuses](events.md#excuses)) | none |
+| `event-excuse-edited` | A member edits their own excuse's reason (a declined one is sent again) | none |
 | `event-excuse-decided` | The receiver approves or declines an excuse. `decision` is `APPROVED` or `DECLINED` | `decision` |
 
 **Tasks (`tasks`)**

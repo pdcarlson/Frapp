@@ -8,7 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { normalizeRow, reactionActionType } from "@repo/chat-core/types";
 import type { BlockState } from "@repo/chat-core/blocks";
@@ -27,12 +27,34 @@ const thread = {
   typingUsers: [] as readonly string[],
   setFollow: vi.fn(async () => undefined),
   send: vi.fn(async () => ({ error: null as string | null })),
+  sendGif: vi.fn(async () => ({ error: null as string | null })),
   retry: vi.fn(async () => ({ error: null as string | null })),
   discard: vi.fn(),
   refreshRoot: vi.fn(),
   emitTyping: vi.fn(),
 };
 let offline = false;
+let gifs = { available: false, provider: "" };
+
+// The picker's own spec covers search; here a button picks one GIF.
+const PICKED_GIF = {
+  id: "g1",
+  title: "wave",
+  token: "signed",
+  full: { url: "https://static.klipy.com/g1.webp", width: 200, height: 150 },
+  preview: {
+    url: "https://static.klipy.com/g1-s.webp",
+    width: 100,
+    height: 75,
+  },
+};
+vi.mock("./gif-picker", () => ({
+  GifPickerButton: ({ onPick }: { onPick: (gif: unknown) => void }) => (
+    <button type="button" onClick={() => onPick(PICKED_GIF)}>
+      Send a GIF
+    </button>
+  ),
+}));
 
 // Chat backgrounds (#3973) read their own query; decoration, not under test here.
 vi.mock("./chat-background", () => ({ ChatBackground: () => null }));
@@ -73,6 +95,11 @@ const rosterCatchUp = vi.hoisted(() =>
   vi.fn<(typists: readonly string[], rows?: readonly unknown[]) => void>(),
 );
 
+const scheduled = vi.hoisted(() => ({
+  rows: [] as unknown[],
+  listFor: vi.fn(),
+}));
+
 vi.mock("@repo/hooks", async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
@@ -80,6 +107,11 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useAuthorAvatars: () => ({ data: {} }),
     // The roster catch-up has its own spec in `@repo/hooks`.
     useRosterCatchUp: rosterCatchUp,
+    useGifAvailability: () => gifs,
+    useScheduledMessages: (channelId: string, threadRootId?: string) => {
+      scheduled.listFor(channelId, threadRootId);
+      return { data: scheduled.rows };
+    },
   };
 });
 
@@ -159,6 +191,7 @@ function renderPanel(
     onClosePanel: () => void;
     beside: boolean;
     askRefusal: (text: string) => string | null;
+    onSchedule: (content: string, at: Date) => Promise<void>;
   }> = {},
 ) {
   const onClose = vi.fn();
@@ -185,6 +218,7 @@ function renderPanel(
       onClosePanel={overrides.onClosePanel}
       beside={overrides.beside}
       askRefusal={overrides.askRefusal}
+      onSchedule={overrides.onSchedule}
     />,
   );
   return { onClose, writes, onUnblock };
@@ -219,6 +253,187 @@ describe("ThreadPanel (#3785)", () => {
       "Me too{Enter}",
     );
     expect(thread.send).toHaveBeenCalledWith("Me too");
+  });
+
+  it("sends a reply from the Send button", async () => {
+    renderPanel();
+    const user = userEvent.setup();
+    const send = screen.getByRole("button", { name: "Send reply" });
+    expect(send).toBeDisabled();
+    await user.type(
+      screen.getByRole("textbox", { name: "Reply in thread" }),
+      "Me too",
+    );
+    await user.click(send);
+    expect(thread.send).toHaveBeenCalledWith("Me too");
+  });
+
+  describe("scheduling a reply (#5005)", () => {
+    afterEach(() => {
+      scheduled.rows = [];
+      toastSpy.mockClear();
+    });
+
+    it("schedules the reply with the channel's chevron, clearing the box", async () => {
+      const onSchedule = vi.fn(async () => undefined);
+      renderPanel({ onSchedule });
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      await user.type(box, "  Leaving at 6  ");
+      await user.click(
+        screen.getByRole("button", { name: "Schedule message" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: /Tomorrow at 9/ }),
+      );
+      expect(onSchedule).toHaveBeenCalledWith("Leaving at 6", expect.any(Date));
+      expect(box).toHaveValue("");
+      expect(thread.send).not.toHaveBeenCalled();
+      expect(toastSpy).toHaveBeenCalledWith({
+        title: expect.stringMatching(/^Scheduled for /),
+      });
+    });
+
+    it("puts the reply back when it can't be scheduled", async () => {
+      const onSchedule = vi.fn(async () => {
+        throw new Error("Too many scheduled");
+      });
+      renderPanel({ onSchedule });
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      await user.type(box, "Leaving at 6");
+      await user.click(
+        screen.getByRole("button", { name: "Schedule message" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: /Tomorrow at 9/ }),
+      );
+      expect(box).toHaveValue("Leaving at 6");
+      expect(toastSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Couldn't schedule it",
+          variant: "destructive",
+        }),
+      );
+    });
+
+    it("won't schedule a question for Frapp", async () => {
+      const onSchedule = vi.fn(async () => undefined);
+      renderPanel({ onSchedule, askRefusal: () => "Ask in the channel." });
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      await user.type(box, "@Frapp when?");
+      await user.click(
+        screen.getByRole("button", { name: "Schedule message" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: /Tomorrow at 9/ }),
+      );
+      expect(onSchedule).not.toHaveBeenCalled();
+      expect(box).toHaveValue("@Frapp when?");
+      expect(toastSpy).toHaveBeenCalledWith({
+        title: "Questions for Frapp can't be scheduled. Send them now.",
+      });
+    });
+
+    it("refuses a second schedule while the first is still out, keeping the text", async () => {
+      let finish!: () => void;
+      const onSchedule = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      renderPanel({ onSchedule });
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      const pick = async () => {
+        await user.click(
+          screen.getByRole("button", { name: "Schedule message" }),
+        );
+        await user.click(
+          await screen.findByRole("menuitem", { name: /Tomorrow at 9/ }),
+        );
+      };
+      await user.type(box, "First");
+      await pick();
+      await user.type(box, "Second");
+      await pick();
+      expect(onSchedule).toHaveBeenCalledTimes(1);
+      expect(box).toHaveValue("Second");
+      expect(toastSpy).toHaveBeenCalledWith({
+        title: "Wait for the last message to finish scheduling.",
+      });
+      finish();
+    });
+
+    it("offers no chevron without a way to schedule", () => {
+      renderPanel();
+      expect(
+        screen.queryByRole("button", { name: "Schedule message" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("lists this thread's scheduled replies above the reply box", () => {
+      scheduled.rows = [{ id: "s1", status: "pending" }];
+      renderPanel({ onSchedule: vi.fn(async () => undefined) });
+      expect(scheduled.listFor).toHaveBeenLastCalledWith("c1", "root");
+      expect(
+        screen.getByRole("button", { name: /1 scheduled message/ }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe("GIFs (#4657)", () => {
+    afterEach(() => {
+      gifs = { available: false, provider: "" };
+      offline = false;
+    });
+
+    it("offers the GIF button and sends a GIF as its own reply, keeping the draft", async () => {
+      gifs = { available: true, provider: "KLIPY" };
+      thread.sendGif.mockClear();
+      renderPanel();
+      const user = userEvent.setup();
+      const box = screen.getByRole("textbox", { name: "Reply in thread" });
+      await user.type(box, "half typed");
+      await user.click(screen.getByRole("button", { name: "Send a GIF" }));
+      expect(thread.sendGif).toHaveBeenCalledWith({
+        provider: "klipy",
+        id: "g1",
+        title: "wave",
+        url: PICKED_GIF.full.url,
+        width: 200,
+        height: 150,
+        token: "signed",
+      });
+      expect(box).toHaveValue("half typed");
+    });
+
+    it("says why a GIF reply didn't send", async () => {
+      gifs = { available: true, provider: "KLIPY" };
+      toastSpy.mockClear();
+      thread.sendGif.mockResolvedValueOnce({ error: "No posting here" });
+      renderPanel();
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "Send a GIF" }));
+      await waitFor(() =>
+        expect(toastSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ description: "No posting here" }),
+        ),
+      );
+    });
+
+    it("hides it where GIFs aren't set up, and offline", () => {
+      renderPanel();
+      expect(screen.queryByRole("button", { name: "Send a GIF" })).toBeNull();
+      cleanup();
+      gifs = { available: true, provider: "KLIPY" };
+      offline = true;
+      renderPanel();
+      expect(screen.queryByRole("button", { name: "Send a GIF" })).toBeNull();
+    });
   });
 
   it("refuses a reply that is a question for Frapp, and keeps its words (#4713)", async () => {

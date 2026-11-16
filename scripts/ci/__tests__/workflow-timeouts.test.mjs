@@ -70,7 +70,8 @@ describe("workflow job timeouts (#3129)", () => {
     );
     assert.deepEqual(
       apt.map((step) => step.jobId).sort(),
-      ["landing-fold", "web-responsive-floor"],
+      // main-caches seeds the OS-package cache on a queue-tested push (#5084).
+      ["landing-fold", "main-caches", "web-responsive-floor"],
     );
     for (const step of apt) {
       const match = /^\s+timeout-minutes:\s*(\S+)\s*$/m.exec(step.body);

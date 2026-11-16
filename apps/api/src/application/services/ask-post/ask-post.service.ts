@@ -132,6 +132,7 @@ export class AskPostService {
     ).filter((reader) => reader.user_id !== input.userId);
     const restricted = await this.restrictedFor(
       input.chapterId,
+      channel.id,
       receipt,
       others,
     );
@@ -146,12 +147,24 @@ export class AskPostService {
 
     const limited = new Set(restricted.map(({ key }) => key));
     // A live read's chip opens a page, which names no single read, so a
-    // chip is matched to the read behind it by the title they share.
-    const reads = new Map(
-      given.flatMap(({ ref, label }) =>
-        ref?.type === 'tool' && label ? [[label, ref] as const] : [],
-      ),
-    );
+    // chip is matched to the reads behind it by the title they share. Two
+    // reads can share one (the calendar read twice, or the calendar and one
+    // event with the asker's own attendance on it), so a chip answers for
+    // all of them: limited when any is, and the asker's own when any is.
+    const reads = new Map<
+      string,
+      { own: boolean; unknown: boolean; keys: string[] }
+    >();
+    for (const [index, { ref, label }] of given.entries()) {
+      if (!ref || !label || (ref.type !== 'tool' && ref.type !== 'other')) {
+        continue;
+      }
+      const read = reads.get(label) ?? { own: false, unknown: false, keys: [] };
+      read.own ||= ref.type === 'tool' && ref.reach === 'asker';
+      read.unknown ||= ref.type === 'other';
+      read.keys.push(givenKey(ref, index));
+      reads.set(label, read);
+    }
     const payload: AskPostedAnswer = {
       v: ASK_POSTED_ANSWER_VERSION,
       ask_id: receipt.ask_id,
@@ -162,20 +175,28 @@ export class AskPostService {
       // name, not a passage of it.
       citations: shown.citations.map(({ source, at }) => ({ source, at })),
       sources: shown.sources.map((source) => {
-        const read = reads.get(source.title);
-        const own = read?.reach === 'asker';
         const target = (source.target ??
           null) as AskPostedAnswer['sources'][number]['target'];
-        const key = read ? `tool:${read.name}` : targetKey(target);
+        // A document or minutes chip is its own record, whatever it is
+        // called; only a page chip stands for the reads with its title.
+        const record = targetKey(target);
+        const read = record ? undefined : reads.get(source.title);
+        const own = read?.own === true;
+        // A read with no rule (what an officer permission let the asker
+        // read) opens the reader's own page too, so it is not linked.
+        const linked = !own && read?.unknown !== true;
+        const isLimited = read
+          ? read.keys.some((key) => limited.has(key))
+          : limited.has(record);
         return {
           kind: source.kind,
           title: source.title,
           detail: source.detail,
           date: source.date,
           // A reader's Tasks page is their own, not the asker's.
-          target: own ? null : target,
+          target: linked ? target : null,
           ...(own ? { own: true } : {}),
-          ...(limited.has(key) ? { limited: true } : {}),
+          ...(isLimited ? { limited: true } : {}),
         };
       }),
       ...(shown.truncated ? { truncated: true } : {}),
@@ -236,6 +257,7 @@ export class AskPostService {
    */
   private async restrictedFor(
     chapterId: string,
+    channelId: string,
     receipt: AskReportReceipt,
     others: readonly ChapterMemberAccess[],
   ): Promise<AskPostRestricted[]> {
@@ -280,6 +302,10 @@ export class AskPostService {
       switch (ref.type) {
         case 'document':
           return allViewMembers;
+        case 'channel':
+          // Where the question was asked from, which is only its name:
+          // known to everyone who reads that channel and to nobody else.
+          return ref.id === channelId;
         case 'meeting':
           // The minutes routes ask for `members:view` before the meeting's
           // own rule (`MeetingController`).
@@ -316,6 +342,7 @@ function givenKey(ref: AskGivenRef, index: number): string {
   switch (ref.type) {
     case 'document':
     case 'meeting':
+    case 'channel':
       return `${ref.type}:${ref.id}`;
     case 'tool':
       return `tool:${ref.name}`;

@@ -22,6 +22,7 @@ import type {
   ChatMessage,
   ChatThreadFollowState,
   FollowedThreadUnread,
+  MemberThreadRow,
 } from '#domain/entities/chat.entity';
 import { channelAllowsThreads } from '#domain/utils/channel-access';
 import { clampListLimit } from '#domain/constants/list-query-limits';
@@ -37,6 +38,17 @@ export interface ChatThreadView {
   follow_state: ChatThreadFollowState | null;
   last_read_at: string | null;
 }
+
+/**
+ * One row of `GET /v1/threads` (#4960). The latest reply is the root's own
+ * `thread_last_reply`, masked with it, as the channel's thread card reads it.
+ */
+export interface MemberThreadView extends MemberThreadRow {
+  root: MaskedChatMessage;
+}
+
+/** How many threads All threads shows; the newest activity wins. */
+export const MEMBER_THREADS_LIMIT = 50;
 
 /** `PUT …/follow`: `none` unfollows. */
 export type ChatThreadFollowChoice = ChatThreadFollowState | 'none';
@@ -189,6 +201,50 @@ export class ChatThreadService {
   ): Promise<FollowedThreadUnread[]> {
     await this.channelAccess.assertChannelAccess(channelId, chapterId, userId);
     return this.threads.findFollowedUnread(channelId, userId);
+  }
+
+  /**
+   * All threads (#4960): every thread the caller follows or muted, across the
+   * channels they may still read, newest activity first. A follow in a channel
+   * they lost access to is left out before the limit applies, so it never
+   * takes a slot or leaks a root.
+   */
+  async getMemberThreads(
+    chapterId: string,
+    userId: string,
+  ): Promise<MemberThreadView[]> {
+    const followedIn = await this.threads.findFollowedChannelIds(
+      chapterId,
+      userId,
+    );
+    const readable = await this.channelAccess.filterAccessibleChannelIds(
+      chapterId,
+      userId,
+      followedIn,
+    );
+    if (readable.size === 0) return [];
+    const rows = await this.threads.findMemberThreads(
+      chapterId,
+      userId,
+      [...readable],
+      MEMBER_THREADS_LIMIT,
+    );
+    if (rows.length === 0) return [];
+    const [roots, blocked] = await Promise.all([
+      this.threads.findMessagesByIds(rows.map((row) => row.thread_root_id)),
+      this.chatBlocks.listBlockedUserIds(chapterId, userId),
+    ]);
+    const byId = new Map(
+      maskBlockedMessages(roots, blocked).map((root) => [root.id, root]),
+    );
+    const views: MemberThreadView[] = [];
+    for (const row of rows) {
+      const root = byId.get(row.thread_root_id);
+      // A root removed between the two reads (a channel purge) drops out.
+      if (!root || root.channel_id !== row.channel_id) continue;
+      views.push({ ...row, root });
+    }
+    return views;
   }
 
   private async resolveRoot(

@@ -37,8 +37,9 @@ export function useChapterDirectorySearch(
 
   return useQuery({
     queryKey: ["chapter-directory", "search", q, university ?? null],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET("/v1/chapter-directory/search", {
+        signal,
         params: { query: { q, ...(university ? { university } : {}) } },
       });
       if (error) throw error;

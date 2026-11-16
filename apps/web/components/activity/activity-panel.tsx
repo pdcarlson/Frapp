@@ -44,6 +44,7 @@ const PANEL_TITLES: Record<ActivityRow["kind"], string> = {
   hours: "Service hours",
   link: "Link",
   card: "Sign-up",
+  reminder: "Reminder",
 };
 
 /**
@@ -168,6 +169,9 @@ function PanelCard({
       return null;
     case "card":
       // A sign-up or form row opens its message in chat, not the panel.
+      return null;
+    case "reminder":
+      // A reminder row opens its message in chat, not the panel (#4957).
       return null;
   }
 }

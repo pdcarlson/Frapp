@@ -52,6 +52,7 @@ vi.mock("@repo/hooks", () => ({
   useUploadChapterLogo: () => ({ mutateAsync: upload, isPending: false }),
   useRemoveChapterLogo: () => ({ mutateAsync: remove, isPending: false }),
   useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useChannels: () => ({ data: [] }),
   useOrgConfig: () => ({
     data: { org_archetype: "ifc", branding: { greek_letters: "ΦΓΔ" } },
     isPending: false,

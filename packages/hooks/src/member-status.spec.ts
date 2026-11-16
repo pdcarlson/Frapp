@@ -95,7 +95,9 @@ describe("end times", () => {
   test("Today ends at the next local midnight", () => {
     const now = new Date(2026, 10, 9, 15, 30);
     const end = endOfToday(now);
-    expect([end.getDate(), end.getHours(), end.getMinutes()]).toEqual([10, 0, 0]);
+    expect([end.getDate(), end.getHours(), end.getMinutes()]).toEqual([
+      10, 0, 0,
+    ]);
     expect(lineEndsAt("today", now)).toBe(end.toISOString());
   });
 

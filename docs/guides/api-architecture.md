@@ -118,7 +118,10 @@ Interceptors:
 - **AuthSyncInterceptor** — auto-creates/syncs the `users` row from Supabase Auth on first
   authenticated request. Where `ChapterGuard` already resolved the row, the sync runs in the
   background, at most once per session per ten minutes, unless the session's email or metadata
-  changed. Parallel first requests can both miss the row and collide on
+  changed. On a route without `ChapterGuard`, a session the process has already synced and that has
+  not changed gets the same treatment: `SupabaseAuthGuard` looks its row up while `auth.getUser` is
+  in flight and hands the interceptor the id (`request.appUserLookup`, #3583). Any other session waits
+  on the sync. Parallel first requests can both miss the row and collide on
   `users_supabase_auth_id_key`; `AuthService.syncUser` treats that unique violation as
   "the other request won" and returns the existing id (Sentry FRAPP-API-3). Not global:
   applied per-controller/per-route via `@UseInterceptors` — see

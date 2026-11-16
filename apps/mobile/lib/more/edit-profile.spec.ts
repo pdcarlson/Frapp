@@ -10,7 +10,7 @@ import {
   type ProfileDraft,
 } from "./edit-profile";
 import type { ViewerProfile } from "./profile";
-import { PHONE_INVALID_MESSAGE } from "@repo/validation";
+import { BIRTHDAY_COPY, PHONE_INVALID_MESSAGE } from "@repo/validation";
 
 /** #3387. s15's Edit sheet: what it opens on, and what a save sends. */
 
@@ -25,6 +25,10 @@ const PROFILE: ViewerProfile = {
   currentCompany: null,
   bio: "CS, intramural soccer.",
   photoUrl: null,
+  birthdayMonth: null,
+  birthdayDay: null,
+  birthdayYear: null,
+  birthdayVisibility: "nobody",
 };
 
 const ORIGINAL = draftFromProfile(PROFILE);
@@ -43,6 +47,10 @@ describe("draftFromProfile (#3387)", () => {
       graduationYear: "2027",
       city: "Troy, NY",
       company: "",
+      birthdayMonth: "",
+      birthdayDay: "",
+      birthdayYear: "",
+      birthdayVisibility: "nobody",
     });
   });
 
@@ -55,6 +63,10 @@ describe("draftFromProfile (#3387)", () => {
       graduationYear: "",
       city: "",
       company: "",
+      birthdayMonth: "",
+      birthdayDay: "",
+      birthdayYear: "",
+      birthdayVisibility: "nobody",
     });
   });
 });
@@ -116,6 +128,72 @@ describe("profilePatch (#3387)", () => {
   });
 });
 
+describe("profilePatch birthday (#4959)", () => {
+  it("sends a month and day, with the year blank", () => {
+    expect(
+      profilePatch(ORIGINAL, edited({ birthdayMonth: "3", birthdayDay: "4" })),
+    ).toEqual({
+      ok: true,
+      patch: { birthday_month: 3, birthday_day: 4, birthday_year: null },
+    });
+  });
+
+  it("refuses on the part that is missing or wrong", () => {
+    expect(
+      profilePatch(ORIGINAL, edited({ birthdayMonth: "3" })),
+    ).toMatchObject({ ok: false, field: "birthdayDay" });
+    expect(
+      profilePatch(ORIGINAL, edited({ birthdayMonth: "4", birthdayDay: "31" })),
+    ).toMatchObject({ ok: false, field: "birthdayDay" });
+    expect(
+      profilePatch(
+        ORIGINAL,
+        edited({ birthdayMonth: "2", birthdayDay: "29", birthdayYear: "2003" }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      field: "birthdayYear",
+      message: BIRTHDAY_COPY.notLeapYear,
+    });
+    expect(
+      profilePatch(
+        ORIGINAL,
+        edited({ birthdayMonth: "3", birthdayDay: "4", birthdayYear: "204" }),
+      ),
+    ).toMatchObject({
+      ok: false,
+      field: "birthdayYear",
+      message: BIRTHDAY_COPY.yearInvalid,
+    });
+  });
+
+  it("clears the birthday when every part is blanked", () => {
+    const set = draftFromProfile({
+      ...PROFILE,
+      birthdayMonth: 3,
+      birthdayDay: 4,
+      birthdayYear: 2004,
+    });
+    expect(
+      profilePatch(set, {
+        ...set,
+        birthdayMonth: "",
+        birthdayDay: "",
+        birthdayYear: "",
+      }),
+    ).toEqual({
+      ok: true,
+      patch: { birthday_month: null, birthday_day: null, birthday_year: null },
+    });
+  });
+
+  it("sends who can see it on its own", () => {
+    expect(
+      profilePatch(ORIGINAL, edited({ birthdayVisibility: "chapter" })),
+    ).toEqual({ ok: true, patch: { birthday_visibility: "chapter" } });
+  });
+});
+
 describe("applyEdit and rebaseEdits (#3387)", () => {
   const ORIGINAL = {
     displayName: "Alex Rivera",
@@ -125,6 +203,10 @@ describe("applyEdit and rebaseEdits (#3387)", () => {
     graduationYear: "2027",
     city: "Troy, NY",
     company: "",
+    birthdayMonth: "",
+    birthdayDay: "",
+    birthdayYear: "",
+    birthdayVisibility: "nobody",
   };
   const MOVED = { ...ORIGINAL, city: "Albany, NY", company: "Set elsewhere" };
 

@@ -16,7 +16,7 @@ import { z } from 'zod';
  * it picks, so nothing anyone else wrote can pick.
  */
 
-export const ACT_PLAN_PROMPT_VERSION = 'act.plan@v2';
+export const ACT_PLAN_PROMPT_VERSION = 'act.plan@v3';
 export const ACT_MATCH_PROMPT_VERSION = 'act.match@v1';
 
 /** The answer for "none of the actions fits". */
@@ -36,11 +36,16 @@ export function actPlanSystem(
     'everyone_who_attended: true only when the action is for everyone who came to an event. Then event_name is that event as they named it (null when they did not name it) and date is its day.',
     'date: a calendar day as YYYY-MM-DD, worked out from today. start_time and end_time: 24-hour HH:MM.',
     'amount: a whole number of points, negative when points are taken away.',
+    'repeats: for an event that happens again, how often: "weekly" (every week), "every_other_week", or "monthly". null when they did not say it repeats.',
     "title: a short name for it in the officer's own words (for points, the reason). details: anything else they said about it, or null. location: where it is, or null. required: true or false only when they said whether members must attend.",
     'Your answer does nothing by itself. The officer is shown what you understood and decides.',
     `Today is ${todayIso}, ${today}. The officer's time zone is ${timeZone}.`,
   ].join('\n');
 }
+
+/** How often a proposed event repeats, as a plan says it. */
+export const ACT_REPEATS = ['weekly', 'every_other_week', 'monthly'] as const;
+export type ActRepeat = (typeof ACT_REPEATS)[number];
 
 /**
  * Flat on purpose, every field always present: both providers' structured
@@ -60,6 +65,7 @@ export const ActPlanSchema = z.object({
   details: z.string().nullable(),
   location: z.string().nullable(),
   required: z.boolean().nullable(),
+  repeats: z.enum(ACT_REPEATS).nullable(),
 });
 export type ActPlan = z.infer<typeof ActPlanSchema>;
 

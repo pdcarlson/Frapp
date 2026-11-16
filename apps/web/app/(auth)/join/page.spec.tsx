@@ -295,6 +295,17 @@ describe("web join — an invite link opened on a phone (#4002)", () => {
     expect(screen.queryByText("Join in the Frapp app")).toBeNull();
   });
 
+  it("marks Create a chapter so chapter setup opens without bouncing back here (#5077)", async () => {
+    renderPage();
+
+    await screen.findByLabelText("Invite");
+    // Bare `/chat` would loop an account with an emailed invite: the wizard
+    // gate would find the invite and send it straight back to this page.
+    expect(
+      screen.getByRole("link", { name: "Create a chapter" }).getAttribute("href"),
+    ).toBe("/chat?setup=chapter");
+  });
+
   it("sends a signed-out desktop visitor straight to sign-in, as before", async () => {
     sessionUser.mockResolvedValue(null);
     searchParams.current = new URLSearchParams("token=abc");
@@ -592,7 +603,7 @@ function renderPage() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return render(
+  const ui = (
     <QueryClientProvider client={queryClient}>
       <FrappClientProvider
         client={
@@ -604,8 +615,9 @@ function renderPage() {
       >
         <JoinPage />
       </FrappClientProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  return { ...render(ui), ui };
 }
 
 const OFFER = {
@@ -689,6 +701,45 @@ describe("web join — invites for the verified address (#3776)", () => {
     expect(redeemMutate).not.toHaveBeenCalled();
   });
 
+  it("shows one Join, with the Terms box above it, and keeps the paste field behind a link (#5076)", async () => {
+    legal.data = { required: true };
+    pending.data = [OFFER];
+    renderPage();
+    const join = await screen.findByRole("button", {
+      name: "Join Sigma Chi Alpha",
+    });
+    expect(screen.queryByRole("button", { name: "Join chapter" })).toBeNull();
+    expect(screen.queryByLabelText("Invite")).toBeNull();
+    const box = screen.getByRole("checkbox");
+    expect(
+      box.compareDocumentPosition(join) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    fireEvent.click(box);
+    fireEvent.click(join);
+    await waitFor(() =>
+      expect(redeemMutate).toHaveBeenCalledWith({
+        token: "emailed-token",
+        accept_terms_privacy: true,
+      }),
+    );
+  });
+
+  it("opens the paste field on Have a different invite?, sharing the one Terms box (#5076)", async () => {
+    legal.data = { required: true };
+    pending.data = [OFFER];
+    renderPage();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Have a different invite?" }),
+    );
+    expect(screen.getByLabelText("Invite")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Join chapter" })).toBeTruthy();
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: "Have a different invite?" }),
+    ).toBeNull();
+  });
+
   it("shows only the invite a link brought", async () => {
     pending.data = [OFFER];
     searchParams.current = new URLSearchParams("token=link-token");
@@ -736,6 +787,113 @@ describe("web join — who is signed in (#3776)", () => {
         value: original,
       });
     }
+  });
+});
+
+describe("web join — Already in a chapter? (replaced /new-account)", () => {
+  const LINE = "Use a different account";
+
+  it("offers a quiet way to switch accounts to someone with no chapter and no invite", async () => {
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.getByText("Already in a chapter?", { exact: false })).toBeTruthy();
+    expect(screen.getByRole("button", { name: LINE })).toBeTruthy();
+  });
+
+  it("signs out and comes back to /join", async () => {
+    const assign = vi.fn();
+    const original = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...original, origin: "http://localhost", assign },
+    });
+    try {
+      renderPage();
+      await screen.findByLabelText("Invite");
+      fireEvent.click(screen.getByRole("button", { name: LINE }));
+      await waitFor(() =>
+        // Back through `/join?from=sign-in`, which sends a member on to
+        // their chapter (#3850).
+        expect(assign).toHaveBeenCalledWith(
+          "/sign-in?redirectTo=%2Fjoin%3Ffrom%3Dsign-in",
+        ),
+      );
+      expect(signOut).toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: original,
+      });
+    }
+  });
+
+  it("isn't shown when an invite link opened the page", async () => {
+    searchParams.current = new URLSearchParams("token=abc");
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("still shows when the emailed-invites read failed: it is the way out", async () => {
+    pending.data = undefined as never;
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.getByRole("button", { name: LINE })).toBeTruthy();
+  });
+
+  it("isn't shown to a member", async () => {
+    chapters.data = [{ chapter_id: "c1", chapter: { name: "Northfield" } }];
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("isn't shown when an invite was emailed to this account", async () => {
+    pending.data = [
+      {
+        token: "offer-1",
+        chapter_name: "Southfield",
+        university: "State",
+        mark_text: null,
+        accent_color: null,
+        invited_by: null,
+        role: "member",
+      },
+    ];
+    renderPage();
+    await screen.findByRole("button", { name: "Join Southfield" });
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("isn't shown while the chapters are still being read", async () => {
+    chapters.data = undefined;
+    chapters.isLoading = true;
+    chapters.isPending = true;
+    renderPage();
+    await screen.findByLabelText("Invite");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("isn't shown while the emailed invites are still being read", async () => {
+    pending.isLoading = true;
+    pending.data = undefined as never;
+    renderPage();
+    await screen.findByText("Checking for your invites…");
+    expect(screen.queryByRole("button", { name: LINE })).toBeNull();
+  });
+
+  it("holds the field until the emailed invites are read, so it never folds away mid-paste (#5076)", async () => {
+    pending.isLoading = true;
+    pending.data = undefined as never;
+    const view = renderPage();
+    await screen.findByText("Checking for your invites…");
+    expect(screen.queryByLabelText("Invite")).toBeNull();
+
+    pending.isLoading = false;
+    pending.data = [OFFER];
+    view.rerender(view.ui);
+    await screen.findByRole("button", { name: "Join Sigma Chi Alpha" });
+    expect(screen.queryByLabelText("Invite")).toBeNull();
   });
 });
 

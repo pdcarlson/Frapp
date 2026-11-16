@@ -29,6 +29,12 @@ export interface Role {
    * the database keeps it so (`20261111140000_role_tiers.sql`).
    */
   permission_overrides: Record<string, boolean>;
+  /**
+   * Members may join and leave this role themselves (#4958). Only ever true
+   * while the role is safe to pick (`selfAssignableRefusal` in
+   * `@repo/validation`); the database clears it otherwise.
+   */
+  self_assignable: boolean;
   created_at: string;
 }
 

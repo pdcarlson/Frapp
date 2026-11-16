@@ -76,32 +76,44 @@ export function codeOf(error: unknown): string | null {
 }
 
 /**
- * Throws unless the response was a 2xx, with the status on what it throws.
+ * What a non-2xx call failed with, always carrying its status.
  *
  * openapi-fetch 0.17 reports a non-2xx whose body is empty as `error:
  * undefined` (a `Content-Length: 0` failure) or `error: ""` (an empty text
  * body), both falsy, so `if (error) throw error` reads that failure as a
- * success. The status is the truth. What is thrown always carries it where
+ * success. The status is the truth. What this returns always carries it where
  * {@link statusOf} reads it: a body that names none gets `statusCode` from the
  * response, which also covers an edge's JSON or HTML refusal that isn't Nest's
  * shape. A plain-text body is kept as `message`; markup is not, because a
  * gateway's HTML error page would otherwise render as a toast's description.
+ *
+ * `createFrappClient` puts this on every failed call's `error` (#3394), so
+ * the hooks' `if (error) throw error` throws it; {@link throwUnlessOk} is the
+ * same rule for a caller that reads `response` itself.
  */
+export function failureOf(result: {
+  error?: unknown;
+  response: { status: number };
+}): object {
+  const { error } = result;
+  const statusCode = result.response.status;
+  if (error !== null && typeof error === "object") {
+    return statusOf(error) === undefined ? { ...error, statusCode } : error;
+  }
+  const text = typeof error === "string" ? error.trim() : "";
+  return {
+    statusCode,
+    message: text.length > 0 && !text.startsWith("<") ? text : undefined,
+  };
+}
+
+/** Throws {@link failureOf} unless the response was a 2xx. */
 export function throwUnlessOk(result: {
   error?: unknown;
   response: { ok: boolean; status: number };
 }): void {
   if (result.response.ok) return;
-  const { error } = result;
-  const statusCode = result.response.status;
-  if (error !== null && typeof error === "object") {
-    throw statusOf(error) === undefined ? { ...error, statusCode } : error;
-  }
-  const text = typeof error === "string" ? error.trim() : "";
-  throw {
-    statusCode,
-    message: text.length > 0 && !text.startsWith("<") ? text : undefined,
-  };
+  throw failureOf(result);
 }
 
 /**

@@ -41,6 +41,10 @@ import type { RealQuestion } from './types';
  */
 export const TOOL_ALIASES: Readonly<Record<string, string>> = {
   points_leaderboard: 'points_standings',
+  // The card tools shipped under the names of what they set up.
+  create_task: 'propose_tasks',
+  create_event: 'propose_event',
+  give_points: 'propose_points',
 };
 
 const has = (haystack: string, needle: string): boolean =>

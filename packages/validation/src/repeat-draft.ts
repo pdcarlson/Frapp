@@ -176,6 +176,27 @@ export function repeatDraftFromRule(
   };
 }
 
+/**
+ * A proposed series read into a new event's Repeat control (Ask's card Edit,
+ * #5117): its pattern and length, but following the first meeting as the
+ * officer moves it, since the form is a create and nothing is stored yet. A
+ * missing or unreadable rule reads as one-time.
+ */
+export function proposedRepeatDraft(
+  rule: string | null | undefined,
+  timeZone: string = localTimeZone(),
+): RepeatDraft {
+  const draft = repeatDraftFromRule(rule, timeZone);
+  if (draft.preset === "NONE") return draft;
+  return {
+    ...draft,
+    byDay: null,
+    monthDay: null,
+    source: null,
+    pristine: false,
+  };
+}
+
 /** Any change the officer makes: the draft stops standing for its source. */
 export function editRepeatDraft(
   draft: RepeatDraft,

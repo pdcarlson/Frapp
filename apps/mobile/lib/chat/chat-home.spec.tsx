@@ -116,6 +116,7 @@ const {
       pinnedIds: new Set<string>(),
       collapsed: new Set<string>(),
       filters: { unreadOnly: false, hideMuted: false },
+      sort: "chapter" as "chapter" | "recent" | "alpha",
     },
   },
   leaveMutateAsync: vi.fn(),
@@ -180,6 +181,24 @@ vi.mock("@/lib/account/own-status", () => ({
   useSaveOwnStatus: () => ({ save: vi.fn(), isSaving: false }),
 }));
 
+// All threads (#4960): the sheet's rows have their own spec
+// (`all-threads-sheet.spec.tsx`); here the screen's half, the badge and where
+// a tapped row goes, is under test.
+const allThreads = vi.hoisted(() => ({
+  data: [] as { unread_count: number }[],
+  onOpen: null as null | ((target: { channelId: string; rootId: string }) => void),
+}));
+vi.mock("@/components/chat/all-threads-sheet", () => ({
+  AllThreadsSheet: ({
+    onOpen,
+  }: {
+    onOpen: (target: { channelId: string; rootId: string }) => void;
+  }) => {
+    allThreads.onOpen = onOpen;
+    return null;
+  },
+}));
+
 vi.mock("@repo/hooks", async () => {
   // The pure helpers run for real: the point is to catch the screen using
   // them wrongly, and a stub would decide the answer itself.
@@ -205,6 +224,9 @@ vi.mock("@repo/hooks", async () => {
     }),
     useChatBackground: () => query(undefined),
     useChapterChatBackground: () => query(undefined),
+    // All threads (#4960): the header's Threads door; its sheet has its own spec.
+    unreadThreadCount: actual.unreadThreadCount,
+    useMemberThreads: () => query(allThreads.data),
     lastChannelLandingId: actual.lastChannelLandingId,
     lastChannelStorageKey: actual.lastChannelStorageKey,
     useActiveChapterId: () => "chapter-1",
@@ -234,6 +256,8 @@ vi.mock("@repo/hooks", async () => {
     SIDEBAR_SAVE_FAILED_TITLE: actual.SIDEBAR_SAVE_FAILED_TITLE,
     UNPIN_FROM_TOP_LABEL: actual.UNPIN_FROM_TOP_LABEL,
     UNREAD_ONLY_LABEL: actual.UNREAD_ONLY_LABEL,
+    SORT_CHANNELS_LABEL: actual.SORT_CHANNELS_LABEL,
+    SIDEBAR_SORT_OPTIONS: actual.SIDEBAR_SORT_OPTIONS,
     useChapterRoster: () => query([], refetches.roster),
     useSidebarPreferencesRefetch: () => ({ refetch: refetches.sidebar }),
     useSidebarPreferences: () => sidebarPrefs.value,
@@ -293,10 +317,12 @@ vi.mock("@repo/hooks", async () => {
     resolveAuthorName: actual.resolveAuthorName,
     FILTER_CHANNELS_LABEL: actual.FILTER_CHANNELS_LABEL,
     FILTER_CHANNELS_ON_LABEL: actual.FILTER_CHANNELS_ON_LABEL,
-    useChannelLatestMessages: () => {
-      latestCalls();
+    useChannelLatestMessages: (options?: { enabled?: boolean }) => {
+      latestCalls(options);
+      // A disabled read never answers, as TanStack's doesn't.
+      const enabled = options?.enabled ?? true;
       return {
-        ...query(latestData.value, refetches.latest),
+        ...query(enabled ? latestData.value : undefined, refetches.latest),
         isSuccess: latestData.answered,
       };
     },
@@ -375,6 +401,7 @@ import {
   channelFilterMenuAnchor,
 } from "@/components/chat/channel-filter-menu";
 import { Toggle } from "@/components/toggle";
+import { Segmented } from "@/components/segmented";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
 import { MessagesSwipeArea } from "@/components/chat/messages-swipe-area";
@@ -478,6 +505,7 @@ beforeEach(() => {
     pinnedIds: new Set(),
     collapsed: new Set(),
     filters: { unreadOnly: false, hideMuted: false },
+    sort: "chapter",
   };
 });
 
@@ -522,10 +550,13 @@ describe("Chat home lists channels only (2026-11-07)", () => {
     expect(hiddenToggleTexts(tree)).toHaveLength(0);
   });
 
-  it("never reads the latest messages: a channel row carries no preview", () => {
+  it("reads no latest messages unless the member sorts by Recent: a channel row carries no preview", () => {
     render();
 
-    expect(latestCalls).not.toHaveBeenCalled();
+    expect(latestCalls).toHaveBeenCalled();
+    expect(
+      latestCalls.mock.calls.every(([options]) => options?.enabled === false),
+    ).toBe(true);
   });
 });
 
@@ -766,7 +797,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
       ),
     ).toHaveLength(0);
 
-    act(() => pressableLabelled(tree, "Filter channels").props.onPress());
+    act(() => pressableLabelled(tree, "Sort and filter channels").props.onPress());
     const toggle = (label: string) =>
       tree.root
         .findByType(ChannelFilterMenu)
@@ -779,6 +810,54 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     expect(setFilter).toHaveBeenNthCalledWith(2, { hide_muted: true });
   });
 
+  it("offers the sort on top of the menu and sends the one picked (#2877)", () => {
+    const tree = render();
+    act(() =>
+      pressableLabelled(tree, "Sort and filter channels").props.onPress(),
+    );
+    const sort = tree.root
+      .findByType(ChannelFilterMenu)
+      .findByType(Segmented);
+    expect(sort.props.value).toBe("chapter");
+    expect(
+      sort.props.options.map((option: { label: string }) => option.label),
+    ).toEqual(["Chapter order", "Recent", "A–Z"]);
+
+    act(() => sort.props.onChange("alpha"));
+    expect(setFilter).toHaveBeenCalledWith({ sort: "alpha" });
+  });
+
+  it("orders channels by their latest message under Recent (#2877)", () => {
+    const alumni = { id: "c-alumni", name: "alumni", type: "PUBLIC" };
+    channelsData.value = [general, alumni];
+    sidebarPrefs.value = { ...sidebarPrefs.value, sort: "recent" };
+    const latestAt = (channelId: string, createdAt: string) => ({
+      channel_id: channelId,
+      message_id: `m-${channelId}`,
+      sender_id: ALICE,
+      author_name: null,
+      content: "see you at 6",
+      kind: "text",
+      payload: null,
+      attachment_count: 0,
+      created_at: createdAt,
+    });
+    const rowNames = () =>
+      render()
+        .root.findAllByType(ChannelRow)
+        .map((row) => row.props.name);
+
+    // The chapter's order (A to Z here) until the times are known.
+    latestData.value = undefined as never;
+    expect(rowNames()).toEqual(["alumni", "general"]);
+
+    latestData.value = [
+      latestAt(general.id, "2026-11-14T12:00:00.000Z"),
+      latestAt(alumni.id, "2026-11-13T09:00:00.000Z"),
+    ];
+    expect(rowNames()).toEqual(["general", "alumni"]);
+  });
+
   it("says a filter is on, on the button and under the heading, and Show all clears both", () => {
     sidebarPrefs.value = {
       ...sidebarPrefs.value,
@@ -789,7 +868,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     ];
     const tree = render();
 
-    pressableLabelled(tree, "Filter channels, filters on");
+    pressableLabelled(tree, "Sort and filter channels, filters on");
     expect(screenText(tree)).toContain("Showing unread only.");
     act(() =>
       tree.root
@@ -1295,7 +1374,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     // A member: the chevron, and the filter at the edge of the first heading.
     const member = render();
     expect(drawn(member)).toEqual([
-      ["chevron", "Filter channels"],
+      ["chevron", "Sort and filter channels"],
       ["chevron"],
     ]);
     expect(member.root.findByType(ChannelFilterButton).props.atEdge).toBe(true);
@@ -1304,7 +1383,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     permissionList.value = ["channels:manage"];
     const officer = render();
     expect(drawn(officer)).toEqual([
-      ["chevron", "Filter channels", "New channel"],
+      ["chevron", "Sort and filter channels", "New channel"],
       ["chevron", "New channel in Committees"],
     ]);
     expect(officer.root.findByType(ChannelFilterButton).props.atEdge).toBe(
@@ -1351,7 +1430,7 @@ describe("Chat home sidebar arrangement (#2877)", () => {
     channelsData.value = [general];
     const triggerStyle = (tree: ReactTestRenderer) =>
       StyleSheet.flatten(
-        pressableLabelled(tree, "Filter channels").props.style({
+        pressableLabelled(tree, "Sort and filter channels").props.style({
           pressed: false,
         }),
       );
@@ -2371,7 +2450,7 @@ describe("Chat home section headings draw a disclosure glyph", () => {
         (node.type as unknown) === "Pressable" &&
         node.props.accessibilityRole === "header",
     );
-    const filter = pressableLabelled(tree, "Filter channels");
+    const filter = pressableLabelled(tree, "Sort and filter channels");
 
     expect(header.findAll((n) => n === filter)).toHaveLength(0);
     // They share one heading row, the filter button last.
@@ -2536,3 +2615,33 @@ describe("Chat home: the swipe to Messages", () => {
     expect(pan(tree).config?.enabled).toBe(false);
   });
 });
+
+describe("Chat home's Threads door (#4960)", () => {
+  const byTestId = (tree: ReactTestRenderer, testID: string) =>
+    tree.root.findAllByProps({ testID });
+  it("counts threads with new replies on its badge", () => {
+    allThreads.data = [{ unread_count: 2 }, { unread_count: 0 }];
+    try {
+      const tree = render();
+      const [badge] = byTestId(tree, "threads-badge").filter(
+        (node) => (node.type as unknown) === "View",
+      );
+      expect(screenTextOf(badge!)).toBe("1");
+      expect(
+        pressableLabelled(tree, "Threads").props.accessibilityValue,
+      ).toEqual({ text: "1 with new replies" });
+    } finally {
+      allThreads.data = [];
+    }
+  });
+
+  it("opens a tapped thread over its channel", () => {
+    render();
+    act(() => allThreads.onOpen?.({ channelId: "c-general", rootId: "root-1" }));
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/chat-thread",
+      params: { channelId: "c-general", threadRootId: "root-1" },
+    });
+  });
+});
+

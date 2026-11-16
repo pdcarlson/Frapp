@@ -13,6 +13,8 @@ import type { AskExchange } from "@repo/hooks";
 import {
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_EFFORT_COPY,
+  ASK_FEEDBACK_COPY,
   askLeftOutLine,
   askReadLine,
   askSourceMetaLine,
@@ -32,11 +34,32 @@ import { AskTurn } from "./ask-turn";
 
 // The reader has #rush-week (c1) and no other channel.
 const channelList = vi.hoisted(() => ({ reads: 0 }));
+// The thumbs hook has its own spec (`use-ask-feedback.spec.tsx`); here it is
+// what the row draws from, and it is only called for a traced answer.
+const thumbs = vi.hoisted(() => ({
+  state: { rating: null, reason: null } as {
+    rating: "up" | "down" | null;
+    reason: string | null;
+  },
+  failed: false,
+  asked: [] as (string | null | undefined)[],
+  rate: vi.fn(),
+  giveReason: vi.fn(),
+}));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useChannels: () => {
     channelList.reads += 1;
     return { data: [{ id: "c1", name: "rush-week", type: "PUBLIC" }] };
+  },
+  useAskThumbs: (askId: string | null | undefined) => {
+    thumbs.asked.push(askId);
+    return {
+      state: thumbs.state,
+      failed: thumbs.failed,
+      rate: thumbs.rate,
+      giveReason: thumbs.giveReason,
+    };
   },
 }));
 
@@ -238,6 +261,43 @@ describe("AskTurn", () => {
     expect(byLabel(capped, ASK_COPY.consent_action)).toHaveLength(0);
   });
 
+  // #5082: "not available" promised a later with nothing to try. A problem
+  // on Frapp's side, or a reason this build does not know, asks again in
+  // place; the reasons that say what to do or when do not offer it.
+  it("offers Try again for an answer Frapp couldn't give, and only for that reason", () => {
+    const props = handlers();
+    const failed = render(
+      exchange({
+        answer: answer({ status: "unavailable", reason: "not_available" }),
+      }),
+      props,
+    );
+    expect(screenText(failed)).toContain(ASK_COPY.unavailable.not_available);
+    expect(screenText(failed)).not.toContain("later");
+    act(() => byLabel(failed, ASK_COPY.try_again)[0].props.onPress());
+    expect(props.onRetry).toHaveBeenCalledTimes(1);
+
+    // A newer server's reason reads the same words, so it acts the same.
+    const unknown = render(
+      exchange({
+        answer: answer({ status: "unavailable", reason: "over_cap" }),
+      }),
+    );
+    expect(byLabel(unknown, ASK_COPY.try_again)).toHaveLength(1);
+
+    for (const reason of [
+      "consent_required",
+      "chapter_off",
+      "chapter_limit",
+      "member_limit",
+    ]) {
+      const other = render(
+        exchange({ answer: answer({ status: "unavailable", reason }) }),
+      );
+      expect(byLabel(other, ASK_COPY.try_again)).toHaveLength(0);
+    }
+  });
+
   it("states a refusal and a miss in plain words, with no sources", () => {
     const refused = render(exchange({ answer: answer({ status: "refused" }) }));
     expect(screenText(refused)).toContain(ASK_COPY.refused);
@@ -280,6 +340,34 @@ describe("AskTurn", () => {
     act(() => chips[0].props.onPress());
     expect(props.onOpenSource).toHaveBeenCalledTimes(2);
     expect(props.onOpenSource).toHaveBeenLastCalledWith(BYLAWS);
+  });
+
+  it("says whose message a chat source is and when, on its chip (#4904)", () => {
+    const chat: AskSource = {
+      id: "s1",
+      kind: "chat",
+      title: "#general",
+      detail: null,
+      date: "2026-11-09T12:00:00.000Z",
+      target: { type: "message", channel_id: "c1", message_id: "m1" },
+      author: "Sam Ortiz",
+    };
+    const tree = render(
+      exchange({ answer: answer({ sources: [chat, ROSTER] }) }),
+    );
+    const chip = tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith(
+          "Source 1: Sam Ortiz in #general. ",
+        ),
+    );
+    expect(chip).toHaveLength(1);
+    const text = screenText(tree);
+    expect(text).toContain("Sam Ortiz in #general");
+    expect(text).toContain("November 9, 2026");
+    // The marker in the sentence says whose too.
+    expect(byLabel(tree, "Source 1: Sam Ortiz in #general").length).toBe(1);
   });
 
   it("draws a source with no screen as a plain chip, not a dead button", () => {
@@ -508,5 +596,176 @@ describe("under an answer", () => {
     expect(screenText(render(exchange({ answer: answer() })))).not.toMatch(
       /Read the /,
     );
+  });
+});
+
+describe("thumbs under an answer (#4904)", () => {
+  const traced = exchange({
+    askId: "ask-1",
+    answer: answer({ ask_id: "trace-1" }),
+  });
+  const show = (
+    rating: "up" | "down" | null,
+    reason: string | null = null,
+    report: React.ComponentProps<typeof AskTurn>["report"] = null,
+  ) => {
+    thumbs.state = { rating, reason };
+    thumbs.failed = false;
+    thumbs.asked.length = 0;
+    thumbs.rate.mockClear();
+    thumbs.giveReason.mockClear();
+    return render(traced, { report });
+  };
+
+  it("are not drawn, and nothing is asked of the server, without a kept trace", () => {
+    thumbs.asked.length = 0;
+    const tree = render(exchange({ askId: "ask-1", answer: answer() }));
+    expect(byLabel(tree, ASK_FEEDBACK_COPY.up)).toHaveLength(0);
+    expect(byLabel(tree, ASK_FEEDBACK_COPY.down)).toHaveLength(0);
+    expect(thumbs.asked).toHaveLength(0);
+  });
+
+  it("rate against the kept trace's id, not the turn's", () => {
+    const tree = show(null);
+    expect(thumbs.asked).toContain("trace-1");
+    act(() => byLabel(tree, ASK_FEEDBACK_COPY.down)[0]!.props.onPress());
+    expect(thumbs.rate).toHaveBeenCalledWith("down");
+    expect(screenText(tree)).not.toContain(ASK_FEEDBACK_COPY.thanks);
+  });
+
+  it("thank an up and say it is selected", () => {
+    const tree = show("up");
+    expect(
+      byLabel(tree, ASK_FEEDBACK_COPY.up)[0]!.props.accessibilityState,
+    ).toMatchObject({ selected: true });
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.thanks);
+    expect(screenText(tree)).not.toContain(ASK_FEEDBACK_COPY.prompt);
+  });
+
+  it("ask why on a down in one tap, and offer to send on the reason given", () => {
+    const onSend = vi.fn();
+    const tree = show("down", "wrong", {
+      reported: false,
+      onPress: vi.fn(),
+      onSend,
+    });
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.prompt);
+    act(() =>
+      byLabel(tree, ASK_FEEDBACK_COPY.reasons.missed)[0]!.props.onPress(),
+    );
+    expect(thumbs.giveReason).toHaveBeenCalledWith("missed");
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.send.line);
+    const send = tree.root.findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        typeof node.props.onPress === "function" &&
+        screenText({ root: node } as never).includes(
+          ASK_FEEDBACK_COPY.send.action,
+        ) &&
+        !screenText({ root: node } as never).includes(
+          ASK_FEEDBACK_COPY.prompt,
+        ),
+    )[0]!;
+    act(() => send.props.onPress());
+    expect(onSend).toHaveBeenCalledWith("wrong");
+  });
+
+  it("offer no send to a member who cannot report, or once it is reported", () => {
+    expect(screenText(show("down"))).not.toContain(
+      ASK_FEEDBACK_COPY.send.action,
+    );
+    const reported = show("down", null, {
+      reported: true,
+      onPress: vi.fn(),
+      onSend: vi.fn(),
+    });
+    expect(screenText(reported)).not.toContain(ASK_FEEDBACK_COPY.send.action);
+    // Reported before the thumbs: the rating is still the member's to explain.
+    expect(screenText(reported)).toContain(ASK_FEEDBACK_COPY.prompt);
+  });
+
+  it("fold to the thanks line once a report goes in from the offer", () => {
+    const tree = show("down", "wrong", {
+      reported: false,
+      onPress: vi.fn(),
+      onSend: vi.fn(),
+    });
+    act(() => {
+      tree.update(
+        <FrappThemeProvider>
+          <AskTurn
+            exchange={traced}
+            canOpen={() => false}
+            {...handlers()}
+            report={{ reported: true, onPress: vi.fn(), onSend: vi.fn() }}
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.thanks);
+    expect(screenText(tree)).not.toContain(ASK_FEEDBACK_COPY.prompt);
+  });
+
+  it("sit beside Think harder, which asks again once and waits while another turn is answered", () => {
+    thumbs.state = { rating: null, reason: null };
+    const onThinkHarder = vi.fn();
+    const tree = render(traced, { onThinkHarder });
+    act(() => byLabel(tree, ASK_EFFORT_COPY.action)[0]!.props.onPress());
+    expect(onThinkHarder).toHaveBeenCalledTimes(1);
+
+    // Not on the harder answer itself, not without a trace, not where the
+    // host offers none.
+    for (const quiet of [
+      render({ ...traced, effort: "more" }, { onThinkHarder }),
+      render(exchange({ askId: "ask-1", answer: answer() }), { onThinkHarder }),
+      render(traced),
+    ]) {
+      expect(byLabel(quiet, ASK_EFFORT_COPY.action)).toHaveLength(0);
+    }
+
+    const waiting = render(traced, { onThinkHarder, busy: true });
+    expect(byLabel(waiting, ASK_EFFORT_COPY.action)[0]!.props.disabled).toBe(
+      true,
+    );
+  });
+
+  it("leave Think harder off an answer that came with cards, which sit under its words", () => {
+    thumbs.state = { rating: null, reason: null };
+    const withCards = exchange({
+      askId: "ask-1",
+      answer: answer({ ask_id: "trace-1", proposals: ["s1"] }),
+    });
+    const tree = render(withCards, {
+      onThinkHarder: vi.fn(),
+      cards: <Text>the cards</Text>,
+    });
+    expect(byLabel(tree, ASK_EFFORT_COPY.action)).toHaveLength(0);
+    const text = screenText(tree);
+    expect(text.indexOf("the cards")).toBeGreaterThan(
+      text.indexOf(withCards.answer!.text),
+    );
+
+    // An answer that is cards and nothing else: the cards, and no words.
+    const alone = render(
+      exchange({
+        askId: "ask-1",
+        answer: answer({
+          ask_id: "trace-1",
+          text: "",
+          citations: [],
+          proposals: ["s1"],
+        }),
+      }),
+      { cards: <Text>the cards</Text> },
+    );
+    expect(screenText(alone)).toContain("the cards");
+  });
+
+  it("say so when a rating did not send", () => {
+    thumbs.state = { rating: null, reason: null };
+    thumbs.failed = true;
+    const tree = render(traced);
+    expect(screenText(tree)).toContain(ASK_FEEDBACK_COPY.failed);
+    thumbs.failed = false;
   });
 });

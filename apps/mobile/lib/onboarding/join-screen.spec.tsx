@@ -50,9 +50,6 @@ let authStatus: "authenticated" | "unauthenticated" = "authenticated";
 /** The session's email; `null` for an account with none. */
 let sessionEmail: string | null = "brother@westfield.edu";
 
-/** Whether the session reads as a just-created account (#4769). */
-let newAccount = false;
-const dismissNewAccount = vi.fn();
 /** Where the routing gate would send this session. */
 let gateDestination = "join";
 
@@ -62,8 +59,6 @@ vi.mock("@/lib/auth-session", () => ({
     email: sessionEmail,
     userId: "user-1",
     signOut,
-    isNewAccount: newAccount,
-    dismissNewAccount,
   }),
 }));
 
@@ -142,7 +137,8 @@ import {
 } from "@repo/hooks";
 import {
   LEGAL_ACCEPTANCE_REQUIRED_MESSAGE,
-  NEW_ACCOUNT_TITLE,
+  OTHER_ACCOUNT_ACTION,
+  OTHER_ACCOUNT_PROMPT,
 } from "@repo/validation";
 import { OAUTH_MEMBERSHIP_HINT } from "@/lib/auth-providers";
 import {
@@ -150,7 +146,6 @@ import {
   rememberInviteToken,
 } from "@/lib/onboarding/invite-token";
 import { ChapterMarkTile } from "@/components/onboarding/chapter-mark-tile";
-import { NEW_ACCOUNT_CONTINUE } from "@/components/onboarding/new-account-notice";
 import JoinChapter, {
   JOIN_CHOICE_TITLE,
   JOIN_CONFIRM_TITLE,
@@ -1022,6 +1017,7 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
 
     expect(previewPost).toHaveBeenCalledWith("/v1/invites/preview", {
       body: { token: "invite-token-20" },
+      signal: expect.any(AbortSignal),
     });
     const text = allText(tree.root);
     expect(text).toContain(confirmTitle("FIJI Tau Nu"));
@@ -1129,6 +1125,7 @@ describe("join screen — the confirm card's chapter (#3352)", () => {
     expect(allText(tree.root)).toContain(JOIN_CONFIRM_TITLE);
     expect(previewPost).toHaveBeenLastCalledWith("/v1/invites/preview", {
       body: { token: "new-invite-24" },
+      signal: expect.any(AbortSignal),
     });
   });
 
@@ -1759,122 +1756,80 @@ describe("join screen — polish", () => {
   });
 });
 
-describe("join screen — New account created (#4769)", () => {
+describe("join screen — Already in a chapter? (replaced New account created)", () => {
   const params = vi.mocked(useLocalSearchParams);
+  const LINE = `${OTHER_ACCOUNT_PROMPT} ${OTHER_ACCOUNT_ACTION}`;
+  const line = (root: Node) => labelled(root, LINE);
 
   beforeEach(() => {
     vi.clearAllMocks();
-    newAccount = true;
     gateDestination = "join";
-    sessionEmail = "typo@westfield.edu";
+    pendingInvites = [];
   });
 
   afterEach(() => {
-    newAccount = false;
     gateDestination = "join";
-    sessionEmail = "brother@westfield.edu";
+    pendingInvites = [];
     params.mockReturnValue({});
+    consumeRememberedInviteToken();
   });
 
-  /** The notice's buttons, in the order they're drawn. */
-  function noticeButtons(root: Node): string[] {
-    return root
-      .findAllByType("Pressable" as never, { deep: true })
-      .map((pressable) =>
-        pressable
-          .findAllByType("Text" as never, { deep: true })
-          .map((text) => String(text.props.children ?? ""))
-          .join(""),
-      )
-      .filter((label) => [NEW_ACCOUNT_CONTINUE, "Sign out"].includes(label));
-  }
-
-  it("says the account is new, names it, and leads with Sign out", () => {
+  it("puts one quiet line under the two answers, and no card above them", async () => {
     const tree = render();
+    await settle();
     const text = allText(tree.root);
-
-    expect(text).toContain(NEW_ACCOUNT_TITLE);
-    expect(text).toContain(
-      "This is a new Frapp account for typo@westfield.edu. Already a member? Sign out and use the method you joined with.",
+    expect(line(tree.root)).toBeDefined();
+    expect(text).not.toContain("New account created");
+    expect(text).not.toContain("Continue with the new account");
+    // Under the answers, not competing with the question.
+    expect(text.indexOf(OTHER_ACCOUNT_PROMPT)).toBeGreaterThan(
+      text.indexOf("I'm starting our chapter"),
     );
-    // The Signed-in-as line's Sign out, then the notice's two, Sign out first.
-    expect(noticeButtons(tree.root)).toEqual([
-      "Sign out",
-      "Sign out",
-      NEW_ACCOUNT_CONTINUE,
-    ]);
-    // The question is still there underneath.
-    expect(text).toContain(JOIN_CHOICE_TITLE);
   });
 
-  it("signs out in one tap from the notice", async () => {
+  it("signs out in one tap", async () => {
     const tree = render();
-    const signOuts = tree.root
-      .findAllByType("Pressable" as never, { deep: true })
-      .filter((pressable) =>
-        pressable
-          .findAllByType("Text" as never, { deep: true })
-          .some((text) => text.props.children === "Sign out"),
-      );
+    await settle();
     await act(async () => {
-      signOuts[signOuts.length - 1].props.onPress();
+      line(tree.root)?.props.onPress();
     });
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps a remembered invite through the notice's Sign out, as web keeps `next`", async () => {
-    rememberInviteToken("inv-keep-1234");
+  it("waits for the emailed-invites read, so it never shows and then vanishes", () => {
     const tree = render();
-    const signOuts = tree.root
-      .findAllByType("Pressable" as never, { deep: true })
-      .filter((pressable) =>
-        pressable
-          .findAllByType("Text" as never, { deep: true })
-          .some((text) => text.props.children === "Sign out"),
-      );
-    // The notice's Sign out is the last one drawn (Signed-in-as comes first).
-    await act(async () => {
-      signOuts[signOuts.length - 1].props.onPress();
-    });
-    expect(signOut).toHaveBeenCalledTimes(1);
-    expect(consumeRememberedInviteToken()).toBe("inv-keep-1234");
+    expect(line(tree.root)).toBeUndefined();
   });
 
-  it("still forgets the invite on the Signed-in-as line's Sign out", async () => {
-    rememberInviteToken("inv-drop-5678");
+  it("isn't shown when an invite was emailed to this account", async () => {
+    pendingInvites = [
+      {
+        chapter_name: "FIJI Tau Nu",
+        university: "Rensselaer Polytechnic Institute",
+        mark_text: "FIJI",
+        accent_color: "#5b2c83",
+        invited_by: "Paul Carlson",
+        role: "Member",
+        expires_at: "2026-11-10T20:00:00.000Z",
+        token: "offer-token-fiji",
+      },
+    ];
     const tree = render();
-    await act(async () => {
-      control(tree.root, "Sign out")?.props.onPress();
-    });
-    expect(signOut).toHaveBeenCalledTimes(1);
-    expect(consumeRememberedInviteToken()).toBeNull();
+    await settle();
+    expect(line(tree.root)).toBeUndefined();
   });
 
-  it("carries on with the new account", () => {
-    const tree = render();
-    act(() => {
-      control(tree.root, NEW_ACCOUNT_CONTINUE)?.props.onPress();
-    });
-    expect(dismissNewAccount).toHaveBeenCalledTimes(1);
-  });
-
-  it("leads with Continue when an invite link opened the screen", () => {
+  it("isn't shown when an invite link opened the screen", async () => {
     params.mockReturnValue({ token: "inv-abc123" });
     const tree = render();
-    expect(noticeButtons(tree.root)).toEqual([
-      "Sign out",
-      NEW_ACCOUNT_CONTINUE,
-      "Sign out",
-    ]);
+    await settle();
+    expect(allText(tree.root)).not.toContain(OTHER_ACCOUNT_PROMPT);
   });
 
-  it("isn't shown to an account that isn't new", () => {
-    newAccount = false;
-    expect(allText(render().root)).not.toContain(NEW_ACCOUNT_TITLE);
-  });
-
-  it("isn't shown to a member who opened Join from the picker", () => {
+  it("isn't shown to a member who opened Join from the picker", async () => {
     gateDestination = "tabs";
-    expect(allText(render().root)).not.toContain(NEW_ACCOUNT_TITLE);
+    const tree = render();
+    await settle();
+    expect(line(tree.root)).toBeUndefined();
   });
 });

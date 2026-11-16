@@ -15,7 +15,7 @@ import {
 import { LAST_YEAR_COPY, lastYearEventLine } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/shared/section-label";
-import { isoToLocalInput } from "@/components/events/event-editor-dialog";
+import { isoToLocalInput } from "@/components/events/local-input";
 import {
   lastYearDay,
   nameForThisYear,
@@ -138,7 +138,7 @@ export function SuggestedEvents({
         },
         staleTime: 30_000,
       });
-      const template = source as unknown as Record<string, unknown>;
+      const template = source;
       const start = sameWeekdayThisYear(template.start_time);
       // The end keeps its distance from the start, not its own next week.
       const end = sameWeekdayThisYear(template.end_time, start ?? undefined);

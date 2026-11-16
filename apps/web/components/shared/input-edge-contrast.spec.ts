@@ -62,7 +62,8 @@ const CONTROLS = [
   { file: "ui/segmented.tsx", fill: "bg-surface-1" },
   { file: "ui/button.tsx", fill: "bg-card" },
   { file: "ui/switch.tsx", fill: "bg-popover" },
-  { file: "chat/composer.tsx", fill: "bg-surface-1" },
+  // The well both the composer and its shell draw (`COMPOSER_WELL_CLASS`).
+  { file: "chat/composer-shell.tsx", fill: "bg-surface-1" },
   { file: "chat/inline-message-editor.tsx", fill: "bg-surface-1" },
   { file: "chat/emoji-picker-panel.tsx", fill: "bg-surface-1" },
   { file: "layout/find-bar.tsx", fill: "bg-surface-1" },

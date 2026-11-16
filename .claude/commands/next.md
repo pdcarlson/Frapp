@@ -384,7 +384,10 @@ rest.
 
 ## Phase 2 — implement
 
-Run the second verify (§0.6) before the first file write.
+Run the second verify (§0.6) before the first file write. Then check that no open PR from another
+session or user touches the same screen ([AGENTS.md one-PR-per-screen rule](../../AGENTS.md#autonomous-pr-lifecycle-cloud-sessions)).
+If one does, release the claim (`AGENT-RELEASE` `screen-busy`, naming that PR; see [Exits](#exits)) and return to Phase 0
+rather than build a second PR on it.
 
 Branch from `main` as `claude/<slug>`; in a harness-managed cloud session, the session's assigned
 branch always wins. That branch is the **unit branch**. Make focused commits locally and don't
@@ -546,6 +549,7 @@ and the run ends only when every still-held member has its exit action.
 | Issue underspecified | `AGENT-RELEASE` `blocked-discovered`, remove `in-progress` **and** add **`triage`** back (keep a priority label), with an explanation |
 | Already shipped | Close as `completed`, `AGENT-RELEASE` `superseded` |
 | Lost the race | `AGENT-RELEASE` `lost-race`, **labels untouched** — a batch shrinks and continues |
+| Another open PR holds the screen | `AGENT-RELEASE` `screen-busy` naming that PR, remove `in-progress` (→ Backlog) |
 | Batch member vetoed / blocked | Release **that member** per its row above (a veto's question travels in the release comment + end-of-run report, never a mid-batch ask); the rest continues |
 | Batch member superseded by a live `AGENT-RECLAIM` | Excise per §0.5's coherence rule — its commits stay out of your push; if the batch no longer coheres, release the rest per their rows |
 | Context nearly exhausted, work exists | `AGENT-HANDOFF` `session-ending`, labels untouched, claim left live |

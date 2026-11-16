@@ -31,11 +31,13 @@ import { omitColumns } from '../supabase.utils';
  * bookmark row renders an author, a timestamp and a text preview, and jumps.
  * `forwarded_from` (#4875) is the preview's text when a forward has no
  * comment of its own; the service masks and redacts it as it does `content`.
+ * `gif` (#4657) is `metadata.gif` alone, read only to say whether the row is
+ * a GIF: the repository turns it into `has_gif` and serves no GIF.
  * Narrowing also makes the rows small, which is what lets this endpoint stay
  * unpaginated for now.
  */
 export const BOOKMARK_MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, is_deleted, created_at, thread_root_id, forwarded_from';
+  'id, channel_id, sender_id, author_name, author_avatar_path, author_external_id, content, is_deleted, created_at, thread_root_id, forwarded_from, gif:metadata->gif';
 
 const BOOKMARK_WITH_MESSAGE_SELECT = `id, user_id, message_id, chapter_id, created_at, message:chat_messages!inner(${BOOKMARK_MESSAGE_COLUMNS})`;
 
@@ -156,8 +158,30 @@ export class SupabaseChatMessageBookmarkRepository implements IChatMessageBookma
     // the raw row shape, not to the entity, so `stripBookmarkRow` still has to
     // do the narrowing.
     const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
-    return rows.map((row) => stripBookmarkRow<StoredChatMessageBookmark>(row));
+    return rows.map((row) =>
+      stripBookmarkRow<StoredChatMessageBookmark>({
+        ...row,
+        message: withHasGif(row.message as Record<string, unknown>),
+      }),
+    );
   }
+}
+
+/**
+ * The read's `gif` (`metadata.gif`) as `has_gif` (#4657), the one thing the
+ * panel needs of it. A deleted message is never a GIF, whatever its metadata
+ * kept.
+ */
+function withHasGif(message: Record<string, unknown>): Record<string, unknown> {
+  const { gif, ...rest } = message;
+  return {
+    ...rest,
+    has_gif:
+      rest.is_deleted !== true &&
+      typeof gif === 'object' &&
+      gif !== null &&
+      !Array.isArray(gif),
+  };
 }
 
 /**

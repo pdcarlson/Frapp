@@ -149,6 +149,7 @@ export class MyHoursAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: listSourceId(this.name, args.from, args.to),
         kind: 'points',
+        audience: { type: 'asker' },
         title: 'Your hours',
         page: null,
         lines: [...summary, ...shown, ...(cutLine ? [cutLine] : [])],

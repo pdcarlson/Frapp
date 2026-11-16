@@ -270,6 +270,15 @@ describe("Invite members", () => {
     tree.unmount();
   });
 
+  it("lets a tap through while the keyboard is up, so Send takes one tap", () => {
+    const tree = render();
+    const scroll = tree.root.findAll(
+      (node) => (node.type as unknown) === "ScrollView",
+    )[0];
+    expect(scroll.props.keyboardShouldPersistTaps).toBe("handled");
+    tree.unmount();
+  });
+
   it("holds Send until something is typed", () => {
     const tree = render();
     expect(sendButton(tree).props.disabled).toBe(true);

@@ -22,6 +22,7 @@ import type {
   ChatMessage,
 } from '#domain/entities/chat.entity';
 import type { ChatMessageReportView } from '#domain/entities/chat-moderation.entity';
+import type { Member } from '#domain/entities/member.entity';
 import {
   canAccessChannel,
   EMPTY_ACCESS_HOLDER,
@@ -37,7 +38,19 @@ import { RbacService, type ChapterMemberAccess } from './rbac.service';
  * and wiring it into only one call site would let the list admit a channel the
  * single read denies, which is precisely the asymmetry #1001 was.
  */
-function toPredicateChannel(channel: ChatChannel) {
+/** What {@link toPredicateChannel} reads off a channel row. */
+export type ChannelAccessFields = Pick<
+  ChatChannel,
+  | 'id'
+  | 'type'
+  | 'member_ids'
+  | 'who_can_see'
+  | 'who_can_post'
+  | 'archived_at'
+  | 'is_audit_log'
+>;
+
+function toPredicateChannel(channel: Omit<ChannelAccessFields, 'id'>) {
   return {
     type: channel.type,
     member_ids: channel.member_ids,
@@ -46,6 +59,24 @@ function toPredicateChannel(channel: ChatChannel) {
     archived_at: channel.archived_at,
     is_audit_log: channel.is_audit_log ?? null,
   };
+}
+
+/**
+ * Whether a chapter member reads a channel: the one composition both reader
+ * lists use ({@link ChannelAccessService.listChannelMembers},
+ * {@link ChannelAccessService.readersOf}), so they cannot drift.
+ */
+function canReadAs(
+  channel: ReturnType<typeof toPredicateChannel>,
+  member: Pick<ChapterMemberAccess, 'user_id' | 'channel_access'>,
+): boolean {
+  return canAccessChannel({
+    channel,
+    userId: member.user_id,
+    isChapterMember: true,
+    holder: member.channel_access,
+    operation: 'read',
+  });
 }
 
 /** One reader of a channel, from {@link ChannelAccessService.listChannelMembers}. */
@@ -287,14 +318,41 @@ export class ChannelAccessService {
       chapterId,
       listsNameGroups(predicateChannel),
     );
-    return access.filter((member) =>
-      canAccessChannel({
-        channel: predicateChannel,
-        userId: member.user_id,
-        isChapterMember: true,
-        holder: member.channel_access,
-        operation: 'read',
-      }),
+    return access.filter((member) => canReadAs(predicateChannel, member));
+  }
+
+  /**
+   * Who can read each of `channels`, by user id: {@link listChannelMembers}'
+   * rule for many channels at once, from one chapter-wide resolve however
+   * many there are (Activity's vote counts, #4792). The caller has already
+   * established it may read these channels; nothing is checked for it here.
+   * `roster` is the chapter's `members` rows when the caller already reads
+   * them (#4908), passed through to the resolve.
+   */
+  async readersOf(
+    chapterId: string,
+    channels: readonly ChannelAccessFields[],
+    roster?: () => Promise<readonly Member[]>,
+  ): Promise<Map<string, Set<string>>> {
+    if (channels.length === 0) return new Map();
+    const predicates = channels.map((channel) => ({
+      id: channel.id,
+      predicate: toPredicateChannel(channel),
+    }));
+    const access = await this.rbac.getChapterMemberAccess(
+      chapterId,
+      predicates.some(({ predicate }) => listsNameGroups(predicate)),
+      roster,
+    );
+    return new Map(
+      predicates.map(({ id, predicate }) => [
+        id,
+        new Set(
+          access
+            .filter((member) => canReadAs(predicate, member))
+            .map((member) => member.user_id),
+        ),
+      ]),
     );
   }
 

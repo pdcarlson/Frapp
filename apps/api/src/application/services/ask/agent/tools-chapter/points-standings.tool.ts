@@ -119,6 +119,7 @@ export class PointsStandingsAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: listSourceId(this.name, args.period, args.places),
         kind: 'points',
+        audience: { type: 'chapter' },
         title: 'Points standings',
         page: 'points',
         lines: [...summary, ...shown, ...(cutLine ? [cutLine] : [])],

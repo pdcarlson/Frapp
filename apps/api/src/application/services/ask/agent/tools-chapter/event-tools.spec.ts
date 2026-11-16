@@ -115,6 +115,18 @@ describe('events', () => {
     );
   });
 
+  it('names the listed events that leave some member out, for a post to a channel', async () => {
+    const closed = event({ id: 'event-3', excluded_role_ids: ['role-x'] });
+    const result = await tool(jest.fn(async () => [formal, closed])).run(
+      { from: '2026-11-01', to: '2026-12-31', words: '' },
+      context,
+    );
+    expect(result.sources[0].audience).toEqual({
+      type: 'events',
+      limited: ['event-3'],
+    });
+  });
+
   it('never reads more than a year, whatever range it is given', async () => {
     const findByChapter = jest.fn(async () => [event()]);
     const result = await tool(findByChapter).run(
@@ -221,6 +233,8 @@ describe('open_event', () => {
     ]);
     expect(result.sources[0]).toMatchObject({
       id: 'event:event-1',
+      // It holds the asker's own attendance and excuse.
+      audience: { type: 'asker' },
       detail: 'Chapter meeting',
       date: '2026-11-16T00:00:00.000Z',
     });

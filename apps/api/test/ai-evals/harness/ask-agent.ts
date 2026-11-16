@@ -201,7 +201,7 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
     async ask(invocation: AgentInvocation): Promise<AgentAnswer> {
       if (askAgentEnabled()) {
         throw new Error(
-          'Unset ASK_AGENT: these cases grade the one-shot Ask, and the tool loop has no tools here',
+          'Set ASK_AGENT=off: these cases grade the one-shot Ask, and the tool loop has no tools here',
         );
       }
       const { caller } = invocation;
@@ -244,6 +244,12 @@ export function createAskAgent(options: AskAgentOptions = {}): AgentUnderTest {
         // These cases grade the one-shot path; `agent()` refuses to run with
         // the tool loop switched on. #4903 grades the loop.
         new AgentLoopService(gateway),
+        [],
+        // The one-shot path keeps no trace.
+        { record: () => Promise.resolve(false) } as never,
+        // A case is asked from nowhere.
+        { read: () => Promise.resolve([]) } as never,
+        // And answers only: no card is offered.
         [],
       );
 

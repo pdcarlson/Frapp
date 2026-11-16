@@ -54,7 +54,7 @@ import {
 import type { ChatMessage } from "@repo/chat-core/types";
 import { resolveAuthorLabel } from "@repo/hooks";
 import {
-  MAX_MENTION_PICKS,
+  withMentionPick,
   mentionPicksIn,
   type MentionPick,
 } from "@repo/validation";
@@ -153,6 +153,11 @@ export interface ComposerStagingInput {
 export interface ComposerStaging {
   /** The strip above the input, or `null` for an ordinary send. */
   context: ComposerContext | null;
+  /**
+   * The message the staged reply answers, root-normalized as a send's
+   * `replyToId` is: what a schedule carries (#4971). `null` with no reply.
+   */
+  replyToId: string | null;
   /** What the input shows: the text being edited, or the draft. */
   value: string;
   onChangeText: (next: string) => void;
@@ -170,6 +175,11 @@ export interface ComposerStaging {
    * writes, so a picked name reaches that member or nobody.
    */
   addMentionPick: (pick: MentionPick) => void;
+  /**
+   * The picks `text` still writes, for a message sent another way than
+   * `submit`: a scheduled one (#4956).
+   */
+  picksFor: (text: string) => MentionPick[];
 }
 
 /** The reply strip for a staged parent: its author and one line of it. */
@@ -248,10 +258,7 @@ export function useComposerStaging({
   // tried again still carries them.
   const picksRef = useRef<MentionPick[]>([]);
   const addMentionPick = useCallback((pick: MentionPick) => {
-    picksRef.current = [
-      pick,
-      ...picksRef.current.filter((held) => held.label !== pick.label),
-    ].slice(0, MAX_MENTION_PICKS);
+    picksRef.current = withMentionPick(picksRef.current, pick);
   }, []);
   const picksFor = useCallback(
     (text: string) => mentionPicksIn(text, picksRef.current),
@@ -471,6 +478,7 @@ export function useComposerStaging({
 
   return {
     context,
+    replyToId: activeEdit ? null : (activeReply?.messageId ?? null),
     value: activeEdit ? activeEdit.value : draft,
     onChangeText,
     submit,
@@ -482,5 +490,6 @@ export function useComposerStaging({
     startReply,
     startEdit,
     addMentionPick,
+    picksFor,
   };
 }

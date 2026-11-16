@@ -510,6 +510,75 @@ describe('ActService', () => {
     });
   });
 
+  describe('a card from details already worked out (the tool loop, #4899)', () => {
+    const planned = plan({ action: 'create_task', title: 'Book the bus' });
+
+    it('drafts and saves the card without a model call, and leaves earlier cards waiting', async () => {
+      const { service, generateObject, suggestions, task } = build({
+        permissions: OFFICER_HOLDS,
+      });
+      const outcome = await service.proposePlanned(
+        input(''),
+        'create_task',
+        planned,
+        NOW,
+      );
+      expect(outcome).toMatchObject({
+        status: 'proposed',
+        action: 'create_task',
+        suggestion: { id: 'suggestion-1' },
+      });
+      expect(generateObject).not.toHaveBeenCalled();
+      expect(task.draft).toHaveBeenCalledWith(
+        planned,
+        expect.objectContaining({ chapterId: CHAPTER, userId: OFFICER }),
+      );
+      expect(suggestions.withdrawSource).not.toHaveBeenCalled();
+      expect(suggestions.proposeBatch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chapterId: CHAPTER,
+          requestedFor: OFFICER,
+          notify: [],
+        }),
+      );
+    });
+
+    it('refuses a member without ai:act, whatever else they hold', async () => {
+      const { service, suggestions, task } = build({
+        permissions: ['ai:use', 'members:view', 'tasks:manage'],
+      });
+      await expect(
+        service.proposePlanned(input(''), 'create_task', planned, NOW),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(task.draft).not.toHaveBeenCalled();
+      expect(suggestions.proposeBatch).not.toHaveBeenCalled();
+    });
+
+    it('makes nothing of an action this member was not offered, or one that does not exist', async () => {
+      const { service, suggestions, event } = build({
+        permissions: OFFICER_HOLDS,
+      });
+      // No `events:create`.
+      expect(
+        await service.proposePlanned(input(''), 'create_event', planned, NOW),
+      ).toMatchObject({ status: 'no_action' });
+      expect(
+        await service.proposePlanned(input(''), 'delete_chapter', planned, NOW),
+      ).toMatchObject({ status: 'no_action' });
+      // The module is off.
+      expect(
+        await service.proposePlanned(
+          input('', { tasks: false }),
+          'create_task',
+          planned,
+          NOW,
+        ),
+      ).toMatchObject({ status: 'no_action' });
+      expect(event.draft).not.toHaveBeenCalled();
+      expect(suggestions.proposeBatch).not.toHaveBeenCalled();
+    });
+  });
+
   it('assertMayAct refuses when consent does', async () => {
     const { service, consent } = build({ permissions: OFFICER_HOLDS });
     await expect(

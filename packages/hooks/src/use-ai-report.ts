@@ -40,8 +40,8 @@ export function useAiReportPolicy(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: aiReportKeys.policy(chapterId),
-    queryFn: async (): Promise<AiReportPolicy | null> => {
-      const result = await client.GET("/v1/ai/reports");
+    queryFn: async ({ signal }): Promise<AiReportPolicy | null> => {
+      const result = await client.GET("/v1/ai/reports", { signal });
       if (isAiNotAvailable(result.error)) return null;
       throwUnlessOk(result);
       return result.data ?? null;

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   EVENT_EXCUSE_LATE_HOURS,
+  EXCUSE_PUSH_CATEGORY_ID,
   checkInWindowBounds,
   eventExcuseClosesAt,
 } from '@repo/validation';
@@ -176,14 +177,24 @@ export class EventExcuseService {
     return new Map(users.map((u) => [u.id, u.display_name]));
   }
 
-  async submit(
-    eventId: string,
+  private assertExcuseWindowOpen(event: Event, now = new Date()): void {
+    if (now > eventExcuseClosesAt(new Date(event.end_time))) {
+      throw new BadRequestException(
+        `Excuses for this event closed ${EVENT_EXCUSE_LATE_HOURS} hours after it ended`,
+      );
+    }
+  }
+
+  /**
+   * Whether the member may ask to be excused at all: the event requires
+   * them, and their attendance doesn't already settle it. Sending an excuse
+   * and sending a declined one again both ask, so both check (#5115).
+   */
+  private async assertMayAskToBeExcused(
+    event: Event,
     userId: string,
     chapterId: string,
-    reason: string,
-  ): Promise<EventExcuse> {
-    const event = await this.visibleEvent(eventId, chapterId, userId);
-
+  ): Promise<void> {
     const member = await this.memberRepo.findByUserAndChapter(
       userId,
       chapterId,
@@ -197,14 +208,8 @@ export class EventExcuseService {
       );
     }
 
-    if (new Date() > eventExcuseClosesAt(new Date(event.end_time))) {
-      throw new BadRequestException(
-        `Excuses for this event closed ${EVENT_EXCUSE_LATE_HOURS} hours after it ended`,
-      );
-    }
-
     const existing = await this.attendanceRepo.findByEventAndUser(
-      eventId,
+      event.id,
       userId,
     );
     if (existing?.status === 'PRESENT' || existing?.status === 'LATE') {
@@ -220,6 +225,17 @@ export class EventExcuseService {
         'An officer marked you absent from this event; ask them to change it',
       );
     }
+  }
+
+  async submit(
+    eventId: string,
+    userId: string,
+    chapterId: string,
+    reason: string,
+  ): Promise<EventExcuse> {
+    const event = await this.visibleEvent(eventId, chapterId, userId);
+    this.assertExcuseWindowOpen(event);
+    await this.assertMayAskToBeExcused(event, userId, chapterId);
 
     const excuse = await this.excuseRepo.create({
       chapter_id: event.chapter_id,
@@ -255,6 +271,76 @@ export class EventExcuseService {
       excuse,
       receiver: name ? { user_id: creator, display_name: name } : null,
     };
+  }
+
+  /**
+   * Rewrite the caller's own excuse (#5115). A pending one can be edited
+   * until the excuse window closes and stays pending, with no second push:
+   * the receiver hasn't decided yet and reads the new words on the event. A
+   * declined one can be edited until check-in closes, which asks again: it
+   * goes back to pending and the receiver is pushed as for a new excuse.
+   * After check-in closes a decline has already counted the member absent,
+   * so it stands. An approved one isn't edited, since that would change what
+   * the receiver approved; it can be withdrawn and sent again.
+   */
+  async edit(
+    eventId: string,
+    userId: string,
+    chapterId: string,
+    reason: string,
+  ): Promise<EventExcuse> {
+    const event = await this.visibleEvent(eventId, chapterId, userId);
+
+    const excuse = await this.excuseRepo.findByEventAndUser(
+      chapterId,
+      eventId,
+      userId,
+    );
+    if (!excuse) {
+      throw new NotFoundException('You have no excuse for this event');
+    }
+    if (excuse.status === 'APPROVED') {
+      throw new ConflictException(
+        'An approved excuse cannot be edited; withdraw it and send a new one',
+      );
+    }
+
+    const now = new Date();
+    if (excuse.status === 'PENDING') {
+      this.assertExcuseWindowOpen(event, now);
+    } else {
+      const { closesAt } = checkInWindowBounds(
+        new Date(event.start_time),
+        new Date(event.end_time),
+        event.check_in_opens_minutes,
+      );
+      if (now > closesAt) {
+        throw new ConflictException(
+          'This event is over, so a declined excuse can no longer be sent again',
+        );
+      }
+      // Sending it again asks the receiver anew, so it must pass what a
+      // new excuse would: a member who checked in since the decline, or
+      // whom an officer marked, has nothing left to ask.
+      await this.assertMayAskToBeExcused(event, userId, chapterId);
+    }
+
+    const edited = await this.excuseRepo.editReason(
+      excuse.id,
+      chapterId,
+      excuse.status,
+      reason.trim(),
+    );
+    if (!edited) {
+      throw new ConflictException(
+        'This excuse was decided or withdrawn in the meantime',
+      );
+    }
+
+    if (excuse.status === 'DECLINED') {
+      await this.notifyReceivers(event, chapterId, edited);
+    }
+    return edited;
   }
 
   /**
@@ -469,7 +555,16 @@ export class EventExcuseService {
         body: excuse.reason,
         priority: 'NORMAL',
         category: 'events',
-        data: { target: { screen: 'events', eventId: event.id } },
+        // Approve and Decline on the push itself (#4686): the phone answers
+        // with PATCH /v1/events/:eventId/excuses/:excuseUserId.
+        categoryId: EXCUSE_PUSH_CATEGORY_ID,
+        data: {
+          target: { screen: 'events', eventId: event.id },
+          excuseUserId: excuse.user_id,
+          // The phone decides under its active chapter, so it needs to know
+          // when the press is from another of the officer's chapters.
+          chapterId,
+        },
       });
     } catch (error) {
       reportCaughtFailure(this.logger, {

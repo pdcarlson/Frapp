@@ -550,12 +550,16 @@ export interface MessageTimelineProps {
    */
   bookmarkedMessageIds?: Set<string>;
   onToggleBookmark?: (messageId: string, next: boolean) => void;
+  /** "Remind me about this" (#4957); see `MessageItemProps`. */
+  onRemind?: (messageId: string, remindAt: Date) => void;
   canManageChannel?: boolean;
   /** A row's Report and Block (#2687); see `MessageItemProps`. */
   onReport?: (message: ChatMessage) => void;
   onBlock?: (message: ChatMessage) => void;
+  /** A row's Forward (#4907); see `MessageItemProps`. */
+  onForward?: (message: ChatMessage) => void;
   /** Opens a member's profile by `users.id` (#3726); see `MessageItemProps`. */
-  onOpenProfile?: (userId: string) => void;
+  onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
   isMember?: MemberLookup;
   /**
    * Older history (#1571). The timeline asks for the next page when the member
@@ -645,9 +649,11 @@ export const MessageTimeline = forwardRef<
     onFlag,
     bookmarkedMessageIds,
     onToggleBookmark,
+    onRemind,
     canManageChannel,
     onReport,
     onBlock,
+    onForward,
     onOpenProfile,
     isMember,
     hasOlder = false,
@@ -1416,9 +1422,11 @@ export const MessageTimeline = forwardRef<
                   onFlag={onFlag}
                   isBookmarked={bookmarkedMessageIds?.has(entry.message.id)}
                   onToggleBookmark={onToggleBookmark}
+                  onRemind={onRemind}
                   canManageChannel={canManageChannel}
                   onReport={onReport}
                   onBlock={onBlock}
+                  onForward={onForward}
                   onOpenProfile={onOpenProfile}
                   isMember={isMember}
                   isTapRevealed={tapRevealed.isRevealed(entry.message)}

@@ -1,5 +1,9 @@
 import { isBetaOffModule } from "./beta-off-modules";
-import { canAllOfAny, MEMBER_JOINED_AUDIENCE } from "./permissions";
+import {
+  canAllOfAny,
+  MEMBER_JOINED_AUDIENCE,
+  RECAP_PUSH_AUDIENCE,
+} from "./permissions";
 
 /**
  * The member-facing notification categories, shared so every surface offers the
@@ -16,8 +20,11 @@ import { canAllOfAny, MEMBER_JOINED_AUDIENCE } from "./permissions";
  *
  * ## What the API actually emits
  *
- * Grepping `category: '…'` across `apps/api/src` yields nine distinct values.
- * Six are here. The other three are deliberately absent:
+ * Grepping `category: '…'` across `apps/api/src` yields the notification
+ * categories (beside Ask Frapp's unrelated safety ones), and the recap push
+ * names its own, `recap`, through `RECAP_NOTIFICATION_CATEGORY` (#4985).
+ * Seven are here. The chat reminder's `reminder` answers a reminder the member
+ * set themselves, so it has no switch. Three more are deliberately absent:
  *
  * - **`chat`** — dropped as a switch on 2026-11-06 (the owner's iOS testing:
  *   "Do we really want users to be able to turn off chat?"). It silenced every
@@ -154,6 +161,17 @@ export const NOTIFICATION_CATEGORIES = [
     description: "A notice each time a new member joins.",
     defaultEnabled: true,
     audience: MEMBER_JOINED_AUDIENCE,
+  },
+  {
+    // Sunday morning's push of last week's figures (#4985), the line
+    // Activity's "Last week" card shows. Its own switch, so a member can keep
+    // the task and event pushes and drop the digest, as Slack and Linear let
+    // a reader turn off their weekly digests on their own.
+    key: "recap",
+    label: "Weekly recap",
+    description: "Sunday morning: last week's events, tasks, points and hours.",
+    defaultEnabled: true,
+    audience: RECAP_PUSH_AUDIENCE,
   },
 ] as const satisfies readonly NotificationCategory[];
 

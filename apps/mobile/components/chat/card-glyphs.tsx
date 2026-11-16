@@ -32,6 +32,14 @@ export function PointsGlyph(props: TabGlyphProps) {
   return <TabGlyph name="points" {...props} />;
 }
 
+/**
+ * Role picker (#4958): the nav set's Roles shield, the Roles page's own
+ * glyph, so the card and the + row read as roles.
+ */
+export function RolePickerGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="roles" {...props} />;
+}
+
 /** Announcement — the megaphone, its sound arc stroke-only. */
 export function AnnouncementGlyph(props: TabGlyphProps) {
   const { stroke, fill } = glyphPaint(props);

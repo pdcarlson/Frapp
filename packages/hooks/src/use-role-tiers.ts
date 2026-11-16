@@ -24,8 +24,8 @@ export function useRoleTiers() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: tiersKey(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/role-tiers");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/role-tiers", { signal });
       if (error) throw error;
       return [...(data ?? [])].sort((a, b) => a.position - b.position);
     },

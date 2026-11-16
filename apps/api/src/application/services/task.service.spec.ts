@@ -123,6 +123,7 @@ describe('TaskService', () => {
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
     };
 
     mockUserRepo = {

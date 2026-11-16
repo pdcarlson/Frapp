@@ -6,7 +6,7 @@ import { EventsGlyph } from "@/components/events/chapter-ops-glyphs";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
 import { formatTimeOfDay, localIsoDate } from "@repo/formatting";
-import type { CalendarTask } from "@repo/hooks/calendar-tasks";
+import type { CalendarItem } from "@repo/hooks/calendar-tasks";
 import {
   blockGeometry,
   endsWithinDay,
@@ -36,7 +36,7 @@ type EventsTimeGridProps = {
   /** The columns, each at local midnight: seven for Week, one for Day. */
   days: Date[];
   events: EventRow[];
-  tasksByDay: Map<string, CalendarTask[]>;
+  tasksByDay: Map<string, CalendarItem[]>;
   nameOf: (userId: string) => string;
   factsOf: (event: EventRow) => CalendarEventFacts;
   onSelectEvent: (event: EventRow) => void;

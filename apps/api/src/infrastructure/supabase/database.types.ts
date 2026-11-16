@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   ActivityItemRead,
+  ActivityItemSnooze,
+  ActivityRecapPush,
   ActivityUnreadStart,
   AiReport,
   AiRun,
@@ -14,6 +16,7 @@ import type {
   BackworkDepartment,
   BackworkProfessor,
   BackworkResource,
+  BirthdayPost,
   CalendarFeed,
   ChannelReadReceipt,
   Chapter,
@@ -47,9 +50,11 @@ import type {
   ChatMessageBookmark,
   ChatMessageImportantSeen,
   ChatMessageLink,
+  ChatMessageReminder,
   ChatMessageReport,
   ChatNotificationPreference,
   ChatPushDispatch,
+  ChatScheduledMessage,
   ChatSidebarPin,
   ChatSidebarPreferences,
   ChatThreadFollow,
@@ -83,6 +88,7 @@ import type {
   MemberCustomFieldValueRow,
   MemberNudge,
   MemberNudgeSettings,
+  MemberThreadRow,
   MessageReaction,
   Notification,
   NotificationPreference,
@@ -151,6 +157,8 @@ export interface Database {
   public: {
     Tables: {
       activity_item_reads: TableDefinition<ActivityItemRead>;
+      activity_item_snoozes: TableDefinition<ActivityItemSnooze>;
+      activity_recap_pushes: TableDefinition<ActivityRecapPush>;
       activity_unread_starts: TableDefinition<ActivityUnreadStart>;
       ai_ask_feedback: TableDefinition<AskFeedbackRow>;
       ai_ask_trace_steps: TableDefinition<AskTraceStepRow>;
@@ -164,6 +172,7 @@ export interface Database {
       backwork_departments: TableDefinition<BackworkDepartment>;
       backwork_professors: TableDefinition<BackworkProfessor>;
       backwork_resources: TableDefinition<BackworkResource>;
+      birthday_posts: TableDefinition<BirthdayPost>;
       calendar_feeds: TableDefinition<CalendarFeed>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
@@ -195,10 +204,12 @@ export interface Database {
       chat_message_bookmarks: TableDefinition<ChatMessageBookmark>;
       chat_message_important_seen: TableDefinition<ChatMessageImportantSeen>;
       chat_message_links: TableDefinition<ChatMessageLink>;
+      chat_message_reminders: TableDefinition<ChatMessageReminder>;
       chat_message_reports: TableDefinition<ChatMessageReport>;
       chat_messages: TableDefinition<ChatMessage>;
       chat_notification_preferences: TableDefinition<ChatNotificationPreference>;
       chat_push_dispatches: TableDefinition<ChatPushDispatch>;
+      chat_scheduled_messages: TableDefinition<ChatScheduledMessage>;
       chat_sidebar_pins: TableDefinition<ChatSidebarPin>;
       chat_sidebar_preferences: TableDefinition<ChatSidebarPreferences>;
       chat_thread_follows: TableDefinition<ChatThreadFollow>;
@@ -648,6 +659,8 @@ export interface Database {
           attachment_count: number;
           created_at: string;
           forwarded_from: ChatForwardedMessage | null;
+          /** `20261114153147`: the latest message is a GIF (#4657). */
+          has_gif: boolean;
         }[];
       };
       /**
@@ -687,6 +700,28 @@ export interface Database {
       get_hidden_channel_ids: {
         Args: { p_chapter_id: string; p_user_id: string };
         Returns: { channel_id: string }[];
+      };
+      /**
+       * `20261114003341` (#4960). The distinct channels in a chapter holding
+       * the caller's followed or muted threads.
+       */
+      get_member_thread_channel_ids: {
+        Args: { p_chapter_id: string; p_user_id: string };
+        Returns: { channel_id: string }[];
+      };
+      /**
+       * `20261114003341` (#4960). The caller's followed and muted threads
+       * across `p_channel_ids` (already authorized by the service), newest
+       * activity first, with each one's new-reply count.
+       */
+      get_member_threads: {
+        Args: {
+          p_chapter_id: string;
+          p_user_id: string;
+          p_channel_ids: string[];
+          p_limit: number;
+        };
+        Returns: MemberThreadRow[];
       };
       /**
        * `20260906120001` — per-member point totals for one chapter, summed in
@@ -1052,6 +1087,25 @@ export interface Database {
           p_limit: number;
         };
         Returns: ChatMessage[];
+      };
+      /**
+       * `20261114171856` (#4958) — adds (`p_join`: a marked role, never for
+       * an alum) or removes (any unkeyed role outside the tiers) a role on a
+       * member, under the role-then-member locks `delete_role` takes. One
+       * row: `ok` with the written `role_ids`, `not_assignable`, `alumni` or
+       * `no_member`.
+       */
+      self_assign_role: {
+        Args: {
+          p_chapter_id: string;
+          p_member_id: string;
+          p_role_id: string;
+          p_join: boolean;
+        };
+        Returns: {
+          outcome: 'ok' | 'not_assignable' | 'alumni' | 'no_member';
+          role_ids: string[] | null;
+        }[];
       };
       /**
        * `20261113040007` (#4076): a manual group's members set to exactly

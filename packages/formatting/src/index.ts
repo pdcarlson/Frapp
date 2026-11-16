@@ -16,6 +16,12 @@ export {
 } from "./bare-date";
 export { dayDelta, monthGrid, startOfMonth } from "./calendar-days";
 export { formatMinutesExact, formatMinutesRounded } from "./minutes";
+export {
+  recapFigures,
+  type RecapCounts,
+  type RecapFigure,
+  type RecapFigureId,
+} from "./recap-figures";
 export { formatBytes } from "./bytes";
 export { localClock, localIsoDate } from "./local-date";
 export {
@@ -36,6 +42,7 @@ export {
   formatActedLabel,
   formatTimestampFull,
   formatWeekdayDay,
+  formatWeekSpan,
   isDueOverdue,
 } from "./display";
 export {

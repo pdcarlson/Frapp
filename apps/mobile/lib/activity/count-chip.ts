@@ -7,6 +7,8 @@ const COUNTED_SECTIONS: ReadonlySet<Activity["unavailable"][number]> = new Set([
   "polls",
   "cards",
   "coming_up",
+  // Due reminders count too (#4957).
+  "reminders",
 ]);
 
 /**

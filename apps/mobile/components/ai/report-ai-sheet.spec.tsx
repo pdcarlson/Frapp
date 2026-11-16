@@ -61,6 +61,14 @@ function Surface({ target }: { target: AiReportTarget }) {
           </Text>
         </Pressable>
       ) : null}
+      {reporting.offered ? (
+        <Pressable
+          accessibilityLabel="open on wrong"
+          onPress={() => reporting.report(target, "wrong")}
+        >
+          <Text>from a thumbs down</Text>
+        </Pressable>
+      ) : null}
       {reporting.reportSheet}
     </>
   );
@@ -153,6 +161,21 @@ describe("Report this", () => {
     });
     expect(screenText(tree)).toContain(AI_REPORT_COPY.sent_title);
     expect(screenText(tree)).toContain("is reported");
+  });
+
+  it("opens on the reason a thumbs down already gave, and the next report does not", async () => {
+    const tree = render();
+    await press(tree, "open on wrong");
+    expect(sendDisabled(tree)).toBe(false);
+    // The member can still change it; the next thing reported starts empty.
+    await press(tree, AI_REPORT_COPY.reasons.other);
+    await press(tree, "open");
+    expect(sendDisabled(tree)).toBe(true);
+    await press(tree, "open on wrong");
+    await press(tree, AI_REPORT_COPY.send);
+    expect(mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: "wrong" }),
+    );
   });
 
   it("says a second report of the same thing was already in", async () => {

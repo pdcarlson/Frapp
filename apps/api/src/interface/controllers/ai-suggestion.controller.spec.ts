@@ -68,6 +68,25 @@ describe('AiSuggestionController (#4309)', () => {
     );
   });
 
+  it('passes the event made from a proposal in the event form on to Confirm, to record and not make (#5117)', async () => {
+    const accept = jest.fn(async () => ({ suggestion: row(), outcome: null }));
+    const controller = new AiSuggestionController({ accept } as never);
+    const made = '99999999-9999-4999-8999-999999999999';
+    await controller
+      .accept(CHAPTER, USER, null, row().id, {
+        new_event: { event_id: made },
+      })
+      .catch(() => undefined);
+    expect(accept).toHaveBeenCalledWith(
+      CHAPTER,
+      USER,
+      row().id,
+      expect.objectContaining({
+        edits: { kind: 'new_event', fields: { event_id: made } },
+      }),
+    );
+  });
+
   it('wants source_type and source_id together', async () => {
     const listForUser = jest.fn(async () => ({ items: [], has_more: false }));
     const controller = new AiSuggestionController({ listForUser } as never);

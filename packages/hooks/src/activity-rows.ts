@@ -17,8 +17,12 @@ export type ActivityPoll = components["schemas"]["ActivityPollDto"];
 export type ActivityEvent = components["schemas"]["ActivityEventDto"];
 export type ActivityHours = components["schemas"]["ActivityHoursEntryDto"];
 export type ActivityLink = components["schemas"]["ActivityLinkDto"];
+/** A reminder the member set on a chat message (#4957). Private to them. */
+export type ActivityReminder = components["schemas"]["ActivityReminderDto"];
 /** A sign-up sheet, headcount or form waiting on the member's answer (#3926). */
 export type ActivityCard = components["schemas"]["ActivityCardDto"];
+/** How many have answered something the member made, of how many can (#4792). */
+export type ActivityProgress = components["schemas"]["ActivityProgressDto"];
 export type ActivitySection = Activity["unavailable"][number];
 /** What `POST /v1/activity/reads` names: an item's kind and id. */
 export type ActivityItemRef = components["schemas"]["ActivityItemRefDto"];
@@ -48,7 +52,15 @@ export type ActivityBadgeVariant =
  * their own tasks; an event row draws its date instead of a glyph.
  */
 export type ActivityGlyph =
-  "task" | "confirm" | "hours" | "poll" | "event" | "link" | "signup" | "form";
+  | "task"
+  | "confirm"
+  | "hours"
+  | "poll"
+  | "event"
+  | "link"
+  | "signup"
+  | "form"
+  | "reminder";
 
 /**
  * The shared nav glyph each kind draws (`@repo/theme/nav-glyphs`), so a row
@@ -65,6 +77,7 @@ export const ACTIVITY_GLYPH_NAV: Record<ActivityGlyph, NavGlyphName> = {
   link: "link",
   signup: "signup",
   form: "form",
+  reminder: "schedule",
 };
 
 /**
@@ -119,8 +132,43 @@ interface RowBase {
    * dot. Never on a Waiting on others row.
    */
   unread: boolean;
-  /** The item `POST /v1/activity/reads` records when the row is opened. */
-  readRef: ActivityItemRef;
+  /**
+   * What opening the row records as read. Null for a row that has no unread
+   * dot to clear: a reminder (#4957), which is the member's own.
+   */
+  readRef: ActivityItemRef | null;
+  /**
+   * How far along a Waiting on others row is (#4792): an open poll the member
+   * posted, or an event they made once its check-in has opened. A client
+   * draws it as a thin bar with `label` beside it. `null` on every other row,
+   * and when the read has no count for it (never "0 of 0").
+   */
+  progress: ActivityRowProgress | null;
+}
+
+/** A row's progress, ready to draw (#4792). */
+export interface ActivityRowProgress {
+  done: number;
+  /** Never 0. */
+  total: number;
+  /** "41 of 60", drawn beside the bar. */
+  label: string;
+  /** "41 of 60 voted", for a screen reader. */
+  spoken: string;
+}
+
+/**
+ * The read's count as a row draws it. An API read from before the field
+ * existed has none, and a count with nobody to answer is not drawn.
+ */
+function rowProgress(
+  progress: ActivityProgress | null | undefined,
+  verb: string,
+): ActivityRowProgress | null {
+  if (!progress || progress.total <= 0) return null;
+  const done = Math.min(Math.max(progress.done, 0), progress.total);
+  const label = `${done} of ${progress.total}`;
+  return { done, total: progress.total, label, spoken: `${label} ${verb}` };
 }
 
 /** Whether a row's badge asks the member to act, rather than naming a state. */
@@ -180,6 +228,7 @@ export type ActivityRow = RowBase &
     | { kind: "hours"; entry: ActivityHours }
     | { kind: "link"; link: ActivityLink }
     | { kind: "card"; card: ActivityCard }
+    | { kind: "reminder"; reminder: ActivityReminder }
   );
 
 /**
@@ -197,7 +246,7 @@ export interface ActivityPart {
 }
 
 export interface ActivityGroup {
-  id: "made-by-you" | "links";
+  id: "reminders" | "made-by-you" | "links";
   label: string;
   /** Every row of the group, in order: the parts' rows end to end. */
   rows: ActivityRow[];
@@ -205,13 +254,6 @@ export interface ActivityGroup {
   parts: ActivityPart[];
   /** Sections behind this group that could not be read this time. */
   unavailable: ActivitySection[];
-  /**
-   * Rows kept off the group behind one control, which a client draws closed
-   * under the group: the member's closed polls, newest closed first, under
-   * Waiting on others (#4258). `null` when there are none. Not in `rows`,
-   * and not counted in the group's count.
-   */
-  archive: ActivityPart | null;
 }
 
 /** A name for a section the read could not load, for "Couldn't load …". */
@@ -223,6 +265,7 @@ export const ACTIVITY_SECTION_NAMES: Record<ActivitySection, string> = {
   coming_up: "events",
   made_events: "events you made",
   links: "links",
+  reminders: "reminders",
 };
 
 function channelLabel(
@@ -273,15 +316,6 @@ export function activityPollIsOpen(
  */
 type RowWhen = "dated" | "timed";
 
-/**
- * When a closed poll stopped taking votes, for ordering the archive newest
- * first: closed by hand, or its closing time; its posting as a last resort.
- */
-function pollClosedAt(poll: ActivityPoll): number {
-  const at = parseInstant(poll.closed_at ?? poll.closes_at ?? poll.created_at);
-  return at ? at.getTime() : 0;
-}
-
 function pollRow(
   poll: ActivityPoll,
   group: string,
@@ -320,6 +354,10 @@ function pollRow(
     dateBlock: null,
     unread: group !== "made" && poll.unread,
     readRef: { kind: "poll", item_id: poll.message_id },
+    // A closed poll waits on nobody; the read sends no count for one, and a
+    // poll that closes after the read stops drawing its bar on the same tick.
+    progress:
+      group === "made" && !closed ? rowProgress(poll.progress, "voted") : null,
   };
 }
 
@@ -402,6 +440,7 @@ function cardRow(
       kind: card.kind === "form" ? "form" : "signup",
       item_id: card.message_id,
     },
+    progress: null,
   };
 }
 
@@ -470,6 +509,7 @@ function taskRow(
     dateBlock: null,
     unread: role !== "assigned" && task.unread,
     readRef: { kind: "task", item_id: task.id },
+    progress: null,
   };
 }
 
@@ -492,6 +532,7 @@ function hoursRow(entry: ActivityHours): ActivityRow {
     dateBlock: null,
     unread: entry.unread,
     readRef: { kind: "hours_entry", item_id: entry.id },
+    progress: null,
   };
 }
 
@@ -539,6 +580,8 @@ function eventRow(
     dateBlock: when === "timed" ? null : dateBlock(event),
     unread: group !== "made" && event.unread,
     readRef: { kind: "event", item_id: event.id },
+    progress:
+      group === "made" ? rowProgress(event.progress, "checked in") : null,
   };
 }
 
@@ -570,6 +613,42 @@ function linkRow(link: ActivityLink, now: Date): ActivityRow {
     dateBlock: null,
     unread: link.unread,
     readRef: { kind: "link", item_id: link.id },
+    progress: null,
+  };
+}
+
+/**
+ * A reminder row (#4957): the message's words as the title, then who wrote
+ * it, where, and when the reminder is (or was) for. A due one carries a
+ * "Due" badge, as Slack's Later list marks a reminder whose time came.
+ */
+function reminderRow(reminder: ActivityReminder, now: Date): ActivityRow {
+  const when = formatRelativeDayTime(reminder.remind_at, now);
+  return {
+    kind: "reminder",
+    key: `reminder:${reminder.id}`,
+    reminder,
+    title: reminder.preview,
+    detail: [
+      reminder.author_name || null,
+      reminder.message_available && reminder.channel_type
+        ? channelLabel({
+            channel_type: reminder.channel_type,
+            channel_name: reminder.channel_name ?? "",
+          })
+        : null,
+      when ? (reminder.due ? `Reminded ${when}` : `Remind me ${when}`) : null,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    soon: null,
+    faceId: null,
+    badge: reminder.due ? { label: "Due", variant: "warning" } : null,
+    glyph: "reminder",
+    dateBlock: null,
+    unread: false,
+    readRef: null,
+    progress: null,
   };
 }
 
@@ -631,7 +710,7 @@ function part(
  * on others, which is what the member made (the polls they posted, the
  * events they made, the tasks they assigned), one part per kind and a few
  * rows each, so one busy kind doesn't bury the others; then Links. A client
- * leaves out a group with no rows, no archive and nothing that failed.
+ * leaves out a group with no rows and nothing that failed.
  *
  * The member's own things are the To do list (`activityToDos`), and what
  * waits on their review is the To review card (`activityReviewRows`). Until
@@ -646,27 +725,37 @@ export function activityGroups(
   const downFor = (sections: ActivitySection[]) =>
     sections.filter((section) => down.has(section));
   const links = activity.links.map((link) => linkRow(link, now));
+  // Due first (the read orders by time, so the oldest due leads), then the
+  // ones still waiting, soonest first. `?? []`: a read from an API before
+  // #4957 has no field.
+  const reminders = (activity.reminders ?? []).map((reminder) =>
+    reminderRow(reminder, now),
+  );
 
-  // A closed poll, by time or by hand, leaves the list for the archive.
+  // A poll that closes, by time or by hand, leaves the list on the page's
+  // clock; the next read leaves it out, and it is in the Archive (#5127).
   const madePolls = activity.made_by_you.polls
     .filter((poll) => activityPollIsOpen(poll, now))
     .map((poll) => pollRow(poll, "made", now));
-  const archivedPolls = activity.made_by_you.polls
-    .filter((poll) => !activityPollIsOpen(poll, now))
-    .sort((a, b) => pollClosedAt(b) - pollClosedAt(a))
-    .map((poll) =>
-      // The same key as when it was listed, so a panel open on the
-      // poll keeps finding it after it closes.
-      pollRow(poll, "made", now),
-    );
   const madeEvents = activity.made_by_you.events.map((event) =>
     eventRow(event, "made", now),
   );
-  const madeTasks = activity.made_by_you.tasks.map((task) =>
-    taskRow(task, "made", "assigned", now),
-  );
+  // A confirmed task is finished: it is in the Archive (#5127). The read
+  // still serves it, for phone builds from before the Archive.
+  const madeTasks = activity.made_by_you.tasks
+    .filter((task) => !task.confirmed_at)
+    .map((task) => taskRow(task, "made", "assigned", now));
 
   return [
+    {
+      // The member's own reminders on chat messages (#4957), apart from the
+      // To do list: Slack keeps them in Later, beside saved items.
+      id: "reminders",
+      label: "Reminders",
+      rows: reminders,
+      parts: part("all", null, reminders, null),
+      unavailable: downFor(["reminders"]),
+    },
     {
       // What the member made, listed for what it still waits on.
       id: "made-by-you",
@@ -693,15 +782,6 @@ export function activityGroups(
         ),
       ],
       unavailable: downFor(["polls", "made_events", "tasks"]),
-      archive:
-        archivedPolls.length === 0
-          ? null
-          : {
-              id: "archived-polls",
-              label: "Archived polls",
-              rows: archivedPolls,
-              limit: null,
-            },
     },
     {
       // Their own group, not the To do list: a link may or may not be for
@@ -711,7 +791,6 @@ export function activityGroups(
       rows: links,
       parts: part("all", null, links, null),
       unavailable: downFor(["links"]),
-      archive: null,
     },
   ];
 }
@@ -858,4 +937,77 @@ export function activityReviewQueue(
   return activityReviewRows(activity, now).filter(
     (row) => row.kind === "task" && row.glyph === "confirm",
   );
+}
+
+/** `GET /v1/activity/archive`: what the member has finished (#5127). */
+export type ActivityArchive = components["schemas"]["ActivityArchiveDto"];
+export type ActivityArchiveSection = ActivityArchive["unavailable"][number];
+
+/**
+ * One section of the Archive, laid out as Activity lays out its groups:
+ * Events, Tasks, Polls, each newest first.
+ */
+export interface ActivityArchiveGroup {
+  id: ActivityArchiveSection;
+  label: string;
+  rows: ActivityRow[];
+  /** The section could not be read this time: "Couldn't load …". */
+  unavailable: boolean;
+}
+
+/** A name for an Archive section that could not load. */
+export const ACTIVITY_ARCHIVE_SECTION_NAMES: Record<
+  ActivityArchiveSection,
+  string
+> = {
+  events: "events",
+  tasks: "tasks",
+  polls: "polls",
+};
+
+/** What the Archive says when it holds nothing. */
+export const ACTIVITY_ARCHIVE_EMPTY =
+  "Nothing finished in the last 30 days. Events, tasks and polls land here once they're over.";
+
+/**
+ * The Archive's sections (#5127,
+ * `spec/behavior/activity.md` § Archive), each row built as the page builds
+ * it so it reads and opens the same: an event that is over (with "Checked
+ * in" when the member did), a task that is done (with its state: Confirmed,
+ * or still waiting on an officer), a poll that has closed. A row's key is
+ * `archive:…`, apart from the page's keys. A section with no rows and
+ * nothing that failed is left out.
+ */
+export function activityArchiveGroups(
+  archive: ActivityArchive,
+  viewerId: string | null,
+  now: Date = new Date(),
+): ActivityArchiveGroup[] {
+  const down = new Set(archive.unavailable);
+  const events = archive.events.map((event) => {
+    const row = eventRow(event, "archive", now);
+    // Over: nothing to check in to, and "Required" no longer asks anything.
+    return { ...row, badge: event.checked_in ? row.badge : null };
+  });
+  const tasks = archive.tasks.map((task) =>
+    taskRow(
+      task,
+      "archive",
+      viewerId !== null && task.assignee_id !== viewerId ? "assigned" : "mine",
+      now,
+    ),
+  );
+  const polls = archive.polls.map((poll) => ({
+    ...pollRow(poll, "archive", now),
+    // The member's own poll leads with its glyph, as on the page.
+    faceId: poll.sender_id === viewerId ? null : poll.sender_id,
+  }));
+  const groups: ActivityArchiveGroup[] = [
+    { id: "events", label: "Events", rows: events, unavailable: false },
+    { id: "tasks", label: "Tasks", rows: tasks, unavailable: false },
+    { id: "polls", label: "Polls", rows: polls, unavailable: false },
+  ];
+  return groups
+    .map((group) => ({ ...group, unavailable: down.has(group.id) }))
+    .filter((group) => group.rows.length > 0 || group.unavailable);
 }

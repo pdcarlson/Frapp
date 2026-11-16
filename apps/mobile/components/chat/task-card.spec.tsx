@@ -71,16 +71,18 @@ vi.mock("@/lib/chapter-branding", () => ({
 // what it was opened on matters.
 const editSheet = vi.hoisted(() => ({
   editing: null as unknown,
+  keptDraft: undefined as string | undefined,
   present: vi.fn(),
 }));
 vi.mock("@/components/tasks/new-task-sheet", async () => {
   const React = await import("react");
   return {
     NewTaskSheet: React.forwardRef(function NewTaskSheet(
-      props: { editing: unknown },
+      props: { editing: unknown; keptDraft?: string },
       ref: React.Ref<{ present: () => void }>,
     ) {
       editSheet.editing = props.editing;
+      editSheet.keptDraft = props.keptDraft;
       React.useImperativeHandle(ref, () => ({ present: editSheet.present }));
       return null;
     }),
@@ -95,12 +97,16 @@ const sheets = vi.hoisted(() => ({
       proofKind: string;
       sentBack: boolean;
       sentBackReason: string | null;
+      sentBackAt?: string | null;
     };
+    keptDraft?: string;
     initialProblem: string | null;
     onComplete: (proof: Record<string, unknown>) => Promise<void>;
   },
   sendBack: null as null | {
     proofKind: string;
+    keptDraft?: string;
+    submittedAt?: string | null;
     onSubmit: (input: Record<string, unknown>) => Promise<void>;
   },
 }));
@@ -340,7 +346,11 @@ describe("TaskCard — actions", () => {
 
   it("offers a tasks:manage holder Confirm and Send back on a completion", async () => {
     state.permissions = ["tasks:manage"];
-    state.live = liveTask({ status: "COMPLETED", stored_status: "COMPLETED" });
+    state.live = liveTask({
+      status: "COMPLETED",
+      stored_status: "COMPLETED",
+      completed_at: "2026-11-05T09:00:00.000Z",
+    });
     const tree = render("admin-2");
     expect(actions(tree)).toEqual(["Confirm", "Send back"]);
     await press(tree, "Confirm");
@@ -349,6 +359,9 @@ describe("TaskCard — actions", () => {
     await press(tree, "Send back");
     expect(rejectTask).not.toHaveBeenCalled();
     expect(sheets.sendBack?.proofKind).toBe("none");
+    // Kept per task, for the submission under review (#5041).
+    expect(sheets.sendBack?.keptDraft).toBe("send-back:task-1");
+    expect(sheets.sendBack?.submittedAt).toBe("2026-11-05T09:00:00.000Z");
     await act(() =>
       sheets.sendBack!.onSubmit({
         comment: "Floor is still sticky",
@@ -397,7 +410,10 @@ describe("TaskCard — actions", () => {
     expect(sheets.markDone?.task).toMatchObject({
       sentBack: true,
       sentBackReason: "Floor is still sticky",
+      sentBackAt: "2026-11-05T10:00:00.000Z",
     });
+    // The same name as the Tasks screen's Mark done (#5041).
+    expect(sheets.markDone?.keptDraft).toBe("mark-done:task-1");
   });
 
   it("opens Mark done's sheet when the server asks for proof the card didn't know of", async () => {
@@ -656,6 +672,8 @@ describe("TaskCard — Edit (#4512)", () => {
     });
     // Mounted is not shown: the sheet has to be presented.
     expect(editSheet.present).toHaveBeenCalledTimes(1);
+    // Kept past a close and the thread, by task (#4872).
+    expect(editSheet.keptDraft).toBe("task-edit:task-1");
   });
 
   it("holds Edit like the card's other writes while a write would be lost", () => {

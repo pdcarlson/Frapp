@@ -183,6 +183,21 @@ export class EventSuggestionAcceptDto {
   event_id: string;
 }
 
+/**
+ * How a proposed event is accepted after the member changed it in the
+ * ordinary event form (the card's Edit, #5117): the form made the event
+ * through its own route, and the accept records it instead of making one.
+ */
+export class NewEventSuggestionAcceptDto {
+  @ApiProperty({
+    format: 'uuid',
+    description:
+      'The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller.',
+  })
+  @IsUUID()
+  event_id: string;
+}
+
 /** Why a suggestion was dismissed, for the analytics event only. Never stored. */
 const AI_SUGGESTION_DISMISS_REASONS = ['already_doing'] as const;
 export type AiSuggestionDismissReason =
@@ -226,6 +241,16 @@ export class AcceptAiSuggestionDto {
   @ValidateNested()
   @Type(() => EventSuggestionAcceptDto)
   event?: EventSuggestionAcceptDto;
+
+  @ApiPropertyOptional({
+    type: NewEventSuggestionAcceptDto,
+    description:
+      'For a proposed event the caller already added in the event form: records it instead of making one.',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => NewEventSuggestionAcceptDto)
+  new_event?: NewEventSuggestionAcceptDto;
 }
 
 export class AiSuggestionDecideItemDto extends AcceptAiSuggestionDto {
@@ -365,6 +390,14 @@ export class NewEventSuggestionDto {
 
   @ApiProperty()
   is_mandatory: boolean;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The repeat the series is made with (the `recurrence_rule` format of `POST /v1/events`), or null for one event.',
+  })
+  recurrence_rule: string | null;
 }
 
 export class AiSuggestionSourceDto {

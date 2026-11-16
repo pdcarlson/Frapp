@@ -116,8 +116,9 @@ export function useChatBackground(channelId: string | null | undefined) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: chatBackgroundKeys.detail(chapterId!, channelId ?? ""),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const result = await client.GET("/v1/chat-backgrounds/channels/{id}", {
+        signal,
         params: { path: { id: channelId! } },
       });
       throwUnlessOk(result);
@@ -135,8 +136,10 @@ export function useChapterChatBackground() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: chatBackgroundKeys.detail(chapterId!, "default"),
-    queryFn: async () => {
-      const result = await client.GET("/v1/chat-backgrounds/default");
+    queryFn: async ({ signal }) => {
+      const result = await client.GET("/v1/chat-backgrounds/default", {
+        signal,
+      });
       throwUnlessOk(result);
       return result.data!;
     },

@@ -1,3 +1,13 @@
+import {
+  describeRepeatPattern,
+  parseRepeatRule,
+  seriesExtent,
+} from "./recurrence";
+import {
+  POINTS_ADJUSTMENT_MAX,
+  POINTS_REASON_MAX_LENGTH,
+} from "./field-limits";
+
 /**
  * Asking Frapp to do something (#718, `spec/behavior/ai.md` § Asking Frapp to
  * do something): what the API answers and the words both clients show.
@@ -78,9 +88,23 @@ export const ACT_PROPOSAL_EXPIRY_DAYS = 1;
 export const ACT_COPY = {
   confirm: "Confirm",
   cancel: "Cancel",
+  /**
+   * Opens the ordinary form on the proposal, filled in from the card, for
+   * everything the card does not show (#5117).
+   */
+  edit: "Edit",
   confirming: "Confirming",
   mine_only: "Only you can see this. Nothing changes until you confirm.",
   no_members: "Add at least one member to confirm.",
+  /** The points field under a points card's Edit (#5117). */
+  field_amount: "Points each",
+  amount_hint: "A minus sign takes points away.",
+  bad_amount: `Enter a whole number of points other than 0, up to ${POINTS_ADJUSTMENT_MAX.toLocaleString("en-US")}.`,
+  no_reason: "Say what the points are for.",
+  /** A task card's fields under its Edit on web (#5117). */
+  field_task_name: "Task",
+  field_details: "Details",
+  no_task_name: "Give the task a name.",
   need_assignee: "Pick who this is for.",
   need_due: "Pick when it is due.",
   gone: "This is no longer waiting. Ask again.",
@@ -129,6 +153,7 @@ export const ACT_COPY = {
   field_for: "For",
   field_due: "Due",
   field_when: "When",
+  field_repeats: "Repeats",
   field_where: "Where",
   field_points: "Points",
   field_attendance: "Attendance",
@@ -228,6 +253,39 @@ export function actWhenLine(
 }
 
 /**
+ * How a proposed series repeats, written out in full ("Every Sunday, 13
+ * times, the last on Sunday, February 7"), read in the rule's own zone.
+ * Empty for one event or a rule that cannot be read.
+ */
+export function actRepeatLine(
+  rule: string | null | undefined,
+  start: string,
+): string {
+  if (!rule) return "";
+  const parsed = parseRepeatRule(rule);
+  const first = new Date(start);
+  if (!parsed || parsed.legacy || Number.isNaN(first.getTime())) return "";
+  const pattern = describeRepeatPattern(rule, first);
+  const extent = seriesExtent(first, rule);
+  if (!pattern || !extent) return pattern ?? "";
+  const zone = parsed.timeZone;
+  const year = (at: Date) =>
+    new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      timeZone: zone,
+    }).format(at);
+  const last = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: zone,
+    // The year only when the series runs into the next one.
+    ...(year(extent.last) !== year(first) ? { year: "numeric" as const } : {}),
+  }).format(extent.last);
+  return `${pattern}, ${extent.count} times, the last on ${last}`;
+}
+
+/**
  * Whose attendance a points card was read from ("Everyone marked present or
  * late at Chapter Meeting, Thursday, November 12"), so a card never lists
  * members without saying where they came from. Empty without an event.
@@ -293,4 +351,36 @@ export function actConfirmRefusalLine(code: string | null): string | null {
   return (
     (ACT_COPY.refused_confirm as Record<string, string>)[code ?? ""] ?? null
   );
+}
+
+/**
+ * A points card's amount and reason as edited under its Edit (#5117), as the
+ * changes Confirm sends: only what differs from the proposal, or the line to
+ * show under the field that stops it.
+ */
+export function actPointsEdits(
+  proposed: { amount: number; reason: string },
+  amountInput: string,
+  reasonInput: string,
+):
+  | { ok: true; edits: { amount?: number; reason?: string } }
+  | { ok: false; field: "amount" | "reason"; error: string } {
+  const typed = amountInput.trim().replace(/[,\s]/g, "");
+  const amount = /^[-+]?\d+$/.test(typed) ? Number(typed) : Number.NaN;
+  if (
+    !Number.isSafeInteger(amount) ||
+    amount === 0 ||
+    Math.abs(amount) > POINTS_ADJUSTMENT_MAX
+  ) {
+    return { ok: false, field: "amount", error: ACT_COPY.bad_amount };
+  }
+  const reason = reasonInput.trim().slice(0, POINTS_REASON_MAX_LENGTH);
+  if (!reason) return { ok: false, field: "reason", error: ACT_COPY.no_reason };
+  return {
+    ok: true,
+    edits: {
+      ...(amount === proposed.amount ? {} : { amount }),
+      ...(reason === proposed.reason ? {} : { reason }),
+    },
+  };
 }

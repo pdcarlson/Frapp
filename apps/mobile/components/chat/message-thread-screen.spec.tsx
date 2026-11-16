@@ -14,6 +14,7 @@ import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
 import { Chip } from "@/components/filter-chips";
 import { useOpenChatTransport } from "@repo/hooks/open-chat-transport";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { GifPickerSheet } from "@/components/chat/gif-picker-sheet";
 import { ThreadMessageRow } from "@/components/chat/thread-message-row";
 import { FrappThemeProvider } from "@/lib/theme";
 import { screenText } from "@/test/screen-text";
@@ -121,6 +122,7 @@ function threadState(overrides: Partial<ThreadStub> = {}): ThreadStub {
     typingUsers: [],
     setFollow: vi.fn(async () => {}),
     send: vi.fn(async () => ({ error: null })),
+    sendGif: vi.fn(async () => ({ error: null as string | null })),
     retry: vi.fn(async () => ({ error: null })),
     refreshRoot: vi.fn(),
     discard: vi.fn(),
@@ -130,6 +132,20 @@ function threadState(overrides: Partial<ThreadStub> = {}): ThreadStub {
 }
 
 let thread = threadState();
+let gifs = { available: false, provider: "" };
+
+// The picker sheet's own spec covers search; the stub only carries `onPick`.
+vi.mock("@/components/chat/gif-picker-sheet", async () => {
+  const { forwardRef } = await import("react");
+  return {
+    GifPickerSheet: forwardRef<
+      unknown,
+      { provider: string; onPick: (gif: unknown) => void }
+    >(function GifPickerSheet() {
+      return null;
+    }),
+  };
+});
 /** The channel cache's copy of the parent (`useHeldChannelMessage`). */
 let heldRoot: ChatMessage | null = null;
 /** Other messages the channel's cache holds, by id. */
@@ -201,11 +217,18 @@ const save = vi.hoisted(() => ({
   setSaved: vi.fn(),
 }));
 vi.mock("@/lib/chat/save-message", () => ({ useSaveMessage: () => save }));
+// Remind me about this (#4957): the set is seen, not sent.
+const remind = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/chat/message-reminder", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/chat/message-reminder")>()),
+  useRemindMessage: () => remind,
+}));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   // The roster catch-up has its own spec in `@repo/hooks`.
   useRosterCatchUp: rosterCatchUp,
+  useGifAvailability: () => gifs,
   useChannel: () => ({ data: channelRow, isFetching: false }),
   useViewerUserId: () => viewerId,
   useAuthorAvatars: () => ({ data: undefined }),
@@ -286,6 +309,23 @@ vi.mock("@/components/chat/catch-up-sheet", async (importOriginal) => ({
 }));
 
 let writeBlockedReason: string | null = null;
+// Scheduling has its own spec (`use-schedule-send.spec.tsx`); this one checks
+// the thread hands it the thread and the composer gets its long press (#5005).
+const scheduleSend = vi.hoisted(() => ({
+  input: null as Record<string, unknown> | null,
+  open: () => {},
+}));
+vi.mock("@/components/chat/use-schedule-send", () => ({
+  useScheduleSend: (input: Record<string, unknown>) => {
+    scheduleSend.input = input;
+    return {
+      openSchedule: input.canSchedule ? scheduleSend.open : undefined,
+      scheduled: null,
+      sheets: null,
+    };
+  },
+}));
+
 vi.mock("@/lib/connection/use-connection", () => ({
   useConnection: () => ({
     isOffline: writeBlockedReason !== null,
@@ -330,6 +370,7 @@ beforeEach(() => {
   viewerId = VIEWER;
   permissions = [];
   writeBlockedReason = null;
+  gifs = { available: false, provider: "" };
   heldRoot = null;
   heldById = {};
   writes.reactionError = null;
@@ -494,6 +535,110 @@ describe("MessageThreadScreen (#3785)", () => {
     expect(composer().props.disabledHint).toBe("Slow down");
     expect(composer().props.hintTone).toBe("error");
     act(() => tree.unmount());
+  });
+
+  describe("scheduling a reply (#5005)", () => {
+    it("schedules into this thread from a long press on Send", () => {
+      const tree = render();
+      expect(scheduleSend.input).toMatchObject({
+        channelId: CHANNEL,
+        threadRootId: ROOT,
+        canSchedule: true,
+        showList: true,
+      });
+      expect(tree.root.findByType(ChatComposer).props.onSchedule).toBe(
+        scheduleSend.open,
+      );
+      act(() => tree.unmount());
+    });
+
+    it("refuses a question for Frapp, and offers nothing offline", () => {
+      catchUp.ask = true;
+      let tree = render();
+      act(() =>
+        tree.root.findByType(ChatComposer).props.onChangeText("@Frapp when?"),
+      );
+      catchUp.ask = false;
+      expect(scheduleSend.input?.refusal).toBe(
+        "A question for Frapp can't be scheduled.",
+      );
+      act(() => tree.unmount());
+      writeBlockedReason = "Reconnect to make changes.";
+      tree = render();
+      expect(
+        tree.root.findByType(ChatComposer).props.onSchedule,
+      ).toBeUndefined();
+      act(() => tree.unmount());
+    });
+  });
+
+  describe("GIFs (#4657)", () => {
+    const PICKED = {
+      id: "g1",
+      title: "wave",
+      token: "signed",
+      full: {
+        url: "https://static.klipy.com/g1.webp",
+        width: 200,
+        height: 150,
+      },
+      preview: {
+        url: "https://static.klipy.com/g1-s.webp",
+        width: 100,
+        height: 75,
+      },
+    };
+
+    it("opens the GIF picker from the thread's +, and sends a GIF as its own reply", async () => {
+      gifs = { available: true, provider: "KLIPY" };
+      const tree = render();
+      const composer = () => tree.root.findByType(ChatComposer);
+      expect(composer().props.onOpenPlus).toEqual(expect.any(Function));
+      expect(composer().props.plusLabel).toBe("Send a GIF");
+      act(() => composer().props.onChangeText("half typed"));
+      const sheet = tree.root.findByType(GifPickerSheet);
+      await act(async () => sheet.props.onPick(PICKED));
+      expect(thread.sendGif).toHaveBeenCalledWith({
+        provider: "klipy",
+        id: "g1",
+        title: "wave",
+        url: PICKED.full.url,
+        width: 200,
+        height: 150,
+        token: "signed",
+      });
+      // The typed reply stays for its own send.
+      expect(composer().props.value).toBe("half typed");
+      act(() => tree.unmount());
+    });
+
+    it("says why a GIF reply didn't send", async () => {
+      gifs = { available: true, provider: "KLIPY" };
+      thread = threadState({
+        sendGif: vi.fn(async () => ({ error: "Slow down" })),
+      });
+      const tree = render();
+      const sheet = tree.root.findByType(GifPickerSheet);
+      await act(async () => sheet.props.onPick(PICKED));
+      expect(tree.root.findByType(ChatComposer).props.disabledHint).toBe(
+        "Slow down",
+      );
+      act(() => tree.unmount());
+    });
+
+    it("offers no + where GIFs aren't set up, and holds it dark offline", () => {
+      let tree = render();
+      expect(
+        tree.root.findByType(ChatComposer).props.onOpenPlus,
+      ).toBeUndefined();
+      expect(tree.root.findAllByType(GifPickerSheet)).toHaveLength(0);
+      act(() => tree.unmount());
+      gifs = { available: true, provider: "KLIPY" };
+      writeBlockedReason = "Reconnect to make changes.";
+      tree = render();
+      expect(tree.root.findByType(ChatComposer).props.plusDisabled).toBe(true);
+      act(() => tree.unmount());
+    });
   });
 
   it("refuses a reply that is a question for Frapp, and keeps its words (#4713)", async () => {
@@ -905,6 +1050,10 @@ describe("MessageThreadScreen's full rows (#4297, slice 5)", () => {
     expect(target.save).toEqual({ saved: true });
     act(() => sheet(tree).props.onSetSaved("r2", false));
     expect(save.setSaved).toHaveBeenCalledWith("r2", false);
+    // Remind me about this, on replies as on the channel (#4957).
+    const at = new Date("2026-11-20T14:00:00.000Z");
+    act(() => sheet(tree).props.onRemind("r2", at));
+    expect(remind).toHaveBeenCalledWith("r2", at);
     // Not offered here: the channel timeline's Reply, Start thread, Mention
     // and Important.
     expect(sheet(tree).props.onReply).toBeUndefined();

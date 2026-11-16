@@ -18,8 +18,8 @@ export function useBackworkResources() {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["backwork", chapterId, "list"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork", { signal });
       if (error) throw error;
       return data;
     },
@@ -45,8 +45,9 @@ export function useFetchBackworkResource() {
     (id: string) =>
       queryClient.fetchQuery({
         queryKey: ["backwork", id],
-        queryFn: async () => {
+        queryFn: async ({ signal }) => {
           const { data, error } = await client.GET("/v1/backwork/{id}", {
+            signal,
             params: { path: { id } },
           });
           if (error) throw error;
@@ -74,8 +75,10 @@ export function useDepartments(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["backwork", "departments"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork/departments");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork/departments", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -93,8 +96,10 @@ export function useBackworkCourses(options: { enabled?: boolean } = {}) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["backwork", "courses"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork/courses");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork/courses", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -132,19 +137,29 @@ export function useSaveBackworkCourse() {
       // In the cache at once (replacing by id, or appended when new), for the
       // reason `patchNamedRow` gives; the refetch stays as the fallback.
       if (saved && typeof saved === "object" && "id" in saved) {
-        queryClient.setQueryData(["backwork", "courses"], (current: unknown) => {
-          if (!Array.isArray(current)) return current;
-          const found = current.some(
-            (row) => row && typeof row === "object" && "id" in row && row.id === saved.id,
-          );
-          return found
-            ? current.map((row) =>
-                row && typeof row === "object" && "id" in row && row.id === saved.id
-                  ? saved
-                  : row,
-              )
-            : [...current, saved];
-        });
+        queryClient.setQueryData(
+          ["backwork", "courses"],
+          (current: unknown) => {
+            if (!Array.isArray(current)) return current;
+            const found = current.some(
+              (row) =>
+                row &&
+                typeof row === "object" &&
+                "id" in row &&
+                row.id === saved.id,
+            );
+            return found
+              ? current.map((row) =>
+                  row &&
+                  typeof row === "object" &&
+                  "id" in row &&
+                  row.id === saved.id
+                    ? saved
+                    : row,
+                )
+              : [...current, saved];
+          },
+        );
       }
       queryClient.invalidateQueries({ queryKey: ["backwork", "courses"] });
     },
@@ -155,8 +170,10 @@ export function useProfessors() {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["backwork", "professors"],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/backwork/professors");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/backwork/professors", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },
@@ -293,7 +310,10 @@ function patchNamedRow(
   queryClient.setQueryData(key, (current: unknown) => {
     if (!Array.isArray(current)) return current;
     return current.map((row) =>
-      row && typeof row === "object" && "id" in row && row.id === (updated as { id: unknown }).id
+      row &&
+      typeof row === "object" &&
+      "id" in row &&
+      row.id === (updated as { id: unknown }).id
         ? { ...row, ...updated }
         : row,
     );
@@ -355,13 +375,7 @@ export function useMergeDepartments() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["backwork", "merge-departments"],
-    mutationFn: async ({
-      id,
-      targetId,
-    }: {
-      id: string;
-      targetId: string;
-    }) => {
+    mutationFn: async ({ id, targetId }: { id: string; targetId: string }) => {
       const { data, error } = await client.POST(
         "/v1/backwork/departments/{id}/merge",
         { params: { path: { id } }, body: { target_id: targetId } },
@@ -432,13 +446,7 @@ export function useMergeProfessors() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["backwork", "merge-professors"],
-    mutationFn: async ({
-      id,
-      targetId,
-    }: {
-      id: string;
-      targetId: string;
-    }) => {
+    mutationFn: async ({ id, targetId }: { id: string; targetId: string }) => {
       const { data, error } = await client.POST(
         "/v1/backwork/professors/{id}/merge",
         { params: { path: { id } }, body: { target_id: targetId } },

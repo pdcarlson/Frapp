@@ -177,6 +177,12 @@ const linkActions = {
   remove: vi.fn(),
 };
 
+const reminderActions = {
+  open: vi.fn(),
+  snooze: vi.fn(),
+  done: vi.fn(),
+};
+
 const present = vi.fn();
 const dismiss = vi.fn();
 
@@ -194,6 +200,7 @@ function sheetElement(
         onActed={onActed}
         onClosed={onClosed}
         linkActions={linkActions}
+        reminderActions={reminderActions}
       />
     </FrappThemeProvider>
   );
@@ -562,6 +569,87 @@ describe("Activity sheet (#3897)", () => {
         button(officer, "Remove for everyone").props.onPress();
       });
       expect(linkActions.remove).toHaveBeenCalledWith(linkRow);
+    });
+  });
+
+  describe("a message reminder (#4957)", () => {
+    const reminder = {
+      id: "r1",
+      message_id: "m1",
+      thread_root_id: null,
+      channel_id: "chan-1",
+      channel_name: "rush",
+      channel_type: "PUBLIC",
+      author_name: "Olive",
+      preview: "Bring the banner Friday",
+      message_created_at: "2026-11-10T15:00:00.000Z",
+      message_available: true,
+      remind_at: "2026-11-14T09:00:00.000Z",
+      fired_at: "2026-11-14T09:00:00.000Z",
+      due: true,
+    };
+    const reminderRow = (overrides: Record<string, unknown> = {}) =>
+      ({
+        kind: "reminder",
+        key: "reminder:r1",
+        title: reminder.preview,
+        detail: "Olive · #rush · Reminded Today · 9:00 AM",
+        badge: { label: "Due", variant: "warning" },
+        reminder: { ...reminder, ...overrides },
+        unread: false,
+        readRef: null,
+      }) as unknown as ActivityRow;
+
+    it("shows the message's words and who wrote it", () => {
+      const text = screenText(render(reminderRow()));
+      expect(text).toContain("Bring the banner Friday");
+      expect(text).toContain("Olive · #rush");
+      expect(text).toContain("Snooze");
+    });
+
+    it.each([
+      ["Open message", "open"],
+      ["Done", "done"],
+    ] as const)(
+      "closes the sheet, then hands %s to the screen",
+      (label, key) => {
+        const row = reminderRow();
+        const tree = render(row);
+        act(() => {
+          button(tree, label).props.onPress();
+        });
+        expect(dismiss).toHaveBeenCalledTimes(1);
+        expect(reminderActions[key]).toHaveBeenCalledWith(row);
+      },
+    );
+
+    it("snoozes to a preset, closing the sheet first", () => {
+      const row = reminderRow();
+      const tree = render(row);
+      act(() => {
+        button(tree, "Tomorrow").props.onPress();
+      });
+      expect(dismiss).toHaveBeenCalledTimes(1);
+      expect(reminderActions.snooze).toHaveBeenCalledWith(row, "tomorrow");
+    });
+
+    it("calls moving one still to come changing its time, not a snooze", () => {
+      const text = screenText(render(reminderRow({ due: false })));
+      expect(text).toContain("Change the time");
+      expect(text).not.toContain("Snooze");
+    });
+
+    it("offers only Done on a message the member can't read any more", () => {
+      const tree = render(reminderRow({ message_available: false }));
+      expect(() => button(tree, "Open message")).toThrow();
+      expect(() => button(tree, "Tomorrow")).toThrow();
+      expect(screenText(tree)).toContain(
+        "You can't see this conversation any more",
+      );
+      act(() => {
+        button(tree, "Done").props.onPress();
+      });
+      expect(reminderActions.done).toHaveBeenCalledTimes(1);
     });
   });
 });

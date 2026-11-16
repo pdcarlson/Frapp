@@ -6,6 +6,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   describe,
   it,
@@ -78,7 +79,10 @@ const {
   mockSendReturned,
   mockUseMyPermissions,
   searchHit,
+  mockScheduleMutate,
 } = vi.hoisted(() => ({
+  /** `useScheduleMessage().mutateAsync`: what a schedule sends (#4971). */
+  mockScheduleMutate: vi.fn(async () => ({})),
   mockScrollToMessage: vi.fn(),
   mockRefetch: vi.fn(),
   mockUseChatChannel: vi.fn(),
@@ -202,6 +206,9 @@ const mockBookmarkIsError = vi.fn(() => false);
 // Hide conversation (#2303). Each hide awaits its own `mutateAsync` promise,
 // so a case settles that promise to drive the shell's success and failure.
 const mockLeaveMutateAsync = vi.fn();
+const mockSetReminderAsync = vi.fn<
+  (vars: { messageId: string; remindAt: Date }) => Promise<void>
+>(() => Promise.resolve());
 const mockReopenMutate = vi.fn();
 const mockToast = vi.fn();
 // The rail's right-click menu (owner, 2026-11-06): what the shell hands it.
@@ -246,6 +253,7 @@ const mockSetSectionCollapsed = vi.fn();
 const mockSetSidebarFilter = vi.fn();
 // #2877: what the shell hands the pin hook, and the levels the rail filters on.
 const sidebarState = {
+  sort: "chapter" as "chapter" | "recent" | "alpha",
   pinOptions: undefined as { onError?: () => void } | undefined,
   foldOptions: undefined as { onError?: () => void } | undefined,
   filterOptions: undefined as { onError?: () => void } | undefined,
@@ -500,12 +508,53 @@ vi.mock("./channel-member-list", () => ({
     onOpenProfile,
   }: {
     channelId: string | null;
-    onOpenProfile?: (userId: string) => void;
+    onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
   }) => (
     <div data-testid="channel-member-list" data-channel-id={channelId ?? ""}>
-      <button onClick={() => onOpenProfile?.("u-row")}>open-row-profile</button>
+      <button
+        onClick={(event) => onOpenProfile?.("u-row", event.currentTarget)}
+      >
+        open-row-profile
+      </button>
     </div>
   ),
+}));
+// The popout owns its reads and has its own spec; here it says whom the shell
+// opened it on, and hands View profile back (#4593).
+vi.mock("./member-popout", () => ({
+  anchorFor: (element: HTMLElement) => ({
+    contextElement: element,
+    getBoundingClientRect: () => element.getBoundingClientRect(),
+  }),
+  MemberPopout: ({
+    open,
+    userId,
+    side,
+    onViewProfile,
+    onOpenChange,
+  }: {
+    open: boolean;
+    userId: string | null;
+    side?: string;
+    onViewProfile: (userId: string) => void;
+    onOpenChange: (open: boolean) => void;
+  }) =>
+    open && userId ? (
+      <div
+        data-testid="member-popout"
+        data-user-id={userId}
+        data-side={side ?? "right"}
+      >
+        <button
+          onClick={() => {
+            onOpenChange(false);
+            onViewProfile(userId);
+          }}
+        >
+          View profile
+        </button>
+      </div>
+    ) : null,
 }));
 // The profile sheet owns its reads and has its own spec; here it only says
 // whether the shell opened it, and for whom (#3726).
@@ -521,7 +570,10 @@ vi.mock("@/components/members/member-detail-sheet", () => ({
   }) =>
     open ? (
       <div data-testid="member-profile" data-user-id={userId ?? ""}>
-        <button onClick={() => onOpenChange(false)}>close-profile</button>
+        {/* Takes focus as it opens, as the real modal sheet does. */}
+        <button autoFocus onClick={() => onOpenChange(false)}>
+          close-profile
+        </button>
       </div>
     ) : null,
 }));
@@ -529,6 +581,28 @@ vi.mock("@/components/members/member-detail-sheet", () => ({
 const gifState = vi.hoisted(() => ({
   value: { available: false, provider: "" },
 }));
+// All threads (#4960): its list has its own spec; here it is two rows that
+// open a thread elsewhere, so the shell's half (switch channel, open the
+// thread) is what's under test.
+vi.mock("./all-threads-popover", () => ({
+  AllThreadsPopover: ({
+    onOpenThread,
+  }: {
+    onOpenThread: (channelId: string, rootId: string) => void;
+  }) => (
+    <>
+      <button
+        data-testid="all-threads-random"
+        onClick={() => onOpenThread("chan-random", "root-r")}
+      />
+      <button
+        data-testid="all-threads-new"
+        onClick={() => onOpenThread("chan-new", "root-n")}
+      />
+    </>
+  ),
+}));
+
 vi.mock("@repo/hooks", async () => ({
   // The shared helpers run for real, so the shell's use of them is under test.
   ...(await vi
@@ -600,6 +674,8 @@ vi.mock("@repo/hooks", async () => ({
   // The rail's New channel panel (#3838).
   useCreateChannel: () => createChannelState,
   useChannelAccessOptions: () => ({ data: [], isPending: false }),
+  // The Forward dialog (#4907) mounts only once a row asks for it.
+  useForwardMessage: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMemberDisplayNames: () => ({
     byId: sidebarState.memberNames,
     nameFor: (id: string) => sidebarState.memberNames[id] ?? null,
@@ -714,6 +790,19 @@ vi.mock("@repo/hooks", async () => ({
   // the composer remount and delete wiring. `mockBookmarks` lets the bookmark
   // cases below drive the list without touching the other suites' setup.
   useBookmarks: () => mockBookmarks(),
+  // Scheduled messages (#4956): the composer's chevron and the bar above it.
+  // None scheduled, so the bar draws nothing.
+  useScheduleMessage: () => ({ mutateAsync: mockScheduleMutate }),
+  useScheduledMessages: () => ({ data: [] }),
+  useUpdateScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteScheduledMessage: () => ({ mutate: vi.fn(), isPending: false }),
+  useSendScheduledMessageNow: () => ({ mutate: vi.fn(), isPending: false }),
+  formatScheduledFor: () => "Tomorrow at 9:00 AM",
+  schedulePresets: (now: Date) => [
+    { key: "tomorrow", label: "Tomorrow at 9:00 AM", at: now },
+  ],
+  scheduleTimeProblem: () => null,
+  scheduledFailureCopy: () => "Not sent.",
   useBookmarkedMessageIds: () =>
     new Set(
       mockBookmarks().data.map((b: { message_id: string }) => b.message_id),
@@ -728,6 +817,7 @@ vi.mock("@repo/hooks", async () => ({
     reset: mockUnbookmarkReset,
     isError: false,
   }),
+  useSetMessageReminder: () => ({ mutateAsync: mockSetReminderAsync }),
   useLeaveChannel: () => ({ mutateAsync: mockLeaveMutateAsync }),
   useGetOrCreateDm: () => ({ mutate: mockReopenMutate }),
   canHideConversation: (channel: { type: string }) => channel.type === "DM",
@@ -756,6 +846,7 @@ vi.mock("@repo/hooks", async () => ({
     pinnedIds: sidebarState.pinnedIds,
     collapsed: new Set<string>(),
     filters: { unreadOnly: false, hideMuted: false },
+    sort: sidebarState.sort,
   }),
   useSetChannelPinned: (options?: { onError?: () => void }) => {
     sidebarState.pinOptions = options;
@@ -849,11 +940,14 @@ vi.mock("./channel-list", () => ({
     "Nothing changed. Check your connection and try again.",
   ChannelFilters: ({
     onChange,
+    sort,
   }: {
     onChange: (change: { hide_muted: boolean }) => void;
+    sort?: string;
   }) => (
     <button
       data-testid="filters-hide-muted"
+      data-sort={sort}
       onClick={() => onChange({ hide_muted: true })}
     >
       hide muted
@@ -1017,11 +1111,6 @@ vi.mock("@/components/ai/meet-frapp-ai", () => ({
     consentDialog: null,
   }),
 }));
-// Where Ask Frapp's conversation is drawn (#4702). Who gets one is the
-// host's question (`ask-host.spec.tsx`); here it only has to be in place.
-vi.mock("@/components/ask/ask-host", () => ({
-  AskSlot: () => <div data-testid="ask-slot" />,
-}));
 // `@Frapp` from a channel (#4713). What a channel asks with and which turns
 // it draws are `ask-in-channel.spec.tsx`'s; the shell only carries them to the
 // composer and the timeline. `ask` is null for a member without Ask.
@@ -1069,6 +1158,10 @@ const mockChapterRoster = vi.hoisted(() => vi.fn());
 const mockRosterCatchUp = vi.hoisted(() => vi.fn());
 
 const mockDropAttach = vi.fn();
+// The shell imports these from `./composer-shell`, and the lazy `Composer`
+// from `./deferred-panels` (#5050, mocked below); both answer with the mocks
+// here, so the composer renders synchronously.
+vi.mock("./composer-shell", async () => import("./composer"));
 vi.mock("./composer", () => ({
   notifyDispatchOutcome: mockNotifyOutcome,
   Composer: ({
@@ -1092,9 +1185,16 @@ vi.mock("./composer", () => ({
     onSendGif,
     ask,
     askUnknown,
+    onSchedule,
   }: {
     channelId: string;
     onSendGif?: unknown;
+    onSchedule?: (
+      body: string,
+      attachments: unknown[],
+      picks: unknown[],
+      at: Date,
+    ) => Promise<void>;
     ask?: { busy: boolean; send: (question: string) => void } | null;
     askUnknown?: boolean;
     dropAttachRef?: { current: ((files: File[]) => void) | null };
@@ -1196,6 +1296,28 @@ vi.mock("./composer", () => ({
         >
           send
         </button>
+        {onSchedule ? (
+          <button
+            data-testid="composer-schedule"
+            onClick={() =>
+              void onSchedule(
+                "Agenda",
+                [
+                  {
+                    storagePath: "chapters/c/chat/chan-general/a/agenda.pdf",
+                    filename: "agenda.pdf",
+                    contentType: "application/pdf",
+                    byteSize: 15,
+                  },
+                ],
+                [],
+                new Date("2026-11-15T14:00:00.000Z"),
+              ).catch(() => {})
+            }
+          >
+            schedule
+          </button>
+        ) : null}
         {/* The command-form seam (#3773): what the shell answers when the
             real composer offers it a command before dispatching. */}
         {[
@@ -1417,14 +1539,18 @@ vi.mock("./message-timeline", async () => {
       canManageChannel?: boolean;
       holdFollow?: boolean;
       channelStart?: React.ReactNode;
-      onOpenProfile?: (userId: string) => void;
+      onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
       onOpenThread?: (message: { id: string }) => void;
+      onForward?: (message: { id: string }) => void;
       askTurns?: readonly { id: string }[];
+      onRemind?: (messageId: string, remindAt: Date) => void;
     }
   >(function MessageTimeline(
     {
       askTurns,
+      onRemind,
       onOpenThread,
+      onForward,
       onOpenProfile,
       messages,
       onDelete,
@@ -1469,6 +1595,9 @@ vi.mock("./message-timeline", async () => {
         {/* Edit is withheld the same way where the member can't post (#2775). */}
         <span data-testid="edit-offered">{String(!!onEdit)}</span>
         <button onClick={() => onDelete?.("msg-1")}>trigger-delete</button>
+        <button onClick={() => onRemind?.("msg-1", new Date(2099, 0, 1, 9, 0))}>
+          trigger-remind
+        </button>
         <button onClick={() => onClosePoll?.("poll-1")}>
           trigger-close-poll
         </button>
@@ -1478,7 +1607,9 @@ vi.mock("./message-timeline", async () => {
         <button onClick={() => onCloseCard?.("form-1", "form")}>
           trigger-close-form
         </button>
-        <button onClick={() => onOpenProfile?.("u-author")}>
+        <button
+          onClick={(event) => onOpenProfile?.("u-author", event.currentTarget)}
+        >
           open-author-profile
         </button>
         {/* One Reply control per message, so a test can stage a reply against
@@ -1493,6 +1624,18 @@ vi.mock("./message-timeline", async () => {
             reply to {m.id}
           </button>
         ))}
+        {/* A row's Forward (#4907), withheld if the shell doesn't wire it. */}
+        {onForward
+          ? (messages ?? []).map((m) => (
+              <button
+                key={m.id}
+                data-testid={`trigger-forward-${m.id}`}
+                onClick={() => onForward(m)}
+              >
+                forward {m.id}
+              </button>
+            ))
+          : null}
         {/* The row's Start thread and the parent's chip both call
             `onOpenThread` (#3785); withheld where threads aren't offered. */}
         {onOpenThread
@@ -1515,6 +1658,32 @@ vi.mock("./message-timeline", async () => {
   return { MessageTimeline, MessageTimelineSkeleton };
 });
 
+// The shell loads its panels on first open (`deferred-panels.tsx`, #3716).
+// Hand it the modules this file mocks, synchronously, so a test finds the
+// panel the render it opened. `vi.mock` is hoisted, so the order in this file
+// doesn't matter.
+vi.mock("./deferred-panels", async () => ({
+  Composer: (await import("./composer")).Composer,
+  PollForm: (await import("./poll-form")).PollForm,
+  SignupForm: (await import("./signup-form")).SignupForm,
+  RolePickerForm: (await import("./role-picker-form")).RolePickerForm,
+  FormBuilder: (await import("./form-builder")).FormBuilder,
+  EventQuickForm: (await import("./event-quick-form")).EventQuickForm,
+  TaskForm: (await import("@/components/tasks/task-form")).TaskForm,
+  LogHoursForm: (await import("@/components/service/log-hours-form"))
+    .LogHoursForm,
+  PointsAdjustmentForm: (
+    await import("@/components/points/points-adjustment-form")
+  ).PointsAdjustmentForm,
+  EventEditorDialog: (await import("@/components/events/event-editor-dialog"))
+    .EventEditorDialog,
+  MemberDetailSheet: (await import("@/components/members/member-detail-sheet"))
+    .MemberDetailSheet,
+  ThreadPanel: (await import("./thread-panel")).ThreadPanel,
+  preloadChatPanels: () => undefined,
+  preloadComposer: () => undefined,
+}));
+
 // The panel's own rows and reads are `thread-panel.spec.tsx`'s and
 // `use-message-thread.spec.tsx`'s; here it echoes what the shell hands it,
 // with Back and one of each row write a reply or the parent can make.
@@ -1529,6 +1698,7 @@ vi.mock("./thread-panel", () => ({
     onCatchUp,
     beside,
     askRefusal,
+    onSchedule,
   }: import("./thread-panel").ThreadPanelProps) => (
     <section
       aria-label="Thread"
@@ -1550,6 +1720,18 @@ vi.mock("./thread-panel", () => ({
       <span data-testid="thread-can-reply">{String(canReply)}</span>
       <span data-testid="thread-can-post">{String(canPost)}</span>
       <button onClick={onClose}>Back to channel</button>
+      {onSchedule ? (
+        <button
+          onClick={() =>
+            void onSchedule(
+              "Leaving at 6",
+              new Date("2026-11-15T14:00:00.000Z"),
+            )
+          }
+        >
+          thread-schedule-reply
+        </button>
+      ) : null}
       <button onClick={() => writes.delete("reply-1", rootId)}>
         thread-delete-reply
       </button>
@@ -1674,23 +1856,6 @@ beforeEach(() => {
 // announcements channel (#3414); the shell tells the composer so, from that
 // channel's `can_post`, and only that: a chapter with no announcements channel
 // leaves `/announce` to dispatch, which says the channel is missing.
-/**
- * Ask Frapp opens over the chat, rising from the composer (#4702, Paul
- * 2026-11-13: "the ask for app either pops up on top of that"). The chat
- * column gives it the place: directly above the composer, in the column, so
- * the card is the thread's width and moves with the composer as a draft
- * grows.
- */
-describe("ChatShell gives Ask Frapp its place (#4702)", () => {
-  it("puts the slot directly above the composer, inside the chat column", () => {
-    render(<ChatShell />);
-    const slot = screen.getByTestId("ask-slot");
-    const composer = screen.getByTestId("composer");
-    expect(slot.nextElementSibling).toBe(composer);
-    expect(slot.parentElement).toBe(composer.parentElement);
-  });
-});
-
 describe("ChatShell /announce gate (#3414)", () => {
   afterEach(() => {
     channelsQueryState.value = {};
@@ -3531,6 +3696,42 @@ describe("ChatShell hide conversation (#2303)", () => {
   });
 });
 
+describe("ChatShell message reminders (#4957)", () => {
+  it("sets the reminder and says when it will come", async () => {
+    mockToast.mockClear();
+    mockSetReminderAsync.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "trigger-remind" }));
+
+    expect(mockSetReminderAsync).toHaveBeenCalledWith({
+      messageId: "msg-1",
+      remindAt: new Date(2099, 0, 1, 9, 0),
+    });
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        title: "Reminder set",
+        description: expect.stringMatching(/^I'll remind you .+ at 9:00/),
+      }),
+    );
+  });
+
+  it("toasts a failed write", async () => {
+    mockToast.mockClear();
+    mockSetReminderAsync.mockRejectedValueOnce(new Error("nope"));
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "trigger-remind" }));
+
+    await waitFor(() =>
+      expect(mockToast).toHaveBeenCalledWith({
+        variant: "destructive",
+        description: "Couldn't set the reminder. Try again.",
+      }),
+    );
+  });
+});
+
 describe("ChatShell bookmark write failure (#462)", () => {
   it("says nothing while writes are succeeding", () => {
     render(<ChatShell initialChannelId="chan-general" />);
@@ -3619,6 +3820,19 @@ describe("ChatShell reply-with-quote (#489)", () => {
       replyToId: null,
       attachments: [],
     });
+  });
+
+  it("opens Forward to on the row a member forwards from (#4907)", () => {
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(
+      screen.queryByRole("dialog", { name: "Forward to" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("trigger-forward-msg-1"));
+
+    const dialog = screen.getByRole("dialog", { name: "Forward to" });
+    expect(within(dialog).getByText("the original")).toBeInTheDocument();
   });
 
   it("carries the staged message's id through to channel.send", () => {
@@ -3873,6 +4087,53 @@ describe("ChatShell reply-with-quote (#489)", () => {
       replyToId: "msg-1",
       attachments: [],
     });
+  });
+
+  it("schedules the text, its files and the staged reply, then clears the strip (#4971)", async () => {
+    mockScheduleMutate.mockClear();
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-schedule"));
+
+    await waitFor(() =>
+      expect(mockScheduleMutate).toHaveBeenCalledWith({
+        channelId: "chan-general",
+        content: "Agenda",
+        sendAt: new Date("2026-11-15T14:00:00.000Z"),
+        mentionPicks: [],
+        attachments: [
+          {
+            storage_path: "chapters/c/chat/chan-general/a/agenda.pdf",
+            filename: "agenda.pdf",
+            content_type: "application/pdf",
+            byte_size: 15,
+            width: undefined,
+            height: undefined,
+            thumbhash: undefined,
+            preview_storage_path: undefined,
+          },
+        ],
+        replyToId: "msg-1",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("none"),
+    );
+  });
+
+  it("keeps the reply staged when scheduling fails (#4971)", async () => {
+    mockScheduleMutate.mockClear();
+    mockScheduleMutate.mockRejectedValueOnce(new Error("down"));
+    withMessages([ROOT]);
+    render(<ChatShell initialChannelId="chan-general" />);
+
+    fireEvent.click(screen.getByTestId("trigger-reply-msg-1"));
+    fireEvent.click(screen.getByTestId("composer-schedule"));
+
+    await waitFor(() => expect(mockScheduleMutate).toHaveBeenCalled());
+    expect(screen.getByTestId("composer-reply-to")).toHaveTextContent("msg-1");
   });
 
   it("offers no Reply control to a member who cannot post here (alumni)", async () => {
@@ -5469,9 +5730,9 @@ describe("ChatShell member list", () => {
     document.cookie = "frapp_chat_members_hidden=; Max-Age=0; Path=/";
   });
 
-  // #3726: a name or chip in the timeline, or a member-list row, opens the
-  // directory's profile sheet for that member.
-  it("opens one profile sheet from the timeline and from the member column", () => {
+  // #3726, #4593: a name or chip in the timeline, or a member-list row, opens
+  // the popout beside it, whose View profile is the directory's profile sheet.
+  it("opens the popout from the timeline and from the member column", () => {
     stubWide(true);
     render(<ChatShell />);
     expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
@@ -5479,6 +5740,17 @@ describe("ChatShell member list", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "open-author-profile" }),
     );
+    expect(screen.getByTestId("member-popout")).toHaveAttribute(
+      "data-user-id",
+      "u-author",
+    );
+    expect(screen.getByTestId("member-popout")).toHaveAttribute(
+      "data-side",
+      "right",
+    );
+    expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View profile" }));
+    expect(screen.queryByTestId("member-popout")).not.toBeInTheDocument();
     expect(screen.getByTestId("member-profile")).toHaveAttribute(
       "data-user-id",
       "u-author",
@@ -5490,10 +5762,11 @@ describe("ChatShell member list", () => {
     fireEvent.click(
       within(column).getByRole("button", { name: "open-row-profile" }),
     );
-    expect(screen.getByTestId("member-profile")).toHaveAttribute(
-      "data-user-id",
-      "u-row",
-    );
+    // A row's popout opens to its left, as Discord's member list does.
+    const popout = screen.getByTestId("member-popout");
+    expect(popout).toHaveAttribute("data-user-id", "u-row");
+    expect(popout).toHaveAttribute("data-side", "left");
+    expect(screen.queryByTestId("member-profile")).not.toBeInTheDocument();
   });
 
   it("shows the column for the open channel by default, and hides it from the header", () => {
@@ -5533,7 +5806,7 @@ describe("ChatShell member list", () => {
     expect(document.cookie).toContain("frapp_chat_members_hidden=0");
   });
 
-  it("opens a sheet below 1280px instead, without touching the remembered choice", () => {
+  it("opens a list under the button below 1280px instead, without touching the remembered choice", async () => {
     stubWide(false);
     render(<ChatShell />);
 
@@ -5541,12 +5814,61 @@ describe("ChatShell member list", () => {
     expect(toggle).not.toHaveAttribute("aria-pressed");
     fireEvent.click(toggle);
 
-    const sheet = screen.getByRole("dialog", { name: "Members" });
-    expect(within(sheet).getByTestId("channel-member-list")).toHaveAttribute(
+    // A popover under the button (#4593), not a sheet over the page.
+    const list = screen.getByRole("dialog", { name: "Members" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(within(list).getByTestId("channel-member-list")).toHaveAttribute(
       "data-channel-id",
       "chan-general",
     );
     expect(document.cookie).not.toContain("frapp_chat_members_hidden");
+
+    // A row opens its popout over the list; clicking in the popout, and the
+    // full profile behind its View profile taking focus, leave the list open.
+    fireEvent.click(
+      within(list).getByRole("button", { name: "open-row-profile" }),
+    );
+    const popout = screen.getByTestId("member-popout");
+    expect(popout).toHaveAttribute("data-user-id", "u-row");
+    // Radix arms a layer's outside listeners a tick after it opens.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    fireEvent.pointerDown(popout);
+    expect(screen.getByRole("dialog", { name: "Members" })).toBeInTheDocument();
+    fireEvent.click(
+      within(popout).getByRole("button", { name: "View profile" }),
+    );
+    expect(screen.getByTestId("member-profile")).toHaveAttribute(
+      "data-user-id",
+      "u-row",
+    );
+    expect(screen.getByRole("button", { name: "close-profile" })).toHaveFocus();
+    expect(screen.getByRole("dialog", { name: "Members" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "close-profile" }));
+    expect(screen.getByRole("dialog", { name: "Members" })).toBeInTheDocument();
+
+    // The button closes it again: its own pointerdown is not an outside
+    // press that would close the list for its click to reopen.
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull();
+  });
+
+  it("closes the list under the button on Escape and hands focus back to the button", async () => {
+    stubWide(false);
+    render(<ChatShell />);
+    const toggle = screen.getByRole("button", { name: "Show members" });
+    fireEvent.click(toggle);
+    const list = screen.getByRole("dialog", { name: "Members" });
+    within(list).getByRole("button", { name: "open-row-profile" }).focus();
+
+    fireEvent.keyDown(document.activeElement ?? document.body, {
+      key: "Escape",
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Members" })).toBeNull(),
+    );
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await waitFor(() => expect(toggle).toHaveFocus());
   });
 
   it("shows no toggle and no column on a 1:1 DM", () => {
@@ -6200,16 +6522,16 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
 
   it("maps polls:create and the event grants", () => {
     expect(formsFor({ data: { permissions: ["polls:create"] } })).toBe(
-      "poll:true,signup:true,form:true,event:false,task:false,hours:false,points:false",
+      "poll:true,signup:true,form:true,event:false,task:false,hours:false,points:false,roles:false",
     );
     expect(
       formsFor({ data: { permissions: ["events:create", "members:view"] } }),
     ).toBe(
-      "poll:false,signup:true,form:true,event:true,task:false,hours:false,points:false",
+      "poll:false,signup:true,form:true,event:true,task:false,hours:false,points:false,roles:false",
     );
     // Both event grants, not `events:create` alone: the form needs the roster.
     expect(formsFor({ data: { permissions: ["events:create"] } })).toBe(
-      "poll:false,signup:true,form:true,event:false,task:false,hours:false,points:false",
+      "poll:false,signup:true,form:true,event:false,task:false,hours:false,points:false,roles:false",
     );
   });
 
@@ -6226,7 +6548,7 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
         },
       }),
     ).toBe(
-      "poll:false,signup:true,form:true,event:false,task:true,hours:true,points:true",
+      "poll:false,signup:true,form:true,event:false,task:true,hours:true,points:true,roles:false",
     );
     // Without `members:view` the task and points forms can't list anyone;
     // logging your own hours needs no roster.
@@ -6235,20 +6557,26 @@ describe("ChatShell tells the composer's + which forms the role may use (#3865)"
         data: { permissions: ["tasks:manage", "service:log", "points:adjust"] },
       }),
     ).toBe(
-      "poll:false,signup:true,form:true,event:false,task:false,hours:true,points:false",
+      "poll:false,signup:true,form:true,event:false,task:false,hours:true,points:false,roles:false",
+    );
+  });
+
+  it("maps roles:manage to the Role picker (#4958)", () => {
+    expect(formsFor({ data: { permissions: ["roles:manage"] } })).toBe(
+      "poll:false,signup:true,form:true,event:false,task:false,hours:false,points:false,roles:true",
     );
   });
 
   it("blames nothing on the role while permissions load, and says when they couldn't be read", () => {
     expect(formsFor({ data: undefined })).toBe(
-      "poll:loading,signup:true,form:true,event:loading,task:loading,hours:loading,points:loading",
+      "poll:loading,signup:true,form:true,event:loading,task:loading,hours:loading,points:loading,roles:loading",
     );
     expect(formsFor({ data: undefined, isError: true })).toBe(
-      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown",
+      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown,roles:unknown",
     );
     // Paused offline before it ever landed: it can't answer either.
     expect(formsFor({ data: undefined, fetchStatus: "paused" })).toBe(
-      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown",
+      "poll:unknown,signup:true,form:true,event:unknown,task:unknown,hours:unknown,points:unknown,roles:unknown",
     );
   });
 });
@@ -6357,6 +6685,23 @@ describe("ChatShell thread panel", () => {
     fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
     expect(screen.getByTestId("thread-can-post")).toHaveTextContent("false");
     expect(screen.getByTestId("thread-can-reply")).toHaveTextContent("false");
+    // No reply, so nothing to schedule into the thread (#5005).
+    expect(screen.queryByText("thread-schedule-reply")).not.toBeInTheDocument();
+  });
+
+  it("schedules a thread reply into that thread (#5005)", async () => {
+    mockScheduleMutate.mockClear();
+    render(<ChatShell initialChannelId="chan-general" />);
+    fireEvent.click(screen.getByTestId("trigger-thread-msg-1"));
+    fireEvent.click(screen.getByText("thread-schedule-reply"));
+    await waitFor(() =>
+      expect(mockScheduleMutate).toHaveBeenCalledWith({
+        channelId: "chan-general",
+        content: "Leaving at 6",
+        sendAt: new Date("2026-11-15T14:00:00.000Z"),
+        threadRootId: "msg-1",
+      }),
+    );
   });
 });
 
@@ -6525,6 +6870,50 @@ describe("ChatShell's two lists (#3774)", () => {
     expect(screen.queryByTestId("composer")).not.toBeInTheDocument();
   });
 
+  it("reads the latest messages on the channels rail only under Recent, and offers the sort there alone (#2877)", () => {
+    latestReads.enabled = [];
+    latestReads.rows = [
+      {
+        channel_id: "chan-group",
+        sender_id: "other-1",
+        author_name: "Cole Bennett",
+        content: "hi",
+        kind: "text",
+        attachment_count: 0,
+        created_at: "2026-11-12T01:20:00.000Z",
+      },
+    ];
+    channelsQueryState.value = { data: [...CHANNELS, DM, GROUP] };
+    sidebarState.sort = "recent";
+    try {
+      const { unmount } = render(<ChatShell />);
+      expect(latestReads.enabled.at(-1)).toBe(true);
+      expect(rail()).toHaveAttribute("data-latest", "chan-group");
+      // The times order the rail; no preview line is drawn from them.
+      expect(rail()).not.toHaveAttribute("data-previews");
+      expect(screen.getByTestId("filters-hide-muted")).toHaveAttribute(
+        "data-sort",
+        "recent",
+      );
+      unmount();
+
+      sidebarState.sort = "alpha";
+      latestReads.enabled = [];
+      const alpha = render(<ChatShell />);
+      expect(latestReads.enabled.every((on) => on === false)).toBe(true);
+      expect(rail()).not.toHaveAttribute("data-latest");
+      alpha.unmount();
+
+      // Direct messages always run newest first, so they offer no sort.
+      render(<ChatShell view="direct" />);
+      expect(screen.getByTestId("filters-hide-muted")).not.toHaveAttribute(
+        "data-sort",
+      );
+    } finally {
+      sidebarState.sort = "chapter";
+    }
+  });
+
   it("reads the latest messages only for Direct messages, and words each last line (#3774)", () => {
     latestReads.enabled = [];
     latestReads.rows = [
@@ -6662,5 +7051,42 @@ describe("ChatShell's two lists (#3774)", () => {
       expect(rail()).toHaveAttribute("data-latest", "chan-dm");
       expect(previews().get("chan-dm")).toBe("see you at 7");
     });
+  });
+});
+
+describe("ChatShell All threads (#4960)", () => {
+  it("switches to the thread's channel and opens the thread there", async () => {
+    render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("composer");
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("all-threads-random"));
+
+    expect(await screen.findByTestId("thread-panel")).toBeInTheDocument();
+  });
+
+  it("keeps the thread for a channel the cached list hasn't brought in yet", async () => {
+    const { rerender } = render(<ChatShell initialChannelId="chan-general" />);
+    await screen.findByTestId("composer");
+
+    fireEvent.click(screen.getByTestId("all-threads-new"));
+    expect(mockRefetch).toHaveBeenCalled();
+    expect(screen.queryByTestId("thread-panel")).toBeNull();
+
+    // The refetch brings the new channel in.
+    const before = channelsQueryState.value;
+    channelsQueryState.value = {
+      ...before,
+      data: [
+        ...CHANNELS,
+        { id: "chan-new", name: "new", type: "PUBLIC", member_ids: [] },
+      ],
+    };
+    try {
+      rerender(<ChatShell initialChannelId="chan-general" />);
+      expect(await screen.findByTestId("thread-panel")).toBeInTheDocument();
+    } finally {
+      channelsQueryState.value = before;
+    }
   });
 });

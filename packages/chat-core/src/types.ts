@@ -134,6 +134,9 @@ export const CHAT_MESSAGE_KINDS = [
   "signup",
   "form",
   "ask_answer",
+  // An officer's role picker (#4958): members tap to join or leave the
+  // Non-chapter business roles it lists.
+  "role_picker",
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 
@@ -493,6 +496,7 @@ export interface RawThreadLastReply {
   content?: unknown;
   kind?: unknown;
   attachment_count?: unknown;
+  has_gif?: unknown;
   created_at?: unknown;
   sender_blocked?: unknown;
 }
@@ -505,6 +509,11 @@ export interface ThreadLastReply {
   content: string;
   kind: ChatMessageKind;
   attachment_count: number;
+  /**
+   * The reply is a GIF (#4657), so the card reads "Jake: GIF". Always set by
+   * `normalizeRow`; optional so a preview built by hand needn't say no.
+   */
+  has_gif?: boolean;
   created_at: string;
   /**
    * The server's verdict that it withheld this preview because the viewer
@@ -616,6 +625,7 @@ function threadLastReplyOf(
     attachment_count: attachmentCount({
       attachment_count: raw.attachment_count,
     }),
+    has_gif: raw.has_gif === true,
     created_at: typeof raw.created_at === "string" ? raw.created_at : "",
     sender_blocked: raw.sender_blocked === true,
   };
@@ -865,6 +875,22 @@ export interface MessageGif {
 /** What a client sends: the picker result's GIF and the token the API signed it with. */
 export interface OutgoingGif extends MessageGif {
   token: string;
+}
+
+/**
+ * A send's `gif`, as `POST /v1/channels/{id}/messages` takes it: the one
+ * shape for a channel message and a thread reply, since the API checks the
+ * token over these fields.
+ */
+export function gifRequestBody(gif: OutgoingGif) {
+  return {
+    id: gif.id,
+    title: gif.title || undefined,
+    url: gif.url,
+    width: gif.width,
+    height: gif.height,
+    token: gif.token,
+  };
 }
 
 /** The API's own bound on a GIF's edges (`MAX_GIF_EDGE` in its GIF port). */

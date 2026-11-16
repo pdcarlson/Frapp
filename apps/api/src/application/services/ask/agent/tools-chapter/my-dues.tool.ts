@@ -88,6 +88,7 @@ export class MyDuesAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: listSourceId(this.name),
         kind: 'dues',
+        audience: { type: 'asker' },
         title: 'Your dues',
         page: 'dues',
         lines: [...summary, ...shown, ...(cutLine ? [cutLine] : [])],

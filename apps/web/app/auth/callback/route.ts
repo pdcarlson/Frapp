@@ -1,40 +1,13 @@
 import { NextResponse } from "next/server";
-import type { Session, User } from "@supabase/supabase-js";
-import { isNewAccount } from "@/lib/auth/new-account-detection";
 import {
   AUTH_CALLBACK_INTENT_PARAM,
   EMAIL_CONFIRMED_AUTH_ERROR,
-  NEW_ACCOUNT_PATH,
   isEmailLinkIntent,
   isEmailOtpType,
-  isSignInIntent,
   resolveRedirectPath,
 } from "@/lib/auth/redirect";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { reportServerAuthFailure } from "@/lib/sentry/auth-failures";
-
-/**
- * Where a sign-in from the sign-in screen goes when it just created a brand-new
- * account: `/new-account?next=…`, or `null` to carry on to `next`. Only the
- * sign-in screen's intents ask (`sign-in` for Google and Apple, `sign-in-link`
- * for the magic link); a sign-up confirmation (`confirm`) never does, since
- * creating an account there is the point. The decision is `isNewAccount`
- * (`lib/auth/new-account-detection.ts`), the same one `/new-account` makes, and
- * it falls open to `next` on any doubt, so it never blocks a sign-in.
- */
-async function newAccountDestination(
-  url: URL,
-  next: string,
-  data: { user: User | null; session: Session | null } | null,
-): Promise<URL | null> {
-  if (!isSignInIntent(url.searchParams.get(AUTH_CALLBACK_INTENT_PARAM))) {
-    return null;
-  }
-  if (!(await isNewAccount(data?.user, data?.session?.access_token))) return null;
-  const notice = new URL(NEW_ACCOUNT_PATH, url.origin);
-  notice.searchParams.set("next", next);
-  return notice;
-}
 
 /**
  * Report a link or provider return that didn't become a session (#3832), with
@@ -80,17 +53,6 @@ function reportCallbackFailure(failure: { error?: unknown; code?: string }): voi
  * `next` is re-validated with the same open-redirect guard the proxy applies
  * (a same-origin path or `/chat`), so tampering with the link cannot send a
  * freshly signed-in session to another host.
- *
- * **A sign-in that created an account.** When the sign-in screen started the
- * round trip and it returns a brand-new account, the member asked to sign in
- * and got a new, empty one instead. With Google or Apple (`intent=sign-in`),
- * GoTrue links nothing it can't verify, so a member who joined on the phone
- * with Apple and picks Google here is split (#3786). With the magic link
- * (`intent=sign-in-link`, on the `token_hash` or the Confirm-signup `code`
- * path), `signInWithOtp` creates an account for an email the member never
- * joined with (#3801). Either way they go to `/new-account` first, which names
- * the account and offers sign-out in one step, before onboarding treats them
- * as new. Nothing is linked or merged.
  */
 export async function GET(request: Request): Promise<NextResponse> {
   const url = new URL(request.url);
@@ -110,14 +72,11 @@ export async function GET(request: Request): Promise<NextResponse> {
       return NextResponse.redirect(signIn);
     }
     const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase.auth.verifyOtp({
+    const { error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
       type: otpType,
     });
-    if (!error) {
-      const newAccount = await newAccountDestination(url, next, data);
-      return NextResponse.redirect(newAccount ?? new URL(next, url.origin));
-    }
+    if (!error) return NextResponse.redirect(new URL(next, url.origin));
     reportCallbackFailure({ error });
     const signIn = new URL("/sign-in", url.origin);
     signIn.searchParams.set("redirectTo", next);
@@ -127,11 +86,8 @@ export async function GET(request: Request): Promise<NextResponse> {
 
   if (code && !linkError) {
     const supabase = await createSupabaseServerClient();
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      const newAccount = await newAccountDestination(url, next, data);
-      return NextResponse.redirect(newAccount ?? new URL(next, url.origin));
-    }
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (!error) return NextResponse.redirect(new URL(next, url.origin));
     reportCallbackFailure({ error });
     // An email link that reached here with a code already confirmed the
     // address (GoTrue verifies before it hands out a code), so the only thing

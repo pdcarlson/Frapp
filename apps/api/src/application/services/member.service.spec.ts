@@ -74,6 +74,7 @@ describe('MemberService', () => {
       create: jest.fn(),
       update: jest.fn(),
       setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
       delete: jest.fn(),
       // One chapter each unless a test says otherwise (#4367).
       findByUser: jest.fn().mockResolvedValue([]),
@@ -87,6 +88,7 @@ describe('MemberService', () => {
       findByIds: jest.fn(),
       findDisplayIdentitiesByIds: jest.fn(),
       findContactsByIds: jest.fn(),
+      findSharedBirthdaysByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
@@ -233,6 +235,81 @@ describe('MemberService', () => {
   // The roster projection exists so a display surface never has to pull
   // MemberProfile. Its whole point is what it leaves out, so these assert the
   // narrow lookup is the one used and the shape stays three fields wide.
+  describe('birthdays (#4959)', () => {
+    it('lists the shared birthdays of members, in calendar order', async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberFixture({ id: 'm-1', user_id: 'user-1' }),
+        memberFixture({ id: 'm-2', user_id: 'user-2' }),
+      ]);
+      mockUserRepo.findSharedBirthdaysByIds.mockResolvedValue([
+        {
+          id: 'user-2',
+          display_name: 'Dana Lowe',
+          avatar_url: null,
+          birthday_month: 11,
+          birthday_day: 2,
+        },
+        {
+          id: 'user-1',
+          display_name: 'Marcus Reid',
+          avatar_url: null,
+          birthday_month: 3,
+          birthday_day: 4,
+        },
+      ]);
+
+      const result = await service.findBirthdaysByChapter('chapter-1');
+
+      expect(mockUserRepo.findSharedBirthdaysByIds).toHaveBeenCalledWith([
+        'user-1',
+        'user-2',
+      ]);
+      expect(result.map((b) => b.id)).toEqual(['user-1', 'user-2']);
+    });
+
+    it('reads nothing for a chapter without members', async () => {
+      mockRepo.findByChapter.mockResolvedValue([]);
+
+      await expect(
+        service.findBirthdaysByChapter('chapter-1'),
+      ).resolves.toEqual([]);
+      expect(mockUserRepo.findSharedBirthdaysByIds).not.toHaveBeenCalled();
+    });
+
+    it('puts a birthday on a profile only when its member shares it', async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberFixture({ id: 'm-1', user_id: 'user-1' }),
+        memberFixture({ id: 'm-2', user_id: 'user-2' }),
+      ]);
+      mockUserRepo.findByIds.mockResolvedValue([
+        userFixture({
+          id: 'user-1',
+          birthday_month: 3,
+          birthday_day: 4,
+          birthday_year: 2004,
+          birthday_visibility: 'chapter',
+        }),
+        userFixture({
+          id: 'user-2',
+          birthday_month: 5,
+          birthday_day: 6,
+          birthday_visibility: 'nobody',
+        }),
+      ]);
+
+      const result = await service.findByChapter('chapter-1');
+
+      const byUser = new Map(result.map((m) => [m.user_id, m]));
+      expect(byUser.get('user-1')).toEqual(
+        expect.objectContaining({ birthday_month: 3, birthday_day: 4 }),
+      );
+      expect(byUser.get('user-1')).not.toHaveProperty('birthday_year');
+      expect(byUser.get('user-2')).toEqual(
+        expect.objectContaining({ birthday_month: null, birthday_day: null }),
+      );
+    });
+  });
+
   describe('findRosterByChapter', () => {
     const memberRow = (userId: string, id = `member-${userId}`) =>
       memberFixture({

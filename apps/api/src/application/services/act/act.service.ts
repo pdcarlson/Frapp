@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { LanguageModelError } from '#domain/adapters/language-model.interface';
-import { ACT_PROPOSAL_EXPIRY_DAYS, type ActMissing } from '@repo/validation';
+import { ACT_PROPOSAL_EXPIRY_DAYS } from '@repo/validation';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
 import { SystemPermissions, WILDCARD } from '#domain/constants/permissions';
-import type { AiSuggestion } from '#domain/entities/ai-suggestion.entity';
 import { localDateIn } from '#domain/utils/zoned-time';
 import { aiConsentRefusal } from '../ai/ai-consent-refusal';
 import { AiConsentService } from '../ai/ai-consent.service';
@@ -19,12 +18,12 @@ import {
   ActPlanSchema,
   actPlanMessage,
   actPlanSystem,
+  type ActPlan,
 } from './act-prompt';
 import {
   ACT_TOOLS,
   type ActDraft,
-  type ActEventChoice,
-  type ActNote,
+  type ActOutcome,
   type ActTool,
   type ActToolContext,
 } from './act-tool';
@@ -71,32 +70,6 @@ export interface ActInput extends ActMember, ActConversation {
    */
   onAction?: (action: string) => void;
 }
-
-export type ActUnavailableReason =
-  | 'consent_required'
-  | 'chapter_off'
-  | 'chapter_limit'
-  | 'member_limit'
-  | 'not_available';
-
-export type ActOutcome =
-  | {
-      status: 'proposed';
-      action: string;
-      suggestion: AiSuggestion;
-      notes: ActNote[];
-    }
-  | {
-      status: 'needs_event';
-      action: string;
-      amount: number;
-      reason: string;
-      events: ActEventChoice[];
-    }
-  | { status: 'unclear'; action: string | null; missing: ActMissing }
-  | { status: 'no_action'; available: string[] }
-  | { status: 'refused' }
-  | { status: 'unavailable'; reason: ActUnavailableReason };
 
 /**
  * Asking Frapp to do something (#718, `spec/behavior/ai.md` § Asking Frapp to
@@ -234,6 +207,33 @@ export class ActService {
       this.toolContext(input, held, now),
     );
     return this.settle(tool, draft, input, input.keepEarlier === true);
+  }
+
+  /**
+   * A card from details that are already worked out: the tool loop's way in
+   * (`act-agent-tools.ts`, #4899), where the model that read the chapter
+   * names the action and writes its details. No model call is made here.
+   * Everything else is as on a typed request: `ai:act` and `members:view`,
+   * the action one this member was offered, names looked up in this
+   * chapter's roster, and a proposal only the asker can open. Earlier cards
+   * are left waiting, because a turn can come with several.
+   */
+  async proposePlanned(
+    member: ActMember,
+    action: string,
+    plan: ActPlan,
+    now: Date = new Date(),
+  ): Promise<ActOutcome> {
+    const { offered, held } = await this.offered(member);
+    const tool = offered.find((item) => item.name === action);
+    if (!tool) {
+      return {
+        status: 'no_action',
+        available: offered.map((item) => item.name),
+      };
+    }
+    const draft = await tool.draft(plan, this.toolContext(member, held, now));
+    return this.settle(tool, draft, member, true);
   }
 
   private async settle(

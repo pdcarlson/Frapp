@@ -42,6 +42,7 @@ vi.mock("@repo/hooks", () => ({
     mutateAsync: mockUpdateChapter,
     isPending: false,
   }),
+  useChannels: () => ({ data: [] }),
   useOrgConfig: () => ({
     data: { org_archetype: "ifc" },
     isPending: false,

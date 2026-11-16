@@ -95,7 +95,7 @@ describe("the AI hooks", () => {
     });
     expect(aiAvailableFrom(result.current)).toBeUndefined();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(GET).toHaveBeenCalledWith("/v1/ai/consent");
+    expect(GET).toHaveBeenCalledWith("/v1/ai/consent", { signal: expect.any(AbortSignal) });
     expect(aiAvailableFrom(result.current)).toBe(true);
   });
 
@@ -280,7 +280,10 @@ describe("Meet Frapp AI's answers (#4790)", () => {
       await expect(result.current.turnOn()).resolves.toBe(true);
     });
     expect(PATCH).not.toHaveBeenCalled();
-    expect(GET).not.toHaveBeenCalledWith("/v1/ai/settings");
+    expect(GET).not.toHaveBeenCalledWith(
+      "/v1/ai/settings",
+      expect.anything(),
+    );
   });
 
   it("counts Continue as on once the yes is saved, even when the chapter's switches fail", async () => {

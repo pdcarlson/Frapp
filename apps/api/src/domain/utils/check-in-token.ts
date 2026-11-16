@@ -36,8 +36,9 @@ import { constantTimeEquals } from './constant-time';
  *
  * ## A scanned link may last longer, when presence is checked (2026-11-13)
  *
- * The code is read by the phone's own camera now, not Frapp's scanner: a
- * member taps the camera's banner, the app starts, and it may have to ask for
+ * The code is read mostly by the phone's own camera now: a member taps the
+ * camera's banner, the app starts (s18's Scan code, for a member already in
+ * the app, hands its read to the same path), and it may have to ask for
  * location (a permission prompt, then up to 15 seconds for a GPS fix) before
  * it can send. That is expected to outrun one spare window, though no
  * check-in has yet been refused for it (the first ones, on 2026-11-13, were

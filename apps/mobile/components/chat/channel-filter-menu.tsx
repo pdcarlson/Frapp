@@ -6,9 +6,13 @@ import {
   FILTER_CHANNELS_LABEL,
   FILTER_CHANNELS_ON_LABEL,
   HIDE_MUTED_LABEL,
+  SIDEBAR_SORT_OPTIONS,
+  SORT_CHANNELS_LABEL,
   UNREAD_ONLY_LABEL,
   type SidebarFilterChange,
 } from "@repo/hooks";
+import type { SidebarSort } from "@repo/validation";
+import { Segmented } from "@/components/segmented";
 import { SignetTokens } from "@repo/theme/signet";
 import { Toggle } from "@/components/toggle";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -16,7 +20,9 @@ import { useBackToClose, useFocusOnOpen } from "@/lib/overlay";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
- * Chat home's filters behind one control (owner, 2026-11-06), the way web's
+ * Chat home's sort and filters behind one control (owner, 2026-11-06; the
+ * sort joined in #2877, a segmented control on top, as web's popover has
+ * it), the way web's
  * rail keeps them behind its Channels header (`ChannelFilters`,
  * `apps/web/components/chat/channel-list.tsx`). They used to be two chips
  * above the list, the first thing on the screen for something rarely used.
@@ -177,11 +183,14 @@ export function ChannelFilterMenu({
   menu,
   unreadOnly,
   hideMuted,
+  sort,
   onChange,
 }: {
   menu: ChannelFilterMenuState;
   unreadOnly: boolean;
   hideMuted: boolean;
+  /** The member's sort (#2877). Absent, the menu offers none. */
+  sort?: SidebarSort;
   /** Passes straight to `useSetSidebarFilter`, as web's filters do. */
   onChange: (change: SidebarFilterChange) => void;
 }) {
@@ -220,12 +229,29 @@ export function ChannelFilterMenu({
       <View
         style={[styles.menu, { top: menu.anchor.top, left: menu.anchor.left }]}
       >
+        {sort ? (
+          <View style={styles.sort}>
+            <Text ref={firstRef} style={styles.caption}>
+              {SORT_CHANNELS_LABEL}
+            </Text>
+            <Segmented
+              options={SIDEBAR_SORT_OPTIONS}
+              value={sort}
+              onChange={(next) => onChange({ sort: next })}
+              accessibilityLabel={SORT_CHANNELS_LABEL}
+              dense
+            />
+          </View>
+        ) : null}
         {rows.map((row, index) => (
           <View
             key={row.key}
-            style={[styles.row, index > 0 ? styles.rowDivided : null]}
+            style={[styles.row, index > 0 || sort ? styles.rowDivided : null]}
           >
-            <Text ref={index === 0 ? firstRef : undefined} style={styles.label}>
+            <Text
+              ref={index === 0 && !sort ? firstRef : undefined}
+              style={styles.label}
+            >
               {row.label}
             </Text>
             <Toggle
@@ -298,6 +324,14 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.foreground,
       flex: 1,
+    },
+    sort: {
+      gap: tokens.spacing.xs,
+      paddingVertical: tokens.spacing.sm,
+    },
+    caption: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
     },
   });
 }

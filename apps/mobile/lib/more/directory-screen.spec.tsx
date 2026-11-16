@@ -98,6 +98,8 @@ const state = vi.hoisted(() => ({
   rolesError: false,
   // `GET /v1/members` failing with nothing cached (#4135).
   membersError: false,
+  // The Non-chapter business roles the viewer can pick (#4958).
+  pickable: [] as { id: string; name: string; held: boolean }[],
 }));
 
 // One refetch per read, so a pull can be checked against each of them.
@@ -113,6 +115,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useMemberDisplayNames: () => ({ avatarTintFor: () => null }),
   useActiveChapterId: () => state.chapterId,
+  usePickableRoles: () => ({ roles: state.pickable, isLoading: false }),
   usePermissionList: () => state.permissions,
   useRoles: () =>
     state.rolesError
@@ -184,6 +187,10 @@ vi.mock("@/components/filter-chips", () => ({
 
 vi.mock("@/components/directory/member-detail-sheet", () => ({
   MemberDetailSheet: () => null,
+}));
+
+vi.mock("@/components/roles/pick-roles-sheet", () => ({
+  PickRolesSheet: () => null,
 }));
 
 // A props-only stand-in: the spec drives the filter it hands the screen.
@@ -343,6 +350,7 @@ function countOf(tree: ReactTestRenderer, value: string) {
 
 beforeEach(() => {
   resetListLayoutsForTests();
+  state.pickable = [];
   state.chapterId = "c-1";
   state.search = [];
   state.membersError = false;
@@ -1436,5 +1444,21 @@ describe("s13 as a grid (#4175)", () => {
         ),
       ).not.toHaveLength(0);
     });
+  });
+});
+
+describe("Add roles on the Directory (#4958, placement provisional)", () => {
+  const addRoles = (tree: ReactTestRenderer) =>
+    inHeader(tree, (element) => element.props.label === "Add roles");
+
+  it("offers Add roles when the chapter has roles members pick", () => {
+    state.pickable = [{ id: "im", name: "Intramurals", held: false }];
+    const tree = render();
+    expect(addRoles(tree).accessibilityRole).toBe("button");
+  });
+
+  it("offers nothing in a chapter with none", () => {
+    const tree = render();
+    expect(() => addRoles(tree)).toThrow("not in the list header");
   });
 });

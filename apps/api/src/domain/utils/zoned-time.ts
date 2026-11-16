@@ -90,7 +90,26 @@ export function zonedTimeToUtc(
   const wall = Date.UTC(d.year, d.month - 1, d.day, t.hour, t.minute);
   let instant = new Date(wall - offsetMs(new Date(wall), timeZone));
   instant = new Date(wall - offsetMs(instant, timeZone));
-  return instant;
+  if (readsAs(instant, timeZone) === wall) return instant;
+  // The time was skipped. The offsets either side of the change each map
+  // `wall` to an instant that reads otherwise: the earlier offset's lands
+  // just after the gap, the later offset's just before it. Take the one
+  // after, so a skipped midnight (Santiago in September, Havana and the
+  // Azores in March) begins the day rather than ending the one before.
+  const around = [-SKIP_SPAN_MS, SKIP_SPAN_MS].map(
+    (shift) => wall - offsetMs(new Date(instant.getTime() + shift), timeZone),
+  );
+  return new Date(Math.max(...around));
+}
+
+/** Far enough either side of a skipped time to read both offsets. */
+const SKIP_SPAN_MS = 6 * 60 * 60 * 1000;
+
+/** The wall clock `instant` shows in `timeZone`, as a UTC timestamp. */
+function readsAs(instant: Date, timeZone: string): number {
+  return (
+    Math.floor(instant.getTime() / 1000) * 1000 + offsetMs(instant, timeZone)
+  );
 }
 
 /** The calendar date a clock in `timeZone` shows at `instant`, `YYYY-MM-DD`. */

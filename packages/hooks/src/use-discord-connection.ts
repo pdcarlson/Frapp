@@ -42,8 +42,10 @@ export function useDiscordAvailability(options?: { enabled?: boolean }) {
 
   return useQuery({
     queryKey: discordConnectionKeys.availability(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/discord/availability");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/discord/availability", {
+        signal,
+      });
       if (error) throw error;
       return data ?? { available: false };
     },
@@ -60,8 +62,10 @@ export function useDiscordConnection(options?: { enabled?: boolean }) {
 
   return useQuery({
     queryKey: discordConnectionKeys.connection(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/discord/connection");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/discord/connection", {
+        signal,
+      });
       if (error) throw error;
       return data;
     },

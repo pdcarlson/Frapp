@@ -7,11 +7,14 @@ import {
   errorCopy,
   useAcceptAiSuggestion,
   useActEventAudience,
+  useAskCards,
   useCurrentUser,
   useDismissAiSuggestion,
   useMembers,
+  settleProposedEvent,
   type ActResponse,
   type AiSuggestion,
+  type AskCardEnd,
   type AskProposalResolution,
   type PointsSuggestionEdits,
   type TaskSuggestionEdits,
@@ -21,22 +24,30 @@ import { codeOf } from "@repo/api-sdk";
 import { dueEntryFields, dueEntryFromTask } from "@repo/formatting";
 import {
   ACT_COPY,
+  ASK_CARDS_COPY,
   actActionLabel,
   actMissingLine,
   actNoteLine,
   actPointsDoneLine,
+  actPointsEdits,
+  actRepeatLine,
   actAttendanceLine,
   actConfirmRefusalLine,
   actPointsHeadline,
   actPointsTotalLine,
   actWhenLine,
+  TASK_TITLE_MAX_LENGTH,
 } from "@repo/validation";
 import { ReportAiButton } from "@/components/ai/report-ai";
 import {
   DueDateField,
   dueEntryPassed,
 } from "@/components/tasks/due-date-field";
+import { deferredPanel } from "@/components/chat/deferred-panel";
+import { isoToLocalInput } from "@/components/events/local-input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { FOCUS_RING } from "@/components/ui/focus";
 import {
   Select,
@@ -63,8 +74,16 @@ import { cn } from "@/lib/utils";
  *
  * **What can be fixed on the card is what a request leaves unsaid.** Who a
  * points change is for (take a member off, add one a name did not find), and
- * who and when for a task. Everything else is said again in other words, in
- * the same field: the conversation carries what was typed before.
+ * who and when for a task.
+ *
+ * **Every card has Edit beside Cancel** (Paul, 2026-11-15, #5117: "it got
+ * the general idea down, but I'd love to be able to add attendance and change
+ * the time"). Google Calendar's "Add to calendar" on an event found in mail
+ * opens the full event editor, and Linear's issue-from-text opens its own
+ * issue form, so an event's Edit opens the ordinary event form filled in from
+ * the card (attendance by role, the end, notes, the repeat), and its Create
+ * is the confirm. A points or task card is a few fields, so Edit turns its
+ * words into fields on the card itself, as Linear's triage edits in place.
  *
  * **Every card in the thread stays live.** A card is not replaced by the next
  * thing asked. Once it is confirmed or dismissed it becomes one line saying
@@ -74,11 +93,28 @@ import { cn } from "@/lib/utils";
 type Member = NonNullable<ReturnType<typeof useMembers>["data"]>[number];
 
 /** Where a confirmed change can be seen, by the page the card named. */
+/**
+ * The full event form an event card's Edit opens, loaded on first open: Ask
+ * is drawn on every dashboard route, and the form is a large download. Not the
+ * chat shell's own deferred copy, which would import the shell's panels and
+ * make a cycle back to Ask.
+ */
+const EventEditorDialog = deferredPanel(
+  () =>
+    import("@/components/events/event-editor-dialog").then(
+      (m) => m.EventEditorDialog,
+    ),
+  "dialog",
+);
+
 const RESULT_LINKS: Record<string, { href: string; label: string }> = {
   points: { href: "/points", label: ACT_COPY.open_points },
   tasks: { href: "/tasks", label: ACT_COPY.open_tasks },
   events: { href: "/events", label: ACT_COPY.open_events },
 };
+
+/** The accept route's limit on a task suggestion's details. */
+const TASK_SUGGESTION_DETAILS_MAX_LENGTH = 2000;
 
 const CARD_FRAME = "rounded-[14px] border border-border bg-card p-3";
 
@@ -87,6 +123,12 @@ interface CardEdits {
   targets: string[];
   assigneeId: string;
   due: string;
+  /** Edit was pressed: the card's words are fields (#5117). */
+  editing: boolean;
+  amount: string;
+  reason: string;
+  taskName: string;
+  details: string;
 }
 
 /**
@@ -119,7 +161,14 @@ export function AskProposal({
   const [problem, setProblem] = useState<string | null>(null);
 
   if (resolution) {
-    return <ProposalReceipt proposal={proposal} resolution={resolution} />;
+    return (
+      <ProposalReceipt
+        headline={
+          proposal.suggestion ? cardHeadline(proposal.suggestion) : null
+        }
+        resolution={resolution}
+      />
+    );
   }
 
   async function pickEvent(eventId: string) {
@@ -161,9 +210,7 @@ export function AskProposal({
 }
 
 /** What the card was about, in a few words, once it is one line. */
-function proposalHeadline(proposal: ActResponse): string | null {
-  const suggestion = proposal.suggestion;
-  if (!suggestion) return null;
+function cardHeadline(suggestion: AiSuggestion): string | null {
   if (suggestion.task) return suggestion.task.title;
   if (suggestion.new_event) return suggestion.new_event.name;
   return suggestion.points?.reason ?? null;
@@ -177,13 +224,12 @@ function resolutionLine(resolution: AskProposalResolution): string {
 
 /** A card that ended: what happened, in the frame the card had. */
 function ProposalReceipt({
-  proposal,
+  headline,
   resolution,
 }: {
-  proposal: ActResponse;
+  headline: string | null;
   resolution: AskProposalResolution;
 }) {
-  const headline = proposalHeadline(proposal);
   const link =
     resolution.kind === "done" ? RESULT_LINKS[resolution.page ?? ""] : null;
   return (
@@ -206,6 +252,96 @@ function ProposalReceipt({
     </section>
   );
 }
+
+/**
+ * The cards an answer came with (`answer.proposals`, #4904): each waits for
+ * its own Confirm, under the words that led to it, the way Claude and ChatGPT
+ * stack one approval per action under a reply. A card that ended is one line
+ * in its frame, as a turn's single card is. One the server no longer holds
+ * (decided on another device, or a day passed) says so in the same frame.
+ *
+ * While the cards are being read, each holds a frame of a card's usual
+ * height, so the thread does not jump when they arrive.
+ */
+export function AskAnswerCards({
+  ids,
+  ended,
+  onEnded,
+}: {
+  ids: readonly string[];
+  /** How each card that is no longer waiting ended, by its id. */
+  ended: Readonly<Record<string, AskCardEnd>>;
+  onEnded: (suggestionId: string, end: AskCardEnd) => void;
+}) {
+  const waiting = useMemo(() => ids.filter((id) => !ended[id]), [ids, ended]);
+  const cards = useAskCards(waiting);
+  return (
+    <div className="space-y-2" data-testid="ask-answer-cards">
+      {ids.map((id) => {
+        const end = ended[id];
+        if (end) {
+          return (
+            <ProposalReceipt
+              key={id}
+              headline={end.headline}
+              resolution={end.resolution}
+            />
+          );
+        }
+        const suggestion = cards.byId.get(id);
+        if (suggestion) {
+          const headline = cardHeadline(suggestion);
+          return (
+            <ActCard
+              key={id}
+              suggestion={suggestion}
+              notes={NO_NOTES}
+              onDone={(line, page) =>
+                onEnded(id, {
+                  resolution: { kind: "done", line, page },
+                  headline,
+                })
+              }
+              onCancelled={() =>
+                onEnded(id, { resolution: { kind: "cancelled" }, headline })
+              }
+              onGone={() =>
+                onEnded(id, { resolution: { kind: "gone" }, headline })
+              }
+            />
+          );
+        }
+        if (!cards.settled) {
+          // The list could not be read: the card may well still be waiting,
+          // so it is not called gone. It comes back when the list is read.
+          return cards.failed ? (
+            <section key={id} className={CARD_FRAME}>
+              <p role="alert" className="text-sm text-muted-foreground">
+                {ASK_CARDS_COPY.unread}
+              </p>
+            </section>
+          ) : (
+            <section
+              key={id}
+              aria-busy="true"
+              className={cn(CARD_FRAME, "h-28 opacity-60")}
+            />
+          );
+        }
+        return (
+          <ProposalReceipt
+            key={id}
+            headline={null}
+            resolution={{ kind: "gone" }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** A card under an answer carries no notes: they come only with a typed request. */
+const NO_NOTES: ActResponse["notes"] = [];
 
 function ActAnswer({
   response,
@@ -379,9 +515,64 @@ function ActCard({
     ? dueEntryFromTask({ due_date: task.due_date, due_at: task.due_at })
     : "";
   const [due, setDue] = useState(kept?.due ?? suggestedDue);
+  const [editing, setEditing] = useState(kept?.editing ?? false);
+  const [amount, setAmount] = useState(
+    kept?.amount ?? (points ? String(points.amount) : ""),
+  );
+  const [reason, setReason] = useState(kept?.reason ?? points?.reason ?? "");
+  const [taskName, setTaskName] = useState(kept?.taskName ?? task?.title ?? "");
+  const [details, setDetails] = useState(
+    kept?.details ?? task?.description ?? "",
+  );
   useEffect(() => {
-    store?.set(suggestion.id, { targets, assigneeId, due });
-  }, [store, suggestion.id, targets, assigneeId, due]);
+    store?.set(suggestion.id, {
+      targets,
+      assigneeId,
+      due,
+      editing,
+      amount,
+      reason,
+      taskName,
+      details,
+    });
+  }, [
+    store,
+    suggestion.id,
+    targets,
+    assigneeId,
+    due,
+    editing,
+    amount,
+    reason,
+    taskName,
+    details,
+  ]);
+  const [fieldProblem, setFieldProblem] = useState<{
+    field: "amount" | "reason" | "taskName";
+    error: string;
+  } | null>(null);
+  // The event form: mounted on the first Edit and kept, so it can animate
+  // closed; what was typed is kept under the card's name (#4593).
+  const [eventForm, setEventForm] = useState<boolean | null>(null);
+  // One object for the proposal: the form fills again when it changes.
+  const eventTemplate = useMemo(
+    () =>
+      event
+        ? {
+            name: event.name,
+            description: event.description,
+            location: event.location,
+            point_value: event.point_value,
+            is_mandatory: event.is_mandatory,
+          }
+        : null,
+    [event],
+  );
+  const shownAmount = useMemo(() => {
+    if (!points || !editing) return points?.amount ?? 0;
+    const read = actPointsEdits(points, amount, "-");
+    return read.ok ? (read.edits.amount ?? points.amount) : points.amount;
+  }, [points, editing, amount]);
   const [showMembers, setShowMembers] = useState(false);
   // Confirm pressed with something still missing: say which, on the card.
   const [flagged, setFlagged] = useState(false);
@@ -407,17 +598,39 @@ function ActCard({
       {};
     if (points) {
       if (targets.length === 0) return setFlagged(true);
+      const changes: PointsSuggestionEdits = {};
+      if (editing) {
+        const read = actPointsEdits(points, amount, reason);
+        if (!read.ok) {
+          return setFieldProblem({ field: read.field, error: read.error });
+        }
+        Object.assign(changes, read.edits);
+      }
       const changed =
         targets.length !== points.target_user_ids.length ||
         targets.some((id) => !points.target_user_ids.includes(id));
-      if (changed) edits = { points: { target_user_ids: targets } };
+      if (changed) changes.target_user_ids = targets;
+      if (Object.keys(changes).length > 0) edits = { points: changes };
     }
     if (task) {
+      const changes: TaskSuggestionEdits = {};
+      if (editing) {
+        const name = taskName.trim().slice(0, TASK_TITLE_MAX_LENGTH);
+        if (!name) {
+          return setFieldProblem({
+            field: "taskName",
+            error: ACT_COPY.no_task_name,
+          });
+        }
+        if (name !== task.title) changes.title = name;
+        const said =
+          details.trim().slice(0, TASK_SUGGESTION_DETAILS_MAX_LENGTH) || null;
+        if (said !== (task.description ?? null)) changes.description = said;
+      }
       if (!assigneeId || !due) return setFlagged(true);
       if (dueEntryPassed(due, new Date(), suggestedDue)) {
         return setFlagged(true);
       }
-      const changes: TaskSuggestionEdits = {};
       if (assigneeId !== (task.assignee_id ?? "")) {
         changes.assignee_id = assigneeId;
       }
@@ -440,7 +653,7 @@ function ActCard({
         const outcome = decision.result?.outcome;
         onDone(
           actPointsDoneLine(
-            points.amount,
+            edits.points?.amount ?? points.amount,
             outcome?.adjusted ?? targets.length,
             outcome?.skipped ?? 0,
           ),
@@ -478,6 +691,24 @@ function ActCard({
     onCancelled();
   }
 
+  /** Edit: the event form, or the card's words as fields. */
+  function edit() {
+    setProblem(null);
+    if (event) setEventForm(true);
+    else setEditing(true);
+  }
+
+  // Create in the event form is the confirm: the form made the event through
+  // its own route, and the proposal records it (or is taken down). The event
+  // is made either way, so the card says so either way. Not awaited by the
+  // form, which closes at once rather than offering Create again while this
+  // runs.
+  function recordMadeEvent(eventId: string) {
+    void settleProposedEvent({ accept, dismiss }, suggestion.id, eventId).then(
+      () => onDone(ACT_COPY.done_event, "events"),
+    );
+  }
+
   const addable = members.filter(
     (member) =>
       member.user_id !== me && !targets.includes(String(member.user_id)),
@@ -486,7 +717,7 @@ function ActCard({
   let title: string = ACT_COPY.card_event_title;
   if (points) {
     title =
-      points.amount < 0
+      shownAmount < 0
         ? ACT_COPY.card_points_title_take
         : ACT_COPY.card_points_title_give;
   } else if (task) {
@@ -519,15 +750,59 @@ function ActCard({
         <>
           <div className="space-y-0.5">
             <p className="text-base font-semibold text-foreground">
-              {actPointsHeadline(points.amount, targets.length)}
+              {actPointsHeadline(shownAmount, targets.length)}
             </p>
             {/* One line high with or without it, so removing down to one member moves nothing. */}
             <p className="min-h-[18px] text-caption text-muted-foreground">
-              {actPointsTotalLine(points.amount, targets.length)}
+              {actPointsTotalLine(shownAmount, targets.length)}
             </p>
           </div>
+          {editing ? (
+            <div className="space-y-2">
+              <CardField
+                id={`${suggestion.id}-amount`}
+                label={ACT_COPY.field_amount}
+                hint={ACT_COPY.amount_hint}
+                problem={
+                  fieldProblem?.field === "amount" ? fieldProblem.error : null
+                }
+              >
+                <Input
+                  id={`${suggestion.id}-amount`}
+                  inputMode="numeric"
+                  value={amount}
+                  disabled={busy}
+                  aria-invalid={fieldProblem?.field === "amount" || undefined}
+                  onChange={(change) => {
+                    setAmount(change.target.value);
+                    if (fieldProblem?.field === "amount") setFieldProblem(null);
+                  }}
+                />
+              </CardField>
+              <CardField
+                id={`${suggestion.id}-reason`}
+                label={ACT_COPY.field_reason}
+                problem={
+                  fieldProblem?.field === "reason" ? fieldProblem.error : null
+                }
+              >
+                <Input
+                  id={`${suggestion.id}-reason`}
+                  value={reason}
+                  disabled={busy}
+                  aria-invalid={fieldProblem?.field === "reason" || undefined}
+                  onChange={(change) => {
+                    setReason(change.target.value);
+                    if (fieldProblem?.field === "reason") setFieldProblem(null);
+                  }}
+                />
+              </CardField>
+            </div>
+          ) : null}
           <dl className="space-y-2">
-            <CardRow label={ACT_COPY.field_reason}>{points.reason}</CardRow>
+            {editing ? null : (
+              <CardRow label={ACT_COPY.field_reason}>{points.reason}</CardRow>
+            )}
             {points.event_name ? (
               <CardRow label={ACT_COPY.field_attendance}>
                 {actAttendanceLine(points.event_name, points.event_start_time)}
@@ -566,14 +841,56 @@ function ActCard({
 
       {task ? (
         <>
-          <p className="break-words text-base font-semibold text-foreground">
-            {task.title}
-          </p>
-          {task.description ? (
-            <p className="break-words text-sm text-muted-foreground">
-              {task.description}
-            </p>
-          ) : null}
+          {editing ? (
+            <div className="space-y-2">
+              <CardField
+                id={`${suggestion.id}-task`}
+                label={ACT_COPY.field_task_name}
+                problem={
+                  fieldProblem?.field === "taskName" ? fieldProblem.error : null
+                }
+              >
+                <Input
+                  id={`${suggestion.id}-task`}
+                  value={taskName}
+                  maxLength={TASK_TITLE_MAX_LENGTH}
+                  disabled={busy}
+                  aria-invalid={fieldProblem?.field === "taskName" || undefined}
+                  onChange={(change) => {
+                    setTaskName(change.target.value);
+                    if (fieldProblem?.field === "taskName") {
+                      setFieldProblem(null);
+                    }
+                  }}
+                />
+              </CardField>
+              <CardField
+                id={`${suggestion.id}-details`}
+                label={ACT_COPY.field_details}
+                problem={null}
+              >
+                <Textarea
+                  id={`${suggestion.id}-details`}
+                  value={details}
+                  rows={3}
+                  maxLength={TASK_SUGGESTION_DETAILS_MAX_LENGTH}
+                  disabled={busy}
+                  onChange={(change) => setDetails(change.target.value)}
+                />
+              </CardField>
+            </div>
+          ) : (
+            <>
+              <p className="break-words text-base font-semibold text-foreground">
+                {task.title}
+              </p>
+              {task.description ? (
+                <p className="break-words text-sm text-muted-foreground">
+                  {task.description}
+                </p>
+              ) : null}
+            </>
+          )}
           {notesStrip}
           <div className="space-y-2">
             <div className="space-y-1">
@@ -640,6 +957,11 @@ function ActCard({
             <CardRow label={ACT_COPY.field_when}>
               {actWhenLine(event.start_time, event.end_time)}
             </CardRow>
+            {event.recurrence_rule ? (
+              <CardRow label={ACT_COPY.field_repeats}>
+                {actRepeatLine(event.recurrence_rule, event.start_time)}
+              </CardRow>
+            ) : null}
             {event.location ? (
               <CardRow label={ACT_COPY.field_where}>{event.location}</CardRow>
             ) : null}
@@ -685,6 +1007,17 @@ function ActCard({
         >
           {ACT_COPY.cancel}
         </Button>
+        {editing ? null : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={edit}
+          >
+            {ACT_COPY.edit}
+          </Button>
+        )}
         <Button
           type="button"
           size="sm"
@@ -694,7 +1027,54 @@ function ActCard({
           {ACT_COPY.confirm}
         </Button>
       </div>
+      {event && eventForm !== null ? (
+        <EventEditorDialog
+          open={eventForm}
+          onOpenChange={setEventForm}
+          mode="create"
+          event={null}
+          usingPreviewData={false}
+          template={eventTemplate}
+          initialStartAt={isoToLocalInput(event.start_time)}
+          initialEndAt={isoToLocalInput(event.end_time)}
+          initialRepeatRule={event.recurrence_rule}
+          keptDraft={`ask-event:${suggestion.id}`}
+          onCreated={recordMadeEvent}
+          onSaved={() => undefined}
+        />
+      ) : null}
     </section>
+  );
+}
+
+/** A field on the card under its Edit, with its label above. */
+function CardField({
+  id,
+  label,
+  hint,
+  problem,
+  children,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  problem: string | null;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <label htmlFor={id} className={cn(EYEBROW, "text-muted-foreground")}>
+        {label}
+      </label>
+      {children}
+      {problem ? (
+        <p role="alert" className="text-caption text-destructive-text">
+          {problem}
+        </p>
+      ) : hint ? (
+        <p className="text-caption text-muted-foreground">{hint}</p>
+      ) : null}
+    </div>
   );
 }
 

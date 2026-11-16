@@ -13,6 +13,12 @@ import { Button } from "@/components/ui/button";
  * since lost access to, reads as current without this. The import watch panel
  * drew the first one; this is that line, shared.
  *
+ * It also says when a supporting read failed with nothing cached under a page
+ * whose own rows loaded: names on Tasks, Service hours and Points, or the
+ * viewer's account on Tasks (`spec/ui/design-system/components.md` §10, "A
+ * part that failed under a page that loaded"). The message is the caller's, so
+ * it names what the failure costs rather than calling the rows stale.
+ *
  * **The live region is always mounted**, and empty while the read is current,
  * so the line appearing is announced: a region that mounts already populated
  * is not reliably read out (the chat timeline's `BlockListNotice` keeps its

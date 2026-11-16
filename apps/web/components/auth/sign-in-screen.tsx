@@ -177,10 +177,7 @@ function SignInPageContent() {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
-          // `intent=sign-in-link`: this is the sign-in screen, so a link that
-          // just created a brand-new, chapterless account is told so on
-          // `/new-account` (#3801). The tag still carries the Confirm-signup
-          // good-news path for an address that isn't confirmed yet, whose
+          // `intent=sign-in-link` carries the Confirm-signup good-news path for an address that isn't confirmed yet, whose
           // `?code=` link can confirm and still fail to sign this browser in
           // ({@link isEmailLinkIntent}).
           emailRedirectTo: magicLinkRedirectUrl(window.location.origin, redirectTo),

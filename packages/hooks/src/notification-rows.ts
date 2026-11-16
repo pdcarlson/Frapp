@@ -46,6 +46,7 @@ export type NotificationKind =
   | "service"
   | "reports"
   | "import"
+  | "recap"
   | "other";
 
 /** A kind drawn as a tile: no person is behind the notice. */
@@ -68,6 +69,7 @@ export const NOTIFICATION_TILE_HUE: Record<NotificationTileKind, RoleColorHex> =
     service: roleColor("teal"),
     reports: roleColor("rose"),
     import: roleColor("slate"),
+    recap: roleColor("violet"),
     other: roleColor("slate"),
   };
 
@@ -83,7 +85,38 @@ export const NOTIFICATION_TILE_GLYPH: Record<
   service: "service",
   reports: "reports",
   import: "folder",
+  // The weekly recap push (#4985) opens Activity.
+  recap: "activity",
   other: "activity",
+};
+
+/** A kind drawn as a person with a badge on their face's corner. */
+export type NotificationPersonKind = Exclude<
+  NotificationKind,
+  NotificationTileKind
+>;
+
+/**
+ * What a person row's corner badge holds (#4476), read by both clients so a
+ * kind wears one badge everywhere: a typed mark, a glyph from the shared nav
+ * set, or the announcement megaphone, which each platform draws itself (the
+ * nav set has none). A DM wears Direct messages' own glyph, the place it
+ * lives, as a tile wears its screen's.
+ */
+export type NotificationBadge =
+  { mark: string } | { glyph: NavGlyphName } | { announcement: true };
+
+export const NOTIFICATION_BADGE: Record<
+  NotificationPersonKind,
+  NotificationBadge
+> = {
+  mention: { mark: "@" },
+  channel: { mark: "#" },
+  join: { mark: "+" },
+  announcement: { announcement: true },
+  dm: { glyph: "direct" },
+  group: { glyph: "chat" },
+  chat: { glyph: "chat" },
 };
 
 /**
@@ -105,6 +138,7 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   service: "Service hours",
   reports: "Report",
   import: "Discord import",
+  recap: "Weekly recap",
   other: "Notice",
 };
 
@@ -148,6 +182,8 @@ const SCREEN_TILES: Record<string, NotificationTileKind> = {
   ai_suggestions: "tasks",
   chat_reports: "reports",
   discord_import: "import",
+  // The weekly recap push (#4985).
+  activity: "recap",
 };
 
 const CHAT_KINDS = new Set(["dm", "group", "announcement", "channel"]);

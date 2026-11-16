@@ -2,8 +2,12 @@ import { useState } from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ActResponse, AskProposalResolution } from "@repo/hooks";
-import { ACT_COPY } from "@repo/validation";
+import type {
+  ActResponse,
+  AskCardEnd,
+  AskProposalResolution,
+} from "@repo/hooks";
+import { ACT_COPY, ASK_CARDS_COPY } from "@repo/validation";
 
 /**
  * A proposal in the Ask conversation (#718): something the member asked to
@@ -20,10 +24,35 @@ const state = vi.hoisted(() => ({
   audience: vi.fn(),
   accept: vi.fn(),
   dismiss: vi.fn(),
+  eventForm: undefined as
+    | undefined
+    | {
+        open: boolean;
+        template?: Record<string, unknown> | null;
+        initialStartAt?: string;
+        initialEndAt?: string;
+        initialRepeatRule?: string | null;
+        keptDraft?: string;
+        onCreated?: (eventId: string) => Promise<void> | void;
+      },
+  cards: {
+    byId: new Map<string, unknown>(),
+    settled: true,
+    failed: false,
+    asked: [] as string[][],
+  },
 }));
 
 vi.mock("@/components/ai/report-ai", () => ({
   ReportAiButton: () => null,
+}));
+
+// The form itself has its own spec (`event-editor-dialog.spec.tsx`).
+vi.mock("@/components/events/event-editor-dialog", () => ({
+  EventEditorDialog: (props: NonNullable<typeof state.eventForm>) => {
+    state.eventForm = props;
+    return null;
+  },
 }));
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
@@ -40,6 +69,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     mutateAsync: state.dismiss,
     isPending: false,
   }),
+  // The hook has its own spec (`use-ask-cards.spec.tsx`).
+  useAskCards: (ids: readonly string[]) => {
+    state.cards.asked.push([...ids]);
+    return {
+      byId: state.cards.byId,
+      settled: state.cards.settled,
+      failed: state.cards.failed,
+    };
+  },
   useCurrentUser: () => ({ data: { id: ME } }),
   useMembers: () => ({
     isSuccess: true,
@@ -52,7 +90,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
-const { AskProposal, AskCardEditsContext } = await import("./ask-proposal");
+const { AskAnswerCards, AskProposal, AskCardEditsContext } =
+  await import("./ask-proposal");
 type AskCardEditsStore = import("./ask-proposal").AskCardEditsStore;
 
 const base = {
@@ -329,6 +368,142 @@ describe("AskProposal", () => {
     });
   });
 
+  describe("Edit (#5117)", () => {
+    // Paul's request on 2026-11-15: "Chapter, every Sunday night at 6:48 PM".
+    const series = () =>
+      show({
+        ...base,
+        action: "create_event",
+        suggestion: suggestion("new_event", {
+          name: "Chapter",
+          description: null,
+          location: null,
+          start_time: "2026-11-15T23:48:00.000Z",
+          end_time: "2026-11-16T00:48:00.000Z",
+          point_value: null,
+          is_mandatory: false,
+          recurrence_rule:
+            "FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=13;TZID=America/New_York",
+        }),
+      });
+
+    beforeEach(() => {
+      state.eventForm = undefined;
+    });
+
+    it("says a series repeats, written out", async () => {
+      series();
+      expect(
+        await screen.findByText(
+          "Every Sunday, 13 times, the last on Sunday, February 7, 2027",
+        ),
+      ).toBeDefined();
+    });
+
+    it("opens the event form filled in from the card, and Create there is the confirm", async () => {
+      state.accept.mockResolvedValue({ result: null });
+      series();
+      expect(state.eventForm).toBeUndefined();
+      await userEvent.click(
+        await screen.findByRole("button", { name: ACT_COPY.edit }),
+      );
+      const form = state.eventForm!;
+      expect(form.open).toBe(true);
+      expect(form.template).toMatchObject({
+        name: "Chapter",
+        is_mandatory: false,
+      });
+      expect(form.initialRepeatRule).toBe(
+        "FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=13;TZID=America/New_York",
+      );
+      expect(form.initialStartAt).toBeTruthy();
+      expect(form.keptDraft).toBe("ask-event:suggestion-1");
+      expect(state.accept).not.toHaveBeenCalled();
+
+      await form.onCreated?.("event-9");
+      expect(state.accept).toHaveBeenCalledWith({
+        id: "suggestion-1",
+        newEventId: "event-9",
+      });
+      expect(await screen.findByText(ACT_COPY.done_event)).toBeDefined();
+    });
+
+    it("turns a points card's amount and reason into fields, and sends only what changed", async () => {
+      state.accept.mockResolvedValue({
+        result: {
+          kind: "points",
+          id: "t",
+          outcome: { adjusted: 2, skipped: 0 },
+        },
+      });
+      show(pointsCard([JORDAN, JACOB]));
+      await userEvent.click(
+        await screen.findByRole("button", { name: ACT_COPY.edit }),
+      );
+      const amount = screen.getByLabelText(ACT_COPY.field_amount);
+      await userEvent.clear(amount);
+      await userEvent.type(amount, "0");
+      await userEvent.click(
+        screen.getByRole("button", { name: ACT_COPY.confirm }),
+      );
+      expect(state.accept).not.toHaveBeenCalled();
+      expect(screen.getByText(ACT_COPY.bad_amount)).toBeDefined();
+
+      await userEvent.clear(amount);
+      await userEvent.type(amount, "-10");
+      expect(
+        screen.getByText("Take 10 points away from 2 members"),
+      ).toBeDefined();
+      await userEvent.click(
+        screen.getByRole("button", { name: ACT_COPY.confirm }),
+      );
+      expect(state.accept).toHaveBeenCalledWith({
+        id: "suggestion-1",
+        points: { amount: -10 },
+      });
+    });
+
+    it("turns a task's name and details into fields", async () => {
+      state.accept.mockResolvedValue({ result: null });
+      show({
+        ...base,
+        action: "create_task",
+        suggestion: suggestion("task", {
+          title: "Book the bus",
+          description: null,
+          assignee_id: JORDAN,
+          due_date: "2099-11-13",
+          due_at: null,
+          subtasks: [],
+        }),
+      });
+      await userEvent.click(
+        await screen.findByRole("button", { name: ACT_COPY.edit }),
+      );
+      const name = screen.getByLabelText(ACT_COPY.field_task_name);
+      await userEvent.clear(name);
+      await userEvent.click(
+        screen.getByRole("button", { name: ACT_COPY.confirm }),
+      );
+      expect(screen.getByText(ACT_COPY.no_task_name)).toBeDefined();
+      await userEvent.type(name, "Book the bus for formal");
+      await userEvent.type(
+        screen.getByLabelText(ACT_COPY.field_details),
+        "Two buses, 60 seats",
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: ACT_COPY.confirm }),
+      );
+      expect(state.accept).toHaveBeenCalledWith({
+        id: "suggestion-1",
+        task: {
+          title: "Book the bus for formal",
+          description: "Two buses, 60 seats",
+        },
+      });
+    });
+  });
+
   it("asks who a task is for before it can be confirmed", async () => {
     show({
       ...base,
@@ -484,5 +659,80 @@ describe("AskProposal", () => {
         .getByRole("link", { name: ACT_COPY.open_tasks })
         .getAttribute("href"),
     ).toBe("/tasks");
+  });
+});
+
+/** The cards an answer came with (`answer.proposals`, #4904). */
+describe("AskAnswerCards", () => {
+  const task = (id: string, title: string) => ({
+    ...suggestion("task", {
+      title,
+      description: null,
+      assignee_id: JORDAN,
+      due_date: "2026-11-20",
+      due_at: null,
+    }),
+    id,
+  });
+
+  function Cards({ ids }: { ids: string[] }) {
+    const [ended, setEnded] = useState<Record<string, AskCardEnd>>({});
+    return (
+      <AskAnswerCards
+        ids={ids}
+        ended={ended}
+        onEnded={(id, end) => setEnded((now) => ({ ...now, [id]: end }))}
+      />
+    );
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    state.cards.byId = new Map();
+    state.cards.settled = true;
+    state.cards.failed = false;
+    state.cards.asked = [];
+  });
+
+  it("draws each card, and one that ends becomes a line while the other waits", async () => {
+    state.cards.byId = new Map<string, unknown>([
+      ["s1", task("s1", "Buy cups")],
+      ["s2", task("s2", "Book the hall")],
+    ]);
+    state.dismiss.mockResolvedValue({});
+    render(<Cards ids={["s1", "s2"]} />);
+    expect(screen.getByText("Buy cups")).toBeDefined();
+    expect(screen.getByText("Book the hall")).toBeDefined();
+    const cancels = screen.getAllByRole("button", { name: ACT_COPY.cancel });
+    expect(cancels).toHaveLength(2);
+    await userEvent.click(cancels[0]!);
+    expect(state.dismiss).toHaveBeenCalledWith("s1");
+    expect(await screen.findByText(ACT_COPY.cancelled)).toBeDefined();
+    // The line still says what the card was about.
+    expect(screen.getByText("Buy cups")).toBeDefined();
+    expect(
+      screen.getAllByRole("button", { name: ACT_COPY.confirm }),
+    ).toHaveLength(1);
+    // Only the card still waiting is asked for again.
+    expect(state.cards.asked.at(-1)).toEqual(["s2"]);
+  });
+
+  it("holds a frame while the cards are read, and says so when one is no longer waiting", () => {
+    state.cards.settled = false;
+    const view = render(<Cards ids={["s1"]} />);
+    expect(view.container.querySelector('[aria-busy="true"]')).not.toBeNull();
+    expect(screen.queryByText(ACT_COPY.gone)).toBeNull();
+    state.cards.settled = true;
+    view.rerender(<Cards ids={["s1"]} />);
+    expect(view.container.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(screen.getByText(ACT_COPY.gone)).toBeDefined();
+  });
+
+  it("does not call a card gone when the list could not be read", () => {
+    state.cards.settled = false;
+    state.cards.failed = true;
+    render(<Cards ids={["s1"]} />);
+    expect(screen.getByText(ASK_CARDS_COPY.unread)).toBeDefined();
+    expect(screen.queryByText(ACT_COPY.gone)).toBeNull();
   });
 });

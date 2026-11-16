@@ -6,6 +6,7 @@ import {
   Check,
   CircleAlert,
   Flag,
+  Forward,
   MoreHorizontal,
   Pencil,
   Tag,
@@ -22,6 +23,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -50,6 +52,7 @@ import {
   type MessageFlagView,
 } from "@repo/chat-core/flags";
 import { MessageAttachments } from "./message-attachments";
+import { MessageReminderMenu } from "./message-reminder-menu";
 import { MessageGifImage } from "./message-gif";
 import { ForwardedCard } from "./forwarded-card";
 import { QuotedMessage, replyPreviewText } from "./reply-quote";
@@ -57,6 +60,7 @@ import {
   canActOnMessage,
   canBlockSender,
   canDeleteMessage,
+  canForwardMessage,
   canReportMessage,
   canEditMessage,
   isOwnMessage,
@@ -67,11 +71,12 @@ import {
   type MemberLookup,
 } from "@repo/chat-core/message-actions";
 import { MessageRenderer } from "./renderers";
+import type { InlineMessageEditorHandle } from "./inline-message-editor";
+import { InlineMessageEditor } from "./deferred-inline-editor";
 import {
-  InlineMessageEditor,
-  type InlineMessageEditorHandle,
-} from "./inline-message-editor";
-import { MentionOpenerContext } from "./renderers/message-markdown";
+  MentionOpenerContext,
+  type MentionOpener,
+} from "./renderers/message-markdown";
 import {
   authorProfileUserId,
   mentionedUserId,
@@ -288,6 +293,12 @@ export interface MessageItemProps {
    * the viewer can see.
    */
   onToggleBookmark?: (messageId: string, next: boolean) => void;
+  /**
+   * "Remind me about this" (#4957): the viewer's own reminder on this
+   * message, set or moved. Optional, as Save's toggle is: a surface that
+   * doesn't wire it offers no control.
+   */
+  onRemind?: (messageId: string, remindAt: Date) => void;
   /** Gates the Delete affordance on messages that aren't the viewer's own. */
   canManageChannel?: boolean;
   /**
@@ -295,6 +306,12 @@ export interface MessageItemProps {
    * confirmed message (`canReportMessage`), never the viewer's own.
    */
   onReport?: (message: ChatMessage) => void;
+  /**
+   * Opens the Forward dialog for this message (#4907): anyone's confirmed
+   * plain-text message (`canForwardMessage`), first in the More menu, as on
+   * Discord's and Slack's desktop message menus.
+   */
+  onForward?: (message: ChatMessage) => void;
   /**
    * Asks to block this message's sender (#2687). Offered where
    * `canBlockSender` allows, which needs `isMember` too.
@@ -325,9 +342,11 @@ export interface MessageItemProps {
   /**
    * Opens a member's profile by `users.id` (#3726): the author's from their
    * name or photo, or a mentioned member's from an `@` chip, as on mobile.
-   * Optional, so a surface with no profile sheet draws plain names.
+   * Optional, so a surface with no profile sheet draws plain names. The
+   * clicked name, photo or chip comes along as `anchor`, so chat can open its
+   * popout beside it (#4593).
    */
-  onOpenProfile?: (userId: string) => void;
+  onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
 }
 
 /**
@@ -343,7 +362,7 @@ function AuthorName({
   style,
   children,
 }: {
-  openProfile: (() => void) | null;
+  openProfile: ((event: React.MouseEvent<HTMLElement>) => void) | null;
   /** `author-line` where the name is the line itself (compact density). */
   slot?: string;
   className: string;
@@ -431,8 +450,10 @@ export function MessageItem({
   onFlag,
   isBookmarked,
   onToggleBookmark,
+  onRemind,
   canManageChannel,
   onReport,
+  onForward,
   onBlock,
   isMember,
   isTapRevealed,
@@ -456,15 +477,20 @@ export function MessageItem({
     ? authorProfileUserId(message, nameFor)
     : null;
   const openAuthor =
-    onOpenProfile && authorUserId ? () => onOpenProfile(authorUserId) : null;
+    onOpenProfile && authorUserId
+      ? (event: React.MouseEvent<HTMLElement>) =>
+          onOpenProfile(authorUserId, event.currentTarget)
+      : null;
   // An `@` chip in the body opens the member it names, resolved only against
   // the members the server resolved for this message, so a role mention
   // (`@Brothers`) opens nothing (`mentionedUserId`).
   const openMention = useCallback(
-    (token: string): (() => void) | null => {
+    (token: string): MentionOpener | null => {
       if (!onOpenProfile) return null;
       const userId = mentionedUserId(message, token, nameFor);
-      return userId ? () => onOpenProfile(userId) : null;
+      return userId
+        ? (event) => onOpenProfile(userId, event.currentTarget)
+        : null;
     },
     [onOpenProfile, message, nameFor],
   );
@@ -487,8 +513,7 @@ export function MessageItem({
   // block list clears its replier: the parent's echo carries it raw.
   const lastReply = message.thread?.last_reply ?? null;
   const threadPreview =
-    lastReply &&
-    threadPreviewVisible(lastReply, message, blockState, viewerId)
+    lastReply && threadPreviewVisible(lastReply, message, blockState, viewerId)
       ? lastReply
       : null;
   const importantRow = flagView?.important === true;
@@ -549,6 +574,9 @@ export function MessageItem({
   const canReport = canReportMessage(message, viewerId) && !!onReport;
   const canBlock =
     !!isMember && canBlockSender(message, viewerId, isMember) && !!onBlock;
+  // Forward is the phone's rule (#4864, #4907), on the viewer's own messages
+  // too, so the More button now shows on every forwardable row.
+  const canForward = canForwardMessage(message) && !!onForward;
 
   const [isEditing, setIsEditing] = useState(false);
   // The tokens the row paints as chips, which the editor opens as chips.
@@ -857,14 +885,14 @@ export function MessageItem({
     // A GIF message (#4631) is the GIF: no text, no files.
     <MessageGifImage gif={message.gif} />
   ) : message.attachment_count === 0 ? null : (
-      <MessageAttachments
-        channelId={message.channel_id}
-        messageId={message.id}
-        count={message.attachment_count}
-        confirmed={isConfirmed}
-        photos={message.attachment_photos}
-      />
-    );
+    <MessageAttachments
+      channelId={message.channel_id}
+      messageId={message.id}
+      count={message.attachment_count}
+      confirmed={isConfirmed}
+      photos={message.attachment_photos}
+    />
+  );
 
   /*
    * `(edited)` and Pinned, after the body's last line on every row — grouped or
@@ -966,8 +994,8 @@ export function MessageItem({
     ) : null;
   const authorLineFlag =
     flagView && flagOnAuthorLine ? (
-    <MessageFlagCaption view={flagView} inline />
-  ) : null;
+      <MessageFlagCaption view={flagView} inline />
+    ) : null;
   const body = flagCaption ? (
     <>
       {flagCaption}
@@ -1060,8 +1088,9 @@ export function MessageItem({
           // old place, and where a long message's bar ends up anyway.
           "ml-auto",
           // Wraps rather than spilling past the row's left edge: on a coarse
-          // pointer every icon is 44px, and nine of them (your own message) are
-          // wider than a 375px thread, where the scroller would clip the first.
+          // pointer every icon is 44px, and ten of them (your own message, with
+          // More for Forward) are wider than a 375px thread, where the scroller
+          // would clip the first.
           "max-w-full flex-wrap justify-end",
           "rounded-[10px] border border-border bg-card p-0.5",
           "transition-opacity",
@@ -1129,6 +1158,11 @@ export function MessageItem({
             <BookmarkGlyph className="h-4 w-4" active={isBookmarked} />
           </button>
         ) : null}
+        {onRemind ? (
+          <MessageReminderMenu
+            onRemind={(remindAt) => onRemind(message.id, remindAt)}
+          />
+        ) : null}
         {canFlag ? (
           <MessageFlagMenu
             current={message.flag ?? null}
@@ -1158,7 +1192,7 @@ export function MessageItem({
             <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
         ) : null}
-        {canReport || canBlock ? (
+        {canForward || canReport || canBlock ? (
           <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <button
@@ -1171,6 +1205,15 @@ export function MessageItem({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {canForward ? (
+                <DropdownMenuItem onSelect={() => onForward?.(message)}>
+                  <Forward aria-hidden="true" />
+                  Forward
+                </DropdownMenuItem>
+              ) : null}
+              {canForward && (canReport || canBlock) ? (
+                <DropdownMenuSeparator />
+              ) : null}
               {canReport ? (
                 <DropdownMenuItem onSelect={() => onReport?.(message)}>
                   <Flag aria-hidden="true" />
@@ -1663,9 +1706,7 @@ export function MessageItem({
               The gutter, held open on every row of a run: 32px for the avatar
               in cozy, 56px for the time in compact (§11 § Density).
             */}
-            <div
-              className={cn("relative shrink-0", compact ? "w-14" : "w-8")}
-            >
+            <div className={cn("relative shrink-0", compact ? "w-14" : "w-8")}>
               {message.thread && !compact && !auditLine ? (
                 /*
                   The thread card's connector (#4297, after Discord's): from
@@ -1912,7 +1953,9 @@ function MessageFlagCaption({
   view: MessageFlagView;
   inline?: boolean;
 }) {
-  const tone = view.important ? "text-destructive-text" : "text-muted-foreground";
+  const tone = view.important
+    ? "text-destructive-text"
+    : "text-muted-foreground";
   if (inline) {
     return (
       <span data-slot="message-flag" className="contents">

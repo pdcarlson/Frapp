@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Redirect, useRouter } from "expo-router";
 import { BackHandler, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useQueryClient } from "@tanstack/react-query";
 import {
+  PICK_ROLE_MUTATION_KEY,
   useCurrentUser,
+  usePickableRoles,
   useUpdateOnboarding,
   useUpdateUser,
 } from "@repo/hooks";
@@ -19,7 +21,7 @@ import {
   MeetFrappAiBody,
   useMeetFrappAiStep,
 } from "@/components/ai/meet-frapp-ai";
-import { FRAPP_AI_COPY } from "@repo/validation";
+import { FRAPP_AI_COPY, PICK_ROLES_COPY } from "@repo/validation";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import {
   OnboardingFieldLabel,
@@ -27,6 +29,7 @@ import {
 } from "@/components/onboarding/onboarding-field";
 import { ProfilePhoto } from "@/components/profile/profile-photo";
 import { ChatDensityOptions } from "@/components/settings/chat-density-sheet";
+import { PickRolesList } from "@/components/roles/pick-roles-list";
 import {
   ONBOARDING_COLUMN_WIDTH,
   OnboardingPrimaryButton,
@@ -57,7 +60,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /**
  * s03, the member's first-run steps (`spec/ui/mobile/screens.md`).
  *
- * The screens right after a member joins, in up to four beats on one route,
+ * The screens right after a member joins, in up to five beats on one route,
  * all but the display beat shown only when they have something to ask:
  *
  * 1. **How the chapter sees you**, when the member has no photo or no real
@@ -69,19 +72,27 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *    member decides while setting up). The phone's current display is
  *    preselected (Cozy on a fresh phone), so Continue keeps it; a tap saves
  *    the pick on this phone at once.
- * 3. **Meet Frapp AI**, when the server has AI and the member has never
+ * 3. **Pick your roles**, when the chapter has a role the member can join
+ *    and the read is back by the time they leave the display beat (#4958, as
+ *    Discord's onboarding asks while a member joins). Each switch saves on
+ *    the tap, so Continue keeps what was picked, and Continue waits while a
+ *    pick is still saving so a failure is said under its row. The Directory's
+ *    Add roles has the same list later.
+ * 4. **Meet Frapp AI**, when the server has AI and the member has never
  *    answered it (#4790, `components/ai/meet-frapp-ai.tsx`). Continue turns
  *    it on; Not now leaves it off. Either moves on. Shown only if the read
- *    is back by the time the member leaves the display beat; otherwise the
- *    chat home asks once instead (`MeetFrappAiHost`).
- * 4. **Turn on notifications**, when this build can push and push isn't on
+ *    is back by the time the member leaves the beat before it (roles when
+ *    shown, else display); otherwise the chat home asks once instead
+ *    (`MeetFrappAiHost`).
+ * 5. **Turn on notifications**, when this build can push and push isn't on
  *    yet (`shouldOfferPrimer`, #2299). Either answer goes to chat; a "Not
  *    now" comes back once, days later, on the chat home (`usePushReminder`).
  *
  * Then chat, with the first-run tour over it (`lib/onboarding/tour.ts`). The
  * static "You're in." card that used to open s03 is gone (owner brief
  * 2026-11-07): the tour's first stop says it, pointing at the real channels.
- * A member with a photo, a name and push on sees only the display beat.
+ * A member with a photo, a name and push on, Frapp AI answered (or off) and no
+ * role to join sees only the display beat.
  *
  * Which beat comes first waits on the profile and push reads; nothing is drawn
  * until they're back, and a slow read is given up on after
@@ -93,6 +104,30 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * on each beat (the #3348 screen rules).
  */
 const DECIDE_TIMEOUT_MS = 4_000;
+
+type Beat = "profile" | "display" | "roles" | "ai" | "notifications";
+
+/**
+ * Where Android's back goes from a beat: the one shown before it, skipping
+ * any that weren't shown. `null` leaves back alone (the first beat).
+ */
+function previousBeat(
+  step: Beat | "deciding",
+  shown: { profileShown: boolean; rolesShown: boolean; aiShown: boolean },
+): Beat | null {
+  const order: Beat[] = ["profile", "display", "roles", "ai", "notifications"];
+  const wasShown = (beat: Beat) =>
+    beat === "display" ||
+    (beat === "profile" && shown.profileShown) ||
+    (beat === "roles" && shown.rolesShown) ||
+    (beat === "ai" && shown.aiShown);
+  if (step === "deciding") return null;
+  for (let i = order.indexOf(step) - 1; i >= 0; i--) {
+    const beat = order[i]!;
+    if (wasShown(beat)) return beat;
+  }
+  return null;
+}
 
 export default function Welcome() {
   const { tokens } = useFrappTheme();
@@ -107,9 +142,7 @@ export default function Welcome() {
   // The guard itself, since two taps in one frame both read `leaving` false.
   const leavingRef = useRef(false);
   // `deciding` until the profile and push reads are back (or given up on).
-  const [step, setStep] = useState<
-    "deciding" | "profile" | "display" | "ai" | "notifications"
-  >("deciding");
+  const [step, setStep] = useState<"deciding" | Beat>("deciding");
   const [waitedOut, setWaitedOut] = useState(false);
   const userQuery = useCurrentUser();
   const updateUser = useUpdateUser();
@@ -125,6 +158,13 @@ export default function Welcome() {
   // Latched when the AI beat opens, so the notifications beat's back returns
   // to it only when it was shown.
   const [aiShown, setAiShown] = useState(false);
+  // Latched when the roles beat opens, as `aiShown` is: a pick doesn't
+  // change whether it was shown.
+  const [rolesShown, setRolesShown] = useState(false);
+  const pickable = usePickableRoles();
+  // Asked only when there's a role to join; leave-only rows wait for the
+  // Directory's Add roles.
+  const offerRolesBeat = pickable.roles.some((role) => role.joinable);
   // Whether there was a photo when the beat opened, so its event can tell a
   // photo chosen on it from one the member already had.
   const [hadPhoto, setHadPhoto] = useState(false);
@@ -155,8 +195,11 @@ export default function Welcome() {
   // answer is stored before the OS dialog opens and before the PATCH, and
   // the step must stay on screen (busy) until the member has left for chat.
   const asking = step === "notifications";
+  // A role pick still saving holds the beat: leaving would unmount the list
+  // that says why a failed pick failed.
+  const savingPick = useIsMutating({ mutationKey: PICK_ROLE_MUTATION_KEY }) > 0;
   const answering =
-    primer.isRequesting || leaving || savingName || ai.answering;
+    primer.isRequesting || leaving || savingName || ai.answering || savingPick;
 
   useEffect(() => {
     const timer = setTimeout(() => setWaitedOut(true), DECIDE_TIMEOUT_MS);
@@ -181,6 +224,17 @@ export default function Welcome() {
 
   function leaveDisplay() {
     if (leaving) return;
+    if (offerRolesBeat) {
+      setRolesShown(true);
+      setStep("roles");
+    } else {
+      leaveRoles();
+    }
+  }
+
+  // After the roles beat, or past it when there is none.
+  function leaveRoles() {
+    if (leaving || savingPick) return;
     if (ai.show) {
       setAiShown(true);
       setStep("ai");
@@ -248,23 +302,14 @@ export default function Welcome() {
   // Held while an answer is on its way out.
   // The first beat leaves Android's back alone, as the old first beat did.
   useEffect(() => {
-    const previous =
-      step === "notifications"
-        ? aiShown
-          ? "ai"
-          : "display"
-        : step === "ai"
-          ? "display"
-          : step === "display" && profileShown
-          ? "profile"
-          : null;
+    const previous = previousBeat(step, { profileShown, rolesShown, aiShown });
     if (previous === null) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
       if (!answering) setStep(previous);
       return true;
     });
     return () => sub.remove();
-  }, [step, answering, profileShown, aiShown]);
+  }, [step, answering, profileShown, aiShown, rolesShown]);
 
   if (status === "unauthenticated") {
     return <Redirect href="/(auth)/sign-in" />;
@@ -312,6 +357,16 @@ export default function Welcome() {
                   forChapter={ai.forChapter}
                   error={ai.error}
                 />
+              </View>
+            </>
+          ) : step === "roles" ? (
+            <>
+              <Text accessibilityRole="header" style={styles.title}>
+                {PICK_ROLES_COPY.title}
+              </Text>
+              <Text style={styles.subtitle}>{PICK_ROLES_COPY.lede}</Text>
+              <View style={styles.channels}>
+                <PickRolesList roles={pickable.roles} />
               </View>
             </>
           ) : step === "display" ? (
@@ -394,9 +449,20 @@ export default function Welcome() {
               onContinue={() => void answerAi(true)}
               onNotNow={() => void answerAi(false)}
             />
-          ) : step === "display" ? (
+          ) : step === "roles" ? (
             <OnboardingPrimaryButton
               label={primer.showPrimer || ai.show ? "Continue" : "Go to chat"}
+              disabled={answering}
+              busy={answering}
+              onPress={leaveRoles}
+            />
+          ) : step === "display" ? (
+            <OnboardingPrimaryButton
+              label={
+                primer.showPrimer || ai.show || offerRolesBeat
+                  ? "Continue"
+                  : "Go to chat"
+              }
               disabled={answering}
               busy={answering}
               onPress={leaveDisplay}

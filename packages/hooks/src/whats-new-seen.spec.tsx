@@ -46,7 +46,7 @@ describe("What's new on the account (#4043)", () => {
     expect(result.current.settled).toBe(false);
     await waitFor(() => expect(result.current.settled).toBe(true));
     expect(result.current.seen).toBeNull();
-    expect(client.GET).toHaveBeenCalledWith("/v1/users/me/whats-new");
+    expect(client.GET).toHaveBeenCalledWith("/v1/users/me/whats-new", { signal: expect.any(AbortSignal) });
   });
 
   it("settles as unknown when the read fails, so the device goes by its own marker", async () => {

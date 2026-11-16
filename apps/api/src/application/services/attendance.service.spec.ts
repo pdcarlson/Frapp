@@ -57,6 +57,7 @@ describe('AttendanceService', () => {
   let mockExcuseRepo: {
     findUserIdsByEventAndStatus: jest.Mock;
     withdrawAtomic: jest.Mock;
+    editReason: jest.Mock;
   };
   let mockScreenRepo: jest.Mocked<IEventCheckInScreenRepository>;
   let mockRbac: {
@@ -86,6 +87,8 @@ describe('AttendanceService', () => {
     check_in_zone_name: null,
     check_in_opens_minutes: 10,
     event_type_id: null,
+    agenda: [],
+    attachments: [],
     created_by: null,
     created_at: '2026-02-26T00:00:00.000Z',
   };
@@ -106,6 +109,7 @@ describe('AttendanceService', () => {
       findByEvent: jest.fn(),
       findByEventAndUser: jest.fn(),
       findByUserForEvents: jest.fn(),
+      findByEvents: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
       checkInAtomic: jest.fn(),
@@ -138,12 +142,14 @@ describe('AttendanceService', () => {
       transferPresidencyAtomic: jest.fn(),
       claimPresidencyAtomic: jest.fn(),
       setRoleIds: jest.fn(),
+      setSelfAssignedRole: jest.fn(),
     };
 
     // Default: nobody holds an excuse.
     mockExcuseRepo = {
       findUserIdsByEventAndStatus: jest.fn().mockResolvedValue([]),
       withdrawAtomic: jest.fn().mockResolvedValue(null),
+      editReason: jest.fn().mockResolvedValue(null),
     };
 
     // No screen has shown the code unless a test says so.

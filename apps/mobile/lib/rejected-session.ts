@@ -1,5 +1,9 @@
 import { Alert } from "react-native";
-import { isAuthApiError, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  isAuthApiError,
+  isAuthSessionMissingError,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
 import { reportAuthFailure } from "./sentry/auth-failures";
 
 /**
@@ -33,6 +37,25 @@ export function isSessionOver(result: {
   );
 }
 
+/**
+ * Auth's verdict on a session this device held when it asked. A session
+ * revoked elsewhere (sign out everywhere, a password change) comes back from
+ * GoTrue as `session_not_found`, which auth-js turns into
+ * `AuthSessionMissingError`, not an `AuthApiError` (#4440). Read alone, that
+ * error means "no session", so it counts as over only when a local session
+ * existed before the call. Its report names the code, which the error itself
+ * doesn't carry. Web keeps the same rule.
+ */
+export function sessionVerdict(
+  result: { data: { user: unknown }; error: unknown },
+  hadLocalSession: boolean,
+): { over: boolean; code?: string } {
+  if (hadLocalSession && isAuthSessionMissingError(result.error)) {
+    return { over: true, code: "session_not_found" };
+  }
+  return { over: isSessionOver(result) };
+}
+
 const SESSION_ENDED_TITLE = "You've been signed out";
 const SESSION_ENDED_BODY =
   "This account no longer exists or its session ended. Sign in to continue.";
@@ -59,15 +82,19 @@ export function createRejectedSessionHandler(deps: {
     void (async () => {
       try {
         const { data: local } = await supabase.auth.getSession();
+        // Load-bearing: with no local session, getUser's "no session"
+        // answer would read as a revoke (`sessionVerdict`).
         if (!local.session) return;
         const verdict = await supabase.auth.getUser();
-        if (!isSessionOver(verdict)) return;
+        const { over, code } = sessionVerdict(verdict, true);
+        if (!over) return;
         // Auth's reason is the count (#3832). This runs from the SDK's
         // response hook, which knows no route, so the screen is unnamed.
         reportAuthFailure({
           flow: "session_check",
           screen: "unknown",
           error: verdict.error,
+          code,
         });
         await deps.signOut();
         (deps.notify ?? defaultNotify)();

@@ -41,6 +41,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ThreadRow } from "@repo/chat-core/blocks";
 import { ChatComposer } from "@/components/chat/chat-composer";
+import { ScheduleSendSheet } from "@/components/chat/schedule-send-sheet";
 import { AUDIT_LOG_COMPOSER_NOTE } from "@repo/chat-core/audit-log-copy";
 import { ImageViewer } from "@/components/chat/image-viewer";
 import {
@@ -248,6 +249,23 @@ vi.mock("@/components/chat/composer-plus-sheet", async () => {
 });
 
 const presentTaskSheet = vi.fn();
+const presentRolePickerSheet = vi.fn();
+vi.mock("@/components/chat/new-role-picker-sheet", async () => {
+  const { createElement, forwardRef, useImperativeHandle } =
+    await import("react");
+  return {
+    NewRolePickerSheet: forwardRef(function NewRolePickerSheet(
+      props: Record<string, unknown>,
+      ref,
+    ) {
+      useImperativeHandle(ref, () => ({
+        present: presentRolePickerSheet,
+        dismiss: vi.fn(),
+      }));
+      return createElement("NewRolePickerSheet", props);
+    }),
+  };
+});
 vi.mock("@/components/tasks/new-task-sheet", async () => {
   const { createElement, forwardRef, useImperativeHandle } =
     await import("react");
@@ -372,6 +390,7 @@ function channelState(
     sendPoll: vi.fn(async () => ({ ok: true as const })),
     sendGif: vi.fn(async () => ({ ok: true as const })),
     sendSignup: vi.fn(async () => ({ ok: true as const })),
+    sendRolePicker: vi.fn(async () => ({ ok: true as const })),
     sendForm: vi.fn(async () => ({ ok: true as const })),
     postTask: vi.fn(async () => ({ ok: true })),
     postHours: vi.fn(async () => ({ ok: true })),
@@ -395,6 +414,7 @@ function channelState(
     retryPhoto: vi.fn(),
     draft: "",
     setDraft: vi.fn(),
+    restoreDraftFor: vi.fn(),
     sendError: null,
     reactionError: null,
     clearReactionError: vi.fn(),
@@ -430,6 +450,8 @@ let channelLocked = false;
 let channelReadAt = 1_000;
 /** A read-only channel (announcements) the viewer can only read. */
 let channelIsReadOnly = false;
+// Which channel the Scheduled list was read for (#4956).
+const scheduledListFor = vi.fn();
 /** The open channel is the chapter's audit log (#3909). */
 let channelIsAuditLog = false;
 /** The viewer's permissions, and the chapter's modules, for the + (#3701). */
@@ -497,6 +519,11 @@ const bookmarkWrites = vi.hoisted(() => ({
   save: { mutateAsync: vi.fn(async () => undefined) },
   unsave: { mutateAsync: vi.fn(async () => undefined) },
 }));
+/** Remind me about this (#4957): the set, seen and answered. */
+const reminderWrites = vi.hoisted(() => ({
+  set: { mutateAsync: vi.fn(async (input: unknown) => void input) },
+}));
+
 /** The unread counts' fetch, stood in for `GET /v1/channels/unread`. */
 const unreadCountsFetch = vi.hoisted(() => vi.fn(async () => [] as unknown[]));
 
@@ -522,8 +549,18 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     useBookmarkedMessageIds: () => SAVED,
     useBookmarkMessage: () => bookmarkWrites.save,
     useUnbookmarkMessage: () => bookmarkWrites.unsave,
+    // Remind me about this (#4957): writes that succeed.
+    useSetMessageReminder: () => reminderWrites.set,
     useBookmarks: () => ({ data: [], isPending: false, isError: false }),
     usePinnedMessages: () => ({ data: [], isPending: false, isError: false }),
+    // Scheduled messages (#4956): none, and a schedule that never lands.
+    useScheduledMessages: (channelId: string | null) => ({
+      ...(scheduledListFor(channelId) as object),
+      data: [],
+      isPending: false,
+      isError: false,
+    }),
+    useScheduleMessage: () => ({ mutateAsync: vi.fn() }),
     useChannel: (id: string) =>
       channelRow === "found"
         ? {
@@ -843,6 +880,81 @@ describe("chat thread in the audit log", () => {
     expect(
       tree.root.findAllByProps({ testID: "chat-audit-log-note" }),
     ).toHaveLength(0);
+    act(() => tree.unmount());
+  });
+
+  it("offers Schedule message from the composer, with its sheets mounted (#4956)", () => {
+    const tree = render();
+    const composer = tree.root.findByType(ChatComposer);
+    expect(typeof composer.props.onSchedule).toBe("function");
+    // Nothing scheduled here: no line above the input.
+    expect(composer.props.scheduled).toBeNull();
+    expect(tree.root.findAllByType(ScheduleSendSheet)).toHaveLength(1);
+    act(() => tree.unmount());
+  });
+
+  it("hands Schedule message the reason a photo still uploading can't be scheduled (#4971)", () => {
+    channel = channelState({
+      draft: "Chapter at 8",
+      photos: [
+        {
+          key: "p1",
+          previewUri: "file:///a.jpg",
+          width: 10,
+          height: 10,
+          status: "ready",
+          attachment: null,
+          reason: null,
+        },
+      ],
+    } as unknown as Partial<UseChatChannelResult>);
+    const tree = render();
+    act(() => tree.root.findByType(ChatComposer).props.onSchedule());
+    expect(tree.root.findByType(ScheduleSendSheet).props.refusal).toMatch(
+      /^Wait for your photos/,
+    );
+    expect(tree.root.findByType(ScheduleSendSheet).props.preview).toBe(
+      "Chapter at 8",
+    );
+    act(() => tree.unmount());
+  });
+
+  it("takes scheduled photos out of the tray once scheduled (#4971)", async () => {
+    channel = channelState({
+      draft: "Agenda",
+      photos: [
+        {
+          key: "p1",
+          previewUri: "file:///a.jpg",
+          width: 10,
+          height: 10,
+          status: "ready",
+          attachment: {
+            storagePath: "chapters/c/chat/ch/a/a.jpg",
+            filename: "a.jpg",
+            contentType: "image/jpeg",
+          },
+          reason: null,
+        },
+      ],
+    } as unknown as Partial<UseChatChannelResult>);
+    const tree = render();
+    act(() => tree.root.findByType(ChatComposer).props.onSchedule());
+    const sheet = tree.root.findByType(ScheduleSendSheet);
+    expect(sheet.props.refusal).toBeNull();
+    await act(async () => {
+      await sheet.props.onSchedule(new Date(Date.now() + 3_600_000));
+    });
+    expect(channel.removePhoto).toHaveBeenCalledWith("p1");
+    act(() => tree.unmount());
+  });
+
+  it("keeps the Scheduled list where the member can't post (#4956)", () => {
+    channelIsReadOnly = true;
+    scheduledListFor.mockClear();
+    const tree = render();
+    expect(tree.root.findByType(ChatComposer).props.onSchedule).toBeUndefined();
+    expect(scheduledListFor).toHaveBeenLastCalledWith(CHANNEL);
     act(() => tree.unmount());
   });
 });
@@ -2463,7 +2575,7 @@ describe("chat thread + sheet (#3865)", () => {
     // offered.
     expect(rowsOf(tree).map((row) => row.command)).toEqual(["signup", "form"]);
     expect(footerOf(tree)).toEqual([
-      "Your role can't create polls, events, tasks or service hours.",
+      "Your role can't create polls, events, tasks, service hours or role pickers.",
     ]);
     act(() => tree.unmount());
   });
@@ -2478,6 +2590,7 @@ describe("chat thread + sheet (#3865)", () => {
       "event",
       "task",
       "hours",
+      "roles",
     ]);
     act(() => tree.unmount());
   });
@@ -2594,6 +2707,29 @@ describe("chat thread + sheet (#3865)", () => {
     const task = tree.root.findByType("NewTaskSheet" as never);
     expect(task.props.postToChannel).toBe(channel.postTask);
     expect(presentTaskSheet).toHaveBeenCalledTimes(1);
+    act(() => tree.unmount());
+  });
+
+  it("mounts the New role picker on first use and posts through sendRolePicker (#4958)", async () => {
+    permissionList = ["*"];
+    presentRolePickerSheet.mockClear();
+    const tree = render();
+    expect(tree.root.findAllByType("NewRolePickerSheet" as never)).toHaveLength(
+      0,
+    );
+    const openForm = plusSheet(tree).props.onOpenForm as (c: string) => void;
+    act(() => openForm("roles"));
+    expect(presentRolePickerSheet).toHaveBeenCalledTimes(1);
+    const onPost = tree.root.findByType("NewRolePickerSheet" as never).props
+      .onPost as (picker: unknown) => Promise<unknown>;
+    const picker = {
+      content: "Pick your roles",
+      payload: { title: "Pick your roles", role_ids: ["r1"] },
+    };
+    await act(async () => {
+      await onPost(picker);
+    });
+    expect(channel.sendRolePicker).toHaveBeenCalledWith(picker);
     act(() => tree.unmount());
   });
 
@@ -2917,6 +3053,21 @@ describe("chat thread Pin and Save from the actions sheet", () => {
     expect(other.save).toEqual({ saved: SAVED.has(other.messageId) });
     expect([first, other.messageId].sort()).toEqual(["m1", "m2"]);
     SAVED.clear();
+    act(() => tree.unmount());
+  });
+
+  it("sets a reminder on the sheet's message (#4957)", () => {
+    channel = channelState({ messages: [message("m1")] });
+    const tree = render();
+    const sheet = openSheetOn(tree, 0);
+    const at = new Date("2026-11-20T14:00:00.000Z");
+    act(() =>
+      (sheet.props.onRemind as (id: string, at: Date) => void)("m1", at),
+    );
+    expect(reminderWrites.set.mutateAsync).toHaveBeenCalledWith({
+      messageId: "m1",
+      remindAt: at,
+    });
     act(() => tree.unmount());
   });
 

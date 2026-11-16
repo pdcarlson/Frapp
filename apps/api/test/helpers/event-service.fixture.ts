@@ -1,3 +1,4 @@
+import { CHAPTER_DOCUMENT_REPOSITORY } from '#domain/repositories/chapter-document.repository.interface';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EVENT_REPOSITORY } from '#domain/repositories/event.repository.interface';
 import type { IEventRepository } from '#domain/repositories/event.repository.interface';
@@ -48,6 +49,8 @@ export const baseEvent: Event = {
   check_in_zone_name: null,
   check_in_opens_minutes: 10,
   event_type_id: null,
+  agenda: [],
+  attachments: [],
   created_by: null,
   created_at: '2026-02-26T00:00:00.000Z',
 };
@@ -130,6 +133,14 @@ export async function createEventServiceFixture() {
     deleteExpired: jest.fn(),
   };
 
+  // Every document id a test attaches is the chapter's unless it says not
+  // (#4934).
+  const mockDocumentRepo: { findByIds: jest.Mock } = {
+    findByIds: jest.fn(async (ids: string[], chapterId: string) =>
+      ids.map((id) => ({ id, chapter_id: chapterId })),
+    ),
+  };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       EventService,
@@ -144,6 +155,7 @@ export async function createEventServiceFixture() {
       { provide: ChatService, useValue: mockChatService },
       { provide: RbacService, useValue: mockRbacService },
       { provide: EVENT_CHECK_IN_SCREEN_REPOSITORY, useValue: mockScreenRepo },
+      { provide: CHAPTER_DOCUMENT_REPOSITORY, useValue: mockDocumentRepo },
     ],
   }).compile();
 
@@ -157,6 +169,7 @@ export async function createEventServiceFixture() {
     mockRbacService,
     mockEventTypeRepo,
     mockScreenRepo,
+    mockDocumentRepo,
   };
 }
 

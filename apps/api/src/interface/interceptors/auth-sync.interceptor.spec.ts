@@ -376,4 +376,110 @@ describe('AuthSyncInterceptor', () => {
       });
     }
   });
+  describe('on a route with no chapter guard, given the guard’s row lookup (#3583)', () => {
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+    /** A request with no guard row, carrying `SupabaseAuthGuard`'s lookup. */
+    const withLookup = (
+      session: { id: string; email: string },
+      lookup: jest.Mock,
+    ) => {
+      const ctx = mockExecutionContext(session);
+      ctx.switchToHttp().getRequest().appUserLookup = lookup;
+      return ctx;
+    };
+
+    it('still waits on the sync for a session this process never synced', async () => {
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      const lookup = jest.fn().mockResolvedValue('user-1');
+      const ctx = withLookup({ id: auth('a'), email: 'a@example.com' }, lookup);
+
+      await interceptor.intercept(ctx, mockCallHandler);
+
+      expect(lookup).not.toHaveBeenCalled();
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+      expect(ctx.switchToHttp().getRequest().appUser).toEqual({ id: 'user-1' });
+    });
+
+    it('takes the looked-up id without waiting once the session is synced and unchanged', async () => {
+      const session = { id: auth('a'), email: 'a@example.com' };
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      await interceptor.intercept(
+        mockExecutionContext(session),
+        mockCallHandler,
+      );
+      // Any further sync would never settle, so a request that waited on one
+      // would never get past `intercept`.
+      mockAuthService.syncUser.mockReturnValue(new Promise(() => undefined));
+
+      const lookup = jest.fn().mockResolvedValue('user-1');
+      const ctx = withLookup(session, lookup);
+      await interceptor.intercept(ctx, mockCallHandler);
+
+      expect(lookup).toHaveBeenCalledTimes(1);
+      expect(ctx.switchToHttp().getRequest().appUser).toEqual({ id: 'user-1' });
+      expect(mockTimeZones.record).toHaveBeenLastCalledWith(
+        'user-1',
+        'America/Chicago',
+      );
+      // Within the memo window, no background sync either.
+      await flush();
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(1);
+    });
+
+    it('waits on the sync when the lookup finds no row or fails', async () => {
+      const session = { id: auth('a'), email: 'a@example.com' };
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      await interceptor.intercept(
+        mockExecutionContext(session),
+        mockCallHandler,
+      );
+
+      const ctx = withLookup(session, jest.fn().mockResolvedValue(null));
+      await interceptor.intercept(ctx, mockCallHandler);
+
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(2);
+      expect(ctx.switchToHttp().getRequest().appUser).toEqual({ id: 'user-1' });
+    });
+
+    it('waits on the sync, without the lookup, when the session changed', async () => {
+      const id = auth('a');
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      await interceptor.intercept(
+        mockExecutionContext({ id, email: 'a@example.com' }),
+        mockCallHandler,
+      );
+
+      const lookup = jest.fn().mockResolvedValue('user-1');
+      await interceptor.intercept(
+        withLookup({ id, email: 'b@example.com' }, lookup),
+        mockCallHandler,
+      );
+
+      expect(lookup).not.toHaveBeenCalled();
+      expect(mockAuthService.syncUser).toHaveBeenCalledTimes(2);
+      expect(mockAuthService.syncUser).toHaveBeenLastCalledWith(
+        id,
+        'b@example.com',
+        undefined,
+      );
+    });
+
+    it("prefers a guard's row over the lookup", async () => {
+      const session = { id: auth('a'), email: 'a@example.com' };
+      mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
+      await interceptor.intercept(
+        mockExecutionContext(session),
+        mockCallHandler,
+      );
+
+      const lookup = jest.fn().mockResolvedValue('user-other');
+      const ctx = mockExecutionContext(session, { id: 'user-1' });
+      ctx.switchToHttp().getRequest().appUserLookup = lookup;
+      await interceptor.intercept(ctx, mockCallHandler);
+
+      expect(lookup).not.toHaveBeenCalled();
+      expect(ctx.switchToHttp().getRequest().appUser).toEqual({ id: 'user-1' });
+    });
+  });
 });

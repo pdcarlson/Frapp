@@ -29,6 +29,9 @@
 
 import { narrowPushTokenRow, type PushTokenRow } from "./push-registration";
 
+/** The `POST /v1/push-tokens` body. */
+export type RegisterPushTokenBody = { token: string; device_name?: string };
+
 /**
  * `getExpoPushTokenAsync` may emit `onDevicePushToken` before it resolves.
  * The listener would then re-enter this function, `getToken` again, and
@@ -82,7 +85,12 @@ export function sessionOwnsPushRegistration(
 export async function registerCurrentPushToken(deps: {
   isCancelled: () => boolean;
   getToken: () => Promise<string | null>;
-  register: (body: { token: string }) => Promise<unknown>;
+  /**
+   * The platform label for the row (`push-device-name.ts`, #4563). Sent on
+   * every register so a row stored before the phone sent one gets it filled.
+   */
+  getDeviceName?: () => string | undefined;
+  register: (body: RegisterPushTokenBody) => Promise<unknown>;
   remove: (id: string) => Promise<unknown>;
   readStored: () => Promise<PushTokenRow | null>;
   writeStored: (row: PushTokenRow) => Promise<void>;
@@ -104,7 +112,10 @@ export async function registerCurrentPushToken(deps: {
       const supersededId =
         stored?.id && stored.token !== token ? stored.id : null;
 
-      const created = await deps.register({ token });
+      const deviceName = deps.getDeviceName?.();
+      const created = await deps.register(
+        deviceName ? { token, device_name: deviceName } : { token },
+      );
       if (deps.isCancelled()) return;
 
       const row = narrowPushTokenRow(created);

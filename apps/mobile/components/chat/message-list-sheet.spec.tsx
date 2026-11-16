@@ -5,6 +5,8 @@ import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { FrappThemeProvider } from "@/lib/theme";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { inSheet, skeletonBarFills } from "@/test/sheet-skeleton";
 import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
 
 (
@@ -107,6 +109,18 @@ beforeEach(() => {
 });
 
 describe("Pinned messages (#3723)", () => {
+  // #4690: the rows sit straight on the sheet's fill.
+  it("draws its loading bars a step under the sheet, never in its fill", () => {
+    const pins = reads.pins;
+    reads.pins = { ...pins, data: undefined, isPending: true };
+    const fills = inSheet(() => skeletonBarFills(render("pinned")));
+    reads.pins = pins;
+    expect(fills.length).toBeGreaterThan(0);
+    expect(new Set(fills)).toEqual(
+      new Set([signetDarkTokens.color.surface.card]),
+    );
+  });
+
   it("lists the channel's pins newest pin first, and opens the one tapped", () => {
     reads.pins.data = [
       message({

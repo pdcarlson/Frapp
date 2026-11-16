@@ -1,6 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import { Event } from '#domain/entities/event.entity';
 import type { GeofenceCoordinate } from '#domain/entities/study.entity';
+import {
+  agendaProblem,
+  EVENT_ATTACHMENTS_MAX,
+  normalizeAgendaText,
+  normalizeAttachmentUrl,
+  type EventAgendaItem,
+  type EventAttachment,
+} from '@repo/validation';
 
 export interface CreateEventInput {
   chapter_id: string;
@@ -17,6 +25,10 @@ export interface CreateEventInput {
   excluded_role_ids?: string[] | null;
   others_invited?: boolean;
   notes?: string | null;
+  /** This meeting's agenda, whole (#4934); omitted leaves it. */
+  agenda?: EventAgendaItem[];
+  /** This meeting's attachments, whole (#4934); omitted leaves it. */
+  attachments?: EventAttachmentInput[];
   check_in_zone?: GeofenceCoordinate[] | null;
   check_in_zone_name?: string | null;
   check_in_opens_minutes?: number;
@@ -71,12 +83,27 @@ export interface UpdateEventInput {
   excluded_role_ids?: string[] | null;
   others_invited?: boolean;
   notes?: string | null;
+  /** This meeting's agenda, whole (#4934); omitted leaves it. */
+  agenda?: EventAgendaItem[];
+  /** This meeting's attachments, whole (#4934); omitted leaves it. */
+  attachments?: EventAttachmentInput[];
   check_in_zone?: GeofenceCoordinate[] | null;
   check_in_zone_name?: string | null;
   check_in_opens_minutes?: number;
   /** `null` clears the type; omitted leaves it. */
   event_type_id?: string | null;
 }
+
+/**
+ * What a series edit may write (`EventSeriesService.updateSeries`): an
+ * update without a meeting's own `agenda` and `attachments` (#4934), which
+ * `EventService.update` writes to the addressed occurrence only. Leaving them
+ * out of the type means no series path can copy them across by accident.
+ */
+export type SeriesUpdateInput = Omit<
+  UpdateEventInput,
+  'agenda' | 'attachments'
+>;
 
 /**
  * Which occurrences of a recurring event a write applies to.
@@ -91,6 +118,19 @@ export interface UpdateEventInput {
  * scope at all, keep their exact current single-row behavior.
  */
 export type EventMutationScope = 'instance' | 'series';
+
+/**
+ * An attachment as a request sends it (#4934): one flat shape, whose `kind`
+ * says which of `url` and `document_id` it carries. `normalizeAttachments`
+ * turns it into the stored `EventAttachment`.
+ */
+export interface EventAttachmentInput {
+  id: string;
+  kind: EventAttachment['kind'];
+  url?: string;
+  document_id?: string;
+  title: string;
+}
 
 /**
  * Normalize an inbound check-in zone to what the column stores.
@@ -112,4 +152,86 @@ export function normalizeCheckInZone(
     );
   }
   return zone;
+}
+
+/**
+ * An agenda as the column stores it (#4934): each item's text trimmed with
+ * inner whitespace collapsed. An empty item, a duplicate id, or a list past
+ * the limits is a 400 naming it, rather than the table check's 500. The DTO
+ * has already checked each field's type and length.
+ */
+export function normalizeAgenda(
+  items: readonly EventAgendaItem[] | undefined,
+): EventAgendaItem[] | undefined {
+  if (items === undefined) return undefined;
+  const cleaned = items.map((item) => ({
+    id: item.id,
+    text: normalizeAgendaText(item.text),
+    done: item.done,
+  }));
+  const problem = agendaProblem(cleaned);
+  if (problem) throw new BadRequestException(problem);
+  assertUniqueIds(cleaned, 'agenda');
+  return cleaned;
+}
+
+/**
+ * Attachments as the column stores them (#4934): a link's URL normalized
+ * (http or https only), every title trimmed and non-empty, and only the
+ * fields its `kind` carries. Whether a document is the chapter's is the
+ * caller's check (`EventService`), since it needs a read.
+ */
+export function normalizeAttachments(
+  items: readonly EventAttachmentInput[] | undefined,
+): EventAttachment[] | undefined {
+  if (items === undefined) return undefined;
+  if (items.length > EVENT_ATTACHMENTS_MAX) {
+    throw new BadRequestException(
+      `An event holds at most ${EVENT_ATTACHMENTS_MAX} attachments.`,
+    );
+  }
+  const cleaned = items.map((item): EventAttachment => {
+    const title = item.title.replace(/\s+/g, ' ').trim();
+    if (!title) {
+      throw new BadRequestException('Every attachment needs a title.');
+    }
+    if (item.kind === 'link') {
+      const url = normalizeAttachmentUrl(item.url ?? '');
+      if (!url) {
+        throw new BadRequestException(
+          'A link attachment needs a web address starting with http:// or https://.',
+        );
+      }
+      return { id: item.id, kind: 'link', url, title };
+    }
+    if (!item.document_id) {
+      throw new BadRequestException(
+        'A document attachment needs the document it points at.',
+      );
+    }
+    return {
+      id: item.id,
+      kind: 'document',
+      document_id: item.document_id,
+      title,
+    };
+  });
+  assertUniqueIds(cleaned, 'attachments');
+  return cleaned;
+}
+
+function assertUniqueIds(
+  items: readonly { id: string }[],
+  field: 'agenda' | 'attachments',
+): void {
+  const seen = new Set<string>();
+  for (const { id } of items) {
+    if (!id.trim()) {
+      throw new BadRequestException(`Every ${field} entry needs an id.`);
+    }
+    if (seen.has(id)) {
+      throw new BadRequestException(`${field} has two entries with id ${id}.`);
+    }
+    seen.add(id);
+  }
 }

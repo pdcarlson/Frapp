@@ -117,6 +117,7 @@ export class OpenEventAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: `event:${event.id}`,
         kind: 'events',
+        audience: { type: 'asker' },
         title: 'Events',
         detail: oneLine(event.name),
         date: event.start_time,

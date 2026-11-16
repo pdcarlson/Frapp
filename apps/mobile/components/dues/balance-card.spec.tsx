@@ -206,6 +206,8 @@ function invoice(overrides: Partial<InvoiceRow> = {}): InvoiceRow {
     status: "PAID",
     dueDate: "2026-02-01",
     paidAt: "2026-02-03T12:00:00.000Z",
+    paymentFailedAt: null,
+    paymentFailureReason: null,
     ...overrides,
   };
 }

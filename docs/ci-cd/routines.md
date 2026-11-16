@@ -117,8 +117,8 @@ path `/next` uses, with no keys to manage. Start each run by loading the GitHub 
 `issue_read` on a known issue. If the MCP is unavailable, stop and report: there is no fallback
 tracker. Weekly Upkeep is the exception in rule 4.
 
-Direct REST to `api.github.com` is reachable from these sandboxes (a 403 on a proxied `curl` says
-nothing about the PAT; see [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)),
+REST reads of `api.github.com` go through the agent proxy with `gh api` (sessions carry no token
+of their own since 2026-11-15; see [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)),
 and rule 4 limits it to the two reads it names.
 
 Whether an MCP read is faithful enough to rewrite a body from is a measurement that has flipped

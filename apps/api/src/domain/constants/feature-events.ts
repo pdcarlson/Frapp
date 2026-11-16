@@ -49,6 +49,10 @@ export const FEATURE_EVENTS = {
     feature: 'events',
     properties: [],
   },
+  'event-excuse-edited': {
+    feature: 'events',
+    properties: [],
+  },
   'event-excuse-decided': {
     feature: 'events',
     properties: ['decision'],

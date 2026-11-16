@@ -139,6 +139,7 @@ export class ListMeetingsTool implements AgentReadTool<Args> {
           ].join('\n'),
           chat: false,
           authorIds: [],
+          audience: { type: 'meeting', id: meeting.id },
         };
       }),
     );

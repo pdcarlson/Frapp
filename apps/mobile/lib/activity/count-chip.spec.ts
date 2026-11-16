@@ -28,6 +28,13 @@ describe("activityCountChip (#3897)", () => {
     ).toBe("2+");
   });
 
+  it("says at least when reminders couldn't load, since due ones count (#4957)", () => {
+    expect(
+      activityCountChip({ needs_you_count: 2, unavailable: ["reminders"] })
+        ?.label,
+    ).toBe("2+");
+  });
+
   it("keeps the plain count when only an uncounted section failed", () => {
     expect(
       activityCountChip({ needs_you_count: 2, unavailable: ["made_events"] })

@@ -26,6 +26,9 @@ export const CHAT_MESSAGE_KINDS = [
   'signup',
   'form',
   'ask_answer',
+  // An officer's role picker (#4958): members tap to join or leave the
+  // Non-chapter business roles it lists.
+  'role_picker',
 ] as const;
 export type ChatMessageKind = (typeof CHAT_MESSAGE_KINDS)[number];
 
@@ -456,6 +459,11 @@ export interface ChatThreadLastReply {
   content: string;
   kind: string | null;
   attachment_count: number;
+  /**
+   * The reply is a GIF (#4657). Absent on a preview written before
+   * `20261114153147`, which reads as no GIF.
+   */
+  has_gif?: boolean;
   created_at: string;
   /**
    * Set by a read that masks: `true` when the viewer blocked this replier, so
@@ -502,6 +510,17 @@ export interface FollowedThreadUnread {
   last_read_at: string | null;
   /** New replies since `last_read_at`; always 0 for a muted thread. */
   unread_count: number;
+}
+
+/**
+ * One thread in the member's All threads list (#4960): a followed or muted
+ * thread in a channel they may read, as `get_member_threads` answers it.
+ */
+export interface MemberThreadRow extends FollowedThreadUnread {
+  channel_id: string;
+  /** The root's `thread_last_reply_at`; `null` before any reply. */
+  last_reply_at: string | null;
+  reply_count: number;
 }
 
 /**
@@ -617,6 +636,11 @@ export interface ChannelLatestMessage {
    * author. Null when the latest message is not a forward.
    */
   forwarded_from: ChatForwardedMessage | null;
+  /**
+   * The latest message is a GIF (#4657), which has no text, so the preview
+   * reads "GIF" rather than "Message".
+   */
+  has_gif: boolean;
 }
 
 /**
@@ -704,6 +728,22 @@ export interface ChatMessageBookmark {
 export type ChatMessageBookmarkRef = Omit<ChatMessageBookmark, 'user_id'>;
 
 /**
+ * A member's private reminder on a chat message (#4957), as stored in
+ * `chat_message_reminders`.
+ */
+export interface ChatMessageReminder {
+  id: string;
+  user_id: string;
+  message_id: string;
+  chapter_id: string;
+  remind_at: string;
+  /** When the sweep sent its push; null until then. */
+  fired_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * The message as the bookmarks endpoint serves it — a narrow projection, not a
  * whole {@link ChatMessage}.
  *
@@ -739,6 +779,12 @@ export interface BookmarkedMessage {
    * author, and dropped from a row whose channel access was lost.
    */
   forwarded_from: ChatForwardedMessage | null;
+  /**
+   * The message is a GIF (#4657), which has no text, so the Bookmarks panel
+   * reads "GIF" rather than "Message". False once withheld (a block, lost
+   * channel access, a delete).
+   */
+  has_gif: boolean;
   /**
    * Whether the caller has blocked this message's sender (#2257).
    *

@@ -431,7 +431,9 @@ const HTTP_LEDGER: Record<string, Entry> = {
   },
   ActivityController_getActivity_v1: {
     // Its poll rows are chat (a card's question, from a channel the caller
-    // can read), and masked: a blocked author's poll is left out. Its other
+    // can read), and masked: a blocked author's poll is left out. Its
+    // reminder rows (#4957) quote a chat message and are masked to the
+    // timeline's tombstone (`chat-reminder.service.spec.ts`). Its other
     // rows are chapter records carrying text a member wrote (a task title, a
     // service entry's description, an event name), which a block does not
     // hide (#2498), as on the activity feed above.
@@ -594,6 +596,31 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 1,
     entries: [PUSH_LEDGER['chat-push-worker (chat_messages INSERT)']],
   },
+  // A reminder the member set on a chat message (#4957): its push quotes the
+  // message, unless the member has since blocked its author.
+  'application/workers/chat-reminder-sweep.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'masked',
+        proof: {
+          spec: 'application/workers/chat-reminder-sweep.service.spec.ts',
+          test: 'does not quote a blocked author, nor tie the row to the message an edit would rewrite it from',
+        },
+      },
+    ],
+  },
+  // The weekly recap push (#4985): the member's own figures from last week,
+  // under the chapter's name.
+  'application/workers/activity-recap-push.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: "The member's own counts from last week, titled with the chapter name. No member-written text.",
+      },
+    ],
+  },
   // One push per batch of AI suggestions (#4309): `notifyBatch` and its
   // `notifyMembers`. Titled with the meeting or event name an officer wrote.
   'application/services/ai-suggestion.service.ts': {
@@ -647,10 +674,23 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
       },
     ],
   },
+  // Scheduled messages (#4956): tells the author their own message did not
+  // post. It names the channel only when the failure isn't lost access, so
+  // never one the author can no longer see; nothing another member wrote.
+  'application/services/chat-scheduled-message.service.ts': {
+    calls: 1,
+    entries: [
+      {
+        status: 'no-foreign-content',
+        why: "Tells the author their own scheduled message didn't post. A lost-access failure names no channel; any other names the channel the author can still post in. It quotes nothing another member wrote.",
+      },
+    ],
+  },
   // Absence excuses (#3735): the receiver's push quotes the reason the
   // member wrote for them, and the decision and reminder name the event.
+  // A declined excuse sent again (#5115) pushes the same reason again.
   'application/services/event-excuse.service.ts': {
-    calls: 5,
+    calls: 6,
     entries: [MEMBER_TEXT],
   },
   // Two hand a written row to the announcement emitters; the third (#4620)

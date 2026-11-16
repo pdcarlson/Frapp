@@ -16,6 +16,11 @@ export interface IAttendanceRepository {
     userId: string,
     eventIds: readonly string[],
   ): Promise<EventAttendance[]>;
+  /**
+   * Every row for many events, in one read: Activity's count of who has
+   * checked in to the events a member made (#4792).
+   */
+  findByEvents(eventIds: readonly string[]): Promise<EventAttendance[]>;
   createMany(data: Partial<EventAttendance>[]): Promise<EventAttendance[]>;
   update(id: string, data: Partial<EventAttendance>): Promise<EventAttendance>;
   /**

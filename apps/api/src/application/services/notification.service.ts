@@ -155,6 +155,8 @@ export type NotifyPayload = {
   category?: string;
   /** The push's iOS stack (`PushPayload.threadId`). Not stored on the in-app row. */
   threadId?: string;
+  /** The push's action buttons (`PushPayload.categoryId`). Not stored on the in-app row. */
+  categoryId?: string;
   /**
    * The one chat message this notification quotes (#4418): stored as the
    * row's `chat_message_id`, so deleting the message deletes the row and an
@@ -177,7 +179,7 @@ export type NotifyPayload = {
  * zone their quiet hours run in, else null. A stored value this runtime cannot
  * resolve counts as none, so formatting never throws on a legacy row.
  */
-function recipientTimeZone(
+export function recipientTimeZone(
   settings:
     | (Pick<UserSettings, 'quiet_hours_tz'> & { time_zone?: string | null })
     | null,
@@ -438,6 +440,24 @@ export class NotificationService {
   }
 
   /**
+   * The zone each of `userIds` reads their clock in ({@link recipientTimeZone}),
+   * from one batched settings read. A member with no settings row, or none
+   * reported, maps to null. A failed read throws: the daily reminder sweeps
+   * (#4788) would rather skip a tick, and retry on the next hourly one, than
+   * guess a zone and wake a member at the wrong hour.
+   */
+  async timeZonesFor(
+    userIds: readonly string[],
+  ): Promise<Map<string, string | null>> {
+    const unique = [...new Set(userIds)];
+    const rows = await this.settingsRepo.findByUserIds(unique);
+    const byUser = new Map(rows.map((row) => [row.user_id, row]));
+    return new Map(
+      unique.map((id) => [id, recipientTimeZone(byUser.get(id) ?? null)]),
+    );
+  }
+
+  /**
    * Notify every member of a chapter.
    *
    * There is no audience filter. Its one caller, `ChatService`'s announcement
@@ -662,6 +682,7 @@ export class NotificationService {
         // records be sliced by category (see the Expo provider).
         category,
         threadId: payload.threadId,
+        categoryId: payload.categoryId,
       },
     );
 
@@ -977,6 +998,18 @@ export class NotificationService {
     const existing = await this.pushTokenRepo.findByToken(token);
     if (existing) {
       if (existing.user_id === userId) {
+        // The phone sends its platform label on every register (#4563), so a
+        // row stored before it did gets one, and an OS update refreshes it.
+        // An absent label never clears a stored one, and a row deleted since
+        // the read above returns as read, as it did before labels.
+        if (deviceName && existing.device_name !== deviceName) {
+          const updated = await this.pushTokenRepo.updateDeviceName(
+            existing.id,
+            userId,
+            deviceName,
+          );
+          return updated ?? existing;
+        }
         return existing;
       }
       await this.pushTokenRepo.deleteByToken(token);

@@ -37,10 +37,12 @@ import {
 import {
   CHECK_IN_CODE_CHANGED_COPY,
   checkInTargetFrom,
+  parseCheckInLink,
   statusLabel,
 } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { useScreenBelow } from "@/lib/back-target";
+import { CheckInScanner } from "@/components/check-in/check-in-scanner";
 import { ManualCodeSheet } from "@/components/check-in/manual-code-sheet";
 import { useSheetVisit } from "@/components/sheet-scaffold";
 import { ErrorState } from "@/components/state-block";
@@ -64,27 +66,31 @@ import { selectEventDetail, selectMyAttendance } from "@/lib/events/select";
 import { useConnection } from "@/lib/connection/use-connection";
 import { successHaptic } from "@/lib/haptics";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
-import { InlineNote } from "@/components/inline-note";
+import { webAppOrigin } from "@/lib/onboarding/chapter-wizard/invite-link";
 import {
   GlassCloseButton,
   GlassCloseSpacer,
 } from "@/components/glass-close-button";
 
 /**
- * s18 — Check in (2026-11-13: the phone's camera, not Frapp's scanner).
+ * s18 — Check in (2026-11-13: the phone's camera, or Scan code in the app).
  *
  * The officer's screen (s22) shows a QR that is an ordinary link,
  * `https://app.frapp.live/check-in?event=…&t=…` (`@repo/validation`
  * `check-in-link.ts`). A member points the phone's own camera at it and taps
  * the banner, as with a Venmo or Cash App code; the link opens this screen with
- * the event and the token, and the check-in goes at once. There is no scanner
- * in the app any more: the first real check-in (2026-11-13) had members open
- * the app, find the event and tap Scan before pointing anything at the
- * screen, which is the slow path the camera skips.
+ * the event and the token, and the check-in goes at once. That is the fast
+ * path: the first real check-in (2026-11-13) had members open the app, find
+ * the event and tap Scan before pointing anything at the screen.
  *
- * Opened without a token (the event's "Enter code", or the chat card once a
- * code is required), the screen says to use the camera and offers the typed
- * code, for a phone whose camera or link handling is broken.
+ * A member already in the app can stay in it (Paul, 2026-11-13: "why not?"):
+ * Scan code opens a camera viewport here (`components/check-in/check-in-scanner.tsx`),
+ * and a code it reads is handed to this screen as the link's own parameters,
+ * so both paths send the same check-in from one place. The event's Scan code
+ * opens the screen with the viewport already up (`scan=1`). Opened without a
+ * token otherwise (the chat card or Activity once a code is required), the
+ * screen offers Scan code, the phone's camera, and the typed code, for a
+ * phone whose camera or link handling is broken.
  *
  * ## Location is asked for here, in context
  *
@@ -147,6 +153,10 @@ type Phase = "locating" | "sending";
 
 /** The words for a scanned token the server no longer accepts. */
 export const CODE_CHANGED_COPY = CHECK_IN_CODE_CHANGED_COPY;
+
+/** What Scan code says about a code that isn't an event's check-in code. */
+export const NOT_A_CHECK_IN_CODE =
+  "That isn't a Frapp check-in code. Point at the code on the officer's screen.";
 
 /**
  * Which state a failed check-in lands in.
@@ -230,6 +240,7 @@ export default function CheckInScreen() {
     eventId?: string | string[];
     event?: string | string[];
     t?: string | string[];
+    scan?: string | string[];
   }>();
   const eventId = useMemo(() => {
     const raw = params.event ?? params.eventId;
@@ -255,6 +266,11 @@ export default function CheckInScreen() {
 
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const focused = useIsFocused();
+  /** Scan code's viewport is up. The event's own Scan code opens with it up. */
+  const [scannerOpen, setScannerOpen] = useState(() => {
+    const raw = Array.isArray(params.scan) ? params.scan[0] : params.scan;
+    return raw === "1";
+  });
   // A GPS fix kept ready while the screen is up, when location is already
   // allowed, so a check-in doesn't wait on one.
   const warmFix = useWarmCheckInFix(focused);
@@ -452,7 +468,14 @@ export default function CheckInScreen() {
     if (sentTokensRef.current.has(key)) return;
     sentTokensRef.current.add(key);
     void submit({ token: linkToken }, linkToken);
-  }, [eventId, eventLoaded, linkToken, sendingHere, submit, writeBlockedReason]);
+  }, [
+    eventId,
+    eventLoaded,
+    linkToken,
+    sendingHere,
+    submit,
+    writeBlockedReason,
+  ]);
 
   /** Send the last check-in again (after Settings, or Try again). */
   const retry = useCallback(() => {
@@ -463,6 +486,57 @@ export default function CheckInScreen() {
       last.payload.token ?? last.payload.manualCode ?? "",
     );
   }, [submit]);
+
+  /**
+   * A code Scan code read. One of ours becomes the link's own parameters, so
+   * the effect above sends it exactly as if the phone's camera had opened it,
+   * for whichever event it names; anything else (a poster, another app's
+   * code, a build of the other environment) is said once and the viewport
+   * keeps reading. The viewport reports a code in view on every frame, so
+   * each text is acted on once.
+   */
+  const lastScanRef = useRef<string | null>(null);
+  const handleScan = useCallback(
+    (data: string) => {
+      if (lastScanRef.current === data) return;
+      lastScanRef.current = data;
+      const target = parseCheckInLink(data, [webAppOrigin()]);
+      if (!target) {
+        setStatus({
+          kind: "error",
+          message: NOT_A_CHECK_IN_CODE,
+          attemptOnly: true,
+          retryable: false,
+        });
+        return;
+      }
+      setScannerOpen(false);
+      // A valid read replaces whatever the last one said.
+      setStatus({ kind: "idle" });
+      if (target.eventId === eventId && target.token === linkToken) {
+        // The same code the params already hold (read again after a refusal
+        // the member can fix, such as standing too far away): the params
+        // won't change, so the link effect won't send it again. Sent here.
+        if (writeBlockedReason === null && sendingHere === null) {
+          void submit({ token: target.token }, target.token);
+        }
+        return;
+      }
+      router.setParams({ event: target.eventId, t: target.token });
+    },
+    [eventId, linkToken, router, sendingHere, submit, writeBlockedReason],
+  );
+
+  const openScanner = () => {
+    lastScanRef.current = null;
+    // A line about the last attempt says nothing about the next code.
+    setStatus((current) =>
+      current.kind === "error" && current.attemptOnly
+        ? { kind: "idle" }
+        : current,
+    );
+    setScannerOpen(true);
+  };
 
   /**
    * Back from Settings: try again on its own, so allowing location is the
@@ -613,13 +687,7 @@ export default function CheckInScreen() {
             </Text>
           </Pressable>
         </View>
-      ) : !eventId ? (
-        <View style={styles.stateWrap}>
-          <InlineNote>
-            Point your phone&apos;s camera at the check-in code to check in.
-          </InlineNote>
-        </View>
-      ) : !eventLoaded && eventQuery.isError ? (
+      ) : eventId && !eventLoaded && eventQuery.isError ? (
         <View style={styles.stateWrap}>
           <ErrorState
             title="Event didn't load"
@@ -643,18 +711,25 @@ export default function CheckInScreen() {
       ) : (
         <>
           <View style={styles.body}>
-            {linkToken ? null : (
+            {scannerOpen ? (
+              <CheckInScanner
+                active={focused && !manualOpen}
+                onScan={handleScan}
+              />
+            ) : linkToken ? null : (
               <CameraGlyph color={tokens.color.text.mutedForeground} />
             )}
             <Text style={styles.title}>
-              {linkToken
-                ? (event?.name ?? "Check in")
-                : "Point your camera at the code"}
+              {scannerOpen
+                ? "Point at the code on the officer's screen"
+                : linkToken
+                  ? (event?.name ?? "Check in")
+                  : "Scan the check-in code"}
             </Text>
-            {linkToken ? null : (
+            {scannerOpen || linkToken ? null : (
               <Text style={styles.bodyText}>
-                Open your phone&apos;s Camera, point it at the code on the
-                officer&apos;s screen, and tap the Frapp link that appears.
+                Tap Scan code, or point your phone&apos;s Camera at the code on
+                the officer&apos;s screen and tap the Frapp link that appears.
               </Text>
             )}
             {zoneLine ? <Text style={styles.hint}>{zoneLine}</Text> : null}
@@ -697,17 +772,41 @@ export default function CheckInScreen() {
           </View>
 
           <View style={styles.footer}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={openManual}
-              hitSlop={tokens.spacing.sm}
-              style={({ pressed }) => [
-                styles.manualLink,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={styles.manualLinkText}>Enter code instead</Text>
-            </Pressable>
+            {/* Gone while a check-in is on its way, and for a refusal only an
+                officer can lift; back after any other answer, so a code that
+                changed can be scanned again. */}
+            {scannerOpen ||
+            sendingHere ||
+            (linkToken && !eventLoaded) ||
+            status.kind === "blocked" ? null : (
+              <Pressable
+                accessibilityRole="button"
+                onPress={openScanner}
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  { backgroundColor: accentPrimary },
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={[styles.primaryText, { color: accentOnPrimary }]}>
+                  Scan code
+                </Text>
+              </Pressable>
+            )}
+            {/* A typed code is checked against an event, so it needs one. */}
+            {eventId ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={openManual}
+                hitSlop={tokens.spacing.sm}
+                style={({ pressed }) => [
+                  styles.manualLink,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={styles.manualLinkText}>Enter code instead</Text>
+              </Pressable>
+            ) : null}
           </View>
         </>
       )}

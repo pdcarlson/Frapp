@@ -28,6 +28,14 @@ export interface InvoiceRow {
   status: InvoiceStatus;
   dueDate: string;
   paidAt: string | null;
+  /**
+   * When the member's latest card payment on this invoice failed, as the
+   * server recorded it from Stripe's `payment_intent.payment_failed` (#3460);
+   * null while it hasn't. The pay endpoint clears it on each new attempt.
+   */
+  paymentFailedAt: string | null;
+  /** Stripe's member-facing decline message for that failure, when sent. */
+  paymentFailureReason: string | null;
 }
 
 const STATUSES: ReadonlySet<string> = new Set<InvoiceStatus>([
@@ -56,6 +64,8 @@ function toRow(row: Record<string, unknown>): InvoiceRow | null {
     status: rawStatus as InvoiceStatus,
     dueDate,
     paidAt: str(row, "paid_at"),
+    paymentFailedAt: str(row, "last_payment_failed_at"),
+    paymentFailureReason: str(row, "last_payment_failure_reason"),
   };
 }
 

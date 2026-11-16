@@ -372,7 +372,8 @@ export function CardActions({ children }: { children: ReactNode }) {
 /**
  * One card action. `primary` is the chapter's solid-fill pair
  * (accent-engine.md §8), the one a card's main action takes; `secondary` is an
- * outline. A disabled button keeps its label and explains itself through
+ * outline; `link` is a quiet underlined line for the answer a card shouldn't
+ * invite (Can't make it?, #4933), which keeps the 44pt target unboxed. A disabled button keeps its label and explains itself through
  * `accessibilityHint`, so a screen reader hears why it can't be pressed.
  */
 export function CardButton({
@@ -381,13 +382,19 @@ export function CardButton({
   variant = "secondary",
   disabled = false,
   accessibilityHint,
+  accessibilityLabel,
   icon,
 }: {
   label: string;
   onPress: () => void;
-  variant?: "primary" | "secondary";
+  variant?: "primary" | "secondary" | "link";
   disabled?: boolean;
   accessibilityHint?: string;
+  /**
+   * What a screen reader says, when the label alone doesn't say what it acts
+   * on: a list of Join buttons is "Join Intramurals" (#4958). Defaults to the label.
+   */
+  accessibilityLabel?: string;
   /** Drawn before the label, in the label's color. */
   icon?: (color: string) => ReactNode;
 }) {
@@ -395,13 +402,16 @@ export function CardButton({
   const { tokens } = useFrappTheme();
   const brand = useChapterBranding();
   const primary = variant === "primary";
+  const link = variant === "link";
   const labelColor = primary
     ? brand.accentOnPrimary
-    : tokens.color.text.foreground;
+    : link
+      ? tokens.color.text.mutedForeground
+      : tokens.color.text.foreground;
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled }}
       accessibilityHint={accessibilityHint}
       disabled={disabled}
@@ -411,13 +421,23 @@ export function CardButton({
         styles.button,
         primary
           ? { backgroundColor: brand.accentPrimary }
-          : styles.buttonSecondary,
+          : link
+            ? styles.buttonLink
+            : styles.buttonSecondary,
         disabled ? styles.buttonDisabled : null,
         pressed && !disabled ? styles.buttonPressed : null,
       ]}
     >
       {icon ? icon(labelColor) : null}
-      <Text style={[styles.buttonLabel, { color: labelColor }]}>{label}</Text>
+      <Text
+        style={[
+          styles.buttonLabel,
+          link ? styles.buttonLinkLabel : null,
+          { color: labelColor },
+        ]}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -579,6 +599,12 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
       borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.popover,
     },
+    // No side padding, so a lone link lines up with the card's text; the
+    // 44pt height and width keep the target (hitSlop adds the rest).
+    buttonLink: {
+      paddingHorizontal: 0,
+      minWidth: 44,
+    },
     buttonDisabled: {
       opacity: 0.5,
     },
@@ -587,6 +613,9 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     },
     buttonLabel: {
       ...typeRole(tokens.typography.role.label),
+    },
+    buttonLinkLabel: {
+      textDecorationLine: "underline",
     },
     note: {
       ...typeRole(tokens.typography.role.caption),

@@ -45,6 +45,24 @@ describe("a row's data", () => {
   });
 });
 
+describe("a reminder's row (#4957)", () => {
+  it("opens chat at the message its chat_message_id names", () => {
+    const [group] = selectNotificationGroups(
+      [
+        row({
+          data: { target: { screen: "chat", channelId: "c1" }, reminder: true },
+          chat_message_id: "m9",
+        }),
+      ],
+      NOW,
+    );
+    expect(group?.rows[0]?.target).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m9" },
+    });
+  });
+});
+
 describe("selectNotificationGroups", () => {
   it("splits TODAY from EARLIER on the local calendar day", () => {
     const groups = selectNotificationGroups(

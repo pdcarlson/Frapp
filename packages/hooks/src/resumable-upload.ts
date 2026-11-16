@@ -81,8 +81,11 @@ const BASE64 =
 /** Base64 of a string's UTF-8 bytes, without leaning on `btoa`. */
 export function base64Utf8(value: string): string {
   const bytes: number[] = [];
-  for (const char of encodeURIComponent(value).match(/%[0-9A-F]{2}|[^%]/g) ?? []) {
-    bytes.push(char.length === 3 ? parseInt(char.slice(1), 16) : char.charCodeAt(0));
+  for (const char of encodeURIComponent(value).match(/%[0-9A-F]{2}|[^%]/g) ??
+    []) {
+    bytes.push(
+      char.length === 3 ? parseInt(char.slice(1), 16) : char.charCodeAt(0),
+    );
   }
   let out = "";
   for (let i = 0; i < bytes.length; i += 3) {
@@ -241,7 +244,10 @@ export async function uploadResumable(
           "Upload-Offset": String(at),
           "Content-Type": "application/offset+octet-stream",
         },
-        body: await file.read(at, Math.min(file.size, at + RESUMABLE_CHUNK_BYTES)),
+        body: await file.read(
+          at,
+          Math.min(file.size, at + RESUMABLE_CHUNK_BYTES),
+        ),
         signal,
       });
     });

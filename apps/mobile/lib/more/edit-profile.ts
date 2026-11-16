@@ -1,7 +1,10 @@
 import type { components } from "@repo/api-sdk";
 import {
+  birthdayDraftProblem,
+  type BirthdayDraftProblem,
   GRADUATION_YEAR_MESSAGE,
   isPhoneNumber,
+  parseBirthdayVisibility,
   MAJOR_MAX_LENGTH,
   parseGraduationYear,
   PHONE_INVALID_MESSAGE,
@@ -24,6 +27,12 @@ export type ProfileDraft = {
   bio: string;
   city: string;
   company: string;
+  /** The birthday (#4959), typed as digits: month, day, optional year. */
+  birthdayMonth: string;
+  birthdayDay: string;
+  birthdayYear: string;
+  /** `chapter` or `nobody`, set by the sheet's segmented control. */
+  birthdayVisibility: string;
 };
 
 /**
@@ -56,7 +65,35 @@ export function draftFromProfile(profile: ViewerProfile | null): ProfileDraft {
         : String(profile.graduationYear),
     city: profile?.currentCity ?? "",
     company: profile?.currentCompany ?? "",
+    birthdayMonth: digits(profile?.birthdayMonth),
+    birthdayDay: digits(profile?.birthdayDay),
+    birthdayYear: digits(profile?.birthdayYear),
+    birthdayVisibility: profile?.birthdayVisibility ?? "nobody",
   };
+}
+
+/** The draft field each part of a birthday refusal lands on. */
+const BIRTHDAY_DRAFT_FIELD: Record<
+  BirthdayDraftProblem["field"],
+  ProfileDraftField
+> = {
+  month: "birthdayMonth",
+  day: "birthdayDay",
+  year: "birthdayYear",
+};
+
+function digits(value: number | null | undefined): string {
+  return value === null || value === undefined ? "" : String(value);
+}
+
+/**
+ * A typed whole number, `null` for blank, and `NaN` for anything else, which
+ * `birthdayDraftProblem` refuses on that field.
+ */
+function typedNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : Number.NaN;
 }
 
 /**
@@ -118,6 +155,37 @@ export function profilePatch(
       return { ok: false, field: "major", message: MAJOR_TOO_LONG_MESSAGE };
     }
     patch.major = major;
+  }
+
+  // The birthday (#4959): month and day together, or both blank to clear
+  // it (and its year). Sent whole whenever any part changed, so the API checks
+  // the day against the month and year as one.
+  const birthdayChanged = (
+    ["birthdayMonth", "birthdayDay", "birthdayYear"] as const
+  ).some((key) => draft[key].trim() !== original[key].trim());
+  if (birthdayChanged) {
+    // Non-digit text is a part that isn't a number: NaN fails its check.
+    const month = typedNumber(draft.birthdayMonth);
+    const day = typedNumber(draft.birthdayDay);
+    const year = typedNumber(draft.birthdayYear);
+    const problem = birthdayDraftProblem(month, day, year);
+    if (problem) {
+      // On the part that is wrong, so it shows when the member leaves it.
+      return {
+        ok: false,
+        field: BIRTHDAY_DRAFT_FIELD[problem.field],
+        message: problem.message,
+      };
+    }
+    const cleared = month === null && day === null && year === null;
+    patch.birthday_month = cleared ? null : month;
+    patch.birthday_day = cleared ? null : day;
+    patch.birthday_year = cleared ? null : year;
+  }
+  if (draft.birthdayVisibility !== original.birthdayVisibility) {
+    patch.birthday_visibility = parseBirthdayVisibility(
+      draft.birthdayVisibility,
+    );
   }
 
   const bio = draft.bio.trim();

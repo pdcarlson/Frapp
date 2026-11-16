@@ -83,8 +83,8 @@ export function useInvites(options?: {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: ["invites", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/invites");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/invites", { signal });
       if (error) throw error;
       return data;
     },
@@ -108,8 +108,8 @@ export function useInvitableRoleIds(options?: { enabled?: boolean }) {
     // Outside the `["invites", chapterId]` prefix every invite write
     // invalidates: the answer depends on roles, not on invites.
     queryKey: ["invite-roles", chapterId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/invites/roles");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/invites/roles", { signal });
       if (error) throw error;
       return data.role_ids;
     },
@@ -214,8 +214,8 @@ export function usePendingInvites(userId: string | null) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["pending-invites", userId],
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/invites/mine");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/invites/mine", { signal });
       if (error) throw error;
       return data;
     },
@@ -239,8 +239,9 @@ export function useInvitePreview(token: string | null) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["invite-preview", token],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.POST("/v1/invites/preview", {
+        signal,
         body: { token: token as string },
       });
       if (error) throw error;

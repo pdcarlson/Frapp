@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -54,6 +55,7 @@ import {
   useMyPermissions,
   useBookmarks,
   useBookmarkedMessageIds,
+  useScheduleMessage,
   useBookmarkMessage,
   useUnbookmarkMessage,
   resolveAuthorLabel,
@@ -76,9 +78,11 @@ import {
   useChatCatchUpAvailable,
   gifToSend,
   useGifAvailability,
+  useSetMessageReminder,
 } from "@repo/hooks";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
+import { attachmentRequestBody } from "@repo/chat-core/adapters";
 import {
   channelPreviewLine,
   NO_MESSAGES_PREVIEW,
@@ -100,9 +104,11 @@ import {
 import { MentionChipTargetsContext } from "@repo/hooks/mention-chips";
 import { ChevronLeft, SquarePen, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet } from "@/components/ui/sheet";
-import { PanelContent, PanelHeader } from "@/components/shared/panel";
-import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from "@/components/ui/popover";
 import {
   persistMembersHidden,
   WIDE_CHAT_QUERY,
@@ -128,6 +134,7 @@ import {
 import { readLastChannel, writeLastChannel } from "@/lib/chat/last-channel";
 import type { ChatView } from "@/components/layout/shell-prefs";
 import { useToast } from "@/lib/hooks/use-toast";
+import { reminderSetDescription } from "@/lib/chat/reminder-copy";
 import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { useChapterVocabulary } from "@/lib/hooks/use-chapter-vocabulary";
 import { vocab } from "@repo/org-archetypes";
@@ -135,7 +142,7 @@ import * as Sentry from "@sentry/nextjs";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useDeleteChannelFlow } from "./use-delete-channel-flow";
 import { CreateChannelSheet } from "@/components/chat-admin/create-channel-sheet";
-import { ThreadPanel, type ThreadRowWrites } from "./thread-panel";
+import type { ThreadRowWrites } from "./thread-panel";
 import {
   classifyMessage,
   hiddenQuoteText,
@@ -144,7 +151,6 @@ import {
 } from "@repo/chat-core/blocks";
 import type { ResolveMember } from "@repo/chat-core/dispatch";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { AskSlot } from "@/components/ask/ask-host";
 import {
   useChannelAsk,
   useChannelAskAccess,
@@ -175,11 +181,11 @@ import {
   type MessageTimelineHandle,
 } from "./message-timeline";
 import {
-  Composer,
   ComposerShell,
   notifyDispatchOutcome,
   type CommandFormOutcome,
-} from "./composer";
+} from "./composer-shell";
+import { ScheduledMessagesBar } from "./schedule-send";
 import {
   canBlockSender,
   channelAllowsReplies,
@@ -217,6 +223,12 @@ import { replyPreviewText } from "./reply-quote";
 import { OpsSetupNudge } from "./ops-setup-nudge";
 import { SetupChecklistSection } from "./setup-checklist";
 import { ChannelMenu } from "./channel-menu";
+import { AllThreadsPopover } from "./all-threads-popover";
+import {
+  anchorFor,
+  MemberPopout,
+  type MemberPopoutAnchor,
+} from "./member-popout";
 import type { ChannelRowActions } from "./channel-row-menu";
 import type { ChatSearchHit } from "./chat-search-popover";
 import type { BookmarkEntry } from "./bookmarks-popover";
@@ -228,6 +240,8 @@ import {
   ReportMessageDialog,
   type ReportTarget,
 } from "./report-message-dialog";
+import { ForwardMessageDialog } from "./forward-message-dialog";
+import { forwardTargetOf, type ForwardTarget } from "@repo/chat-core/forward";
 import { compactControlClassName } from "@/components/shared/table-controls";
 import { useIsDesktopShell } from "@/components/layout/shell-layout";
 import {
@@ -239,35 +253,38 @@ import {
   type SlashCommand,
 } from "@repo/chat-core/integrations";
 import type { DispatchResult } from "@repo/chat-core/dispatch";
-import {
-  TaskForm,
-  taskDraftFrom,
-  type TaskDraft,
-} from "@/components/tasks/task-form";
-import {
-  LogHoursForm,
-  type HoursDraft,
-} from "@/components/service/log-hours-form";
-import {
-  PointsAdjustmentForm,
-  type PointsDraft,
-} from "@/components/points/points-adjustment-form";
+import { taskDraftFrom, type TaskDraft } from "@/components/tasks/task-draft";
+import type { HoursDraft } from "@/components/service/log-hours-form";
+import type { PointsDraft } from "@/components/points/points-adjustment-form";
 import { useSubscriptionGate } from "@/components/shared/subscription-gate";
-import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 import {
   emptyPollDraft,
   pollDraftFromArgs,
   type PollDraft,
 } from "@repo/chat-core/poll-draft";
-import { PollForm } from "./poll-form";
-import { SignupForm } from "./signup-form";
-import { FormBuilder } from "./form-builder";
-import { emptySignupDraft, type SignupDraft } from "@repo/chat-core/signups";
 import {
+  emptyRolePickerDraft,
+  type RolePickerDraft,
+} from "./role-picker-draft";
+import { emptySignupDraft, type SignupDraft } from "@repo/chat-core/signups";
+import { eventQuickDraftFrom, type EventQuickDraft } from "./event-quick-draft";
+import {
+  Composer,
+  EventEditorDialog,
   EventQuickForm,
-  eventQuickDraftFrom,
-  type EventQuickDraft,
-} from "./event-quick-form";
+  FormBuilder,
+  LogHoursForm,
+  MemberDetailSheet,
+  PointsAdjustmentForm,
+  PollForm,
+  preloadChatPanels,
+  preloadComposer,
+  RolePickerForm,
+  SignupForm,
+  TaskForm,
+  ThreadPanel,
+} from "./deferred-panels";
+import { afterFirstPaint } from "@/lib/after-first-paint";
 import { usePlusDrafts } from "./use-plus-drafts";
 import {
   PLUS_MENU_COMMANDS,
@@ -814,10 +831,13 @@ export function ChatShell({
   /*
     The member list (#3536). From 1280px it is a column beside the timeline,
     shown unless the member hid it, which a cookie remembers. Below that there
-    is no room for a third column, so the same toggle opens it as a sheet.
+    is no room for a third column, so the same toggle opens it as a list
+    under the button (#4593), as Slack's and Discord's members button does
+    once their column won't fit.
   */
   const [membersHidden, setMembersHidden] = useState(defaultMembersHidden);
   const [membersSheetOpen, setMembersSheetOpen] = useState(false);
+  const membersButtonRef = useRef<HTMLButtonElement>(null);
   const wideWindow = useMediaQuery(WIDE_CHAT_QUERY);
   // Room for the column: a wide window, and no tool page beside chat.
   const isWideChat = wideWindow && !toolBeside;
@@ -938,11 +958,7 @@ export function ChatShell({
       const ownBack = backPending.current;
       if (isUnderThreadPaneEntry(event.state)) {
         unmarkUnderThreadPaneEntry();
-        if (
-          !ownBack &&
-          !openAfterBack.current &&
-          isDesktopShellRef.current
-        ) {
+        if (!ownBack && !openAfterBack.current && isDesktopShellRef.current) {
           // The browser's Back left a below-`lg` pick's entry from `lg` up,
           // where the list was already on screen: finish the press (#3836).
           onThreadEntry.current = false;
@@ -1427,16 +1443,84 @@ export function ChatShell({
     [activeChapterId, isMember, nameFor, requestBlock],
   );
   const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
-  // Whose profile is open (#3726): a sender's name or photo, an `@` chip, or a
-  // row of the member list opens the directory's own sheet by `users.id`, as
-  // mobile's thread does. The id outlives the close so the sheet keeps its
-  // member through its exit animation instead of blanking.
+  // The message the Forward dialog is open on (#4907), or null.
+  const [forwardTarget, setForwardTarget] = useState<ForwardTarget | null>(
+    null,
+  );
+  const handleForward = useCallback(
+    (message: ChatMessage) => {
+      // The row offered Forward (`canForwardMessage`), so this is always a
+      // target; the copy is what the card will draw, masked as the row's is.
+      setForwardTarget(
+        forwardTargetOf(message, true, blockState, userId ?? null) ?? null,
+      );
+    },
+    [blockState, userId],
+  );
+  // Whose full profile is open (#3726): a popout's View profile opens the
+  // directory's own sheet by `users.id`. The id outlives the close so the
+  // sheet keeps its member through its exit animation instead of blanking.
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
-  const openProfile = useCallback((memberUserId: string) => {
+  // A sender's name or photo, an `@` chip, or a member-list row opens a small
+  // profile popout beside it first (#4593), as Discord's user popout does;
+  // the sheet is its View profile. Kept after the close for the exit
+  // animation, like the sheet's id. A row's popout opens to the row's left,
+  // as Discord's member list does.
+  const [popout, setPopout] = useState<{
+    userId: string;
+    anchor: MemberPopoutAnchor;
+    side: "left" | "right";
+  } | null>(null);
+  const [popoutOpen, setPopoutOpen] = useState(false);
+  // Read by the Members popover's outside-click and focus guards, which run
+  // between renders: a popout or profile stacked over the list must not
+  // close the list. A layout effect, because the popout and the sheet move
+  // focus in their own (passive) mount effects, which must already see it.
+  const stackedOverMembersRef = useRef(false);
+  useLayoutEffect(() => {
+    stackedOverMembersRef.current = profileOpen || popoutOpen;
+  }, [profileOpen, popoutOpen]);
+  // The dialogs and forms above load on first open; fetch them once the
+  // page is idle so that first open rarely waits (#3716).
+  // The composer's editor is wanted sooner, as soon as there is a channel,
+  // so its fetch starts now (#5050).
+  useEffect(() => {
+    preloadComposer();
+    afterFirstPaint(preloadChatPanels);
+  }, []);
+  const openProfileSheet = useCallback((memberUserId: string) => {
     setProfileUserId(memberUserId);
     setProfileOpen(true);
   }, []);
+  // The popout beside the clicked element; the sheet only when a caller has
+  // no element to anchor to.
+  const openPopout = useCallback(
+    (
+      memberUserId: string,
+      anchor: HTMLElement | undefined,
+      side: "left" | "right",
+    ) => {
+      if (!anchor) {
+        openProfileSheet(memberUserId);
+        return;
+      }
+      setPopout({ userId: memberUserId, anchor: anchorFor(anchor), side });
+      setPopoutOpen(true);
+    },
+    [openProfileSheet],
+  );
+  const openProfile = useCallback(
+    (memberUserId: string, anchor?: HTMLElement) =>
+      openPopout(memberUserId, anchor, "right"),
+    [openPopout],
+  );
+  // A row sits at the window's right edge, so its popout opens leftward.
+  const openProfileFromList = useCallback(
+    (memberUserId: string, anchor?: HTMLElement) =>
+      openPopout(memberUserId, anchor, "left"),
+    [openPopout],
+  );
   const handleReport = useCallback(
     (message: ChatMessage) => {
       const canBlock = !!userId && canBlockSender(message, userId, isMember);
@@ -1707,6 +1791,28 @@ export function ChatShell({
               }}
             />
           );
+        case "roles":
+          return (
+            <RolePickerForm
+              key={key}
+              {...kept}
+              initialDraft={
+                plusDrafts.get<RolePickerDraft>(channelId, "roles") ??
+                emptyRolePickerDraft()
+              }
+              onDiscard={discard}
+              onPost={async (picker) => {
+                const result = await channel.sendRolePicker(channelId, picker);
+                if (result.ok && result.warning) {
+                  toast({
+                    title: "Role picker posted",
+                    description: result.warning,
+                  });
+                }
+                return result;
+              }}
+            />
+          );
         case "form":
           return (
             <FormBuilder
@@ -1845,6 +1951,7 @@ export function ChatShell({
     [bookmarksQuery.data],
   );
   const bookmarkedMessageIds = useBookmarkedMessageIds();
+  const scheduleMessage = useScheduleMessage();
   const bookmarkMessage = useBookmarkMessage();
   const unbookmarkMessage = useUnbookmarkMessage();
   const handleToggleBookmark = useCallback(
@@ -1861,6 +1968,29 @@ export function ChatShell({
       else unbookmarkMessage.mutate(messageId);
     },
     [bookmarkMessage, unbookmarkMessage],
+  );
+  // "Remind me about this" (#4957). Unlike Save, nothing on the row shows
+  // the reminder, so both outcomes toast, as Slack confirms its own.
+  const setMessageReminder = useSetMessageReminder();
+  const setMessageReminderAsync = setMessageReminder.mutateAsync;
+  const handleRemind = useCallback(
+    (messageId: string, remindAt: Date) => {
+      // Per call, because `mutate`'s per-call callbacks run only for the
+      // latest call.
+      void setMessageReminderAsync({ messageId, remindAt }).then(
+        () =>
+          toast({
+            title: "Reminder set",
+            description: reminderSetDescription(remindAt),
+          }),
+        () =>
+          toast({
+            variant: "destructive",
+            description: "Couldn't set the reminder. Try again.",
+          }),
+      );
+    },
+    [setMessageReminderAsync, toast],
   );
   const bookmarkWriteFailed =
     bookmarkMessage.isError || unbookmarkMessage.isError;
@@ -2173,7 +2303,8 @@ export function ChatShell({
     conversation first, each with its last line, worded by the rule both
     clients share (`channelPreviewLine`; spec/behavior/chat/README.md
     § Channel list previews). The channels rail draws neither, so the read
-    runs only while the panel shows direct messages.
+    runs there only while the member sorts by Recent (#2877), which orders
+    the rail by the same times and draws no line from them.
 
     The list waits for the read's first answer behind its skeleton, as the
     phone's does, so the rows never re-sort under the pointer. After that the
@@ -2181,7 +2312,10 @@ export function ChatShell({
     and so the order and the lines. A hidden DM has no latest row (the server
     leaves it out), so it gets no line rather than a false "No messages yet".
   */
-  const latestQuery = useChannelLatestMessages({ enabled: directView });
+  const recentSort = !directView && sidebarPreferences.sort === "recent";
+  const latestQuery = useChannelLatestMessages({
+    enabled: directView || recentSort,
+  });
   const latestRows = latestQuery.data;
   // Settled once it has data, has failed, or isn't fetching at all (paused
   // offline, or never enabled for want of a chapter): only a first read in
@@ -2214,6 +2348,13 @@ export function ChatShell({
     }
     return { at, previews };
   }, [directView, latestRows, railChannels, userId, nameFor]);
+  // Recent on the channels rail (#2877): each channel's latest message time.
+  // Absent until the read answers or if it failed, when the shared
+  // arrangement keeps the chapter's order rather than sorting on nothing.
+  const channelLatestAt = useMemo(() => {
+    if (!recentSort || !latestRows) return undefined;
+    return new Map(latestRows.map((row) => [row.channel_id, row.created_at]));
+  }, [recentSort, latestRows]);
   // A failed fetch must not read as "everything is read". `ChannelList` maps
   // an absent row to zero, so handing it an empty map on error would render
   // every row calm and unbadged — telling a member they have no @-mentions at
@@ -2548,10 +2689,14 @@ export function ChatShell({
   } | null>(null);
   // Leaving the channel closes its thread, so coming back shows the timeline
   // (state adjusted during render, React's pattern for a reset on a prop).
+  // Not while the thread's channel is the one being switched to and the
+  // cached list hasn't brought it in yet: All threads (#4960) opens a thread
+  // in a channel that may be new to this tab, and its refetch lands after.
   if (
     openThread &&
     activeChannel &&
-    openThread.channelId !== activeChannel.id
+    openThread.channelId !== activeChannel.id &&
+    openThread.channelId !== selectedChannelId
   ) {
     setOpenThread(null);
   }
@@ -2589,6 +2734,31 @@ export function ChatShell({
     setThreadJump(null);
     setOpenThread(null);
   }, []);
+  // A channel reads `#name` in the All threads list; a DM its people.
+  const threadChannelLabel = useCallback(
+    (channelId: string) => {
+      const title = channelTitles.get(channelId);
+      if (!title) return null;
+      const type = channels.find((ch) => ch.id === channelId)?.type;
+      return type === "DM" || type === "GROUP_DM" ? title : `#${title}`;
+    },
+    [channelTitles, channels],
+  );
+  // All threads (#4960): a row may name another channel, so switch to it
+  // first, as a bookmark's jump does, and open its thread there.
+  const openThreadInChannel = useCallback(
+    (channelId: string, rootId: string) => {
+      if (channelId !== activeChannelId) {
+        setSelectedChannelId(channelId);
+        setChannelTargetDismissed(false);
+        void refetchChannels();
+      }
+      setThreadJump(null);
+      setOpenThread({ channelId, rootId });
+      setNarrowPane("thread");
+    },
+    [activeChannelId, refetchChannels],
+  );
 
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it, and only on a channel a
@@ -3092,6 +3262,10 @@ export function ChatShell({
           ) : null}
           <ChannelFilters
             filters={sidebarPreferences.filters}
+            // Direct messages always run newest first, so their panel
+            // offers no sort.
+            sort={directView ? undefined : sidebarPreferences.sort}
+            reorderable={!directView && !!railReorder}
             onChange={sidebarControls.onSetFilters}
           />
         </div>
@@ -3141,12 +3315,14 @@ export function ChatShell({
           {channelsPaneState === "ready" && !directView ? (
             <SetupChecklistSection />
           ) : null}
-          {channelsPaneState === "ready" && directView && !latestSettled ? (
+          {channelsPaneState === "ready" &&
+          (directView || recentSort) &&
+          !latestSettled ? (
             <ChannelListSkeleton />
           ) : channelsPaneState === "ready" ? (
             <ChannelList
               kind={view}
-              latestAt={directLatest?.at}
+              latestAt={directView ? directLatest?.at : channelLatestAt}
               previews={directLatest?.previews}
               viewerId={userId}
               memberNames={memberNames}
@@ -3160,7 +3336,9 @@ export function ChatShell({
               sidebar={sidebarControls}
               // The chapter's order is for channels: a DM is never placed in
               // it, and the empty categories an officer drags onto would sit
-              // in a list of conversations (#3774).
+              // in a list of conversations (#3774). Under Recent or A–Z the
+              // list keeps categories draggable and turns off channel-row
+              // drag itself (#2877).
               reorder={directView ? undefined : railReorder}
               onCreateChannel={
                 canManageChannel && !directView
@@ -3220,9 +3398,11 @@ export function ChatShell({
           maskedRefresh={maskedRefresh}
           bookmarkedMessageIds={bookmarkedMessageIds}
           onToggleBookmark={handleToggleBookmark}
+          onRemind={handleRemind}
           canManageChannel={canManageChannel}
           onReport={handleReport}
           onBlock={handleBlock}
+          onForward={handleForward}
           onOpenProfile={openProfile}
           isMember={isMember}
           canReply={channelAllowsThreadReplies(activeChannel)}
@@ -3232,6 +3412,20 @@ export function ChatShell({
           onCatchUp={canCatchUpHere ? startThreadCatchUp : undefined}
           jumpTo={threadJump}
           askRefusal={replyAskRefusalFor}
+          // A reply scheduled into this thread (#5005): the API checks it as
+          // a thread reply, so it follows `canReply`, not `can_post`.
+          onSchedule={
+            channelAllowsThreadReplies(activeChannel)
+              ? async (content, at) => {
+                  await scheduleMessage.mutateAsync({
+                    channelId: activeChannel.id,
+                    content,
+                    sendAt: at,
+                    threadRootId,
+                  });
+                }
+              : undefined
+          }
         />
       </MentionChipTargetsContext.Provider>
     ) : null;
@@ -3380,18 +3574,84 @@ export function ChatShell({
           />
           <div className="flex shrink-0 items-center gap-2">
             {showMemberList ? (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={compactControlClassName}
-                onClick={threadBeside ? showMembersOverThread : toggleMembers}
-                aria-label={membersBeside ? "Hide members" : "Show members"}
-                aria-pressed={isWideChat ? membersBeside : undefined}
-                aria-haspopup={isWideChat ? undefined : "dialog"}
+              <Popover
+                open={membersSheetOpen}
+                onOpenChange={setMembersSheetOpen}
               >
-                <MembersGlyph className="h-5 w-5" active={membersBeside} />
-              </Button>
+                <PopoverAnchor asChild>
+                  <Button
+                    ref={membersButtonRef}
+                    variant="ghost"
+                    size="icon"
+                    className={compactControlClassName}
+                    onClick={
+                      threadBeside
+                        ? showMembersOverThread
+                        : membersSheetOpen
+                          ? () => setMembersSheetOpen(false)
+                          : toggleMembers
+                    }
+                    aria-label={membersBeside ? "Hide members" : "Show members"}
+                    aria-pressed={isWideChat ? membersBeside : undefined}
+                    aria-haspopup={isWideChat ? undefined : "dialog"}
+                    aria-expanded={isWideChat ? undefined : membersSheetOpen}
+                  >
+                    <MembersGlyph className="h-5 w-5" active={membersBeside} />
+                  </Button>
+                </PopoverAnchor>
+                {/*
+                  The list under its button (#4593: a quick list opens under
+                  its button, as the notification list does; components.md §
+                  Chat member list): the column's own list, search and all,
+                  capped to the room below the button. A popout opened from a
+                  row, and the profile behind its View profile, stack over it
+                  and close back to it (#3798), so the list ignores the clicks
+                  and focus they take.
+                */}
+                <PopoverContent
+                  align="end"
+                  aria-label="Members"
+                  className="flex max-h-[min(32rem,var(--radix-popover-content-available-height))] w-72 flex-col p-0"
+                  collisionPadding={16}
+                  // Radix calls this for a press or a focus move outside.
+                  onInteractOutside={(event) => {
+                    // The button closes the list itself; dismissing here on
+                    // its pointerdown would let its click open it again.
+                    const onButton = membersButtonRef.current?.contains(
+                      event.target as Node,
+                    );
+                    if (stackedOverMembersRef.current || onButton) {
+                      event.preventDefault();
+                    }
+                  }}
+                  onCloseAutoFocus={(event) => {
+                    event.preventDefault();
+                    const active = document.activeElement;
+                    const content = event.currentTarget as HTMLElement | null;
+                    if (
+                      !active ||
+                      active === document.body ||
+                      !!content?.contains(active)
+                    ) {
+                      membersButtonRef.current?.focus();
+                    }
+                  }}
+                >
+                  {activeChannel ? (
+                    <ChannelMemberList
+                      channelId={activeChannel.id}
+                      onOpenProfile={openProfileFromList}
+                    />
+                  ) : null}
+                </PopoverContent>
+              </Popover>
             ) : null}
+            <AllThreadsPopover
+              channelNameFor={threadChannelLabel}
+              nameFor={nameFor}
+              viewerId={userId}
+              onOpenThread={openThreadInChannel}
+            />
             <ChannelMenu
               activeChannelId={activeChannelId}
               messages={shownMessages}
@@ -3906,9 +4166,11 @@ export function ChatShell({
                   }
                   bookmarkedMessageIds={bookmarkedMessageIds}
                   onToggleBookmark={handleToggleBookmark}
+                  onRemind={handleRemind}
                   canManageChannel={canManageChannel}
                   onReport={handleReport}
                   onBlock={handleBlock}
+                  onForward={handleForward}
                   onOpenProfile={openProfile}
                   isMember={isMember}
                 />
@@ -3917,8 +4179,11 @@ export function ChatShell({
             <TypingLine label={typingLine} />
           </>
         ) : null}
-        {/* Where Ask Frapp's conversation rises from: the composer's top edge. */}
-        {activeChannel ? <AskSlot /> : null}
+        {/* Wherever the member can read: a message that failed because they
+            lost posting here is exactly the one they need to see and delete. */}
+        {activeChannel ? (
+          <ScheduledMessagesBar channelId={activeChannel.id} />
+        ) : null}
         {activeChannel ? (
           <Composer
             // Remounts the editor whenever the channel *or its resolved
@@ -3942,6 +4207,11 @@ export function ChatShell({
             // never during render, and it answers `true` at most once — see
             // `claimShellFocus` above and `Composer`'s own prop doc.
             claimShellFocus={claimShellFocus}
+            // The same ref, for the shell that stands in while the editor's
+            // code loads (#5050).
+            onShellFocusChange={(focused) => {
+              shellFocus.current = focused;
+            }}
             dropAttachRef={dropAttachRef}
             channelId={activeChannel.id}
             channelName={activeChannelName}
@@ -3985,6 +4255,30 @@ export function ChatShell({
                 mentionPicks,
               });
             }}
+            // Scheduled to post later (#4956), where the member may post:
+            // the text, its files and the staged reply (#4971). The reply is
+            // read and cleared as a send does, only once it is scheduled.
+            onSchedule={
+              activeChannel.can_post !== false
+                ? async (body, attachments, mentionPicks, at) => {
+                    const target = replyTo?.id ?? null;
+                    await scheduleMessage.mutateAsync({
+                      channelId: activeChannel.id,
+                      content: body,
+                      sendAt: at,
+                      mentionPicks,
+                      attachments: attachments.map(attachmentRequestBody),
+                      replyToId: target,
+                    });
+                    // Unless another reply was staged while it was out.
+                    if (target) {
+                      setReplyTarget((current) =>
+                        current?.messageId === target ? null : current,
+                      );
+                    }
+                  }
+                : undefined
+            }
             // A GIF goes out as its own message (#4631); the reply strip
             // attaches to it as it would to typed text.
             onSendGif={
@@ -4072,43 +4366,41 @@ export function ChatShell({
           <ChannelMemberList
             channelId={activeChannel?.id ?? null}
             enabled={isWideChat}
-            onOpenProfile={openProfile}
+            onOpenProfile={openProfileFromList}
           />
         </aside>
       ) : null}
-      <Sheet open={membersSheetOpen} onOpenChange={setMembersSheetOpen}>
-        {/*
-          A Panel, §9's surface for a list that grows: the member list is the
-          panel's whole body and owns its one scroll.
-        */}
-        <PanelContent>
-          <PanelHeader>Members</PanelHeader>
-          {activeChannel ? (
-            <ChannelMemberList
-              channelId={activeChannel.id}
-              onOpenProfile={openProfile}
-            />
-          ) : null}
-        </PanelContent>
-      </Sheet>
+
+      {popout ? (
+        <MemberPopout
+          userId={popout.userId}
+          anchor={popout.anchor}
+          side={popout.side}
+          open={popoutOpen}
+          onOpenChange={setPopoutOpen}
+          identity={{
+            name: nameFor(popout.userId),
+            avatarUrl: avatarFor(popout.userId),
+          }}
+          onViewProfile={openProfileSheet}
+        />
+      ) : null}
 
       {/*
-        After the Members sheet, so a profile opened from one of its rows
-        stacks over the list and closes back to it, as mobile's does (#3798).
+        Mounted from the first open on, so its chunk loads with that open
+        rather than with the shell (#3716), and so it can animate closed.
       */}
-      <MemberDetailSheet
-        open={profileOpen}
-        onOpenChange={setProfileOpen}
-        userId={profileUserId}
-        identity={
-          profileUserId
-            ? {
-                name: nameFor(profileUserId),
-                avatarUrl: avatarFor(profileUserId),
-              }
-            : null
-        }
-      />
+      {profileUserId ? (
+        <MemberDetailSheet
+          open={profileOpen}
+          onOpenChange={setProfileOpen}
+          userId={profileUserId}
+          identity={{
+            name: nameFor(profileUserId),
+            avatarUrl: avatarFor(profileUserId),
+          }}
+        />
+      ) : null}
 
       {catchUp.element}
       {confirmDialog}
@@ -4163,6 +4455,17 @@ export function ChatShell({
         target={reportTarget}
         onClose={() => setReportTarget(null)}
       />
+      {/* Mounted only while open: its channel and roster reads have no
+          work to do for a closed dialog. */}
+      {forwardTarget ? (
+        <ForwardMessageDialog
+          key={forwardTarget.messageId}
+          target={forwardTarget}
+          nameFor={nameFor}
+          viewerId={userId ?? null}
+          onClose={() => setForwardTarget(null)}
+        />
+      ) : null}
     </div>
   );
 }

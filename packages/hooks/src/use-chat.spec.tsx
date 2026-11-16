@@ -2,6 +2,9 @@ import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  CHANNEL_LATEST_MESSAGES_KEY,
+  CHANNEL_LIST_KEY,
+  CHANNEL_UNREAD_COUNTS_KEY,
   useChannelUnreadCounts,
   useMarkChannelRead,
   useMarkMessageUnread,
@@ -14,8 +17,6 @@ import {
   useSetChannelNotificationLevel,
   useUploadSignedUrl,
   useForwardMessage,
-  CHANNEL_LATEST_MESSAGES_KEY,
-  CHANNEL_UNREAD_COUNTS_KEY,
   channelSetFingerprint,
   CHANNEL_NOTIFICATION_PREFERENCES_KEY,
 } from "./use-chat";
@@ -75,7 +76,9 @@ describe("useChannelUnreadCounts", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mockGet).toHaveBeenCalledWith("/v1/channels/unread");
+    expect(mockGet).toHaveBeenCalledWith("/v1/channels/unread", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.data).toEqual(rows);
   });
 
@@ -150,14 +153,26 @@ describe("useMarkChannelRead", () => {
     queryClient = createTestQueryClient();
   });
 
-  it("posts to the channel's read endpoint and invalidates channel queries", async () => {
+  it("posts to the channel's read endpoint and re-reads the summaries and channel metadata, not the per-message reads", async () => {
     const mockPost = vi.fn().mockResolvedValue({
       data: { success: true },
       error: undefined,
       response: { ok: true, status: 200 },
     });
     const mockClient = { POST: mockPost };
-    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    // Everything that lives under the `["channels"]` prefix on an open chat.
+    const keys = {
+      unread: CHANNEL_UNREAD_COUNTS_KEY,
+      latest: CHANNEL_LATEST_MESSAGES_KEY,
+      list: CHANNEL_LIST_KEY,
+      categories: ["channels", "categories"],
+      detail: ["channels", "chan-1"],
+      otherDetail: ["channels", "chan-2"],
+      pins: ["channels", "chan-1", "pins"],
+      avatars: ["channels", "chan-1", "avatars", "x"],
+      attachments: ["channels", "chan-1", "messages", "m-1", "attachments"],
+    } as const;
+    for (const key of Object.values(keys)) queryClient.setQueryData(key, []);
 
     const { result } = renderHook(() => useMarkChannelRead(), {
       wrapper: createWrapper(queryClient, mockClient),
@@ -170,11 +185,28 @@ describe("useMarkChannelRead", () => {
     expect(mockPost).toHaveBeenCalledWith("/v1/channels/{id}/read", {
       params: { path: { id: "chan-1" } },
     });
-    // Badges come from the ["channels", "unread"] key; invalidating the
-    // broader ["channels"] key is what makes a mark-read clear them via
-    // React Query's prefix matching, without a second, narrower invalidation
-    // that could drift out of sync with the unread query's own key.
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] });
+    // The summaries and the channel metadata are re-read: opening a channel
+    // is when the rail catches up with other members' channel changes. The
+    // per-message reads under the prefix are not: refetching them on every
+    // open (a signed URL re-minted per attachment) was part of the open
+    // burst (#4709).
+    const invalidated = Object.fromEntries(
+      Object.entries(keys).map(([name, key]) => [
+        name,
+        queryClient.getQueryState(key)?.isInvalidated,
+      ]),
+    );
+    expect(invalidated).toEqual({
+      unread: true,
+      latest: true,
+      list: true,
+      categories: true,
+      detail: true,
+      otherDetail: false,
+      pins: false,
+      avatars: false,
+      attachments: false,
+    });
   });
 
   it("surfaces an error without invalidating anything", async () => {
@@ -242,12 +274,16 @@ describe("useMarkChannelRead", () => {
 
     invalidateSpy.mockClear();
     result.current.mutate("chan-1");
-    // The second success is the one that just invalidated `["channels"]`.
+    // The second success is the one that just invalidated the unread counts.
     await waitFor(() =>
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["channels"] }),
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["channels", "latest"],
+        exact: true,
+      }),
     );
-    // Nothing left to clear: one invalidation (channels), no list refetch.
-    expect(invalidateSpy).toHaveBeenCalledTimes(1);
+    // Nothing left to clear: the read's own five keys (summaries, list,
+    // categories, detail), no notification-list refetch.
+    expect(invalidateSpy).toHaveBeenCalledTimes(5);
     expect(queryClient.getQueryState(prefsKey)?.isInvalidated).toBe(false);
   });
 
@@ -295,12 +331,10 @@ describe("useMarkChannelRead", () => {
 describe("useSetChannelDisplayLock (#3787)", () => {
   it("puts the lock and refetches the channel list", async () => {
     const queryClient = createTestQueryClient();
-    const mockPut = vi
-      .fn()
-      .mockResolvedValue({
-        data: { id: "c-1", display_locked: true },
-        error: null,
-      });
+    const mockPut = vi.fn().mockResolvedValue({
+      data: { id: "c-1", display_locked: true },
+      error: null,
+    });
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
     const { result } = renderHook(() => useSetChannelDisplayLock(), {
       wrapper: createWrapper(queryClient, { PUT: mockPut }),
@@ -464,6 +498,7 @@ describe("useAuthorAvatars", () => {
     expect(mockPost).toHaveBeenCalledWith(
       "/v1/channels/{id}/messages/avatars",
       {
+        signal: expect.any(AbortSignal),
         params: { path: { id: "chan-1" } },
         body: { message_ids: ["msg-1"] },
       },
@@ -493,6 +528,7 @@ describe("useAuthorAvatars", () => {
     expect(mockPost).toHaveBeenCalledWith(
       "/v1/channels/{id}/messages/avatars",
       {
+        signal: expect.any(AbortSignal),
         params: { path: { id: "chan-1" } },
         body: { message_ids: ["msg-3"] },
       },
@@ -657,6 +693,7 @@ describe("useChannelNotificationPreferences", () => {
 
     expect(mockGet).toHaveBeenCalledWith(
       "/v1/channels/notification-preferences",
+      { signal: expect.any(AbortSignal) },
     );
     expect(result.current.data).toEqual(rows);
   });
@@ -714,7 +751,7 @@ describe("useChannelNotificationPreferences", () => {
       { channel_id: "chan-1", level: "mentions" },
     ]);
 
-    // Mark-read invalidates `["channels"]`. Same ids and names → same
+    // Mark-read re-reads the channel list. Same ids and names → same
     // fingerprint → the prefs query must not fire again.
     channels = [{ id: "chan-1", name: "general" }];
     await queryClient.invalidateQueries({ queryKey: ["channels"] });
@@ -917,6 +954,42 @@ describe("useForwardMessage (#4864)", () => {
     expect(body.client_message_id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
+  });
+
+  it("sends the comment's @ picks as mention_picks, and none without a comment (#4907)", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: created,
+      error: undefined,
+      response: { ok: true, status: 201 },
+    });
+    const { result } = renderHook(() => useForwardMessage(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+    const picks = [{ user_id: "u-jane", label: "Jane Doe" }];
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: "@Jane Doe look",
+      mentionPicks: picks,
+    });
+    expect(mockPost.mock.calls[0]![1].body.mention_picks).toEqual(picks);
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: " ",
+      mentionPicks: picks,
+    });
+    expect(mockPost.mock.calls[1]![1].body).not.toHaveProperty("mention_picks");
+
+    await result.current.mutateAsync({
+      messageId: "m1",
+      channelId: "chan-dest",
+      content: "look",
+      mentionPicks: [],
+    });
+    expect(mockPost.mock.calls[2]![1].body).not.toHaveProperty("mention_picks");
   });
 
   it("throws with the status on a refusal and re-reads nothing", async () => {

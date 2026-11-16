@@ -76,7 +76,7 @@ const CHAPTER_ID = "chapter-abc";
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(mockGet).toHaveBeenCalledWith("/v1/backwork");
+      expect(mockGet).toHaveBeenCalledWith("/v1/backwork", { signal: expect.any(AbortSignal) });
       expect(result.current.data).toEqual(mockData);
     });
 
@@ -146,7 +146,7 @@ const CHAPTER_ID = "chapter-abc";
         downloadUrl: "b",
       });
       expect(mockGet).toHaveBeenCalledTimes(2);
-      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/{id}", {
+      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/{id}", { signal: expect.any(AbortSignal),
         params: { path: { id: "res1" } },
       });
     });
@@ -194,7 +194,7 @@ const CHAPTER_ID = "chapter-abc";
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/departments");
+      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/departments", { signal: expect.any(AbortSignal) });
       expect(result.current.data).toEqual(mockData);
     });
 
@@ -227,7 +227,7 @@ const CHAPTER_ID = "chapter-abc";
       await waitFor(() => {
         expect(result.current.isSuccess).toBe(true);
       });
-      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/courses");
+      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/courses", { signal: expect.any(AbortSignal) });
       expect(result.current.data).toEqual(mockData);
     });
   });
@@ -298,7 +298,7 @@ const CHAPTER_ID = "chapter-abc";
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/professors");
+      expect(mockGet).toHaveBeenCalledWith("/v1/backwork/professors", { signal: expect.any(AbortSignal) });
       expect(result.current.data).toEqual(mockData);
     });
 

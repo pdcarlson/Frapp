@@ -636,6 +636,8 @@ describe('ActivityFeedService', () => {
       check_in_zone_name: null,
       check_in_opens_minutes: 10,
       event_type_id: null,
+      agenda: [],
+      attachments: [],
       created_by: null,
       created_at: '2026-01-01T00:00:00.000Z',
       ...overrides,

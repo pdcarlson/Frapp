@@ -76,6 +76,7 @@ import { POINTS_CONFIG_DEFAULTS } from './chapter-points-config.service';
 import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import { CHAPTER_CONFIG_REPOSITORY } from '#domain/repositories/chapter-config.repository.interface';
 import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '#domain/repositories/chat.repository.interface';
 import { ActivationService } from './activation.service';
 import {
   ChapterAuditLogService,
@@ -114,6 +115,8 @@ function makeRepos(
   // the query, so those are the same answer by construction.
   options: {
     defaultInviteRoleId?: string | null;
+    /** #4959: the stored birthday post channel. */
+    birthdayChannelId?: string | null;
     roleLookupRow?: { id: string } | null;
     roleLookupError?: {
       code?: string;
@@ -198,6 +201,7 @@ function makeRepos(
     beta_config: { enabled: true, style: 'sidebar_pill' },
     analytics_opt_out: false,
     default_invite_role_id: options.defaultInviteRoleId ?? null,
+    birthday_channel_id: options.birthdayChannelId ?? null,
   };
 
   const workflowUpsert = jest.fn().mockResolvedValue(undefined);
@@ -251,10 +255,33 @@ function makeRepos(
     }),
   };
 
+  // #4959: the birthday post channel's ownership check, chapter-first.
+  const channelRepo = {
+    findById: jest.fn((id: string, chapterId: string) =>
+      Promise.resolve(
+        chapterId === CHAPTER_ID && id === 'chan-ok'
+          ? { id, type: 'PUBLIC', archived_at: null, is_audit_log: false }
+          : chapterId === CHAPTER_ID && id === 'chan-archived'
+            ? {
+                id,
+                type: 'PUBLIC',
+                archived_at: '2026-01-01T00:00:00Z',
+                is_audit_log: false,
+              }
+            : chapterId === CHAPTER_ID && id === 'chan-dm'
+              ? { id, type: 'DM', archived_at: null, is_audit_log: false }
+              : chapterId === CHAPTER_ID && id === 'chan-audit'
+                ? { id, type: 'PUBLIC', archived_at: null, is_audit_log: true }
+                : null,
+      ),
+    ),
+  };
+
   return {
     chapterRepo,
     configRepo,
     roleRepo,
+    channelRepo,
     workflowUpsert,
     duesUpsert,
     serviceUpsert,
@@ -301,6 +328,7 @@ async function buildService(repos: Repos) {
       { provide: CHAPTER_REPOSITORY, useValue: repos.chapterRepo },
       { provide: CHAPTER_CONFIG_REPOSITORY, useValue: repos.configRepo },
       { provide: ROLE_REPOSITORY, useValue: repos.roleRepo },
+      { provide: CHAT_CHANNEL_REPOSITORY, useValue: repos.channelRepo },
       { provide: ActivationService, useValue: mockActivation },
       { provide: ChapterAuditLogService, useValue: mockAuditLog },
     ],
@@ -1323,6 +1351,67 @@ describe('ChapterConfigService default invite role (#422)', () => {
    * chapter, this fails immediately and by name. The cross-chapter test above
    * cannot: its fixture has no matching role in any chapter.
    */
+  it("saves a birthday post channel that is the chapter's own (#4959)", async () => {
+    const repos = makeRepos([]);
+    const service = await buildService(repos);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      birthday_channel_id: 'chan-ok',
+    });
+
+    expect(repos.channelRepo.findById).toHaveBeenCalledWith(
+      'chan-ok',
+      CHAPTER_ID,
+    );
+    expect(repos.chapterUpdate).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      expect.objectContaining({ birthday_channel_id: 'chan-ok' }),
+    );
+  });
+
+  it.each(['chan-elsewhere', 'chan-archived', 'chan-dm', 'chan-audit'])(
+    'refuses birthday channel %s with 400 (#4959)',
+    async (channelId) => {
+      const repos = makeRepos([]);
+      const service = await buildService(repos);
+
+      await expect(
+        service.patchConfig(CHAPTER_ID, 'user-1', {
+          birthday_channel_id: channelId,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(repos.chapterUpdate).not.toHaveBeenCalled();
+    },
+  );
+
+  it('turns the birthday posts off with null, looking up no channel (#4959)', async () => {
+    const repos = makeRepos([], null, {}, null, null, {
+      birthdayChannelId: 'chan-ok',
+    });
+    const service = await buildService(repos);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      birthday_channel_id: null,
+    });
+
+    expect(repos.channelRepo.findById).not.toHaveBeenCalled();
+    expect(repos.chapterUpdate).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      expect.objectContaining({ birthday_channel_id: null }),
+    );
+  });
+
+  it('reads the saved birthday post channel back (#4959)', async () => {
+    const repos = makeRepos([], null, {}, null, null, {
+      birthdayChannelId: 'chan-ok',
+    });
+    const service = await buildService(repos);
+
+    await expect(service.getConfig(CHAPTER_ID)).resolves.toEqual(
+      expect.objectContaining({ birthday_channel_id: 'chan-ok' }),
+    );
+  });
+
   it('scopes the role lookup by chapter_id, not just by id', async () => {
     const repos = makeRepos([], null, {}, null, null, {
       roleLookupRow: { id: 'role-pledge' },

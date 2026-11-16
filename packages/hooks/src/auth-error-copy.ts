@@ -25,7 +25,8 @@ export const AUTH_FALLBACK_COPY = "Something went wrong. Please try again.";
 
 /** GoTrue's `error_code` on an `AuthApiError`, or undefined. */
 function authCodeOf(error: unknown): string | undefined {
-  if (!error || typeof error !== "object" || !("code" in error)) return undefined;
+  if (!error || typeof error !== "object" || !("code" in error))
+    return undefined;
   return typeof error.code === "string" && error.code.length > 0
     ? error.code
     : undefined;
@@ -91,7 +92,8 @@ export const WRONG_CREDENTIALS_COPY =
 /** The password form's refusal. */
 export function describePasswordSignInError(error: unknown): string {
   if (isEmailNotConfirmed(error)) return UNCONFIRMED_EMAIL_COPY;
-  if (authCodeOf(error) === "invalid_credentials") return WRONG_CREDENTIALS_COPY;
+  if (authCodeOf(error) === "invalid_credentials")
+    return WRONG_CREDENTIALS_COPY;
   return describeEmailSendError(error);
 }
 
@@ -131,7 +133,10 @@ export function describeSignUpError(
   const code = authCodeOf(error);
   if (code === "weak_password") {
     const reasons =
-      error && typeof error === "object" && "reasons" in error && Array.isArray(error.reasons)
+      error &&
+      typeof error === "object" &&
+      "reasons" in error &&
+      Array.isArray(error.reasons)
         ? (error.reasons as unknown[])
         : [];
     if (reasons.includes("pwned")) {
@@ -155,7 +160,9 @@ export function describeSignUpError(
 export function isExistingAccountSignUp(
   user: { identities?: unknown[] | null } | null | undefined,
 ): boolean {
-  return Boolean(user && Array.isArray(user.identities) && user.identities.length === 0);
+  return Boolean(
+    user && Array.isArray(user.identities) && user.identities.length === 0,
+  );
 }
 
 const IDENTITY_COLLISION_CODES = new Set([

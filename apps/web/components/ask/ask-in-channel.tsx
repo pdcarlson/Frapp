@@ -21,6 +21,7 @@ import {
   type ActResponse,
   type AskExchange,
   type AskOptions,
+  type AskCardEnd,
   type AskProposalResolution,
 } from "@repo/hooks";
 import {
@@ -88,9 +89,11 @@ interface AskInChannel {
   busy: boolean;
   /** Ask from `channelId`'s composer; `after` is its newest message's key. */
   send: (channelId: string, question: string, after: string | null) => void;
-  retry: (id: string) => void;
+  /** `harder` asks it again with more effort: Think harder (#4904). */
+  retry: (id: string, harder?: boolean) => void;
   setProposal: (id: string, proposal: ActResponse) => void;
   resolveProposal: (id: string, resolution: AskProposalResolution) => void;
+  resolveCard: (id: string, suggestionId: string, end: AskCardEnd) => void;
   dismiss: (id: string) => void;
   /** What was changed on waiting cards, shared with the Ask card. */
   edits: AskCardEditsStore;
@@ -151,6 +154,7 @@ export function AskInChannelBridge({
     retry,
     setProposal,
     resolveProposal,
+    resolveCard,
     dismissFromChannel,
   } = useAsk();
   const { ensureConsent, consentDialog } = useAiConsentGate();
@@ -176,7 +180,8 @@ export function AskInChannelBridge({
     [ask, options],
   );
   const retryTurn = useCallback(
-    (id: string) => void retry(id, options()),
+    (id: string, harder?: boolean) =>
+      void retry(id, harder ? { ...options(), effort: "more" } : options()),
     [retry, options],
   );
 
@@ -189,6 +194,7 @@ export function AskInChannelBridge({
             retry: retryTurn,
             setProposal,
             resolveProposal,
+            resolveCard,
             dismiss: dismissFromChannel,
             edits,
           }
@@ -200,6 +206,7 @@ export function AskInChannelBridge({
       retryTurn,
       setProposal,
       resolveProposal,
+      resolveCard,
       dismissFromChannel,
       edits,
     ],
@@ -335,12 +342,16 @@ export function AskChannelTurn({ id }: { id: string }) {
             exchange={exchange}
             busy={channel.busy && exchange.phase !== "working"}
             onRetry={() => channel.retry(exchange.id)}
+            onThinkHarder={() => channel.retry(exchange.id, true)}
             onAnswerConsent={() => channel.retry(exchange.id)}
             onProposal={(proposal) =>
               channel.setProposal(exchange.id, proposal)
             }
             onResolved={(resolution) =>
               channel.resolveProposal(exchange.id, resolution)
+            }
+            onCardEnded={(suggestionId, end) =>
+              channel.resolveCard(exchange.id, suggestionId, end)
             }
           />
         </AskCardEditsContext.Provider>

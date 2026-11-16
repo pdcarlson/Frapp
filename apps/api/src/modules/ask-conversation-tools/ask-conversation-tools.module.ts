@@ -17,10 +17,11 @@ import { SearchModule } from '../search/search.module';
  * `read_minutes`, `read_document` and `list_meetings`.
  *
  * It provides and exports the tool classes of `CONVERSATION_AGENT_TOOLS`
- * and nothing else: no route, no table, no worker. The agent loop's module
- * imports this one and lists the classes under `AGENT_READ_TOOLS`
- * (`application/services/ask/agent/agent-tool.ts`). Until it does, no tool
- * here can be called by anything.
+ * and the helper they share (`ConversationScope`, which `AskFromService`
+ * also reads the asker's channel list through), and nothing else: no route,
+ * no table, no worker. The agent loop's module
+ * (`AskModule`) imports this one and lists the classes under
+ * `AGENT_READ_TOOLS` (`application/services/ask/agent/agent-tool.ts`).
  *
  * Each import is the module of a service a tool reads through, the same
  * service the mirrored route calls.
@@ -46,6 +47,8 @@ import { SearchModule } from '../search/search.module';
     ...CONVERSATION_AGENT_TOOL_HELPERS,
     ...CONVERSATION_AGENT_TOOLS,
   ],
-  exports: [...CONVERSATION_AGENT_TOOLS],
+  // `ConversationScope` is exported for `AskFromService`, which looks up
+  // the channel a question was asked from in the asker's own channel list.
+  exports: [...CONVERSATION_AGENT_TOOL_HELPERS, ...CONVERSATION_AGENT_TOOLS],
 })
 export class AskConversationToolsModule {}

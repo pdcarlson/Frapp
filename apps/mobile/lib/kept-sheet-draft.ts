@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  dropKeptDraft,
   hasKeptDraft,
+  keepEditsOver,
   readKeptDraft,
   useKeptDraftKeys,
   useKeptFormDraft,
@@ -10,18 +12,21 @@ import {
 /**
  * A form sheet's draft, kept past its screen (#4593: "keep the draft").
  *
- * A sheet already keeps its draft across a close, because it stays mounted on
- * its host (`spec/ui/mobile/patterns.md` § Bottom sheets). A sheet hosted by a
- * pushed screen (Tasks, Service hours, Documents) goes when the member goes
- * back, and took the draft with it. This keeps it in the shared store
+ * A sheet already keeps its draft across a close while it stays mounted on
+ * its host. A sheet hosted by a pushed screen goes when the member goes back,
+ * and took the draft with it. This keeps it in the shared store
  * (`@repo/hooks/kept-drafts`, the one web's docked forms use), by member,
- * chapter and form, so the screen's sheet opens on it next time.
+ * chapter and form, so the sheet opens on it next time. Which sheets keep
+ * one, and when each gives it up, is `spec/ui/mobile/patterns.md` § Bottom
+ * sheets ("A draft outlives a close"); an edit names its record
+ * (`event-edit:<id>`, #4872) and is laid over the record as it is now with
+ * `keepEditsOver`.
  *
  * `name` is `null` for a sheet that keeps nothing past its host (the + quick
  * actions' sheets, whose host never unmounts). `useKeptSheetOpening` reads the
  * kept draft to start the sheet's state from. While mounted the store follows
  * the draft;
- * `clear()` where the sheet gives it up (Cancel, a save that lands);
+ * `clear()` where the sheet gives it up;
  * `hold()` when a save starts, so a screen reopened mid-save doesn't offer
  * the same entry again, and `release()` when it fails, with anything the
  * failure added that the sheet hasn't drawn yet (`patch`).
@@ -43,7 +48,8 @@ export function useKeptSheetOpening<T>(name: string | null): T | undefined {
 export function useKeptSheetDraft<T>(
   name: string | null,
   value: T,
-  signature: string,
+  /** What decides "changed", or `undefined` for the value's own JSON. */
+  signature: string | undefined,
   /** What `useKeptSheetOpening` gave the sheet to start from. */
   opening: T | undefined,
 ): {
@@ -86,4 +92,18 @@ export function useKeptSheetDraft<T>(
     () => ({ clear, hold, release: releaseWith }),
     [clear, hold, releaseWith],
   );
+}
+
+/** Shared with web's event editor (`@repo/hooks/kept-drafts`). */
+export { keepEditsOver };
+
+/**
+ * Drops a kept draft whose record is gone (deleted, or no longer this
+ * member's to see), so nothing keeps it for a sheet that can't open again.
+ */
+export function useDropKeptSheetDraft(name: string | null, gone: boolean) {
+  const keys = useKeptDraftKeys();
+  useEffect(() => {
+    if (gone && name !== null) dropKeptDraft(keys.draft(name));
+  }, [gone, name, keys]);
 }

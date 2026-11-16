@@ -148,6 +148,8 @@ vi.mock("expo-router", () => {
     navigate: vi.fn(),
     dismissTo: vi.fn(),
     back: vi.fn(),
+    // s18's Scan code hands a code it read to the screen as its own params.
+    setParams: vi.fn(),
     // Nothing behind the screen unless a spec says otherwise
     // (`mockReturnValue(true)`, as the chapter picker's does).
     canGoBack: vi.fn(() => false),
@@ -288,6 +290,13 @@ vi.mock("expo-application", () => ({
   applicationId: null,
   nativeApplicationVersion: null,
   nativeBuildVersion: null,
+}));
+
+// `lib/notifications/push-device-name.ts` labels a push-token row with these
+// (#4563); a spec that pins the label mocks its own.
+vi.mock("expo-device", () => ({
+  osVersion: null,
+  modelName: null,
 }));
 
 vi.mock("expo-network", () => ({

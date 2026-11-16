@@ -120,6 +120,83 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-16",
+    title: "New in this update",
+    changes: [
+      "Excuses on an event now sit on one tidy line each, and you can edit yours after sending it.",
+      "Cards Ask Frapp proposes have Edit, so you can change an event's time, attendance, notes or repeat in the event form before it is added, and an event you ask for every week now comes back as a repeating series.",
+      "Finished events, tasks and polls now leave Activity for one Archive at the foot of the page, laid out like Activity, so you can still open anything that's over.",
+    ],
+    web: [
+      "Tasks now groups your own tasks as Today, This week and Later, and officers can switch between My tasks and All tasks, group the chapter's tasks by person, and filter them by assignee, status and due date.",
+    ],
+    phone: [
+      "The Calendar has its own + at the top for adding an event from any view, and on the Calendar it starts on the day you've picked, today or later.",
+      "Tasks now groups your tasks as Today, This week and Later, with anything overdue at the top of Today.",
+    ],
+  },
+  {
+    date: "2026-11-15",
+    title: "New in this update",
+    changes: [
+      "Activity now shows how many have voted on a poll you posted, and how many have checked in to an event you made once check-in opens.",
+      "You can sort your channel list by most recent activity or A to Z from the filter button, and your choice follows you between your phone and the web.",
+      "You can now schedule a reply inside a thread, the same way you schedule a message in the channel, and see that thread's scheduled replies from the line above its reply box.",
+      "Officers can set aside roles for things outside chapter business, like intramurals or a study group, and you can add yourself to them and get their channels in Chat.",
+      "Signing in for the first time no longer stops you with a warning about a new account; if you're already in a chapter and signed in with the wrong account, a small link on the join screen lets you switch.",
+      "Task reminders now arrive around 9 in the morning where you are, and \"due today\" follows your own calendar.",
+      "Every Sunday morning a notification sums up your last week, and you can turn it off with Weekly recap in notification settings.",
+      "Officers can post a role picker in any channel, so members tap to join or leave interest roles like intramurals.",
+      "A chapter you start can plan events, hand out tasks and give points right away.",
+      "When Ask Frapp runs into a problem on its end, you can now try your question again right there instead of being told to come back later.",
+      "When a dues payment fails after you've paid, the app now tells you your payment didn't go through, instead of waiting on a confirmation that won't come, so you can pay again.",
+      "A member's profile no longer lists a stack of empty chapter details under More details; only the ones that are filled in show.",
+    ],
+    web: [
+      "Clicking a name in chat opens a small profile card beside it, and the members list opens right under its button when the window is narrow.",
+      "Joining with an invite emailed to you no longer shows a second Join under it, with the Terms box above the invite, and the welcome tour no longer leaves chapter setup open behind it or closes on a stray click.",
+      "Signing in with an email you were invited at now takes you to your invite, instead of chapter setup.",
+      "The first-run tour now walks you through the real Chat screen, lighting up each part as it explains it, and picks up where you left off if you step away.",
+      "When member names or your account can't load on Tasks, Service hours or Points, the page now says what's missing with a Try again button, and the error page offers Reload when a new version shipped while your tab was open.",
+    ],
+    phone: [
+      "Send invite now works on the first tap while the keyboard is open.",
+      "Officers can approve or decline an excuse straight from its notification.",
+      "Edits to an event or a task are still there when you come back to them, unless you cancel or save.",
+      "Chapter accent, Chat background and Schedule message no longer stop opening after you swipe one away while it's still saving.",
+      "Meeting notes you haven't drafted yet, and what you typed to mark a task done or send one back, are still there when you come back, unless you cancel or send.",
+      "Search results in Ask Frapp now sit above the message box instead of running under it.",
+      "Officers can turn on Non-chapter business from a role's page in Chapter settings, so members can add that role themselves.",
+      "Sheets show their loading placeholders while a member or thread list loads, instead of a blank area.",
+    ],
+  },
+  {
+    date: "2026-11-14",
+    title: "New in this update",
+    changes: [
+      "A Threads button at the top of Chat lists every thread you started, replied in or were mentioned in, across channels, with new replies marked; tap one to open it.",
+      "You can add your birthday to your profile, with the year optional and never shown, and choose whether your chapter sees it.",
+      "Birthdays members share now show on the events calendar, with a Birthdays switch to hide them.",
+      "An officer can pick a channel where Frapp wishes members a happy birthday on the day, for members who share their birthday.",
+      "Snooze what's waiting on you on Activity until later today, tomorrow, the weekend or next week: from a row's ⋯ menu on the web, or a long press on your phone. It comes back when you picked.",
+      "Activity starts each week with a short recap of the last one: the events you went to, the tasks you finished, your points, and your service and study hours.",
+      "Birthdays members share now show on the events calendar, with a Birthdays switch to hide them.",
+      "Opening the app is faster, and it no longer slows to a crawl when lots of people open it at once.",
+      "A GIF now shows as \"GIF\" in your conversation list and saved messages, you can send GIFs in message threads, and GIFs stay still until you play them if your device is set to reduce motion.",
+      "You can ask Frapp to remind you about a chat message later, and the reminder shows up on your Activity page until you mark it done.",
+      "A scheduled message can now carry the photos or files you staged and a reply to another message, and each one in your scheduled list says what it carries.",
+    ],
+    web: [
+      "Schedule a message to send later: open the arrow beside Send, pick a time, and see, edit or send your scheduled messages from the line above the composer.",
+      "Open a message's More menu and pick Forward to send it to another channel or a direct message, with a note of your own if you like.",
+    ],
+    phone: [
+      "Schedule a message to send later: hold Send, pick a time, and see, edit or send your scheduled messages from the line above the composer.",
+      "Typing @ in a forwarded message's note now lets you pick who to mention, as it does when you post.",
+      "The month calendar writes each day's events in its square, so you can see what's on without tapping each day.",
+    ],
+  },
+  {
     date: "2026-11-13",
     title: "New in this update",
     changes: [
@@ -151,6 +228,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Ask Frapp now knows who is asking, so \"me\" and \"my\" mean you, and its answers are shorter and in its own words.",
       "An answer from @Frapp in a channel can be posted for everyone there with Post for everyone here, after Frapp tells you which of its sources not everyone can open.",
       "A forward you saved with no comment now shows what was forwarded in Saved messages.",
+      "On a required event, Can't make it is now a quiet link instead of a big button, on the event page and on its chat card.",
     ],
     web: [
       "The Documents grid now shows a preview of each photo and the first page of each PDF, and the Documents and Directory grids fit more, smaller tiles on a row.",
@@ -171,6 +249,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Invites, new channels, backwork uploads, pledge class members, study zones and folder imports also keep what you typed when you leave, and pick up where you left off.",
       "You can clear a notification with the x that shows when you hover over it.",
       "After you link or unlink your Discord account, an open chat now shows your imported messages under the right name without a reload.",
+      "The search field at the top now asks Frapp too: type a question, press Enter, and the answer opens right there, from any page.",
     ],
     phone: [
       "Messages has a search box that finds your conversation with someone by name, or lets you start one with anyone you haven't messaged, and the pencil takes you straight to it.",
@@ -197,6 +276,9 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "You can clear a notification by pressing and holding it.",
       "Long-press a message and choose Mark unread to come back to it later: the channel shows as unread from that message on.",
       "Long-press a message and tap Forward to send it to another channel or a direct message, with a note of your own if you like.",
+      "On Android, pointing your camera at a check-in code now opens Frapp straight to the check-in, the way it already did on iPhone.",
+      "You can also check in without leaving Frapp: tap Scan code on the event and point it at the officer's code.",
+      "The Ask Frapp bar searches too: type a few letters to jump to a channel, member, message or event, or send a question as before.",
     ],
   },
   {

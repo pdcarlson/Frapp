@@ -35,8 +35,8 @@ export function useActStatus(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: actStatusKey(chapterId),
-    queryFn: async (): Promise<string[] | null> => {
-      const result = await client.GET("/v1/ai/act");
+    queryFn: async ({ signal }): Promise<string[] | null> => {
+      const result = await client.GET("/v1/ai/act", { signal });
       if (isAiNotAvailable(result.error)) return null;
       if (result.response.status === 403) return null;
       throwUnlessOk(result);

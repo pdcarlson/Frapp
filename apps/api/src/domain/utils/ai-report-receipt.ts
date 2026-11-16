@@ -44,6 +44,8 @@ export type AskGivenRef =
   | { type: 'document'; id: string }
   | { type: 'meeting'; id: string }
   | { type: 'chat' }
+  /** The channel the question was asked from: open to that channel alone. */
+  | { type: 'channel'; id: string }
   | {
       type: 'tool';
       name: string;
@@ -69,6 +71,8 @@ export interface AskReceiptShown {
      * sealed before #4713, which can be reported but not posted.
      */
     target?: unknown;
+    /** Whose message a chat chip said it was. Absent on any other chip. */
+    author?: string;
   }>;
   left_out_messages: number;
   unverified_citations: number;

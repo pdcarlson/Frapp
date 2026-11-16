@@ -1002,6 +1002,13 @@ export class ChannelLatestMessageDto {
       'When the latest message is a forward (#4864), its copy, `content` cut to 500, so a forward with no comment previews as “Forwarded: …”. Withheld (`sender_blocked: true`) when the caller blocked the original’s author. Null otherwise.',
   })
   forwarded_from: ForwardedMessageDto | null;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
+      'The latest message is a GIF (#4657). A GIF has no text, so a preview reads “GIF”.',
+  })
+  has_gif: boolean;
 }
 
 /**
@@ -1153,6 +1160,14 @@ export class ChatThreadLastReplyDto {
       'The reply’s `metadata.attachment_count`, or 0 when it has none.',
   })
   attachment_count: number;
+
+  @ApiProperty({
+    type: Boolean,
+    required: false,
+    description:
+      'The reply is a GIF (#4657), so a preview reads “GIF”. False on a masked preview; absent on one written before GIF thread replies.',
+  })
+  has_gif?: boolean;
 
   @ApiProperty()
   created_at: string;
@@ -1511,6 +1526,13 @@ export class BookmarkedMessageDto {
   @ApiProperty({
     type: Boolean,
     description:
+      'The saved message is a GIF (#4657). A GIF has no text, so the row previews as “GIF”. False on a deleted row, a redacted one, and one whose sender the caller blocked.',
+  })
+  has_gif: boolean;
+
+  @ApiProperty({
+    type: Boolean,
+    description:
       'Whether the caller has blocked this message’s sender. Present on every row, not only the masked ones. A blocked row’s `content` reads the masking sentinel — never pattern-match it. Distinct from `message_available`, which is about channel access: a block leaves the jump affordance live, and it lands on the same tombstone the timeline shows.',
   })
   sender_blocked: boolean;
@@ -1679,4 +1701,27 @@ export class FollowedThreadDto {
     description: 'Replies new to the caller; always 0 when muted.',
   })
   unread_count: number;
+}
+
+/** One row of `GET /v1/threads` (#4960): a thread the caller is part of, in any channel they may read. */
+export class MemberThreadDto extends FollowedThreadDto {
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'When the newest reply landed; null before any reply.',
+  })
+  last_reply_at: string | null;
+
+  @ApiProperty({ description: 'Replies in the thread, deleted ones included.' })
+  reply_count: number;
+
+  @ApiProperty({
+    type: () => ChatMessageDto,
+    description:
+      'The parent message; its `thread_last_reply` is the latest reply, masked for a blocked replier.',
+  })
+  root: ChatMessageDto;
 }

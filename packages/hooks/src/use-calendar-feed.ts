@@ -27,8 +27,8 @@ export function useCalendarFeedLink(options: { enabled: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: calendarFeedKeys.chapter(chapterId!),
-    queryFn: async (): Promise<CalendarFeedLink> => {
-      const result = await client.POST("/v1/calendar-feed");
+    queryFn: async ({ signal }): Promise<CalendarFeedLink> => {
+      const result = await client.POST("/v1/calendar-feed", { signal });
       throwUnlessOk(result);
       return result.data!;
     },
@@ -84,9 +84,9 @@ export function calendarAppLinks(link: CalendarFeedLink): {
     apple: link.webcal_url,
     // Google reads `cid` as a calendar to add; a webcal:// address makes it a
     // subscription by URL rather than a calendar id.
-    google: `https://calendar.google.com/calendar/r?${new URLSearchParams(
-      { cid: link.webcal_url },
-    ).toString()}`,
+    google: `https://calendar.google.com/calendar/r?${new URLSearchParams({
+      cid: link.webcal_url,
+    }).toString()}`,
     outlook: `https://outlook.live.com/calendar/0/addfromweb?${outlookQuery}`,
     outlookWork: `https://outlook.office.com/calendar/0/addfromweb?${outlookQuery}`,
   };

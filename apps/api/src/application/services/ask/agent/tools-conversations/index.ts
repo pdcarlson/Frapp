@@ -17,8 +17,8 @@ import { SearchRecordsTool } from './search-records.tool';
  * The order is the order a model is shown them: finding before reading.
  *
  * `AskConversationToolsModule` (`modules/ask-conversation-tools`) provides
- * and exports these classes. The agent loop's module imports it and lists
- * them under `AGENT_READ_TOOLS`; nothing calls a tool until it does.
+ * and exports these classes. The agent loop's module (`AskModule`) imports
+ * it and lists them under `AGENT_READ_TOOLS`, which is what the loop may call.
  */
 export const CONVERSATION_AGENT_TOOLS = [
   SearchMessagesTool,

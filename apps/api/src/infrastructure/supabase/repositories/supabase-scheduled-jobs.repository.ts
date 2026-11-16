@@ -200,8 +200,6 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
           .eq('status', 'OPEN')
           .gte('due_date', dueOnOrAfter)
           .lte('due_date', dueOnOrBefore)
-          // A task with a time is reminded by the five-minute sweep instead.
-          .is('due_at', null)
           .order('id', { ascending: true })
           .range(from, to),
     );
@@ -251,6 +249,10 @@ export class SupabaseScheduledJobsRepository implements IScheduledJobsRepository
           ])
           .gte('due_date', dueOnOrAfter)
           .lte('due_date', dueOnOrBefore)
+          // A task with a time is reminded by the five-minute sweep instead
+          // (#4003). Until #4788 this filter sat on the invoice query, which
+          // has no `due_at`, so timed tasks got the daily reminder too.
+          .is('due_at', null)
           .order('id', { ascending: true })
           .range(from, to),
     );

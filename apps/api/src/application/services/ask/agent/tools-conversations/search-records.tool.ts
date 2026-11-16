@@ -96,6 +96,7 @@ export function recordSource(passage: {
     text: passage.text,
     chat: false,
     authorIds: [],
+    audience: { type: minutes ? 'meeting' : 'document', id: passage.sourceId },
   };
 }
 

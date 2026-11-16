@@ -108,6 +108,33 @@ describe('ResendEmailProvider', () => {
     expect(result).toBe(false);
   });
 
+  it("logs Resend's reason for a refusal, with any address masked", async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          name: 'validation_error',
+          message:
+            'The mail.frapp.live domain is not allowed for this key. Sent to someone@example.com',
+        }),
+        { status: 403, statusText: 'Forbidden' },
+      ),
+    );
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    const provider = new ResendEmailProvider({
+      apiKey: 're_test',
+      fromAddress: 'Frapp <invites@mail.frapp.live>',
+    });
+
+    await expect(provider.sendInviteEmail(params)).resolves.toBe(false);
+    const line = String(warn.mock.calls[0][0]);
+    expect(line).toContain(
+      '403 Forbidden (validation_error: The mail.frapp.live domain',
+    );
+    expect(line).toContain('<address>');
+    expect(line).not.toContain('someone@example.com');
+  });
+
   it('reports failure and swallows a network error', async () => {
     jest.spyOn(global, 'fetch').mockRejectedValue(new Error('network down'));
     const warnSpy = jest

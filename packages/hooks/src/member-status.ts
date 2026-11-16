@@ -128,16 +128,19 @@ export function tomorrowMorning(now: Date): Date {
 export function dndEndsAt(duration: DndDuration, now: Date): string | null {
   if (duration === null) return null;
   if (duration === "1h") return new Date(now.getTime() + HOUR).toISOString();
-  if (duration === "8h") return new Date(now.getTime() + 8 * HOUR).toISOString();
+  if (duration === "8h")
+    return new Date(now.getTime() + 8 * HOUR).toISOString();
   return tomorrowMorning(now).toISOString();
 }
 
 /** The end time to send for a custom line's "Clear after", or `null`. */
 export function lineEndsAt(duration: LineDuration, now: Date): string | null {
   if (duration === null) return null;
-  if (duration === "30m") return new Date(now.getTime() + 30 * MINUTE).toISOString();
+  if (duration === "30m")
+    return new Date(now.getTime() + 30 * MINUTE).toISOString();
   if (duration === "1h") return new Date(now.getTime() + HOUR).toISOString();
-  if (duration === "4h") return new Date(now.getTime() + 4 * HOUR).toISOString();
+  if (duration === "4h")
+    return new Date(now.getTime() + 4 * HOUR).toISOString();
   return endOfToday(now).toISOString();
 }
 

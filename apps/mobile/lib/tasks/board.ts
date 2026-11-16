@@ -13,8 +13,10 @@ import { dayDelta } from "@repo/formatting";
 import {
   isSentBack,
   isTaskStatus,
+  myTasksGroup,
   readLiveTaskPhotos,
   type LiveTaskPhoto,
+  type MyTasksGroup,
 } from "@repo/hooks";
 import {
   taskNeedsSignOff,
@@ -35,9 +37,6 @@ import { isOpenTask } from "./transitions";
  * member's finger, which reads as a delete rather than a completion.
  */
 const COMPLETED_RETENTION_DAYS = 7;
-
-/** Days ahead that still counts as "this week" — a rolling window, not a calendar one. */
-const THIS_WEEK_DAYS = 7;
 
 export interface TaskRowModel {
   id: string;
@@ -138,14 +137,20 @@ function toSubtasks(value: unknown): TaskRowSubtask[] {
   return rows;
 }
 
+/**
+ * The board by My tasks' groups (#4295 step 5): Today (overdue first), This
+ * week, Later, by the rule web's My tasks uses (`myTasksGroup`).
+ */
 export interface TaskBoard {
-  dueThisWeek: TaskRowModel[];
-  later: TaskRowModel[];
+  groups: Record<MyTasksGroup, TaskRowModel[]>;
   /** Rows kept after filtering — what distinguishes an empty board from a full one. */
   total: number;
 }
 
-const EMPTY_BOARD: TaskBoard = { dueThisWeek: [], later: [], total: 0 };
+const EMPTY_BOARD: TaskBoard = {
+  groups: { today: [], week: [], later: [] },
+  total: 0,
+};
 
 /** One `GET /v1/tasks` row as the board draws it, or `null` if it can't be. */
 export function toTaskRow(row: Record<string, unknown>): TaskRowModel | null {
@@ -255,8 +260,11 @@ export function selectTaskRows(
 ): TaskBoard {
   if (!viewerUserId) return EMPTY_BOARD;
 
-  const dueThisWeek: RankedRow[] = [];
-  const later: RankedRow[] = [];
+  const groups: Record<MyTasksGroup, RankedRow[]> = {
+    today: [],
+    week: [],
+    later: [],
+  };
 
   for (const raw of records(data)) {
     if (str(raw, "assignee_id") !== viewerUserId) continue;
@@ -285,25 +293,29 @@ export function selectTaskRows(
       if (sinceDone !== null && sinceDone > COMPLETED_RETENTION_DAYS) continue;
     }
 
-    // Overdue rows land in DUE THIS WEEK rather than a section of their own:
-    // Canvas draws no OVERDUE section, and an overdue task is the most urgent
-    // thing the board can say — burying it below "this week" would invert that.
-    // The 7-day boundary is not arbitrary either: `formatDueSubtitle` switches
-    // from a weekday name to an absolute date at exactly `days < 7`, and the
-    // drawing agrees (its LATER row reads "Due Aug 22").
-    if (days !== null && days < THIS_WEEK_DAYS) {
-      dueThisWeek.push({ row, days });
-    } else {
-      later.push({ row, days });
-    }
+    // Today, This week or Later by the shared rule. An overdue row leads
+    // Today rather than taking a section of its own: it is the most urgent
+    // thing the board can say, and burying it under a later heading would
+    // invert that (Canvas draws no OVERDUE section either). A finished row
+    // whose day has passed stays in Today too, where it was finished, until
+    // it retires above.
+    const stored = isTaskStatus(row.storedStatus) ? row.storedStatus : null;
+    const shown = isTaskStatus(row.displayStatus) ? row.displayStatus : stored;
+    const group = myTasksGroup(
+      { due_date: row.dueDay ?? row.dueDate, due_at: row.dueAt, status: shown },
+      now,
+    );
+    groups[group].push({ row, days });
   }
 
-  dueThisWeek.sort(compareRows);
-  later.sort(compareRows);
-
+  const sorted = (rows: RankedRow[]) =>
+    rows.sort(compareRows).map((entry) => entry.row);
   return {
-    dueThisWeek: dueThisWeek.map((entry) => entry.row),
-    later: later.map((entry) => entry.row),
-    total: dueThisWeek.length + later.length,
+    groups: {
+      today: sorted(groups.today),
+      week: sorted(groups.week),
+      later: sorted(groups.later),
+    },
+    total: groups.today.length + groups.week.length + groups.later.length,
   };
 }

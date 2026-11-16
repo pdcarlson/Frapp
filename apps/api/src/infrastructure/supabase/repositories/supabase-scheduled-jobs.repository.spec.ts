@@ -856,6 +856,9 @@ describe('SupabaseScheduledJobsRepository — tenant scope', () => {
     expect(rows.map((r) => r.id).sort()).toEqual([INVOICE_A, INVOICE_B].sort());
     const [op] = harness.ops;
     expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
+    // Invoices have no `due_at`; the filter that once sat here is the task
+    // query's (#4788), and on this table PostgREST rejects it.
+    expect(op.filters.some((f) => f.column === 'due_at')).toBe(false);
   });
 
   it('findIncompleteTasksDueBetween is a cross-chapter sweep (characterised)', async () => {
@@ -867,6 +870,10 @@ describe('SupabaseScheduledJobsRepository — tenant scope', () => {
     expect(rows.map((r) => r.id).sort()).toEqual([TASK_A, TASK_B].sort());
     const [op] = harness.ops;
     expect(op.filters.some((f) => f.column === 'chapter_id')).toBe(false);
+    // A timed task is the five-minute sweep's, not the daily one's (#4788).
+    expect(op.filters).toContainEqual(
+      expect.objectContaining({ column: 'due_at' }),
+    );
   });
 
   it('findExpiredPollsPendingNotice is a cross-chapter sweep (characterised)', async () => {

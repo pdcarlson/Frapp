@@ -299,9 +299,14 @@ function containsValue(actual: unknown, expected: unknown): boolean {
   if (typeof expected === 'string' && /^[[{]/.test(expected.trim())) {
     return containsValue(actual, JSON.parse(expected) as unknown);
   }
+  // jsonb `@>`: each expected item is contained by some actual item, so
+  // `[{"storage_path":"a"}]` matches an array holding `{storage_path:"a",…}`.
   if (Array.isArray(expected)) {
     return (
-      Array.isArray(actual) && expected.every((item) => actual.includes(item))
+      Array.isArray(actual) &&
+      expected.every((item) =>
+        actual.some((candidate) => containsValue(candidate, item)),
+      )
     );
   }
   if (expected && typeof expected === 'object') {

@@ -1,17 +1,24 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
-import { TextInput } from "react-native";
-import { describe, expect, it, vi } from "vitest";
+import { Pressable, StyleSheet, Text, TextInput } from "react-native";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 
 /**
- * The member's Can't make it block on Event details: the chat card's button
+ * The member's Can't make it? link on Event details: the chat card's link
  * arrives with `excuse=1`, which opens the line on arrival (#4660). The rule
  * itself is `myExcuseView`'s, run for real here.
  */
 
+let mine: unknown = { excuse: null, receiver: null };
+let list: unknown[] = [];
+const editExcuse = vi.fn(async () => ({}));
+
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
-  useMyEventExcuse: () => ({ data: { excuse: null, receiver: null } }),
+  useMyEventExcuse: () => ({ data: mine }),
+  useEventExcuses: () => ({ data: list }),
+  useDecideEventExcuse: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEditEventExcuse: () => ({ mutateAsync: editExcuse, isPending: false }),
   useMyAttendance: () => ({ data: { attendance: null } }),
   useSendEventExcuse: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useWithdrawEventExcuse: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -33,14 +40,14 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import { MyExcuseCard } from "./event-excuses";
+import { ExcuseReviewSection, MyExcuse } from "./event-excuses";
 
 function render(startWriting?: boolean): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        <MyExcuseCard
+        <MyExcuse
           eventId="evt-1"
           required
           start="2026-11-15T23:00:00.000Z"
@@ -55,12 +62,181 @@ function render(startWriting?: boolean): ReactTestRenderer {
   return tree;
 }
 
-describe("MyExcuseCard", () => {
+describe("MyExcuse", () => {
+  beforeEach(() => {
+    mine = { excuse: null, receiver: null };
+    editExcuse.mockClear();
+  });
+
   it("opens the line on arrival from the chat card (#4660)", () => {
     expect(render(true).root.findAllByType(TextInput)).toHaveLength(1);
   });
 
   it("waits for Can't make it otherwise", () => {
     expect(render().root.findAllByType(TextInput)).toHaveLength(0);
+  });
+
+  it("offers it as a quiet underlined link that keeps a 44pt target (#4933)", () => {
+    const tree = render();
+    const link = tree.root
+      .findAllByType(Pressable)
+      .find(
+        (node) =>
+          node.props.accessibilityHint === "Send an excuse for this event.",
+      );
+    expect(link).toBeDefined();
+    expect(link!.props.accessibilityRole).toBe("button");
+    const box = StyleSheet.flatten(link!.props.style({ pressed: false }));
+    expect(box.minHeight).toBeGreaterThanOrEqual(44);
+    expect(box.minWidth).toBeGreaterThanOrEqual(44);
+    expect(box.borderWidth).toBeUndefined();
+    const label = link!.findByType(Text);
+    expect(label.props.children).toBe("Can't make it?");
+    expect(StyleSheet.flatten(label.props.style).textDecorationLine).toBe(
+      "underline",
+    );
+    act(() => link!.props.onPress());
+    expect(tree.root.findAllByType(TextInput)).toHaveLength(1);
+  });
+
+  const sent = (status: string) => ({
+    excuse: {
+      id: "x-1",
+      chapter_id: "c",
+      event_id: "evt-1",
+      user_id: "me",
+      reason: "Exam review",
+      status,
+      decided_by: null,
+      decided_at: status === "PENDING" ? null : "2026-11-13T00:00:00Z",
+      created_at: "2026-11-12T00:00:00Z",
+      updated_at: "2026-11-12T00:00:00Z",
+    },
+    receiver: { user_id: "jake", display_name: "Jake" },
+  });
+  const button = (tree: ReactTestRenderer, label: string) =>
+    tree.root
+      .findAllByType(Pressable)
+      .find(
+        (node) =>
+          node.props.accessibilityLabel === label ||
+          node.findAllByType(Text).some((t) => t.props.children === label),
+      );
+
+  it("draws a sent excuse as one row, not a card, with Edit (#5115)", () => {
+    mine = sent("PENDING");
+    const tree = render();
+    const reason = tree.root
+      .findAllByType(Text)
+      .find((t) => t.props.children === "Exam review");
+    expect(reason!.props.numberOfLines).toBe(1);
+    expect(tree.root.findAllByType(TextInput)).toHaveLength(0);
+    expect(button(tree, "Edit")).toBeDefined();
+  });
+
+  it("edits the reason in place and saves only a change", async () => {
+    mine = sent("PENDING");
+    const tree = render();
+    act(() => button(tree, "Edit")!.props.onPress());
+    const input = tree.root.findByType(TextInput);
+    expect(input.props.value).toBe("Exam review");
+    expect(button(tree, "Save excuse")!.props.disabled).toBe(true);
+    act(() => input.props.onChangeText(" Away game "));
+    await act(async () => {
+      button(tree, "Save excuse")!.props.onPress();
+    });
+    expect(editExcuse).toHaveBeenCalledWith({
+      eventId: "evt-1",
+      reason: "Away game",
+    });
+  });
+
+  it("sends a declined excuse again from Edit", () => {
+    mine = sent("DECLINED");
+    const tree = render();
+    act(() => button(tree, "Edit")!.props.onPress());
+    expect(button(tree, "Send excuse again")).toBeDefined();
+  });
+
+  it("tells a declined member they're still expected, on the row itself", () => {
+    mine = sent("DECLINED");
+    const tree = render();
+    expect(
+      tree.root
+        .findAllByType(Text)
+        .some(
+          (t) => t.props.children === "You're still expected at this event.",
+        ),
+    ).toBe(true);
+  });
+
+  it("opens the row to the whole reason on a tap", () => {
+    mine = sent("APPROVED");
+    const tree = render();
+    const reason = () =>
+      tree.root
+        .findAllByType(Text)
+        .find((t) => t.props.children === "Exam review")!;
+    expect(reason().props.numberOfLines).toBe(1);
+    act(() => button(tree, "Excused: Exam review")!.props.onPress());
+    expect(reason().props.numberOfLines).toBeUndefined();
+  });
+
+  it("offers no Edit on an approved excuse, only Withdraw", () => {
+    mine = sent("APPROVED");
+    const tree = render();
+    expect(button(tree, "Edit")).toBeUndefined();
+    expect(button(tree, "Withdraw")).toBeDefined();
+  });
+});
+
+describe("ExcuseReviewSection", () => {
+  it("opens a row on a tap, with Approve and Decline beside it, not inside it", () => {
+    list = [
+      {
+        id: "x-2",
+        chapter_id: "c",
+        event_id: "evt-1",
+        user_id: "sam",
+        display_name: "Sam",
+        reason: "Away game",
+        status: "PENDING",
+        decided_by: null,
+        decided_at: null,
+        created_at: "2026-11-12T00:00:00Z",
+        updated_at: "2026-11-12T00:00:00Z",
+      },
+    ];
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <ExcuseReviewSection
+            eventId="evt-1"
+            viewerId="officer"
+            canUpdateEvents
+          />
+        </FrappThemeProvider>,
+      );
+    });
+    const row = tree.root
+      .findAllByType(Pressable)
+      .find((node) => /^Sam: Away game/.test(node.props.accessibilityLabel))!;
+    // VoiceOver hides an accessible element's children: the decisions must
+    // not sit inside the row's own pressable.
+    expect(
+      row
+        .findAllByType(Text)
+        .some(
+          (t) =>
+            t.props.children === "Approve" || t.props.children === "Decline",
+        ),
+    ).toBe(false);
+    expect(row.props.accessibilityState).toEqual({ expanded: false });
+    act(() => row.props.onPress());
+    const opened = tree.root
+      .findAllByType(Pressable)
+      .find((node) => /^Sam: Away game/.test(node.props.accessibilityLabel))!;
+    expect(opened.props.accessibilityState).toEqual({ expanded: true });
   });
 });

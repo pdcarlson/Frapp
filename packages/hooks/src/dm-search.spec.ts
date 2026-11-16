@@ -76,10 +76,7 @@ describe("searchDirectMessages", () => {
 
   it("never offers a blocked member, the viewer or the system actor", () => {
     const result = run("a", {
-      roster: [
-        ...roster,
-        { user_id: SYSTEM_SENDER_ID, display_name: "Frapp" },
-      ],
+      roster: [...roster, { user_id: SYSTEM_SENDER_ID, display_name: "Frapp" }],
     });
     const offered = userIds(result.members);
     expect(offered).not.toContain("blocked");

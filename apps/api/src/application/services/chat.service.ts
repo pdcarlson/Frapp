@@ -25,6 +25,7 @@ import { stampCardClosed } from './card-close';
 import { normalizeSignupCard } from '#domain/utils/signup-card-rules';
 import { isCardClosed } from '#domain/utils/card-closing';
 import { normalizeFormCard } from '#domain/utils/form-card-rules';
+import { normalizeRolePickerCard } from '#domain/utils/role-picker-card-rules';
 import {
   CHAT_THREAD_REPOSITORY,
   type IChatThreadRepository,
@@ -196,6 +197,15 @@ export interface SendMessageInput {
    */
   system_originated?: boolean;
   /**
+   * Who may post a role picker and what it may list (#4958), checked by the
+   * caller that can read roles (`RbacService.assertMayPostRolePicker`, passed
+   * by `ChatController.sendMessage`). Called with the card's normalized role
+   * ids after the replay check, so a picker that already committed is
+   * answered as a duplicate even if a role was unmarked since. A
+   * `role_picker` send without it is refused.
+   */
+  assertRolePicker?: (roleIds: readonly string[]) => Promise<void>;
+  /**
    * Internal-only: the copy `forwardMessage` built of the message being
    * forwarded (#4864). Never on `SendMessageDto`, so a client can't claim a
    * copy of something it never read. With it, `content` (the forwarder's
@@ -319,6 +329,14 @@ function cardPayloadForSend(
   // answer against its questions.
   if (kind === 'form') {
     const checked = normalizeFormCard(payload);
+    if ('error' in checked) throw new BadRequestException(checked.error);
+    return { ...checked.card };
+  }
+  // A role picker (#4958) keeps only its title and role ids. The caller has
+  // checked who may post one and that each role is marked
+  // (`ChatController.sendMessage`).
+  if (kind === 'role_picker') {
+    const checked = normalizeRolePickerCard(payload);
     if ('error' in checked) throw new BadRequestException(checked.error);
     return { ...checked.card };
   }
@@ -1141,28 +1159,10 @@ export class ChatService {
       threadRootId ? 'thread' : 'post',
     );
 
-    const threadRoot = threadRootId
-      ? await this.assertThreadRoot(channel, threadRootId, input)
-      : null;
-
-    let replyTo: ChatMessage | null = null;
-    if (input.reply_to_id) {
-      // A quote reply is a post: whoever may post here may quote (#3722),
-      // which `assertChannelAccess` above already decided.
-      replyTo = await this.messageRepo.findById(input.reply_to_id);
-      if (!replyTo || replyTo.channel_id !== input.channel_id) {
-        throw new BadRequestException(
-          'reply_to_id must reference a message in the same channel',
-        );
-      }
-      // A quote in the timeline cannot point into a thread, whose replies the
-      // timeline never shows (#3785).
-      if (replyTo.thread_root_id) {
-        throw new BadRequestException(
-          'reply_to_id cannot reference a reply inside a thread',
-        );
-      }
-    }
+    const { threadRoot, replyTo } = await this.assertSendTargets(channel, {
+      reply_to_id: input.reply_to_id ?? null,
+      thread_root_id: threadRootId,
+    });
 
     const kind: ChatMessageKind = input.kind ?? 'text';
     // A refusal below that only exists because something changed after the
@@ -1194,6 +1194,27 @@ export class ChatService {
     // Before anything is written (thread follows, the attachment repair), so
     // a card that can't be stored costs nothing.
     const payload = cardPayloadForSend(kind, input.payload);
+
+    // A role picker hands out roles, so it is an officer's post that lists
+    // only marked roles. A replay of one that already committed is answered
+    // as the duplicate, as the module gate's is, so a role unmarked or a
+    // grant lost since never fails a card that is already in the channel.
+    if (kind === 'role_picker') {
+      try {
+        if (!input.assertRolePicker) {
+          throw new ForbiddenException(
+            'Only officers who manage roles can post a role picker',
+          );
+        }
+        await input.assertRolePicker(
+          (payload as { role_ids: string[] }).role_ids,
+        );
+      } catch (refusal) {
+        const replay = await committedReplay();
+        if (replay) return replay;
+        throw refusal;
+      }
+    }
 
     const gatedModule = MODULE_GATED_KINDS[kind];
     if (
@@ -1510,10 +1531,46 @@ export class ChatService {
    * threads). A thread never nests, a 1:1 DM has no threads in slice 1, and a
    * thread reply is never also a quote-reply.
    */
+  /**
+   * A send's quote and thread, checked against the channel it posts in: the
+   * one place their rules live, for a send now and a send scheduled for later
+   * (#4971), which checks when it is scheduled and the send checks again.
+   * The caller has already authorized the channel (as `thread` for a thread
+   * reply). Answers the messages the targets name.
+   */
+  async assertSendTargets(
+    channel: ChatChannel,
+    targets: { reply_to_id: string | null; thread_root_id: string | null },
+  ): Promise<{ threadRoot: ChatMessage | null; replyTo: ChatMessage | null }> {
+    const threadRoot = targets.thread_root_id
+      ? await this.assertThreadRoot(channel, targets.thread_root_id, targets)
+      : null;
+
+    let replyTo: ChatMessage | null = null;
+    if (targets.reply_to_id) {
+      // A quote reply is a post: whoever may post here may quote (#3722),
+      // which the caller's channel check already decided.
+      replyTo = await this.messageRepo.findById(targets.reply_to_id);
+      if (!replyTo || replyTo.channel_id !== channel.id) {
+        throw new BadRequestException(
+          'reply_to_id must reference a message in the same channel',
+        );
+      }
+      // A quote in the timeline cannot point into a thread, whose replies the
+      // timeline never shows (#3785).
+      if (replyTo.thread_root_id) {
+        throw new BadRequestException(
+          'reply_to_id cannot reference a reply inside a thread',
+        );
+      }
+    }
+    return { threadRoot, replyTo };
+  }
+
   private async assertThreadRoot(
     channel: ChatChannel,
     rootId: string,
-    input: SendMessageInput,
+    input: { reply_to_id?: string | null },
   ): Promise<ChatMessage> {
     if (!channelAllowsThreads(channel)) {
       throw new BadRequestException('This channel does not take threads');

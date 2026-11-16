@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { localIsoDate, parseInstant } from "@repo/formatting";
 import { useRequiredOfViewer } from "@repo/hooks";
-import type { CalendarTask } from "@repo/hooks/calendar-tasks";
+import type { CalendarItem } from "@repo/hooks/calendar-tasks";
 import {
   blockGeometry,
   endsWithinDay,
@@ -67,7 +67,7 @@ export function EventsTimeGrid({
   days: Date[];
   events: EventRow[];
   now: Date;
-  tasksByDay: Map<string, CalendarTask[]>;
+  tasksByDay: Map<string, CalendarItem[]>;
   onOpen: (id: string) => void;
   onOpenTask: (taskId: string) => void;
   /** A column's heading opens that day in the Day view (3 days only). */

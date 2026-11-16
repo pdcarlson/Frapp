@@ -36,5 +36,7 @@ import { ProfilePhotoModule } from '../profile-photo/profile-photo.module';
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
     { provide: AUTH_ADMIN_PROVIDER, useClass: SupabaseAuthAdminService },
   ],
+  // `BootstrapModule` reads the profile and What's new from it (#4709).
+  exports: [UserService],
 })
 export class UserModule {}

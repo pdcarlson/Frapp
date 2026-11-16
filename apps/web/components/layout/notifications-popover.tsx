@@ -27,6 +27,7 @@ import {
   useNowDate,
 } from "@repo/hooks";
 import {
+  NOTIFICATION_BADGE,
   NOTIFICATION_KIND_LABEL,
   NOTIFICATION_TILE_GLYPH,
   NOTIFICATION_TILE_HUE,
@@ -42,14 +43,15 @@ import {
   type NotificationEntry,
   type NotificationFilter,
   type NotificationKind,
+  type NotificationPersonKind,
 } from "@repo/hooks/notification-rows";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { NavGlyph } from "@/components/layout/nav-glyphs";
 import {
-  AnnouncementGlyph,
-  DirectMessageGlyph,
-} from "@/components/chat/chat-glyphs";
+  FACE_BADGE_NEUTRAL,
+  FaceWithBadge,
+} from "@/components/shared/face-with-badge";
+import { NavGlyph } from "@/components/layout/nav-glyphs";
+import { AnnouncementGlyph } from "@/components/chat/chat-glyphs";
 import { MENTION_CHIP } from "@/components/chat/chip";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -65,7 +67,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { asArray, cn, initials } from "@/lib/utils";
+import { asArray, cn } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { chatDeepLink } from "@/lib/chat/chat-links";
@@ -94,6 +96,8 @@ type Notification = {
       screen?: string;
       channelId?: string;
       messageId?: string;
+      /** A thread's first message, when the row is about a reply in it. */
+      threadRootId?: string;
       eventId?: string;
       /** "Minutes posted" (`meeting.service.ts`) names the minutes too. */
       meetingId?: string;
@@ -110,7 +114,13 @@ type Notification = {
     memberUserId?: string;
     chatKind?: string;
     mentioned?: boolean;
+    /** A message reminder that came due (#4957). */
+    reminder?: boolean;
+    /** The message a reminder is about (#4957). */
+    messageId?: string;
   } | null;
+  /** The chat message a chat row is about, kept in its own column. */
+  chat_message_id?: string | null;
   read_at: string | null;
   created_at: string;
 };
@@ -125,15 +135,25 @@ type Notification = {
  *
  * A chat notification's `target` never carries a `messageId` (a chat push
  * carries one beside `target` for the phone's tray, and the in-app row keeps
- * it in a column, `spec/behavior/notifications.md` § Deep Linking), so this
- * only ever forwards `channelId` through `chatDeepLink`.
+ * it in a column, `spec/behavior/notifications.md` § Deep Linking). Only a
+ * reminder (#4957) forwards it (its `data.messageId`, or the column on a
+ * row written before that field), so it opens on the message the
+ * member asked about: its thread's first message for a reply, which is what
+ * the channel's timeline holds. Any other chat row opens the channel.
  */
 export function deepLinkFor(notification: Notification): string {
   const target = notification.data?.target;
   if (!target) return "/chat";
   switch (target.screen) {
     case "chat":
-      return chatDeepLink({ channelId: target.channelId });
+      return chatDeepLink({
+        channelId: target.channelId,
+        messageId: notification.data?.reminder
+          ? (target.threadRootId ??
+            notification.data?.messageId ??
+            notification.chat_message_id)
+          : null,
+      });
     case "events":
       return target.meetingId ? `/meetings/${target.meetingId}` : "/events";
     case "points":
@@ -157,6 +177,9 @@ export function deepLinkFor(notification: Notification): string {
         : "/tasks";
     case "service":
       return "/service";
+    // The weekly recap push (#4985): Activity, where the "Last week" card is.
+    case "activity":
+      return "/activity";
     case "profile":
       return "/profile";
     // "Alex Smith joined" (`invite.service.ts`). It used to fall through to
@@ -661,17 +684,25 @@ function NotificationPicture({
       </span>
     );
   }
-  const photo = personId ? names.avatarFor(personId) : null;
-  const tint = personId ? names.avatarTintFor(personId) : null;
   return (
-    <span aria-hidden="true" className="relative size-9">
-      <Avatar className="size-9">
-        {photo ? <AvatarImage src={photo} alt="" /> : null}
-        <AvatarFallback tint={tint}>{initials(personName)}</AvatarFallback>
-      </Avatar>
-      <KindBadge kind={kind} />
-    </span>
+    <FaceWithBadge
+      size={36}
+      avatarUrl={personId ? names.avatarFor(personId) : null}
+      name={personName}
+      tint={personId ? names.avatarTintFor(personId) : null}
+      tone={BADGE_TONE[kind] ?? FACE_BADGE_NEUTRAL}
+      badgeProps={{ "data-kind-badge": kind }}
+      badge={<NotificationBadgeContent kind={kind} />}
+    />
   );
+}
+
+/** The badge's content, from the map both clients read (#4476). */
+function NotificationBadgeContent({ kind }: { kind: NotificationPersonKind }) {
+  const badge = NOTIFICATION_BADGE[kind];
+  if ("mark" in badge) return <>{badge.mark}</>;
+  if ("glyph" in badge) return <NavGlyph paths={NAV_GLYPHS[badge.glyph]} />;
+  return <AnnouncementGlyph />;
 }
 
 const BADGE_TONE: Partial<Record<NotificationKind, string>> = {
@@ -682,29 +713,3 @@ const BADGE_TONE: Partial<Record<NotificationKind, string>> = {
   mention: "bg-mention-chip-text text-mention-chip",
   join: "bg-success text-success-foreground",
 };
-
-function KindBadge({ kind }: { kind: NotificationKind }) {
-  return (
-    <span
-      data-kind-badge={kind}
-      className={cn(
-        "absolute -bottom-1 -right-1 grid size-[18px] place-items-center rounded-full text-caption font-bold leading-none ring-2 ring-popover",
-        BADGE_TONE[kind] ?? "bg-card-hover text-muted-foreground",
-      )}
-    >
-      {kind === "mention" ? (
-        "@"
-      ) : kind === "channel" ? (
-        "#"
-      ) : kind === "join" ? (
-        "+"
-      ) : kind === "announcement" ? (
-        <AnnouncementGlyph className="size-3" />
-      ) : kind === "dm" ? (
-        <DirectMessageGlyph className="size-3" />
-      ) : (
-        <NavGlyph paths={NAV_GLYPHS.chat} className="size-3" />
-      )}
-    </span>
-  );
-}

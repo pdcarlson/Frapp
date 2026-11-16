@@ -48,9 +48,10 @@ export function useLegalAcceptance(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: legalAcceptanceQueryKey(),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const { data, error } = await client.GET(
         "/v1/users/me/legal-acceptance",
+        { signal },
       );
       if (error) throw error;
       return data;

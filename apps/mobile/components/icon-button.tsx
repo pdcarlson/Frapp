@@ -25,12 +25,18 @@ export function IconButton({
   hint,
   onPress,
   disabled = false,
+  selected,
   children,
 }: {
   label: string;
   hint?: string;
   onPress: () => void;
   disabled?: boolean;
+  /**
+   * For a control that stays chosen (a thumbs under an Ask answer): said to
+   * a screen reader as "selected". Left out, nothing is said either way.
+   */
+  selected?: boolean;
   /** The glyph, from `components/control-glyphs.tsx` where one exists. */
   children: ReactNode;
 }) {
@@ -40,7 +46,9 @@ export function IconButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityHint={hint}
-      accessibilityState={{ disabled }}
+      accessibilityState={
+        selected === undefined ? { disabled } : { disabled, selected }
+      }
       disabled={disabled}
       hitSlop={ICON_BUTTON_HIT_SLOP}
       onPress={guardedPress}

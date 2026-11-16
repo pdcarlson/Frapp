@@ -55,7 +55,7 @@ describe("usePendingInvites (#3776)", () => {
       wrapper: wrapperFor({ GET }),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(GET).toHaveBeenCalledWith("/v1/invites/mine");
+    expect(GET).toHaveBeenCalledWith("/v1/invites/mine", { signal: expect.any(AbortSignal) });
     expect(result.current.data).toEqual(PENDING);
   });
 

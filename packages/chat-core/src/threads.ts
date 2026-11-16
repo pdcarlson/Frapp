@@ -21,12 +21,17 @@ import { randomClientId } from "@repo/api-sdk";
 import type { MentionPick } from "@repo/validation";
 import { firstName } from "./channel-preview";
 import { replyPreviewText } from "./reply-preview";
+import { TOMBSTONE_TEXT } from "./block-copy";
 import {
   chatThreadKey,
   chatThreadRepliesKey,
+  gifRequestBody,
+  normalizeRow,
   optimisticMessage,
   type ChannelCache,
   type ChatMessage,
+  type MessageGif,
+  type OutgoingGif,
   type ThreadLastReply,
   type RawChatMessage,
   type RawChatMessageAction,
@@ -315,6 +320,11 @@ export interface SendThreadReplyArgs {
   mentionPicks?: readonly MentionPick[] | null;
   /** Reuse the failed row's id for Retry, so the server dedupes. */
   clientMessageId?: string;
+  /**
+   * A GIF from the picker (#4657): the reply is the GIF alone, so `content`
+   * is empty, as a channel GIF send's is (#4631).
+   */
+  gif?: OutgoingGif | null;
 }
 
 /**
@@ -335,6 +345,7 @@ export async function sendThreadReply(
       channelId: args.channelId,
       senderId: args.senderId,
       content: args.content,
+      gif: args.gif ?? null,
     }),
     thread_root_id: args.rootId,
   };
@@ -352,6 +363,7 @@ export async function sendThreadReply(
         mention_picks: args.mentionPicks?.length
           ? [...args.mentionPicks]
           : undefined,
+        gif: args.gif ? gifRequestBody(args.gif) : undefined,
       },
     });
     if (error || !data) throw apiError(error, "Couldn't send reply");
@@ -370,6 +382,19 @@ export async function sendThreadReply(
     );
     return { error: reason };
   }
+}
+
+/**
+ * The picker's GIF a failed reply still holds, token and all, so its Retry
+ * sends the GIF again (#4657); `null` for a text reply. The optimistic row
+ * keeps what `sendThreadReply` was given, and only an unsent row has it.
+ */
+export function outgoingGifOf(
+  gif: MessageGif | null | undefined,
+): OutgoingGif | null {
+  if (!gif) return null;
+  const token = (gif as Partial<OutgoingGif>).token;
+  return typeof token === "string" && token ? { ...gif, token } : null;
 }
 
 /** Removes a failed reply the member chose not to retry. */
@@ -503,6 +528,40 @@ export function threadPreviewParts(
           ? firstName(fullName)
           : names.fallbackLabel(sender);
   return { name, fullName, text: replyPreviewText(preview) };
+}
+
+/**
+ * One All threads row's two lines (#4960), one rule for web and the phone:
+ * the parent and its latest reply, read the way the channel draws them. The
+ * API serves the raw parent, so it is normalized first (a GIF or a file-only
+ * message reads "GIF" or "Attachment", not "Message"), and the latest reply
+ * is the parent's own `thread_last_reply`, as the thread card's preview is.
+ * A message from a member the viewer blocked reads as the tombstone with no
+ * name, as it does in the channel.
+ */
+export function memberThreadPreview(
+  rawRoot: RawChatMessage,
+  viewerId: string | null,
+  names: ThreadPreviewNames,
+): {
+  root: ChatMessage;
+  rootText: string;
+  reply: { name: string | null; text: string } | null;
+} {
+  const root = normalizeRow(rawRoot);
+  const last = root.thread?.last_reply ?? null;
+  const reply = !last
+    ? null
+    : last.sender_blocked
+      ? { name: null, text: TOMBSTONE_TEXT }
+      : (({ name, text }) => ({ name, text }))(
+          threadPreviewParts(last, viewerId, names),
+        );
+  return {
+    root,
+    rootText: root.sender_blocked ? TOMBSTONE_TEXT : replyPreviewText(root),
+    reply,
+  };
 }
 
 /**

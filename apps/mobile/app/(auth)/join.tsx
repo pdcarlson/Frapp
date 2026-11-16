@@ -50,7 +50,7 @@ import {
   OnboardingPrimaryButton,
 } from "@/components/onboarding/onboarding-primary-button";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
-import { NewAccountNotice } from "@/components/onboarding/new-account-notice";
+import { OtherAccountLine } from "@/components/onboarding/other-account-line";
 import {
   SignedInAs,
   useOnboardingSignOut,
@@ -157,10 +157,9 @@ export default function JoinChapter() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { status, email, userId, isNewAccount, dismissNewAccount } =
-    useAuthSession();
-  // "New account created" (#4769) only for an account the gate sent here for
-  // having no chapter, never for a member opening Join from the picker.
+  const { status, email, userId } = useAuthSession();
+  // "Already in a chapter?" only for an account the gate sent here for having
+  // no chapter, never for a member opening Join from the picker.
   const gateDestination = useAuthGateDestination();
   const { signOut: signOutToSignIn, signingOut } = useOnboardingSignOut();
   const redeemInvite = useRedeemInvite();
@@ -551,16 +550,6 @@ export default function JoinChapter() {
     </View>
   );
 
-  // "New account created"'s Sign out (#4769): the person is leaving to come
-  // back with the account they meant, so an invite that opened this screen
-  // goes with them, as web's `/new-account` keeps `next`. The screen took a
-  // remembered invite out of memory into the field, so it goes back first.
-  const signOutKeepingInvite = async () => {
-    const invite = arrivedWithInvite ? token.trim() : "";
-    if (invite) rememberInviteToken(invite);
-    await signOutToSignIn({ keepInvite: true });
-  };
-
   // Each view fades in (`stepFadeIn`, as setup's steps do).
   const entering = stepFadeIn(tokens);
 
@@ -610,19 +599,6 @@ export default function JoinChapter() {
                 disabled={submitting}
               />
             </View>
-
-            {isNewAccount && gateDestination === "join" ? (
-              <View style={[styles.accountLine, styles.noticeLine]}>
-                <NewAccountNotice
-                  email={email}
-                  inviteFirst={arrivedWithInvite}
-                  signOut={signOutKeepingInvite}
-                  signingOut={signingOut}
-                  disabled={submitting}
-                  onContinue={dismissNewAccount}
-                />
-              </View>
-            ) : null}
 
             {view === "choose" ? (
               // At the top, like the other two views, so the title doesn't
@@ -695,6 +671,25 @@ export default function JoinChapter() {
                     }}
                   />
                 </View>
+
+                {/*
+                  For someone already in a chapter who signed in with another
+                  account than the one they joined with. Not when an invite
+                  link or an emailed invite brought them: those are the
+                  account an officer meant. Held until the emailed-invites
+                  read settles, so it never shows and then vanishes; a read
+                  that failed still shows it, since it is the way out.
+                */}
+                {gateDestination === "join" &&
+                !arrivedWithInvite &&
+                !pendingInvites.isPending &&
+                offers.length === 0 ? (
+                  <OtherAccountLine
+                    onPress={() => void signOutToSignIn()}
+                    disabled={submitting || signingOut}
+                    busy={signingOut}
+                  />
+                ) : null}
               </Animated.View>
             ) : view === "invite" ? (
               <Animated.View
@@ -979,10 +974,6 @@ function createStyles(tokens: SignetTokens) {
       width: "100%",
       maxWidth: ONBOARDING_COLUMN_WIDTH,
       alignSelf: "center",
-    },
-    // "New account created" under the Sign out line (#4769).
-    noticeLine: {
-      paddingTop: tokens.spacing.sm,
     },
     inviteCard: {
       borderRadius: tokens.radius.card,

@@ -31,8 +31,8 @@ export function useGroups(options?: { enabled?: boolean }) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: groupsKey(chapterId),
-    queryFn: async () => {
-      const { data, error } = await client.GET("/v1/groups");
+    queryFn: async ({ signal }) => {
+      const { data, error } = await client.GET("/v1/groups", { signal });
       if (error) throw error;
       return data;
     },

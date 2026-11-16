@@ -26,15 +26,21 @@ export * from "./api-error-codes";
 // Ask Frapp (#450): the request, the versioned stream format, and its copy.
 export * from "./ask";
 // People and channels named in an Ask answer (#4904).
+export * from "./ask-cards";
+export * from "./ask-effort";
 export * from "./ask-entities";
 // Thumbs on an Ask answer and the taps under it (#4902).
 export * from "./ask-feedback";
 // An Ask Frapp answer posted to a channel (#4713).
+export * from "./ask-find";
 export * from "./ask-post";
+export * from "./ask-source-chip";
 export * from "./backwork";
 // ── Backwork course names and nicknames (#3848) ──
 export * from "./backwork-courses";
 export * from "./beta-off-modules";
+// A member's birthday (#4959): its rules, its words, and where it falls.
+export * from "./birthday";
 export * from "./channel-access-lists";
 export * from "./chapter-branding";
 export * from "./chapter-config";
@@ -64,6 +70,9 @@ export * from "./discord-export";
 // offers a Clear the API refuses. See ./discord-import.
 export * from "./discord-import";
 export * from "./error-copy";
+// An event's agenda and attachments (#4934): their limits and shapes, which
+// the API enforces and both editors read.
+export * from "./event-agenda";
 // Event attendance by role: who an event is for, read the same way by the
 // API's read gate, check-in, auto-absent and pushes, and by both editors.
 export * from "./event-attendance";
@@ -123,9 +132,6 @@ export * from "./module-refusal";
 // shared so web's invite hand-off (`AppHandoff`), the API's update-screen
 // default and the app-link files name one app. See ./native-app.
 export * from "./native-app";
-// The "did this sign-in create a new account?" rule (#3786, #3801, #4769),
-// shared so web's `/new-account` and the phone's s02 notice agree.
-export * from "./new-account";
 // ── Notification categories (issue #564; mobile half shipped in C4 of #937) ──
 // Shared because each `key` is written verbatim into
 // `notification_preferences.category` and nothing validates it — the column is
@@ -136,6 +142,9 @@ export * from "./new-account";
 // is — it is the fold from server rows onto those keys, and a second copy is
 // how two surfaces come to disagree about what a member's switches say.
 export * from "./notification-categories";
+// The inbox's first page, which the API bootstrap, the SDK batch and
+// `useNotifications` must agree on (#4962).
+export * from "./notification-inbox";
 // ── Ops-setup nudges (issue #492) ────────────────────────────────────────────
 // Shared for the same reason as the categories above: each `key` is written
 // verbatim into `members.dismissed_ops_nudges`, the column is an unconstrained
@@ -146,6 +155,8 @@ export * from "./notification-categories";
 // than presentation, so it is shared too rather than re-derived per surface.
 export * from "./ops-nudges";
 export * from "./order-number";
+// s02's "Already in a chapter?" line, shared by web `/join` and the phone.
+export * from "./other-account";
 // What each system permission is called and which module it belongs to. The
 // API serves it at `GET /v1/roles/permissions-catalog`; web and mobile read
 // the same list from here (#4069).
@@ -156,6 +167,7 @@ export * from "./permissions";
 export * from "./phone";
 export * from "./profile-copy";
 export * from "./profile-correction";
+export * from "./push-action-categories";
 // Event recurrence: the repeat-rule format the DTOs validate against, the
 // stepper the series generator materializes from, and the words both apps
 // describe a series with. One source so the generated series and what the
@@ -183,6 +195,8 @@ export {
 export * from "./repeat-draft";
 export * from "./role-colors";
 export * from "./screen-copy";
+// Roles members pick themselves (#4958): the safety rule and its words.
+export * from "./self-assignable-roles";
 export * from "./service-points";
 export * from "./service-receipt";
 // The sign-up hosts Activity gathers, shared by its kind label and the API's title read (#4215).

@@ -10,7 +10,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { compactControlClassName } from "@/components/shared/table-controls";
+import { useMediaQuery } from "@/lib/use-media-query";
 import { cn } from "@/lib/utils";
+import { GifFrame, REDUCED_MOTION } from "./message-gif";
 
 /**
  * The composer's GIF button and picker (#4631): Discord's layout, a "GIF"
@@ -111,6 +113,7 @@ export function GifPickerPanel({
 }) {
   const [query, setQuery] = useState("");
   const search = useGifSearch(query);
+  const reduceMotion = useMediaQuery(REDUCED_MOTION);
   const columns = useMemo(() => intoColumns(search.results), [search.results]);
   const viewport = useRef<HTMLDivElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -226,28 +229,11 @@ export function GifPickerPanel({
                   >
                     {column.map((gif) => (
                       <li key={gif.id}>
-                        <button
-                          type="button"
-                          onClick={() => onPick(gif)}
-                          title={gif.title || undefined}
-                          aria-label={
-                            gif.title ? `Send GIF: ${gif.title}` : "Send GIF"
-                          }
-                          className={cn(
-                            "block w-full overflow-hidden rounded-md bg-surface-1 hover:opacity-85",
-                            FOCUS_RING,
-                          )}
-                          style={{ height: tileHeight(gif) }}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element -- a provider's animated WebP, hotlinked; next/image would re-encode it */}
-                          <img
-                            src={gif.preview.url}
-                            alt=""
-                            loading="lazy"
-                            decoding="async"
-                            className="h-full w-full object-cover"
-                          />
-                        </button>
+                        <GifTile
+                          gif={gif}
+                          reduceMotion={reduceMotion}
+                          onPick={onPick}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -269,5 +255,59 @@ export function GifPickerPanel({
         <div ref={sentinel} aria-hidden="true" className="h-px" />
       </div>
     </div>
+  );
+}
+
+/**
+ * One picker result. With reduced motion (#4657) it holds its first frame
+ * and plays while hovered or focused, as a GIF in the thread does.
+ */
+function GifTile({
+  gif,
+  reduceMotion,
+  onPick,
+}: {
+  gif: GifResult;
+  reduceMotion: boolean;
+  onPick: (gif: GifResult) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const height = tileHeight(gif);
+  return (
+    <button
+      type="button"
+      onClick={() => onPick(gif)}
+      title={gif.title || undefined}
+      aria-label={gif.title ? `Send GIF: ${gif.title}` : "Send GIF"}
+      className={cn(
+        "relative block w-full overflow-hidden rounded-md bg-surface-1 hover:opacity-85",
+        FOCUS_RING,
+      )}
+      style={{ height }}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+    >
+      {reduceMotion ? (
+        <GifFrame
+          url={gif.preview.url}
+          width={Math.round(TILE_WIDTH)}
+          height={Math.round(height)}
+          playing={hovered || focused}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        /* eslint-disable-next-line @next/next/no-img-element -- a provider's animated WebP, hotlinked; next/image would re-encode it */
+        <img
+          src={gif.preview.url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover"
+        />
+      )}
+    </button>
   );
 }

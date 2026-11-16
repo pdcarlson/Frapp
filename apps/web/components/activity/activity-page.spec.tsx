@@ -1,21 +1,35 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActivityRow } from "@repo/hooks";
 
 const mockActivity = vi.fn();
 const mockStanding = vi.fn<() => { isPending: boolean; data?: unknown }>(
   () => ({ isPending: false, data: undefined }),
 );
+const mockRecap = vi.fn<() => { data?: unknown }>(() => ({
+  data: undefined,
+}));
+const mockChapterId = vi.fn(() => "chap-1");
+const mockArchive = vi.fn<
+  () => {
+    isPending: boolean;
+    isError?: boolean;
+    data?: unknown;
+    refetch?: () => void;
+  }
+>(() => ({ isPending: true }));
 const mockInvalidate = vi.fn();
 /**
  * How many times the page re-read its list. Each re-read also re-reads the
- * standing ("This semester"), so counting every invalidation would double.
+ * standing ("This semester") and the Archive, so counting every invalidation
+ * would triple.
  */
 const listRereads = () =>
   mockInvalidate.mock.calls.filter(
     ([options]) =>
       Array.isArray(options?.queryKey) &&
-      !JSON.stringify(options.queryKey).includes("standing"),
+      options.queryKey[0] === "activity",
   ).length;
 const standingRereads = () =>
   mockInvalidate.mock.calls.filter(([options]) =>
@@ -37,6 +51,9 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     // the groups and the gauges (`activity-agenda.ts`, `activity-rows.ts`,
     // `activity-standing.ts`). Only the reads are stood in for.
     ACTIVITY_GLYPH_NAV: actual.ACTIVITY_GLYPH_NAV,
+    ACTIVITY_ARCHIVE_EMPTY: actual.ACTIVITY_ARCHIVE_EMPTY,
+    ACTIVITY_ARCHIVE_SECTION_NAMES: actual.ACTIVITY_ARCHIVE_SECTION_NAMES,
+    activityArchiveGroups: actual.activityArchiveGroups,
     ACTIVITY_REVIEW_OPEN_LIMIT: actual.ACTIVITY_REVIEW_OPEN_LIMIT,
     ACTIVITY_REVIEW_ROW_LIMIT: actual.ACTIVITY_REVIEW_ROW_LIMIT,
     ACTIVITY_SHOW_EVERYTHING: actual.ACTIVITY_SHOW_EVERYTHING,
@@ -45,6 +62,16 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityCouldNotLoad: actual.activityCouldNotLoad,
     activityNarrowedNote: actual.activityNarrowedNote,
     activityAgenda: actual.activityAgenda,
+    activityAwake: actual.activityAwake,
+    activityRowSnoozable: actual.activityRowSnoozable,
+    activitySnoozedRows: actual.activitySnoozedRows,
+    activitySnoozeOptions: actual.activitySnoozeOptions,
+    useActivitySnoozeWake: () => undefined,
+    useActivitySnooze: () => ({
+      snooze: mockSnooze,
+      unsnooze: mockUnsnooze,
+      isPending: false,
+    }),
     activityBadgeIsAsk: actual.activityBadgeIsAsk,
     activityGroups: actual.activityGroups,
     activityReview: actual.activityReview,
@@ -53,12 +80,19 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityStandingGauges: actual.activityStandingGauges,
     activityWeekSummary: actual.activityWeekSummary,
     findActivityTaskRow: actual.findActivityTaskRow,
+    activityArchiveKeys: actual.activityArchiveKeys,
     activityKeys: actual.activityKeys,
     activityStandingKeys: actual.activityStandingKeys,
     useNowDate: actual.useNowDate,
-    useActiveChapterId: () => "chap-1",
+    useActiveChapterId: () => mockChapterId(),
     useActivity: () => mockActivity(),
     useActivityStanding: () => mockStanding(),
+    useActivityRecap: () => mockRecap(),
+    useActivityArchive: () => mockArchive(),
+    activityRecapCard: actual.activityRecapCard,
+    recapDismissalKey: actual.recapDismissalKey,
+    recapDismissed: actual.recapDismissed,
+    withRecapDismissal: actual.withRecapDismissal,
     useActivityUnread: () => ({ markRead: mockMarkRead }),
     useMyPermissions: () => mockPermissions(),
     activityDetailParts: actual.activityDetailParts,
@@ -73,6 +107,8 @@ vi.mock("@repo/hooks", async (importOriginal) => {
         : null,
   };
 });
+const mockSnooze = vi.fn(() => Promise.resolve());
+const mockUnsnooze = vi.fn(() => Promise.resolve());
 // `?review=<taskId>` from a "submitted a task" notification.
 let mockSearch = new URLSearchParams();
 const mockReplace = vi.fn();
@@ -169,7 +205,18 @@ vi.mock("./activity-link-row", () => ({
   }) => <li>{`link:${row.title}:${canRemove ? "officer" : "member"}`}</li>,
 }));
 
+// The reminder row's actions are its own spec's
+// (`activity-reminder-row.spec.tsx`); this page owes the Reminders group.
+vi.mock("./activity-reminder-row", () => ({
+  useActivityReminderActions: () => ({}),
+  ActivityReminderRow: ({ row }: { row: ActivityRow }) => (
+    <li>{`reminder:${row.title}`}</li>
+  ),
+}));
+
 const { ActivityPage } = await import("./activity-page");
+const { RECAP_DISMISSED_STORAGE_KEY, resetRecapDismissalForTests } =
+  await import("./recap-card");
 
 const task = {
   id: "t1",
@@ -228,6 +275,7 @@ const loaded = (overrides: Record<string, unknown> = {}) => ({
 });
 
 beforeEach(() => {
+  vi.useRealTimers();
   vi.clearAllMocks();
   mockSearch = new URLSearchParams();
   mockModuleGate.mockReturnValue(undefined);
@@ -235,6 +283,10 @@ beforeEach(() => {
   mockNetwork.mockReturnValue({ isOffline: false });
   mockPermissions.mockReturnValue({ data: { permissions: [] } });
   mockStanding.mockReturnValue({ isPending: false, data: undefined });
+  mockRecap.mockReturnValue({ data: undefined });
+  mockChapterId.mockReturnValue("chap-1");
+  window.localStorage.clear();
+  resetRecapDismissalForTests();
   mockGate.mockReturnValue({
     allowed: true,
     isOffline: false,
@@ -349,7 +401,9 @@ describe("ActivityPage", () => {
       // The soonest thing is on the card, and not repeated in the list.
       expect(within(card).getByText("Next")).toBeInTheDocument();
       expect(
-        within(card).getByRole("button", { name: /Formal venue\?/ }),
+        within(card).getByRole("button", {
+          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+        }),
       ).toBeInTheDocument();
       expect(within(toDo()).queryByText("Formal venue?")).toBeNull();
       expect(within(toDo()).getByText("Book the venue")).toBeInTheDocument();
@@ -392,7 +446,9 @@ describe("ActivityPage", () => {
       expect(within(toDo()).getByText("Formal venue?")).toBeInTheDocument();
       expect(within(toDo()).queryByText("Book the venue")).toBeNull();
       expect(
-        within(weekCard()).getByRole("button", { name: /Formal venue\?/ }),
+        within(weekCard()).getByRole("button", {
+          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+        }),
       ).toBeInTheDocument();
       expect(
         within(toDo()).getByText(/Showing only polls and sign-ups\./),
@@ -682,7 +738,9 @@ describe("ActivityPage", () => {
       expect(screen.queryByTestId("activity-week-ring")).toBeNull();
       const next = screen.getByRole("region", { name: "Next" });
       expect(
-        within(next).getByRole("button", { name: /Formal venue\?/ }),
+        within(next).getByRole("button", {
+          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+        }),
       ).toBeInTheDocument();
     });
 
@@ -706,7 +764,9 @@ describe("ActivityPage", () => {
       const label = within(weekCard()).getByText("Happening now");
       expect(label).toHaveClass("text-accent-text");
       expect(
-        within(weekCard()).getByRole("button", { name: /Chapter meeting/ }),
+        within(weekCard()).getByRole("button", {
+          name: /^(Unread:\s?)?Chapter meeting/,
+        }),
       ).toBeInTheDocument();
     });
 
@@ -720,6 +780,96 @@ describe("ActivityPage", () => {
       mockUser.mockReturnValue({ userId: "me", isLoading: false });
       rerender(<ActivityPage />);
       expect(weekCard()).toBeInTheDocument();
+    });
+  });
+
+  describe("Last week (#4983)", () => {
+    beforeEach(() => {
+      // A Monday morning: the card's season.
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(2026, 10, 16, 9));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+    const recap = {
+      start: new Date(2026, 10, 8).toISOString(),
+      end: new Date(2026, 10, 15).toISOString(),
+      events_attended: 2,
+      tasks_done: 0,
+      points: 15,
+      service_minutes: null,
+      study_minutes: 90,
+      unavailable: ["service"],
+    };
+
+    it("sums up last week with only what the member did, and stays gone once dismissed", () => {
+      mockActivity.mockReturnValue(loaded());
+      mockRecap.mockReturnValue({ data: recap });
+      const { unmount } = render(<ActivityPage />);
+
+      const card = screen.getByRole("region", { name: "Last week" });
+      expect(within(card).getByText("Nov 8 – Nov 14")).toBeInTheDocument();
+      expect(
+        within(card)
+          .getAllByRole("listitem")
+          .map((item) => item.getAttribute("aria-label")),
+      ).toEqual(["2 events attended", "15 points earned", "1h 30m studied"]);
+
+      fireEvent.click(
+        within(card).getByRole("button", { name: "Dismiss last week's recap" }),
+      );
+      expect(screen.queryByRole("region", { name: "Last week" })).toBeNull();
+      expect(window.localStorage.getItem(RECAP_DISMISSED_STORAGE_KEY)).toBe(
+        `chap-1@${recap.end}`,
+      );
+
+      // Remembered across visits, until next week's recap.
+      unmount();
+      resetRecapDismissalForTests();
+      const again = render(<ActivityPage />);
+      expect(screen.queryByRole("region", { name: "Last week" })).toBeNull();
+
+      // Another chapter's recap that week still shows.
+      again.unmount();
+      mockChapterId.mockReturnValue("chap-2");
+      const other = render(<ActivityPage />);
+      expect(
+        screen.getByRole("region", { name: "Last week" }),
+      ).toBeInTheDocument();
+
+      // And so does this chapter's next week.
+      other.unmount();
+      mockChapterId.mockReturnValue("chap-1");
+      vi.setSystemTime(new Date(2026, 10, 23, 9));
+      mockRecap.mockReturnValue({
+        data: {
+          ...recap,
+          start: new Date(2026, 10, 15).toISOString(),
+          end: new Date(2026, 10, 22).toISOString(),
+        },
+      });
+      render(<ActivityPage />);
+      expect(
+        screen.getByRole("region", { name: "Last week" }),
+      ).toBeInTheDocument();
+    });
+
+    it("draws nothing after Tuesday, whatever the read still holds", () => {
+      vi.setSystemTime(new Date(2026, 10, 18, 9));
+      mockActivity.mockReturnValue(loaded());
+      mockRecap.mockReturnValue({ data: recap });
+      render(<ActivityPage />);
+      expect(screen.queryByText("Last week")).toBeNull();
+    });
+
+    it("draws nothing for a week with nothing to show", () => {
+      mockActivity.mockReturnValue(loaded());
+      mockRecap.mockReturnValue({
+        data: { ...recap, events_attended: 0, points: 0, study_minutes: 0 },
+      });
+      render(<ActivityPage />);
+      expect(screen.queryByText("Last week")).toBeNull();
     });
   });
 
@@ -1020,7 +1170,9 @@ describe("ActivityPage", () => {
 
       // The longest overdue is the next thing, and says so on its own row.
       expect(
-        within(weekCard()).getByRole("button", { name: /File the roster/ }),
+        within(weekCard()).getByRole("button", {
+          name: /^(Unread:\s?)?File the roster/,
+        }),
       ).toHaveTextContent("Overdue");
       const overdue = within(toDo()).getByTestId("activity-day-overdue");
       const heading = within(overdue).getByRole("heading", { level: 3 });
@@ -1031,7 +1183,7 @@ describe("ActivityPage", () => {
       expect(heading.nextElementSibling).toHaveTextContent(/^1$/);
       expect(heading).toHaveClass("text-warning");
       const row = within(overdue).getByRole("button", {
-        name: /Return the keys/,
+        name: /^(Unread:\s?)?Return the keys/,
       });
       // Its detail still says by how long; the chip would repeat the heading.
       expect(row).toHaveTextContent("Overdue by 1 day");
@@ -1079,7 +1231,9 @@ describe("ActivityPage", () => {
       render(<ActivityPage />);
 
       expect(
-        within(weekCard()).getByRole("button", { name: /Formal venue\?/ }),
+        within(weekCard()).getByRole("button", {
+          name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+        }),
       ).toBeInTheDocument();
       expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
       expect(screen.queryByText("Nothing to do right now.")).toBeNull();
@@ -1125,7 +1279,9 @@ describe("ActivityPage", () => {
     }
   });
 
-  it("orders the page: the week, this semester, to review, to do, waiting on others, links", () => {
+  it("orders the page: the week, last week, this semester, to review, to do, waiting on others, links", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 16, 9));
     mockPermissions.mockReturnValue({
       data: { permissions: ["tasks:manage"] },
     });
@@ -1136,6 +1292,18 @@ describe("ActivityPage", () => {
         required_events: { required: 8, attended: 6, excused: 1 },
         service: null,
         study: null,
+        unavailable: [],
+      },
+    });
+    mockRecap.mockReturnValue({
+      data: {
+        start: new Date(2026, 10, 8).toISOString(),
+        end: new Date(2026, 10, 15).toISOString(),
+        events_attended: 1,
+        tasks_done: null,
+        points: null,
+        service_minutes: null,
+        study_minutes: null,
         unavailable: [],
       },
     });
@@ -1179,6 +1347,7 @@ describe("ActivityPage", () => {
         .map((heading) => heading.textContent),
     ).toEqual([
       "2 left this week",
+      "Last week",
       "This semester",
       "To review",
       "To do",
@@ -1202,7 +1371,7 @@ describe("ActivityPage", () => {
     expect(screen.queryByRole("region", { name: "Links" })).toBeNull();
   });
 
-  it("lists open polls only, and keeps closed ones behind Archived polls (#4258)", () => {
+  it("lists open polls only: a closed one is in the Archive (#4258, #5127)", () => {
     mockActivity.mockReturnValue(
       loaded({
         made_by_you: {
@@ -1212,14 +1381,6 @@ describe("ActivityPage", () => {
               message_id: "m1",
               question: "Open one",
               sender_id: "me",
-            },
-            {
-              ...poll,
-              message_id: "m2",
-              question: "Closed one",
-              sender_id: "me",
-              is_closed: true,
-              closed_at: "2026-11-02T00:00:00.000Z",
             },
           ],
           tasks: [],
@@ -1231,53 +1392,92 @@ describe("ActivityPage", () => {
 
     const made = screen.getByRole("region", { name: "Waiting on others" });
     expect(within(made).getByText("Open one")).toBeInTheDocument();
-    expect(within(made).queryByText("Closed one")).toBeNull();
-    const toggle = within(made).getByRole("button", {
-      name: "Archived polls (1)",
-    });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    const archive = within(made).getByRole("list", { name: "Archived polls" });
-    expect(within(archive).getByText("Closed one")).toBeInTheDocument();
-    expect(within(archive).getByText("Closed")).toBeInTheDocument();
-
-    // A closed poll opens its card, with its result, like any other row.
-    fireEvent.click(
-      within(archive).getByRole("button", { name: /Closed one/ }),
-    );
-    expect(screen.getByTestId("panel")).toHaveTextContent("panel:Closed one");
+    expect(screen.queryByRole("button", { name: /Archived polls/ })).toBeNull();
   });
 
-  it("keeps Waiting on others while every posted poll is closed, for its archive", () => {
-    mockActivity.mockReturnValue(
-      loaded({
-        made_by_you: {
-          polls: [
-            {
-              ...poll,
-              message_id: "m-closed",
-              question: "All done",
-              sender_id: "me",
-              is_closed: true,
-              closed_at: "2026-11-02T00:00:00.000Z",
-            },
-          ],
-          tasks: [],
-          events: [],
-        },
-      }),
-    );
+  it("opens the Archive in place of the page, laid out by kind, and goes back (#5127)", () => {
+    mockActivity.mockReturnValue(loaded({}));
+    mockArchive.mockReturnValue({
+      isPending: false,
+      data: {
+        events: [
+          {
+            id: "e-past",
+            name: "Last week's meeting",
+            location: null,
+            start_time: "2026-11-02T19:00:00.000Z",
+            end_time: "2026-11-02T20:00:00.000Z",
+            attendance: "required",
+            point_value: 10,
+            check_in_opens_minutes: 10,
+            check_in_open: false,
+            check_in_needs_location: false,
+            check_in_needs_code: false,
+            checked_in: true,
+            created_by: null,
+            progress: null,
+            created_at: "2026-10-01T00:00:00.000Z",
+            unread: false,
+            snoozed_until: null,
+          },
+        ],
+        tasks: [],
+        polls: [
+          {
+            ...poll,
+            message_id: "m2",
+            question: "Closed one",
+            sender_id: "me",
+            is_closed: true,
+            closed_at: "2026-11-02T00:00:00.000Z",
+          },
+        ],
+        unavailable: ["tasks"],
+      },
+    });
     render(<ActivityPage />);
 
-    const made = screen.getByRole("region", { name: "Waiting on others" });
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    expect(screen.queryByRole("region", { name: "To do" })).toBeNull();
     expect(
-      within(made).getByRole("button", { name: "Archived polls (1)" }),
+      screen.getByRole("heading", { name: "Archive" }),
+    ).toBeInTheDocument();
+    const events = screen.getByRole("region", { name: "Events" });
+    expect(within(events).getByText("Last week's meeting")).toBeInTheDocument();
+    expect(within(events).getByText("Checked in")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Tasks" })).getByText(
+        /Couldn't load tasks/,
+      ),
+    ).toBeInTheDocument();
+    const polls = screen.getByRole("region", { name: "Polls" });
+    expect(within(polls).getByText("Closed")).toBeInTheDocument();
+
+    // A closed poll opens its card, with its result, as on the page.
+    fireEvent.click(within(polls).getByRole("button", { name: /Closed one/ }));
+    expect(screen.getByTestId("panel")).toHaveTextContent("panel:Closed one");
+
+    fireEvent.click(screen.getByRole("button", { name: "Activity" }));
+    expect(screen.queryByRole("heading", { name: "Archive" })).toBeNull();
+  });
+
+  it("says when the Archive holds nothing", () => {
+    mockActivity.mockReturnValue(loaded({}));
+    mockArchive.mockReturnValue({
+      isPending: false,
+      data: { events: [], tasks: [], polls: [], unavailable: [] },
+    });
+    render(<ActivityPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    expect(
+      screen.getByText(/Nothing finished in the last 30 days/),
     ).toBeInTheDocument();
   });
 
-  it("moves a poll to the archive when its time runs out while the page is open", () => {
+  it("takes a poll off the page when its time runs out while the page is open", () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
     try {
       vi.setSystemTime(new Date("2026-11-11T12:00:00.000Z"));
@@ -1299,18 +1499,14 @@ describe("ActivityPage", () => {
         }),
       );
       render(<ActivityPage />);
-      const made = screen.getByRole("region", { name: "Waiting on others" });
-      expect(within(made).getByText("Closing soon")).toBeInTheDocument();
+      expect(screen.getByText("Closing soon")).toBeInTheDocument();
 
       // One tick of the shared clock, past the closing time, with no re-read.
       act(() => {
         vi.advanceTimersByTime(31_000);
       });
 
-      expect(within(made).queryByText("Closing soon")).toBeNull();
-      expect(
-        within(made).getByRole("button", { name: "Archived polls (1)" }),
-      ).toBeInTheDocument();
+      expect(screen.queryByText("Closing soon")).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -1344,7 +1540,9 @@ describe("ActivityPage", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Book the venue/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^(Unread:\s?)?Book the venue/ }),
+    );
 
     expect(screen.getByText("panel:Book the venue")).toBeInTheDocument();
   });
@@ -1446,8 +1644,12 @@ describe("ActivityPage", () => {
     );
     render(<ActivityPage />);
 
-    const pollRow = screen.getByRole("button", { name: /Formal venue\?/ });
-    const taskRow = screen.getByRole("button", { name: /Book the venue/ });
+    const pollRow = screen.getByRole("button", {
+      name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+    });
+    const taskRow = screen.getByRole("button", {
+      name: /^(Unread:\s?)?Book the venue/,
+    });
     expect(pollRow).toHaveAccessibleName(
       /^Unread:\s?From Olive Officer\.\s?Formal venue\?/,
     );
@@ -1465,7 +1667,11 @@ describe("ActivityPage", () => {
   it("keeps the panel open when the row has left the list after an action", () => {
     mockActivity.mockReturnValue(loaded());
     const { rerender } = render(<ActivityPage />);
-    fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
+    );
 
     // The vote landed: the re-read no longer lists the poll.
     mockActivity.mockReturnValue(
@@ -1475,14 +1681,20 @@ describe("ActivityPage", () => {
 
     expect(screen.getByText("panel:Formal venue?")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: /Formal venue\?/ }),
+      screen.queryByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
     ).not.toBeInTheDocument();
   });
 
   it("keeps the list and the open panel when a re-read fails", () => {
     mockActivity.mockReturnValue(loaded());
     const { rerender } = render(<ActivityPage />);
-    fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
+    );
 
     mockActivity.mockReturnValue({
       ...loaded(),
@@ -1515,13 +1727,21 @@ describe("ActivityPage", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "close" }));
     expect(screen.queryByTestId("panel")).toBeNull();
     expect(listRereads()).toBe(1);
     expect(standingRereads()).toBe(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "acted" }));
     fireEvent.click(screen.getByRole("button", { name: "settled close" }));
     expect(screen.queryByTestId("panel")).toBeNull();
@@ -1533,7 +1753,11 @@ describe("ActivityPage", () => {
   it("does not close the open row when another row's action answers late", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
-    fireEvent.click(screen.getByRole("button", { name: /Formal venue\?/ }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      }),
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "late close" }));
 
@@ -1569,6 +1793,53 @@ describe("ActivityPage", () => {
     });
     render(<ActivityPage />);
     expect(screen.getByText("link:Google Form:officer")).toBeInTheDocument();
+  });
+
+  it("lists the member's message reminders first under the To do list (#4957)", () => {
+    const link = {
+      id: "l1",
+      url: "https://forms.gle/abc",
+      host: "forms.gle",
+      title: null,
+      message_id: "m1",
+      thread_root_id: null,
+      channel_id: "c1",
+      channel_name: "rush",
+      channel_type: "PUBLIC",
+      posted_by: "olive",
+      posted_by_name: "Olive",
+      posted_at: "2026-11-10T15:00:00.000Z",
+    };
+    const reminder = {
+      id: "r1",
+      message_id: "m9",
+      thread_root_id: null,
+      channel_id: "c1",
+      channel_name: "general",
+      channel_type: "PUBLIC",
+      author_name: "Olive",
+      preview: "Bring the banner Friday",
+      message_created_at: "2026-11-10T15:00:00.000Z",
+      message_available: true,
+      remind_at: "2099-01-01T14:00:00.000Z",
+      fired_at: null,
+      due: false,
+    };
+    mockActivity.mockReturnValue(
+      loaded({ links: [link], reminders: [reminder] }),
+    );
+    render(<ActivityPage />);
+
+    const reminders = screen.getByRole("region", { name: "Reminders" });
+    expect(
+      within(reminders).getByText("reminder:Bring the banner Friday"),
+    ).toBeInTheDocument();
+    const order = screen
+      .getAllByRole("region")
+      .map((region) => region.getAttribute("aria-labelledby"));
+    expect(order.indexOf("activity-reminders")).toBeLessThan(
+      order.indexOf("activity-links"),
+    );
   });
 
   describe("asks on the row (#4402)", () => {
@@ -1635,7 +1906,7 @@ describe("ActivityPage", () => {
         screen.queryByRole("button", { name: "act:check-in:Philanthropy 5K" }),
       ).toBeNull();
       expect(
-        screen.getByRole("button", { name: /Philanthropy 5K/ }),
+        screen.getByRole("button", { name: /^(Unread:\s?)?Philanthropy 5K/ }),
       ).toHaveAccessibleName(/Check in/);
       // The ask moved out of the row: the row itself no longer names it,
       // and only holds its place for the button laid over it.
@@ -1650,7 +1921,9 @@ describe("ActivityPage", () => {
       expect(
         screen.queryByRole("button", { name: /^act:.*Formal/ }),
       ).toBeNull();
-      const vote = screen.getByRole("button", { name: /Formal venue\?/ });
+      const vote = screen.getByRole("button", {
+        name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+      });
       expect(vote).toHaveTextContent("Vote");
       expect(vote).toHaveClass("hover:bg-surface-1");
 
@@ -1714,7 +1987,9 @@ describe("ActivityPage", () => {
     mockActivity.mockReturnValue(loaded());
     render(<ActivityPage />);
 
-    const row = within(toDo()).getByRole("button", { name: /Book the venue/ });
+    const row = within(toDo()).getByRole("button", {
+      name: /^(Unread:\s?)?Book the venue/,
+    });
     expect(within(row).queryByText("To do")).toBeNull();
   });
 
@@ -1778,7 +2053,9 @@ describe("ActivityPage", () => {
       loaded({ needs_you: { ...nothingWaiting, polls: [poll] } }),
     );
     render(<ActivityPage />);
-    const row = screen.getByRole("button", { name: /Formal venue\?/ });
+    const row = screen.getByRole("button", {
+      name: /^(Unread:\s?)?(From .*\.\s?)?Formal venue\?/,
+    });
     expect(row).toHaveAccessibleName(/^From Olive Officer\.\s?Formal venue\?/);
   });
 
@@ -1819,5 +2096,127 @@ describe("ActivityPage", () => {
     render(<ActivityPage />);
 
     expect(screen.queryByText("Chapter meeting")).toBeNull();
+  });
+
+  describe("snooze (#4982)", () => {
+    const later = (hours: number) =>
+      new Date(Date.now() + hours * 3_600_000).toISOString();
+
+    it("keeps a snoozed row off the list and under Snoozed, saying when it is back", () => {
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            tasks: [{ ...task, snoozed_until: later(5) }],
+            task_confirmations: [],
+            hours_approvals: [],
+            polls: [poll],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+
+      expect(
+        screen.queryByRole("button", { name: /^(Unread:\s?)?Book the venue/ }),
+      ).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Snoozed (1)" }));
+      expect(
+        within(document.getElementById("activity-snoozed")!).getByText(
+          "Book the venue",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(document.getElementById("activity-snoozed")!).getByText(
+          /^Back /,
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it("brings a snoozed row back from its menu under Snoozed", async () => {
+      const user = userEvent.setup();
+      mockActivity.mockReturnValue(
+        loaded({
+          needs_you: {
+            tasks: [{ ...task, snoozed_until: later(5) }],
+            task_confirmations: [],
+            hours_approvals: [],
+            polls: [poll],
+          },
+        }),
+      );
+      render(<ActivityPage />);
+
+      await user.click(screen.getByRole("button", { name: "Snoozed (1)" }));
+      await user.click(
+        screen.getByRole("button", { name: "More for Book the venue" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Unsnooze" }),
+      );
+
+      expect(mockUnsnooze).toHaveBeenCalledWith({
+        kind: "task",
+        item_id: "t1",
+      });
+    });
+
+    it("snoozes a row from its menu", async () => {
+      const user = userEvent.setup();
+      mockActivity.mockReturnValue(loaded());
+      render(<ActivityPage />);
+
+      await user.click(
+        screen.getByRole("button", { name: "More for Book the venue" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: /^Tomorrow · 8:00 AM/ }),
+      );
+
+      expect(mockSnooze).toHaveBeenCalledWith(
+        { kind: "task", item_id: "t1" },
+        expect.any(Date),
+      );
+    });
+  });
+});
+
+describe("Waiting on others: how far along each thing is (#4792)", () => {
+  it("draws a bar and the count under a poll the member posted, said whole to a screen reader", () => {
+    mockActivity.mockReturnValue(
+      loaded({
+        made_by_you: {
+          polls: [
+            {
+              ...poll,
+              message_id: "p9",
+              sender_id: "me",
+              question: "Where should formal be?",
+              progress: { done: 17, total: 25 },
+            },
+            // Nobody else can answer it: no bar, never "0 of 0".
+            {
+              ...poll,
+              message_id: "p10",
+              sender_id: "me",
+              question: "Exec only?",
+              progress: null,
+            },
+          ],
+          tasks: [],
+          events: [],
+        },
+      }),
+    );
+
+    render(<ActivityPage />);
+
+    const formal = screen
+      .getByText("Where should formal be?")
+      .closest("li") as HTMLElement;
+    expect(within(formal).getByText("17 of 25 voted")).toBeTruthy();
+    expect(
+      within(formal).getByText("17 of 25").getAttribute("aria-hidden"),
+    ).toBe("true");
+    const alone = screen.getByText("Exec only?").closest("li") as HTMLElement;
+    expect(within(alone).queryByText(/ of /)).toBeNull();
   });
 });

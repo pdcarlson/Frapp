@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   list: [] as unknown[],
   send: vi.fn(),
   withdraw: vi.fn(),
+  edit: vi.fn(),
   decide: vi.fn(),
   toast: vi.fn(),
   now: 0,
@@ -33,6 +34,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
   }),
   useDecideEventExcuse: () => ({ mutateAsync: state.decide, isPending: false }),
+  useEditEventExcuse: () => ({ mutateAsync: state.edit, isPending: false }),
   useNow: () => state.now,
 }));
 
@@ -90,6 +92,7 @@ beforeEach(() => {
   state.send.mockReset().mockResolvedValue({});
   state.withdraw.mockReset().mockResolvedValue(null);
   state.decide.mockReset().mockResolvedValue({});
+  state.edit.mockReset().mockResolvedValue({});
   state.toast.mockReset();
   state.now = new Date(2026, 10, 12, 12, 0).getTime();
 });
@@ -98,7 +101,7 @@ describe("MyExcuse", () => {
   it("sends one trimmed line from Can't make it", async () => {
     const user = userEvent.setup();
     renderMine();
-    await user.click(screen.getByRole("button", { name: "Can't make it" }));
+    await user.click(screen.getByRole("button", { name: "Can't make it?" }));
     await user.type(screen.getByRole("textbox"), "  Away game ");
     await user.click(screen.getByRole("button", { name: "Send excuse" }));
     expect(state.send).toHaveBeenCalledWith({
@@ -107,10 +110,24 @@ describe("MyExcuse", () => {
     });
   });
 
+  it("offers it as a quiet underlined link, 44px to a finger (#4933)", () => {
+    renderMine();
+    const link = screen.getByRole("button", { name: "Can't make it?" });
+    expect(link.className.split(/\s+/)).toEqual(
+      expect.arrayContaining([
+        "underline",
+        "text-muted-foreground",
+        "pointer-coarse:min-h-11",
+        "justify-self-center",
+      ]),
+    );
+    expect(link.closest("section")).toBeNull();
+  });
+
   it("opens the line on arrival when the chat card asked (#4660)", () => {
     renderMine(true, 1);
     expect(screen.getByRole("textbox")).toHaveFocus();
-    expect(screen.queryByRole("button", { name: "Can't make it" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Can't make it/ })).toBeNull();
   });
 
   it("opens it again for a new ask while already showing (#4660)", async () => {
@@ -124,7 +141,7 @@ describe("MyExcuse", () => {
 
   it("offers nothing on an event that doesn't require the viewer", () => {
     renderMine(false);
-    expect(screen.queryByRole("button", { name: "Can't make it" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Can't make it/ })).toBeNull();
   });
 
   it("says who a pending excuse went to, and withdraws it", async () => {
@@ -134,24 +151,71 @@ describe("MyExcuse", () => {
       receiver: { user_id: "u-jake", display_name: "Jake" },
     };
     renderMine();
-    expect(screen.getByText("Excuse sent to Jake")).toBeInTheDocument();
+    expect(screen.getByText("Your excuse · Sent to Jake")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
     await user.click(screen.getByRole("button", { name: "Withdraw excuse" }));
     expect(state.withdraw).toHaveBeenCalledWith({ eventId: "e1" });
+  });
+
+  it("opens the viewer's own row to the whole reason", async () => {
+    const user = userEvent.setup();
+    state.mine = { excuse: excuse("APPROVED"), receiver: null };
+    renderMine();
+    const row = screen.getByRole("button", { name: /^Excused: / });
+    expect(row).toHaveClass("truncate");
+    await user.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(row).not.toHaveClass("truncate");
   });
 
   it("names no one when the excuse goes to the officers", () => {
     state.mine = { excuse: excuse("PENDING"), receiver: null };
     renderMine();
-    expect(screen.getByText("Excuse sent to the officers")).toBeInTheDocument();
+    expect(
+      screen.getByText("Your excuse · Sent to the officers"),
+    ).toBeInTheDocument();
   });
 
-  it("says a declined excuse wasn't accepted, with no Withdraw", () => {
+  it("says a declined excuse wasn't accepted, and sends it again from Edit", async () => {
+    const user = userEvent.setup();
     state.mine = { excuse: excuse("DECLINED"), receiver: null };
     renderMine();
-    expect(screen.getByText("Excuse not accepted")).toBeInTheDocument();
+    expect(screen.getByText("Declined")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
     expect(
       screen.queryByRole("button", { name: "Withdraw excuse" }),
     ).toBeNull();
+    await user.clear(screen.getByRole("textbox"));
+    await user.type(screen.getByRole("textbox"), "Family emergency");
+    await user.click(screen.getByRole("button", { name: "Send excuse again" }));
+    expect(state.edit).toHaveBeenCalledWith({
+      eventId: "e1",
+      reason: "Family emergency",
+    });
+  });
+
+  it("edits a pending excuse in place, saving only a change (#5115)", async () => {
+    const user = userEvent.setup();
+    state.mine = { excuse: excuse("PENDING"), receiver: null };
+    renderMine();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("textbox")).toHaveValue("Exam review");
+    expect(screen.getByRole("button", { name: "Save excuse" })).toBeDisabled();
+    await user.type(screen.getByRole("textbox"), " at noon");
+    await user.click(screen.getByRole("button", { name: "Save excuse" }));
+    expect(state.edit).toHaveBeenCalledWith({
+      eventId: "e1",
+      reason: "Exam review at noon",
+    });
+  });
+
+  it("offers Withdraw, not Edit, on an approved excuse", () => {
+    state.mine = { excuse: excuse("APPROVED"), receiver: null };
+    renderMine();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Withdraw excuse" }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -173,6 +237,20 @@ describe("ExcuseReview", () => {
     expect(screen.getByText("Excuses")).toBeInTheDocument();
   });
 
+  it("opens a row to the whole reason and closes it again", async () => {
+    const user = userEvent.setup();
+    state.list = [excuse("PENDING", { user_id: "u-sam", display_name: "Sam" })];
+    render(<ExcuseReview eventId="e1" viewerId="u-officer" canUpdateEvents />);
+    const row = screen.getByRole("button", { name: /^Sam: / });
+    expect(row).toHaveAttribute("aria-expanded", "false");
+    expect(row).toHaveClass("truncate");
+    await user.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(row).not.toHaveClass("truncate");
+    await user.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "false");
+  });
+
   it("lists pending excuses first and decides one", async () => {
     const user = userEvent.setup();
     state.list = [
@@ -185,7 +263,7 @@ describe("ExcuseReview", () => {
     ).toBeInTheDocument();
     const names = screen
       .getAllByRole("listitem")
-      .map((item) => item.querySelector("p")?.textContent);
+      .map((item) => item.querySelector("span")?.textContent);
     expect(names).toEqual(["Sam", "Ana"]);
     await user.click(
       screen.getByRole("button", { name: "Decline Sam's excuse" }),

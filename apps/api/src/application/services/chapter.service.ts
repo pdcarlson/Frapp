@@ -9,6 +9,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CHAPTER_BILLING_BETA_OFF,
   fileExtension,
   isAllowedUploadExtension,
   isAllowedUploadMime,
@@ -266,6 +267,13 @@ export class ChapterService {
       name,
       university,
       ...config,
+      // Chapter billing is off for the beta, so the chapter starts usable
+      // rather than at the schema default `incomplete`, which refuses every
+      // paid-ops write until a checkout nobody is asked to do. Last, so no
+      // config key can override it. `CHAPTER_BILLING_BETA_OFF` owns the why.
+      ...(CHAPTER_BILLING_BETA_OFF
+        ? { subscription_status: 'active' as const }
+        : {}),
     });
 
     // The starting tiers are rows from here on: the chapter can rename,

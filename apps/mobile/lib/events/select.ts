@@ -1,9 +1,10 @@
 /**
  * Narrowing for the `/v1/events` payloads.
  *
- * The generated SDK types for these routes infer as `never` — the same gap
- * `components/chat/up-next-strip.tsx` documents — so the shapes are narrowed at
- * the boundary rather than asserted. That is not just type hygiene here: a row
+ * These routes had no response schema until #4867, so the shapes were narrowed
+ * at the boundary rather than asserted. The SDK now types them
+ * (`EventResponseDto`, `EventDetailResponseDto`); moving these readers onto
+ * those types is #4952. The narrowing still earns its keep: a row
  * missing `id` would otherwise route to a detail screen that can never load,
  * and a missing `start_time` would render "Invalid Date" to a member.
  *

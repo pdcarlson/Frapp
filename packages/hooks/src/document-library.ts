@@ -62,7 +62,8 @@ export type LibrarySourceDocument = {
  * A file format group, for the File type filter and for search (#3938, Shawn's
  * addition; Google Drive's Type filter).
  */
-export type FileKind = "pdf" | "word" | "slides" | "spreadsheet" | "image" | "other";
+export type FileKind =
+  "pdf" | "word" | "slides" | "spreadsheet" | "image" | "other";
 
 /** The groups in the order the filter offers them. */
 const FILE_KIND_OPTIONS: readonly { value: FileKind; label: string }[] = [
@@ -142,29 +143,37 @@ function kindOfMime(type: string): FileKind {
 }
 
 /** The name a type goes by in the viewer ("Excel spreadsheets can't be previewed yet"). */
-const TYPE_LABEL: Readonly<Record<string, string>> = Object.assign(Object.create(null), {
-  "application/msword": "Word document",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word document",
-  "application/vnd.ms-excel": "Excel spreadsheet",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel spreadsheet",
-  "application/vnd.ms-powerpoint": "PowerPoint deck",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint deck",
-  "application/vnd.apple.keynote": "Keynote deck",
-  "application/vnd.oasis.opendocument.text": "OpenDocument text file",
-  "application/vnd.oasis.opendocument.spreadsheet": "OpenDocument spreadsheet",
-  "application/vnd.oasis.opendocument.presentation": "OpenDocument presentation",
-  "application/rtf": "Rich text document",
-  "text/rtf": "Rich text document",
-  "text/plain": "Text file",
-  "text/csv": "CSV file",
-  // "Photo" is for what the viewer draws; these it offers as a download, and
-  // the card names them ("HEIC photos can't be previewed yet").
-  "image/heic": "HEIC photo",
-  "image/heif": "HEIF photo",
-  "image/tiff": "TIFF image",
-  "image/avif": "AVIF image",
-  "image/svg+xml": "SVG image",
-});
+const TYPE_LABEL: Readonly<Record<string, string>> = Object.assign(
+  Object.create(null),
+  {
+    "application/msword": "Word document",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      "Word document",
+    "application/vnd.ms-excel": "Excel spreadsheet",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+      "Excel spreadsheet",
+    "application/vnd.ms-powerpoint": "PowerPoint deck",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+      "PowerPoint deck",
+    "application/vnd.apple.keynote": "Keynote deck",
+    "application/vnd.oasis.opendocument.text": "OpenDocument text file",
+    "application/vnd.oasis.opendocument.spreadsheet":
+      "OpenDocument spreadsheet",
+    "application/vnd.oasis.opendocument.presentation":
+      "OpenDocument presentation",
+    "application/rtf": "Rich text document",
+    "text/rtf": "Rich text document",
+    "text/plain": "Text file",
+    "text/csv": "CSV file",
+    // "Photo" is for what the viewer draws; these it offers as a download, and
+    // the card names them ("HEIC photos can't be previewed yet").
+    "image/heic": "HEIC photo",
+    "image/heif": "HEIF photo",
+    "image/tiff": "TIFF image",
+    "image/avif": "AVIF image",
+    "image/svg+xml": "SVG image",
+  },
+);
 
 const KIND_LABEL: Record<FileKind, string> = {
   pdf: "PDF",
@@ -202,8 +211,10 @@ export type ClassifiedFile = {
 export function classifyFile(
   doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">,
 ): ClassifiedFile {
-  const declared = doc.content_type?.split(";")[0]?.trim().toLowerCase() || null;
-  const type = declared && declared !== "application/octet-stream" ? declared : null;
+  const declared =
+    doc.content_type?.split(";")[0]?.trim().toLowerCase() || null;
+  const type =
+    declared && declared !== "application/octet-stream" ? declared : null;
   const name = doc.storage_path?.split("/").pop() ?? "";
   const fromName = EXTENSION_TYPE[fileExtension(name)] ?? null;
   if (type === null) return describe(fromName, fromName);
@@ -217,11 +228,17 @@ export function classifyFile(
 
 function describe(type: string | null, groupBy: string | null): ClassifiedFile {
   const kind = groupBy ? kindOfMime(groupBy) : "other";
-  return { type, kind, label: (groupBy && TYPE_LABEL[groupBy]) || KIND_LABEL[kind] };
+  return {
+    type,
+    kind,
+    label: (groupBy && TYPE_LABEL[groupBy]) || KIND_LABEL[kind],
+  };
 }
 
 /** A document's format group ({@link classifyFile}). Anything unrecognised is Other. */
-export function fileKind(doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">): FileKind {
+export function fileKind(
+  doc: Pick<LibrarySourceDocument, "content_type" | "storage_path">,
+): FileKind {
   return classifyFile(doc).kind;
 }
 
@@ -250,7 +267,10 @@ export type DateFilter =
  */
 export type DocumentMarkFilter = { pinned: boolean; starred: boolean };
 
-export const NO_MARK_FILTER: DocumentMarkFilter = { pinned: false, starred: false };
+export const NO_MARK_FILTER: DocumentMarkFilter = {
+  pinned: false,
+  starred: false,
+};
 
 export type DocumentFilters = {
   /** `uploaded_by`, or null for anyone. */
@@ -292,7 +312,9 @@ function inMarkFilter(
 }
 
 /** A document with its uploader's name resolved and its words normalised once. */
-export type LibraryDocument<D extends LibrarySourceDocument = LibrarySourceDocument> = {
+export type LibraryDocument<
+  D extends LibrarySourceDocument = LibrarySourceDocument,
+> = {
   doc: D;
   uploader: string | null;
   words: readonly string[];
@@ -322,7 +344,10 @@ export function toLibraryDocuments<D extends LibrarySourceDocument>(
  * "Uploaded Sep 26 by Ryan Castellano", dropping whichever half is unknown:
  * the lead of each app's row meta line.
  */
-export function uploadedLine(day: string | null, uploader: string | null): string | null {
+export function uploadedLine(
+  day: string | null,
+  uploader: string | null,
+): string | null {
   if (!day && !uploader) return null;
   return ["Uploaded", day, uploader ? `by ${uploader}` : null]
     .filter(Boolean)
@@ -330,7 +355,10 @@ export function uploadedLine(day: string | null, uploader: string | null): strin
 }
 
 /** Everything a member might type to find a document. */
-function searchText(doc: LibrarySourceDocument, uploader: string | null): string {
+function searchText(
+  doc: LibrarySourceDocument,
+  uploader: string | null,
+): string {
   return [doc.title, doc.description, uploader, doc.folder, doc.document_type]
     .filter((part) => part !== null && part !== undefined && part !== "")
     .join(" ");
@@ -350,11 +378,16 @@ export function semesterSince(
   let latest: { end_date: string; created_at?: string } | null = null;
   for (const archive of archives) {
     if (!archive.end_date) continue;
-    if (latest === null || (archive.created_at ?? "") > (latest.created_at ?? "")) {
+    if (
+      latest === null ||
+      (archive.created_at ?? "") > (latest.created_at ?? "")
+    ) {
       latest = archive;
     }
   }
-  return latest ? new Date(`${latest.end_date.slice(0, 10)}T23:59:59.999Z`) : null;
+  return latest
+    ? new Date(`${latest.end_date.slice(0, 10)}T23:59:59.999Z`)
+    : null;
 }
 
 /**
@@ -417,7 +450,9 @@ export function isActiveDateFilter(
 ): filter is DateFilter {
   if (filter === null) return false;
   if (filter.preset === "semester") return semesterKnown;
-  return filter.preset !== "custom" || filter.from !== null || filter.to !== null;
+  return (
+    filter.preset !== "custom" || filter.from !== null || filter.to !== null
+  );
 }
 
 /** Whether a search or a filter is narrowing the list. */
@@ -449,10 +484,15 @@ export function dateFilterLabel(filter: DateFilter): string {
 const byTitle = (a: LibraryDocument, b: LibraryDocument) =>
   (a.doc.title || "").localeCompare(b.doc.title || "");
 
-const COMPARE: Record<DocumentSort, (a: LibraryDocument, b: LibraryDocument) => number> = {
+const COMPARE: Record<
+  DocumentSort,
+  (a: LibraryDocument, b: LibraryDocument) => number
+> = {
   name: byTitle,
-  newest: (a, b) => b.doc.created_at.localeCompare(a.doc.created_at) || byTitle(a, b),
-  oldest: (a, b) => a.doc.created_at.localeCompare(b.doc.created_at) || byTitle(a, b),
+  newest: (a, b) =>
+    b.doc.created_at.localeCompare(a.doc.created_at) || byTitle(a, b),
+  oldest: (a, b) =>
+    a.doc.created_at.localeCompare(b.doc.created_at) || byTitle(a, b),
   // Unknown uploaders last, then by name, then newest first within one person.
   uploader: (a, b) =>
     (a.uploader === null ? 1 : 0) - (b.uploader === null ? 1 : 0) ||
@@ -472,7 +512,10 @@ export function queryDocuments<D extends LibrarySourceDocument>(
   sort: DocumentSort,
   dates: QueryContext,
 ): LibraryDocument<D>[] {
-  const date = isActiveDateFilter(filters.date, dates.semesterSince !== undefined)
+  const date = isActiveDateFilter(
+    filters.date,
+    dates.semesterSince !== undefined,
+  )
     ? filters.date
     : null;
   const starred = dates.starred ?? NO_STARS;
@@ -512,7 +555,10 @@ export function queryDocuments<D extends LibrarySourceDocument>(
  * "excel"): exact, or as the start of one from three letters, scored as the
  * fuzzy matcher scores an exact word and a prefix. No near misses.
  */
-function matchKindWord(kind: FileKind, word: string): { score: number; hit: null } {
+function matchKindWord(
+  kind: FileKind,
+  word: string,
+): { score: number; hit: null } {
   let score = 0;
   for (const kindWord of FILE_KIND_WORDS[kind]) {
     if (kindWord === word) return { score: 3, hit: null };
@@ -533,10 +579,16 @@ export function kindOptions(
 }
 
 /** The Uploaded by chip's choices: only people who have uploaded something. */
-export function uploaderOptions(rows: readonly LibraryDocument[]): UploaderOption[] {
+export function uploaderOptions(
+  rows: readonly LibraryDocument[],
+): UploaderOption[] {
   const people = new Map<string, string>();
   for (const row of rows) {
-    if (row.doc.uploaded_by && row.uploader && !people.has(row.doc.uploaded_by)) {
+    if (
+      row.doc.uploaded_by &&
+      row.uploader &&
+      !people.has(row.doc.uploaded_by)
+    ) {
       people.set(row.doc.uploaded_by, row.uploader);
     }
   }
@@ -571,8 +623,7 @@ export function tierByMarks<T>(
 
 /** A pinned or starred thing above the list: a folder, or a single file. */
 export type MarkedItem<F, D> =
-  | { kind: "folder"; folder: F; count: number }
-  | { kind: "document"; doc: D };
+  { kind: "folder"; folder: F; count: number } | { kind: "document"; doc: D };
 
 /**
  * The Pinned and Starred groups both apps draw above All files (#3934): the
@@ -604,13 +655,11 @@ export function markedItems<
     if (doc.folder) counts.set(doc.folder, (counts.get(doc.folder) ?? 0) + 1);
   }
   const items: MarkedItem<F, D>[] = [
-    ...folders.map(
-      (folder): MarkedItem<F, D> => ({
-        kind: "folder",
-        folder,
-        count: counts.get(folder.name) ?? 0,
-      }),
-    ),
+    ...folders.map((folder): MarkedItem<F, D> => ({
+      kind: "folder",
+      folder,
+      count: counts.get(folder.name) ?? 0,
+    })),
     ...shown.map((doc): MarkedItem<F, D> => ({ kind: "document", doc })),
   ];
   const { pinned, starred } = tierByMarks(
@@ -626,10 +675,9 @@ export function markedItems<
 }
 
 /** A list's rows with pinned files first, then starred, then the rest. */
-export function tierRows<R extends { doc: { id: string; pinned_at?: string | null } }>(
-  rows: readonly R[],
-  starredDocuments: ReadonlySet<string>,
-): R[] {
+export function tierRows<
+  R extends { doc: { id: string; pinned_at?: string | null } },
+>(rows: readonly R[], starredDocuments: ReadonlySet<string>): R[] {
   const tiers = tierByMarks(
     rows,
     (row) => !!row.doc.pinned_at,

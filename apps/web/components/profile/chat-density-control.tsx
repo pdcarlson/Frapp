@@ -5,6 +5,7 @@ import {
   type ChatDensity,
 } from "@repo/chat-core/density";
 import { FOCUS_RING_OFFSET_HAS_VISIBLE } from "@/components/ui/focus";
+import { SegmentedChoice } from "@/components/ui/segmented";
 import { setChatDensity, useChatDensity } from "@/lib/chat/chat-density";
 import { cn } from "@/lib/utils";
 
@@ -18,8 +19,28 @@ import { cn } from "@/lib/utils";
  * arrow-key movement and one tab stop from the browser, which a row of
  * `role="radio"` buttons would have to rebuild by hand.
  */
-export function ChatDensityControl() {
+export function ChatDensityControl({
+  compact = false,
+}: {
+  /**
+   * The three names as one segmented control instead of the cards, for the
+   * first-run tour's coach mark, which sits over the real messages: the
+   * thread itself is the drawing there (#5080).
+   */
+  compact?: boolean;
+} = {}) {
   const density = useChatDensity();
+  if (compact) {
+    return (
+      <SegmentedChoice
+        label="Chat density"
+        options={CHAT_DENSITY_OPTIONS}
+        value={density}
+        onChange={setChatDensity}
+        fill
+      />
+    );
+  }
   return (
     <fieldset className="grid max-w-2xl grid-cols-2 gap-3 sm:grid-cols-3">
       <legend className="sr-only">Chat density</legend>

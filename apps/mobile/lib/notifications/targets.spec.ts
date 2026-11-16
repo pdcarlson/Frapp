@@ -35,6 +35,10 @@ describe("resolveNotificationTarget", () => {
     expect(resolveNotificationTarget(payload({ screen: "members" }))).toEqual({
       pathname: "/directory",
     });
+    // The weekly recap push (#4985).
+    expect(resolveNotificationTarget(payload({ screen: "activity" }))).toEqual({
+      pathname: "/activity",
+    });
   });
 
   it("opens the suggested tasks list for a new batch (#4313)", () => {
@@ -187,6 +191,58 @@ describe("resolveNotificationTarget, thread replies (#4054)", () => {
         payload({ screen: "events", eventId: "e1", threadRootId: "m1" }),
       ),
     ).toEqual({ pathname: "/event-details", params: { id: "e1" } });
+  });
+});
+
+describe("resolveNotificationTarget, message reminders (#4957)", () => {
+  it("opens chat at the message a reminder push is about", () => {
+    expect(
+      resolveNotificationTarget(
+        payload(
+          { screen: "chat", channelId: "c1" },
+          { reminder: true, messageId: "m9" },
+        ),
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m9" },
+    });
+  });
+
+  it("opens a thread reply's reminder in its thread, at the reply", () => {
+    expect(
+      resolveNotificationTarget(
+        payload(
+          { screen: "chat", channelId: "c1", threadRootId: "r1" },
+          { reminder: true, messageId: "m9" },
+        ),
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", threadRootId: "r1", focusMessageId: "m9" },
+      under: { pathname: "/chat-thread", params: { channelId: "c1" } },
+    });
+  });
+
+  it("takes the inbox row's message when the data has none", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "chat", channelId: "c1" }, { reminder: true }),
+        "m9",
+      ),
+    ).toEqual({
+      pathname: "/chat-thread",
+      params: { channelId: "c1", focusMessageId: "m9" },
+    });
+  });
+
+  it("leaves every other chat push on the conversation", () => {
+    expect(
+      resolveNotificationTarget(
+        payload({ screen: "chat", channelId: "c1" }, { messageId: "m9" }),
+        "m9",
+      ),
+    ).toEqual({ pathname: "/chat-thread", params: { channelId: "c1" } });
   });
 });
 

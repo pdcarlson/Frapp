@@ -1,4 +1,5 @@
 import { describeLoadFailure } from "@repo/hooks/error-copy";
+import { statusOf } from "@repo/api-sdk";
 import {
   can,
   checkInZoneLine,
@@ -23,7 +24,7 @@ import {
 } from "@repo/hooks";
 import {
   ExcuseReviewSection,
-  MyExcuseCard,
+  MyExcuse,
 } from "@/components/events/event-excuses";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
@@ -36,6 +37,7 @@ import {
 import { type EventEditTarget } from "@/lib/events/edit-event";
 import { BACK_TO_EVENTS } from "@/components/back-row";
 import { goBackTo } from "@/lib/href";
+import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
 import { SheetPrimaryButton } from "@/components/sheet-scaffold";
 import {
   ErrorState,
@@ -94,7 +96,7 @@ import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
  * the endpoint (#1035). A line that used to stand in for it ("Check in at the
  * event to be counted.") is gone too: the check-in card above already says it.
  * On an event that requires the viewer, "Can't make it" is an excuse, not an
- * RSVP, and has a server (#3735): `MyExcuseCard` under the check-in card, and
+ * RSVP, and has a server (#3735): `MyExcuse` under the check-in card, and
  * the receiver's `ExcuseReviewSection` below it.
  *
  * ## Editing
@@ -179,6 +181,16 @@ export default function EventDetailsScreen() {
   const editSheetKey = editTarget
     ? JSON.stringify([eventQuery.data, parentQuery.data ?? null])
     : "";
+
+  // An edit kept past this screen (#4872) goes with its event: one deleted
+  // since has no sheet to open it in.
+  const editDraftName = eventId ? `event-edit:${eventId}` : null;
+  useDropKeptSheetDraft(
+    editDraftName,
+    !eventQuery.isPending &&
+      eventQuery.isError &&
+      statusOf(eventQuery.error) === 404,
+  );
 
   /*
     A ticking clock, not one frozen at mount: this screen is often opened
@@ -271,7 +283,7 @@ export default function EventDetailsScreen() {
 
         <CheckInCard event={event} window={window} now={now} />
 
-        <MyExcuseCard
+        <MyExcuse
           eventId={event.id}
           required={requiredOfViewer}
           start={event.start_time}
@@ -318,6 +330,9 @@ export default function EventDetailsScreen() {
           ref={editSheetRef}
           now={now}
           editing={editTarget}
+          // Kept past this screen (#4872): going back and opening this
+          // event's Edit again brings back what was typed.
+          keptDraft={editDraftName ?? undefined}
           onSaved={({ leave }) => {
             // A series save can replace the occurrence on screen with a new
             // one; the Events list shows where it went.
@@ -364,9 +379,10 @@ export default function EventDetailsScreen() {
  *   attends still earns the points, so while the window is open and they
  *   aren't in yet, a quieter "Check myself in" under the button opens s18,
  *   where they type the code their own screen shows.
- * - **Open, for a guest.** One line saying to point the phone's camera at the
- *   code (2026-11-13: the QR is a link the camera opens, and the app has no
- *   scanner), and a quieter "Enter code" for a camera that won't read it.
+ * - **Open, for a guest.** One line saying to scan the code here or with the
+ *   phone's camera (2026-11-13: the QR is a link the camera opens), and a
+ *   quieter "Scan code" that opens s18 with its viewport up, where the typed
+ *   code is one tap further for a camera that won't read it.
  *   Held back while their own row is first being read, so a checked-in
  *   member never sees it flash. Not while that read is paused offline: s18
  *   says what offline means for a check-in. A failed read shows it too (the
@@ -428,10 +444,16 @@ function CheckInCard({
   // The accent fill marks a card with something to do now.
   const active = (isOpen && !own) || hostable;
   const showScan = canScan && !canHost;
-  const openScanner = () =>
+  const openCheckIn = () =>
     router.push({
       pathname: "/check-in",
       params: { eventId: event.id },
+    });
+  // s18 with Scan code's viewport already up: the member tapped Scan code.
+  const openScanner = () =>
+    router.push({
+      pathname: "/check-in",
+      params: { eventId: event.id, scan: "1" },
     });
 
   return (
@@ -486,7 +508,7 @@ function CheckInCard({
           {canScan ? (
             <Pressable
               accessibilityRole="button"
-              onPress={openScanner}
+              onPress={openCheckIn}
               style={({ pressed }) => [
                 styles.selfCheckIn,
                 pressed ? styles.pressed : null,
@@ -501,8 +523,8 @@ function CheckInCard({
       ) : showScan ? (
         <>
           <Text style={styles.cameraHint}>
-            Point your phone&apos;s camera at the code on the officer&apos;s
-            screen.
+            Scan the code on the officer&apos;s screen, here or with your
+            phone&apos;s camera.
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -513,7 +535,7 @@ function CheckInCard({
             ]}
           >
             <Text style={[styles.selfCheckInText, { color: accent }]}>
-              Enter code
+              Scan code
             </Text>
           </Pressable>
         </>

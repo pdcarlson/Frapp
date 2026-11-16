@@ -20,6 +20,14 @@ export interface PushPayload {
    * clearing). Absent, iOS stacks the push with the app's others.
    */
   threadId?: string;
+  /**
+   * The action buttons the phone shows on this push: an Expo `categoryId`
+   * the app registered at startup (`@repo/validation`
+   * `push-action-categories.ts`), such as the excuse push's Approve and
+   * Decline (#4686). A build that never registered it shows the push without
+   * buttons.
+   */
+  categoryId?: string;
 }
 
 export interface SendToUserResult {

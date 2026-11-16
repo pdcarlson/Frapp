@@ -234,10 +234,7 @@ export function useChapterSetupChecklist(options: SetupChecklistOptions = {}): {
   const permissions = permissionsPayload?.permissions as
     readonly string[] | undefined;
   const chapterQuery = useCurrentChapter();
-  const enabledModules = (
-    chapterQuery.data as
-      { enabled_modules?: Record<string, boolean> | null } | undefined
-  )?.enabled_modules;
+  const enabledModules = chapterQuery.data?.enabled_modules;
   const chaptersQuery = useAccessibleChapters();
   const dismissMutation = useDismissOpsNudge();
   // The chapters hidden in this session, ahead of the server write. Keyed by

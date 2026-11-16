@@ -110,6 +110,7 @@ export class MyTasksAgentTool implements AgentReadTool<Args> {
         liveSource({
           id: listSourceId(this.name, 'done'),
           kind: 'tasks',
+          audience: { type: 'asker' },
           title: 'Your tasks',
           detail: 'Finished',
           page: 'tasks',
@@ -180,6 +181,7 @@ export class MyTasksAgentTool implements AgentReadTool<Args> {
       liveSource({
         id: listSourceId(this.name),
         kind: 'tasks',
+        audience: { type: 'asker' },
         title: 'Your tasks',
         page: 'tasks',
         lines: [...summary, ...shown, ...(cutLine ? [cutLine] : [])],

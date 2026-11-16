@@ -28,6 +28,11 @@ export interface ChannelLatestMessage {
    * for a blocked author). Optional: absent from an older server.
    */
   forwarded_from?: unknown;
+  /**
+   * The latest message is a GIF (#4657), so the row reads "Jake: GIF".
+   * Optional: absent from an older server.
+   */
+  has_gif?: boolean;
 }
 
 /** The preview of a channel with no message yet, so every row is two lines. */
@@ -104,6 +109,7 @@ export function channelPreviewLine(
     attachment_count: latest.attachment_count,
     kind: latest.kind as ChatMessageKind,
     forwarded_from: forwardedFromOf(latest.forwarded_from),
+    has_gif: latest.has_gif === true,
   });
 
   if (latest.kind === "system_audit" || latest.sender_id === SYSTEM_SENDER_ID) {

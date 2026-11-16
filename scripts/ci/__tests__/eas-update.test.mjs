@@ -8,10 +8,12 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 import {
+  APP_CONFIG,
   APP_JSON,
   EAS_JSON,
   LOCKFILE,
   SHIPPED_BUILDS,
+  STAGING_RUNTIME_ENV,
   UPDATE_GIT_SHA_ENV,
   UPDATE_PROFILE_ENV,
   isNativePackage,
@@ -22,7 +24,9 @@ import {
   prepareUpdate,
   productionChecks,
   profileForChannel,
+  pulledNames,
   staleInstall,
+  stagingRuntimeVersion,
   updateEnv,
   uploadSourceMaps,
 } from "../../eas-update.mjs";
@@ -181,6 +185,93 @@ test("adds the channel's environment, and skips the store-build checks off produ
   assert.ok(r.notes.some((n) => /native-compatibility check is skipped/.test(n)));
 });
 
+const STAGING_EAS = {
+  build: {
+    ...EAS.build,
+    staging: {
+      channel: "staging",
+      environment: "preview",
+      env: { EXPO_PUBLIC_API_URL: "https://api-staging.frapp.live", FRAPP_APP_VARIANT: "staging" },
+    },
+  },
+};
+const stagingFiles = (over = {}) =>
+  files({ [EAS_JSON]: JSON.stringify(STAGING_EAS), [APP_CONFIG]: "module.exports = (c) => c;\n", ...over });
+
+test("the staging runtime is the version plus a hash that moves with each native input and nothing else", () => {
+  const base = stagingRuntimeVersion({ readFile: stagingFiles(), isNative });
+  assert.match(base.runtime, /^0\.9\.1-[0-9a-f]{12}$/);
+  assert.deepEqual(stagingRuntimeVersion({ readFile: stagingFiles(), isNative }), base, "stable for one tree");
+  const withLock = (versions) => ({
+    [LOCKFILE]: JSON.stringify(lock(versions)),
+    "node_modules/.package-lock.json": JSON.stringify(lock(versions)),
+  });
+  // A JS-only package moving is not a native change.
+  const jsOnly = stagingRuntimeVersion({
+    readFile: stagingFiles(withLock({ "expo-haptics": "57.0.3", react: "19.2.4" })),
+    isNative,
+  });
+  assert.equal(jsOnly.runtime, base.runtime);
+  for (const [label, over] of [
+    ["a native package's version", withLock({ "expo-haptics": "57.0.4", react: "19.2.3" })],
+    ["a new native package", withLock({ "expo-haptics": "57.0.3", "@sentry/react-native": "8.0.0", react: "19.2.3" })],
+    ["app.json", { [APP_JSON]: JSON.stringify({ expo: { version: "0.9.1", name: "x" } }) }],
+    ["app.config.js", { [APP_CONFIG]: "module.exports = (c) => ({ ...c });\n" }],
+  ]) {
+    const moved = stagingRuntimeVersion({ readFile: stagingFiles(over), isNative });
+    assert.match(moved.runtime, /^0\.9\.1-[0-9a-f]{12}$/, label);
+    assert.notEqual(moved.runtime, base.runtime, label);
+  }
+  // A Windows checkout's line endings are not a native input.
+  const crlf = stagingRuntimeVersion({ readFile: stagingFiles({ [APP_CONFIG]: "module.exports = (c) => c;\r\n" }), isNative });
+  assert.equal(crlf.runtime, base.runtime);
+});
+
+test("the staging runtime refuses a tree it can't read natives from", () => {
+  const stale = stagingRuntimeVersion({
+    readFile: stagingFiles({ "node_modules/.package-lock.json": JSON.stringify(lock({ "expo-haptics": "57.0.2", react: "19.2.3" })) }),
+    isNative,
+  });
+  assert.match(stale.error, /npm ci/);
+  const absent = stagingRuntimeVersion({
+    readFile: stagingFiles({ [LOCKFILE]: JSON.stringify(lock({ "expo-haptics": "57.0.3", react: "19.2.3", "@sentry/react-native": "8.0.0" })) }),
+    isNative,
+  });
+  assert.match(absent.error, /@sentry\/react-native is in the lockfile but not installed/);
+  const noVersion = stagingRuntimeVersion({ readFile: stagingFiles({ [APP_JSON]: JSON.stringify({ expo: {} }) }), isNative });
+  assert.match(noVersion.error, /expo\.version/);
+});
+
+test("a staging update carries the computed runtime, whatever the shell held", () => {
+  const { git } = fakeGit({ "rev-parse HEAD": { stdout: `${SHA}\n` } });
+  const opts = { readFile: stagingFiles(), git, production: noProduction, pullEnv: () => ({ vars: {} }) };
+  const r = prepareUpdate(["--channel", "staging", "--message", "x"], {
+    ...opts,
+    env: { [STAGING_RUNTIME_ENV]: "0.9.1-ffffffffffff" },
+    stagingRuntime: () => ({ runtime: "0.9.1-0123456789ab" }),
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.env[STAGING_RUNTIME_ENV], "0.9.1-0123456789ab");
+  assert.equal(r.env.FRAPP_APP_VARIANT, "staging");
+  assert.equal(r.env[UPDATE_PROFILE_ENV], "staging");
+  assert.ok(r.notes.some((n) => /Runtime 0\.9\.1-0123456789ab/.test(n)));
+  // Stored in EAS, the value would win over the computed one in the update's export.
+  const stored = prepareUpdate(["--channel", "staging"], {
+    ...opts,
+    env: {},
+    stagingRuntime: () => ({ runtime: "0.9.1-0123456789ab" }),
+    pullEnv: () => ({ vars: {}, names: pulledNames(`# ${STAGING_RUNTIME_ENV}=*****\nEXPO_PUBLIC_X=1\n`) }),
+  });
+  assert.equal(stored.ok, false);
+  assert.match(stored.errors[0], /delete the EAS variable/);
+  const refused = prepareUpdate(["--channel", "staging"], { ...opts, env: {}, stagingRuntime: () => ({ error: "no natives" }) });
+  assert.deepEqual(refused, { ok: false, errors: ["no natives"] });
+  // Another channel never inherits one.
+  const preview = prepareUpdate(["--channel", "preview"], { ...opts, env: { [STAGING_RUNTIME_ENV]: "0.9.1-ffffffffffff" } });
+  assert.equal(preview.ok, true);
+  assert.equal(STAGING_RUNTIME_ENV in preview.env, false);
+});
+
 test("production runs the store-build checks, and any error refuses the publish", () => {
   const opts = { readFile: files(), git: fakeGit().git, env: {}, pullEnv };
   const refused = prepareUpdate(["--channel", "production"], { ...opts, production: () => ({ errors: ["nope"], notes: [] }) });
@@ -263,6 +354,13 @@ test("an install that disagrees with the lockfile can't be trusted for the nativ
   assert.deepEqual(staleInstall(lock({ a: "1" }), lock({ a: "1" })), []);
   assert.match(staleInstall(lock({ a: "2" }), lock({ a: "1" }))[0], /node_modules\/a 1 \(lockfile: 2\)/);
   assert.match(staleInstall(lock({}), undefined)[0], /missing/);
+  // A lockfile package that was never installed can't be asked whether it is native.
+  assert.match(staleInstall(lock({ a: "1", b: "1" }), lock({ a: "1" }))[0], /node_modules\/b is in the lockfile but not installed/);
+  for (const flag of ["optional", "dev", "devOptional", "link"]) {
+    const head = { packages: { "node_modules/a": { version: "1" }, "node_modules/b": { version: "1", [flag]: true } } };
+    assert.deepEqual(staleInstall(head, lock({ a: "1" })), [], flag);
+  }
+  assert.deepEqual(staleInstall({ packages: { "": { version: "1" }, "apps/mobile": { version: "1" } } }, lock({})), []);
 });
 
 function checks({ answers = {}, over = {}, native = isNative } = {}) {
@@ -512,7 +610,10 @@ test("pullEasEnv runs eas env:pull into a temporary file, parses it, and deletes
     writeFileSync(seenPath, "# Environment: production\n\nEXPO_PUBLIC_SUPABASE_URL=https://p.supabase.co\n");
     return { status: 0 };
   };
-  assert.deepEqual(pullEasEnv("/fake/eas", "production", { spawn }), { vars: { EXPO_PUBLIC_SUPABASE_URL: "https://p.supabase.co" } });
+  assert.deepEqual(pullEasEnv("/fake/eas", "production", { spawn }), {
+    vars: { EXPO_PUBLIC_SUPABASE_URL: "https://p.supabase.co" },
+    names: ["EXPO_PUBLIC_SUPABASE_URL"],
+  });
   assert.throws(() => readFileSync(seenPath), /ENOENT/, "the pulled file is deleted");
   assert.match(pullEasEnv("/fake/eas", "production", { spawn: () => ({ status: 1 }) }).error, /exited 1/);
 });
@@ -588,7 +689,7 @@ test("pullEasEnv pulls with the shell env the guard publishes with, and deletes 
     mkdirSync(dirname(fileVar), { recursive: true });
     const removed = [];
     const spawn = (cmd, args, opts) => {
-      assert.deepEqual(opts.env, { PATH: "/bin" }, "no EXPO_PUBLIC_*, EAS_BUILD_* or update marker");
+      assert.deepEqual(opts.env, { PATH: "/bin" }, "no EXPO_PUBLIC_*, EAS_BUILD_*, update marker or staging runtime");
       writeFileSync(fileVar, "{}");
       writeFileSync(args[args.indexOf("--path") + 1], `GOOGLE_SERVICES_JSON=${fileVar}\nEXPO_PUBLIC_X=1\n`);
       return { status: 0 };
@@ -596,10 +697,10 @@ test("pullEasEnv pulls with the shell env the guard publishes with, and deletes 
     const r = pullEasEnv("/fake/eas", "production", {
       spawn,
       mobileDir,
-      env: { PATH: "/bin", EXPO_PUBLIC_X: "shell", EAS_BUILD_PROFILE: "production", FRAPP_EAS_UPDATE_PROFILE: "production" },
+      env: { PATH: "/bin", EXPO_PUBLIC_X: "shell", EAS_BUILD_PROFILE: "production", FRAPP_EAS_UPDATE_PROFILE: "production", FRAPP_STAGING_RUNTIME: "0.9.0-000000000000" },
       remove: (p) => (removed.push(p), rmSync(p, { recursive: true, force: true })),
     });
-    assert.deepEqual(r, { vars: { EXPO_PUBLIC_X: "1" } });
+    assert.deepEqual(r, { vars: { EXPO_PUBLIC_X: "1" }, names: ["GOOGLE_SERVICES_JSON", "EXPO_PUBLIC_X"] });
     assert.ok(removed.includes(fileVar));
   } finally {
     rmSync(mobileDir, { recursive: true, force: true });

@@ -1,4 +1,5 @@
 import { PRODUCTION_APP_ORIGIN } from "./invite-token";
+import { appLinkParams } from "./native-app";
 
 /**
  * A message's link (#3723): `https://app.frapp.live/chat?channel=…&message=…`.
@@ -55,23 +56,10 @@ export function parseChatLink(
   href: string,
   origins: readonly string[] = [PRODUCTION_APP_ORIGIN],
 ): ChatLinkTarget | null {
-  let url: URL;
-  try {
-    url = new URL(href);
-  } catch {
-    return null;
-  }
-  const allowed = origins.map((origin) => {
-    try {
-      return new URL(origin).origin;
-    } catch {
-      return null;
-    }
-  });
-  if (!allowed.includes(url.origin)) return null;
-  if (url.pathname.replace(/\/+$/, "") !== CHAT_LINK_PATH) return null;
-  const channelId = url.searchParams.get(CHAT_LINK_CHANNEL_PARAM)?.trim();
-  const messageId = url.searchParams.get(CHAT_LINK_MESSAGE_PARAM)?.trim();
+  const params = appLinkParams(href, origins, CHAT_LINK_PATH);
+  if (!params) return null;
+  const channelId = params.get(CHAT_LINK_CHANNEL_PARAM)?.trim();
+  const messageId = params.get(CHAT_LINK_MESSAGE_PARAM)?.trim();
   if (!channelId) return null;
   return { channelId, messageId: messageId || null };
 }

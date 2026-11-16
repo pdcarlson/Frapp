@@ -114,6 +114,9 @@ export class ListChannelsTool implements AgentReadTool<Args> {
           // A list of channels is not anyone's message.
           chat: false,
           authorIds: [],
+          // Which channels a member is in, and what they have not read, is
+          // theirs alone.
+          audience: { type: 'asker' },
         },
       ],
       entities: shown.map((row) => ({

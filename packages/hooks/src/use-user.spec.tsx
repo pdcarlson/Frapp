@@ -57,7 +57,9 @@ describe("useMyPermissions", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    expect(mockClient.GET).toHaveBeenCalledWith("/v1/users/me/permissions");
+    expect(mockClient.GET).toHaveBeenCalledWith("/v1/users/me/permissions", {
+      signal: expect.any(AbortSignal),
+    });
     expect(result.current.data).toEqual({
       permissions: ["members:view", "events:create"],
     });

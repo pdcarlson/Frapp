@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useState, type MouseEvent } from "react";
 import {
   MEMBER_SEARCH_THRESHOLD,
   filterChannelMembers,
@@ -26,7 +26,10 @@ import {
   type PresenceStatus,
 } from "@repo/hooks/presence-status";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
-import { ROLE_NAME_CLASS, roleNameStyle } from "@/components/roles/role-name-paint";
+import {
+  ROLE_NAME_CLASS,
+  roleNameStyle,
+} from "@/components/roles/role-name-paint";
 import { cn, initials } from "@/lib/utils";
 
 /** One row of the list, joined from the channel read, the roster and presence. */
@@ -55,9 +58,10 @@ export type ChannelMemberGroup = ChannelMemberRoleGroup<ChannelMemberRow>;
  * holds still when presence arrives (principles.md P4.4). Past
  * {@link MEMBER_SEARCH_THRESHOLD} readers a search field filters by name.
  *
- * A row opens that member's profile (#3726), the same sheet a click on a
- * sender's name or an `@` chip opens, so each row is a button inside its list
- * item and the list is announced by its heading. Without `onOpenProfile` the
+ * A row opens that member's profile (#3726), the same popout a click on a
+ * sender's name or an `@` chip opens (#4593), so each row is a button inside
+ * its list item, handed to `onOpenProfile` as the popout's anchor, and the
+ * list is announced by its heading. Without `onOpenProfile` the
  * rows are plain list items.
  *
  * `channelId: null` draws the skeleton: the shell mounts the column before the
@@ -73,7 +77,7 @@ export function ChannelMemberList({
   channelId: string | null;
   enabled?: boolean;
   /** Opens a member's profile by `users.id`. */
-  onOpenProfile?: (userId: string) => void;
+  onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
 }) {
   const headingId = useId();
   const membersQuery = useChannelMembers(channelId, { enabled });
@@ -197,7 +201,7 @@ function MemberGroup({
   onOpenProfile,
 }: {
   group: ChannelMemberGroup;
-  onOpenProfile?: (userId: string) => void;
+  onOpenProfile?: (userId: string, anchor?: HTMLElement) => void;
 }) {
   const labelId = useId();
   return (
@@ -214,7 +218,11 @@ function MemberGroup({
           <MemberRow
             key={row.userId}
             row={row}
-            onOpen={onOpenProfile ? () => onOpenProfile(row.userId) : undefined}
+            onOpen={
+              onOpenProfile
+                ? (event) => onOpenProfile(row.userId, event.currentTarget)
+                : undefined
+            }
           />
         ))}
       </ul>
@@ -236,7 +244,7 @@ function MemberRow({
   onOpen,
 }: {
   row: ChannelMemberRow;
-  onOpen?: () => void;
+  onOpen?: (event: MouseEvent<HTMLElement>) => void;
 }) {
   const offline = row.status === "offline" || row.status === "invisible";
   const content = (

@@ -21,6 +21,7 @@ function role(id: string, name: string, extra: Partial<Role> = {}): Role {
     mentionable: true,
     tier_id: null,
     permission_overrides: {},
+    self_assignable: false,
     created_at: '2026-11-12T00:00:00Z',
     ...extra,
   };

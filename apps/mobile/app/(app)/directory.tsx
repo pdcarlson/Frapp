@@ -60,6 +60,8 @@ import {
 } from "@/components/pull-to-refresh";
 import { MemberDetailSheet } from "@/components/directory/member-detail-sheet";
 import { ActivesFilterSheet } from "@/components/directory/actives-filter-sheet";
+import { PickRolesSheet } from "@/components/roles/pick-roles-sheet";
+import { usePickableRoles } from "@repo/hooks";
 import {
   countActivesFilters,
   effectiveActivesFilter,
@@ -164,6 +166,8 @@ export default function DirectoryScreen() {
   const detailSheetRef = useRef<BottomSheetModal>(null);
   const [selected, setSelected] = useState<DirectoryRow | null>(null);
   const activesFilterSheetRef = useRef<BottomSheetModal>(null);
+  const pickRolesSheetRef = useRef<BottomSheetModal>(null);
+  const pickable = usePickableRoles();
   const [activesFilterPicks, setActivesFilterPicks] =
     useState<ActivesFilter>(NO_ACTIVES_FILTER);
 
@@ -320,7 +324,20 @@ export default function DirectoryScreen() {
         <Text accessibilityRole="header" style={styles.title}>
           Directory
         </Text>
-        {chapterId ? <ListLayoutToggle screen="directory" /> : null}
+        <View style={styles.titleActions}>
+          {/* Add roles (#4958): placement provisional, pending Paul. */}
+          {pickable.roles.length > 0 ? (
+            <Chip
+              accessibilityRole="button"
+              accessibilityState={{}}
+              accessibilityHint="Pick the Non-chapter business roles you want, like intramurals."
+              label="Add roles"
+              on={false}
+              onPress={() => pickRolesSheetRef.current?.present()}
+            />
+          ) : null}
+          {chapterId ? <ListLayoutToggle screen="directory" /> : null}
+        </View>
       </View>
 
       <SearchField
@@ -589,6 +606,7 @@ export default function DirectoryScreen() {
           member={selected}
           onDismiss={() => setSelected(null)}
         />
+        <PickRolesSheet ref={pickRolesSheetRef} roles={pickable.roles} />
         <ActivesFilterSheet
           ref={activesFilterSheetRef}
           filter={activesFilter}
@@ -944,6 +962,11 @@ function createStyles(tokens: SignetTokens) {
       alignItems: "center",
       justifyContent: "space-between",
       gap: tokens.spacing.md,
+    },
+    titleActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
     },
     // A tile is the row's grid twin: hairline-bordered, on the page surface,
     // not a card, so the grid reads as the same list laid out wider.

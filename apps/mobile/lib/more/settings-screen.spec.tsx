@@ -302,9 +302,10 @@ describe("Settings switches", () => {
     );
 
     // Push, quiet hours, then one per notification category this member is
-    // shown (no permissions here, so not the officers' join switch).
+    // shown (no permissions here, so not the officers' join switch, nor the
+    // weekly recap, which goes to `members:view`).
     expect(pushSwitches(tree)).toHaveLength(1);
-    expect(switches).toHaveLength(2 + NOTIFICATION_CATEGORIES.length - 1);
+    expect(switches).toHaveLength(2 + NOTIFICATION_CATEGORIES.length - 2);
     for (const node of switches) {
       expect(node.props.trackColor.true).toBe("#8E4EC6");
       expect(node.props.activeThumbColor).toBe("#FFFFFF");

@@ -35,6 +35,7 @@ describe('ChatAttachmentService', () => {
   let mockRbac: ChatServiceFixture['mockRbac'];
   let mockChatBlocks: ChatServiceFixture['mockChatBlocks'];
   let mockReportRepo: ChatServiceFixture['mockReportRepo'];
+  let mockScheduledRepo: ChatServiceFixture['mockScheduledRepo'];
 
   beforeEach(async () => {
     captureException.mockClear();
@@ -47,6 +48,7 @@ describe('ChatAttachmentService', () => {
       mockRbac,
       mockChatBlocks,
       mockReportRepo,
+      mockScheduledRepo,
     } = await createChatServiceFixture());
   });
 
@@ -1346,6 +1348,102 @@ describe('ChatAttachmentService', () => {
         original,
         preview,
       ]);
+    });
+
+    it('keeps a file a scheduled message still names (#4971)', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockAttachmentRepo.findSharedObjects.mockResolvedValue([]);
+      mockScheduledRepo.findPathsInUse.mockResolvedValue([original]);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockScheduledRepo.findPathsInUse).toHaveBeenCalledWith(
+        'ch-1',
+        [original, preview],
+        null,
+      );
+      expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+        preview,
+      ]);
+    });
+
+    it('keeps everything when it cannot tell whether a scheduled message names it', async () => {
+      mockAttachmentRepo.findByMessage.mockResolvedValue([photoRow]);
+      mockAttachmentRepo.findSharedObjects.mockResolvedValue([]);
+      mockScheduledRepo.findPathsInUse.mockRejectedValue(new Error('down'));
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      await attachments.purgeRemovedMessageAttachments('msg-1', 'ch-1');
+
+      expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+    });
+
+    describe('discardUnsentAttachments (#4971)', () => {
+      const claim = { storage_path: original, content_type: 'image/jpeg' };
+      const pdf = {
+        storage_path: 'chapters/ch-1/chat/ch-chan-1/b/dues.pdf',
+        content_type: 'application/pdf',
+      };
+
+      it('deletes the files and photo previews nothing else needs', async () => {
+        await attachments.discardUnsentAttachments('ch-1', 'sched-1', [
+          claim,
+          pdf,
+        ]);
+
+        expect(mockScheduledRepo.findPathsInUse).toHaveBeenCalledWith(
+          'ch-1',
+          [original, preview, pdf.storage_path],
+          'sched-1',
+        );
+        expect(mockStorageProvider.deleteFiles).toHaveBeenCalledWith('chat', [
+          original,
+          preview,
+          pdf.storage_path,
+        ]);
+      });
+
+      it('keeps what a live message, a report or another scheduled message needs', async () => {
+        mockAttachmentRepo.findSharedObjects.mockResolvedValue([
+          { bucket: 'chat', storage_path: preview },
+        ]);
+        mockReportRepo.findHeldObjects.mockResolvedValue([
+          { bucket: 'chat', storage_path: original },
+        ]);
+        mockScheduledRepo.findPathsInUse.mockResolvedValue([pdf.storage_path]);
+
+        await attachments.discardUnsentAttachments('ch-1', 'sched-1', [
+          claim,
+          pdf,
+        ]);
+
+        expect(mockAttachmentRepo.findSharedObjects).toHaveBeenCalledWith(
+          expect.any(Array),
+          null,
+        );
+        expect(mockReportRepo.findHeldObjects).toHaveBeenCalledWith('ch-1');
+        expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['a live message', () => mockAttachmentRepo.findSharedObjects],
+        ['a report', () => mockReportRepo.findHeldObjects],
+        ['a scheduled message', () => mockScheduledRepo.findPathsInUse],
+      ])(
+        'keeps everything when it cannot tell whether %s needs it',
+        async (_label, mock) => {
+          mock().mockRejectedValue(new Error('down'));
+          jest
+            .spyOn(Logger.prototype, 'warn')
+            .mockImplementation(() => undefined);
+
+          await attachments.discardUnsentAttachments('ch-1', 'sched-1', [
+            claim,
+          ]);
+
+          expect(mockStorageProvider.deleteFiles).not.toHaveBeenCalled();
+        },
+      );
     });
 
     it('takes the preview with the original even when this row never named it (a forward of the photo)', async () => {

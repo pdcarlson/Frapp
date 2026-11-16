@@ -21,8 +21,8 @@ import { ServiceHoursAgentTool } from './service-hours.tool';
  * `ChapterAgentToolsModule` provides exactly these classes, and
  * `chapter-agent-tools.spec.ts` holds each one to the rules a tool keeps
  * (`../agent-tool.ts`), so a tool added here is checked without a second
- * list to remember. Nothing calls them until the core slice (#4899) wires
- * the list into the loop.
+ * list to remember. `AskModule` lists them under `AGENT_READ_TOOLS`, which
+ * is what the loop may call.
  *
  * What the six one-shot reads in `../../ask-tools.ts` answered, these answer
  * too: `roster`, `events`, `my_points`, `points_leaderboard` (here

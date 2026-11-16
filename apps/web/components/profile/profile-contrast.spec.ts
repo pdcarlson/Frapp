@@ -86,7 +86,7 @@ describe("the archetype card's selected state", () => {
   });
 });
 
-describe("the tutorial's step strip, and the fix that would have been a second defect", () => {
+describe("a fill inside `--popover` (the first-run slideshow's step strip, deleted in #5080), and the fix that would have been a second defect", () => {
   it("would have caught `bg-secondary/60` inside a DialogContent", () => {
     // `--secondary` held `--card`'s value (deleted, #3036) and a dialog is
     // `--popover`, so the strip composited to 1.044:1 against its own
@@ -134,7 +134,7 @@ describe("the step indicator's track", () => {
     // Both step indicators drew their remaining steps in `bg-border`.
     // `components/shared/meter.ts` measured this class of choice already; the
     // numbers for *this* pair are asserted rather than inherited, because the
-    // wizard's indicator sits on `--background` and the tutorial's inside a
+    // wizard's indicator sits on `--background` and the slideshow's sat inside a
     // dialog, neither of which that module's call sites cover.
     let worstOnBorder = Infinity;
     let worstOnBackground = Infinity;

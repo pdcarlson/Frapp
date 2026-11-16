@@ -44,7 +44,9 @@ export function readGoogleCalendarReturn(
   if (outcome === "confirm") {
     const code = params.get("gcal_code");
     const state = params.get("gcal_state");
-    return code && state ? { kind: "confirm", code, state } : { kind: "failed" };
+    return code && state
+      ? { kind: "confirm", code, state }
+      : { kind: "failed" };
   }
   if (outcome === "denied" || outcome === "expired") return { kind: outcome };
   return outcome ? { kind: "failed" } : null;
@@ -55,8 +57,8 @@ export function useGoogleCalendarStatus(options: { enabled?: boolean } = {}) {
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: googleCalendarKeys.chapter(chapterId!),
-    queryFn: async (): Promise<GoogleCalendarStatus> => {
-      const result = await client.GET("/v1/google-calendar");
+    queryFn: async ({ signal }): Promise<GoogleCalendarStatus> => {
+      const result = await client.GET("/v1/google-calendar", { signal });
       throwUnlessOk(result);
       return result.data!;
     },
