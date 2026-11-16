@@ -30,83 +30,18 @@ vi.mock("@/components/ai/suggested-events", () => ({
   useRecordPlannedEvent: () => async () => undefined,
 }));
 
-vi.mock("@repo/hooks", () => ({
-  // A viewer with no roles: the event's default decides (#4132). The rule
-  // itself is the hook's own spec.
-  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
-    fields.is_mandatory === true,
-  // The toolbar's Subscribe menu (#3322) asks for nothing until it opens.
-  useCalendarFeedLink: () => ({ data: undefined, isError: false }),
-  useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  calendarAppLinks: () => null,
-  useGoogleCalendarStatus: () => ({ data: undefined }),
-  useStartGoogleCalendarConnect: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  useConfirmGoogleCalendarConnect: () => ({ mutateAsync: vi.fn() }),
-  useDisconnectGoogleCalendar: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  readGoogleCalendarReturn: () => null,
-  GOOGLE_CALENDAR_RETURN_PARAMS: [],
-  useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
-  useCalendarBirthdays: () => [],
-  useChapterRoster: () => ({ data: [] }),
-  useCurrentChapter: () => mockCurrentChapter(),
-  useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useEvent: () => ({ data: undefined, isPending: false, isError: false }),
-  useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useEventTypes: () => ({
-    data: [
-      {
-        id: "type-meeting",
-        chapter_id: "chap-1",
-        name: "Chapter meeting",
-        point_value: 10,
-        is_mandatory: true,
-        position: 1,
-        created_at: "2026-11-11T00:00:00.000Z",
-        updated_at: "2026-11-11T00:00:00.000Z",
-      },
-      {
-        id: "type-social",
-        chapter_id: "chap-1",
-        name: "Social",
-        point_value: 0,
-        is_mandatory: false,
-        position: 2,
-        created_at: "2026-11-11T00:00:00.000Z",
-        updated_at: "2026-11-11T00:00:00.000Z",
-      },
-    ],
-    isLoading: false,
-  }),
-  useCreateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useDeleteEventType: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
-  useActiveChapterId: () => "chap-1",
-  useAttendance: () => ({
-    data: ATTENDANCE,
-    isPending: false,
-    isError: false,
-  }),
-  useMembers: () => ({ data: MEMBERS, isPending: false, isError: false }),
-  useUpdateAttendanceStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useMyPermissions: () => ({
-    data: { permissions: ["events:update", "events:create", "members:view"] },
-  }),
-  useEvents: () => ({
-    data: [],
-    isLoading: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  useNow: () => Date.now(),
-}));
+vi.mock("@repo/hooks", async () => {
+  const { eventsPageHooks } = await import("@/tests/events-page");
+  return eventsPageHooks({
+    useCurrentChapter: () => mockCurrentChapter(),
+    useAttendance: () => ({
+      data: ATTENDANCE,
+      isPending: false,
+      isError: false,
+    }),
+    useMembers: () => ({ data: MEMBERS, isPending: false, isError: false }),
+  });
+});
 
 // The viewer whose last view (List or Calendar) the page reads; no stored
 // choice unless a test writes one.

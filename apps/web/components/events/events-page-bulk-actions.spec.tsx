@@ -50,53 +50,27 @@ vi.mock("@/components/ai/suggested-events", () => ({
   useRecordPlannedEvent: () => async () => undefined,
 }));
 
-vi.mock("@repo/hooks", () => ({
-  // A viewer with no roles: the event's default decides (#4132). The rule
-  // itself is the hook's own spec.
-  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
-    fields.is_mandatory === true,
-  // The toolbar's Subscribe menu (#3322) asks for nothing until it opens.
-  useCalendarFeedLink: () => ({ data: undefined, isError: false }),
-  useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  calendarAppLinks: () => null,
-  useGoogleCalendarStatus: () => ({ data: undefined }),
-  useStartGoogleCalendarConnect: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  useConfirmGoogleCalendarConnect: () => ({ mutateAsync: vi.fn() }),
-  useDisconnectGoogleCalendar: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  readGoogleCalendarReturn: () => null,
-  GOOGLE_CALENDAR_RETURN_PARAMS: [],
-  useActiveChapterId: () => "chap-1",
-  useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
-  useCalendarBirthdays: () => [],
-  useChapterRoster: () => ({ data: [] }),
-  useCurrentChapter: () => ({
-    data: { subscription_status: access.subscription, past_due_since: null },
-    isPending: false,
-    isError: false,
-  }),
-  useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useEvent: () => ({ data: undefined, isPending: false, isError: false }),
-  useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
-  useEvents: () => ({
-    data: EVENTS,
-    isLoading: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  useAutoAbsent: () => ({
-    mutateAsync: autoAbsentMutateAsync,
-    isPending: false,
-  }),
-  useMyPermissions: () => ({ data: { permissions: access.permissions } }),
-  useNow: () => Date.now(),
-}));
+vi.mock("@repo/hooks", async () => {
+  const { eventsPageHooks } = await import("@/tests/events-page");
+  return eventsPageHooks({
+    useCurrentChapter: () => ({
+      data: { subscription_status: access.subscription, past_due_since: null },
+      isPending: false,
+      isError: false,
+    }),
+    useEvents: () => ({
+      data: EVENTS,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    }),
+    useAutoAbsent: () => ({
+      mutateAsync: autoAbsentMutateAsync,
+      isPending: false,
+    }),
+    useMyPermissions: () => ({ data: { permissions: access.permissions } }),
+  });
+});
 
 // The viewer whose last view (List or Calendar) the page reads; no stored
 // choice unless a test writes one.
