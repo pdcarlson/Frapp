@@ -62,6 +62,7 @@ import {
   selectSeriesCadence,
   selectSeriesName,
   selectSeriesOccurrences,
+  withoutMeetingLists,
   type EventDetail,
 } from "@/lib/events/select";
 import { PressableRow } from "@/components/list-section";
@@ -72,7 +73,7 @@ import { pageSurfaces } from "@/lib/surfaces";
 import { InlineNote } from "@/components/inline-note";
 import { EventMinutesRow } from "@/components/minutes/event-minutes-row";
 import { EventMeetingLists } from "@/components/events/event-agenda";
-import { useMeetingsOn } from "@/lib/minutes/meetings-on";
+import { useNotesLabel } from "@/lib/minutes/meetings-on";
 
 /**
  * s07 — Event detail (`canvas-screens.dc.html:246`).
@@ -180,19 +181,26 @@ export default function EventDetailsScreen() {
   }, [event, parent, seriesListQuery.data]);
   // The sheet's draft is seeded from the event when it mounts, so a save
   // (or anyone else's) remounts it with what the server now holds.
+  // Not on the agenda or attachments: those save in place on this screen
+  // (#4934), and a check-off must not close an open Edit sheet under the
+  // officer. The sheet edits neither.
   const editSheetKey = editTarget
-    ? JSON.stringify([eventQuery.data, parentQuery.data ?? null])
+    ? JSON.stringify([
+        withoutMeetingLists(eventQuery.data),
+        parentQuery.data ?? null,
+      ])
     : "";
 
   // An edit kept past this screen (#4872) goes with its event: one deleted
   // since has no sheet to open it in.
   const editDraftName = eventId ? `event-edit:${eventId}` : null;
-  useDropKeptSheetDraft(
-    editDraftName,
+  // The event was deleted: its read now 404s, though a refetch keeps the
+  // event it loaded before on screen.
+  const eventGone =
     !eventQuery.isPending &&
-      eventQuery.isError &&
-      statusOf(eventQuery.error) === 404,
-  );
+    eventQuery.isError &&
+    statusOf(eventQuery.error) === 404;
+  useDropKeptSheetDraft(editDraftName, eventGone);
 
   /*
     A ticking clock, not one frozen at mount: this screen is often opened
@@ -207,9 +215,7 @@ export default function EventDetailsScreen() {
     server enforces the real window regardless — this is UX only.
   */
   const now = useNowDate();
-  // With meetings on, the minutes are their own record and `notes` is the
-  // event's notes (`spec/behavior/meetings.md` § Where minutes live).
-  const meetingsOn = useMeetingsOn();
+  const notesLabel = useNotesLabel();
 
   if (!eventId) {
     return (
@@ -247,8 +253,6 @@ export default function EventDetailsScreen() {
     event.check_in_opens_minutes,
   );
   const requiredOfViewer = requiredOf(event.attendance);
-  // A refetch that found the event deleted since it loaded.
-  const eventGone = eventQuery.isError && statusOf(eventQuery.error) === 404;
 
   return (
     <>
@@ -335,7 +339,7 @@ export default function EventDetailsScreen() {
           // Every member the event invites reads these, so never "internal"
           // (#4934); labeled as web's sheet labels them.
           <DetailSection
-            label={meetingsOn ? "NOTES" : "MEETING MINUTES"}
+            label={notesLabel.toUpperCase()}
             body={event.notes}
             styles={styles}
           />

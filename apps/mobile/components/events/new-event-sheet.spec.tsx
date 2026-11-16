@@ -206,6 +206,8 @@ describe("New event", () => {
     );
     act(() => byLabel(tree, "More options").props.onPress());
     type(tree, "Points for attending", "25");
+    // Notes, sent on create as web's form sends them (#4934).
+    type(tree, "Notes", "  Bring dues ");
     // Required for everyone, but alumni only optional: set in the stacked
     // Who's coming sheet (its own spec drives its controls).
     const attendance = tree.root.find(
@@ -253,6 +255,7 @@ describe("New event", () => {
       location: "Great Hall",
       start_time: local(7, 21, 30).toISOString(),
       end_time: local(8, 1, 30).toISOString(),
+      notes: "Bring dues",
       point_value: 25,
       is_mandatory: true,
       optional_role_ids: ["role-alumni"],
@@ -683,12 +686,6 @@ describe("Edit event", () => {
       { id: "evt-1", body: { notes: "Bring dues", scope: "instance" } },
       expect.anything(),
     );
-  });
-
-  it("has no notes field on a new event, which sets them once it exists", () => {
-    const tree = render();
-    act(() => byLabel(tree, "More options").props.onPress());
-    expect(() => byLabel(tree, "Notes")).toThrow();
   });
 
   it("saves nothing for an untouched form", async () => {

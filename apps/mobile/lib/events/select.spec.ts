@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   selectAllEventRows,
   selectEventDetail,
+  withoutMeetingLists,
   selectEventList,
   selectMyAttendance,
   selectSeriesCadence,
@@ -102,10 +103,14 @@ describe("selectMyAttendance", () => {
 
   it("keeps an officer's mark, with no check-in", () => {
     expect(
-      selectMyAttendance({ attendance: { status: "EXCUSED", check_in_time: at } }),
+      selectMyAttendance({
+        attendance: { status: "EXCUSED", check_in_time: at },
+      }),
     ).toEqual({ status: "EXCUSED", checkedInAt: null });
     expect(
-      selectMyAttendance({ attendance: { status: "PRESENT", check_in_time: null } }),
+      selectMyAttendance({
+        attendance: { status: "PRESENT", check_in_time: null },
+      }),
     ).toEqual({ status: "PRESENT", checkedInAt: null });
   });
 
@@ -181,11 +186,16 @@ describe("selectEventList", () => {
       "November 23: day 14",
     ]);
     expect(flatten(later)).toEqual(["November 24: day 15"]);
-    expect(soon.every((group) => group.entries.every((e) => e.cadence === null))).toBe(true);
+    expect(
+      soon.every((group) => group.entries.every((e) => e.cadence === null)),
+    ).toBe(true);
   });
 
   it("groups two events on one day under one heading", () => {
-    const { soon } = listOf([row("a", 10, { start_time: local(10, 12) }), row("b", 10)], now);
+    const { soon } = listOf(
+      [row("a", 10, { start_time: local(10, 12) }), row("b", 10)],
+      now,
+    );
     expect(soon).toHaveLength(1);
     expect(soon[0]!.entries.map((entry) => entry.event.id)).toEqual(["a", "b"]);
   });
@@ -218,7 +228,12 @@ describe("selectEventList", () => {
 
 describe("selectSeriesOccurrences", () => {
   const now = new Date(2026, 10, 9, 9, 0);
-  const at = (id: string, day: number, parent: string | null, rule: string | null = null) => ({
+  const at = (
+    id: string,
+    day: number,
+    parent: string | null,
+    rule: string | null = null,
+  ) => ({
     id,
     name: "Chapter",
     start_time: new Date(2026, 10, day, 18).toISOString(),
@@ -237,17 +252,27 @@ describe("selectSeriesOccurrences", () => {
   it("lists the series' other upcoming dates, soonest first", () => {
     const [, c1] = selectAllEventRows(data);
     expect(c1!.id).toBe("c1");
-    expect(selectSeriesOccurrences(selectAllEventRows(data), c1!, now).map((e) => e.id)).toEqual(["c2", "c3"]);
+    expect(
+      selectSeriesOccurrences(selectAllEventRows(data), c1!, now).map(
+        (e) => e.id,
+      ),
+    ).toEqual(["c2", "c3"]);
   });
 
   it("reaches the children from the head", () => {
     const head = selectAllEventRows(data)[0]!;
-    expect(selectSeriesOccurrences(selectAllEventRows(data), head, now).map((e) => e.id)).toEqual(["c1", "c2", "c3"]);
+    expect(
+      selectSeriesOccurrences(selectAllEventRows(data), head, now).map(
+        (e) => e.id,
+      ),
+    ).toEqual(["c1", "c2", "c3"]);
   });
 
   it("is empty for a one-time event", () => {
     const other = selectAllEventRows(data).find((e) => e.id === "other")!;
-    expect(selectSeriesOccurrences(selectAllEventRows(data), other, now)).toEqual([]);
+    expect(
+      selectSeriesOccurrences(selectAllEventRows(data), other, now),
+    ).toEqual([]);
   });
 });
 
@@ -305,5 +330,23 @@ describe("the series as a whole", () => {
       meeting("head", 8),
     ]);
     expect(selectSeriesName(rows, "head")).toBe("Chapter");
+  });
+});
+
+describe("withoutMeetingLists (#4934)", () => {
+  it("keys the edit sheet on everything but the lists saved in place", () => {
+    const read = { id: "e1", name: "Chapter", notes: "n" };
+    const checkedOff = {
+      ...read,
+      agenda: [{ id: "a", text: "Report", done: true }],
+      attachments: [],
+    };
+    expect(JSON.stringify(withoutMeetingLists(checkedOff))).toBe(
+      JSON.stringify(
+        withoutMeetingLists({ ...read, agenda: [], attachments: [] }),
+      ),
+    );
+    expect(withoutMeetingLists(checkedOff)).toEqual(read);
+    expect(withoutMeetingLists(undefined)).toBeUndefined();
   });
 });

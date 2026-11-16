@@ -43,6 +43,7 @@ import {
   DisclosureGlyph,
   LinkGlyph,
 } from "@/components/control-glyphs";
+import { TextAction } from "@/components/events/event-excuses";
 import { DocumentsGlyph } from "@/components/more/more-glyphs";
 import { sheetFieldStyles } from "@/components/sheet-scaffold";
 import { eyebrowStyle } from "@/components/eyebrow";
@@ -63,10 +64,10 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  */
 
 /** Whether Chapter Files is on: `null` while the chapter read can't say. */
-export type DocumentsModule = boolean | null;
+type DocumentsModule = boolean | null;
 
 /** Chapter Files on, off, or not known yet (the chapter still loading). */
-export function useDocumentsModule(): DocumentsModule {
+function useDocumentsModule(): DocumentsModule {
   const chapter = useCurrentChapter().data;
   return chapter ? isModuleEnabled(chapter.enabled_modules, "documents") : null;
 }
@@ -119,7 +120,7 @@ export function EventMeetingLists({
   );
 }
 
-export function EventAgendaSection({
+function EventAgendaSection({
   agenda,
   canEdit,
   onChange,
@@ -276,18 +277,30 @@ export function EventAgendaSection({
 }
 
 /**
- * Open a Chapter Files document to read (the inline signed link, in the
- * in-app browser, as Documents opens one). A file deleted since it was
- * attached says so rather than failing generically.
+ * Open an attachment in the in-app browser: a link as it is, a Chapter Files
+ * document to read through its inline signed link, as Documents opens one. A
+ * file deleted since it was attached says so rather than failing generically.
+ * One browser at a time for both: iOS refuses a second over the first.
  */
-function useOpenDocument() {
+function useOpenAttachment() {
   const signedLinks = useDocumentDownloadUrl();
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  // iOS refuses a second browser over the first.
   const presenting = useRef(false);
-  async function open(documentId: string) {
+  async function openLink(url: string) {
     if (presenting.current) return;
+    setProblem(null);
+    presenting.current = true;
+    try {
+      await WebBrowser.openBrowserAsync(url);
+    } catch {
+      setProblem("Couldn't open that link. Try again in a moment.");
+    } finally {
+      presenting.current = false;
+    }
+  }
+  async function openDocument(documentId: string) {
+    if (presenting.current || openingId) return;
     setProblem(null);
     setOpeningId(documentId);
     try {
@@ -309,10 +322,10 @@ function useOpenDocument() {
       setOpeningId(null);
     }
   }
-  return { open, openingId, problem };
+  return { openLink, openDocument, openingId, problem };
 }
 
-export function EventAttachmentsSection({
+function EventAttachmentsSection({
   attachments,
   canEdit,
   documentsOn,
@@ -326,7 +339,7 @@ export function EventAttachmentsSection({
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens, accent);
-  const { open, openingId, problem } = useOpenDocument();
+  const { openLink, openDocument, openingId, problem } = useOpenAttachment();
   const [adding, setAdding] = useState<"link" | "document" | null>(null);
   if (attachments.length === 0 && !canEdit) return null;
 
@@ -366,8 +379,8 @@ export function EventAttachmentsSection({
               disabled={disabled}
               onPress={() =>
                 attachment.kind === "link"
-                  ? void WebBrowser.openBrowserAsync(attachment.url)
-                  : void open(attachment.document_id)
+                  ? void openLink(attachment.url)
+                  : void openDocument(attachment.document_id)
               }
               style={({ pressed }) => [
                 styles.row,
@@ -435,54 +448,21 @@ export function EventAttachmentsSection({
       ) : null}
       {canEdit && !full && adding === null ? (
         <View style={styles.actions}>
-          <TextAction label="Add a link" onPress={() => setAdding("link")} />
+          <TextAction
+            label="Add a link"
+            color={accent}
+            onPress={() => setAdding("link")}
+          />
           {documentsOn === true ? (
             <TextAction
               label="Attach from Chapter Files"
+              color={accent}
               onPress={() => setAdding("document")}
             />
           ) : null}
         </View>
       ) : null}
     </View>
-  );
-}
-
-/** A quiet accent text button at the 44pt floor. */
-function TextAction({
-  label,
-  onPress,
-  disabled = false,
-  muted = false,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  muted?: boolean;
-}) {
-  const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
-  const styles = createStyles(tokens, accent);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.textAction,
-        pressed || disabled ? styles.pressed : null,
-      ]}
-    >
-      <Text
-        style={[
-          styles.textActionLabel,
-          { color: muted ? tokens.color.text.mutedForeground : accent },
-        ]}
-      >
-        {label}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -563,8 +543,13 @@ function AddLinkForm({
         </Text>
       ) : null}
       <View style={styles.actions}>
-        <TextAction label="Add link" disabled={!url.trim()} onPress={submit} />
-        <TextAction label="Cancel" muted onPress={onCancel} />
+        <TextAction
+          label="Add link"
+          color={accent}
+          disabled={!url.trim()}
+          onPress={submit}
+        />
+        <TextAction label="Cancel" onPress={onCancel} />
       </View>
     </View>
   );
@@ -647,7 +632,7 @@ function PickDocument({
         ))
       )}
       <View style={styles.actions}>
-        <TextAction label="Cancel" muted onPress={onCancel} />
+        <TextAction label="Cancel" onPress={onCancel} />
       </View>
     </View>
   );
@@ -728,13 +713,6 @@ function createStyles(tokens: SignetTokens, accent?: string) {
       flexDirection: "row",
       flexWrap: "wrap",
       columnGap: tokens.spacing.lg,
-    },
-    textAction: {
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-    },
-    textActionLabel: {
-      ...typeRole(tokens.typography.role.label),
     },
     pressed: {
       opacity: 0.7,

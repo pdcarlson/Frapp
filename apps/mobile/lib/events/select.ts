@@ -395,6 +395,19 @@ export function selectMyAttendance(data: unknown): MyAttendance | null {
   };
 }
 
+/**
+ * An event read without its agenda and attachments (#4934), which Event
+ * details saves in place: what the edit sheet is keyed on, so a check-off
+ * during the meeting doesn't remount, and close, an open Edit sheet.
+ */
+export function withoutMeetingLists(data: unknown): unknown {
+  if (!isRecord(data)) return data;
+  const rest = { ...data };
+  delete rest.agenda;
+  delete rest.attachments;
+  return rest;
+}
+
 export function selectEventDetail(data: unknown): EventDetail | null {
   if (!isRecord(data)) return null;
   const row = toRow(data);
