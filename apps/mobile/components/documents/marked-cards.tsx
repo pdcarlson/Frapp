@@ -147,7 +147,7 @@ function CardList({
             accessibilityHint={
               item.kind === "folder"
                 ? "Shows this folder's files."
-                : "Opens in your browser."
+                : "Opens the share sheet to save it or open it in another app."
             }
             accessibilityState={busy ? { busy: true } : undefined}
             accessibilityActions={

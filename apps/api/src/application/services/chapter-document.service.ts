@@ -308,15 +308,16 @@ export class ChapterDocumentService {
    *
    * - `downloadUrl` serves the file inline: a browser shows a PDF or image
    *   in place. The web viewer reads the file through it (PDF.js fetches it,
-   *   an `<img>` draws it, and neither runs it as a page), and mobile opens
-   *   it in the in-app browser. Unchanged since before the viewer (#3849).
+   *   an `<img>` draws it, and neither runs it as a page). On the phone only
+   *   Ask's document chips still open it in the in-app browser (#5175).
    * - `forcedDownloadUrl` carries `Content-Disposition: attachment` under the
    *   stored filename, so following it saves the file. The web Download
    *   control uses it; before it, Download opened a PDF in a tab.
    *
    * The web viewer reads the inline link without loading the file as a page
-   * (pdf.js parses it, an `<img>` draws it). Mobile's in-app browser does
-   * navigate to it; whether it should is the owner's call, #4409. Backwork,
+   * (pdf.js parses it, an `<img>` draws it). The phone's Documents screen
+   * downloads `forcedDownloadUrl` and hands the file to the share sheet
+   * instead of opening either link (#4409). Backwork,
    * which has no viewer, signs only a forced download (#3867).
    */
   async findById(

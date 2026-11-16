@@ -197,6 +197,13 @@ export type ClassifiedFile = {
   kind: FileKind;
   /** Its name for people: "PDF", "Excel spreadsheet", "Photo", "File". */
   label: string;
+  /**
+   * The type it groups and names by: the declared type, or the stored
+   * extension's when the declared one is absent or unrecognised. The phone
+   * saves a document under this type's extension (`document-file.ts`), so the
+   * file it hands over is the kind its tile says it is.
+   */
+  groupType: string | null;
 };
 
 /**
@@ -232,6 +239,7 @@ function describe(type: string | null, groupBy: string | null): ClassifiedFile {
     type,
     kind,
     label: (groupBy && TYPE_LABEL[groupBy]) || KIND_LABEL[kind],
+    groupType: groupBy,
   };
 }
 
