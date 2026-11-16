@@ -5,6 +5,8 @@ import {
   formatDateEntry,
   parseDateEntry,
   parseDateEntryWithTime,
+  parseTimeEntry,
+  addMinutesToTime,
 } from "./date-entry";
 
 // Monday, 9 November 2026, mid-afternoon local.
@@ -244,5 +246,39 @@ describe("leaning back and to the nearest (#3937)", () => {
 
   it("puts a time alone on today", () => {
     expect(parseDateEntryWithTime("9am", NOW, "back")).toBe("2026-11-09T09:00");
+  });
+});
+
+describe("parseTimeEntry (#5219)", () => {
+  it("reads times written the usual ways", () => {
+    expect(parseTimeEntry("7pm")).toBe("19:00");
+    expect(parseTimeEntry("7:30 PM")).toBe("19:30");
+    expect(parseTimeEntry("9a")).toBe("09:00");
+    expect(parseTimeEntry("19:30")).toBe("19:30");
+    expect(parseTimeEntry("noon")).toBe("12:00");
+    expect(parseTimeEntry("7 PM")).toBe("19:00");
+  });
+
+  it("reads a bare hour near the anchor", () => {
+    expect(parseTimeEntry("7")).toBe("19:00");
+    expect(parseTimeEntry("730")).toBe("19:30");
+    expect(parseTimeEntry("10", "09:00")).toBe("10:00");
+    expect(parseTimeEntry("12")).toBe("12:00");
+    expect(parseTimeEntry("0")).toBe("00:00");
+  });
+
+  it("reads nothing else", () => {
+    expect(parseTimeEntry("")).toBeNull();
+    expect(parseTimeEntry("friday 5pm")).toBeNull();
+    expect(parseTimeEntry("25")).toBeNull();
+    expect(parseTimeEntry("7:75")).toBeNull();
+    expect(parseTimeEntry("soon")).toBeNull();
+  });
+});
+
+describe("addMinutesToTime", () => {
+  it("adds and wraps past midnight", () => {
+    expect(addMinutesToTime("19:00", 60)).toBe("20:00");
+    expect(addMinutesToTime("23:30", 60)).toBe("00:30");
   });
 });

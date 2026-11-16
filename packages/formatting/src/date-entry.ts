@@ -298,6 +298,51 @@ function findTime(
 }
 
 /**
+ * A time of day typed into a time field on its own (#5219): `7pm`, `7:30 pm`,
+ * `19:30`, `noon`, or a bare `7` / `730`, as Google Calendar's time box reads
+ * them. Returns `HH:MM` on the 24-hour clock, or `null` for anything else.
+ *
+ * A bare hour has no AM or PM, so it is read as whichever of the two lies
+ * nearer `anchor` (`HH:MM`): an evening default reads `7` as 7 PM, and an end
+ * field anchored on a 9 AM start reads `10` as 10 AM. `12` alone is noon.
+ */
+export function parseTimeEntry(raw: string, anchor = "19:00"): string | null {
+  const text = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!text) return null;
+  const found = findTime(text);
+  if (found)
+    return found.rest ? null : `${pad(found.hours)}:${pad(found.minutes)}`;
+  const bare = /^(\d{1,2})(?::?(\d{2}))?$/.exec(text);
+  if (!bare) return null;
+  let hours = Number(bare[1]);
+  const minutes = bare[2] ? Number(bare[2]) : 0;
+  if (minutes > 59 || hours > 23) return null;
+  if (hours >= 1 && hours <= 12) {
+    if (hours === 12) {
+      hours = 12;
+    } else {
+      const [ah = 19, am = 0] = anchor.split(":").map(Number);
+      const at = ah * 60 + am;
+      const morning = hours * 60 + minutes;
+      const evening = morning + 12 * 60;
+      const gap = (value: number) => {
+        const d = Math.abs(value - at);
+        return Math.min(d, 24 * 60 - d);
+      };
+      if (gap(evening) <= gap(morning)) hours += 12;
+    }
+  }
+  return `${pad(hours)}:${pad(minutes)}`;
+}
+
+/** `HH:MM` plus `minutes`, wrapping past midnight. */
+export function addMinutesToTime(time: string, minutes: number): string {
+  const [h = 0, m = 0] = time.split(":").map(Number);
+  const total = (((h * 60 + m + minutes) % 1440) + 1440) % 1440;
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+}
+
+/**
  * What the API takes for a due entry: the day, and the instant when the
  * entry has a time, read in the device's zone (`POST /v1/tasks` `due_at`).
  */

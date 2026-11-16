@@ -9,16 +9,14 @@ import {
   meetingWhenLabel,
 } from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import { DateField } from "@/components/ui/date-field";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
-import { localIso } from "@/components/meetings/start-minutes-panel";
 import {
-  MinutesAudienceField,
-  type MinutesAudience,
-} from "@/components/meetings/minutes-audience";
+  DEFAULT_MEETING_NAME,
+  OffCalendarMeetingFields,
+  offCalendarSpan,
+  type OffCalendarMeeting,
+} from "@/components/meetings/off-calendar-meeting";
 
 /** How far back the picker looks for the meeting's event. */
 const RECENT_DAYS = 60;
@@ -46,12 +44,14 @@ export function LinkEventPanel({
   const link = useLinkMeetingEvent();
   const [open, setOpen] = useState(false);
   const [making, setMaking] = useState(false);
-  const [name, setName] = useState(meetingName);
-  const [date, setDate] = useState("");
-  const [startTime, setStartTime] = useState("19:00");
-  const [endTime, setEndTime] = useState("20:00");
-  const [audience, setAudience] = useState<MinutesAudience>("everyone");
-  const [roleIds, setRoleIds] = useState<string[]>([]);
+  const [meeting, setMeeting] = useState<OffCalendarMeeting>({
+    name: meetingName,
+    date: "",
+    startTime: "",
+    endTime: "",
+    audience: "everyone",
+    roleIds: [],
+  });
   const [problem, setProblem] = useState<string | null>(null);
 
   const [now] = useState(() => Date.now());
@@ -87,27 +87,24 @@ export function LinkEventPanel({
   }
 
   function makeIt() {
-    const start = localIso(date, startTime);
-    const end = localIso(date, endTime);
-    if (
-      !name.trim() ||
-      !start ||
-      !end ||
-      Date.parse(end) <= Date.parse(start)
-    ) {
-      setProblem("Give the meeting a name, a day, and an end after its start.");
+    const span = offCalendarSpan(
+      meeting,
+      asArray<EventRow>(eventsQuery.data),
+      new Date(),
+    );
+    if ("problem" in span) {
+      setProblem(span.problem);
       return;
     }
-    if (audience === "roles" && roleIds.length === 0) {
+    if (meeting.audience === "roles" && meeting.roleIds.length === 0) {
       setProblem("Pick at least one role, or choose Everyone.");
       return;
     }
     void submit({
       new_event: {
-        name: name.trim(),
-        start_time: start,
-        end_time: end,
-        role_ids: audience === "roles" ? roleIds : [],
+        name: meeting.name.trim() || DEFAULT_MEETING_NAME,
+        ...span,
+        role_ids: meeting.audience === "roles" ? meeting.roleIds : [],
       },
     });
   }
@@ -166,52 +163,10 @@ export function LinkEventPanel({
             </Button>
           ) : (
             <div className="grid gap-3">
-              <div className="grid gap-1">
-                <Label htmlFor={`${ids}-name`}>Meeting name</Label>
-                <Input
-                  id={`${ids}-name`}
-                  value={name}
-                  maxLength={200}
-                  onChange={(event) => setName(event.target.value)}
-                />
-              </div>
-              <div className="grid gap-1">
-                <Label htmlFor={`${ids}-date`}>Day</Label>
-                <DateField
-                  id={`${ids}-date`}
-                  lean="back"
-                  placeholder="e.g. last Sunday"
-                  value={date}
-                  onChange={setDate}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="grid min-w-0 gap-1">
-                  <Label htmlFor={`${ids}-start`}>Started</Label>
-                  <Input
-                    id={`${ids}-start`}
-                    type="time"
-                    step={300}
-                    value={startTime}
-                    onChange={(event) => setStartTime(event.target.value)}
-                  />
-                </div>
-                <div className="grid min-w-0 gap-1">
-                  <Label htmlFor={`${ids}-end`}>Ended</Label>
-                  <Input
-                    id={`${ids}-end`}
-                    type="time"
-                    step={300}
-                    value={endTime}
-                    onChange={(event) => setEndTime(event.target.value)}
-                  />
-                </div>
-              </div>
-              <MinutesAudienceField
-                audience={audience}
-                onAudienceChange={setAudience}
-                roleIds={roleIds}
-                onRoleIdsChange={setRoleIds}
+              <OffCalendarMeetingFields
+                value={meeting}
+                onChange={setMeeting}
+                problems={{}}
               />
               <div>
                 <Button size="sm" disabled={link.isPending} onClick={makeIt}>
