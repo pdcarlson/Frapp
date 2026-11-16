@@ -40,6 +40,7 @@ import {
   useSheetClose,
   useSheetVisit,
   SHEET_STACK_BEHAVIOR,
+  type GuardedSheetHandle,
 } from "@/components/sheet-scaffold";
 import * as Clipboard from "expo-clipboard";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -47,15 +48,9 @@ import { selectionHaptic } from "@/lib/haptics";
 import { confirmBlockMember, useBlockActions } from "@/lib/chat/block-actions";
 import { AddReactionGlyph } from "@/components/control-glyphs";
 import { EmojiPickerSheet } from "@/components/chat/emoji-picker-sheet";
-import {
-  ForwardSheet,
-  type ForwardSheetHandle,
-} from "@/components/chat/forward-sheet";
+import { ForwardSheet } from "@/components/chat/forward-sheet";
 import type { ForwardTarget } from "@repo/chat-core/forward";
-import {
-  RemindSheet,
-  type RemindSheetHandle,
-} from "@/components/chat/remind-sheet";
+import { RemindSheet } from "@/components/chat/remind-sheet";
 import { MESSAGE_REMINDER_LABEL } from "@repo/hooks/use-message-reminders";
 import { QUICK_REACTIONS, canonicalEmoji } from "@repo/chat-core/emoji-recent";
 import { recordRecentEmoji } from "@/lib/chat/recent-emoji";
@@ -388,8 +383,8 @@ export const MessageActionsSheet = forwardRef<
   const menuRef = useRef<BottomSheetModal>(null);
   const reportRef = useRef<BottomSheetModal>(null);
   const pickerRef = useRef<BottomSheetModal>(null);
-  const forwardSheetRef = useRef<ForwardSheetHandle>(null);
-  const remindSheetRef = useRef<RemindSheetHandle>(null);
+  const forwardSheetRef = useRef<GuardedSheetHandle>(null);
+  const remindSheetRef = useRef<GuardedSheetHandle>(null);
   const closeMenu = useSheetClose(menuRef);
   const closeReport = useSheetClose(reportRef);
   // Whether each modal is up, so the thread's dismiss (its message was
