@@ -18,6 +18,7 @@ import { VERIFY_SESSION_LOCALLY_KEY } from '../decorators/session-check.decorato
 import { JWKS_VERIFIED_ALGS } from './custom-throttler.guard';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { createHash } from 'node:crypto';
+import { decodeJwtSegment } from '#domain/utils/jwt-segment';
 import { isAuthOutage, lookupUnavailable } from './guard-lookup';
 import { InFlightLookups } from '../../infrastructure/supabase/in-flight-lookups';
 import {
@@ -107,14 +108,9 @@ export function failedClaimCheck(
 function tokenAlg(token: string): string | undefined {
   const [headerSeg] = token.split('.');
   if (!headerSeg) return undefined;
-  try {
-    const header = JSON.parse(
-      Buffer.from(headerSeg, 'base64url').toString('utf8'),
-    ) as { alg?: unknown };
-    return typeof header.alg === 'string' ? header.alg : undefined;
-  } catch {
-    return undefined;
-  }
+  const header = decodeJwtSegment(headerSeg) as
+    { alg?: unknown } | null | undefined;
+  return typeof header?.alg === 'string' ? header.alg : undefined;
 }
 
 /** The key `sessionLookups` shares a token's session check under. */

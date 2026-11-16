@@ -1713,4 +1713,46 @@ describe('StudyService', () => {
       );
     });
   });
+
+  // Heartbeat, pause, resume and stop each reload the active session and its
+  // geofence; they answer a missing one with the same two 404s.
+  describe('active session reload', () => {
+    const calls: Array<[string, (svc: StudyService) => Promise<unknown>]> = [
+      ['heartbeat', (svc) => svc.heartbeat('user-1', 'ch-1', 5, 5)],
+      ['pauseSession', (svc) => svc.pauseSession('user-1', 'ch-1')],
+      ['resumeSession', (svc) => svc.resumeSession('user-1', 'ch-1', 5, 5)],
+      ['stopSession', (svc) => svc.stopSession('user-1', 'ch-1')],
+    ];
+
+    it.each(calls)(
+      '%s 404s when the member has no active session',
+      async (_name, call) => {
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(null);
+
+        await expect(call(service)).rejects.toThrow(
+          new NotFoundException('No active study session found'),
+        );
+        expect(mockSessionRepo.findActiveByUserAndChapter).toHaveBeenCalledWith(
+          'user-1',
+          'ch-1',
+        );
+        expect(mockGeofenceRepo.findById).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(calls)(
+      "%s 404s when the session's geofence is gone",
+      async (_name, call) => {
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+          baseSession,
+        );
+        mockGeofenceRepo.findById.mockResolvedValue(null);
+
+        await expect(call(service)).rejects.toThrow(
+          new NotFoundException('Geofence not found'),
+        );
+        expect(mockGeofenceRepo.findById).toHaveBeenCalledWith('geo-1', 'ch-1');
+      },
+    );
+  });
 });

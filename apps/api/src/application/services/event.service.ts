@@ -24,9 +24,9 @@ import {
 } from './event-announcement.service';
 import { SystemPermissions } from '#domain/constants/permissions';
 import {
+  filterVisibleEvents,
   isEventVisibleTo,
   isEventVisibleWith,
-  isInvited,
   type EventViewer,
 } from './event-role-targeting';
 import {
@@ -315,29 +315,15 @@ export class EventService {
   }
 
   /** `events` narrowed to those `viewerId` may read (see `isVisibleToViewer`). */
-  private async visibleOf(
+  private visibleOf(
     events: Event[],
     chapterId: string,
     viewerId: string,
   ): Promise<Event[]> {
-    // Skip the permission/member lookups entirely for the common case — a
-    // chapter with no role-targeted events — rather than paying for them on
-    // every list call.
-    const hasTargetedEvents = events.some(eventLimitsAudience);
-    if (!hasTargetedEvents) return events;
-    if (
-      await this.rbac.memberHasAnyPermission(chapterId, viewerId, [
-        SystemPermissions.EVENTS_UPDATE,
-      ])
-    ) {
-      return events;
-    }
-    const member = await this.memberRepo.findByUserAndChapter(
-      viewerId,
-      chapterId,
-    );
-    const memberRoleIds = member?.role_ids ?? [];
-    return events.filter((event) => isInvited(event, memberRoleIds));
+    return filterVisibleEvents(events, chapterId, viewerId, {
+      rbac: this.rbac,
+      memberRepo: this.memberRepo,
+    });
   }
 
   /**
