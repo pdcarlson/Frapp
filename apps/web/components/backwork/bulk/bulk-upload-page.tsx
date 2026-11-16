@@ -60,6 +60,8 @@ import {
 import { getBulkSession, type Prepared, type Submission } from "@/lib/backwork-bulk/session";
 import { InlineNote } from "@/components/shared/inline-note";
 import { DraftsReview } from "./drafts-review";
+import { useSuggestedBoxes } from "./use-suggested-boxes";
+import { addBoxes, suggestionNote, type BoxSuggestion } from "@/lib/backwork-bulk/suggest-boxes";
 
 /**
  * Backwork bulk upload (#3499): drop PDFs or folders, redact and describe each
@@ -72,7 +74,9 @@ import { DraftsReview } from "./drafts-review";
  * Privacy: a Student Copy, or any document with a box on it, is flattened on
  * this device and only the flattened file is uploaded (`flattenPdf`). The
  * original bytes leave the browser only for a Blank Copy or Answer Key with no
- * boxes, which is the same file the single upload sheet already sends.
+ * boxes, which is the same file the single upload sheet already sends. Boxes
+ * are suggested from each document's own text as it opens
+ * (`useSuggestedBoxes`, `suggest-boxes.ts`), on this device.
  */
 export function BulkUploadPage() {
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
@@ -157,6 +161,15 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
     // over the batch's sticky fields (`handoff.ts`).
     setFields(documentFields(sticky, current.file));
     setBoxes({});
+  }
+
+  // Boxes suggested from the document's own text go on once, beside any the
+  // person drew while the search ran (`suggest-boxes.ts`).
+  const suggestion = useSuggestedBoxes(current);
+  const [suggestedFor, setSuggestedFor] = useState<string | null>(null);
+  if (current && suggestion && suggestedFor !== current.id) {
+    setSuggestedFor(current.id);
+    setBoxes((drawn) => addBoxes(drawn, suggestion.boxes));
   }
 
   const pending = snapshot.items.some((it) =>
@@ -282,7 +295,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
 
           <section className="order-1 min-w-0 @4xl:order-2" aria-label="Redact">
             {current ? (
-              <CurrentDocument item={current} boxes={boxes} onBoxes={setBoxes} loadPreview={loadPreview} onRetry={() => queue.retry(current.id)} onRemove={() => queue.remove(current.id)} />
+              <CurrentDocument item={current} suggestion={suggestion} boxes={boxes} onBoxes={setBoxes} loadPreview={loadPreview} onRetry={() => queue.retry(current.id)} onRemove={() => queue.remove(current.id)} />
             ) : (
               <AllCaughtUp finishing={pending} />
             )}
@@ -321,6 +334,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
 
 function CurrentDocument({
   item,
+  suggestion,
   boxes,
   onBoxes,
   loadPreview,
@@ -328,6 +342,7 @@ function CurrentDocument({
   onRemove,
 }: {
   item: QueueItem<Prepared, Submission>;
+  suggestion: BoxSuggestion | null;
   boxes: BoxesByPage;
   onBoxes: (next: BoxesByPage) => void;
   loadPreview: (page: number) => Promise<PagePreview>;
@@ -353,13 +368,18 @@ function CurrentDocument({
           </Button>
         </div>
       ) : item.prepared ? (
-        <PdfRedactor
-          key={item.id}
-          pageCount={item.prepared.pageCount}
-          loadPreview={loadPreview}
-          boxes={boxes}
-          onChange={onBoxes}
-        />
+        <>
+          <p className="text-caption text-muted-foreground" aria-live="polite">
+            {suggestionNote(suggestion)}
+          </p>
+          <PdfRedactor
+            key={item.id}
+            pageCount={item.prepared.pageCount}
+            loadPreview={loadPreview}
+            boxes={boxes}
+            onChange={onBoxes}
+          />
+        </>
       ) : (
         <div className="flex aspect-[8.5/11] w-full max-w-[860px] items-center justify-center rounded-lg border border-border bg-surface-1">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label="Loading the PDF" />
