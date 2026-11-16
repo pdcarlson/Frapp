@@ -4,7 +4,7 @@ import type {
   AgentProposeTool,
   AgentToolContext,
 } from '../ask/agent/agent-tool';
-import type { ActPlan } from './act-prompt';
+import { ACT_REPEATS, type ActPlan } from './act-prompt';
 import type { ActOutcome, ActTool } from './act-tool';
 import type { ActService } from './act.service';
 
@@ -101,6 +101,12 @@ const EventArgs = z.object({
     .min(0)
     .optional()
     .describe('The points it is worth, when the member said.'),
+  repeats: z
+    .enum(ACT_REPEATS)
+    .optional()
+    .describe(
+      'How often it happens again, when the member said it repeats ("every Sunday" is weekly). Left out: once.',
+    ),
 });
 
 /** Every field of a plan, empty. An action reads the ones it needs. */
@@ -116,6 +122,7 @@ const EMPTY_PLAN: Omit<ActPlan, 'action'> = {
   details: null,
   location: null,
   required: null,
+  repeats: null,
 };
 
 interface Front<Args> {
@@ -162,7 +169,7 @@ const FRONTS: Readonly<Record<string, Front<unknown>>> = {
   }),
   create_event: front<z.infer<typeof EventArgs>>({
     description:
-      'Prepare a card that puts one event on the chapter calendar, for the member to confirm. Use it only when the member asked for an event to be made and you have its name, day and start time. It changes nothing by itself.',
+      'Prepare a card that puts one event, or a repeating series, on the chapter calendar, for the member to confirm. Use it only when the member asked for an event to be made and you have its name, day and start time; for a series, the day is its first meeting. It changes nothing by itself.',
     reading: 'Working out the event',
     input: EventArgs,
     plan: (args) => ({
@@ -175,6 +182,7 @@ const FRONTS: Readonly<Record<string, Front<unknown>>> = {
       details: args.details ?? null,
       required: args.required ?? null,
       amount: args.points ?? null,
+      repeats: args.repeats ?? null,
     }),
   }),
 };

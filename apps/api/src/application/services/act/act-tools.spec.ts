@@ -424,8 +424,62 @@ describe('CreateEventActTool', () => {
         end_time: '2026-11-18T01:00:00.000Z',
         point_value: null,
         is_mandatory: false,
+        recurrence_rule: null,
       },
       notes: [],
+    });
+  });
+
+  it('makes a series when the member said it repeats, on the first day said, in their zone', async () => {
+    // "every Sunday night at 6:48 PM" (Paul, 2026-11-15): the card dropped
+    // the repeat and showed one event.
+    const weekly = await tool.draft(
+      plan({
+        title: 'Chapter',
+        date: '2026-11-15',
+        start_time: '18:48',
+        repeats: 'weekly',
+      }),
+      context,
+    );
+    expect(weekly).toMatchObject({
+      payload: {
+        start_time: '2026-11-15T23:48:00.000Z',
+        recurrence_rule:
+          'FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=13;TZID=America/New_York',
+      },
+    });
+    expect(
+      await tool.draft(
+        plan({
+          title: 'Officer sync',
+          date: '2026-11-18',
+          start_time: '20:00',
+          repeats: 'every_other_week',
+        }),
+        context,
+      ),
+    ).toMatchObject({
+      payload: {
+        recurrence_rule:
+          'FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;COUNT=13;TZID=America/New_York',
+      },
+    });
+    expect(
+      await tool.draft(
+        plan({
+          title: 'Alumni dinner',
+          date: '2026-12-05',
+          start_time: '19:00',
+          repeats: 'monthly',
+        }),
+        context,
+      ),
+    ).toMatchObject({
+      payload: {
+        recurrence_rule:
+          'FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=5;COUNT=7;TZID=America/New_York',
+      },
     });
   });
 

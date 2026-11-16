@@ -50,6 +50,23 @@ describe('the scripted acting agent', () => {
     });
   });
 
+  it('reads how often an event repeats, and not "every member" as a repeat (#5117)', () => {
+    expect(
+      planFor('Add an event chapter every Sunday at 6:48 PM'),
+    ).toMatchObject({ action: 'create_event', repeats: 'weekly' });
+    expect(
+      planFor('Add an officer sync event every other Wednesday at 8'),
+    ).toMatchObject({ repeats: 'every_other_week' });
+    expect(
+      planFor('Add an alumni dinner event monthly on Friday at 7'),
+    ).toMatchObject({ repeats: 'monthly' });
+    expect(
+      planFor(
+        'Add a study night event Tuesday at 7, required for every member',
+      ),
+    ).toMatchObject({ action: 'create_event', repeats: null });
+  });
+
   it('reads the request Ask opens with: the day after "due", and the other day left in the title', () => {
     expect(
       planFor(

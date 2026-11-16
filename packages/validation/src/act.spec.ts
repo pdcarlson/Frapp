@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  actPointsEdits,
+  actRepeatLine,
   actAttendanceLine,
   actConfirmRefusalLine,
   ACT_ACTIONS,
@@ -12,6 +14,7 @@ import {
   actPointsTotalLine,
   actWhenLine,
 } from "./act";
+import { proposedRepeatDraft } from "./repeat-draft";
 
 describe("the acting agent's words", () => {
   it("says the size of a points change plainly", () => {
@@ -90,5 +93,61 @@ describe("the acting agent's words", () => {
       "Confirm again",
     );
     expect(actConfirmRefusalLine("something.else")).toBeNull();
+  });
+});
+
+describe("a proposal's Edit and repeat (#5117)", () => {
+  const WEEKLY =
+    "FREQ=WEEKLY;INTERVAL=1;BYDAY=SU;COUNT=13;TZID=America/New_York";
+
+  it("writes a series out in full, with the year only when it runs into the next", () => {
+    expect(actRepeatLine(WEEKLY, "2026-11-15T23:48:00.000Z")).toBe(
+      "Every Sunday, 13 times, the last on Sunday, February 7, 2027",
+    );
+    expect(
+      actRepeatLine(
+        "FREQ=WEEKLY;INTERVAL=2;BYDAY=WE;COUNT=3;TZID=America/New_York",
+        "2026-09-02T23:00:00.000Z",
+      ),
+    ).toBe(
+      "Every other Wednesday, 3 times, the last on Wednesday, September 30",
+    );
+    expect(actRepeatLine(null, "2026-11-15T23:48:00.000Z")).toBe("");
+    expect(actRepeatLine("WEEKLY", "2026-11-15T23:48:00.000Z")).toBe("");
+  });
+
+  it("reads a points card's fields into only what changed", () => {
+    const proposed = { amount: 5, reason: "Came to chapter" };
+    expect(actPointsEdits(proposed, "5", "Came to chapter")).toEqual({
+      ok: true,
+      edits: {},
+    });
+    expect(actPointsEdits(proposed, " -1,000 ", "Skipped chapter ")).toEqual({
+      ok: true,
+      edits: { amount: -1000, reason: "Skipped chapter" },
+    });
+    for (const typed of ["0", "2.5", "", "five", "100001"]) {
+      expect(actPointsEdits(proposed, typed, "x")).toMatchObject({
+        ok: false,
+        field: "amount",
+      });
+    }
+    expect(actPointsEdits(proposed, "5", "  ")).toMatchObject({
+      ok: false,
+      field: "reason",
+    });
+  });
+
+  it("opens a proposed series in the form following its first meeting", () => {
+    const draft = proposedRepeatDraft(WEEKLY);
+    expect(draft).toMatchObject({
+      preset: "WEEKLY",
+      byDay: null,
+      countInput: "13",
+      timeZone: "America/New_York",
+      source: null,
+      pristine: false,
+    });
+    expect(proposedRepeatDraft(null).preset).toBe("NONE");
   });
 });

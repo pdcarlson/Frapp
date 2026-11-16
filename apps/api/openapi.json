@@ -27165,6 +27165,11 @@
           },
           "is_mandatory": {
             "type": "boolean"
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "nullable": true,
+            "description": "The repeat the series is made with (the `recurrence_rule` format of `POST /v1/events`), or null for one event."
           }
         },
         "required": [
@@ -27174,7 +27179,8 @@
           "start_time",
           "end_time",
           "point_value",
-          "is_mandatory"
+          "is_mandatory",
+          "recurrence_rule"
         ]
       },
       "AiSuggestionDto": {
@@ -27384,6 +27390,19 @@
           "event_id"
         ]
       },
+      "NewEventSuggestionAcceptDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
       "AcceptAiSuggestionDto": {
         "type": "object",
         "properties": {
@@ -27408,6 +27427,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/EventSuggestionAcceptDto"
+              }
+            ]
+          },
+          "new_event": {
+            "description": "For a proposed event the caller already added in the event form: records it instead of making one.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewEventSuggestionAcceptDto"
               }
             ]
           }
@@ -27515,6 +27542,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/EventSuggestionAcceptDto"
+              }
+            ]
+          },
+          "new_event": {
+            "description": "For a proposed event the caller already added in the event form: records it instead of making one.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewEventSuggestionAcceptDto"
               }
             ]
           },

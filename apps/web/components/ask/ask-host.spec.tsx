@@ -288,9 +288,7 @@ describe("the way in", () => {
         <Page />
       </AskHost>,
     );
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: "ask" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "ask" }));
     who.previewing = true;
     view.rerender(
       <AskHost>

@@ -152,6 +152,7 @@ describe('the cards the tool loop may propose', () => {
         start_time: '19:00',
         required: true,
         points: 2,
+        repeats: 'weekly',
       }),
       context,
     );
@@ -175,6 +176,8 @@ describe('the cards the tool loop may propose', () => {
         start_time: '19:00',
         required: true,
         amount: 2,
+        // "every Tuesday" read by the model reaches the card (#5117).
+        repeats: 'weekly',
       }),
     ]);
   });

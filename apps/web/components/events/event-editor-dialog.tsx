@@ -45,6 +45,7 @@ import {
   leavesAfterSave,
   noRepeatDraft,
   REPEAT_PRESET_LABELS,
+  proposedRepeatDraft,
   repeatDraftFromRule,
   repeatEditAnchor,
   repeatEditDraft,
@@ -96,6 +97,7 @@ import {
   parseGuardedInt,
 } from "@/lib/utils";
 import { parseInstant } from "@repo/formatting";
+import { isoToLocalInput } from "@/components/events/local-input";
 import { randomClientId, statusOf } from "@repo/api-sdk";
 import {
   eventCardOutcomeCopy,
@@ -106,13 +108,6 @@ type EventRecord = Record<string, unknown>;
 
 const textOf = (value: unknown): string | null =>
   typeof value === "string" ? value : null;
-
-export function isoToLocalInput(value: unknown): string {
-  const date = parseInstant(value);
-  if (!date) return "";
-  const timezoneOffset = date.getTimezoneOffset() * 60_000;
-  return new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 16);
-}
 
 function localInputToIso(value: string): string {
   // The editor holds a day and a time apart; either may still be empty.
@@ -260,6 +255,7 @@ function openingDraft({
   initialName,
   initialLocation,
   initialPointValue,
+  initialRepeatRule,
 }: {
   mode: "create" | "edit";
   event: EventRecord | null;
@@ -269,7 +265,11 @@ function openingDraft({
   initialName?: string;
   initialLocation?: string;
   initialPointValue?: number;
+  initialRepeatRule?: string | null;
 }): EventFormDraft {
+  const openingRepeat = initialRepeatRule
+    ? proposedRepeatDraft(initialRepeatRule)
+    : noRepeatDraft();
   const text = (value: unknown) => (typeof value === "string" ? value : "");
   const points = (value: unknown) =>
     String(typeof value === "number" ? value : 10);
@@ -313,7 +313,7 @@ function openingDraft({
       endAt: initialEndAt ?? "",
       pointValue: points(template.point_value),
       attendance: attendanceFromEvent(attendanceFieldsOf(template)),
-      repeat: noRepeatDraft(),
+      repeat: openingRepeat,
       notes: text(template.notes),
       eventTypeId:
         typeof template.event_type_id === "string"
@@ -336,7 +336,7 @@ function openingDraft({
     endAt: initialEndAt ?? "",
     pointValue: String(initialPointValue ?? 10),
     attendance: emptyAttendanceDraft(),
-    repeat: noRepeatDraft(),
+    repeat: openingRepeat,
     notes: "",
     eventTypeId: null,
     checkInZone: [],
@@ -507,10 +507,16 @@ type EventEditorDialogProps = {
    * An earlier event a fresh create starts as a copy of (#3930, "this time
    * last year"): its name, description, location, points, who it is for,
    * notes, type and check-in zone. Never its schedule or its repeat, which
-   * come from `initialStartAt` / `initialEndAt` and the officer. Ignored in
-   * edit mode.
+   * come from `initialStartAt` / `initialEndAt`, `initialRepeatRule` and the
+   * officer. Ignored in edit mode.
    */
   template?: EventRecord | null;
+  /**
+   * The repeat a fresh create opens with: the series Ask proposed (#5117),
+   * following the first meeting as the officer moves it. Ignored in edit
+   * mode.
+   */
+  initialRepeatRule?: string | null;
   /**
    * Keep what is typed when the officer leaves without saving (#4593), under
    * this name (`event-create`, `event-edit:<id>`): going back, Escape or
@@ -554,6 +560,7 @@ export function EventEditorDialog({
   initialLocation,
   initialPointValue,
   template,
+  initialRepeatRule,
   keptDraft,
   onCreated,
   postToChannelId,
@@ -743,6 +750,7 @@ export function EventEditorDialog({
       initialName,
       initialLocation,
       initialPointValue,
+      initialRepeatRule,
     });
     const draft = takeKept();
     openedOnDraft.current = draft !== undefined;
@@ -779,6 +787,7 @@ export function EventEditorDialog({
     initialName,
     initialLocation,
     initialPointValue,
+    initialRepeatRule,
     takeKept,
     fillCount,
   ]);

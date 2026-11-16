@@ -91,10 +91,8 @@ import {
   useRecordPlannedEvent,
   type EventPlan,
 } from "@/components/ai/suggested-events";
-import {
-  EventEditorDialog,
-  isoToLocalInput,
-} from "@/components/events/event-editor-dialog";
+import { EventEditorDialog } from "@/components/events/event-editor-dialog";
+import { isoToLocalInput } from "@/components/events/local-input";
 import {
   hasKeptDraft,
   readKeptPanel,

@@ -146,6 +146,7 @@ export function useAcceptAiSuggestion() {
       task,
       points,
       eventId,
+      newEventId,
     }: {
       id: string;
       task?: TaskSuggestionEdits;
@@ -155,12 +156,20 @@ export function useAcceptAiSuggestion() {
        * through the event form. The accept records it and makes nothing.
        */
       eventId?: string;
+      /**
+       * For an event Ask proposed (#5117): the event the member added from
+       * the card's Edit, through the event form. The accept records it and
+       * makes nothing.
+       */
+      newEventId?: string;
     }): Promise<AiSuggestionDecision> => {
+      let body;
+      if (newEventId) body = { new_event: { event_id: newEventId } };
+      else if (eventId) body = { event: { event_id: eventId } };
+      else body = { ...(task ? { task } : {}), ...(points ? { points } : {}) };
       const result = await client.POST("/v1/ai/suggestions/{id}/accept", {
         params: { path: { id } },
-        body: eventId
-          ? { event: { event_id: eventId } }
-          : { ...(task ? { task } : {}), ...(points ? { points } : {}) },
+        body,
       });
       throwUnlessOk(result);
       return bodyOf(result.data);
@@ -172,6 +181,38 @@ export function useAcceptAiSuggestion() {
         queryKey: aiSuggestionKeys.all(chapterId),
       }),
   });
+}
+
+/**
+ * Settles an event Ask proposed once the member made it in the event form
+ * from the card's Edit (#5117): records it on the proposal, or, if that
+ * can't land (the proposal expired, the network dropped, or the form's answer
+ * carried no id), takes the proposal down, so it is never drawn again with a
+ * Confirm that would make the event a second time. The event is made either
+ * way, so nothing here is the member's to fix and nothing is thrown. A
+ * proposal that can't be taken down either was already decided, or expires
+ * the next day.
+ */
+export async function settleProposedEvent(
+  mutations: {
+    accept: ReturnType<typeof useAcceptAiSuggestion>;
+    dismiss: ReturnType<typeof useDismissAiSuggestion>;
+  },
+  suggestionId: string,
+  eventId: string | null,
+): Promise<void> {
+  if (eventId) {
+    try {
+      await mutations.accept.mutateAsync({
+        id: suggestionId,
+        newEventId: eventId,
+      });
+      return;
+    } catch {
+      // Taken down below.
+    }
+  }
+  await mutations.dismiss.mutateAsync(suggestionId).catch(() => undefined);
 }
 
 export function useDismissAiSuggestion() {

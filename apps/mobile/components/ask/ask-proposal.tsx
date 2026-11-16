@@ -6,11 +6,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   BottomSheetFlatList,
   BottomSheetModal,
   BottomSheetTextInput,
+  useBottomSheetInternal,
 } from "@gorhom/bottom-sheet";
 import { codeOf } from "@repo/api-sdk";
 import {
@@ -21,6 +22,7 @@ import {
   useChapterRoster,
   useCurrentUser,
   useDismissAiSuggestion,
+  settleProposedEvent,
   type ActResponse,
   type AiSuggestion,
   type AskCardEnd,
@@ -39,7 +41,9 @@ import {
   actMissingLine,
   actNoteLine,
   actPointsDoneLine,
+  actPointsEdits,
   actPointsHeadline,
+  actRepeatLine,
   actPointsTotalLine,
   actWhenLine,
   meetingDueLabel,
@@ -58,11 +62,13 @@ import {
   useSheetClose,
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
+import { NewEventSheet } from "@/components/events/new-event-sheet";
 import {
   NewTaskSheet,
   type TaskSuggestionSeed,
 } from "@/components/tasks/new-task-sheet";
 import type { KeptTargets } from "@/lib/ask/kept-targets";
+import { proposedEventTemplate } from "@/lib/ask/proposed-event-template";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { suggestionEdits } from "@/lib/tasks/suggestion-edits";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
@@ -89,8 +95,18 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * sheet with a search field, not a menu). A task opens the ordinary task
  * form on the proposal, the same door a suggested task has
  * (`suggested-tasks.tsx`), so who, when and the steps are changed where an
- * officer already changes them. Everything else is said again in other
- * words: the conversation carries what was typed before.
+ * officer already changes them.
+ *
+ * **Every card has Edit beside Cancel** (Paul, 2026-11-15, #5117: "it got
+ * the general idea down, but I'd love to be able to add attendance and change
+ * the time"). Gmail's Smart Compose and Siri's suggested reminders hand the
+ * draft to the ordinary editor rather than growing their own, and Calendar's
+ * "Add to calendar" on an event found in mail opens the full event editor.
+ * So Edit opens the form the officer already uses: an event opens New event
+ * filled in from the card (attendance by role, the end, notes, the repeat),
+ * and its Create is the confirm; a task opens the task form. A points card
+ * has no form of its own on the phone, so Edit turns its amount and reason
+ * into fields on the card. Both forms keep what was typed when closed (#4593).
  *
  * **Every card in the thread stays live.** A card is not replaced by the
  * next thing asked. Once it is confirmed or dismissed it becomes one line
@@ -154,7 +170,9 @@ export function AskProposal({
   if (resolution) {
     return (
       <CardReceipt
-        headline={proposal.suggestion ? cardHeadline(proposal.suggestion) : null}
+        headline={
+          proposal.suggestion ? cardHeadline(proposal.suggestion) : null
+        }
         resolution={resolution}
         onOpen={onOpen}
         styles={styles}
@@ -278,10 +296,7 @@ export function AskAnswerCards({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const waiting = useMemo(
-    () => ids.filter((id) => !ended[id]),
-    [ids, ended],
-  );
+  const waiting = useMemo(() => ids.filter((id) => !ended[id]), [ids, ended]);
   const cards = useAskCards(waiting);
   return (
     <View style={styles.block} testID="ask-answer-cards">
@@ -527,6 +542,55 @@ function CardRow({
   );
 }
 
+/** A field on a points card under its Edit, with its label above. */
+function CardField({
+  label,
+  hint,
+  value,
+  onChangeText,
+  keyboardType,
+  problem,
+  disabled,
+  styles,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  keyboardType?: "numbers-and-punctuation";
+  problem: string | null;
+  disabled: boolean;
+  styles: Styles;
+}) {
+  const { tokens } = useFrappTheme();
+  // A card is drawn in the Ask sheet and also under a question asked in a
+  // channel, which is a screen: the sheet's own input throws outside a sheet.
+  const inSheet = useBottomSheetInternal(true) != null;
+  const Field = inSheet ? BottomSheetTextInput : TextInput;
+  return (
+    <View style={styles.cardRow}>
+      <Text style={styles.eyebrow}>{label}</Text>
+      <Field
+        value={value}
+        onChangeText={onChangeText}
+        accessibilityLabel={label}
+        accessibilityHint={hint}
+        editable={!disabled}
+        keyboardType={keyboardType}
+        placeholderTextColor={tokens.color.text.muted}
+        style={[styles.pickerField, problem ? styles.fieldProblem : null]}
+      />
+      {problem ? (
+        <Text accessibilityRole="alert" style={styles.problem}>
+          {problem}
+        </Text>
+      ) : hint ? (
+        <Text style={styles.caption}>{hint}</Text>
+      ) : null}
+    </View>
+  );
+}
+
 /** A task's due day written out, with its time when it has one. */
 function dueLine(task: { due_date: string | null; due_at: string | null }) {
   const day = meetingDueLabel(task.due_date);
@@ -585,7 +649,10 @@ function ActCard({
 
   const { points, task, new_event: event } = suggestion;
   const proposed = points?.target_user_ids;
-  const targets = useMemo(() => [...(kept ?? proposed ?? [])], [kept, proposed]);
+  const targets = useMemo(
+    () => [...(kept ?? proposed ?? [])],
+    [kept, proposed],
+  );
   const setTargets = (change: (list: string[]) => string[]) =>
     onKeep(suggestion.id, change(targets));
   // A Confirm or Cancel is out: the card's controls wait for it.
@@ -596,6 +663,29 @@ function ActCard({
   const [problem, setProblem] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const formRef = useRef<BottomSheetModal>(null);
+  // The event form mounts on the first Edit and stays, so what the officer
+  // typed is still there when they open it again (#4593).
+  const [eventFormMounted, setEventFormMounted] = useState(false);
+  const eventFormRef = useRef<BottomSheetModal>(null);
+  useEffect(() => {
+    if (eventFormMounted) eventFormRef.current?.present();
+  }, [eventFormMounted]);
+  // A points card's Edit: its amount and reason as fields.
+  const [editingPoints, setEditingPoints] = useState(false);
+  const [amountInput, setAmountInput] = useState(
+    points ? String(points.amount) : "",
+  );
+  const [reasonInput, setReasonInput] = useState(points?.reason ?? "");
+  const [fieldProblem, setFieldProblem] = useState<{
+    field: "amount" | "reason";
+    error: string;
+  } | null>(null);
+  const shownAmount = useMemo(() => {
+    if (!points || !editingPoints) return points?.amount ?? 0;
+    // The amount alone: a reason not yet written says nothing about it.
+    const read = actPointsEdits(points, amountInput, "-");
+    return read.ok ? (read.edits.amount ?? points.amount) : points.amount;
+  }, [points, editingPoints, amountInput]);
   const pickerRef = useRef<BottomSheetModal>(null);
   useEffect(() => {
     if (formOpen) formRef.current?.present();
@@ -623,10 +713,20 @@ function ActCard({
         setFlagged(true);
         return;
       }
+      const changes: PointsSuggestionEdits = {};
+      if (editingPoints) {
+        const read = actPointsEdits(points, amountInput, reasonInput);
+        if (!read.ok) {
+          setFieldProblem({ field: read.field, error: read.error });
+          return;
+        }
+        Object.assign(changes, read.edits);
+      }
       const changed =
         targets.length !== points.target_user_ids.length ||
         targets.some((id) => !points.target_user_ids.includes(id));
-      if (changed) edits = { points: { target_user_ids: targets } };
+      if (changed) changes.target_user_ids = targets;
+      if (Object.keys(changes).length > 0) edits = { points: changes };
     }
     if (task && (!task.assignee_id || !task.due_date)) {
       // A task needs who and when; the form is where the officer says them.
@@ -635,12 +735,15 @@ function ActCard({
     }
     setDeciding(true);
     try {
-      const decision = await accept.mutateAsync({ id: suggestion.id, ...edits });
+      const decision = await accept.mutateAsync({
+        id: suggestion.id,
+        ...edits,
+      });
       if (points) {
         const outcome = decision.result?.outcome;
         onDone(
           actPointsDoneLine(
-            points.amount,
+            edits.points?.amount ?? points.amount,
             outcome?.adjusted ?? targets.length,
             outcome?.skipped ?? 0,
           ),
@@ -683,6 +786,29 @@ function ActCard({
     onCancelled();
   }
 
+  /** Edit: the form the officer already uses, or a points card's fields. */
+  function edit() {
+    setProblem(null);
+    if (event) {
+      if (eventFormMounted) eventFormRef.current?.present();
+      else setEventFormMounted(true);
+    } else if (task) {
+      setFormOpen(true);
+    } else if (points) {
+      setEditingPoints(true);
+    }
+  }
+
+  // Create in the event form is the confirm: the form made the event through
+  // its own route, and the proposal records it (or is taken down). The event
+  // is made either way, so the card says so either way.
+  async function recordMadeEvent(eventId: string | null) {
+    setDeciding(true);
+    await settleProposedEvent({ accept, dismiss }, suggestion.id, eventId);
+    setDeciding(false);
+    onDone(ACT_COPY.done_event, "events");
+  }
+
   const addable = roster.filter(
     (member) => member.userId !== me && !targets.includes(member.userId),
   );
@@ -690,7 +816,7 @@ function ActCard({
   let title: string = ACT_COPY.card_event_title;
   if (points) {
     title =
-      points.amount < 0
+      shownAmount < 0
         ? ACT_COPY.card_points_title_take
         : ACT_COPY.card_points_title_give;
   } else if (task) {
@@ -768,17 +894,50 @@ function ActCard({
         <>
           <View>
             <Text style={styles.headline}>
-              {actPointsHeadline(points.amount, targets.length)}
+              {actPointsHeadline(shownAmount, targets.length)}
             </Text>
             {/* One line high with or without it, so removing down to one
                 member moves nothing. */}
             <Text style={[styles.caption, styles.oneLine]}>
-              {actPointsTotalLine(points.amount, targets.length)}
+              {actPointsTotalLine(shownAmount, targets.length)}
             </Text>
           </View>
-          <CardRow label={ACT_COPY.field_reason} styles={styles}>
-            {points.reason}
-          </CardRow>
+          {editingPoints ? (
+            <>
+              <CardField
+                label={ACT_COPY.field_amount}
+                hint={ACT_COPY.amount_hint}
+                value={amountInput}
+                onChangeText={(text) => {
+                  setAmountInput(text);
+                  if (fieldProblem?.field === "amount") setFieldProblem(null);
+                }}
+                keyboardType="numbers-and-punctuation"
+                problem={
+                  fieldProblem?.field === "amount" ? fieldProblem.error : null
+                }
+                disabled={busy}
+                styles={styles}
+              />
+              <CardField
+                label={ACT_COPY.field_reason}
+                value={reasonInput}
+                onChangeText={(text) => {
+                  setReasonInput(text);
+                  if (fieldProblem?.field === "reason") setFieldProblem(null);
+                }}
+                problem={
+                  fieldProblem?.field === "reason" ? fieldProblem.error : null
+                }
+                disabled={busy}
+                styles={styles}
+              />
+            </>
+          ) : (
+            <CardRow label={ACT_COPY.field_reason} styles={styles}>
+              {points.reason}
+            </CardRow>
+          )}
           {points.event_name ? (
             <CardRow label={ACT_COPY.field_attendance} styles={styles}>
               {actAttendanceLine(points.event_name, points.event_start_time)}
@@ -907,6 +1066,11 @@ function ActCard({
           <CardRow label={ACT_COPY.field_when} styles={styles}>
             {actWhenLine(event.start_time, event.end_time)}
           </CardRow>
+          {event.recurrence_rule ? (
+            <CardRow label={ACT_COPY.field_repeats} styles={styles}>
+              {actRepeatLine(event.recurrence_rule, event.start_time)}
+            </CardRow>
+          ) : null}
           {event.location ? (
             <CardRow label={ACT_COPY.field_where} styles={styles}>
               {event.location}
@@ -948,6 +1112,14 @@ function ActCard({
           onPress={() => void cancel()}
           styles={styles}
         />
+        {editingPoints ? null : (
+          <QuietButton
+            label={ACT_COPY.edit}
+            disabled={busy}
+            onPress={edit}
+            styles={styles}
+          />
+        )}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={ACT_COPY.confirm}
@@ -980,6 +1152,13 @@ function ActCard({
             );
             setFlagged(false);
           }}
+        />
+      ) : null}
+      {event && eventFormMounted ? (
+        <NewEventSheet
+          ref={eventFormRef}
+          template={proposedEventTemplate(event)}
+          onCreated={(created) => void recordMadeEvent(created.id)}
         />
       ) : null}
       {formOpen && seed ? (
@@ -1065,7 +1244,9 @@ const MemberPickerSheet = forwardRef<
         }
         ListEmptyComponent={
           <Text style={styles.pickerEmpty}>
-            {loading ? "Loading your chapter…" : "No members match that search."}
+            {loading
+              ? "Loading your chapter…"
+              : "No members match that search."}
           </Text>
         }
         renderItem={({ item }: { item: { userId: string; label: string } }) => (
@@ -1273,6 +1454,9 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
       paddingVertical: tokens.spacing.lg,
+    },
+    fieldProblem: {
+      borderColor: tokens.color.semantic.destructive,
     },
     pressed: { opacity: 0.7 },
     dimmed: { opacity: 0.5 },

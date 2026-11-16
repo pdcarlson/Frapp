@@ -1,5 +1,13 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { POINTS_ADJUSTMENT_MAX } from '@repo/validation';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  MAX_REPEAT_RULE_LENGTH,
+  POINTS_ADJUSTMENT_MAX,
+  isRepeatRule,
+} from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { AiSuggestionPayload } from '#domain/entities/ai-suggestion.entity';
 import type {
@@ -15,10 +23,13 @@ const NEW_EVENT_SUGGESTION_EXPIRY_DAYS = 1;
 /** Longer than any ISO 8601 instant, so a model's essay is not one. */
 const INSTANT_MAX_LENGTH = 40;
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
- * A proposed event, as stored and as listed. One event, never a series, and
- * open to the whole chapter: who is invited by role, a check-in zone and a
- * repeat are set on the event form afterwards.
+ * A proposed event, as stored and as listed: one event, or a series when the
+ * member asked for one ("every Sunday at 6:48"), open to the whole chapter.
+ * Who is invited by role, a check-in zone and anything else the card does not
+ * show are set in the event form, which the card's Edit opens (#5117).
  */
 export interface NewEventSuggestionPayload {
   name: string;
@@ -29,6 +40,30 @@ export interface NewEventSuggestionPayload {
   /** Null leaves the event service's own default. */
   point_value: number | null;
   is_mandatory: boolean;
+  /**
+   * The repeat the series is made with (`packages/validation` recurrence
+   * format), or null for one event.
+   */
+  recurrence_rule: string | null;
+}
+
+/**
+ * The event the member made from this proposal in the ordinary event form
+ * (the card's Edit), set by their accept and never by a proposal: accepting
+ * then records it and makes nothing.
+ */
+function madeEventIdOf(payload: AiSuggestionPayload): string | null {
+  return typeof payload.event_id === 'string' && UUID.test(payload.event_id)
+    ? payload.event_id
+    : null;
+}
+
+function ruleOrNull(value: unknown): string | null {
+  return typeof value === 'string' &&
+    value.length <= MAX_REPEAT_RULE_LENGTH &&
+    isRepeatRule(value)
+    ? value
+    : null;
 }
 
 function text(value: unknown, max: number): string | null {
@@ -70,6 +105,7 @@ export function readNewEventPayload(
     end_time: instantOrNull(payload.end_time) ?? '',
     point_value: pointsOrNull(payload.point_value),
     is_mandatory: payload.is_mandatory === true,
+    recurrence_rule: ruleOrNull(payload.recurrence_rule),
   };
 }
 
@@ -120,7 +156,9 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
       end_time: end,
       point_value: pointsOrNull(input.point_value),
       is_mandatory: input.is_mandatory === true,
+      recurrence_rule: ruleOrNull(input.recurrence_rule),
     };
+    // Never from a proposal: only the member's accept names an event made.
     return { ...event };
   }
 
@@ -128,6 +166,15 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
     payload: AiSuggestionPayload,
     edits: Record<string, unknown>,
   ): AiSuggestionPayload {
+    // Made in the event form from the card's Edit: whatever the member set
+    // there is the event, so the accept records it and the proposal's own
+    // fields are left as they were.
+    if (edits.event_id !== undefined) {
+      if (typeof edits.event_id !== 'string' || !UUID.test(edits.event_id)) {
+        throw incomplete('Add the event from its form first.');
+      }
+      return { ...payload, event_id: edits.event_id };
+    }
     const next = readNewEventPayload(payload);
     const has = (key: string) => edits[key] !== undefined;
     if (has('name')) {
@@ -157,7 +204,24 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
     return { ...next };
   }
 
+  /**
+   * An event made in the form counts as changed: the member opened Edit
+   * because the card was not what they wanted, and what they changed there
+   * is the form's to know. Otherwise, any difference in the payload.
+   */
+  countsAsEdited(
+    proposed: AiSuggestionPayload,
+    accepted: AiSuggestionPayload,
+  ): boolean {
+    if (madeEventIdOf(accepted)) return true;
+    return (
+      JSON.stringify(readNewEventPayload(proposed)) !==
+      JSON.stringify(readNewEventPayload(accepted))
+    );
+  }
+
   assertAcceptable(payload: AiSuggestionPayload): void {
+    if (madeEventIdOf(payload)) return;
     const event = readNewEventPayload(payload);
     if (!event.name) throw incomplete('An event needs a name.');
     if (!event.start_time || !event.end_time) {
@@ -170,6 +234,17 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
     userId: string;
     payload: AiSuggestionPayload;
   }): Promise<AiSuggestionCommitResult> {
+    const madeId = madeEventIdOf(input.payload);
+    if (madeId) {
+      // Missing, another chapter's, or not this member's own: all answer
+      // 404, as the event route does for an event the member can't see, so
+      // naming someone else's event confirms nothing (as the `event` kind).
+      const made = await this.events.findById(madeId, input.chapterId);
+      if (made.created_by !== input.userId) {
+        throw new NotFoundException('Event not found');
+      }
+      return { resultId: made.id };
+    }
     const event = readNewEventPayload(input.payload);
     const created = await this.events.create({
       chapter_id: input.chapterId,
@@ -181,6 +256,9 @@ export class NewEventSuggestionKind implements AiSuggestionKindHandler {
       end_time: event.end_time,
       is_mandatory: event.is_mandatory,
       ...(event.point_value === null ? {} : { point_value: event.point_value }),
+      ...(event.recurrence_rule === null
+        ? {}
+        : { recurrence_rule: event.recurrence_rule }),
       // Never a chat card (no `channel_id`).
     });
     return { resultId: created.id };
