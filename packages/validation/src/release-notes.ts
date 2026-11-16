@@ -650,6 +650,103 @@ export function decideWhatsNew(input: {
   return { show, record: newestVersion };
 }
 
+/**
+ * What a device remembers to tell which lines came with the update it is
+ * running (Paul, 2026-11-16: on a big day of changes, see what is new since
+ * your last update). `date` and `lines` are the newest entry as the last
+ * bundle it ran had it; `fresh` holds the lines that bundle brought that the
+ * one before it didn't have. It is per device, like the What's new marker,
+ * and kept apart from it: the marker moves once the notes are read, while
+ * these lines stay marked until the next update brings more.
+ */
+export interface ReleaseNoteSnapshot {
+  readonly date: string;
+  readonly lines: readonly string[];
+  readonly fresh: readonly string[];
+}
+
+function releaseNoteLines(note: ReleaseNote): string[] {
+  return releaseNoteGroups(note).flatMap((group) => group.lines);
+}
+
+/**
+ * The snapshot after this bundle starts, given the one stored (`null`: none,
+ * or unreadable). Only an update that carries news by
+ * {@link isNewerReleaseNoteVersion} sets new fresh lines: every line of an
+ * entry dated after the stored one, and the stored day's lines it didn't
+ * have. A bundle with the same count on the same day (a reword) refreshes the
+ * remembered lines and keeps the fresh ones; anything older (a rollback, or a
+ * tab still on an earlier deploy) changes nothing, so going forward again
+ * doesn't mark lines twice. A device with no snapshot marks nothing: it
+ * can't know what its last update had.
+ */
+export function nextReleaseNoteSnapshot(
+  notes: readonly ReleaseNote[],
+  stored: ReleaseNoteSnapshot | null,
+): ReleaseNoteSnapshot | null {
+  const newest = notes[0];
+  if (!newest) return stored;
+  const lines = releaseNoteLines(newest);
+  if (stored === null) return { date: newest.date, lines, fresh: [] };
+  const current = { date: newest.date, lines: lines.length };
+  const seen = { date: stored.date, lines: stored.lines.length };
+  if (isNewerReleaseNoteVersion(current, seen)) {
+    const had = new Set(stored.lines);
+    const fresh = notes.flatMap((note) => {
+      if (note.date > stored.date) return releaseNoteLines(note);
+      if (note.date === stored.date)
+        return releaseNoteLines(note).filter((line) => !had.has(line));
+      return [];
+    });
+    return { date: newest.date, lines, fresh };
+  }
+  if (current.date === seen.date && current.lines === seen.lines) {
+    return { ...stored, lines };
+  }
+  return stored;
+}
+
+/** A stored snapshot read back, or `null` for anything that isn't one. */
+export function parseReleaseNoteSnapshot(
+  raw: string | null,
+): ReleaseNoteSnapshot | null {
+  if (raw === null) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== "object" || value === null) return null;
+    const { date, lines, fresh } = value as Record<string, unknown>;
+    const strings = (list: unknown): list is string[] =>
+      Array.isArray(list) && list.every((item) => typeof item === "string");
+    if (typeof date !== "string" || !strings(lines) || !strings(fresh)) {
+      return null;
+    }
+    return { date, lines, fresh };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The lines of `note` to set apart as new with this update: the fresh ones,
+ * but none when every line of the entry is fresh, because the whole entry is
+ * then new and its date already says so. Setting all of it apart would mark
+ * nothing.
+ */
+export function freshReleaseNoteLines(
+  note: ReleaseNote,
+  fresh: readonly string[],
+): ReadonlySet<string> {
+  if (fresh.length === 0) return new Set();
+  const all = new Set(fresh);
+  const lines = releaseNoteLines(note);
+  const marked = lines.filter((line) => all.has(line));
+  return marked.length === lines.length ? new Set() : new Set(marked);
+}
+
+/** The caption over an entry that sets lines apart, saying what bold means. */
+export const FRESH_RELEASE_NOTE_CAPTION =
+  "Lines in bold came with your latest update.";
+
 const MONTHS = [
   "January",
   "February",

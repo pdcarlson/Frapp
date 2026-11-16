@@ -189,6 +189,11 @@ export {
   releaseNoteVersion,
   type ReleaseNoteVersion,
   type WhatsNewDecision,
+  FRESH_RELEASE_NOTE_CAPTION,
+  freshReleaseNoteLines,
+  nextReleaseNoteSnapshot,
+  parseReleaseNoteSnapshot,
+  type ReleaseNoteSnapshot,
 } from "./release-notes";
 // The Repeat control's state, read and written the same way by the web
 // editor and the phone's New event sheet (#4488).

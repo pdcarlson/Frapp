@@ -14,6 +14,9 @@ import {
   releaseNoteGroups,
   releaseNoteStoreText,
   releaseNoteLineCount,
+  nextReleaseNoteSnapshot,
+  parseReleaseNoteSnapshot,
+  freshReleaseNoteLines,
   type ReleaseNote,
 } from "./release-notes";
 
@@ -358,5 +361,103 @@ describe("isLaterReleaseNoteVersion", () => {
     expect(isLaterReleaseNoteVersion("2026-11-10#9", "2026-11-10#9")).toBe(false);
     expect(isLaterReleaseNoteVersion("2026-11-10#8", "2026-11-10#9")).toBe(false);
     expect(isLaterReleaseNoteVersion("2026-11-09#20", "2026-11-10#1")).toBe(false);
+  });
+});
+
+describe("nextReleaseNoteSnapshot", () => {
+  const day = (date: string, changes: string[], extra: Partial<ReleaseNote> = {}): ReleaseNote => ({
+    date,
+    title: "New in this update",
+    changes,
+    ...extra,
+  });
+  const morning = [day("2026-11-16", ["a", "b"]), day("2026-11-15", ["x"])];
+  const evening = [
+    day("2026-11-16", ["a", "b", "c"], { phone: ["d"] }),
+    day("2026-11-15", ["x"]),
+  ];
+
+  it("marks nothing on a device with no snapshot, and remembers the newest entry", () => {
+    expect(nextReleaseNoteSnapshot(morning, null)).toEqual({
+      date: "2026-11-16",
+      lines: ["a", "b"],
+      fresh: [],
+    });
+  });
+
+  it("marks the lines a later update added to the same day, in any place", () => {
+    const stored = nextReleaseNoteSnapshot(morning, null);
+    expect(nextReleaseNoteSnapshot(evening, stored)).toEqual({
+      date: "2026-11-16",
+      lines: ["a", "b", "c", "d"],
+      fresh: ["c", "d"],
+    });
+  });
+
+  it("keeps the marks on a later launch of the same update", () => {
+    const after = nextReleaseNoteSnapshot(evening, nextReleaseNoteSnapshot(morning, null));
+    expect(nextReleaseNoteSnapshot(evening, after)).toEqual(after);
+  });
+
+  it("marks a new day's lines, and the lines its last day gained, after skipped updates", () => {
+    const stored = { date: "2026-11-15", lines: [], fresh: ["old"] };
+    expect(nextReleaseNoteSnapshot(evening, stored)?.fresh).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+      "x",
+    ]);
+  });
+
+  it("refreshes the lines after a reword without marking it", () => {
+    const stored = { date: "2026-11-16", lines: ["a", "b"], fresh: ["b"] };
+    const reworded = [day("2026-11-16", ["a", "b, said better"])];
+    expect(nextReleaseNoteSnapshot(reworded, stored)).toEqual({
+      date: "2026-11-16",
+      lines: ["a", "b, said better"],
+      fresh: ["b"],
+    });
+  });
+
+  it("changes nothing for an older bundle, so a newer one isn't marked twice", () => {
+    const stored = nextReleaseNoteSnapshot(evening, nextReleaseNoteSnapshot(morning, null));
+    expect(nextReleaseNoteSnapshot(morning, stored)).toBe(stored);
+    expect(nextReleaseNoteSnapshot([day("2026-11-14", ["z"])], stored)).toBe(stored);
+  });
+
+  it("keeps what it has with no entries", () => {
+    expect(nextReleaseNoteSnapshot([], null)).toBeNull();
+  });
+});
+
+describe("parseReleaseNoteSnapshot", () => {
+  it("reads a stored snapshot back", () => {
+    const snapshot = { date: "2026-11-16", lines: ["a"], fresh: ["a"] };
+    expect(parseReleaseNoteSnapshot(JSON.stringify(snapshot))).toEqual(snapshot);
+  });
+
+  it("reads anything else as none", () => {
+    for (const raw of [null, "", "nope", "[]", "null", '{"date":1,"lines":[],"fresh":[]}', '{"date":"d","lines":[1],"fresh":[]}']) {
+      expect(parseReleaseNoteSnapshot(raw)).toBeNull();
+    }
+  });
+});
+
+describe("freshReleaseNoteLines", () => {
+  const note: ReleaseNote = {
+    date: "2026-11-16",
+    title: "New in this update",
+    changes: ["a", "b"],
+    web: ["c"],
+  };
+
+  it("sets apart the entry's fresh lines", () => {
+    expect([...freshReleaseNoteLines(note, ["c", "elsewhere"])]).toEqual(["c"]);
+  });
+
+  it("sets apart nothing when the whole entry is fresh, or nothing is", () => {
+    expect(freshReleaseNoteLines(note, ["a", "b", "c"]).size).toBe(0);
+    expect(freshReleaseNoteLines(note, []).size).toBe(0);
   });
 });
