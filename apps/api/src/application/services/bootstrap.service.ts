@@ -117,8 +117,8 @@ function sectionReaders(s: {
     /** `GET /v1/geofences` */
     geofences: ({ chapterId }: Caller) => s.geofences.listGeofences(chapterId),
     /** `GET /v1/documents` with no folder or search */
-    documents: ({ chapterId }: Caller) =>
-      s.documents.findByChapter(chapterId, undefined),
+    documents: ({ userId, chapterId }: Caller) =>
+      s.documents.findByChapter(chapterId, userId, undefined),
     /** `GET /v1/members/roster` */
     member_roster: ({ chapterId }: Caller) =>
       s.members.findRosterByChapter(chapterId),

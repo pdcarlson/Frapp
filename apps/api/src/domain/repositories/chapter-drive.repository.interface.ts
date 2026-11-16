@@ -24,6 +24,7 @@ export interface IChapterDriveRepository {
     folder_id: string;
     folder_name: string;
     connected_by: string;
+    who_can_see: string[] | null;
   }): Promise<ChapterDriveConnection>;
   /** Makes the chapter's live connection due now. False when there is none. */
   markDue(chapterId: string, now: Date): Promise<boolean>;

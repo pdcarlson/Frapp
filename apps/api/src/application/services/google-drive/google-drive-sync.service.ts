@@ -17,16 +17,22 @@ import {
   type IChapterDocumentRepository,
 } from '#domain/repositories/chapter-document.repository.interface';
 import {
+  CHAPTER_DOCUMENT_FOLDER_REPOSITORY,
+  type IChapterDocumentFolderRepository,
+} from '#domain/repositories/chapter-document-folder.repository.interface';
+import {
   CHAPTER_DRIVE_REPOSITORY,
   type IChapterDriveRepository,
 } from '#domain/repositories/chapter-drive.repository.interface';
-import type { ChapterDocument } from '#domain/entities/chapter-document.entity';
+import type {
+  ChapterDocument,
+  ChapterDocumentFolder,
+} from '#domain/entities/chapter-document.entity';
 import type { ChapterDriveConnection } from '#domain/entities/chapter-drive-connection.entity';
 import { safeObjectFilename } from '#domain/constants/storage';
-import {
-  ChapterDocumentService,
-  DOCUMENTS_BUCKET,
-} from '../chapter-document.service';
+import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
+import { listNoWiderThan } from '#domain/utils/document-access';
+import { DOCUMENTS_BUCKET } from '../chapter-document.service';
 import { toReportableError } from '../../../infrastructure/observability/reportable-error';
 
 /** Folder levels read: the folder itself and two below it. */
@@ -37,6 +43,8 @@ export const DRIVE_MAX_FILES = 500;
 export const DRIVE_COPY_BUDGET = 20;
 /** Folders listed per pass, so a folder of folders can't stall a pass. */
 const DRIVE_MAX_FOLDERS = 100;
+/** A Frapp folder name's longest. */
+const FOLDER_NAME_MAX = 100;
 /** Google's own types Frapp turns into files people can open anywhere. */
 const EXPORTS: Record<string, { mime: string; extension: string }> = {
   'application/vnd.google-apps.document': {
@@ -59,11 +67,20 @@ const TITLE_EXTENSION =
 export type DriveSyncOutcome =
   'synced' | 'more' | 'no_access' | 'rate_limited' | 'disconnected';
 
+/** One Drive folder the pass read: the connected one, or one below it. */
+interface PlannedFolder {
+  driveId: string;
+  /** Null for the connected folder itself. */
+  parentDriveId: string | null;
+  /** Its name in Drive, cleaned. */
+  name: string;
+}
+
 /** One Drive file as Documents should hold it. */
 interface PlannedFile {
   item: GoogleDriveItem;
-  /** The Frapp folder: null at the top, else the subfolder path. */
-  folder: string | null;
+  /** The Drive folder it sits in, which names its Frapp folder. */
+  folderDriveId: string;
   title: string;
   filename: string;
   contentType: string;
@@ -81,6 +98,13 @@ interface PlannedFile {
  * renames and refiles copies whose name or folder changed without
  * re-downloading them, and removes copies of files that left the folder.
  * Drive's modified time says whether a file changed.
+ *
+ * Who can see a copy (#5220): each Drive folder has one Frapp folder, found
+ * by its Drive id, so a rename in Drive renames it and its list stays. The
+ * connected folder's starts with the connection's list, and a new subfolder
+ * with its parent's. Sync never writes a list after that, and never moves a
+ * copy into a folder more people may see: it leaves the copy where it was,
+ * marked, until someone who manages documents opens it up.
  */
 @Injectable()
 export class GoogleDriveSyncService {
@@ -92,8 +116,9 @@ export class GoogleDriveSyncService {
     private readonly connections: IChapterDriveRepository,
     @Inject(CHAPTER_DOCUMENT_REPOSITORY)
     private readonly documents: IChapterDocumentRepository,
+    @Inject(CHAPTER_DOCUMENT_FOLDER_REPOSITORY)
+    private readonly folders: IChapterDocumentFolderRepository,
     @Inject(STORAGE_PROVIDER) private readonly storage: IStorageProvider,
-    private readonly documentService: ChapterDocumentService,
   ) {}
 
   isAvailable(): boolean {
@@ -107,6 +132,7 @@ export class GoogleDriveSyncService {
     try {
       if (connection.status === 'disconnecting') {
         await this.removeCopies(connection.chapter_id);
+        await this.removeSyncedFolders(connection.chapter_id, () => true);
         await this.connections.delete(connection.id);
         return 'disconnected';
       }
@@ -157,7 +183,16 @@ export class GoogleDriveSyncService {
       throw new GoogleDriveApiError('not_found', null, 'not_a_folder');
     }
 
-    const { planned, skipped, complete } = await this.plan(root.id);
+    const { planned, folders, skipped, complete } = await this.plan(root);
+    // Folders first: a rename re-files the copies in it, so they are read
+    // after.
+    const filedIn = await this.syncFolders(connection, folders);
+    const lists = new Map(
+      (await this.folders.findByChapter(chapterId)).map((folder) => [
+        folder.name,
+        folder.who_can_see ?? null,
+      ]),
+    );
     const existing = await this.documents.findDriveCopies(chapterId);
     const byFile = new Map(
       existing.map((doc) => [doc.drive_file_id as string, doc]),
@@ -180,19 +215,23 @@ export class GoogleDriveSyncService {
     let more = false;
     let filed = 0;
     let unreadable = 0;
-    const toCopy: PlannedFile[] = [];
+    const toCopy: { file: PlannedFile; folder: ChapterDocumentFolder }[] = [];
     for (const file of planned) {
       const copy = byFile.get(file.item.id);
+      // A folder it couldn't make this pass (a name race) waits for the
+      // next; the copy stays as it is meanwhile.
+      const folder = filedIn.get(file.folderDriveId);
+      if (!folder) continue;
       if (copy && sameInstant(copy.drive_modified_at, file.item.modifiedTime)) {
-        await this.refile(chapterId, copy, file);
+        await this.refile(chapterId, copy, file, place(copy, folder, lists));
         filed += 1;
       } else {
-        toCopy.push(file);
+        toCopy.push({ file, folder });
       }
     }
     // In a fresh order each pass, so files Google keeps refusing can't hold
     // the same place ahead of readable ones pass after pass.
-    for (const file of shuffled(toCopy)) {
+    for (const { file, folder } of shuffled(toCopy)) {
       const copy = byFile.get(file.item.id);
       if (budget === 0 || failures === 0) {
         if (budget === 0) more = true;
@@ -200,7 +239,12 @@ export class GoogleDriveSyncService {
         else if (failures === 0) unreadable += 1;
         continue;
       }
-      const ok = await this.copy(connection, file, copy ?? null);
+      const ok = await this.copy(
+        connection,
+        file,
+        copy ?? null,
+        copy ? place(copy, folder, lists) : { folder: folder.name, held: null },
+      );
       if (ok) {
         budget -= 1;
         filed += 1;
@@ -217,6 +261,16 @@ export class GoogleDriveSyncService {
       }
     }
 
+    // Folders Drive no longer has go once their copies have: anything else
+    // filed there moves to the top level with the folder's list.
+    if (complete) {
+      const read = new Set(folders.map((folder) => folder.driveId));
+      await this.removeSyncedFolders(
+        chapterId,
+        (folder) => !read.has(folder.drive_folder_id as string),
+      );
+    }
+
     await this.connections.finishSync(connection.id, {
       status: 'active',
       folder_name: root.name || connection.folder_name,
@@ -229,18 +283,29 @@ export class GoogleDriveSyncService {
     return more ? 'more' : 'synced';
   }
 
-  /** The folder tree as files Documents should hold, and how many it can't. */
-  private async plan(
-    rootId: string,
-  ): Promise<{ planned: PlannedFile[]; skipped: number; complete: boolean }> {
+  /**
+   * The folder tree as folders and files Documents should hold, parents
+   * before their children, and how many files it can't.
+   */
+  private async plan(root: GoogleDriveItem): Promise<{
+    planned: PlannedFile[];
+    folders: PlannedFolder[];
+    skipped: number;
+    complete: boolean;
+  }> {
     const planned: PlannedFile[] = [];
+    const folders: PlannedFolder[] = [
+      {
+        driveId: root.id,
+        parentDriveId: null,
+        name: cleanName(root.name) || 'Google Drive',
+      },
+    ];
     let skipped = 0;
     let complete = true;
     let listed = 0;
-    const queue: { id: string; path: string | null; depth: number }[] = [
-      { id: rootId, path: null, depth: 0 },
-    ];
-    const seen = new Set<string>([rootId]);
+    const queue: { id: string; depth: number }[] = [{ id: root.id, depth: 0 }];
+    const seen = new Set<string>([root.id]);
     while (queue.length > 0) {
       const next = queue.shift()!;
       if (listed >= DRIVE_MAX_FOLDERS) {
@@ -269,19 +334,16 @@ export class GoogleDriveSyncService {
           // Deeper levels, and a folder shared into itself, are left out.
           if (next.depth + 1 < DRIVE_MAX_DEPTH && !seen.has(item.id)) {
             seen.add(item.id);
-            const name = cleanName(item.name) || 'Untitled folder';
-            queue.push({
-              id: item.id,
-              // A folder name in Frapp is at most 100 characters.
-              path: (next.path ? `${next.path} / ${name}` : name)
-                .slice(0, 100)
-                .trim(),
-              depth: next.depth + 1,
+            folders.push({
+              driveId: item.id,
+              parentDriveId: next.id,
+              name: cleanName(item.name) || 'Untitled folder',
             });
+            queue.push({ id: item.id, depth: next.depth + 1 });
           }
           continue;
         }
-        const file = planFile(item, next.path);
+        const file = planFile(item, next.id);
         if (!file || planned.length >= DRIVE_MAX_FILES) {
           skipped += 1;
           continue;
@@ -289,7 +351,95 @@ export class GoogleDriveSyncService {
         planned.push(file);
       }
     }
-    return { planned, skipped, complete };
+    return { planned, folders, skipped, complete };
+  }
+
+  /**
+   * The Frapp folder for each Drive folder read, by Drive id: renamed to
+   * follow Drive (its list kept), or made with its parent's list (the
+   * connected folder's with the connection's). A subfolder's name is its
+   * path, since Documents folders don't nest. A name another folder holds
+   * gets a number.
+   */
+  private async syncFolders(
+    connection: ChapterDriveConnection,
+    planned: PlannedFolder[],
+  ): Promise<Map<string, ChapterDocumentFolder>> {
+    const chapterId = connection.chapter_id;
+    const all = await this.folders.findByChapter(chapterId);
+    const byDrive = new Map(
+      all
+        .filter((folder) => folder.drive_folder_id !== null)
+        .map((folder) => [folder.drive_folder_id as string, folder]),
+    );
+    const taken = new Set(all.map((folder) => folder.name));
+    let nextOrder =
+      all.reduce((max, folder) => Math.max(max, folder.sort_order), -1) + 1;
+    const out = new Map<string, ChapterDocumentFolder>();
+    for (const folder of planned) {
+      const parent =
+        folder.parentDriveId === null ? null : out.get(folder.parentDriveId);
+      if (parent === undefined) continue;
+      const wanted = folderPath(parent?.name ?? null, folder.name);
+      const existing = byDrive.get(folder.driveId);
+      if (existing) {
+        taken.delete(existing.name);
+        const name = freeName(wanted, taken);
+        taken.add(name);
+        if (name === existing.name) {
+          out.set(folder.driveId, existing);
+          continue;
+        }
+        try {
+          const renamed = await this.folders.rename(
+            existing.id,
+            chapterId,
+            name,
+          );
+          if (renamed) out.set(folder.driveId, renamed);
+        } catch (error) {
+          // Someone took the name between the read and the write: keep the
+          // folder under its old name, and the next pass tries again.
+          if (!isUniqueViolation(error)) throw error;
+          out.set(folder.driveId, existing);
+        }
+        continue;
+      }
+      const name = freeName(wanted, taken);
+      taken.add(name);
+      try {
+        out.set(
+          folder.driveId,
+          await this.folders.create({
+            chapter_id: chapterId,
+            name,
+            sort_order: nextOrder,
+            who_can_see:
+              parent === null ? connection.who_can_see : parent.who_can_see,
+            drive_folder_id: folder.driveId,
+          }),
+        );
+        nextOrder += 1;
+      } catch (error) {
+        // Someone named a folder this between the read and the write; the
+        // next pass picks another name. Its files wait for it.
+        if (!isUniqueViolation(error)) throw error;
+      }
+    }
+    return out;
+  }
+
+  /** Deletes the synced folders `which` picks, moving anything left in them. */
+  private async removeSyncedFolders(
+    chapterId: string,
+    which: (folder: ChapterDocumentFolder) => boolean,
+  ): Promise<void> {
+    const synced = (await this.folders.findByChapter(chapterId)).filter(
+      (folder) => folder.drive_folder_id !== null && which(folder),
+    );
+    for (const folder of synced) {
+      await this.folders.deleteMovingDocuments(folder.id, chapterId);
+    }
   }
 
   /** Brings a copy's name, folder and link up to date without re-copying it. */
@@ -297,20 +447,20 @@ export class GoogleDriveSyncService {
     chapterId: string,
     copy: ChapterDocument,
     file: PlannedFile,
+    placement: Placement,
   ): Promise<void> {
     if (
       copy.title === file.title &&
-      copy.folder === file.folder &&
+      copy.folder === placement.folder &&
+      copy.drive_held_folder_id === placement.held &&
       copy.drive_url === file.item.webViewLink
     ) {
       return;
     }
-    if (file.folder !== null) {
-      await this.documentService.ensureFolder(file.folder, chapterId);
-    }
     await this.documents.updateDriveCopy(copy.id, chapterId, {
       title: file.title,
-      folder: file.folder,
+      folder: placement.folder,
+      drive_held_folder_id: placement.held,
       drive_url: file.item.webViewLink,
     });
   }
@@ -323,6 +473,7 @@ export class GoogleDriveSyncService {
     connection: ChapterDriveConnection,
     file: PlannedFile,
     previous: ChapterDocument | null,
+    placement: Placement,
   ): Promise<boolean> {
     const chapterId = connection.chapter_id;
     let bytes: Uint8Array;
@@ -353,13 +504,11 @@ export class GoogleDriveSyncService {
       bytes,
       file.contentType,
     );
-    if (file.folder !== null) {
-      await this.documentService.ensureFolder(file.folder, chapterId);
-    }
     if (previous) {
       await this.documents.updateDriveCopy(previous.id, chapterId, {
         title: file.title,
-        folder: file.folder,
+        folder: placement.folder,
+        drive_held_folder_id: placement.held,
         storage_path: storagePath,
         content_type: file.contentType,
         byte_size: bytes.byteLength,
@@ -379,7 +528,7 @@ export class GoogleDriveSyncService {
       chapter_id: chapterId,
       title: file.title,
       description: null,
-      folder: file.folder,
+      folder: placement.folder,
       storage_path: storagePath,
       uploaded_by: connection.connected_by,
       content_type: file.contentType,
@@ -425,7 +574,7 @@ export class GoogleDriveSyncService {
 /** A Drive file as Documents would hold it, or null when Documents can't. */
 export function planFile(
   item: GoogleDriveItem,
-  folder: string | null,
+  folderDriveId: string,
 ): PlannedFile | null {
   const name = cleanName(item.name);
   if (!item.id || !name) return null;
@@ -433,7 +582,7 @@ export function planFile(
   if (exported) {
     return {
       item,
-      folder,
+      folderDriveId,
       title: name,
       filename: `${name}.${exported.extension}`,
       contentType: exported.mime,
@@ -447,12 +596,58 @@ export function planFile(
   if (item.size !== null && item.size > MAX_UPLOAD_BYTES) return null;
   return {
     item,
-    folder,
+    folderDriveId,
     title: name.replace(TITLE_EXTENSION, '') || name,
     filename: name,
     contentType: item.mimeType,
     exportMime: null,
   };
+}
+
+/** Where a copy goes, and the folder Drive wanted when it was held back. */
+interface Placement {
+  folder: string | null;
+  held: string | null;
+}
+
+/**
+ * Where a copy already in Documents goes when Drive files it in `target`:
+ * there, unless more people may see `target` than see the folder it is in
+ * now. Then it stays, and `held` names `target` for a manager to open up.
+ * A copy at the top level, or in a folder no row claims, is open to the
+ * chapter already, so any folder is no wider.
+ */
+function place(
+  copy: ChapterDocument,
+  target: ChapterDocumentFolder,
+  lists: ReadonlyMap<string, string[] | null>,
+): Placement {
+  if (copy.folder === target.name) {
+    return { folder: target.name, held: null };
+  }
+  const current =
+    copy.folder === null ? null : (lists.get(copy.folder) ?? null);
+  if (listNoWiderThan(target.who_can_see, current)) {
+    return { folder: target.name, held: null };
+  }
+  return { folder: copy.folder, held: target.id };
+}
+
+/** A synced folder's name: its path from the connected folder, capped. */
+function folderPath(parent: string | null, name: string): string {
+  return (parent ? `${parent} / ${name}` : name)
+    .slice(0, FOLDER_NAME_MAX)
+    .trim();
+}
+
+/** `wanted`, or `wanted (2)` and up when another folder has the name. */
+function freeName(wanted: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(wanted)) return wanted;
+  for (let n = 2; ; n += 1) {
+    const suffix = ` (${n})`;
+    const name = `${wanted.slice(0, FOLDER_NAME_MAX - suffix.length).trim()}${suffix}`;
+    if (!taken.has(name)) return name;
+  }
 }
 
 function shuffled<T>(items: T[]): T[] {

@@ -43,10 +43,13 @@ describe('AI_MODEL_CATALOG', () => {
     });
   });
 
-  // No AI over rush, the vault or backwork (the AI build's rules).
-  it('has no task for recruitment, the vault or backwork', () => {
+  // No AI over rush or the vault (the AI build's rules). Backwork has one
+  // task: the upload-time fill over a file's redacted text, which Paul
+  // allowed on 2026-11-16 (#5233). Ask still never reads backwork files.
+  it('has no task for recruitment or the vault, and only the fill for backwork', () => {
     for (const [task] of entries) {
-      expect(task).not.toMatch(/rush|recruit|vault|backwork/);
+      expect(task).not.toMatch(/rush|recruit|vault/);
+      if (/backwork/.test(task)) expect(task).toBe('backwork.fill');
     }
   });
 });

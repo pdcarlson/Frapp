@@ -61,6 +61,9 @@ function ChatHome({ withChannels }: { withChannels: boolean }) {
 
 async function render(withChannels = true): Promise<ReactTestRenderer> {
   let tree!: ReactTestRenderer;
+  // Fake timers through the start, so the host's settle delay passes in full
+  // however loaded the runner: real waits of a fixed length lost that race.
+  vi.useFakeTimers();
   act(() => {
     tree = create(
       <FrappThemeProvider>
@@ -82,10 +85,16 @@ async function render(withChannels = true): Promise<ReactTestRenderer> {
     );
   });
   // The due read, then the host's settle delay before it measures.
-  for (let i = 0; i < 12; i += 1) {
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 60));
-    });
+  // In steps, each its own act, so React commits what a timer set (the name
+  // arriving re-runs the host's check) before the next timer is due.
+  try {
+    for (let i = 0; i < 12; i += 1) {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60);
+      });
+    }
+  } finally {
+    vi.useRealTimers();
   }
   return tree;
 }

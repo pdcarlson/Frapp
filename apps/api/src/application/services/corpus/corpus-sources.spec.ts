@@ -3,6 +3,8 @@ import type { IDocumentTextExtractor } from '#domain/adapters/document-text-extr
 import type { IStorageProvider } from '#domain/adapters/storage.interface';
 import type { Meeting } from '#domain/entities/meeting.entity';
 import type { IChapterDocumentRepository } from '#domain/repositories/chapter-document.repository.interface';
+import type { IChapterDocumentFolderRepository } from '#domain/repositories/chapter-document-folder.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
 import type { IMeetingRepository } from '#domain/repositories/meeting.repository.interface';
 import type { MeetingService } from '../meeting.service';
 import type { RbacService } from '../rbac.service';
@@ -175,12 +177,33 @@ describe('ChapterDocumentCorpusSource', () => {
     content_type: 'application/pdf',
     effective_date: '2026-08-15',
     created_at: '2026-09-01T12:00:00.000Z',
+    drive_file_id: null,
   };
 
   function setup(row: typeof document | null = document) {
     const documents = {
       findById: jest.fn().mockResolvedValue(row),
+      findByIds: jest.fn(async (ids: string[]) =>
+        ids.map((id) => ({
+          ...document,
+          id,
+          folder: null,
+          who_can_see: null,
+          uploaded_by: 'someone-else',
+        })),
+      ),
     } as unknown as jest.Mocked<IChapterDocumentRepository>;
+    const folders = {
+      findByChapter: jest.fn().mockResolvedValue([]),
+    } as unknown as jest.Mocked<IChapterDocumentFolderRepository>;
+    const members = {
+      findByUserAndChapter: jest.fn().mockResolvedValue(null),
+    } as unknown as jest.Mocked<IMemberRepository>;
+    const getChannelAccessHolder = jest.fn().mockResolvedValue({
+      entries: new Set<string>(),
+      wildcard: false,
+      alumniEntries: new Set<string>(),
+    });
     const storage = {
       downloadFile: jest.fn().mockResolvedValue(new Uint8Array([1, 2, 3])),
     } as unknown as jest.Mocked<IStorageProvider>;
@@ -197,9 +220,20 @@ describe('ChapterDocumentCorpusSource', () => {
       extractor,
       {
         memberHasAnyPermission,
+        getChannelAccessHolder,
       } as unknown as RbacService,
+      folders,
+      members,
     );
-    return { source, documents, storage, extractor, memberHasAnyPermission };
+    return {
+      source,
+      documents,
+      folders,
+      storage,
+      extractor,
+      memberHasAnyPermission,
+      getChannelAccessHolder,
+    };
   }
 
   it('reads the file from the documents bucket and dates it by its effective date', async () => {
@@ -254,7 +288,7 @@ describe('ChapterDocumentCorpusSource', () => {
     });
   });
 
-  it('lets a member read every document when they may open the library, and none otherwise', async () => {
+  it('lets a member read every open document when they may open the library, and none otherwise', async () => {
     const { source, memberHasAnyPermission } = setup();
     await expect(
       source.readableBy(CHAPTER, MEMBER, ['doc-1', 'doc-2']),
@@ -266,5 +300,60 @@ describe('ChapterDocumentCorpusSource', () => {
     await expect(
       source.readableBy(CHAPTER, MEMBER, ['doc-1']),
     ).resolves.toEqual(new Set());
+  });
+
+  // #3642 piece 1: Ask quotes only the files the member sees in Documents.
+  it("leaves out a file whose folder list or own list the member isn't on", async () => {
+    const { source, documents, folders, getChannelAccessHolder } = setup();
+    folders.findByChapter.mockResolvedValue([
+      {
+        id: 'f-1',
+        chapter_id: CHAPTER,
+        name: 'Exec',
+        sort_order: 0,
+        created_at: '2026-01-01T00:00:00.000Z',
+        pinned_at: null,
+        who_can_see: ['tier:exec'],
+        drive_folder_id: null,
+      },
+    ]);
+    documents.findByIds.mockResolvedValue([
+      {
+        ...document,
+        id: 'open',
+        folder: null,
+        who_can_see: null,
+        uploaded_by: 'x',
+      },
+      {
+        ...document,
+        id: 'exec',
+        folder: 'Exec',
+        who_can_see: null,
+        uploaded_by: 'x',
+      },
+      {
+        ...document,
+        id: 'mine',
+        folder: 'Exec',
+        who_can_see: null,
+        uploaded_by: MEMBER,
+      },
+      {
+        ...document,
+        id: 'treasurer',
+        folder: null,
+        who_can_see: ['role:treasurer'],
+        uploaded_by: 'x',
+      },
+    ] as never);
+    getChannelAccessHolder.mockResolvedValue({
+      entries: new Set(['tier:member']),
+      wildcard: false,
+      alumniEntries: new Set(),
+    });
+    await expect(
+      source.readableBy(CHAPTER, MEMBER, ['open', 'exec', 'mine', 'treasurer']),
+    ).resolves.toEqual(new Set(['open', 'mine']));
   });
 });

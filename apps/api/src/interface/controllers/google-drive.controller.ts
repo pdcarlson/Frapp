@@ -4,6 +4,8 @@ import {
   Delete,
   Get,
   HttpCode,
+  Param,
+  ParseUUIDPipe,
   Post,
   Put,
   UseGuards,
@@ -16,6 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { GoogleDriveService } from '../../application/services/google-drive/google-drive.service';
+import { ChapterDocumentService } from '../../application/services/chapter-document.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -31,6 +34,7 @@ import {
   ConnectGoogleDriveDto,
   GoogleDriveStatusDto,
 } from '../dtos/google-drive.dto';
+import { ChapterDocumentDto } from '../dtos/chapter-document.dto';
 
 /**
  * The chapter's connected Google Drive folder (#5157;
@@ -49,7 +53,10 @@ import {
 @RequireModule('documents')
 @Controller('google-drive')
 export class GoogleDriveController {
-  constructor(private readonly drive: GoogleDriveService) {}
+  constructor(
+    private readonly drive: GoogleDriveService,
+    private readonly documents: ChapterDocumentService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -72,7 +79,27 @@ export class GoogleDriveController {
     @CurrentUser('id') userId: string,
     @Body() body: ConnectGoogleDriveDto,
   ): Promise<GoogleDriveStatusDto> {
-    return this.drive.connect(chapterId, userId, body.folder_link);
+    return this.drive.connect(
+      chapterId,
+      userId,
+      body.folder_link,
+      body.who_can_see ?? null,
+    );
+  }
+
+  @Post('copies/:id/open-up')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Move a Drive copy that sync held back into the folder Drive put it in, which more people may see.',
+  })
+  @ApiOkResponse({ type: ChapterDocumentDto })
+  openUp(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ChapterDocumentDto> {
+    return this.documents.openUpDriveCopy(id, chapterId, userId);
   }
 
   @Post('sync')

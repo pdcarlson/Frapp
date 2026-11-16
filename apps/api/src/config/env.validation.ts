@@ -98,8 +98,10 @@ const REQUIRED_ENV_VARS = [
 //                        number is no wait (language-model-registry.ts)
 //   - ANTHROPIC_API_KEY  enables the Anthropic adapter; not checked at boot
 //   - GOOGLE_VERTEX_PROJECT + GOOGLE_VERTEX_CREDENTIALS_JSON  enable the Google
-//                        adapter; both or neither, and the JSON must be a
-//                        service account's key file (checked at boot)
+//                        adapter; both or neither, except that on Cloud Run
+//                        (K_SERVICE set) the project alone signs in as the
+//                        service's identity; the JSON must be a service
+//                        account's key file (checked at boot)
 //   - GOOGLE_VERTEX_LOCATION  optional, "global" when unset
 //   - ASSEMBLYAI_API_KEY  enables the AssemblyAI transcriber (meeting
 //                        recordings, #712); not checked at boot

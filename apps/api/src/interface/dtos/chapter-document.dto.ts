@@ -7,6 +7,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -16,9 +17,40 @@ import {
 } from 'class-validator';
 import { POSITION_MAX } from '#domain/constants/field-limits';
 import {
+  CHANNEL_ACCESS_ENTRY_PATTERN,
+  CHANNEL_ACCESS_LIST_MAX,
   DOCUMENT_TITLE_MAX_LENGTH,
   DOCUMENT_TYPE_NAME_MAX_LENGTH,
 } from '@repo/validation';
+import { ChannelAccessOptionDto } from './chat.dto';
+
+const ACCESS_ENTRY_MESSAGE =
+  'each entry must be tier:<id>, role:<id> or group:<id>, as GET /v1/documents/access-options lists them';
+
+/** The decorators every who-can-see field shares (#3642), as a channel's list. */
+export function WhoCanSee(description: string): PropertyDecorator {
+  return (target, key) => {
+    ApiPropertyOptional({
+      type: [String],
+      nullable: true,
+      maxItems: CHANNEL_ACCESS_LIST_MAX,
+      description,
+    })(target, key);
+    IsOptional()(target, key);
+    IsArray()(target, key);
+    ArrayMaxSize(CHANNEL_ACCESS_LIST_MAX)(target, key);
+    IsString({ each: true })(target, key);
+    Matches(CHANNEL_ACCESS_ENTRY_PATTERN, {
+      each: true,
+      message: ACCESS_ENTRY_MESSAGE,
+    })(target, key);
+  };
+}
+
+const FILE_WHO_CAN_SEE =
+  "Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept.";
+const FOLDER_WHO_CAN_SEE =
+  "Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept.";
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RequestDocumentUploadUrlDto {
@@ -114,6 +146,27 @@ export class ConfirmDocumentUploadDto {
   @IsOptional()
   @IsDateString()
   effective_date?: string;
+
+  @WhoCanSee(FILE_WHO_CAN_SEE)
+  who_can_see?: string[] | null;
+}
+
+export class SetDocumentAccessDto {
+  @WhoCanSee(FILE_WHO_CAN_SEE)
+  who_can_see: string[] | null;
+}
+
+/** What the who-can-see picker offers (`GET /v1/documents/access-options`). */
+export class DocumentAccessOptionsDto {
+  @ApiProperty({ type: ChannelAccessOptionDto, isArray: true })
+  options: ChannelAccessOptionDto[];
+  @ApiProperty({
+    type: [String],
+    nullable: true,
+    description:
+      "The tiers every list the caller sets keeps (their own and those above), shown fixed; empty for the President, null when the caller ranks outside the tiers and can't set a list",
+  })
+  always: string[] | null;
 }
 
 /**
@@ -176,6 +229,9 @@ export class CreateDocumentFolderDto {
   @Min(0)
   @Max(POSITION_MAX)
   sort_order?: number;
+
+  @WhoCanSee(FOLDER_WHO_CAN_SEE)
+  who_can_see?: string[] | null;
 }
 
 export class UpdateDocumentFolderDto {
@@ -198,6 +254,11 @@ export class UpdateDocumentFolderDto {
   @Min(0)
   @Max(POSITION_MAX)
   sort_order?: number;
+
+  @WhoCanSee(
+    `${FOLDER_WHO_CAN_SEE} Left out, it stays as it is; null opens it to everyone.`,
+  )
+  who_can_see?: string[] | null;
 }
 
 export class CreateDocumentTypeDto {
@@ -310,6 +371,20 @@ export class ChapterDocumentDto {
     description: "The file's page in Google Drive",
   })
   drive_url: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      "Set on a Drive copy that Drive moved into a folder more people may see (#5220): that folder's id. The copy stays in its folder until someone who manages documents opens it up (`POST /v1/google-drive/copies/:id/open-up`).",
+  })
+  drive_held_folder_id: string | null;
+  @ApiProperty({
+    type: [String],
+    nullable: true,
+    description:
+      "Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's",
+  })
+  who_can_see: string[] | null;
 }
 
 /** A folder as the folder list and pin routes return it (#3934). */
@@ -325,6 +400,20 @@ export class DocumentFolderDto {
     description: 'When an officer pinned it for the whole chapter, or null',
   })
   pinned_at: string | null;
+  @ApiProperty({
+    type: [String],
+    nullable: true,
+    description:
+      'Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents',
+  })
+  who_can_see: string[] | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The Google Drive folder it mirrors, or null (#5220). Its name follows Drive, so it is renamed and deleted there, not here.',
+  })
+  drive_folder_id: string | null;
 }
 
 /** One grid preview link (#4647): the document and its inline signed URL. */

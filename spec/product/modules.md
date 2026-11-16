@@ -30,7 +30,7 @@
 
 **PDF redaction:** Web bulk upload (#3499) flattens a Student Copy, or any PDF with a box, on the member's device; only the flattened file is stored. Behavior: [`backwork.md` § PDF Redaction](../behavior/backwork.md#pdf-redaction).
 
-**AI metadata extraction (v3+):** Optional AI parses the PDF and pre-fills metadata fields. User reviews before confirming.
+**AI fill:** bulk-uploaded drafts that were redacted get their fields proposed from the redacted text, and the uploader checks them before publishing ([`backwork.md` § AI Fill](../behavior/backwork.md#ai-fill)).
 
 ## Financials
 

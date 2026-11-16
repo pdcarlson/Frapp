@@ -26,7 +26,7 @@ import type { EventExcuseStatus } from '#domain/entities/event-excuse.entity';
 import { EVENT_CHECK_IN_SCREEN_REPOSITORY } from '#domain/repositories/event-check-in-screen.repository.interface';
 import type { IEventCheckInScreenRepository } from '#domain/repositories/event-check-in-screen.repository.interface';
 import { RbacService } from './rbac.service';
-import { attendanceFor, isEventVisibleTo } from './event-role-targeting';
+import { attendanceFor, visibleEventOrNotFound } from './event-role-targeting';
 import {
   checkInWindowBounds,
   eventRequiresAnyone,
@@ -602,17 +602,12 @@ export class AttendanceService {
     userId: string,
     chapterId: string,
   ): Promise<EventAttendance | null> {
-    const event = await this.eventRepo.findById(eventId, chapterId);
-    if (
-      !event ||
-      !(await isEventVisibleTo(event, chapterId, userId, {
-        rbac: this.rbac,
-        memberRepo: this.memberRepo,
-      }))
-    ) {
-      throw new NotFoundException('Event not found');
-    }
-
+    await visibleEventOrNotFound(
+      await this.eventRepo.findById(eventId, chapterId),
+      chapterId,
+      userId,
+      { rbac: this.rbac, memberRepo: this.memberRepo },
+    );
     return this.attendanceRepo.findByEventAndUser(eventId, userId);
   }
 
