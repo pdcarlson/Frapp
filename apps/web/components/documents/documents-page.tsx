@@ -36,6 +36,7 @@ import {
   DELETE_DOCUMENT_LABEL,
   NO_DOCUMENT_FILTERS,
   deleteDocumentTitle,
+  limitedDocumentCheck,
   markedItems,
   tierRows,
   type DocumentFilters,
@@ -288,18 +289,11 @@ function ChapterDocumentsPage() {
     Who can see control. The list only ever holds what this member sees.
   */
   const viewerId = useViewerUserId();
-  const limitedFolders = useMemo(
+  const isLimited = useMemo(
     () =>
-      new Set(
-        folders
-          .filter((folder) => folder.who_can_see != null)
-          .map((folder) => folder.name),
-      ),
-    [folders],
+      limitedDocumentCheck(foldersQuery.data === undefined ? null : folders),
+    [foldersQuery.data, folders],
   );
-  const isLimited = (doc: ChapterDocument) =>
-    doc.who_can_see != null ||
-    (doc.folder !== null && limitedFolders.has(doc.folder));
   const canSetAccess = (doc: ChapterDocument) =>
     canSetDocumentAccess(doc, viewerId, {
       manages: canManageTypes,

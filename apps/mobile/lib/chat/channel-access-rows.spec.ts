@@ -71,3 +71,25 @@ describe("channelAccessSummaryLine", () => {
     );
   });
 });
+
+describe("channelAccessSummaryLine with a document's own lines (#5216)", () => {
+  const lines = {
+    everyone: "Whoever can see Exec can see it.",
+    always: "The President and whoever uploaded it can always see it.",
+  };
+
+  it("says what the open choice means for a file", () => {
+    expect(channelAccessSummaryLine("see", null, options, true, lines)).toBe(
+      lines.everyone,
+    );
+  });
+
+  it("says who passes every list", () => {
+    expect(
+      channelAccessSummaryLine("see", ["role:a"], options, true, lines),
+    ).toBe(`Reaches 1 person. ${lines.always}`);
+    expect(
+      channelAccessSummaryLine("see", ["role:a"], options, false, lines),
+    ).toBe(lines.always);
+  });
+});
