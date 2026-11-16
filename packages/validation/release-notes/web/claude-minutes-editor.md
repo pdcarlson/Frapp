@@ -1,1 +1,0 @@
-Minutes save as you type, keep the meeting's name and Post pinned at the top, let you answer the draft's open questions right above the minutes, and let officers mark who was there when nobody checked in.
