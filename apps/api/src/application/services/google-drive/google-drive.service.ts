@@ -3,6 +3,7 @@ import {
   ConflictException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -18,6 +19,7 @@ import {
 } from '#domain/repositories/chapter-drive.repository.interface';
 import type { ChapterDriveConnection } from '#domain/entities/chapter-drive-connection.entity';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
+import { toReportableError } from '../../../infrastructure/observability/reportable-error';
 
 export interface GoogleDriveStatus {
   available: boolean;
@@ -41,6 +43,8 @@ export interface GoogleDriveStatus {
  */
 @Injectable()
 export class GoogleDriveService {
+  private readonly logger = new Logger(GoogleDriveService.name);
+
   constructor(
     @Inject(GOOGLE_DRIVE_API) private readonly drive: IGoogleDriveApi,
     @Inject(CHAPTER_DRIVE_REPOSITORY)
@@ -94,6 +98,11 @@ export class GoogleDriveService {
           `Frapp can’t see that folder yet. In Google Drive, share it with ${email} as a Viewer, then connect again.`,
         );
       }
+      // A key Google refuses, the Drive API switched off, or an outage: the
+      // officer can only retry, so the reason goes to the logs.
+      this.logger.warn(
+        `Google Drive refused a connect check: ${toReportableError(error).message}`,
+      );
       throw new ServiceUnavailableException(
         'Couldn’t reach Google Drive. Try again in a moment.',
       );
