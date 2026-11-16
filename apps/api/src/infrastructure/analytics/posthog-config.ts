@@ -13,7 +13,7 @@ const DEFAULT_POSTHOG_HOST = 'https://us.i.posthog.com';
 /** Project API keys only. Personal keys (`phx_`) are rejected as malformed. */
 const POSTHOG_PROJECT_KEY_RE = /^phc_[A-Za-z0-9_-]+$/;
 
-export type PosthogConfigReason =
+type PosthogConfigReason =
   'ok' | 'missing' | 'empty' | 'malformed_key' | 'malformed_host';
 
 export interface PosthogConfig {

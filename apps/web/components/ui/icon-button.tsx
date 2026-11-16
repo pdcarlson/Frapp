@@ -39,7 +39,7 @@ import { cn } from "@/lib/utils";
  * than inherited from Button's `icon` size so the step holds whichever way
  * that size moves.
  */
-export interface IconButtonProps extends Omit<
+interface IconButtonProps extends Omit<
   ButtonProps,
   "size" | "aria-label"
 > {

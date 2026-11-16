@@ -47,6 +47,25 @@ export interface BackworkProfessor {
   created_at: string;
 }
 
+/**
+ * A draft's unpublished metadata (#5208), in the confirm body's shape. Names,
+ * not ids: a department or professor is created only when the draft is
+ * published, so a half-typed name never shows up in another member's filters.
+ */
+export interface BackworkDraftFields {
+  title?: string | null;
+  department_code?: string | null;
+  course_number?: string | null;
+  course_name?: string | null;
+  professor_name?: string | null;
+  year?: number | null;
+  semester?: Semester | null;
+  assignment_type?: AssignmentType | null;
+  assignment_number?: number | null;
+  document_variant?: DocumentVariant | null;
+  tags?: string[] | null;
+}
+
 export interface BackworkResource {
   id: string;
   chapter_id: string;
@@ -65,4 +84,9 @@ export interface BackworkResource {
   is_redacted: boolean;
   tags: string[];
   created_at: string;
+  /**
+   * Not null while the row is a draft (#5208): visible only to its uploader,
+   * left out of every chapter-wide read. Null once published.
+   */
+  draft_fields: BackworkDraftFields | null;
 }

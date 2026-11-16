@@ -70,6 +70,7 @@ const copy = (over: Partial<ChapterDocument>): ChapterDocument => ({
   // As PostgREST hands a timestamptz back, not as Drive wrote it.
   drive_modified_at: '2026-11-15T00:00:00+00:00',
   drive_url: 'https://drive.google.com/file/d/f1/view',
+  who_can_see: null,
   ...over,
 });
 
@@ -117,8 +118,7 @@ describe('GoogleDriveSyncService', () => {
       findDriveCopies: jest.fn().mockResolvedValue([]),
       updateDriveCopy: jest.fn().mockResolvedValue(undefined),
       setPinnedAt: jest.fn(),
-      moveToRoot: jest.fn(),
-      renameFolder: jest.fn(),
+      setWhoCanSee: jest.fn(),
     };
     storage = {
       uploadFile: jest.fn().mockResolvedValue(undefined),

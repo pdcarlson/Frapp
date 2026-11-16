@@ -22,7 +22,7 @@ export type MemberThread = components["schemas"]["MemberThreadDto"];
 export const memberThreadKeys = createChapterQueryKeys("member-threads");
 
 /** How often the button re-reads while nothing else does. */
-export const MEMBER_THREADS_SETTLE_MS = 60_000;
+const MEMBER_THREADS_SETTLE_MS = 60_000;
 
 export function useMemberThreads(options: { refetchOnMount?: boolean } = {}) {
   const client = useFrappClient();

@@ -110,13 +110,13 @@ from search results and are checked at Google before a paid run.
 ## Real questions (#4903)
 
 The cases above grade the rules Frapp enforces around a model. `real-questions/` grades the answer:
-forty questions a member, a committee chair or an officer would really ask, plus requests Frapp AI
+forty-five questions a member, a committee chair or an officer would really ask, plus requests Frapp AI
 must decline, each with what a right answer holds. Did it know who asked, look in the right places,
 get the facts right and stay short.
 
 | File | What it holds |
 | --- | --- |
-| `real-questions/questions.ts` | The forty: 12 from a member, 9 from a chair, 10 from an officer, 9 to decline. Each has the asker, where they asked from, the facts a right answer holds, what it must never say, the reads it needs, a word limit, and a reference answer written by hand |
+| `real-questions/questions.ts` | The set: 15 from a member, 9 from a chair, 11 from an officer, 10 to decline (the forty from the plan page, and five about the backwork catalog from #5209). Each has the asker, where they asked from, the facts a right answer holds, what it must never say, the reads it needs, a word limit, and a reference answer written by hand |
 | `real-questions/paul-questions.json` | Paul's own questions, as data. Empty until he gives them |
 | `real-questions/code-grader.ts` | The checks code can make. Its header lists every rule |
 | `real-questions/judge-rubric.md`, `judge.ts`, `judge-sample.ts` | The judge model's instructions, the call, and the hand-graded answers it is checked against |
@@ -195,7 +195,7 @@ planner asks for every read while Ask runs the first three, so `my_tasks` is nev
 does show is where the one-shot Ask has no read at all (chapter tasks, attendance, service hours) and
 that it cannot propose a card. The baseline is this run with a real model.
 
-With `--agent loop` the scripted model passes 37 of 40. That is not the loop's score either: the
+With `--agent loop` the scripted model passes 42 of 45. That is not the loop's score either: the
 script searches, asks for the reads a question expects when they take no argument, and answers with
 the reference. The three misses are the two questions that need cards (a card's content is a
 model's to write) and one read that needs an event named. It shows the tools run against the term
@@ -269,7 +269,7 @@ offered to narrow down.
 ### The agent loop under test
 
 `--agent loop` asks the questions of the tool loop (#4899): `AskService` on its loop path, the
-product's loop and prompt, all 22 read tools and the three card tools, each built as the product
+product's loop and prompt, all 23 read tools and the three card tools, each built as the product
 builds it. `harness/term-world.ts` puts the term chapter behind them and says, at its top, what is
 the product's (the tools, the chat reader's consent and channel rules, the card service) and what
 stands in for the database (the services under the chapter tools, message search by words). The

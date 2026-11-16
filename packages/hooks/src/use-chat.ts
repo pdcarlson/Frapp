@@ -244,7 +244,7 @@ export function useCategories() {
 /** Per-channel notification level. `off` is what the UI calls "muted". */
 export type { ChatNotificationLevel } from "@repo/validation";
 
-export interface ChannelNotificationPreference {
+interface ChannelNotificationPreference {
   channel_id: string;
   level: ChatNotificationLevel;
   /**
@@ -795,7 +795,7 @@ export function useMarkChannelRead() {
  * read already pending (a paused or retrying one included) rather than
  * landing first and being stamped over.
  */
-export const READ_CURSOR_SCOPE = { id: "chat-read-cursor" } as const;
+const READ_CURSOR_SCOPE = { id: "chat-read-cursor" } as const;
 
 /**
  * Mark unread (#3723): move the viewer's read cursor in a message's channel to

@@ -128,6 +128,19 @@ export function CopyGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   );
 }
 
+/**
+ * A file that downloads when tapped: a backwork file Frapp found (#5209).
+ * Web draws Lucide's `Download` there.
+ */
+export function DownloadGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path d="M12 3v12M7 10l5 5 5-5M4 21h16" {...detail} />
+    </Frame>
+  );
+}
+
 /** Done, where a control confirms in place (Copy turning to Copied). */
 export function CheckGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });

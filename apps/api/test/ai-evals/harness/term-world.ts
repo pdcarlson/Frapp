@@ -46,6 +46,7 @@ import type {
   ChatChannel,
   ChatChannelView,
 } from '#domain/entities/chat.entity';
+import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { Event } from '#domain/entities/event.entity';
 import type { EventAttendance } from '#domain/entities/event-attendance.entity';
 import type { FinancialInvoice } from '#domain/entities/financial-invoice.entity';
@@ -94,6 +95,8 @@ import { CHAT_SOURCE_TYPE } from '../../../src/application/services/corpus/chat-
 import {
   PHILANTHROPY_COMMITTEE,
   type TermChapter,
+  backworkFileHash,
+  backworkStorageKey,
   type TermEvent,
   type TermTask,
 } from '../synthetic-chapter/term';
@@ -921,7 +924,155 @@ export function createTermWorld(
   );
   const wordsOf = (text: string): string[] =>
     text.toLowerCase().match(/[a-z0-9$#@']+/g) ?? [];
+  // --------------------------------------------------------- the backwork
+  // The library's catalog (#5209). Rows as the tables hold them; no file is
+  // ever here, which is the point: a tool can only hand over what it reads.
+  const bwDepartments = chapter.backwork.departments.map((department) => ({
+    id: termId(`backwork-department:${department.code}`),
+    chapter_id: chapterId,
+    code: department.code,
+    name: department.name,
+    created_at: stamp,
+  }));
+  const bwDepartmentId = (code: string) =>
+    termId(`backwork-department:${code}`);
+  const bwProfessorNames = [
+    ...new Set(
+      chapter.backwork.files.flatMap((file) =>
+        file.professor ? [file.professor] : [],
+      ),
+    ),
+  ];
+  const bwProfessors = bwProfessorNames.map((name) => ({
+    id: termId(`backwork-professor:${name}`),
+    chapter_id: chapterId,
+    name,
+    created_at: stamp,
+  }));
+  const bwCourses = chapter.backwork.courses.map((course) => ({
+    id: termId(`backwork-course:${course.department}:${course.number}`),
+    chapter_id: chapterId,
+    department_id: bwDepartmentId(course.department),
+    course_number: course.number,
+    course_key: course.number.toLowerCase(),
+    name: course.name,
+    nicknames: [...course.nicknames],
+    created_at: stamp,
+    updated_at: stamp,
+  }));
+  const bwFiles: BackworkResource[] = chapter.backwork.files.map((file) => ({
+    id: u(file.id),
+    chapter_id: chapterId,
+    department_id: bwDepartmentId(file.department),
+    course_number: file.course,
+    professor_id: file.professor
+      ? termId(`backwork-professor:${file.professor}`)
+      : null,
+    uploader_id: termId('syn-backwork-uploader'),
+    title: null,
+    year: file.year,
+    semester: file.semester,
+    assignment_type: file.type,
+    assignment_number: file.number,
+    document_variant: file.copy,
+    // Never handed to a model: `neverShown` on the backwork questions.
+    storage_path: `${chapterId}/${backworkStorageKey(file.id)}`,
+    file_hash: backworkFileHash(file.id),
+    is_redacted: true,
+    tags: [],
+    // Every eval file is published: drafts (#5208) never reach Ask.
+    draft_fields: null,
+    created_at: stamp,
+  }));
+  // What `search_backwork_resources` matches on: the course every way it is
+  // written, its name and nicknames, the professor and the type.
+  const bwHay = (file: BackworkResource): string => {
+    const department = bwDepartments.find((d) => d.id === file.department_id);
+    const course = bwCourses.find(
+      (c) =>
+        c.department_id === file.department_id &&
+        c.course_number === file.course_number,
+    );
+    const professor = bwProfessors.find((p) => p.id === file.professor_id);
+    return [
+      department?.code,
+      department?.name,
+      file.course_number,
+      `${department?.code ?? ''}${file.course_number ?? ''}`,
+      course?.name,
+      ...(course?.nicknames ?? []),
+      professor?.name,
+      file.assignment_type,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+  };
+  const backwork = {
+    getDepartments: (asked: string) =>
+      quietly(asked === chapterId ? bwDepartments : []),
+    getProfessors: (asked: string) =>
+      quietly(asked === chapterId ? bwProfessors : []),
+    getCourses: (asked: string) =>
+      quietly(asked === chapterId ? bwCourses : []),
+    findByChapter: (
+      asked: string,
+      filters: {
+        department_id?: string;
+        assignment_type?: string;
+        semester?: string;
+        year?: number;
+        document_variant?: string;
+      } = {},
+    ) =>
+      quietly(
+        asked !== chapterId
+          ? []
+          : bwFiles.filter(
+              (file) =>
+                (!filters.department_id ||
+                  file.department_id === filters.department_id) &&
+                (!filters.assignment_type ||
+                  file.assignment_type === filters.assignment_type) &&
+                (!filters.semester || file.semester === filters.semester) &&
+                (!filters.year || file.year === filters.year) &&
+                (!filters.document_variant ||
+                  file.document_variant === filters.document_variant),
+            ),
+      ),
+  };
+  const mayBrowseBackwork = () =>
+    caller.permissions.some((permission) =>
+      ['*', 'backwork:upload', 'backwork:admin'].includes(permission),
+    );
+
   const search = {
+    // A stand-in for `search_backwork_resources`: the whole query inside the
+    // catalog's words (a nickname, "calc 1"), or every word of it, plurals
+    // folded. Gated like `SearchService.searchBackwork`.
+    searchBackwork: (
+      inChapter: string,
+      _asker: string,
+      query: string,
+      limit = 10,
+    ): Promise<BackworkResource[]> => {
+      if (inChapter !== chapterId || !mayBrowseBackwork()) return quietly([]);
+      const whole = query.trim().toLowerCase();
+      const wanted = wordsOf(query)
+        .filter((word) => !COMMON_WORDS.has(word))
+        .map((word) => word.replace(/s$/, ''));
+      if (wanted.length === 0) return quietly([]);
+      return quietly(
+        bwFiles
+          .filter((file) => {
+            const hay = bwHay(file);
+            return (
+              hay.includes(whole) || wanted.every((word) => hay.includes(word))
+            );
+          })
+          .slice(0, limit),
+      );
+    },
     // Every word of the query, anywhere in the message: a stand-in for the
     // app's full-text search, newest first.
     searchMessagesIn: (
@@ -1075,6 +1226,7 @@ export function createTermWorld(
     ConversationScope: scope,
     ChatCatchUpService: catchUp,
     SearchService: search,
+    BackworkService: backwork,
     CorpusRetrievalService: corpus.retrieval,
     MeetingService: meetings,
   };

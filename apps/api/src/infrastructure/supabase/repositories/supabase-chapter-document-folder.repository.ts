@@ -59,6 +59,7 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
     chapter_id: string;
     name: string;
     sort_order: number;
+    who_can_see?: string[] | null;
   }): Promise<ChapterDocumentFolder> {
     const row: TablesInsert<'chapter_document_folders'> = data;
     const { data: created, error } = await this.supabase
@@ -102,12 +103,26 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
     return data;
   }
 
-  async delete(id: string, chapterId: string): Promise<void> {
-    const { error } = await this.supabase
-      .from('chapter_document_folders')
-      .delete()
-      .eq('id', id)
-      .eq('chapter_id', chapterId);
+  async rename(
+    id: string,
+    chapterId: string,
+    name: string,
+  ): Promise<ChapterDocumentFolder | null> {
+    const { data, error } = await this.supabase.rpc('rename_document_folder', {
+      p_chapter_id: chapterId,
+      p_folder_id: id,
+      p_name: name,
+    });
     if (error) throw new SupabaseQueryError(error);
+    return data?.[0] ?? null;
+  }
+
+  async deleteMovingDocuments(id: string, chapterId: string): Promise<boolean> {
+    const { data, error } = await this.supabase.rpc('delete_document_folder', {
+      p_chapter_id: chapterId,
+      p_folder_id: id,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    return data === true;
   }
 }

@@ -43,6 +43,7 @@ export const KNOWN_TOOLS = [
   'my_hours',
   'service_hours',
   'polls',
+  'find_backwork',
   'propose_tasks',
   'propose_event',
   'propose_points',

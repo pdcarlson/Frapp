@@ -47,12 +47,6 @@ import type { MemberLabel } from "./form-responses";
 
 export const SIGNUP_CLAIM_ACTION_TYPE = "signup";
 
-export {
-  HEADCOUNT_GOING_SLOT_ID,
-  HEADCOUNT_NOT_GOING_SLOT_ID,
-  SIGNUP_HEADCOUNT_FORMAT,
-};
-
 export interface SignupSlot {
   id: string;
   label: string;
@@ -280,11 +274,11 @@ export function canExportSignup(
 }
 
 /** A sign-up's export columns. */
-export const SIGNUP_EXPORT_SLOT_COLUMN = "Slot";
-export const SIGNUP_EXPORT_ANSWER_COLUMN = "Answer";
-export const SIGNUP_EXPORT_NAME_COLUMN = "Name";
-export const SIGNUP_EXPORT_NOTE_COLUMN = "Note";
-export const SIGNUP_EXPORT_SIGNED_UP_COLUMN = "Signed up at";
+const SIGNUP_EXPORT_SLOT_COLUMN = "Slot";
+const SIGNUP_EXPORT_ANSWER_COLUMN = "Answer";
+const SIGNUP_EXPORT_NAME_COLUMN = "Name";
+const SIGNUP_EXPORT_NOTE_COLUMN = "Note";
+const SIGNUP_EXPORT_SIGNED_UP_COLUMN = "Signed up at";
 
 /**
  * A sign-up card's claims as spreadsheet rows: one per member per slot, in
@@ -557,7 +551,7 @@ export interface PendingHeadcount {
  * The viewer's answer and note as the card should build on them: their last
  * tap while it is fresh (`POLL_PICKS_PENDING_MS`), else the tally.
  */
-export function currentHeadcount(
+function currentHeadcount(
   tally: SignupTally,
   viewerId: string | null,
   pending: PendingHeadcount | null,

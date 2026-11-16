@@ -298,13 +298,8 @@ export class UserService {
  * - The day must exist in the month (and 29 February needs a leap year when a
  *   year is given), the same rule as the `users_birthday_valid` check, so the
  *   member reads why instead of a database error.
- *
- * Exported for its spec.
  */
-export function birthdayPatch(
-  current: User,
-  data: Partial<User>,
-): Partial<User> {
+function birthdayPatch(current: User, data: Partial<User>): Partial<User> {
   const hasMonth = data.birthday_month !== undefined;
   const hasDay = data.birthday_day !== undefined;
   const hasYear = data.birthday_year !== undefined;

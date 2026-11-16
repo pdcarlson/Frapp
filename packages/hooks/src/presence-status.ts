@@ -76,7 +76,7 @@ export type PresenceStatus =
  * The status a member picked that rides their presence entry. Online is the
  * absence of one, and Invisible never rides at all (it publishes nothing).
  */
-export type PickedPresence = "idle" | "dnd";
+type PickedPresence = "idle" | "dnd";
 
 /** One member's entry on `presence:chapter:<id>`, as far as we trust it. */
 export type PresenceEntry = {

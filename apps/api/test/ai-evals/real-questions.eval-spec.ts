@@ -54,6 +54,9 @@ import { ScriptedLanguageModel } from '../../src/infrastructure/ai/scripted-lang
 import { ROSTER, member } from './synthetic-chapter/roster';
 import {
   CONTACT_DETAILS,
+  TERM_BACKWORK,
+  backworkFileHash,
+  backworkStorageKey,
   DIRECT_MESSAGES,
   TERM_CHANNEL_NAMES,
   TERM_CHAPTER,
@@ -215,6 +218,13 @@ describe('the real-question set', () => {
           ...TERM_CORPUS.map((doc) => doc.body),
           ...DIRECT_MESSAGES.map((dm) => dm.body),
           ...Object.values(CONTACT_DETAILS).flatMap((c) => [c.phone, c.email]),
+          // The backwork catalog, and each file's storage key and hash
+          // (#5209), which no tool reads into a result.
+          ...TERM_BACKWORK.files.flatMap((file) => [
+            file.professor ?? '',
+            backworkStorageKey(file.id),
+            backworkFileHash(file.id),
+          ]),
         ]
           .join('\n')
           .toLowerCase();

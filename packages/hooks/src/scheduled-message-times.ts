@@ -8,7 +8,7 @@
  */
 
 /** What the presets send at: 9 AM, Slack's default. */
-export const SCHEDULE_PRESET_HOUR = 9;
+const SCHEDULE_PRESET_HOUR = 9;
 /** The furthest ahead the API takes a message, in days. */
 export const SCHEDULE_MAX_DAYS = 120;
 

@@ -85,6 +85,12 @@ export interface AgentToolSpec {
   readonly description: string;
   /** The permission the mirrored route requires of its caller. */
   readonly permission: string;
+  /**
+   * For a route gated by any one of several permissions
+   * (`@RequireAnyOfPermissions`): the others that also let a member use it.
+   * Backwork is one: `backwork:upload` or `backwork:admin`.
+   */
+  readonly alsoPermittedBy?: readonly string[];
   /** The module the mirrored route belongs to, or null for an always-on one. */
   readonly module: string | null;
   readonly effect: AskToolEffect;
@@ -113,7 +119,10 @@ export function toolsMemberMayUse<T extends AgentToolSpec>(
 ): T[] {
   return tools.filter(
     (tool) =>
-      (heldPermissions.has(WILDCARD) || heldPermissions.has(tool.permission)) &&
+      (heldPermissions.has(WILDCARD) ||
+        [tool.permission, ...(tool.alsoPermittedBy ?? [])].some((permission) =>
+          heldPermissions.has(permission),
+        )) &&
       (tool.module === null || isModuleEnabled(enabledModules, tool.module)),
   );
 }

@@ -37,7 +37,7 @@ export function formQuestionTypeLabel(type: FormQuestionType): string {
   );
 }
 
-export interface FormOptionRow {
+interface FormOptionRow {
   key: string;
   label: string;
 }

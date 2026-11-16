@@ -107,7 +107,7 @@ export function formAnswerText(
   return typeof answer === "string" ? answer : "";
 }
 
-export interface FormChoiceCount {
+interface FormChoiceCount {
   id: string;
   label: string;
   count: number;
@@ -198,17 +198,14 @@ export function formChoicePercent(count: number, answered: number): number {
  * and so no header is a bare integer, which a JavaScript object would move
  * to the front of the row.
  */
-export function formExportColumn(
-  question: FormQuestion,
-  index: number,
-): string {
+function formExportColumn(question: FormQuestion, index: number): string {
   return `${index + 1}. ${question.title}`;
 }
 
 /** Each export row's fixed columns, before the questions. */
-export const FORM_EXPORT_NAME_COLUMN = "Name";
-export const FORM_EXPORT_ANSWERED_COLUMN = "Answered at";
-export const FORM_EXPORT_UPDATED_COLUMN = "Last changed";
+const FORM_EXPORT_NAME_COLUMN = "Name";
+const FORM_EXPORT_ANSWERED_COLUMN = "Answered at";
+const FORM_EXPORT_UPDATED_COLUMN = "Last changed";
 
 /**
  * A form's responses as spreadsheet rows, one per response, first answered

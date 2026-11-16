@@ -6,7 +6,7 @@ import { formatActedLabel, formatTimeOfDay } from "@repo/formatting";
 import { selectionHaptic } from "@/lib/haptics";
 
 /** The alert title when a reminder can't be set or moved. */
-export const REMINDER_FAILED_TITLE = "Couldn't set the reminder";
+const REMINDER_FAILED_TITLE = "Couldn't set the reminder";
 
 /**
  * When a reminder is for, in a sentence: "today at 3:40 PM", "tomorrow at
@@ -34,7 +34,7 @@ export function reminderPresetValue(at: Date, now: Date): string {
 }
 
 /** What the member hears once a reminder is set: "Reminder set for …". */
-export function reminderSetAnnouncement(
+function reminderSetAnnouncement(
   at: Date,
   now: Date = new Date(),
 ): string {

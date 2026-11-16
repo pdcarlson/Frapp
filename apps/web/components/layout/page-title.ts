@@ -31,7 +31,7 @@ import {
  * nav, and a caret that leads nowhere new is decoration.
  */
 
-export type PageTitleParent = { label: string; href: string };
+type PageTitleParent = { label: string; href: string };
 
 export type PageTitle = {
   title: string;

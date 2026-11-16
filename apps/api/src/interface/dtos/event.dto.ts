@@ -39,6 +39,7 @@ import { IsRepeatRule } from '../decorators/is-repeat-rule.decorator';
 import type { Event } from '#domain/entities/event.entity';
 import type { GeofenceCoordinate } from '#domain/entities/study.entity';
 import { GeofenceCoordinateDto } from './study.dto';
+import type { AssertNever } from './drift-guard';
 
 /**
  * Swagger/validation description shared by the create and update zone fields.
@@ -331,7 +332,7 @@ export class CreateEventDto {
  * renders as `content?: never` (or no content at all), so callers cast the
  * fields they read (#1717, #4867). Drift between this class and the event row
  * is caught the same way as `AdjustPointsResponseDto`: `implements Event` for
- * type drift, and the `Assert<Exclude<…>>` aliases at the end of this file for
+ * type drift, and the `AssertNever<Exclude<…>>` aliases at the end of this file for
  * key drift.
  */
 export class EventResponseDto implements Event {
@@ -675,13 +676,14 @@ export class DeleteEventQueryDto {
 /**
  * Compile-time key-drift guards between {@link EventResponseDto} and the
  * event row it publishes. Each resolves to `never` while the two agree; when
- * they diverge the alias stops satisfying `Assert`'s constraint and the build
+ * they diverge the alias stops satisfying `AssertNever`'s constraint and the build
  * fails naming the field.
  */
-type Assert<T extends never> = T;
-
-/** Event fields {@link EventResponseDto} forgot to declare. Must be `never`. */
-export type EventResponseDtoMissingFields = Assert<
+/**
+ * Event fields {@link EventResponseDto} forgot to declare. Must be `never`.
+ * @driftguard
+ */
+export type EventResponseDtoMissingFields = AssertNever<
   Exclude<keyof Event, keyof EventResponseDto>
 >;
 
@@ -689,7 +691,8 @@ export type EventResponseDtoMissingFields = Assert<
  * Fields {@link EventResponseDto} declares that the event row does not carry.
  * Must be `never`. Route-specific additions (`card_posted`,
  * `check_in_needs_code`) live on the subclasses, not here.
+ * @driftguard
  */
-export type EventResponseDtoExtraFields = Assert<
+export type EventResponseDtoExtraFields = AssertNever<
   Exclude<keyof EventResponseDto, keyof Event>
 >;

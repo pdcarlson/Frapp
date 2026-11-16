@@ -123,6 +123,10 @@ import type {
 } from '#domain/entities';
 import type { StripeWebhookClaimOutcome } from '#domain/repositories/stripe-webhook-event.repository.interface';
 
+/**
+ * @public Nothing imports it, but the exported `Database` type names it, and
+ * the API compiles with declarations on, so it has to stay exported.
+ */
 export type Json =
   | string
   | number
@@ -532,6 +536,15 @@ export interface Database {
        */
       delete_chapter_document_type: {
         Args: { p_chapter_id: string; p_type_id: string };
+        Returns: boolean;
+      };
+      /**
+       * `20261116185618` (#3642 piece 1). Moves a folder's documents to the
+       * top level, carrying a restricted folder's list onto them, and deletes
+       * it; false when the folder isn't in the chapter.
+       */
+      delete_document_folder: {
+        Args: { p_chapter_id: string; p_folder_id: string };
         Returns: boolean;
       };
       /**
@@ -1029,6 +1042,14 @@ export interface Database {
       rename_chapter_document_type: {
         Args: { p_chapter_id: string; p_type_id: string; p_name: string };
         Returns: ChapterDocumentType[];
+      };
+      /**
+       * `20261116185618` (#3642 piece 1). Renames a folder and re-files its
+       * documents in one transaction; no row when the folder isn't there.
+       */
+      rename_document_folder: {
+        Args: { p_chapter_id: string; p_folder_id: string; p_name: string };
+        Returns: ChapterDocumentFolder[];
       };
       /** `20261110170000` (#3939) — `returns setof chapter_pledge_classes`. */
       reorder_chapter_pledge_classes: {

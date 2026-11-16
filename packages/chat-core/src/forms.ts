@@ -28,12 +28,11 @@ import type { ChatMessage } from "./types";
  * same check, run in the form so a member sees what to fix before sending.
  */
 
-export { FORM_QUESTION_TYPES };
 export type { FormQuestionType };
 
 /** The two answers a yes/no question takes, as stored. */
-export const FORM_YES = "yes";
-export const FORM_NO = "no";
+const FORM_YES = "yes";
+const FORM_NO = "no";
 
 export interface FormOption {
   id: string;
@@ -207,7 +206,7 @@ export const CLOSE_FORM_CONFIRM_LABEL = "Close form";
  * never disagree. It names the ceiling (the poster will read them in step 4's
  * responses view), not only who can read them today.
  */
-export const FORM_PRIVACY_NOTE =
+const FORM_PRIVACY_NOTE =
   "Your answers aren't posted in the chat. Only you and the person who posted this form can see them.";
 
 /**

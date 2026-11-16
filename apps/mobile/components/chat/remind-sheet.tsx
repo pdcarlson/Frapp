@@ -38,7 +38,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /** The last row, which opens the platform's date and time picker. */
 export const REMINDER_CUSTOM_LABEL = "Custom…";
 /** The custom step's title and its button. */
-export const REMINDER_CUSTOM_TITLE = "Pick a date and time";
+const REMINDER_CUSTOM_TITLE = "Pick a date and time";
 export const REMINDER_SET_LABEL = "Set reminder";
 /** Said under the pickers, and on Android, for a time already gone. */
 export const REMINDER_PAST_NOTE = "Pick a time later than now.";

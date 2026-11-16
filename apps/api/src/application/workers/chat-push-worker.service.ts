@@ -131,7 +131,7 @@ const UNNAMED_GROUP_DM = /^group-dm-\d+$/;
  * announcement, or any other channel. The announcement test is the push's own
  * (`isAnnouncementPush`), so the badge and the URGENT priority can't disagree.
  */
-export type ChatNotificationKind = 'dm' | 'group' | 'announcement' | 'channel';
+type ChatNotificationKind = 'dm' | 'group' | 'announcement' | 'channel';
 
 function chatNotificationKind(
   channel: Pick<CachedChannelRow, 'type'>,

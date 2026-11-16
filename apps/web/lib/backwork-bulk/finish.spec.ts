@@ -87,6 +87,12 @@ describe("finishUpload", () => {
     );
   });
 
+  it("saves every document as a draft for the review table (#5208)", async () => {
+    const { deps } = harness();
+    await run({ document_variant: "Blank Copy" }, {}, deps);
+    expect(deps.confirm).toHaveBeenCalledWith(expect.objectContaining({ draft: true }));
+  });
+
   it("re-flattens smaller when the first pass is over the cap", async () => {
     const tooBig = { byteLength: MAX_BACKWORK_UPLOAD_BYTES + 1 } as Uint8Array;
     const flatten = vi.fn().mockResolvedValueOnce(tooBig).mockResolvedValueOnce(FLAT);
