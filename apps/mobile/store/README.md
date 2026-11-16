@@ -653,11 +653,11 @@ Where each answer comes from:
   (`lib/chat/attachment-upload.ts`), so a member's photo goes from the library
   to the chat bucket from the phone. That is also what reinstated the
   Photos or Videos row above — read its footnote before touching either.
-  Documents now upload from the phone too, photos only (#3399): s12's sheet
-  sends a library photo to the documents bucket, and that photo is declared
-  under the Photos or Videos row above. A PDF or Office file still uploads only
-  from the web dashboard, since picking one needs `expo-document-picker`, a
-  native module no store build carries yet. Service-hour proof uploads from
+  Documents now upload from the phone too (#3399): s12's sheet sends a library
+  photo to the documents bucket, declared under the Photos or Videos row
+  above, and from 0.13.0 a PDF, Office or text file the member picks in Files
+  (#3401), which is a file they chose to share with the chapter, under Other
+  User Content here. Service-hour proof uploads from
   the phone too, photos only: the s20 sheet's "Add photo proof" row sends a
   library photo to the service bucket, declared under the same row. Backwork
   has no mobile screen, so it stays web-dashboard-only and is not claimed here

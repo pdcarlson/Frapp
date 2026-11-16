@@ -374,7 +374,10 @@ export async function encodeAvatar(
 }
 
 /** The byte size of `uri`: `hinted` when the caller has one for these exact bytes, else read from disk. */
-async function byteSizeOf(uri: string, hinted?: number): Promise<number> {
+export async function byteSizeOf(
+  uri: string,
+  hinted?: number,
+): Promise<number> {
   if (typeof hinted === "number" && Number.isFinite(hinted) && hinted >= 0) {
     return hinted;
   }
@@ -663,6 +666,11 @@ export async function uploadPickedImage(
    * out of the result, and the image is still uploaded.
    */
   previewUri: string | null = null,
+  /**
+   * The sentence a failed PUT reads as. A photo's by default; s21's Files
+   * pick passes its own, since "that photo" misnames a PDF.
+   */
+  failedCopy: string = UPLOAD_FAILED,
 ): Promise<Exclude<ImageUploadResult, { status: "cancelled" }>> {
   try {
     const ticket = await requestUploadUrl({
@@ -687,7 +695,7 @@ export async function uploadPickedImage(
         : false,
     ]);
     if (!ok) {
-      return { status: "refused", reason: UPLOAD_FAILED };
+      return { status: "refused", reason: failedCopy };
     }
 
     return {
@@ -703,7 +711,10 @@ export async function uploadPickedImage(
       },
     };
   } catch (err) {
-    return { status: "refused", reason: uploadFailureReason(err) };
+    return {
+      status: "refused",
+      reason: definitiveRefusalMessage(err) ?? failedCopy,
+    };
   }
 }
 

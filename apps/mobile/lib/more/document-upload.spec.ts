@@ -1,3 +1,5 @@
+import { requireOptionalNativeModule } from "expo";
+import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import { ImageManipulator } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
@@ -6,9 +8,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import {
+  DOCUMENT_FILE_TYPE_REFUSAL,
   DOCUMENT_SIZE_REFUSAL,
   DOCUMENT_TYPE_REFUSAL,
+  canPickFiles,
+  documentPickerTypes,
   documentTitle,
+  pickDocumentFile,
   pickDocumentPhoto,
   uploadDocumentPhoto,
 } from "./document-upload";
@@ -59,6 +65,135 @@ beforeEach(() => {
     canAskAgain: true,
   } as never);
   picker.launchImageLibraryAsync.mockResolvedValue({ canceled: true } as never);
+});
+
+const filePicker = vi.mocked(DocumentPicker);
+
+function filePick(asset: {
+  uri: string;
+  name: string;
+  mimeType?: string;
+  size?: number;
+}) {
+  filePicker.getDocumentAsync.mockResolvedValue({
+    canceled: false,
+    assets: [asset],
+  } as never);
+}
+
+describe("pickDocumentFile (#3401)", () => {
+  it("returns a PDF from Files as picked, and sends nothing", async () => {
+    filePick({
+      uri: "file:///cache/Bylaws.pdf",
+      name: "Bylaws.pdf",
+      mimeType: "application/pdf",
+      size: 1_200_000,
+    });
+    await expect(pickDocumentFile()).resolves.toEqual({
+      status: "picked",
+      image: {
+        uri: "file:///cache/Bylaws.pdf",
+        filename: "Bylaws.pdf",
+        contentType: "application/pdf",
+        byteSize: 1_200_000,
+      },
+    });
+    expect(requestUploadUrl).not.toHaveBeenCalled();
+    expect(fs.uploadAsync).not.toHaveBeenCalled();
+  });
+
+  it("asks the picker for the document allowlist, copied to the cache", async () => {
+    filePicker.getDocumentAsync.mockResolvedValue({
+      canceled: true,
+      assets: null,
+    } as never);
+    await expect(pickDocumentFile()).resolves.toEqual({ status: "cancelled" });
+    const options = filePicker.getDocumentAsync.mock.calls[0]![0]!;
+    expect(options.copyToCacheDirectory).toBe(true);
+    expect(options.multiple).toBe(false);
+    expect(options.type).toEqual(documentPickerTypes());
+    const types = documentPickerTypes();
+    expect(types).toContain("application/pdf");
+    expect(types).toContain(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+    expect(types).toContain("text/csv");
+    expect(types).toContain("image/heic");
+  });
+
+  it("types an Office file by its extension when the picker reports none", async () => {
+    filePick({
+      uri: "file:///cache/Budget.xlsx",
+      name: "Budget.xlsx",
+      size: 30_000,
+    });
+    const result = await pickDocumentFile();
+    expect(result).toMatchObject({
+      status: "picked",
+      image: {
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    });
+  });
+
+  it("turns a Pages file down, saying how to send it", async () => {
+    filePick({
+      uri: "file:///cache/Recruitment.pages",
+      name: "Recruitment.pages",
+      mimeType: "application/vnd.apple.pages",
+      size: 30_000,
+    });
+    await expect(pickDocumentFile()).resolves.toEqual({
+      status: "refused",
+      reason: DOCUMENT_FILE_TYPE_REFUSAL,
+    });
+  });
+
+  it("turns a file over 25 MB down before anything is sent", async () => {
+    filePick({
+      uri: "file:///cache/Scan.pdf",
+      name: "Scan.pdf",
+      mimeType: "application/pdf",
+      size: 40 * 1024 * 1024,
+    });
+    await expect(pickDocumentFile()).resolves.toEqual({
+      status: "refused",
+      reason: DOCUMENT_SIZE_REFUSAL,
+    });
+    expect(requestUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("turns an iPhone HEIC saved to Files into a JPEG", async () => {
+    filePick({
+      uri: "file:///cache/IMG_1.HEIC",
+      name: "IMG_1.HEIC",
+      mimeType: "image/heic",
+      size: 900_000,
+    });
+    const result = await pickDocumentFile();
+    expect(result).toMatchObject({
+      status: "picked",
+      image: { filename: "IMG_1.jpg", contentType: "image/jpeg" },
+    });
+    expect(ImageManipulator.manipulate).toHaveBeenCalled();
+  });
+
+  it("reads a picker that throws as a sentence, never a rejection", async () => {
+    filePicker.getDocumentAsync.mockRejectedValue(new Error("busy"));
+    await expect(pickDocumentFile()).resolves.toEqual({
+      status: "refused",
+      reason: "Couldn't open that file. Try again in a moment.",
+    });
+  });
+});
+
+describe("canPickFiles", () => {
+  it("is true when the binary has the picker, false when it doesn't", () => {
+    expect(canPickFiles()).toBe(true);
+    vi.mocked(requireOptionalNativeModule).mockReturnValueOnce(null);
+    expect(canPickFiles()).toBe(false);
+  });
 });
 
 describe("pickDocumentPhoto", () => {
@@ -244,7 +379,7 @@ describe("uploadDocumentPhoto", () => {
       uploadDocumentPhoto(IMAGE, { title: "", folder: null }, mutations),
     ).resolves.toEqual({
       status: "refused",
-      reason: "Couldn't upload that photo. Try again in a moment.",
+      reason: "Couldn't upload that file. Try again in a moment.",
       final: false,
     });
     expect(confirm).not.toHaveBeenCalled();
@@ -257,7 +392,7 @@ describe("uploadDocumentPhoto", () => {
       uploadDocumentPhoto(IMAGE, { title: "", folder: null }, mutations),
     ).resolves.toEqual({
       status: "refused",
-      reason: "Couldn't upload that photo. Try again in a moment.",
+      reason: "Couldn't upload that file. Try again in a moment.",
       final: false,
       sent: {
         image: IMAGE,

@@ -597,7 +597,9 @@ A PDF waits for `expo-document-picker` in a store build
 
 Route: *sheet* on `documents.tsx`, or from the tab bar's quick actions with no folder picked ([`navigation.md` § Quick actions](navigation.md#quick-actions)).
 
-Sheet — photos only ([#3399](https://github.com/pdcarlson/Frapp/issues/3399)): the picked photo's card with Change, a title (blank files it under the file name, as web does), folder chips, Upload.
+Sheet ([#3399](https://github.com/pdcarlson/Frapp/issues/3399), [#3401](https://github.com/frapplive/Frapp/issues/3401)): with nothing picked, two rows, Choose a file (PDF, Word, Excel, PowerPoint or text, up to 25 MB) and Choose a photo, as Slack's and Google Drive's upload menus put them; then the picked file's card ("1.2 MB · from Files" or "· from Photos") with Change, which goes back to the two rows; a title (blank files it under the file name, as web does), folder chips, Upload.
+Choose a file opens the system picker: on iOS, Files, which lists iCloud Drive and any installed cloud app with a Files extension (Google Drive, OneDrive, Dropbox); on Android, the document picker, which lists Drive too. It offers only the `document` allowlist (plus HEIC, turned into JPEG on the pick, as a photo is), so a Pages, Numbers or Keynote file is greyed out, and one that slips through reads "Export a Pages, Numbers or Keynote file as PDF first." A file over 25 MB is turned down before anything is sent.
+A store build from before #3401 has no file picker, so its sheet draws the photo card alone, as before.
 Mint, PUT and confirm all run on Upload, so a sheet cancelled before Upload leaves no object behind.
 Upload closes the sheet at once and the upload carries on behind it, shown by s12's pending row or the quick-action capsule; a failure keeps its reason here for the visit that row reopens (2026-11-07).
 A photo larger than 2560 px is shrunk before it is sent ([`navigation.md`](navigation.md), the `expo-image-picker` note), and a retry after a failed confirm files the bytes already sent rather than uploading a second copy, with the title and folder they were sent with (unless that folder is gone, below), which hold still until a new photo is picked.
@@ -605,7 +607,7 @@ The draft (photo, title and folder) outlives a close, not a Cancel ([`patterns.m
 A close keeps any held retry with the draft, and a new photo gives that up; s12 mounts a fresh sheet per chapter, since the held path was minted under it.
 A kept folder an officer has since deleted or renamed falls back to s12's filter when that folder still exists and to None otherwise, as an s12 filter naming a deleted folder does, and a held retry's folder that is gone falls back to None, where a deleted folder's documents go, so Upload never files into a folder no chip shows as selected (the API would create it again).
 No "Officers only" toggle: `chapter_documents` has no visibility column.
-A PDF or Office file needs `expo-document-picker`, a native module, so "from Files" waits for a store build ([#3401](https://github.com/pdcarlson/Frapp/issues/3401))
+_Changed 2026-11-16 (#3401):_ "from Files" shipped with `expo-document-picker` in the 0.13.0 store build; until then this line said it waited for one.
 
 ### s22 Host check-in (admin)
 

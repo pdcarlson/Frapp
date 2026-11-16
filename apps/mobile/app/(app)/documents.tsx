@@ -116,8 +116,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * owner's `*` the way the server's guard does. While the permission read is
  * loading the button is absent, which fails closed.
  *
- * Photos only: a PDF needs `expo-document-picker`, a native module that waits
- * for a store build.
+ * s21 takes a file from Files (PDF, Office, text) or a photo, in a store build
+ * that has `expo-document-picker` (#3401), and a photo alone in one before it.
  *
  * ## Search, filters and sort, as web's (#3938)
  *

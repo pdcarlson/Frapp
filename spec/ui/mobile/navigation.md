@@ -284,6 +284,12 @@ is the file half of the last two: a PDF or Office file on s21 needs
 `expo-document-picker`, which can only ship in a store build, and
 [#3401](https://github.com/pdcarlson/Frapp/issues/3401) adds it there and decides
 whether s20's proof takes a PDF from Files too.
+_2026-11-16:_ #3401 added `expo-document-picker` back to `package.json` for s21's
+Files pick (`lib/more/document-upload.ts`), in 0.13.0 before its first store build. It
+needs no `plugins` entry (its plugin only touches iCloud entitlements, still unset) and
+no purpose string. It reads a picked file's modification date and ships no privacy
+manifest, so `ios.privacyManifests` declares FileTimestamp reason 3B52.1 (files the
+user picked) beside C617.1. s20's proof stays photos only for now.
 
 **`package.json` and `app.json` gained `expo-audio`** (2026-11-12, the meeting
 recorder). The dependency, its `plugins` entry (`microphonePermission`,

@@ -1,4 +1,11 @@
-import { forwardRef, useCallback, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetModal,
@@ -14,6 +21,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { DOCUMENT_TITLE_MAX_LENGTH, MAX_UPLOAD_LABEL } from "@repo/validation";
 import { DocumentsGlyph } from "@/components/more/more-glyphs";
 import { FilterChips } from "@/components/filter-chips";
+import { PhotoGlyph } from "@/components/tab-glyphs";
 import {
   SheetGrabber,
   SheetHeader,
@@ -29,9 +37,12 @@ import {
 import type { PickedImage } from "@/lib/chat/attachment-upload";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
+  canPickFiles,
   documentTitle,
+  pickDocumentFile,
   pickDocumentPhoto,
   uploadDocumentPhoto,
+  type DocumentSource,
   type SentUpload,
 } from "@/lib/more/document-upload";
 import type { DocumentFolder } from "@/lib/more/documents";
@@ -50,7 +61,10 @@ export interface PendingDocumentUpload {
 
 /** Why the title and folder stopped taking edits after a failed confirm. */
 export const RETRY_KEEPS_DRAFT =
-  "Trying again keeps this title and folder. Change the photo to start over.";
+  "Trying again keeps this title and folder. Change the file to start over.";
+
+/** The Files row's second line: what it takes, and the cap. */
+export const FILES_ROW_META = `PDF, Word, Excel, PowerPoint or text, up to ${MAX_UPLOAD_LABEL}`;
 
 /**
  * s21, the Upload document sheet (`canvas-screens.dc.html` s21, #3399): the
@@ -63,8 +77,17 @@ export const RETRY_KEEPS_DRAFT =
  * - **"Officers only".** `chapter_documents` has no visibility column, so the
  *   toggle would set nothing, and a privacy switch that does nothing is worse
  *   than none.
- * - **"from Files".** Photos only for now: a PDF needs `expo-document-picker`,
- *   a native module, so the card reads "from Photos".
+ *
+ * ## Files and Photos
+ *
+ * With nothing picked, the card is two rows, Choose a file and Choose a photo,
+ * as Slack's and Google Drive's upload menus put them (#3401). Choose a file
+ * opens the system picker, which on iOS is Files with iCloud Drive and any
+ * cloud app installed (Google Drive among them), and on Android the document
+ * picker, which lists Drive too. A picked file's card reads "· from Files" or
+ * "· from Photos", and Change goes back to the two rows. A binary without the
+ * file picker (a store build from before #3401) draws the photo card alone,
+ * as it did before, where Change reopens the library.
  * - **The "Documents feed ✦ Ask answers" line.** Ask's reach is Ask's to
  *   describe, not an upload sheet's.
  *
@@ -119,6 +142,8 @@ export const RETRY_KEEPS_DRAFT =
 /** What a kept draft holds (`keptDraft`). */
 type KeptUpload = {
   picked: PickedImage | null;
+  /** Where `picked` came from; `null` with nothing picked. */
+  source: DocumentSource | null;
   title: string;
   chosenFolder: string | null | undefined;
   stored: SentUpload | null;
@@ -163,7 +188,13 @@ export const UploadDocumentSheet = forwardRef<
   const [picked, setPicked] = useState<PickedImage | null>(
     () => opening?.picked ?? null,
   );
-  const [picking, setPicking] = useState(false);
+  const [source, setSource] = useState<DocumentSource | null>(
+    () => opening?.source ?? null,
+  );
+  // Which row's picker is opening, for its "Opening…"; `null` when none is.
+  const [picking, setPicking] = useState<DocumentSource | null>(null);
+  // Asked once per mount: a binary either has the module or it doesn't.
+  const filesAvailable = useMemo(() => canPickFiles(), []);
   const [title, setTitle] = useState(() => opening?.title ?? "");
   // `undefined` until the member taps a chip: the sheet then follows s12's
   // filter, which can change between visits. Read through `draftFolder`,
@@ -193,9 +224,10 @@ export const UploadDocumentSheet = forwardRef<
   const draftHeld = uploading || stored !== null;
   const kept = useKeptSheetDraft<KeptUpload>(
     keptDraft ?? null,
-    { picked, title, chosenFolder, stored },
+    { picked, source, title, chosenFolder, stored },
     JSON.stringify([
       picked?.uri ?? null,
+      source,
       title,
       chosenFolder ?? null,
       stored?.uploaded ?? null,
@@ -226,6 +258,7 @@ export const UploadDocumentSheet = forwardRef<
   const reset = useCallback(() => {
     clearKept();
     setPicked(null);
+    setSource(null);
     setTitle("");
     setChosenFolder(undefined);
     setTitleFocused(false);
@@ -281,15 +314,17 @@ export const UploadDocumentSheet = forwardRef<
     dismiss();
   };
 
-  const choose = async () => {
+  const choose = async (from: DocumentSource) => {
     if (pickingNow.current || sending.current) return;
     pickingNow.current = true;
-    setPicking(true);
+    setPicking(from);
     setPickRefusal(null);
     try {
-      const result = await pickDocumentPhoto();
+      const result =
+        from === "files" ? await pickDocumentFile() : await pickDocumentPhoto();
       if (result.status === "picked") {
         setPicked(result.image);
+        setSource(from);
         setStored(null);
         setFailure(null);
       } else if (result.status === "refused") {
@@ -297,8 +332,20 @@ export const UploadDocumentSheet = forwardRef<
       }
     } finally {
       pickingNow.current = false;
-      setPicking(false);
+      setPicking(null);
     }
+  };
+
+  // Change with both sources: back to the two rows, the pick given up as a
+  // new pick would give it up, bytes held for a retry included. Nothing has
+  // been sent for it but those, so nothing else is lost.
+  const change = () => {
+    if (uploading || pickingNow.current || sending.current) return;
+    setPicked(null);
+    setSource(null);
+    setStored(null);
+    setFailure(null);
+    setPickRefusal(null);
   };
 
   const upload = async () => {
@@ -346,8 +393,11 @@ export const UploadDocumentSheet = forwardRef<
   };
 
   const sourceLine = picked
-    ? `${formatBytes(picked.byteSize)} · from Photos`
+    ? `${formatBytes(picked.byteSize)} · from ${
+        source === "files" ? "Files" : "Photos"
+      }`
     : `JPEG, PNG, GIF or WebP, up to ${MAX_UPLOAD_LABEL}`;
+  const pickDisabled = picking !== null || uploading;
 
   return (
     <BottomSheetModal
@@ -369,33 +419,87 @@ export const UploadDocumentSheet = forwardRef<
           cancelDisabled={uploading}
         />
 
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={
-            picked ? `Change photo, ${picked.filename}` : "Choose a photo"
-          }
-          accessibilityHint="Opens your photo library."
-          accessibilityState={{ disabled: picking || uploading }}
-          disabled={picking || uploading}
-          onPress={() => void choose()}
-          style={({ pressed }) => [
-            styles.fileCard,
-            pressed ? styles.pressed : null,
-          ]}
-        >
-          <DocumentsGlyph color={tokens.color.text.mutedForeground} size={24} />
-          <View style={styles.fileText}>
-            <Text style={styles.fileName} numberOfLines={1}>
-              {picked ? picked.filename : "Choose a photo"}
+        {picked || !filesAvailable ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              picked
+                ? `Change ${filesAvailable ? "file" : "photo"}, ${picked.filename}`
+                : "Choose a photo"
+            }
+            accessibilityHint={
+              filesAvailable
+                ? "Goes back to choosing a file or a photo."
+                : "Opens your photo library."
+            }
+            accessibilityState={{ disabled: pickDisabled }}
+            disabled={pickDisabled}
+            onPress={() => (filesAvailable ? change() : void choose("photos"))}
+            style={({ pressed }) => [
+              styles.fileCard,
+              pressed ? styles.pressed : null,
+            ]}
+          >
+            {filesAvailable && source === "photos" ? (
+              <PhotoGlyph
+                focused={false}
+                accent={accent}
+                muted={tokens.color.text.mutedForeground}
+              />
+            ) : (
+              <DocumentsGlyph
+                color={tokens.color.text.mutedForeground}
+                size={24}
+              />
+            )}
+            <View style={styles.fileText}>
+              <Text style={styles.fileName} numberOfLines={1}>
+                {picked ? picked.filename : "Choose a photo"}
+              </Text>
+              <Text style={styles.fileMeta} numberOfLines={1}>
+                {sourceLine}
+              </Text>
+            </View>
+            <Text style={styles.change}>
+              {picking ? "Opening…" : picked ? "Change" : "Choose"}
             </Text>
-            <Text style={styles.fileMeta} numberOfLines={1}>
-              {sourceLine}
-            </Text>
+          </Pressable>
+        ) : (
+          <View style={styles.sourceCard}>
+            <SourceRow
+              label="Choose a file"
+              meta={FILES_ROW_META}
+              hint="Opens Files, where iCloud Drive and Google Drive are too."
+              opening={picking === "files"}
+              disabled={pickDisabled}
+              onPress={() => void choose("files")}
+              styles={styles}
+              glyph={
+                <DocumentsGlyph
+                  color={tokens.color.text.mutedForeground}
+                  size={24}
+                />
+              }
+            />
+            <View style={styles.sourceDivider} />
+            <SourceRow
+              label="Choose a photo"
+              meta="From your photo library"
+              hint="Opens your photo library."
+              opening={picking === "photos"}
+              disabled={pickDisabled}
+              onPress={() => void choose("photos")}
+              styles={styles}
+              glyph={
+                <PhotoGlyph
+                  focused={false}
+                  accent={accent}
+                  muted={tokens.color.text.mutedForeground}
+                />
+              }
+            />
           </View>
-          <Text style={styles.change}>
-            {picking ? "Opening…" : picked ? "Change" : "Choose"}
-          </Text>
-        </Pressable>
+        )}
         {pickRefusal ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {pickRefusal}
@@ -463,7 +567,12 @@ export const UploadDocumentSheet = forwardRef<
           onPress={() => void upload()}
           disabled={!canUpload}
           accessibilityHint={
-            refusal ?? (picked ? undefined : "Choose a photo first.")
+            refusal ??
+            (picked
+              ? undefined
+              : filesAvailable
+                ? "Choose a file or a photo first."
+                : "Choose a photo first.")
           }
           accent={accent}
           onAccent={tokens.color.gold.onHouse}
@@ -472,6 +581,53 @@ export const UploadDocumentSheet = forwardRef<
     </BottomSheetModal>
   );
 });
+
+/** One of the two rows the card shows with nothing picked. */
+function SourceRow({
+  label,
+  meta,
+  hint,
+  glyph,
+  opening,
+  disabled,
+  onPress,
+  styles,
+}: {
+  label: string;
+  meta: string;
+  hint: string;
+  glyph: ReactNode;
+  opening: boolean;
+  disabled: boolean;
+  onPress: () => void;
+  styles: ReturnType<typeof createStyles>;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.sourceRow,
+        pressed ? styles.pressed : null,
+      ]}
+    >
+      {glyph}
+      <View style={styles.fileText}>
+        <Text style={styles.fileName} numberOfLines={1}>
+          {label}
+        </Text>
+        <Text style={styles.fileMeta} numberOfLines={2}>
+          {meta}
+        </Text>
+      </View>
+      <Text style={styles.change}>{opening ? "Opening…" : "Choose"}</Text>
+    </Pressable>
+  );
+}
 
 function createStyles(tokens: SignetTokens, accent: string) {
   const fieldStyles = sheetFieldStyles(tokens, accent);
@@ -491,6 +647,25 @@ function createStyles(tokens: SignetTokens, accent: string) {
       backgroundColor: tokens.color.surface.surface1,
       padding: tokens.spacing.md,
       minHeight: tokens.touch.minimum,
+    },
+    sourceCard: {
+      borderRadius: tokens.radius.card,
+      borderWidth: 1,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.surface1,
+      overflow: "hidden",
+    },
+    sourceRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.md,
+      padding: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
+    },
+    sourceDivider: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: tokens.color.border.hairline,
+      marginLeft: tokens.spacing.md + 24 + tokens.spacing.md,
     },
     pressed: {
       opacity: 0.7,
