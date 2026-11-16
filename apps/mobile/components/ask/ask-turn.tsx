@@ -74,20 +74,25 @@ import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
  * kind of source it is and its date are in the chip's spoken name, so a
  * thread of several answers stays short.
  *
- * **Nothing above moves while it works.** The step line ("Searching your
- * chapter's sources") sits under the text, so words stream in above it. The
- * streamed text is a preview: the server decides what stands once the model
- * stops, and that replaces it (`ask.ts`).
+ * **One line says what Frapp is doing, then what it did, above its words**
+ * (#5144). While it works it names the step ("Searching your chapter's
+ * sources"); once the answer stands the same line says what was read to
+ * write it ("Read the events calendar and 3 sources"), the way ChatGPT keeps
+ * "Thought for 12s" and Claude "Searched the web" over an answer. It never
+ * moves, so the words stream in under it and the line is not pushed down
+ * with every new line of text. The streamed text is a preview: the server
+ * decides what stands once the model stops, and that replaces it (`ask.ts`).
+ * Words written before Frapp went back to read were not the answer, and
+ * leave when the next step starts (`applyAskEvent`).
  *
- * **The answer is the loudest thing in its turn** (Paul, 2026-11-13: "there
- * just needs to be better hierarchy", "report shouldn't be so obvious", and
- * the conversation "should feel more agentic"). Under the words, in the step
- * line's place and tone, a line says what Frapp read to write them ("Read
- * the events calendar and 3 sources"), as ChatGPT keeps "Thought for 12s"
- * and Perplexity its count of sources. Then the source chips. Last, two
- * small muted icons, Copy and Report, the row of quiet icons ChatGPT, Claude
- * and Gemini end an answer with. The words "Report this" stood there alone
- * and read as the thing to do next.
+ * **Then the words, then what they lead to, then what they rest on**
+ * (Paul, 2026-11-13: "there just needs to be better hierarchy", "report
+ * shouldn't be so obvious"; reordered in #5144). The answer's words are the
+ * loudest thing in the turn. Straight under them, any cards it came with, so
+ * "I drafted it below" sits over the card it means. Then the source chips.
+ * Last, small muted icons, Copy, the thumbs and Report, the row of quiet
+ * icons ChatGPT, Claude and Gemini end an answer with. The words "Report
+ * this" stood there alone and read as the thing to do next.
  *
  * **The member's bubble is the chapter's colour; Frapp's marks are gold.**
  * The bubble takes the solid accent and its contrast-checked text colour
@@ -218,20 +223,25 @@ export function AskReply({
 }: AskReplyProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
+  // The step while it works; once an answer stands, what was read to write
+  // it. A refusal, a miss, a card in place of an answer and a failure say
+  // nothing here: there is no answer for it to vouch for.
+  const workLine =
+    exchange.phase === "working"
+      ? exchange.step
+        ? askStepLine(exchange.step, exchange.stepDetail)
+        : null
+      : exchange.phase === "done" && exchange.answer?.status === "answered"
+        ? askReadLine(exchange.read)
+        : null;
 
   return (
     <View style={styles.reply} accessibilityLiveRegion="polite">
-      {exchange.phase === "working" ? (
-        <>
-          {exchange.preview ? (
-            <Text style={styles.answer}>{exchange.preview}</Text>
-          ) : null}
-          {exchange.step ? (
-            <Text style={styles.note}>
-              {askStepLine(exchange.step, exchange.stepDetail)}
-            </Text>
-          ) : null}
-        </>
+      {/* What Frapp is doing, then what it did, on one line above its
+            words: the step while it works, the read line once it is done. */}
+      {workLine ? <Text style={styles.note}>{workLine}</Text> : null}
+      {exchange.phase === "working" && exchange.preview ? (
+        <Text style={styles.answer}>{exchange.preview}</Text>
       ) : null}
 
       {exchange.phase === "failed" && exchange.failure ? (
@@ -252,7 +262,7 @@ export function AskReply({
       {exchange.phase === "done" && exchange.answer ? (
         <AnswerBody
           answer={exchange.answer}
-          readLine={askReadLine(exchange.read)}
+          cards={cards}
           canOpen={canOpen}
           openingSourceId={openingSourceId ?? null}
           onOpenSource={onOpenSource}
@@ -262,8 +272,6 @@ export function AskReply({
           onOpenChannel={onOpenChannel}
         />
       ) : null}
-
-      {exchange.phase === "done" && exchange.answer ? cards : null}
 
       {/* Anything Ask wrote, or chose not to, can be reported; what it
             wrote can be copied. An answer that was never attempted has
@@ -588,7 +596,7 @@ function ThumbsFollowUp({
 
 function AnswerBody({
   answer,
-  readLine,
+  cards,
   canOpen,
   openingSourceId,
   onOpenSource,
@@ -598,8 +606,12 @@ function AnswerBody({
   onOpenChannel,
 }: {
   answer: AskAnswer;
-  /** What Frapp read to write it (`askReadLine`), or null. */
-  readLine: string | null;
+  /**
+   * The cards the answer came with, drawn straight under its words: they
+   * are what the words lead to ("I drafted it below"), and the sources are
+   * what the words rest on, so those come after.
+   */
+  cards?: ReactNode;
   canOpen: (source: AskSource) => boolean;
   openingSourceId: string | null;
   onOpenSource: (source: AskSource) => void;
@@ -637,7 +649,12 @@ function AnswerBody({
     );
   }
   if (answer.status === "refused") {
-    return <Text style={styles.answer}>{ASK_COPY.refused}</Text>;
+    return (
+      <>
+        <Text style={styles.answer}>{ASK_COPY.refused}</Text>
+        {cards}
+      </>
+    );
   }
   if (answer.status === "not_found") {
     return (
@@ -645,6 +662,7 @@ function AnswerBody({
         <Text style={styles.answer}>{ASK_COPY.not_found}</Text>
         <Text style={styles.note}>{ASK_COPY.not_found_hint}</Text>
         <AnswerNotes answer={answer} />
+        {cards}
       </>
     );
   }
@@ -699,9 +717,8 @@ function AnswerBody({
       {answer.own_words ? (
         <Text style={styles.note}>{ASK_COPY.own_words}</Text>
       ) : null}
-      {/* Where the step line was while it worked, in the same tone. */}
-      {readLine ? <Text style={styles.note}>{readLine}</Text> : null}
       <AnswerNotes answer={answer} />
+      {cards}
       {answer.sources.length > 0 ? (
         <View style={styles.sources}>
           {answer.sources.map((source, index) => (

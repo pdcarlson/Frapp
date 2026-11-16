@@ -419,7 +419,9 @@ describe("AskTurn", () => {
     const painted = tree.root
       .findAll((node) => node.props.style !== undefined)
       .map((node) => ({ node, style: flat(node.props.style) }));
-    const question = tree.root.findAllByProps({ accessibilityRole: "header" })[0]!;
+    const question = tree.root.findAllByProps({
+      accessibilityRole: "header",
+    })[0]!;
     const within = (node: ReactTestInstance) => {
       for (let at: ReactTestInstance | null = question; at; at = at.parent) {
         if (at === node) return true;
@@ -579,7 +581,7 @@ describe("under an answer", () => {
     expect(byLabel(miss, ASK_COPY.copy_answer)).toHaveLength(0);
   });
 
-  it("says what Frapp read, after the answer and before its sources", () => {
+  it("says what Frapp read above the answer, where the step line was", () => {
     const tree = render(
       exchange({
         answer: answer(),
@@ -590,8 +592,10 @@ describe("under an answer", () => {
     const text = screenText(tree);
     const line = askReadLine({ reads: ["events"], found: 2 })!;
     expect(text).toContain(line);
-    expect(text.indexOf("Ana is treasurer")).toBeLessThan(text.indexOf(line));
-    expect(text.indexOf(line)).toBeLessThan(text.lastIndexOf("Bylaws"));
+    expect(text.indexOf(line)).toBeLessThan(text.indexOf("Ana is treasurer"));
+    expect(text.indexOf("Ana is treasurer")).toBeLessThan(
+      text.lastIndexOf("Bylaws"),
+    );
     // And no line when the server named nothing it read.
     expect(screenText(render(exchange({ answer: answer() })))).not.toMatch(
       /Read the /,
@@ -662,9 +666,7 @@ describe("thumbs under an answer (#4904)", () => {
         screenText({ root: node } as never).includes(
           ASK_FEEDBACK_COPY.send.action,
         ) &&
-        !screenText({ root: node } as never).includes(
-          ASK_FEEDBACK_COPY.prompt,
-        ),
+        !screenText({ root: node } as never).includes(ASK_FEEDBACK_COPY.prompt),
     )[0]!;
     act(() => send.props.onPress());
     expect(onSend).toHaveBeenCalledWith("wrong");

@@ -277,9 +277,10 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   Anything longer with no checked citation is still "couldn't find that". An answer in Frapp's own words cannot be posted to a channel.
   When some quotes were dropped and others stood, the answer says part of it could not be matched.
 - **What streams is a preview.**
-  Text appears as it is written, over one line that says what Frapp is doing.
+  Text appears as it is written, under one line that says what Frapp is doing (above the text since #5144, 2026-11-16; it was under it).
   The server decides what stands after the model stops, and the checked answer replaces the preview.
-- **The line under a working turn says what the server is really doing** (changed in #4701 by pdcarlson, 2026-11-13: until then it was one of three fixed lines, "Searching your chapter's sources", "Reading what it found" and "Writing", whatever was read, and a turn that ended in a card said "Searching" until the card arrived).
+  Words written before Frapp went back to read or to draft a card were not the answer: they leave the screen when that next step starts, so the answer's words are never joined on to them (#5144).
+- **The line over a working turn says what the server is really doing** (changed in #4701 by pdcarlson, 2026-11-13: until then it was one of three fixed lines, "Searching your chapter's sources", "Reading what it found" and "Writing", whatever was read, and a turn that ended in a card said "Searching" until the card arrived).
   Each line is sent when that work starts, and none is shown for work that did not happen:
   - "Searching your chapter's sources" from the moment the question is sent: the index is searched and the question is read for which live records it needs.
     While the member is still answering the AI question ([Consent](#consent)) the turn says nothing, because nothing has been sent.

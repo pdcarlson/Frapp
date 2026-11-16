@@ -288,7 +288,7 @@ a fixed 28px dot slot below `xl`, so it never resizes the find field), notificat
   It is one conversation for the whole dashboard: it is the same thread in every channel and after a tool page covered the chat, and with no chat on screen it waits.
   Following a source opens its page beside the chat and leaves the answer open, with two exceptions: a cited chat message is in the thread the card covers, so following one closes the card (the conversation is kept, and the button reopens it);
   and below 1056px, where a page takes chat's place, the card waits with the chat and is there when chat returns.
-  The card is drawn on the page's own background, not the raised popover grey, and under an answer sit the read line, the sources and two quiet icons (Paul, 2026-11-13; [`../design-system/components.md`](../design-system/components.md) §11).
+  The card is drawn on the page's own background, not the raised popover grey, and over an answer sits the read line and under it the cards, the sources and the quiet icons (Paul, 2026-11-13; [`../design-system/components.md`](../design-system/components.md) §11).
   Size, surface and dismissal: [`../design-system/components.md`](../design-system/components.md) § Surface size.
   The two bullets below describe what shipped until then and are kept for the thread's own rules (turns, markers, chips, the saved line, consent), which did not change.
 - **Ask is the top bar's find field** (changed in #4904 by pdcarlson, 2026-11-13; Paul, on the composer button once it shipped: "Looks soooo out of place.
@@ -322,7 +322,7 @@ a fixed 28px dot slot below `xl`, so it never resizes the find field), notificat
   18px radius, 6px at the bottom right, at most 85% wide), then what Frapp came back with on the left as plain text with no frame: the answer with a numbered gold marker after each cited sentence (the placement Notion AI and Perplexity use), and under it a wrapping row of source chips, each the marker's number in `gold-ask-text` and the source's name on a `surface-1` pill (32px, 44px on a touch pointer), with the source's kind and date as its tooltip and accessible name.
   Who said what is told by shape, not labels, the way ChatGPT, Claude and Slack's assistant draw a conversation.
   Markers and chips are links to the source; a source this build has no page for is a plain chip.
-  While it works, the step line sits under the streaming text, in the place the sources take, so nothing above it moves.
+  While it works, the step line sits above the streaming text and becomes the read line in the same place once the answer stands; under the words come any cards, then the sources (since #5144; [`../design-system/components.md`](../design-system/components.md) §11).
   The header holds the title, a New conversation button once there is a turn, and the X. The field is two lines high with an arrow send and reads "Ask Frapp anything"; Enter sends and Shift+Enter breaks the line.
   Nothing sits under the field.
   While the beta diagnostics window is on, one caption line above the field says questions and answers are saved and until when; the status is read before the panel opens, so the line is in place when it slides in.

@@ -69,22 +69,27 @@ import {
  * answer. Each opens its source: the document in the viewer, the minutes,
  * the message in its channel, or the page live data came from.
  *
- * **Nothing above the fold moves while it works.** The step line ("Searching
- * your chapter's sources") sits under the text, so text streams in above it
- * and the question never shifts. The streamed text is a preview: the server
+ * **One line says what Frapp is doing, then what it did, above its words**
+ * (#5144). While it works it names the step ("Searching your chapter's
+ * sources"); once the answer stands the same line says what was read to
+ * write it ("Read the events calendar and 3 sources"), the way ChatGPT keeps
+ * "Thought for 12s" and Claude "Searched the web" over an answer. It never
+ * moves, so the words stream in under it and the line is not pushed down
+ * with every new line of text. The streamed text is a preview: the server
  * decides what stands after the model stops, and `done` replaces it
- * (`ask.ts`).
+ * (`ask.ts`). Words written before Frapp went back to read were not the
+ * answer, and leave when the next step starts (`applyAskEvent`).
  *
- * **The answer is the loudest thing in its turn** (Paul, 2026-11-13: "there
- * just needs to be better hierarchy", "report shouldn't be so obvious", and
- * the conversation "should feel more agentic"). Under the words, in the step
- * line's place and in its quiet tone, a line says what Frapp read to write
- * them ("Read the events calendar and 3 sources"), the way ChatGPT keeps
- * "Thought for 12s" and Perplexity its count of sources. Then the source
- * chips. Last, two small muted icons, Copy and Report, as ChatGPT, Claude and
- * Gemini end an answer with a row of quiet icons. "Report this" was a
- * labelled button there, the only control under every answer, and read as
- * the thing to do next.
+ * **Then the words, then what they lead to, then what they rest on**
+ * (Paul, 2026-11-13: "there just needs to be better hierarchy", "report
+ * shouldn't be so obvious"; reordered in #5144). The answer's words are the
+ * loudest thing in the turn. Straight under them, any cards it came with, so
+ * "I drafted it below" sits over the card it means, as Claude and ChatGPT
+ * put an approval under the sentence that asked for it. Then the source
+ * chips, as Perplexity and Notion AI draw them. Last, small muted icons,
+ * Copy, the thumbs and Report, as ChatGPT, Claude and Gemini end an answer
+ * with a row of quiet icons. "Report this" was a labelled button there, the
+ * only control under every answer, and read as the thing to do next.
  */
 export function AskTurn({
   exchange,
@@ -180,19 +185,13 @@ export function AskReply({
 }) {
   return (
     <div aria-live="polite" className="space-y-3">
-      {exchange.phase === "working" ? (
-        <>
-          {exchange.preview ? (
-            <p className="whitespace-pre-wrap text-sm text-foreground">
-              {exchange.preview}
-            </p>
-          ) : null}
-          {exchange.step ? (
-            <p className="text-caption text-muted-foreground">
-              {askStepLine(exchange.step, exchange.stepDetail)}
-            </p>
-          ) : null}
-        </>
+      {/* What Frapp is doing, then what it did, on one line above its
+          words: the step while it works, the read line once it is done. */}
+      <AskWorkLine exchange={exchange} />
+      {exchange.phase === "working" && exchange.preview ? (
+        <p className="whitespace-pre-wrap text-sm text-foreground">
+          {exchange.preview}
+        </p>
       ) : null}
       {exchange.phase === "failed" && exchange.failure ? (
         <div className="space-y-2">
@@ -222,20 +221,21 @@ export function AskReply({
         <>
           <AskAnswerBody
             answer={exchange.answer}
-            readLine={askReadLine(exchange.read)}
             busy={busy}
             onAnswerConsent={onAnswerConsent}
             onRetry={onRetry}
             onFollowMessage={onFollowMessage}
+            cards={
+              exchange.answer.proposals?.length ? (
+                <CountedAnswerCards
+                  askId={exchange.answer.ask_id ?? null}
+                  ids={exchange.answer.proposals}
+                  ended={exchange.cards ?? NO_CARDS_ENDED}
+                  onEnded={onCardEnded}
+                />
+              ) : null
+            }
           />
-          {exchange.answer.proposals?.length ? (
-            <CountedAnswerCards
-              askId={exchange.answer.ask_id ?? null}
-              ids={exchange.answer.proposals}
-              ended={exchange.cards ?? NO_CARDS_ENDED}
-              onEnded={onCardEnded}
-            />
-          ) : null}
           {/* Anything Ask wrote, or chose not to, can be reported. An
                 answer that was never attempted has nothing AI-made in it. */}
           {exchange.answer.status !== "unavailable" && exchange.askId ? (
@@ -259,6 +259,30 @@ export function AskReply({
 }
 
 const NO_CARDS_ENDED: Readonly<Record<string, AskCardEnd>> = {};
+
+/**
+ * The caption line at the top of Frapp's reply. While it works it names the
+ * step ("Searching messages"); once an answer stands it says, in the past
+ * tense, what was read to write it ("Read the events calendar and 3
+ * sources"). It stays in one place from the first step to the last, so the
+ * words stream in under it and nothing it says pushes them about, the way
+ * ChatGPT's "Thought for 12s" and Claude's "Searched the web" sit over their
+ * answers. A refusal, a miss, a card in place of an answer and a failure say
+ * nothing here: there is no answer for it to vouch for.
+ */
+function AskWorkLine({ exchange }: { exchange: AskExchange }) {
+  const line =
+    exchange.phase === "working"
+      ? exchange.step
+        ? askStepLine(exchange.step, exchange.stepDetail)
+        : null
+      : exchange.phase === "done" && exchange.answer?.status === "answered"
+        ? askReadLine(exchange.read)
+        : null;
+  return line ? (
+    <p className="text-caption text-muted-foreground">{line}</p>
+  ) : null;
+}
 
 /**
  * The cards under an answer, each one's end counted against the answer that
@@ -388,15 +412,19 @@ function CopyAnswer({ text }: { text: string }) {
 
 function AskAnswerBody({
   answer,
-  readLine,
+  cards,
   busy,
   onAnswerConsent,
   onRetry,
   onFollowMessage,
 }: {
   answer: AskAnswer;
-  /** What Frapp read to write it (`askReadLine`), or null. */
-  readLine: string | null;
+  /**
+   * The cards the answer came with, drawn straight under its words: they
+   * are what the words lead to ("I drafted it below"), and the sources are
+   * what the words rest on, so those come after.
+   */
+  cards: ReactNode;
   busy: boolean;
   onAnswerConsent: () => void;
   /** Asks the same question again in this turn's place. */
@@ -438,7 +466,12 @@ function AskAnswerBody({
     );
   }
   if (answer.status === "refused") {
-    return <p className="text-sm text-foreground">{ASK_COPY.refused}</p>;
+    return (
+      <>
+        <p className="text-sm text-foreground">{ASK_COPY.refused}</p>
+        {cards}
+      </>
+    );
   }
   if (answer.status === "not_found") {
     return (
@@ -448,6 +481,7 @@ function AskAnswerBody({
           {ASK_COPY.not_found_hint}
         </p>
         <AnswerNotes answer={answer} />
+        {cards}
       </div>
     );
   }
@@ -463,11 +497,8 @@ function AskAnswerBody({
           {ASK_COPY.own_words}
         </p>
       ) : null}
-      {/* Where the step line was while it worked, in the same tone. */}
-      {readLine ? (
-        <p className="text-caption text-muted-foreground">{readLine}</p>
-      ) : null}
       <AnswerNotes answer={answer} />
+      {cards}
       {answer.sources.length > 0 ? (
         <ol aria-label={ASK_COPY.sources} className="flex flex-wrap gap-1.5">
           {answer.sources.map((source, index) => (

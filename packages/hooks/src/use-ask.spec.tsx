@@ -107,6 +107,23 @@ describe("applyAskEvent", () => {
     });
   });
 
+  it("drops words written before Frapp went back to read, instead of joining the answer on to them", () => {
+    let exchange = applyAskEvent(WORKING, { v, type: "status", step: "writing" });
+    exchange = applyAskEvent(exchange, {
+      v,
+      type: "text",
+      delta: "Let me check the calendar first.",
+    });
+    exchange = applyAskEvent(exchange, { v, type: "status", step: "reading" });
+    expect(exchange.preview).toBe("");
+    exchange = applyAskEvent(exchange, { v, type: "status", step: "writing" });
+    exchange = applyAskEvent(exchange, { v, type: "text", delta: "Formal is Friday." });
+    expect(exchange.preview).toBe("Formal is Friday.");
+    // Drafting a card is a step back too.
+    exchange = applyAskEvent(exchange, { v, type: "status", step: "proposing" });
+    expect(exchange.preview).toBe("");
+  });
+
   it("keeps what a step says is being read, and only for that step", () => {
     const reading = applyAskEvent(WORKING, {
       v,

@@ -278,6 +278,12 @@ export function applyAskEvent(
       return {
         ...exchange,
         step: event.step,
+        // Words written before Frapp went back to read or draft a card were
+        // not the answer (the loop's `discard`), so they leave the screen
+        // instead of having the next round's words joined on to them. Only
+        // a `writing` step keeps what has streamed: it comes just before
+        // the words it names.
+        ...(event.step === "writing" ? {} : { preview: "" }),
         // Each step replaces the last one's detail, so "3 sources" never
         // outlives the step that counted them.
         // `label` is the tool loop's own line for the read that just

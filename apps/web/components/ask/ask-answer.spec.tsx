@@ -304,14 +304,18 @@ describe("AskTurn", () => {
     expect(screen.getByRole("button", { name: REPORT })).toBeInTheDocument();
   });
 
-  it("says what Frapp read under a finished answer, before its sources", () => {
+  it("says what Frapp read above a finished answer, where the step line was", () => {
     show(exchange({ askId: "a-1", read: { reads: ["events"], found: 3 } }));
     const line = screen.getByText(
       askReadLine({ reads: ["events"], found: 3 })!,
     );
+    const words = screen.getByText(/Quorum is two-thirds\./);
     const sources = screen.getByRole("list", { name: ASK_COPY.sources });
     expect(
-      line.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING,
+      line.compareDocumentPosition(words) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      words.compareDocumentPosition(sources) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(
       sources.compareDocumentPosition(
@@ -902,6 +906,7 @@ describe("AskTurn", () => {
       expect(
         words.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
+
       const user = userEvent.setup();
       await user.click(screen.getByRole("button", { name: "confirm s1" }));
       expect(thumbs.signal).toHaveBeenLastCalledWith("ask-1", "card_confirmed");
@@ -914,6 +919,27 @@ describe("AskTurn", () => {
       expect(ended).toHaveBeenCalledTimes(3);
     });
 
+    it("come before the sources: what the words lead to, then what they rest on", () => {
+      render(
+        <AskTurn
+          exchange={exchange({
+            askId: "ask-1",
+            answer: { ...ANSWER, ask_id: "ask-1", proposals: ["s1"] },
+          })}
+          onRetry={() => undefined}
+          onAnswerConsent={() => undefined}
+          onProposal={() => undefined}
+          onResolved={() => undefined}
+          onCardEnded={() => undefined}
+        />,
+      );
+      const cards = screen.getByTestId("cards");
+      const sources = screen.getByRole("list", { name: ASK_COPY.sources });
+      expect(
+        cards.compareDocumentPosition(sources) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
     it("stand alone when the answer is cards and nothing else, with no Copy and no Think harder", () => {
       show(withCards(""), { thinkHarder: () => undefined });
       expect(screen.getByTestId("cards")).toBeDefined();
