@@ -21,9 +21,7 @@ import {
   BottomSheetTextInput,
   type BottomSheetScrollViewMethods,
 } from "@gorhom/bottom-sheet";
-import { useRouter } from "expo-router";
 import {
-  isSearchRunnable,
   useAsk,
   useAskStatus,
   useAskSuggestions,
@@ -32,7 +30,6 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import {
   ASK_COPY,
-  ASK_FIND_PLACEHOLDER,
   ASK_QUESTION_MAX_LENGTH,
   askSavedLine,
   formatAiAnswerDate,
@@ -40,7 +37,6 @@ import {
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskSendGlyph } from "@/components/ask/ask-bar";
-import { AskFind } from "@/components/ask/ask-find";
 import { AskTurn } from "@/components/ask/ask-turn";
 import {
   SOURCE_OPEN_FAILED,
@@ -61,10 +57,6 @@ import {
 } from "@/components/sheet-scaffold";
 import { useActActions, useMayAct } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import {
-  openNotificationTarget,
-  type NotificationTarget,
-} from "@/lib/notifications/targets";
 import {
   fieldTypeRole,
   fontFamilyFor,
@@ -112,12 +104,12 @@ import {
  * does not take away. What a turn does when the member acts on it is
  * `useAskTurns`, shared with the channel's row.
  *
- * **The field searches too** (#4904; Paul's pick of 2026-11-13, one field
- * for search and Ask, as on web). While the member types, channels, members,
- * messages and events that match are listed just above the field
- * (`ask-find.tsx`); a tap closes the sheet and opens the thing, and Send
- * still asks Frapp. So the field and the bar that opens it both read
- * "Search or ask Frapp". The phone had no search anywhere before this.
+ * **The field only asks** (#5139; Paul, 2026-11-16). From #4904 until then
+ * it searched too, listing channels, members, messages and events above the
+ * field while the member typed (Paul's pick of 2026-11-13). Search is its own
+ * screen now, pushed from Chat home (`components/search/search-screen.tsx`),
+ * which every member has and which can hand its words to this sheet
+ * (`initialDraft`). The field and the bar read "Ask Frapp anything" again.
  *
  * **It opens on the member's own account** (#4700, owner 2026-11-13: "not
  * just be like some presets"). Before the first turn the sheet offers up to
@@ -199,7 +191,6 @@ export const AskSheet = forwardRef<
   }
 >(function AskSheet({ onClosed, initialDraft }, ref) {
   const closeSheet = useSheetClose(ref);
-  const router = useRouter();
   const { tokens } = useFrappTheme();
   const { accent, accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
@@ -327,15 +318,6 @@ export const AskSheet = forwardRef<
 
   // A place found while typing: the sheet closes and its screen opens, as
   // a source's does. What was typed was a search, so it is not kept.
-  const openFound = useCallback(
-    (route: NotificationTarget) => {
-      setDraft("");
-      leave();
-      openNotificationTarget(router, route);
-    },
-    [leave, router],
-  );
-
   const canSend = draft.trim().length > 0 && !working;
 
   return (
@@ -431,12 +413,6 @@ export const AskSheet = forwardRef<
           )}
         </BottomSheetScrollView>
 
-        {/* Places that match what is typed, between the thread and the
-            field (`ask-find.tsx`, #4904; in the column since #5082). Send
-            still asks. */}
-        {shownOpen && isSearchRunnable(draft) ? (
-          <AskFind query={draft} onOpen={openFound} />
-        ) : null}
         <View style={styles.composer}>
           {savedUntil !== null ? (
             <Text style={styles.caption}>
@@ -451,9 +427,9 @@ export const AskSheet = forwardRef<
               onChangeText={setDraft}
               onSubmitEditing={() => submit(draft)}
               maxLength={ASK_QUESTION_MAX_LENGTH}
-              placeholder={ASK_FIND_PLACEHOLDER}
+              placeholder={ASK_COPY.placeholder}
               placeholderTextColor={tokens.color.text.muted}
-              accessibilityLabel={ASK_FIND_PLACEHOLDER}
+              accessibilityLabel={ASK_COPY.placeholder}
               returnKeyType="send"
               style={styles.composerField}
             />

@@ -71,8 +71,9 @@ import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { selectFromChapterLevel } from "@/components/chat/notification-level-control";
 import {
   MessagesButton,
-  ThreadsButton,
   NotificationsButton,
+  SearchButton,
+  ThreadsRow,
 } from "@/components/chat/home-header";
 import { AllThreadsSheet } from "@/components/chat/all-threads-sheet";
 import { DisclosureGlyph, PlusGlyph } from "@/components/control-glyphs";
@@ -739,11 +740,10 @@ export default function ChatHomeScreen() {
       }}
       headerAction={
         <View style={styles.headerActions}>
-          {/* The Messages door, then the inbox's bell (#3362). The
-              member's avatar is the You tab since #3839. */}
-          <ThreadsButton
-            onPress={() => threadsSheetRef.current?.present?.()}
-          />
+          {/* Search (#5139), the Messages door, then the inbox's bell
+              (#3362). The member's avatar is the You tab since #3839;
+              Threads is the list's first row since #5139. */}
+          <SearchButton />
           <MessagesButton unreadConversations={unreadConversations} />
           <NotificationsButton />
         </View>
@@ -844,6 +844,9 @@ export default function ChatHomeScreen() {
         )
       ) : (
         <>
+          {/* Threads, first in the list as Slack's Home lists it (#5139;
+              a title-row round from #4960 until then). */}
+          <ThreadsRow onPress={() => threadsSheetRef.current?.present?.()} />
           {/*
             The list (2026-11-06 redesign): the member's sections, each row
             with its latest message and time. The filters sit behind the

@@ -4,8 +4,8 @@ import { memberLabel } from "./display-names";
 /**
  * What Find lists, built from the channel list and one `/v1/search` payload:
  * web's Find dialog (`apps/web/components/layout/find-dialog.tsx`) and the
- * rows the phone's Ask field offers while a member types
- * (`apps/mobile/components/ask/ask-find.tsx`, #4904). Pure, so the ranking,
+ * phone's Search screen (`apps/mobile/components/search/search-screen.tsx`,
+ * #5139; inside the Ask field from #4904 until then). Pure, so the ranking,
  * the per-group caps and every date hint are testable without rendering
  * either. Each result names what it is (`target`); where that opens is the
  * client's own routing.

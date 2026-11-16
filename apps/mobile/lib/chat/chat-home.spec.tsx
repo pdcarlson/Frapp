@@ -2616,7 +2616,7 @@ describe("Chat home: the swipe to Messages", () => {
   });
 });
 
-describe("Chat home's Threads door (#4960)", () => {
+describe("Chat home's Threads row (#4960, a row since #5139)", () => {
   const byTestId = (tree: ReactTestRenderer, testID: string) =>
     tree.root.findAllByProps({ testID });
   it("counts threads with new replies on its badge", () => {
@@ -2627,12 +2627,22 @@ describe("Chat home's Threads door (#4960)", () => {
         (node) => (node.type as unknown) === "View",
       );
       expect(screenTextOf(badge!)).toBe("1");
-      expect(
-        pressableLabelled(tree, "Threads").props.accessibilityValue,
-      ).toEqual({ text: "1 with new replies" });
+      expect(pressableLabelled(tree, "Threads, 1 with new replies")).toBeTruthy();
     } finally {
       allThreads.data = [];
     }
+  });
+
+  it("draws no row for a member in no thread", () => {
+    allThreads.data = [];
+    const tree = render();
+    expect(byTestId(tree, "threads-row")).toHaveLength(0);
+  });
+
+  it("puts Search in the title row, where Threads was", () => {
+    const tree = render();
+    act(() => pressableLabelled(tree, "Search").props.onPress());
+    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/search");
   });
 
   it("opens a tapped thread over its channel", () => {

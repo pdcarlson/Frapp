@@ -120,6 +120,8 @@ export default function AppLayout() {
         name="documents"
         options={{ title: SCREEN_TITLES.documents }}
       />
+      {/* Pushed from Chat home's Search round (#5139). */}
+      <Stack.Screen name="search" options={{ title: SCREEN_TITLES.search }} />
       <Stack.Screen
         name="directory"
         options={{ title: SCREEN_TITLES.directory }}
