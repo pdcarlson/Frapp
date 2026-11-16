@@ -88,7 +88,7 @@ bundled chat burst adds `bundled: true` and `count` (`chat-push-worker.service.t
 `buildPayload`). A single-message chat **push** (not a bundle) also carries
 `messageId`, the `chat_messages.id` it quotes, at the top level of its data beside
 `notificationId`, never inside `target`, so a phone can take the push out of its tray
-when the message is deleted (#4418). The in-app row records the same id in its
+when the message is deleted (#4418; the phone does since #4470, [`chat/README.md`](./chat/README.md) § Edit and delete). The in-app row records the same id in its
 `chat_message_id` column instead, not in `data`, so the list's rows carry none; a
 client deep-links from `target` alone.
 

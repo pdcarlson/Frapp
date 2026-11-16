@@ -149,11 +149,13 @@ sub-second path is wanted.
 thread is open, so on its own it leaves everything that summarizes *all* channels (unread
 badges and bold rows, the Messages order, the app badge) waiting for focus or staleness. The
 realtime manager therefore also holds one global Postgres Changes subscription on
-`chat_messages` INSERTs (`chat:inbox:global`), unfiltered and scoped by the `chat_messages` RLS
+`chat_messages` (`chat:inbox:global`), unfiltered and scoped by the `chat_messages` RLS
 policy that Realtime runs per subscriber, so a member is told about exactly the messages a REST
 read would return them, archive imports excluded. It carries no message into a timeline. It
 reports each new message to the client (`onMessageActivity`), which, coalescing a burst into one
-round, re-reads `GET /v1/channels/unread` and `/latest`. When the message landed in the thread
+round, re-reads `GET /v1/channels/unread` and `/latest`. It reports an edit or a delete too
+(an UPDATE of a row with `edited_at` or `is_deleted` set, #4442), which re-reads the same two and
+stamps nothing, so a list's latest line never keeps a message its author changed or removed. When the message landed in the thread
 the member is looking at, the client first re-stamps that channel read
 (`POST /v1/channels/{id}/read`) (`createChatActivityHandler` in `@repo/hooks`). "Looking at"
 means the thread has claimed it on focus (`claimViewedChannel`) and the app or tab is in front of

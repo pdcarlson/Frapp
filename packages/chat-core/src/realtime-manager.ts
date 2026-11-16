@@ -14,10 +14,11 @@
  *     not-yet-loaded messages are intentionally dropped. Nothing here reads
  *     back the actions written while this subscription was down: the
  *     backfill reads message rows only (#3039).
- *   - One global Postgres Changes subscription on `chat_messages` INSERTs
+ *   - One global Postgres Changes subscription on `chat_messages`
  *     (`INBOX_TOPIC`, #3698), RLS-scoped to what the viewer may read, which
- *     reports every new message to `ctx.onMessageActivity` so the client can
- *     keep unread badges and the Messages order live. Its rejoins, and
+ *     reports every new message, and every edit or delete (#4442), to
+ *     `ctx.onMessageActivity` so the client can keep unread badges, the
+ *     Messages order and its latest lines live. Its rejoins, and
  *     `resume()` (the app back in the foreground), report a `resync`.
  *   - Aggregates per-channel subscribe status into `"live" | "polling" |
  *     "reconnecting" | "offline"` for the UI "Reconnecting…" pill, with
@@ -183,6 +184,10 @@ export interface ManagerContext {
  *   the activity is about everything that summarizes channels. Whether the
  *   member is looking at it is the client's to say: a subscribed thread can be
  *   mounted under another screen.
+ * - `changed`: message `messageId` in `channelId` was edited or deleted
+ *   (#4442). Its channel's latest line and unread count may have changed;
+ *   nothing new arrived, so nothing is to be marked read. A phone takes a
+ *   deleted message's push out of its tray by the id (#4470).
  * - `resync`: the manager may have missed messages (the inbox rejoined after a
  *   drop, or the app came back from the background) and anything derived from
  *   them should be read again.
@@ -196,6 +201,13 @@ export type MessageActivity =
       type: "message";
       channelId: string;
       senderId: string | null;
+    }
+  | {
+      type: "changed";
+      channelId: string;
+      messageId: string;
+      /** Soft-deleted, rather than edited. */
+      deleted: boolean;
     }
   | { type: "resync" }
   | { type: "joined" };
@@ -1313,18 +1325,36 @@ class ChatRealtimeManager {
     });
     channel.on(
       "postgres_changes",
-      { event: "INSERT", schema: "public", table: "chat_messages" },
+      { event: "*", schema: "public", table: "chat_messages" },
       (payload: RealtimePostgresChangesPayload<RawChatMessage>) => {
         const row = payload.new as RawChatMessage | undefined;
         if (!row?.channel_id) return;
         // RLS already keeps archive rows off the wire (see the per-channel
         // handler); an import is not traffic anyone should be told about.
         if (row.kind === "imported") return;
-        this.reportActivity({
-          type: "message",
-          channelId: row.channel_id,
-          senderId: row.sender_id ?? null,
-        });
+        if (payload.eventType === "INSERT") {
+          this.reportActivity({
+            type: "message",
+            channelId: row.channel_id,
+            senderId: row.sender_id ?? null,
+          });
+          return;
+        }
+        // An edit or a soft delete can change a channel's latest line and its
+        // unread count (#4442). Default replica identity sends no `old`, so an
+        // UPDATE can't say what changed: any UPDATE of an edited or deleted row
+        // counts (a later pin of an edited row re-reads too, harmlessly). A
+        // pin, flag or reply-count bump of an untouched row doesn't.
+        if (payload.eventType !== "UPDATE" || !row.id) return;
+        const deleted = Boolean(row.is_deleted) || row.deleted_at != null;
+        if (deleted || row.edited_at != null) {
+          this.reportActivity({
+            type: "changed",
+            channelId: row.channel_id,
+            messageId: row.id,
+            deleted,
+          });
+        }
       },
     );
     this.inboxChannel = channel;

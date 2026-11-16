@@ -2122,12 +2122,12 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
     ...extra,
   });
 
-  test("joins one inbox listening for every new chat message, unfiltered (RLS does the scoping server-side)", () => {
+  test("joins one inbox listening for every chat message change, unfiltered (RLS does the scoping server-side)", () => {
     const ch = inbox();
     expect(ch).toBeDefined();
     expect(ch.on).toHaveBeenCalledWith(
       "postgres_changes",
-      { event: "INSERT", schema: "public", table: "chat_messages" },
+      { event: "*", schema: "public", table: "chat_messages" },
       expect.any(Function),
     );
   });
@@ -2140,6 +2140,38 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       channelId: "elsewhere",
       senderId: OTHER,
     });
+  });
+
+  test("an edit or a delete is reported as a change to its channel (#4442)", () => {
+    inbox().emitPostgresChange({
+      eventType: "UPDATE",
+      new: row("dm", { edited_at: "2026-11-08T00:01:00.000Z" }),
+    });
+    inbox().emitPostgresChange({
+      eventType: "UPDATE",
+      new: row("dm2", { is_deleted: true }),
+    });
+    expect(activity).toHaveBeenNthCalledWith(1, {
+      type: "changed",
+      channelId: "dm",
+      messageId: "m-dm",
+      deleted: false,
+    });
+    expect(activity).toHaveBeenNthCalledWith(2, {
+      type: "changed",
+      channelId: "dm2",
+      messageId: "m-dm2",
+      deleted: true,
+    });
+  });
+
+  test("an UPDATE of an unedited, undeleted row (a pin, a reply count) is not activity", () => {
+    inbox().emitPostgresChange({
+      eventType: "UPDATE",
+      new: row("c1", { is_pinned: true }),
+    });
+    inbox().emitPostgresChange({ eventType: "DELETE", old: { id: "m-c1" } });
+    expect(activity).not.toHaveBeenCalled();
   });
 
   test("an archive import is not activity", () => {

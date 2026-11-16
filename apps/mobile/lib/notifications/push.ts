@@ -5,9 +5,15 @@ import { createIsolatedModule } from "../isolated-module";
 import { requireNotifications } from "./push-module";
 import { isRecord, str } from "../more/narrow";
 import { chatChannelIdFrom, isThreadChatPush } from "./targets";
+import {
+  pushesQuotingMessages,
+  pushesWithDeletedRows,
+  type NotificationPageSnapshot,
+} from "./deleted-message-pushes";
 import { PUSH_ACTION_CATEGORIES } from "./push-actions";
 import type {
   NotificationsModule,
+  PresentedNotification,
   PushNotificationResponse,
   PushSubscription,
 } from "./push-types";
@@ -342,6 +348,54 @@ export async function clearReadChatNotifications(
     // An older native build without the call, or the OS refusing: leave the
     // tray as it is.
   }
+}
+
+/**
+ * Dismisses the tray entries `pick` names. Best-effort like
+ * `clearReadChatNotifications`.
+ */
+async function dismissPresented(
+  pick: (presented: PresentedNotification[]) => string[],
+): Promise<void> {
+  const mod = localOnlyModule();
+  if (!mod) return;
+  try {
+    const presented = await mod.getPresentedNotificationsAsync();
+    await Promise.allSettled(
+      pick(presented).map((id) => mod.dismissNotificationAsync(id)),
+    );
+  } catch {
+    // As in `clearReadChatNotifications`: leave the tray as it is.
+  }
+}
+
+/**
+ * Takes the pushes quoting these messages out of the tray: the app learned
+ * they were deleted while it was open (the inbox's `changed` activity, #4470).
+ * Matched by the push's `messageId` only, never by channel.
+ */
+export async function dismissDeletedMessagePushes(
+  messageIds: ReadonlySet<string>,
+): Promise<void> {
+  if (messageIds.size === 0) return;
+  await dismissPresented((presented) =>
+    pushesQuotingMessages(presented, messageIds),
+  );
+}
+
+/**
+ * Takes out of the tray the single-message chat pushes whose in-app row the
+ * freshly read page shows is gone, deleted with its message while the app was
+ * closed (#4470). `pushesWithDeletedRows` says which, conservatively.
+ */
+export async function dismissPushesWithDeletedRows(
+  page: NotificationPageSnapshot,
+  chapterChannelIds: ReadonlySet<string>,
+): Promise<void> {
+  if (chapterChannelIds.size === 0) return;
+  await dismissPresented((presented) =>
+    pushesWithDeletedRows(presented, page, chapterChannelIds),
+  );
 }
 
 /**
