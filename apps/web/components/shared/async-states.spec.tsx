@@ -110,8 +110,6 @@ describe("pausedRead", () => {
 describe("pausedRead is the only spelling of the rule", () => {
   const WEB_ROOT = join(__dirname, "..", "..");
   const DEFINITION = "components/shared/async-states.tsx";
-  // `/backwork` is held by #5214 (one open PR per screen); #5222 moves it.
-  const ALLOWED = new Set(["components/backwork/backwork-page.tsx"]);
   const HAND_WRITTEN = [
     /isPending\s*&&\s*\(?\s*[\w.?]*fetchStatus\s*[!=]==\s*["']paused["']/,
     /fetchStatus\s*[!=]==\s*["']paused["']\s*\)?\s*&&\s*[\w.?]*isPending\b/,
@@ -143,18 +141,10 @@ describe("pausedRead is the only spelling of the rule", () => {
     const copies = files.filter(
       (file) =>
         file !== DEFINITION &&
-        !ALLOWED.has(file) &&
         HAND_WRITTEN.some((rule) =>
           rule.test(stripComments(readFileSync(join(WEB_ROOT, file), "utf8"))),
         ),
     );
     expect(copies).toEqual([]);
-  });
-
-  it("still sees the allowlisted copy, so the allowlist cannot go stale", () => {
-    for (const file of ALLOWED) {
-      const source = stripComments(readFileSync(join(WEB_ROOT, file), "utf8"));
-      expect(HAND_WRITTEN.some((rule) => rule.test(source))).toBe(true);
-    }
   });
 });

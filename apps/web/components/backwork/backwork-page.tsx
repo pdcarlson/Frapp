@@ -105,6 +105,7 @@ import {
 } from "@/components/shared/table-controls";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import { InlineNote, InlineNoteAction } from "@/components/shared/inline-note";
+import { pausedRead } from "@/components/shared/async-states";
 
 /**
  * `/backwork`, rebuilt 2026-11-05 around the files instead of a filter form
@@ -782,8 +783,7 @@ export function BackworkPage() {
             }}
           />
         ) : resourcesQuery.isLoading ||
-          (resourcesQuery.isPending &&
-            resourcesQuery.fetchStatus === "paused") ||
+          pausedRead(resourcesQuery) ||
           // Rows join departments and professors on the client; without them
           // a course reads as a bare number and search misses "cogs". Course
           // names are not waited on: rows show the department's name until
