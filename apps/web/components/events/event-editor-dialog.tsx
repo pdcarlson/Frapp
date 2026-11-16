@@ -103,6 +103,7 @@ import {
   eventCardOutcomeCopy,
   type EventCardTrack,
 } from "@repo/chat-core/dispatch";
+import { useMeetingsModuleOn } from "@/components/meetings/event-minutes";
 
 type EventRecord = Record<string, unknown>;
 
@@ -616,6 +617,7 @@ export function EventEditorDialog({
   // The Repeat section (`repeat-draft.ts` in `@repo/validation`).
   const [repeat, setRepeat] = useState<RepeatDraft>(() => noRepeatDraft());
   const [notes, setNotes] = useState("");
+  const meetingsOn = useMeetingsModuleOn();
   // The chapter's event type this is made as, or none (#3730). Picking one
   // only fills the form; the event keeps its own points and attendance.
   const [eventTypeId, setEventTypeId] = useState<string | null>(null);
@@ -1550,10 +1552,12 @@ export function EventEditorDialog({
                   ) : null}
                 </div>
 
+                {/* Labeled as the sheet labels them: Notes while minutes
+                    are their own record (#4934). */}
                 {mode === "edit" ? (
                   <div className="grid gap-1">
                     <Label htmlFor="event-meeting-minutes">
-                      Meeting minutes
+                      {meetingsOn ? "Notes" : "Meeting minutes"}
                     </Label>
                     <Textarea
                       id="event-meeting-minutes"
