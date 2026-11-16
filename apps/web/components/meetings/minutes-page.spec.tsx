@@ -22,9 +22,29 @@ const mocks = vi.hoisted(() => ({
   removeRecording: vi.fn(),
   uploadResumable: vi.fn(),
   readAudioDuration: vi.fn(),
+  notes: { current: null as unknown },
+  saveNotes: vi.fn(),
+  choose: vi.fn(),
 }));
 
 vi.mock("@repo/hooks", () => ({
+  useMeetingNotes: () => ({ isPending: false, data: mocks.notes.current }),
+  useSaveMeetingNotes: () => ({
+    mutateAsync: mocks.saveNotes,
+    isPending: false,
+  }),
+  useAddMeetingNoteTaker: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoveMeetingNoteTaker: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useChooseMeetingDraftVersion: () => ({
+    mutateAsync: mocks.choose,
+    isPending: false,
+  }),
+  useLinkMeetingEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEvents: () => ({ data: [] }),
+  useMeetings: () => ({ data: [] }),
+  useCurrentUser: () => ({
+    data: { id: "11111111-1111-4111-8111-111111111111" },
+  }),
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
   useMeeting: () => mocks.meeting.current,
   useUpdateMeeting: () => ({ mutateAsync: mocks.update, isPending: false }),
@@ -194,7 +214,10 @@ function loaded(meeting: MeetingMinutes) {
 }
 
 beforeEach(() => {
+  mocks.notes.current = null;
   for (const fn of [
+    mocks.saveNotes,
+    mocks.choose,
     mocks.update,
     mocks.post,
     mocks.remove,
@@ -236,8 +259,7 @@ const NO_RECORDING = {
   upload: null,
 };
 
-const TRANSCRIPT =
-  "Speaker 1: Call to order.\nSpeaker 2: Treasurer report.";
+const TRANSCRIPT = "Speaker 1: Call to order.\nSpeaker 2: Treasurer report.";
 
 const READY_RECORDING = {
   ...NO_RECORDING,
@@ -727,7 +749,9 @@ describe("MinutesPage", () => {
       mocks.ensureConsent.mockResolvedValueOnce(false);
       mocks.requestDraft.mockResolvedValue({ ...NO_DRAFT, status: "drafting" });
       render(<MinutesPage id="m-1" />);
-      expect(screen.getByText(/Turn on Frapp AI to draft from your notes/)).toBeTruthy();
+      expect(
+        screen.getByText(/Turn on Frapp AI to draft from your notes/),
+      ).toBeTruthy();
       fireEvent.change(screen.getByRole("textbox", { name: "Your notes" }), {
         target: { value: "notes" },
       });
@@ -826,9 +850,7 @@ describe("MinutesPage", () => {
       ).toBeTruthy();
 
       fireEvent.click(screen.getByRole("button", { name: "Upload" }));
-      expect(
-        screen.getByText(/Confirm that the room was told/),
-      ).toBeTruthy();
+      expect(screen.getByText(/Confirm that the room was told/)).toBeTruthy();
       expect(mocks.startRecording).not.toHaveBeenCalled();
 
       fireEvent.click(screen.getByRole("checkbox"));
@@ -858,22 +880,37 @@ describe("MinutesPage", () => {
     });
 
     it.each([
-      [new File(["x"], "meeting.mov", { type: "video/quicktime" }), 60, /isn't a recording Frapp can read/],
-      [new File(["x"], "long.m4a", { type: "audio/mp4" }), 7300, /the most Frapp takes is 2 hours/],
-      [new File(["x"], "odd.ogg", { type: "audio/ogg" }), null, /couldn't read how long/],
-    ])("says what is wrong with a file the moment it is chosen", async (file, seconds, message) => {
-      mocks.recording.current = NO_RECORDING;
-      mocks.readAudioDuration.mockResolvedValue(seconds);
-      open();
-      fireEvent.click(
-        screen.getByRole("button", { name: "Upload a recording" }),
-      );
-      const dialog = await screen.findByRole("dialog");
-      fireEvent.change(dialog.querySelector('input[type="file"]')!, {
-        target: { files: [file] },
-      });
-      expect(await screen.findByText(message)).toBeTruthy();
-    });
+      [
+        new File(["x"], "meeting.mov", { type: "video/quicktime" }),
+        60,
+        /isn't a recording Frapp can read/,
+      ],
+      [
+        new File(["x"], "long.m4a", { type: "audio/mp4" }),
+        7300,
+        /the most Frapp takes is 2 hours/,
+      ],
+      [
+        new File(["x"], "odd.ogg", { type: "audio/ogg" }),
+        null,
+        /couldn't read how long/,
+      ],
+    ])(
+      "says what is wrong with a file the moment it is chosen",
+      async (file, seconds, message) => {
+        mocks.recording.current = NO_RECORDING;
+        mocks.readAudioDuration.mockResolvedValue(seconds);
+        open();
+        fireEvent.click(
+          screen.getByRole("button", { name: "Upload a recording" }),
+        );
+        const dialog = await screen.findByRole("dialog");
+        fireEvent.change(dialog.querySelector('input[type="file"]')!, {
+          target: { files: [file] },
+        });
+        expect(await screen.findByText(message)).toBeTruthy();
+      },
+    );
 
     it("asks on the AI sheet first, and opens nothing on a No", async () => {
       mocks.recording.current = {
@@ -931,43 +968,26 @@ describe("MinutesPage", () => {
       ).toBeTruthy();
     });
 
-    it("puts a transcript that arrives into empty notes by itself", async () => {
-      mocks.recording.current = {
-        ...NO_RECORDING,
-        status: "transcribing",
-        upload_id: "u-1",
-        duration_seconds: 4320,
-      };
-      mocks.draft.current = NO_DRAFT;
-      loaded(ownDraft());
-      const view = render(<MinutesPage id="m-1" />);
-      mocks.recording.current = READY_RECORDING;
-      view.rerender(<MinutesPage id="m-1" />);
-      await waitFor(() =>
-        expect(notesBox()).toHaveProperty("value", TRANSCRIPT),
-      );
-      expect(
-        screen.getByText(
-          /The transcript is in your notes \(1 hour 12 minutes, 2 speakers\)/,
-        ),
-      ).toBeTruthy();
-    });
-
-    it("never writes over notes already typed: the transcript waits to be added below them", async () => {
+    it("reads a transcript as its own source, never into the notes (#4935)", async () => {
       mocks.recording.current = READY_RECORDING;
       mocks.draft.current = { ...NO_DRAFT, notes: "my own notes" };
+      mocks.notes.current = notesState();
       loaded(ownDraft());
       render(<MinutesPage id="m-1" />);
       expect(notesBox()).toHaveProperty("value", "my own notes");
-      fireEvent.click(
-        screen.getByRole("button", { name: "Add to your notes" }),
-      );
-      await waitFor(() =>
-        expect(notesBox()).toHaveProperty(
-          "value",
-          `my own notes\n\n${TRANSCRIPT}`,
-        ),
-      );
+      expect(
+        screen.getByText(/the draft reads it with everyone's notes/),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("button", { name: "Add to your notes" }),
+      ).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Read" }));
+      expect(
+        screen.getByText(TRANSCRIPT, { normalizer: (t) => t }),
+      ).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Draft from all notes" }),
+      ).toBeTruthy();
     });
 
     it("clearing the notes removes the recording and its transcript too", async () => {
@@ -984,4 +1004,136 @@ describe("MinutesPage", () => {
       );
     });
   });
+
+  describe("several note-takers (#4935)", () => {
+    it("lists other note-takers' notes for the author to read", () => {
+      mocks.draft.current = NO_DRAFT;
+      mocks.notes.current = notesState({
+        takers: [
+          {
+            user_id: "22222222-2222-4222-8222-222222222222",
+            display_name: "Sam Lee",
+            is_author: false,
+            added: false,
+            notes: "budget passed 21-6",
+            updated_at: "2026-11-10T02:00:00.000Z",
+            held: null,
+          },
+        ],
+        others_count: 1,
+      });
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      expect(screen.getByText("Notes for this meeting")).toBeTruthy();
+      expect(screen.getByText("Sam Lee")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Read" }));
+      expect(screen.getByText("budget passed 21-6")).toBeTruthy();
+      expect(
+        screen.getByRole("button", { name: "Draft from all notes" }),
+      ).toBeTruthy();
+    });
+
+    it("saves the officer's notes as they type", async () => {
+      mocks.draft.current = NO_DRAFT;
+      mocks.notes.current = notesState();
+      mocks.saveNotes.mockResolvedValue(notesState());
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      fireEvent.change(screen.getByPlaceholderText(/Paste or type/), {
+        target: { value: "dues due Friday" },
+      });
+      await waitFor(
+        () =>
+          expect(mocks.saveNotes).toHaveBeenCalledWith({
+            id: "m-1",
+            notes: "dues due Friday",
+          }),
+        { timeout: 2000 },
+      );
+    });
+
+    it("lists a disagreement and puts the other version in on a tap", async () => {
+      mocks.notes.current = notesState();
+      mocks.choose.mockResolvedValue(NO_DRAFT);
+      mocks.refetch.mockResolvedValue({ data: ownDraft() });
+      mocks.draft.current = {
+        ...NO_DRAFT,
+        status: "applied",
+        notes: "notes",
+        review: {
+          gaps: [],
+          sources: [],
+          left_out: 0,
+          conflicts: [
+            {
+              kind: "decision",
+              about: "The formal budget vote",
+              versions: [
+                {
+                  from: "Jake Ross",
+                  quote: "budget passed 22-5",
+                  text: "Approved the budget, 22 to 5.",
+                  vote: { for: 22, against: 5, abstain: 0 },
+                  owner_user_id: null,
+                  due_date: null,
+                },
+                {
+                  from: "Sam Lee",
+                  quote: "budget passed 21-6",
+                  text: "Approved the budget, 21 to 6.",
+                  vote: { for: 21, against: 6, abstain: 0 },
+                  owner_user_id: null,
+                  due_date: null,
+                },
+              ],
+              chosen: 0,
+              settled_by: "authority",
+            },
+          ],
+        },
+      };
+      loaded(ownDraft());
+      render(<MinutesPage id="m-1" />);
+      expect(screen.getByText("Notes disagreed")).toBeTruthy();
+      expect(screen.getByText("Settled by who wrote it")).toBeTruthy();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Use Sam Lee's instead" }),
+      );
+      await waitFor(() =>
+        expect(mocks.choose).toHaveBeenCalledWith({
+          id: "m-1",
+          body: expect.objectContaining({ conflict: 0, version: 1 }),
+        }),
+      );
+    });
+
+    it("offers Link an event on minutes whose event is gone", () => {
+      mocks.draft.current = null;
+      loaded({ ...ownDraft(), event_id: null });
+      render(<MinutesPage id="m-1" />);
+      expect(
+        screen.getByRole("button", { name: "Link an event" }),
+      ).toBeTruthy();
+    });
+  });
 });
+
+function notesState(overrides: Record<string, unknown> = {}) {
+  return {
+    meeting: {
+      id: "m-1",
+      event_id: "e-1",
+      event_name: "Chapter meeting",
+      event_start_time: "2026-11-10T00:00:00.000Z",
+      meeting_type: "chapter",
+      author_name: "Jake Ross",
+    },
+    role: "editor",
+    mine: { notes: "my own notes", updated_at: null, held: null },
+    takers: [],
+    others_count: 0,
+    can_add: true,
+    joined: true,
+    ...overrides,
+  };
+}

@@ -205,6 +205,9 @@ export const MEETING_NOTE_TAKERS_COPY = {
   heading: "Notes for this meeting",
   /** The author's draft button once anyone else's notes or a transcript are in. */
   draftAll: "Draft from all notes",
+  draftingAll: "Drafting minutes from everyone's notes",
+  appliedAll:
+    "Drafted from everyone's notes. Read it through, and check Notes disagreed, before you post.",
   saved: "Saved",
   saving: "Saving…",
   saveFailed: "Couldn't save your notes. Keep this page open and try again.",
@@ -249,10 +252,10 @@ export const MEETING_NOTE_TAKERS_COPY = {
     "Turn on Frapp AI so your notes go into the draft. Until then they're saved here but left out.",
   leave: "Stop taking notes",
   leaveTitle: "Stop taking notes?",
-  leaveBody:
-    "Your notes are deleted, and so is a draft written from them.",
+  leaveBody: "Your notes are deleted, and so is a draft written from them.",
   posted: "These minutes are posted, so notes are closed.",
-  missing: "These notes aren't here any more, or you can't take notes on this meeting.",
+  missing:
+    "These notes aren't here any more, or you can't take notes on this meeting.",
   /** The Meetings page's list for a note-taker. */
   listHeading: "Taking notes",
   listItem: (author: string) => `Minutes by ${author}`,
@@ -264,14 +267,23 @@ export const MEETING_NOTE_TAKERS_COPY = {
     author: "You picked",
   },
   youDecide: "You decide",
-  tieBody: "Neither the recording nor who wrote it settles this, so it isn't in the minutes yet.",
-  useVersion: (from: string) => `Use ${from}'s instead`,
-  pickVersion: (from: string) => `Use ${from}'s`,
+  tieBody:
+    "Neither the recording nor who wrote it settles this, so it isn't in the minutes yet.",
+  useVersion: (from: string, mine = false) =>
+    mine ? "Use yours instead" : `Use ${from}'s instead`,
+  pickVersion: (from: string, mine = false) =>
+    mine ? "Use yours" : `Use ${from}'s`,
   inMinutes: "In the minutes",
   chooseFailed: "Couldn't change it. Reload and try again.",
-  from: (from: string) => (from === "Recording" ? "From the recording" : `From ${from}'s notes`),
+  from: (from: string, mine = false) =>
+    mine
+      ? "From your notes"
+      : from === "Recording"
+        ? "From the recording"
+        : `From ${from}'s notes`,
   /** Linking an event (#4935). */
-  noEvent: "These minutes aren't linked to an event, so nobody but editors can read them.",
+  noEvent:
+    "These minutes aren't linked to an event, so nobody but editors can read them.",
   linkEvent: "Link an event",
   linkTitle: "Link these minutes to an event",
   linkHint:

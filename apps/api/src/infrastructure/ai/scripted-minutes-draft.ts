@@ -178,6 +178,32 @@ function placeItems(
   }
 }
 
+/** Words too common to say two lines are about the same thing. */
+const FILLER = new Set([
+  'the',
+  'and',
+  'for',
+  'will',
+  'was',
+  'were',
+  'are',
+  'that',
+  'this',
+  'with',
+  'there',
+  'all',
+  'favor',
+  'speaker',
+  'needs',
+  'someone',
+  'about',
+  'our',
+  'motion',
+  'passed',
+  'voted',
+  'vote',
+]);
+
 /** Whether two lines are about the same thing: most of their words shared. */
 function sameSubject(a: string, b: string, roster: string[]): boolean {
   const names = new Set(
@@ -188,7 +214,9 @@ function sameSubject(a: string, b: string, roster: string[]): boolean {
       line
         .toLowerCase()
         .split(/[^a-z]+/)
-        .filter((word) => word.length >= 3 && !names.has(word)),
+        .filter(
+          (word) => word.length >= 3 && !names.has(word) && !FILLER.has(word),
+        ),
     );
   const left = words(a);
   const right = words(b);
@@ -233,7 +261,11 @@ function ownerOpening(line: string, roster: string[]): string | null {
 }
 
 function sentence(line: string): string {
-  const text = line.replace(/^[-*•]\s*/, '').trim();
+  // A transcript line opens with its speaker; the minutes don't.
+  const text = line
+    .replace(/^[-*•]\s*/, '')
+    .replace(/^Speaker \d+:\s*/i, '')
+    .trim();
   const capped = text.charAt(0).toUpperCase() + text.slice(1);
   return /[.!?]$/.test(capped) ? capped : `${capped}.`;
 }

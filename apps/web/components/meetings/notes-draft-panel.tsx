@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { codeOf } from "@repo/api-sdk";
 import {
   useChooseMeetingDraftVersion,
+  useCurrentUser,
+  useMemberDisplayNames,
   useDiscardMeetingDraft,
   useRequestMeetingDraft,
   useUseMeetingDraft,
@@ -94,6 +96,10 @@ export function NotesDraftPanel({
   const discard = useDiscardMeetingDraft();
   const use = useUseMeetingDraft();
   const choose = useChooseMeetingDraftVersion();
+  // A version is named by its writer; the viewer's own reads as "yours".
+  const me = (useCurrentUser().data as { id?: string } | undefined)?.id;
+  const myName = useMemberDisplayNames().nameFor(me ?? "");
+  const isMine = (from: string) => !!myName && from === myName;
   const removeRecording = useRemoveMeetingRecording();
   // The AI sheet opens here, where the officer first reaches for the draft.
   const { ensureConsent, consentDialog } = useAiConsentGate();
@@ -182,10 +188,7 @@ export function NotesDraftPanel({
         setProblem(MEETING_DRAFT_FAILURE_COPY.consent_required);
       else if (code === "ai.chapter_off")
         setProblem(MEETING_DRAFT_FAILURE_COPY.chapter_off);
-      else
-        setProblem(
-          getErrorMessage(error, MEETING_NOTES_COPY.startFailed),
-        );
+      else setProblem(getErrorMessage(error, MEETING_NOTES_COPY.startFailed));
     }
   }
 
@@ -260,8 +263,7 @@ export function NotesDraftPanel({
       await use.mutateAsync({ id: meetingId, expectedUpdatedAt: expected });
     } catch (error) {
       if (codeOf(error) === "meeting.stale") onStale();
-      else
-        setProblem(getErrorMessage(error, MEETING_NOTES_COPY.useFailed));
+      else setProblem(getErrorMessage(error, MEETING_NOTES_COPY.useFailed));
     }
   }
 
@@ -271,38 +273,48 @@ export function NotesDraftPanel({
     ? { tone: "problem" as const, text: problem }
     : autosave.status === "failed" && saving
       ? { tone: "problem" as const, text: saving }
-    : drafting
-      ? { tone: "quiet" as const, text: MEETING_NOTES_COPY.drafting }
-      : needsConsent
+      : drafting
         ? {
             tone: "quiet" as const,
-            text: MEETING_DRAFT_FAILURE_COPY.consent_required,
+            text: othersWrote
+              ? MEETING_NOTE_TAKERS_COPY.draftingAll
+              : MEETING_NOTES_COPY.drafting,
           }
-        : state.status === "failed"
+        : needsConsent
           ? {
-              tone:
-                state.failure === "stopped"
-                  ? ("quiet" as const)
-                  : ("problem" as const),
-              text: state.failure_message ?? MEETING_DRAFT_FAILURE_COPY.failed,
+              tone: "quiet" as const,
+              text: MEETING_DRAFT_FAILURE_COPY.consent_required,
             }
-          : waiting
+          : state.status === "failed"
             ? {
-                tone: "quiet" as const,
-                text: MEETING_NOTES_COPY.waiting,
+                tone:
+                  state.failure === "stopped"
+                    ? ("quiet" as const)
+                    : ("problem" as const),
+                text:
+                  state.failure_message ?? MEETING_DRAFT_FAILURE_COPY.failed,
               }
-            : state.status === "applied"
+            : waiting
               ? {
                   tone: "quiet" as const,
-                  text: MEETING_NOTES_COPY.applied,
+                  text: MEETING_NOTES_COPY.waiting,
                 }
-              : {
-                  tone: "quiet" as const,
-                  text: MEETING_NOTES_COPY.idle,
-                };
+              : state.status === "applied"
+                ? {
+                    tone: "quiet" as const,
+                    text: othersWrote
+                      ? MEETING_NOTE_TAKERS_COPY.appliedAll
+                      : MEETING_NOTES_COPY.applied,
+                  }
+                : {
+                    tone: "quiet" as const,
+                    text: MEETING_NOTES_COPY.idle,
+                  };
 
   const reviewed = state.status === "applied" || state.status === "ready";
-  const { gaps, left_out: leftOut, conflicts } = state.review;
+  const { gaps, left_out: leftOut } = state.review;
+  // An API from before several note-takers sends no disagreements.
+  const conflicts = state.review.conflicts ?? [];
 
   return (
     <section
@@ -342,7 +354,10 @@ export function NotesDraftPanel({
       {saving && autosave.status !== "failed" ? (
         <p className="text-caption text-muted-foreground">{saving}</p>
       ) : null}
-      {notesState && (notesState.takers.length > 0 || transcriptReady || notesState.can_add) ? (
+      {notesState &&
+      (notesState.takers.length > 0 ||
+        transcriptReady ||
+        notesState.can_add) ? (
         <NoteTakersList
           meetingId={meetingId}
           state={notesState}
@@ -464,8 +479,11 @@ export function NotesDraftPanel({
                       <div className="min-w-0 flex-1 space-y-1">
                         <p className="break-words">{version.text}</p>
                         <p className="break-words text-caption text-muted-foreground">
-                          {MEETING_NOTE_TAKERS_COPY.from(version.from)}: “
-                          {version.quote}”
+                          {MEETING_NOTE_TAKERS_COPY.from(
+                            version.from,
+                            isMine(version.from),
+                          )}
+                          : “{version.quote}”
                         </p>
                       </div>
                       {conflict.chosen === at ? (
@@ -480,8 +498,14 @@ export function NotesDraftPanel({
                           onClick={() => void handleChoose(index, at)}
                         >
                           {conflict.chosen === null
-                            ? MEETING_NOTE_TAKERS_COPY.pickVersion(version.from)
-                            : MEETING_NOTE_TAKERS_COPY.useVersion(version.from)}
+                            ? MEETING_NOTE_TAKERS_COPY.pickVersion(
+                                version.from,
+                                isMine(version.from),
+                              )
+                            : MEETING_NOTE_TAKERS_COPY.useVersion(
+                                version.from,
+                                isMine(version.from),
+                              )}
                         </Button>
                       ) : null}
                     </li>

@@ -7,6 +7,7 @@ import { X } from "lucide-react";
 import { codeOf, statusOf } from "@repo/api-sdk";
 import {
   useChapterRoster,
+  useCurrentUser,
   useDeleteMeeting,
   useMeeting,
   useMeetingDraft,
@@ -152,9 +153,7 @@ export function MinutesPage({ id }: { id: string }) {
             missing ? MEETING_COPY.missingTitle : MEETING_COPY.loadFailedTitle
           }
           description={
-            missing
-              ? MEETING_COPY.missingBody
-              : MEETING_COPY.loadFailedBody
+            missing ? MEETING_COPY.missingBody : MEETING_COPY.loadFailedBody
           }
           onRetry={missing ? undefined : () => void query.refetch()}
         />
@@ -200,6 +199,8 @@ function Minutes({
   const post = usePostMeeting();
   const remove = useDeleteMeeting();
   const names = useMemberDisplayNames();
+  const viewer = useCurrentUser().data as { id?: string } | undefined;
+  const myName = viewer?.id ? names.nameFor(viewer.id) : null;
 
   const isDraft = meeting.status === "draft";
   const [editing, setEditing] = useState(meeting.can_edit && isDraft);
@@ -460,9 +461,7 @@ function Minutes({
           role="alert"
           className="space-y-2 rounded-lg border border-warning/30 bg-warning-tint p-3 text-sm"
         >
-          <p>
-            {MEETING_COPY.stale}
-          </p>
+          <p>{MEETING_COPY.stale}</p>
           <Button
             size="sm"
             variant="secondary"
@@ -551,9 +550,7 @@ function Minutes({
         ) : null}
 
         {!editing && shown.length === 0 ? (
-          <InlineNote>
-            {MEETING_COPY.nothingWritten}
-          </InlineNote>
+          <InlineNote>{MEETING_COPY.nothingWritten}</InlineNote>
         ) : null}
 
         {shown.map((key) => (
@@ -572,7 +569,7 @@ function Minutes({
                 <DecisionsEditor
                   decisions={draft.content.decisions}
                   onChange={(decisions) => editContent({ decisions })}
-                  quoteFor={(text) => quoteOf(review, "decision", text)}
+                  quoteFor={(text) => quoteOf(review, "decision", text, myName)}
                 />
               ) : (
                 <DecisionsView decisions={base.content.decisions} />
@@ -583,7 +580,9 @@ function Minutes({
                   disabled={drafting}
                   items={draft.content.action_items}
                   onChange={(action_items) => editContent({ action_items })}
-                  quoteFor={(text) => quoteOf(review, "action_item", text)}
+                  quoteFor={(text) =>
+                    quoteOf(review, "action_item", text, myName)
+                  }
                 />
               ) : (
                 <ActionItemsView
@@ -644,14 +643,10 @@ function Attendees({
 }) {
   const attendees = meeting.attendees;
   if (!attendees) {
-    return (
-      <InlineNote>{MEETING_COPY.attendeesGone}</InlineNote>
-    );
+    return <InlineNote>{MEETING_COPY.attendeesGone}</InlineNote>;
   }
   if (!hasAttendees(meeting)) {
-    return (
-      <InlineNote>{MEETING_COPY.attendeesNone}</InlineNote>
-    );
+    return <InlineNote>{MEETING_COPY.attendeesNone}</InlineNote>;
   }
   const groups = [
     { label: MEETING_LIST_COPY.present, ids: attendees.present },
@@ -733,24 +728,27 @@ function NotesQuote({ quote }: { quote: DraftQuote | null }) {
   if (!quote) return null;
   return (
     <p className="break-words text-caption text-muted-foreground">
-      {quote.from ? MEETING_NOTE_TAKERS_COPY.from(quote.from) : "From your notes"}
+      {quote.from
+        ? MEETING_NOTE_TAKERS_COPY.from(quote.from, quote.mine)
+        : "From your notes"}
       : “{quote.quote}”
     </p>
   );
 }
 
 /** The line a drafted item came from, and whose it is (#4935). */
-type DraftQuote = { quote: string; from: string | null };
+type DraftQuote = { quote: string; from: string | null; mine: boolean };
 
 function quoteOf(
   review: MeetingDraftState["review"] | null,
   kind: "decision" | "action_item",
   text: string,
+  myName: string | null,
 ): DraftQuote | null {
   const quote = meetingDraftQuoteFor(review, kind, text);
-  return quote
-    ? { quote, from: meetingDraftSourceFor(review, kind, text) }
-    : null;
+  if (!quote) return null;
+  const from = meetingDraftSourceFor(review, kind, text);
+  return { quote, from, mine: !!from && from === myName };
 }
 
 function clampVote(value: string): number {
