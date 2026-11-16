@@ -132,7 +132,9 @@ function Section({
             <View style={styles.itemText}>
               <Text style={styles.text}>{decision.text}</Text>
               {decision.vote ? (
-                <Text style={styles.meta}>{meetingVoteLine(decision.vote)}</Text>
+                <Text style={styles.meta}>
+                  {meetingVoteLine(decision.vote)}
+                </Text>
               ) : null}
             </View>
           </View>

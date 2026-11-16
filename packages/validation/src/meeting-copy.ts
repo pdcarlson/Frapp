@@ -231,6 +231,11 @@ export const MEETING_NOTE_TAKERS_COPY = {
   noNotesYet: "Nothing written yet",
   lines: (count: number) => (count === 1 ? "1 line" : `${count} lines`),
   recording: "Recording",
+  /** How the phone sheet names the transcript among what a draft reads. */
+  recordingSource: "the recording",
+  /** The phone's one line saying what else the draft reads. */
+  alsoReads: (sources: readonly string[]) =>
+    `The draft also reads ${sources.length === 1 ? sources[0] : `${sources.slice(0, -1).join(", ")} and ${sources[sources.length - 1]}`}.`,
   recordingWhat: (speakers: number | null) =>
     speakers && speakers > 1
       ? `Transcript, ${speakers} speakers`

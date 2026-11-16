@@ -83,7 +83,9 @@ export const RecordingNoticeSheet = forwardRef<
           <Text style={styles.caption}>
             {MEETING_RECORDER_NOTICE.scriptLabel}
           </Text>
-          <Text style={styles.scriptText}>{MEETING_RECORDER_NOTICE.script}</Text>
+          <Text style={styles.scriptText}>
+            {MEETING_RECORDER_NOTICE.script}
+          </Text>
         </View>
 
         <Text style={styles.caption}>

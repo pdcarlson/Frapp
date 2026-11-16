@@ -9,7 +9,7 @@ import {
   MEETING_DRAFT_FAILURE_COPY,
   MEETING_NOTES_COPY,
   MEETING_NOTES_MAX_LENGTH,
-  MEETING_RECORDER_COPY,
+  MEETING_NOTE_TAKERS_COPY,
 } from "@repo/validation";
 import { dropAllKeptDrafts } from "@repo/hooks/kept-drafts";
 import { FrappThemeProvider } from "@/lib/theme";
@@ -25,6 +25,8 @@ const hooks = vi.hoisted(() => ({
   discard: vi.fn(),
   use: vi.fn(),
   removeRecording: vi.fn(),
+  choose: vi.fn(),
+  notesState: null as unknown,
 }));
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
@@ -40,6 +42,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useRemoveMeetingRecording: () => ({
     mutateAsync: hooks.removeRecording,
     isPending: false,
+  }),
+  useMeetingNotes: () => ({ data: hooks.notesState }),
+  useChooseMeetingDraftVersion: () => ({
+    mutateAsync: hooks.choose,
+    isPending: false,
+  }),
+  useCurrentUser: () => ({ data: { id: "u-me" } }),
+  useMemberDisplayNames: () => ({
+    nameFor: (id: string) => (id === "u-me" ? "Eli Sorensen" : null),
   }),
 }));
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
@@ -152,66 +163,43 @@ beforeEach(() => {
   hooks.discard.mockResolvedValue({});
   hooks.use.mockResolvedValue({});
   hooks.removeRecording.mockResolvedValue({});
+  hooks.choose.mockResolvedValue({});
+  hooks.notesState = null;
   gate.ensureConsent.mockResolvedValue(true);
   confirm.mockResolvedValue(true);
   reporting.offered = true;
   reporting.reported = false;
 });
 
-describe("a recording's transcript in the notes", () => {
-  it("goes into an empty box by itself, so Open your notes finds it there", () => {
+describe("a recording's transcript, a source of its own (#4935)", () => {
+  it("is read by the draft beside the notes, never put into the box", () => {
     const tree = render(draftState(), false, recordingState());
-    expect(field(tree).props.value).toBe(
-      "Speaker 1: Call to order.\nSpeaker 2: Budget passed.",
-    );
-    expect(button(tree, MEETING_RECORDER_COPY.addTranscript)).toBeUndefined();
-  });
-
-  it("arrives while the sheet is already mounted, when transcription finishes", () => {
-    const tree = render(
-      draftState(),
-      false,
-      recordingState({ status: "transcribing", transcript: null }),
-    );
     expect(field(tree).props.value).toBe("");
-    act(() => tree.update(element(draftState(), false, recordingState())));
-    expect(field(tree).props.value).toContain("Call to order");
+    expect(
+      tree.root.findAll(
+        (node) =>
+          drawnText(node) ===
+          MEETING_NOTE_TAKERS_COPY.alsoReads(["the recording"]),
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(button(tree, MEETING_NOTE_TAKERS_COPY.draftAll)).toBeDefined();
   });
 
-  it("waits behind a button when the officer already typed notes, and is added under them", async () => {
-    const tree = render(
-      draftState({ notes: "My own notes." }),
-      false,
-      recordingState(),
-    );
-    expect(field(tree).props.value).toBe("My own notes.");
-    await press(tree, MEETING_RECORDER_COPY.addTranscript);
-    expect(field(tree).props.value).toBe(
-      "My own notes.\n\nSpeaker 1: Call to order.\nSpeaker 2: Budget passed.",
-    );
-    expect(button(tree, MEETING_RECORDER_COPY.addTranscript)).toBeUndefined();
-  });
-
-  it("is put in once per recording: a box emptied by hand stays emptied", () => {
+  it("drafts with no notes of the officer's own when the recording is ready", async () => {
     const tree = render(draftState(), false, recordingState());
-    act(() => field(tree).props.onChangeText(""));
-    act(() => tree.update(element(draftState(), false, recordingState())));
-    expect(field(tree).props.value).toBe("");
-    // A new recording is a new transcript to put in.
-    act(() =>
-      tree.update(
-        element(
-          draftState(),
-          false,
-          recordingState({ upload_id: "upload-2", transcript: "Speaker 1: Round two." }),
-        ),
-      ),
-    );
-    expect(field(tree).props.value).toBe("Speaker 1: Round two.");
+    await press(tree, MEETING_NOTE_TAKERS_COPY.draftAll);
+    expect(hooks.request).toHaveBeenCalledWith({
+      id: "m1",
+      body: expect.not.objectContaining({ notes: expect.anything() }),
+    });
   });
 
   it("is removed with the notes when they are cleared, and the question says so", async () => {
-    const tree = render(draftState(), false, recordingState());
+    const tree = render(
+      draftState({ notes: "Typed." }),
+      false,
+      recordingState(),
+    );
     await press(tree, MEETING_NOTES_COPY.clear);
     expect(confirm).toHaveBeenCalledWith(
       expect.objectContaining({ body: MEETING_NOTES_COPY.clearBodyRecording }),
@@ -227,6 +215,56 @@ describe("a recording's transcript in the notes", () => {
       expect.objectContaining({ body: MEETING_NOTES_COPY.clearBody }),
     );
     expect(hooks.removeRecording).not.toHaveBeenCalled();
+  });
+});
+
+describe("Notes disagreed (#4935)", () => {
+  it("lists a disagreement and puts the other version in on a tap", async () => {
+    const tree = render(
+      draftState({
+        status: "applied",
+        notes: "Typed.",
+        review: {
+          gaps: [],
+          sources: [],
+          left_out: 0,
+          conflicts: [
+            {
+              kind: "decision",
+              about: "The formal budget vote",
+              versions: [
+                {
+                  from: "Eli Sorensen",
+                  quote: "budget passed 22-5",
+                  text: "Approved the budget, 22 to 5.",
+                  vote: { for: 22, against: 5, abstain: 0 },
+                  owner_user_id: null,
+                  due_date: null,
+                },
+                {
+                  from: "Sam Lee",
+                  quote: "budget passed 21-6",
+                  text: "Approved the budget, 21 to 6.",
+                  vote: { for: 21, against: 6, abstain: 0 },
+                  owner_user_id: null,
+                  due_date: null,
+                },
+              ],
+              chosen: 0,
+              settled_by: "authority",
+            },
+          ],
+        },
+      }),
+    );
+    expect(
+      button(tree, MEETING_NOTE_TAKERS_COPY.takeVersion("Sam Lee")),
+    ).toBeDefined();
+    await press(tree, MEETING_NOTE_TAKERS_COPY.takeVersion("Sam Lee"));
+    expect(hooks.choose).toHaveBeenCalledWith({
+      id: "m1",
+      body: { conflict: 0, version: 1, expected_updated_at: "v1" },
+    });
   });
 });
 
@@ -279,7 +317,10 @@ describe("NotesDraftSheet", () => {
 
   it("stops saying consent is missing once the member has said yes", async () => {
     confirm.mockResolvedValue(false);
-    const tree = render(draftState({ blocked: "consent_required" } as never), true);
+    const tree = render(
+      draftState({ blocked: "consent_required" } as never),
+      true,
+    );
     act(() => field(tree).props.onChangeText("Notes"));
     // Yes on the sheet, then Cancel on "replace what's written?".
     await press(tree, MEETING_NOTES_COPY.draft);
