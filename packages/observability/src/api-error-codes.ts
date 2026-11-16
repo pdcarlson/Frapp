@@ -80,6 +80,18 @@ export const MEMBER_CAUSED_ERROR_CODES = [
   "chapter.config.invalid_birthday_channel",
   // The officer picked a role another officer deleted meanwhile.
   "chapter.config.invalid_default_invite_role",
+  // The officer picked a default invite role they can't invite into
+  // themselves (#1830): the President's, or one ranked at or above them, as
+  // a picker loaded before a demotion can still offer.
+  "chapter.config.default_invite_role_president",
+  "chapter.config.default_invite_role_out_of_reach",
+  // An invite named a role the chapter no longer has, renamed or deleted
+  // while the invite dialog was open (#1830).
+  "invite.role_unknown",
+  // A joiner opened an invite whose role its sender can no longer give: a
+  // President invite minted before the rule, or a sender demoted since
+  // (#1830).
+  "invite.role_out_of_reach",
   // An officer named a role so it reads as @everyone (#4191) or @here.
   "role.everyone_name",
   // A tier reorder that would lift New members or Alumni above Everyone

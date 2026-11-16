@@ -54,6 +54,15 @@ export default [
               message:
                 "Use KeyboardAvoidingArea from @/lib/keyboard. On Android store builds React Native's view does nothing under the app-wide KeyboardProvider.",
             },
+            {
+              // FRAPP-MOBILE-10: the library's scroll lock re-enters itself
+              // through Reanimated's synchronous scrollTo until the stack
+              // runs out. The guarded copies stop that once, for every sheet.
+              name: "@gorhom/bottom-sheet",
+              importNames: ["BottomSheetScrollView", "BottomSheetFlatList"],
+              message:
+                "Import from @/lib/sheet-scrollables: the library's own scroll lock can recurse until the app crashes (FRAPP-MOBILE-10).",
+            },
           ],
           patterns: [
             {

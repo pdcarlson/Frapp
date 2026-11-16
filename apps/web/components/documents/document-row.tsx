@@ -2,7 +2,7 @@
 
 import { Download, Loader2, Trash2 } from "lucide-react";
 import { formatDay } from "@repo/formatting";
-import { uploadedLine } from "@repo/hooks/document-library";
+import { isDriveCopy, uploadedLine } from "@repo/hooks/document-library";
 import { IconButton } from "@/components/ui/icon-button";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { Can } from "@/components/shared/can";
@@ -29,7 +29,11 @@ export function documentFacts(
   uploader: string | null,
 ): { uploaded: string | null; filed: string[]; description: string | null } {
   return {
-    uploaded: uploadedLine(formatDay(doc.created_at), uploader),
+    uploaded: uploadedLine(
+      formatDay(doc.created_at),
+      uploader,
+      isDriveCopy(doc),
+    ),
     filed: [
       doc.folder,
       doc.document_type,
@@ -132,7 +136,9 @@ export function DocumentRow({
       >
         <DocumentsGlyph className="hidden h-4 w-4 shrink-0 text-muted @md:block" />
         <span className="block min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">{doc.title}</span>
+          <span className="block truncate text-sm font-semibold">
+            {doc.title}
+          </span>
           {/*
           Description LAST, and the order is load-bearing. The
           merged line is `truncate`, where the two lines it
@@ -245,20 +251,28 @@ export function DocumentControls({
         </IconButton>
       </Can>
       <DownloadButton id={doc.id} title={doc.title} />
+      {/*
+        A copy of a Drive file (#5157) has no Delete: Drive owns it, the API
+        refuses, and the next sync would bring it back.
+      */}
       <Can permission="chapter_docs:manage">
-        {/*
+        {isDriveCopy(doc) ? null : (
+          <>
+            {/*
         `DELETE /v1/documents/:id` sits behind the same guard
         as upload, so gating only the upload trigger would
         have the page claim writes are blocked while still
         offering one per row.
       */}
-        <IconButton
-          label={`Delete ${doc.title}`}
-          onClick={() => onDelete(doc)}
-          {...gate.controlProps(deleting)}
-        >
-          <Trash2 />
-        </IconButton>
+            <IconButton
+              label={`Delete ${doc.title}`}
+              onClick={() => onDelete(doc)}
+              {...gate.controlProps(deleting)}
+            >
+              <Trash2 />
+            </IconButton>
+          </>
+        )}
       </Can>
     </div>
   );

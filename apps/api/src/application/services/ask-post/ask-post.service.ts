@@ -98,7 +98,13 @@ export class AskPostService {
 
     const receipt = this.open(input);
     const { shown, given } = receipt;
-    if (shown.status !== 'answered' || shown.text.trim() === '') {
+    // An answer in Frapp's own words rests on nothing anyone in the channel
+    // could check, so it is not put in front of them as an answer.
+    if (
+      shown.status !== 'answered' ||
+      shown.text.trim() === '' ||
+      shown.citations.length === 0
+    ) {
       throw refusal('ai.ask.post.not_an_answer');
     }
     // A receipt sealed before sources carried where they came from can be

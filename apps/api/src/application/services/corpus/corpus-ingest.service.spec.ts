@@ -20,7 +20,7 @@ const PRESIDENT = '55555555-5555-4555-8555-555555555555';
 const GONE_MEMBER = '66666666-6666-4666-8666-666666666666';
 const SOURCE = '0a000000-0000-4000-8000-000000000720';
 const RUN = '0b000000-0000-4000-8000-000000000720';
-const FINGERPRINT = 'gemini-embedding-001.1536.p1';
+const FINGERPRINT = 'gemini-embedding-001.1536.p2';
 const NOW = new Date('2026-11-12T10:00:00.000Z');
 
 const source = (overrides: Partial<CorpusSource> = {}): CorpusSource => ({

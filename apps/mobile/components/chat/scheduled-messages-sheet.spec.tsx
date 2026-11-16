@@ -28,7 +28,11 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useUpdateScheduledMessage: () => ({ mutate: update, isPending: false }),
 }));
 
-import { ScheduledRows } from "./scheduled-messages-sheet";
+import {
+  ScheduledMessagesSheet,
+  ScheduledRows,
+} from "./scheduled-messages-sheet";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 function message(overrides: Partial<ScheduledMessage>): ScheduledMessage {
   const at = new Date();
@@ -166,5 +170,16 @@ describe("ScheduledRows (#4956)", () => {
     );
     act(() => input.props.onChangeText("   "));
     expect(button(tree, "Save")!.props.disabled).toBe(true);
+  });
+});
+
+describe("ScheduledMessagesSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so the list still opens", () => {
+    rows.current = [];
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <ScheduledMessagesSheet ref={ref} channelId="c1" />
+      </FrappThemeProvider>
+    ));
   });
 });

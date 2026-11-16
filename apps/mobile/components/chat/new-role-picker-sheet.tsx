@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
   buildRolePickerMessage,
   ROLE_PICKER_DEFAULT_TITLE,
@@ -30,11 +26,12 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  useGuardedSheetRef,
 } from "@/components/sheet-scaffold";
 import { ListRow, ListSection } from "@/components/list-section";
 import { Toggle } from "@/components/toggle";
 import { successHaptic } from "@/lib/haptics";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /** With no role marked Non-chapter business, where the officer turns one on. */
 export const NO_PICKABLE_ROLES_LINE =
@@ -69,8 +66,11 @@ export const NewRolePickerSheet = forwardRef<
   const styles = createStyles(tokens, brand);
   const backgroundStyle = useSheetBackgroundStyle();
   const closeSheet = useSheetClose(ref);
-  const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-    useSheetVisit(ref);
+  // Its hosts (the composer among them) dismiss it on a blur or a channel
+  // switch, up or not (#5059): the ref they hold only reaches a sheet that
+  // is up.
+  const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+    useGuardedSheetRef(ref);
 
   const rolesQuery = useRoles();
   const roles = useMemo(
@@ -196,7 +196,7 @@ export const NewRolePickerSheet = forwardRef<
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       enableDynamicSizing
       keyboardBehavior="interactive"

@@ -8,7 +8,7 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   useBlockedUserIds,
@@ -51,7 +51,7 @@ import {
   useTallSheetProps,
   SheetBackToClose,
   useSheetClose,
-  useSheetVisit,
+  useGuardedSheetRef,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { selectMemberDetail } from "@/lib/directory/member-detail";
@@ -89,6 +89,7 @@ import {
   START_DM_FAILED_BODY,
   startDmFailedTitle,
 } from "@/lib/directory/start-dm";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * A member's profile — a sheet, not a route, per s13's own scope
@@ -190,8 +191,10 @@ export const MemberDetailSheet = forwardRef<
   const closeSheet = useSheetClose(ref);
   // A removal or a DM can settle after the member swiped the sheet away: see
   // `useSheetVisit`. Each closes only the visit it was sent from (#3405).
-  const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-    useSheetVisit(ref);
+  // The chat thread also dismisses it on every blur, up or not (#4229), so
+  // the ref it holds is guarded too.
+  const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+    useGuardedSheetRef(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
@@ -387,7 +390,7 @@ export const MemberDetailSheet = forwardRef<
   return (
     <>
       <BottomSheetModal
-        ref={ref}
+        ref={modalRef}
         stackBehavior={SHEET_STACK_BEHAVIOR}
         {...tallSheet}
         backgroundStyle={backgroundStyle}

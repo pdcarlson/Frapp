@@ -1,5 +1,5 @@
 import { Text, type ColorValue } from "react-native";
-import Svg from "react-native-svg";
+import Svg, { Circle, Path, Rect } from "react-native-svg";
 import { NAV_GLYPHS, type NavGlyphName } from "@repo/theme/nav-glyphs";
 import { NavGlyph } from "@/components/nav-glyph";
 import { fontFamilyFor, tint, typeRole, useFrappTheme } from "@/lib/theme";
@@ -189,5 +189,43 @@ export function TabLabel({
     >
       {children}
     </Text>
+  );
+}
+
+/**
+ * Photo: a framed picture, sun and hill, in the card eyebrows' stroke recipe.
+ * The composer's + draws it on its Photo row, and s21 on Choose a photo.
+ */
+export function PhotoGlyph(props: TabGlyphProps) {
+  const { stroke, fill } = glyphPaint(props);
+  return (
+    <GlyphFrame size={props.size}>
+      <Rect
+        x={3.5}
+        y={5}
+        width={17}
+        height={14}
+        rx={2.4}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+      />
+      <Circle
+        cx={9}
+        cy={10}
+        r={1.6}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+      />
+      <Path
+        d="M4 17l5-4.6 3.2 2.8 3.3-3.4L20 16"
+        fill="none"
+        stroke={stroke}
+        strokeWidth={STROKE_WIDTH}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </GlyphFrame>
   );
 }

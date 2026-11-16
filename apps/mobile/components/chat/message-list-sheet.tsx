@@ -1,6 +1,6 @@
 import { forwardRef, useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   resolveAuthorLabel,
   useBookmarks,
@@ -25,10 +25,12 @@ import {
   SheetScrim,
   TallSheetHeader,
   useSheetBackgroundStyle,
+  useGuardedSheetRef,
   useSheetClose,
   useTallSheetProps,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The thread header's two message lists (#3723), the phone's face of web's
@@ -85,6 +87,9 @@ export const MessageListSheet = forwardRef<
   ref,
 ) {
   const closeSheet = useSheetClose(ref);
+  // Pinned and Saved: the thread dismisses it on every blur and channel
+  // switch, up or not (#4229): the ref it holds only reaches a sheet that is up.
+  const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
@@ -96,7 +101,9 @@ export const MessageListSheet = forwardRef<
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
+      onAnimate={onAnimate}
+      onDismiss={markClosed}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       {...tallSheet}
       backgroundStyle={backgroundStyle}

@@ -335,50 +335,52 @@ Merge each `shipped-builds.json` PR before the next `auto` ship: an unrecorded b
 to the plan, which would build that version again instead of updating it. A store build then
 calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111):
 
-1. **`build`** checks out the validated SHA and nothing else, runs `npm ci`, and installs eas-cli
-   **24.8.0** with `--before=2026-10-01`, so none of eas-cli's own dependencies can be a version
-   published after that date (it ships no lockfile; the lockfile fix is #3118). It refuses to go
-   on unless the tree is exactly that commit with nothing changed (eas-cli uploads uncommitted
-   changes with the build), and unless that commit is still the latest `v*` tag, read from the
-   API. Then:
-   - Each platform starts on its own:
-     `eas build --platform <p> --profile production --non-interactive --no-wait --json` hands its
-     build id on at once. `eas build --platform all` would start Android and then die on an iOS
-     failure, leaving the Android build running unreported.
-   - One step polls the builds (`eas build:view <id> --json`) until each ends, under a 230-minute
-     deadline of its own. A build still queued at the deadline is reported by id, not lost. Each
-     build's status is logged as it changes, and a build that errors or is cancelled is named in
-     the log the round it is seen, usually within a minute (longer only when an EAS read stalls
-     or a retry is starting), while the other platform builds on (#3812). A build that has ended
-     is not read again.
-   - A build that errored on a transient network failure (a 5xx, timeout or reset while fetching
-     pods or packages, read from EAS's error message and the end of the build's logs) is started
-     again, once per platform, and the retry takes its place. Nothing else is retried, because EAS
-     meters every build: not a cancelled build, any other error, a failure with under an hour
-     left before the deadline, or one after the `v*` tags changed since the builds started (or
-     couldn't be read), since a retry is a build start like any other. The log match only looks
-     at the last 100 lines, so a network warning the build recovered from long before it failed
-     doesn't count; it is a heuristic, and a wrong call costs one build. iOS 0.10.3 is why: a 504
-     from GitHub's release download behind `RNSentry.podspec` sank it in pod install (run
-     42567552486). Retrying the build covers any pod or package host, where pinning that one fetch
-     wouldn't.
-   - Only a build EAS reports `FINISHED` from the shipped commit goes on.
-   - The latest-tag check runs again: a ship made while EAS was building (a rollback, say) stops
-     every upload.
-   - Then `eas submit --platform <p> --profile production --id <build id> --non-interactive --no-wait`;
+1. **`ios`** (on `macos-latest`) and **`android`** (on `ubuntu-latest`) each build their own
+   platform on a GitHub runner with `eas build --local`, side by side, so one platform's failure
+   doesn't stop the other's build or upload. Paul moved the builds off Expo's cloud on 2026-11-16
+   (#5162): the Free plan's build credits ran out on 2026-11-14 until 2026-12-01, and the 11-14 and
+   11-16 ships went live and then failed at the build start ("You've reached your included build
+   credits"). A local build is metered by nothing, and runners are free for a public repository.
+   It still takes its signing credentials, its `production` EAS environment variables (§ 6.3) and
+   its next build number from EAS with `EXPO_TOKEN`, so the build numbers stay one sequence with
+   the cloud builds before it. Each job:
+   - checks out the validated SHA and nothing else, runs `npm ci`, and installs eas-cli
+     **24.8.0** with `--before=2026-10-01`, so none of eas-cli's own dependencies can be a version published
+     after that date (it ships no lockfile; the lockfile fix is #3118). The runner is set up as
+     **Staging app**'s build of the same platform is (§ 6.8): iOS picks the runner's newest stable
+     Xcode 26, because a local build ignores `eas.json`'s `image`; Android uses Java 17 and gives
+     Gradle 4 GB.
+   - Android only: fetches `GOOGLE_SERVICES_JSON`, a File variable whose file `eas build --local`
+     doesn't fetch, with `eas env:pull --environment production`, and points the variable at it.
+   - refuses to go on unless the tree is exactly that commit with nothing changed (a local build
+     packs uncommitted changes too), and unless that commit is still the latest `v*` tag, read
+     from the API.
+   - turns Sentry's upload off (`SENTRY_DISABLE_AUTO_UPLOAD`) when the `automation` environment has
+     no `SENTRY_AUTH_TOKEN`, and says so in the summary: the binary ships, and its native crash
+     reports stay unsymbolicated (What a run needs outside the repo, below).
+   - builds with `eas build --local --platform <p> --profile production --non-interactive --output <archive>`.
+     eas-cli takes the next build number from EAS and prints it ("Incremented buildNumber from 24
+     to 25."); that line is the only place a local build reports it, so the job reads it from the
+     log, with the version from `expo.version`, and stops unless it finds exactly one. On iOS the
+     binary's own `Info.plist` must agree before anything uploads.
+   - runs the latest-tag check again: a ship made while the runner was building (a rollback, say)
+     stops the upload.
+   - then `eas submit --platform <p> --profile production --path <archive> --non-interactive --no-wait`;
      iOS also passes `--no-auto-testflight-setup`, so CI never creates a TestFlight group. The
      step ends once EAS accepts the submission and hands its id on, because Expo's free plan
      queues a submission for about 47 minutes before uploading, and waiting for that turned
-     uploads that worked into red runs with nothing recorded (#3483, 2026-11-05).
+     uploads that worked into red runs with nothing recorded (#3483, 2026-11-05). Submissions
+     aren't builds, so they cost no build credits.
 
-   One platform's failure doesn't stop the other's build or upload.
+   An iOS build took 22 to 33 minutes and an Android one 34 on these runners when Frapp Staging's
+   were measured (#4877).
 2. **`record`** opens the PR that adds one `shipped-builds.json` entry per build whose
    submission EAS accepted, which may still be in Expo's queue
    (`scripts/ci/record-shipped-builds.mjs`). It uses the PR base sync GitHub App's token, because
    a PR opened with the Actions `GITHUB_TOKEN` starts no CI, and that PR's `api-contract-check`
-   is the point. It merges itself (`AUTO_MERGE` in `_mobile-build.yml`; Paul, 2026-11-12), so the next `auto` ship sees the build: once `confirm` (step 3) sees every upload finish, the **`merge-record`** job turns on its squash auto-merge with the same App token, and its required checks still hold it. Not before, because a record PR that merged ahead of a failed upload would tag and plan around a build no store has. If an upload failed or never finished, or GitHub refuses auto-merge, that job comments on the PR instead: **drop any failed build's entry and merge it by hand before any tester installs the build.** A build EAS reports from any
-   other commit is refused, not recorded. The run summary lists every build: its EAS id, status,
-   version, upload result, and whether it was recorded.
+   is the point. It merges itself (`AUTO_MERGE` in `_mobile-build.yml`; Paul, 2026-11-12), so the next `auto` ship sees the build: once `confirm` (step 3) sees every upload finish, the **`merge-record`** job turns on its squash auto-merge with the same App token, and its required checks still hold it. Not before, because a record PR that merged ahead of a failed upload would tag and plan around a build no store has. If an upload failed or never finished, or GitHub refuses auto-merge, that job comments on the PR instead: **drop any failed build's entry and merge it by hand before any tester installs the build.** A build from any
+   other commit is refused, not recorded. The run summary lists every platform: its job's status,
+   the version and build number, the upload result, and whether it was recorded.
    If that PR's `api-contract-check` fails, `main` has already changed the API in a way the new
    build can't take: `main` is ahead of the tag, and nothing compared the change against this
    build until it was listed. Fix it on `main` before the next production ship, or waive a route
@@ -412,60 +414,58 @@ calls [`_mobile-build.yml`](../../../.github/workflows/_mobile-build.yml) (#3111
    passed processing: App Store Connect can still reject an iOS binary by email afterwards, as it
    did iOS 0.9.1 (8) with ITMS-90683.
 4. **`snapshot`** dispatches **Migration snapshot** as the store build starts. The run stays in
-   flight for as long as EAS takes, and the snapshot otherwise publishes only when a Deploy
+   flight while the builds and Expo's submission queue take their time, and the snapshot otherwise publishes only when a Deploy
    production run completes, so the required PR migration gates would judge production against
    the pre-ship state until then (`download-migration-snapshot`'s header).
 
-All four jobs name the `automation` environment, which has no reviewers, so a ship stays one Approve
+Every job here names the `automation` environment, which has no reviewers, so a ship stays one Approve
 click ([`agent-infra.md` § GitHub environments and bootstrap secrets](../../ci-cd/agent-infra.md#github-environments-and-bootstrap-secrets)).
 The build reads the same EAS `production` environment variables (§ 6.3) and credentials as a
-laptop build, so anything a hand build needs, this one needs too.
+laptop build, so anything a hand build needs, this one needs too, plus what a local build can't
+read from EAS: the Firebase file and the Sentry token (What a run needs outside the repo, below).
 
 **When it fails.** Production and the tag are already live and stay as they are. The `mobile` job
 goes red on its own, and the deploy summary and alert don't change. The `record` job's summary
-lists each platform's EAS id, status and upload, and says which of these applies, except a
+lists each platform's status, version and upload, and says which of these applies, except a
 red `confirm`, whose own summary says what happened to each submission. A build that
 uploaded but couldn't be recorded is listed there as the JSON entries to add.
 
-A re-run builds every platform the run asked for again, so re-run only when nothing uploaded and
-nothing is still building.
+Each platform builds in its own job, so **Re-run failed jobs** builds again only the platform
+whose job failed, with a new build number, and uploads and records it. A runner keeps no binary,
+so a build that finished but didn't upload is built again rather than uploaded by hand. A re-run
+stops if a later ship has tagged another commit; dispatch Deploy production for that one instead.
 
-- **A build finished but EAS refused its submission** (the `build` job is red): fix the cause,
-  run the summary's `npm run eas -- submit … --id <build id>` from the repo root, and record the
-  build by hand.
+- **A build or its upload failed** (the `ios` or `android` job is red): the job's log says why.
+  Fix the cause, then **Re-run failed jobs**. The deploy and the tag succeeded and don't run
+  again. A profile that "doesn't include the … capability" is the capability item under What a
+  run needs outside the repo, below. If the other platform's record PR hasn't merged yet when the
+  re-run records, the re-run's record PR lists that build again. Once the first merges, the PR
+  base sync merges `main` into the second when the repeated entry matches exactly
+  (`resolve-registry-conflict.mjs`); when it was recorded on another day, the sync comments
+  instead, and the repeated entry is deleted from the second PR by hand.
 - **EAS accepted a submission and then failed to upload it** (the `confirm` job is red): the
   record PR already lists the build. Either, while its commit is still the latest `v*` tag, fix
-  the cause and upload it again, and keep the entry, or drop the entry. To upload it again, run
+  the cause and upload it again, and keep the entry, or drop the entry. Once EAS won't retry the
+  submission, only dropping it is left: the runner kept no copy of the binary, so the `confirm`
+  summary says to drop the entry and re-run that platform's job by itself (its own re-run button;
+  **Re-run failed jobs** skips it, since its upload was accepted) for a new build. To upload it again, run
   the **Retry a store upload** workflow (`mobile-retry-upload.yml`) with the platform and the
   submission id the `confirm` summary names: it retries that submission on EAS, any error
-  included, and waits for it like `confirm` does, with nothing rebuilt or redeployed. Once EAS
-  no longer allows a retry, the summary gives the `npm run eas -- submit … --id <build id>` to
-  run from the repo root instead. Merge the record PR by hand once the upload finished. To drop
-  the entry, delete it from the record PR before
-  merging, or, if that has merged, move it to the registry's `dropped` list with the run as its
-  reason, in a PR of its own (a plain deletion fails `api-contract-check`). A build that never
-  reached a store can be dropped at once
+  included, and waits for it like `confirm` does, with nothing rebuilt or redeployed. Merge the
+  record PR by hand once the upload finished. To drop the entry, delete it from the record PR
+  before merging, or, if that has merged, move it to the registry's `dropped` list with the run
+  as its reason, in a PR of its own (a plain deletion fails `api-contract-check`). A build that
+  never reached a store can be dropped at once
   ([`apps/mobile/store/README.md` § Shipped builds and the API contract](../../../apps/mobile/store/README.md#shipped-builds-and-the-api-contract)).
-- **A build was still running when the job stopped waiting:** it may finish on EAS. Don't start
-  another. When it finishes, and its commit is still the latest `v*` tag, upload it with the same
-  `npm run eas -- submit … --id` and record it.
-- **One platform uploaded and the other didn't build:** fix the cause, then build and upload the
-  other by hand from the latest `v*` tag (below), and record it. Or merge the uploaded platform's
-  record PR and let the next `auto` ship build the other: the plan gives a platform with no
-  recorded build of the version a store build, and the recorded one an update. The wait step's log
-  says whether a transient network failure was retried (and names both builds) or why it wasn't,
-  and carries EAS's error; a profile that "doesn't include the … capability" is the capability
-  item under What a run needs outside the repo, below.
-- **Production shipped another commit before or while EAS was building:** nothing from this run
-  may upload. The next store build comes with the next ship.
+- **One platform uploaded and the other didn't build:** **Re-run failed jobs**, as above. Or merge
+  the uploaded platform's record PR and let the next `auto` ship build the other: the plan gives a
+  platform with no recorded build of the version a store build, and the recorded one an update.
+- **Production shipped another commit before or while the runner was building:** nothing from
+  this run may upload. The next store build comes with the next ship.
 - **A tag check failed without finding production moved** (a GitHub API error that outlasted its
   retries, or a top `v*` tag that isn't `vX.Y.Z`; the summary keeps both apart from a moved
-  production): resolve that first. Before the builds, nothing started, so then re-run; before the
-  uploads, the builds are done, so confirm the commit is the latest `v*` tag and upload them by
-  hand with the summary's `npm run eas -- submit … --id`.
-- **Nothing built:** **Re-run failed jobs** on the same run. The deploy and the tag succeeded and
-  don't run again, and the builds get fresh build numbers. The re-run stops if a later ship has
-  tagged another commit; dispatch Deploy production for that one instead.
+  production): resolve that first, confirm the commit is the latest `v*` tag, then **Re-run
+  failed jobs**.
 - **The tag failed, so the store build never started:** `mobile` shows skipped, and the deploy
   summary says the run asked for one. Fix the tag's cause, then use **Re-run failed jobs** on this
   run rather than the Release workflow: it retries the tag without redeploying, then runs the
@@ -480,7 +480,7 @@ nothing is still building.
 *Status* says what existed when someone last looked, and how they looked.
 
 - **`EXPO_TOKEN`**: an Expo access token, as a secret of the GitHub **`automation`** environment.
-  Not Infisical, and never a repository secret (#2518). Without it the `build` job's first step
+  Not Infisical, and never a repository secret (#2518). Without it each build job's first step
   fails, before any checkout. *Status (Expo → account → Access tokens, and the `automation`
   environment's secrets in GitHub, 2026-10-01):* the token of the robot user
   `github-deploy-production` (role Developer) on the `pdcarlson` Expo account, so it isn't tied to
@@ -536,15 +536,28 @@ nothing is still building.
   production Android build also needs the `GOOGLE_SERVICES_JSON` file variable
   (`apps/mobile/app.config.js` refuses to evaluate without it), set in EAS since 2026-11-03
   (#1826).
-- **An EAS plan whose build quota covers each ticked ship** (one build per platform). *Status
-  (Expo → account → Billing, 2026-10-01):* the Free plan, with 15 iOS and 15 Android builds a
-  month, on the low-priority queue. A queued build can outlast the wait's deadline (When it fails,
-  above, says what to do then); if that keeps happening, a paid plan is the fix.
+- **`GOOGLE_SERVICES_JSON` readable outside EAS's servers** (Android). It is a File variable in
+  the EAS `production` environment (#1826), and the `android` job fetches it with `eas env:pull`,
+  which skips a variable of **Secret** visibility: the job then stops with what to change. It must
+  be Plain text or Sensitive (`npm run eas -- env:list --environment production` shows it). The
+  file is Firebase's client config, which ships inside the app anyway. *Status:* set since
+  2026-11-03; its visibility hasn't been read from a session, so the first run says.
+- **`SENTRY_AUTH_TOKEN`** as a secret of the GitHub **`automation`** environment, the
+  organization token `_mobile-update.yml` uses for an update's source maps. EAS's variable of that
+  name is Secret and never reaches a runner. Without it the build still ships, with Sentry's upload
+  turned off and a warning in the summary, and its native crash reports stay unsymbolicated
+  ([`ENV_REFERENCE.md` § apps/mobile](../../internal/environment/ENV_REFERENCE.md#appsmobile-expo--eas)).
+- **No EAS build credits.** The builds run on GitHub's runners since 2026-11-16 (#5162), so the
+  Free plan's monthly credits (15 iOS and 15 Android builds, used up on 2026-11-14) don't limit a
+  ship. Submissions aren't metered.
 
 #### By hand
 
-Run from the repo root, after checking out the latest `v*` tag and building it on EAS
-(`npm run eas -- build --platform <p> --profile production`). A tag cut before `npm run eas`
+Run from the repo root, after checking out the latest `v*` tag and building it
+(`npm run eas -- build --platform <p> --profile production`). That builds on EAS and needs the Free
+plan's build credits; add `--local --output <file>` to build on your own Mac (iOS, with Xcode 26) or
+a machine with the Android SDK and Java 17, as the store build does on GitHub's runners, then
+submit that file with `--path <file>` in place of `--latest`. A tag cut before `npm run eas`
 existed (#3124) doesn't have it; there, use the global fallback at the top of § 6. Both platforms read the `production` submit
 profile in `apps/mobile/eas.json`; `eas submit` defaults to it, and falls back to it when the
 build's own profile has no submit profile of the same name.
@@ -595,7 +608,12 @@ shapes too: with a changed `build:view` shape, no build ever reads as finished, 
 to its deadline. *2026-11-09 (#3812):* the retry reads `build:view --json`'s `error.errorCode`,
 `error.message` and `logFiles` (signed log URLs), from eas-cli 24.8.0's `BuildFragment`; eas-cli
 24.8 has no command that re-runs a build, so a retry is a fresh `eas build --no-wait`. A changed
-shape there only stops the retry: the error is still reported.
+shape there only stops the retry: the error is still reported. *2026-11-16 (#5162):* the builds moved to `eas build --local`, read from
+eas-cli 24.8.0's source: the local build plugin's environment is EAS's plain and sensitive
+variables overlaid by the runner's own (`runLocalBuildAsync`), so a variable the job sets wins;
+eas-cli reads the variables without File contents (`includeFileContent` unset), while `eas env:pull` asks for them and writes each file under `.eas/.env/`;
+and `--output` and `eas submit --path` are in the same version's `--help`. The cloud path's
+`--no-wait --json`, `build:view` and retry are gone with it.
 `npm run eas` runs the version CI pins (see the top of this section), so the table holds on a
 laptop too; after a bump, or when a run disagrees, re-check it against
 `npm run eas -- submit --help`.

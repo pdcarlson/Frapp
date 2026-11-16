@@ -253,6 +253,8 @@ describe("ci.yml reads queue_tested", () => {
 
   for (const job of jobs.filter((j) => !ALWAYS_RUN.includes(j.jobId) && j.jobId !== SEEDER)) {
     it(`${job.jobId} needs changes and skips on a queue-tested push`, () => {
+      // `skip_suite` is `queue_tested` or a docs-only change (#5141,
+      // docs-only-skip.test.mjs), so either gate skips here.
       const needs = job.keys.get("needs") ?? "";
       assert.match(String(needs), /(^|[\s[,])changes([\s\],]|$)/, `${job.jobId} needs: changes`);
       assert.ok(job.if, `${job.jobId} has a job-level if:`);
@@ -260,8 +262,8 @@ describe("ci.yml reads queue_tested", () => {
       // arm, and every other condition keeps its own parentheses.
       assert.match(
         job.if,
-        /^\$\{\{ needs\.changes\.outputs\.queue_tested != 'true'( && \(.+\))? \}\}$/,
-        `${job.jobId}: if: \${{ needs.changes.outputs.queue_tested != 'true' [&& (…)] }}`,
+        /^\$\{\{ needs\.changes\.outputs\.(?:queue_tested|skip_suite) != 'true'( && \(.+\))? \}\}$/,
+        `${job.jobId}: if: \${{ needs.changes.outputs.skip_suite != 'true' [&& (…)] }}`,
       );
     });
   }

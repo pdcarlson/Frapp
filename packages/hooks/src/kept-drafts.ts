@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useClientScopeIfAny } from "./use-frapp-client";
 
 /**
@@ -73,10 +80,50 @@ export function writeKeptPanel(key: string, value: unknown): void {
   else panels.set(key, value);
 }
 
+/**
+ * Saves in flight, by key: what each `hold()` took out of the store, until its
+ * save lands or fails. A form that mounts on the same key mid-save (a phone
+ * sheet mounted per open, #5086) opens on it rather than blank, and waits for
+ * the outcome with the form that sent it instead of offering it again. A form
+ * whose save is a `mutate` callback can't settle it once it has gone, so its
+ * entry stays until a sign-out or chapter switch; only forms whose saves are
+ * awaited wait on an entry, so nothing waits on one of those.
+ */
+const sends = new Map<string, unknown>();
+const sendOutcomes = new Map<string, "landed" | "failed">();
+const sendListeners = new Set<() => void>();
+
+function startSend(key: string, value: unknown): void {
+  sends.set(key, value);
+  sendOutcomes.delete(key);
+  sendListeners.forEach((listener) => listener());
+}
+
+function endSend(key: string, outcome: "landed" | "failed"): void {
+  if (!sends.has(key)) return;
+  sends.delete(key);
+  sendOutcomes.set(key, outcome);
+  sendListeners.forEach((listener) => listener());
+}
+
+function subscribeSends(listener: () => void): () => void {
+  sendListeners.add(listener);
+  return () => {
+    sendListeners.delete(listener);
+  };
+}
+
+/** What a save in flight on `key` sent, or `undefined` when none is out. */
+export function readKeptSend<T>(key: string): T | undefined {
+  return sends.get(key) as T | undefined;
+}
+
 /** Sign-out, another account, another chapter. Also the test seam. */
 export function dropAllKeptDrafts(): void {
   drafts.clear();
   panels.clear();
+  sends.clear();
+  sendOutcomes.clear();
 }
 
 /**
@@ -118,6 +165,14 @@ export function useKeptDraftKeys(): {
  *
  * `form` is `null` for a use that keeps nothing (the same form opened from
  * chat, which keeps its own drafts per channel).
+ *
+ * A form that mounted on another form's save in flight (`readKeptSend`, with
+ * `adoptsSend`) keeps nothing while that save is out and reports
+ * `sendingElsewhere`, so it can lock as the form that sent it did. If the save
+ * fails, the draft is back in the store and this form, already showing it,
+ * keeps it from then on; if it lands, what it shows is no longer a draft and
+ * `landedElsewhere` turns true. A form that has gone calls `settleGone` for
+ * a save it sent, so a form waiting on it hears the outcome.
  */
 export function useKeptFormDraft<T>(
   form: string | null,
@@ -128,6 +183,8 @@ export function useKeptFormDraft<T>(
     signature?: string;
     /** The form mounted on a kept draft it read itself. */
     restoredAtMount?: boolean;
+    /** What it mounted on was another form's save in flight (`readKeptSend`). */
+    adoptsSend?: boolean;
   },
 ): {
   /** The kept draft to open on, if there is one. Call it where the form fills on open. */
@@ -144,6 +201,15 @@ export function useKeptFormDraft<T>(
   hold: () => void;
   /** The save failed: keep what the form holds again. */
   release: () => void;
+  /**
+   * The form has gone and its save settled: end the hold without touching the
+   * store, which a later form may have written since.
+   */
+  settleGone: (outcome: "landed" | "failed") => void;
+  /** The save this form opened on is still out (`adoptsSend`). */
+  sendingElsewhere: boolean;
+  /** The save this form opened on landed: what it shows has been sent. */
+  landedElsewhere: boolean;
 } {
   const keys = useKeptDraftKeys();
   const key = form === null ? null : keys.draft(form);
@@ -177,6 +243,32 @@ export function useKeptFormDraft<T>(
   // until its fill lands; writing that would put a stale draft back.
   const writingTo = useRef<string | null>(null);
 
+  // Waiting on the save it opened on, if any, until that save settles. The
+  // key is the one it opened on: a form whose name changes mid-save (Mark
+  // done's goes once its task reads done, which an optimistic write sets
+  // before the save lands) still hears that save's outcome.
+  const [waitKey] = useState(() =>
+    options?.adoptsSend === true && key !== null ? key : null,
+  );
+  const [waiting, setWaiting] = useState(() => waitKey !== null);
+  const [landedElsewhere, setLandedElsewhere] = useState(false);
+  const sendOut = useSyncExternalStore(
+    subscribeSends,
+    () => waitKey !== null && sends.has(waitKey),
+    () => false,
+  );
+  if (waiting && !sendOut) {
+    setWaiting(false);
+    if (waitKey !== null && sendOutcomes.get(waitKey) === "landed") {
+      // Sent: what the form shows is no longer a draft.
+      setLandedElsewhere(true);
+      setRestored(false);
+    }
+    // Failed: the draft is back in the store, and this form, showing it,
+    // keeps it from here on.
+  }
+  const rebasedOnLanding = useRef(false);
+
   const take = useCallback((): T | undefined => {
     settle();
     if (key === null) {
@@ -206,18 +298,27 @@ export function useKeptFormDraft<T>(
       baseline.current = signature;
       return;
     }
+    if (waiting) return;
+    if (landedElsewhere && !rebasedOnLanding.current) {
+      rebasedOnLanding.current = true;
+      baseline.current = signature;
+      return;
+    }
     if (held.current?.key === key) return;
     if (restoredRef.current || signature !== baseline.current) {
       writeKeptDraft(key, latest.current);
     } else {
       dropKeptDraft(key);
     }
-  }, [open, key, settles, signature, whole]);
+  }, [open, key, settles, signature, whole, waiting, landedElsewhere]);
 
   // Each settles the key it was made for: a save's outcome lands on the form
   // it was sent from, even when this one has turned into another since.
   const drop = useCallback(() => {
-    if (held.current?.key === key) held.current = null;
+    if (key !== null && held.current?.key === key) {
+      held.current = null;
+      endSend(key, "landed");
+    }
     if (key !== null) dropKeptDraft(key);
     if (writingTo.current === key || writingTo.current === null) {
       setRestored(false);
@@ -225,7 +326,10 @@ export function useKeptFormDraft<T>(
   }, [key]);
   const discard = useCallback(() => {
     if (key !== null) dropKeptDraft(key);
-    if (held.current?.key === key) held.current = null;
+    if (key !== null && held.current?.key === key) {
+      held.current = null;
+      endSend(key, "landed");
+    }
     setRestored(false);
     settle();
   }, [key, settle]);
@@ -233,6 +337,7 @@ export function useKeptFormDraft<T>(
     if (key === null) return;
     held.current = { key, value: latest.current };
     dropKeptDraft(key);
+    startSend(key, latest.current);
   }, [key]);
   // Written even after the form has gone: a save that fails once the member
   // has left keeps their work for when they come back. What the form shows
@@ -244,11 +349,41 @@ export function useKeptFormDraft<T>(
     const stillThatForm =
       writingTo.current === key || writingTo.current === null;
     writeKeptDraft(key, stillThatForm ? latest.current : sent.value);
+    endSend(key, "failed");
   }, [key]);
+  const settleGone = useCallback((outcome: "landed" | "failed") => {
+    const sent = held.current;
+    if (sent === null) return;
+    held.current = null;
+    endSend(sent.key, outcome);
+  }, []);
+  const sendingElsewhere = waiting && sendOut;
 
   return useMemo(
-    () => ({ take, restored, drop, discard, rebase: settle, hold, release }),
-    [take, restored, drop, discard, settle, hold, release],
+    () => ({
+      take,
+      restored,
+      drop,
+      discard,
+      rebase: settle,
+      hold,
+      release,
+      settleGone,
+      sendingElsewhere,
+      landedElsewhere,
+    }),
+    [
+      take,
+      restored,
+      drop,
+      discard,
+      settle,
+      hold,
+      release,
+      settleGone,
+      sendingElsewhere,
+      landedElsewhere,
+    ],
   );
 }
 

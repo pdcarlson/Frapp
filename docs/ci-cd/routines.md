@@ -81,12 +81,12 @@ point here instead of restating these rules. Policy detail:
      versions or a frozen surface's visuals, and keeps at most one PR open at a time.
 4. **GitHub MCP only; if it is unavailable, stop and report.** The MCP is auditable and its writes
    are lossless, so no routine lists, searches, reads, files, labels, closes or comments on an issue
-   or PR over `gh` or REST, or parks tracker work in a scratch file, and a missing MCP is a full
-   stop, not a prompt to find another route. REST is allowed for two reads only, neither of them
-   tracker work: provider settings the MCP has no tool for (branch protection, environments,
-   rulesets, repo visibility, vulnerability alerts), and the body-fidelity verification read that
-   [`github-pm.md`](github-pm.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity) licenses.
-   Neither lifts the stop rule. Weekly Upkeep writes a PR rather than issues, so a missing MCP
+   or PR over `gh` or REST (the one exception is the read-only search a session without MCP
+   `search_*` tools makes, per
+   [`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)), or parks tracker work in a scratch file, and a missing MCP is a full
+   stop, not a prompt to find another route. A setting the MCP has no tool for is judged by
+   behaviour or reported for Paul, never read over `gh` or REST
+   ([`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy)). Weekly Upkeep writes a PR rather than issues, so a missing MCP
    doesn't block its sweep or scan: push the branch, report its name, and stop. It stops and
    reports if `git push` fails.
 5. **`issue_write` labels replace the whole set.** Send the union of the existing labels and your
@@ -117,9 +117,9 @@ path `/next` uses, with no keys to manage. Start each run by loading the GitHub 
 `issue_read` on a known issue. If the MCP is unavailable, stop and report: there is no fallback
 tracker. Weekly Upkeep is the exception in rule 4.
 
-REST reads of `api.github.com` go through the agent proxy with `gh api` (sessions carry no token
-of their own since 2026-11-15; see [`agent-infra.md` → The `api.github.com` route rule](agent-infra.md#the-apigithubcom-route-rule)),
-and rule 4 limits it to the two reads it names.
+Sessions carry no GitHub token and don't use `gh`, so the MCP is the route, apart from the
+read-only search exception in
+[`agent-infra.md` § GitHub access policy](agent-infra.md#github-access-policy).
 
 Whether an MCP read is faithful enough to rewrite a body from is a measurement that has flipped
 several times, so read the current table in

@@ -1,10 +1,6 @@
 import { forwardRef, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetFlatList,
-  BottomSheetModal,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -33,6 +29,7 @@ import {
   type ActivesStatus,
   type FilterRole,
 } from "@/lib/directory/actives-filter";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /**
  * The Directory's Actives filters (#3971), behind the Filters chip on the

@@ -53,11 +53,13 @@ const seed = () => ({
       id: 'points-a',
       adjustment_rate_limit_per_hour: 20,
       anomaly_threshold: 40,
+      prediction_max_stake: 25,
     }),
     inB({
       id: 'points-b',
       adjustment_rate_limit_per_hour: 20,
       anomaly_threshold: 40,
+      prediction_max_stake: 25,
     }),
   ],
 });
@@ -183,12 +185,14 @@ describe('SupabaseChapterConfigRepository — tenant scope', () => {
     ).resolves.toMatchObject({
       adjustment_rate_limit_per_hour: 20,
       anomaly_threshold: 40,
+      prediction_max_stake: 25,
     });
 
     await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.upsertPointsConfig(CHAPTER_B, {
         adjustment_rate_limit_per_hour: 5,
         anomaly_threshold: 40,
+        prediction_max_stake: 25,
       }),
     );
 
@@ -268,6 +272,7 @@ describe('SupabaseChapterConfigRepository — query errors', () => {
         r.upsertPointsConfig(CHAPTER_B, {
           adjustment_rate_limit_per_hour: 20,
           anomaly_threshold: 40,
+          prediction_max_stake: 25,
         }),
     ],
   ])('%s throws the query error rather than returning', async (_name, call) => {

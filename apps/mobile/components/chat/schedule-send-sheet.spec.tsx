@@ -13,6 +13,7 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import { ScheduleSendSheet, ScheduleWhenField } from "./schedule-send-sheet";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 /**
  * Schedule message (#4956). The harness fires `onPress` on a disabled
@@ -213,5 +214,21 @@ describe("ScheduleSendSheet closing after a create (#3405)", () => {
     const refusal = new Error("refused");
     await failed.fail(refusal);
     expect(screenText(failed.tree)).not.toContain(errorCopy(refusal));
+  });
+});
+
+describe("ScheduleSendSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so Schedule still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <ScheduleSendSheet
+          ref={ref}
+          preview="Chapter is at 8 tonight"
+          refusal={null}
+          openedAt={null}
+          onSchedule={vi.fn(() => Promise.resolve())}
+        />
+      </FrappThemeProvider>
+    ));
   });
 });

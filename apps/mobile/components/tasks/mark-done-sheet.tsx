@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { TASK_ACTION_LABELS, useRequestTaskPhotoUploadUrl } from "@repo/hooks";
 import {
@@ -45,6 +41,7 @@ import {
   taskStatusGateRefusal,
 } from "@/lib/tasks/status-refusal";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /** What Mark done sends besides the status (#4635). */
 export interface CompletionProof {
@@ -149,7 +146,9 @@ export function MarkDoneSheet({
   // nothing and the kept draft goes.
   const keptName = task.done ? null : (keptDraft ?? null);
   const round = task.sentBackAt ?? null;
-  const stored = useKeptSheetOpening<KeptMarkDone>(keptName);
+  const stored = useKeptSheetOpening<KeptMarkDone>(keptName, {
+    waitsOnSend: true,
+  });
   const fits =
     stored !== undefined &&
     stored.proofKind === task.proofKind &&
@@ -179,6 +178,12 @@ export function MarkDoneSheet({
   );
   const [problem, setProblem] = useState<string | null>(initialProblem);
   const [busy, setBusy] = useState(false);
+  // Opened while an earlier visit's send is still out (#5086): it shows what
+  // that visit sent, locked until the send settles, and closes if it lands.
+  const locked = busy || kept.sendingElsewhere;
+  useEffect(() => {
+    if (kept.landedElsewhere) dismiss();
+  }, [kept.landedElsewhere, dismiss]);
   const [adding, setAdding] = useState(false);
   // Set before the first await, so two taps in one frame send once.
   const sending = useRef(false);
@@ -191,7 +196,7 @@ export function MarkDoneSheet({
   const kind = task.proofKind;
 
   const addPhotos = async () => {
-    if (picking.current || sending.current) return;
+    if (picking.current || sending.current || kept.sendingElsewhere) return;
     picking.current = true;
     setAdding(true);
     try {
@@ -214,7 +219,7 @@ export function MarkDoneSheet({
   };
 
   const submit = async () => {
-    if (sending.current) return;
+    if (sending.current || kept.sendingElsewhere) return;
     if (task.done) {
       setProblem(MARK_DONE_ALREADY_DONE);
       return;
@@ -310,11 +315,11 @@ export function MarkDoneSheet({
           onCancel={() => {
             // Held while a send runs: Cancel can't call the write back, and
             // giving the draft up here would lose it if the write fails.
-            if (sending.current) return;
+            if (sending.current || kept.sendingElsewhere) return;
             kept.clear();
             dismiss();
           }}
-          cancelDisabled={busy}
+          cancelDisabled={locked}
         />
         <Text style={styles.subtitle} numberOfLines={2}>
           {task.title}
@@ -337,7 +342,7 @@ export function MarkDoneSheet({
                 setPhotos((current) => current.filter((_, i) => i !== index))
               }
               onAdd={() => void addPhotos()}
-              disabled={busy}
+              disabled={locked}
               adding={adding}
             />
           </View>
@@ -347,7 +352,7 @@ export function MarkDoneSheet({
             <BottomSheetTextInput
               value={link}
               onChangeText={setLink}
-              editable={!busy}
+              editable={!locked}
               placeholder="https://"
               placeholderTextColor={tokens.color.text.muted}
               accessibilityLabel="Link"
@@ -366,7 +371,7 @@ export function MarkDoneSheet({
             <BottomSheetTextInput
               value={note}
               onChangeText={setNote}
-              editable={!busy}
+              editable={!locked}
               placeholder="What you changed"
               placeholderTextColor={tokens.color.text.muted}
               accessibilityLabel="Reply to the officer"
@@ -386,8 +391,8 @@ export function MarkDoneSheet({
         <SheetPrimaryButton
           label={TASK_ACTION_LABELS.complete}
           onPress={() => void submit()}
-          disabled={busy}
-          busy={busy}
+          disabled={locked}
+          busy={locked}
           accent={accent}
           onAccent={tokens.color.gold.onHouse}
         />

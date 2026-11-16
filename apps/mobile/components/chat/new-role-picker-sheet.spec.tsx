@@ -32,6 +32,7 @@ import {
   NO_PICKABLE_ROLES_LINE,
   type NewRolePickerSheetProps,
 } from "./new-role-picker-sheet";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 const role = (id: string, name: string, selfAssignable = true) => ({
   id,
@@ -169,5 +170,15 @@ describe("New role picker sheet (#4958)", () => {
     expect(screenText(tree)).toContain(NO_PICKABLE_ROLES_LINE);
     expect(postButton(tree).props.disabled).toBe(true);
     act(() => tree.unmount());
+  });
+});
+
+describe("NewRolePickerSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <NewRolePickerSheet ref={ref} onPost={vi.fn()} />
+      </FrappThemeProvider>
+    ));
   });
 });

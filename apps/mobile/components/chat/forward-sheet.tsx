@@ -16,11 +16,7 @@ import {
   type TextInput,
   View,
 } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useQueryClient } from "@tanstack/react-query";
 import type { TextInput as GestureTextInput } from "react-native-gesture-handler";
 import { randomClientId } from "@repo/api-sdk";
@@ -81,6 +77,7 @@ import {
   mentionPickFor,
   useMentionPicker,
 } from "./mention-picker";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /** As the report form: the sheet holds a list, so it takes a fixed detent. */
 const FORWARD_SNAP_POINTS = ["85%"];

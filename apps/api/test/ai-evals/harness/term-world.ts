@@ -392,6 +392,8 @@ export function createTermWorld(
       proof_link: null,
       sent_back_reason: null,
       completion_note: null,
+      series_id: null,
+      occurrence_date: null,
       created_at: stamp,
     };
   };
@@ -1052,7 +1054,11 @@ export function createTermWorld(
   };
 
   // ------------------------------------------------------------ the tools
-  const scope = new ConversationScope(channelReads as never, members as never);
+  const scope = new ConversationScope(
+    channelReads as never,
+    members as never,
+    rbac as never,
+  );
   const held: Record<string, unknown> = {
     MemberService: members,
     RbacService: rbac,
@@ -1153,7 +1159,7 @@ export function createTermWorld(
   const acting = [
     new GivePointsActTool(people, events as never, attendance as never),
     new CreateTaskActTool(people),
-    new CreateEventActTool(),
+    new CreateEventActTool(events as never, { list: async () => [] } as never),
   ];
   const act = new ActService(
     gateway,

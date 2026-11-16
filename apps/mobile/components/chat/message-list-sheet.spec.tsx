@@ -49,6 +49,7 @@ import {
   type ListedMessage,
   type MessageListKind,
 } from "./message-list-sheet";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 const NAMES: Record<string, string> = { u1: "Blake", u2: "Casey" };
 const nameFor = (id: string) => NAMES[id] ?? null;
@@ -286,5 +287,21 @@ describe("Saved messages (#3723)", () => {
 
   it("says when nothing is saved", () => {
     expect(text(render("saved"))).toContain(SAVED_EMPTY);
+  });
+});
+
+describe("MessageListSheet — dismissed by the thread while closed (#4229)", () => {
+  it("never reaches the modal unless it is up, so Pinned still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <MessageListSheet
+          ref={ref}
+          kind="pinned"
+          channelId="c1"
+          nameFor={nameFor}
+          onOpen={vi.fn()}
+        />
+      </FrappThemeProvider>
+    ));
   });
 });

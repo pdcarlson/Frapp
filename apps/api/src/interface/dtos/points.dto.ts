@@ -212,6 +212,7 @@ const TRANSACTION_CATEGORIES = [
   'FINE',
   'MANUAL',
   'STUDY',
+  'PREDICTION',
 ] as const;
 
 export class ListPointTransactionsQueryDto {

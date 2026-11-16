@@ -39,7 +39,11 @@
 //   meeting recorder's microphone in the permissions clause, and the camera
 //   for s18's Scan code (#4763; the camera was dropped and restored the same
 //   day, before any 0.13.0 build), moved only the Privacy pin on those
-//   precedents; whether each of these is material, and
+//   precedents. The 2026-11-16 privacy-copy pass (#5129 push-token device
+//   label, #4611 task photos, #4530 the study zone map's providers, #4914
+//   Ask's 90-day trace, #4787 groups, class year, service hours and study time in the AI data
+//   list) moved only the Privacy pin on those precedents too,
+//   pending the owner's ruling in its PR; whether each of these is material, and
 //   what each ruling does, is spec/behavior/legal.md § Acceptance record's.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
@@ -79,7 +83,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "September 2026",
-    fingerprint: "3a94468a6653140a",
+    fingerprint: "2cf8b46feac7fb17",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",

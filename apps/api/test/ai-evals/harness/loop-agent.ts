@@ -57,7 +57,9 @@ const ASKED_BACK = {
  * already held the quote to that text. What is checked against the corpus
  * here is the member's words, which is all the synthetic message holds.
  */
-// The time can be followed by ", replying in a thread" or ", mentioning you".
+// The time can be followed by how it was written: ", posting an
+// announcement", ", replying in the thread of message <id>", ", mentioning
+// you". The author can carry their roles in brackets.
 const SAID =
   /^[^\n:]*? in #[\w-]+ on [^\n:]*? at \d{1,2}:\d{2}\s?(?:AM|PM)(?:, [^:\n]+)?: /;
 function saidIn(quote: string): string {

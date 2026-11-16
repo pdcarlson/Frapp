@@ -25,12 +25,10 @@ function byScore(a: CorpusPassage, b: CorpusPassage): number {
 
 /** Stamped on the ledger row of every question's embed call. */
 const CORPUS_QUERY_PROMPT_VERSION = 'corpus.query@v1';
-/**
- * What a chat passage's score is multiplied by: chat ranks below official
- * sources (`ai.md` § Chat as a source), so a chat passage has to match much
- * better than a document or minutes to take its place.
- */
-const CHAT_RANK_WEIGHT = 0.5;
+// Chat is ranked by how well it matches, like any other source. Its score
+// used to be halved and official passages always put first (C8); Paul
+// removed both on 2026-11-16 (#5179): each source tells the model what it
+// is, and the model weighs it (`ai.md` § Context over rules).
 /** How many candidates each half (nearest, best words) contributes. */
 const CANDIDATES_PER_HALF = 40;
 const DEFAULT_LIMIT = 8;
@@ -113,7 +111,7 @@ export interface CorpusPassage {
 export type CorpusRetrievalResult =
   | {
       status: 'ok';
-      /** Official sources first, then chat; each by score. */
+      /** Best match first, whatever the source. */
       passages: CorpusPassage[];
       /**
        * How many messages were left out of the conversations the chat
@@ -146,9 +144,9 @@ export type CorpusRetrievalResult =
  *    passage (`CorpusSourceAdapter.admit`): chat drops a passage by an author
  *    who no longer says yes, or by someone the asker blocked (#4314).
  * 5. What is left is merged by reciprocal rank fusion, with no reranker; a
- *    source that dates (minutes, chat) is weighted by its age, and chat by
- *    {@link CHAT_RANK_WEIGHT}. The passages come back official first, then
- *    chat, with how many messages the chat they came from left out.
+ *    source that dates (minutes, chat) is weighted by its age. The passages
+ *    come back best first, with how many messages the chat they came from
+ *    left out.
  *
  * This is a service, not a route: Ask (#450) and the features after it call
  * it and hand the passages to the gateway as sources.
@@ -261,15 +259,10 @@ export class CorpusRetrievalService {
       readable,
     );
 
-    const top = admitted
+    const passages = admitted
       .map((candidate) => this.passage(candidate, now))
       .sort(byScore)
       .slice(0, limit);
-    // Official sources reach a model first, then chat (C8).
-    const passages = [
-      ...top.filter((passage) => passage.sourceType !== CHAT_SOURCE_TYPE),
-      ...top.filter((passage) => passage.sourceType === CHAT_SOURCE_TYPE),
-    ];
     return {
       status: 'ok',
       passages,
@@ -398,7 +391,7 @@ export class CorpusRetrievalService {
       sourceAt: chat
         ? (candidate.anchor_at ?? candidate.source_at)
         : candidate.source_at,
-      score: fused * recencyWeight(ageDays) * (chat ? CHAT_RANK_WEIGHT : 1),
+      score: fused * recencyWeight(ageDays),
       matchedBy,
       channelId: chat ? candidate.channel_id : null,
       messageId: chat ? candidate.anchor_id : null,

@@ -40,8 +40,8 @@ name: Mobile update
 # never sees `SENTRY_AUTH_TOKEN`, the source-map upload never sees
 # `EXPO_TOKEN`.
 #
-# Honest limit, wider than the store build's: `eas build` bundles on EAS's
-# worker, but `eas update` bundles here, so Metro, Babel and every transformer
+# Honest limit, the store build's too since it moved to GitHub's runners
+# (#5162): `eas update` bundles here, so Metro, Babel and every transformer
 # in the deployed tree's `node_modules` run in the process that holds
 # `EXPO_TOKEN`, a token that can publish to every installed app. Those are
 # lockfile-pinned, reviewed dependencies, but a compromised one would see the

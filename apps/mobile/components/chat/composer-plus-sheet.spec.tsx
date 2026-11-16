@@ -17,6 +17,7 @@ import {
   presentEventOutcome,
   presentPostOutcome,
 } from "./use-composer-plus";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 function ctx(overrides: Partial<PlusMenuContext> = {}): PlusMenuContext {
   return {
@@ -67,6 +68,10 @@ function render(
       },
     );
   });
+  // What gorhom reports as `present()` starts bringing the sheet up.
+  act(() =>
+    tree.root.findByType("BottomSheetModal" as never).props.onAnimate(-1, 0),
+  );
   return { tree, onPhoto, onOpenForm };
 }
 
@@ -208,5 +213,21 @@ describe("presentEventOutcome", () => {
     expect(alert).toHaveBeenCalledTimes(2);
     expect(alert.mock.calls[0]![1]).toMatch(/only for some roles/);
     expect(alert.mock.calls[1]![1]).toMatch(/couldn't be posted in chat/);
+  });
+});
+
+describe("ComposerPlusSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <ComposerPlusSheet
+          ref={ref}
+          model={plusMenuModel(ctx())}
+          photoDisabledReason={null}
+          onPhoto={vi.fn()}
+          onOpenForm={vi.fn()}
+        />
+      </FrappThemeProvider>
+    ));
   });
 });

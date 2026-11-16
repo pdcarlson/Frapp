@@ -43,6 +43,9 @@ export const ChapterPointsConfigSchema = z.object({
   // Ceiling is the ledger's own per-row bound: an adjustment can never exceed
   // +/-POINTS_ADJUSTMENT_MAX, so a threshold above it could never fire.
   anomaly_threshold: z.number().int().min(1).max(POINTS_ADJUSTMENT_MAX),
+  // Most one member may stake on one prediction (#5133); points carry
+  // standing, so the default stays small next to an event award.
+  prediction_max_stake: z.number().int().min(1).max(POINTS_ADJUSTMENT_MAX),
 });
 
 /**
@@ -72,6 +75,7 @@ export type ChapterServiceConfig = z.infer<typeof ChapterServiceConfigSchema>;
 export const CHAPTER_POINTS_CONFIG_DEFAULTS: ChapterPointsConfig = {
   adjustment_rate_limit_per_hour: 50,
   anomaly_threshold: 100,
+  prediction_max_stake: 25,
 };
 
 /**

@@ -34,7 +34,7 @@ import {
   SHEET_STACK_BEHAVIOR,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  useGuardedSheetRef,
 } from "@/components/sheet-scaffold";
 
 /**
@@ -78,8 +78,9 @@ export const ScheduleSendSheet = forwardRef<
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const closeSheet = useSheetClose(ref);
-  const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-    useSheetVisit(ref);
+  // Its host also dismisses it on every blur, up or not (#5059).
+  const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+    useGuardedSheetRef(ref);
   const [mountedAt] = useState(() => new Date());
   const presets = schedulePresets(openedAt ?? mountedAt);
   const [custom, setCustom] = useState<Date | null>(null);
@@ -121,7 +122,7 @@ export const ScheduleSendSheet = forwardRef<
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       enableDynamicSizing
       backgroundStyle={backgroundStyle}

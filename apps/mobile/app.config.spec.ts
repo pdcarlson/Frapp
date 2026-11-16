@@ -1446,6 +1446,11 @@ describe("iOS privacy manifest (#2294)", () => {
     // FileTimestamp / C617.1 was required by #2296's acceptance criteria. It
     // covers the app's own container reads, and sentry-cocoa's and the
     // prebuilt SDWebImage's timestamp reads, neither of which ships a manifest.
+    // 3B52.1 (#3401) covers expo-document-picker, which reads a picked
+    // file's `contentModificationDateKey` (DocumentPickerModule.swift) and
+    // ships no manifest. 3B52.1 is Apple's reason for "files or directories
+    // the user specifically granted access to, such as using a document
+    // picker view controller", which is exactly that read.
     // 0A2A.1 is NOT added: Apple reserves it for a third-party SDK wrapping
     // timestamp APIs, so it is a reason for an SDK's manifest, not the app's.
     //
@@ -1470,7 +1475,7 @@ describe("iOS privacy manifest (#2294)", () => {
         },
         {
           NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
-          NSPrivacyAccessedAPITypeReasons: ["C617.1"],
+          NSPrivacyAccessedAPITypeReasons: ["C617.1", "3B52.1"],
         },
         {
           NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategorySystemBootTime",
@@ -1503,8 +1508,19 @@ describe("media picker dependencies (#2296, #2464)", () => {
     expect(all["expo-image-picker"]).toBeDefined();
     expect(all["expo-image-manipulator"]).toBeDefined();
 
-    // Still absent, and for the original reason: no surface picks a document.
-    expect(all["expo-document-picker"]).toBeUndefined();
+    // Back with s21's Files pick (#3401), `lib/more/document-upload.ts`, the
+    // surface #1045 added it a month ahead of. The test below holds it to
+    // that importer.
+    expect(all["expo-document-picker"]).toBeDefined();
+  });
+
+  it("keeps a source importer for the document picker", () => {
+    const mobileRoot = path.dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(
+      path.join(mobileRoot, "lib/more/document-upload.ts"),
+      "utf8",
+    );
+    expect(source).toContain('import("expo-document-picker")');
   });
 
   it("keeps a source importer for every media picker it depends on", () => {

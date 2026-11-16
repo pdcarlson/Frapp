@@ -57,10 +57,10 @@ export const CI_CHECKS = [
   // ROLLOUT: list a check in the PR that adds its job; listing writes nothing to
   // GitHub. Apply branch protection only after that PR merges and the job has run
   // green, or every open PR blocks on a context nobody reports. Applying is a
-  // human step with an admin PAT, and a live PUT of the whole roster; an agent
-  // session runs only `npm run configure:branch-protection:verify`, which writes
-  // nothing (docs/ops/github-branch-protection-runbook.md § Prerequisites, which
-  // also covers the `--dry-run` separator trap). The notes below that say "same
+  // human step with an admin PAT, and a live PUT of the whole roster; the
+  // read-only `npm run configure:branch-protection:verify` is a laptop step too,
+  // and an agent session runs neither (docs/ops/github-branch-protection-runbook.md
+  // § Prerequisites, which also covers the `--dry-run` separator trap). The notes below that say "same
   // caveat as secret-scan" inherit this one.
   "secret-scan",
   // `npm ci && check-types && lint` with no prebuilt packages, so a regression
@@ -103,7 +103,7 @@ export const CI_CHECKS = [
   // Vercel's production install; #1331 and #1372 reached production through
   // that gap (#1371). Unfiltered by path, because `changes.web` does not cover
   // apps/landing. ROLLOUT: same caveat as secret-scan. Applying is a human step
-  // with an admin PAT; an agent session runs
+  // with an admin PAT; so is the read-only
   // `npm run configure:branch-protection:verify`.
   "web-production-build",
   // Every migration applied from empty to PGlite, asserting RLS on every

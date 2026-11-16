@@ -84,8 +84,11 @@ interface FakeChannel {
  */
 function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
   let captured: ((status: SubscribeStatus) => void) | null = null;
-  let onChange: ((payload: { new?: unknown; old?: unknown }) => void) | null =
-    null;
+  /** `chat_messages` handlers by the event they were bound for (`*` included). */
+  const onChange = new Map<
+    string,
+    (payload: { new?: unknown; old?: unknown }) => void
+  >();
   const onBroadcast = new Map<string, (msg: { payload: unknown }) => void>();
   const channel: FakeChannel = {
     topic: `realtime:${topic}`,
@@ -104,11 +107,13 @@ function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
             `cannot add \`${type}\` callbacks for ${channel.topic} after \`subscribe()\`.`,
           );
         }
+        const bound = filter as { table?: string; event?: string } | undefined;
         if (
           type === "postgres_changes" &&
-          (filter as { table?: string } | undefined)?.table === "chat_messages"
+          bound?.table === "chat_messages" &&
+          handler
         ) {
-          onChange = handler ?? null;
+          onChange.set(bound.event ?? "*", handler);
         }
         if (type === "broadcast" && handler) {
           onBroadcast.set(
@@ -140,9 +145,16 @@ function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
       channel.state = status === "SUBSCRIBED" ? "joined" : "errored";
       captured(status);
     },
+    // Delivered as Realtime does: to the `*` binding, or to the one bound for
+    // this frame's event. A frame with no event is an INSERT. A frame no
+    // binding listens for is dropped, never handed to the wrong handler.
     emitPostgresChange: (payload) => {
-      if (!onChange) throw new Error("postgres_changes handler not captured");
-      onChange(payload);
+      if (onChange.size === 0) {
+        throw new Error("postgres_changes handler not captured");
+      }
+      const handler =
+        onChange.get("*") ?? onChange.get(payload.eventType ?? "INSERT");
+      handler?.(payload);
     },
     emitBroadcast: (event, payload) => {
       const handler = onBroadcast.get(event);
@@ -2122,14 +2134,24 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
     ...extra,
   });
 
-  test("joins one inbox listening for every new chat message, unfiltered (RLS does the scoping server-side)", () => {
+  test("joins one inbox listening for new and changed chat messages, unfiltered (RLS does the scoping server-side)", () => {
     const ch = inbox();
     expect(ch).toBeDefined();
-    expect(ch.on).toHaveBeenCalledWith(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "chat_messages" },
-      expect.any(Function),
-    );
+    for (const event of ["INSERT", "UPDATE"]) {
+      expect(ch.on).toHaveBeenCalledWith(
+        "postgres_changes",
+        { event, schema: "public", table: "chat_messages" },
+        expect.any(Function),
+      );
+    }
+  });
+
+  test("never binds DELETE, which Realtime sends past RLS (#4442 review)", () => {
+    const events = inbox()
+      .on.mock.calls.filter(([type]) => type === "postgres_changes")
+      .map(([, filter]) => (filter as { event: string }).event);
+    expect(events).not.toContain("*");
+    expect(events).not.toContain("DELETE");
   });
 
   test("a new message is reported with its channel and sender", () => {
@@ -2140,6 +2162,38 @@ describe("ChatRealtimeManager — inbox and resume keep every channel live (#369
       channelId: "elsewhere",
       senderId: OTHER,
     });
+  });
+
+  test("an edit or a delete is reported as a change to its channel (#4442)", () => {
+    inbox().emitPostgresChange({
+      eventType: "UPDATE",
+      new: row("dm", { edited_at: "2026-11-08T00:01:00.000Z" }),
+    });
+    inbox().emitPostgresChange({
+      eventType: "UPDATE",
+      new: row("dm2", { is_deleted: true }),
+    });
+    expect(activity).toHaveBeenNthCalledWith(1, {
+      type: "changed",
+      channelId: "dm",
+      messageId: "m-dm",
+      deleted: false,
+    });
+    expect(activity).toHaveBeenNthCalledWith(2, {
+      type: "changed",
+      channelId: "dm2",
+      messageId: "m-dm2",
+      deleted: true,
+    });
+  });
+
+  test("an UPDATE of an unedited, undeleted row (a pin, a reply count) is not activity", () => {
+    inbox().emitPostgresChange({
+      eventType: "UPDATE",
+      new: row("c1", { is_pinned: true }),
+    });
+    inbox().emitPostgresChange({ eventType: "DELETE", old: { id: "m-c1" } });
+    expect(activity).not.toHaveBeenCalled();
   });
 
   test("an archive import is not activity", () => {

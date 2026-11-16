@@ -204,7 +204,10 @@ docs angle in [`diff-review`](../diff-review/angles.md), and
 
 ### Branch protection
 
-From an agent session, run only the read-only diff:
+A session doesn't read or apply branch protection: judge it by behaviour, or record it as
+unverified for Paul
+([`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy)).
+On a laptop, the read-only diff is:
 
 ```bash
 npm run configure:branch-protection:verify
@@ -215,8 +218,7 @@ prints `Mode: LIVE`). `npm run configure:branch-protection --dry-run` without th
 also applies, because npm swallows the flag and the script sees no arguments. Applying branch
 protection is a human step with a person's own admin token; an audit never applies.
 
-In a session, `:verify` reads through the agent proxy (the npm script passes `--use-env-proxy`),
-since sessions carry no GitHub token of their own; on a laptop it reads `GITHUB_PAT` or an alias
+It reads `GITHUB_PAT` or an alias
 ([`github-branch-protection-runbook.md`](../../../docs/ops/github-branch-protection-runbook.md)).
 `:verify` exits non-zero and names each divergence from `CI_CHECKS` / `DOCS_CHECKS` /
 `DRIFT_CHECKS` in `scripts/ci/lib/required-checks.mjs`, which is the comparand. The human-readable

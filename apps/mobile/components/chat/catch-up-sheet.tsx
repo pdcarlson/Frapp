@@ -7,10 +7,7 @@ import {
   type RefObject,
 } from "react";
 import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useChatCatchUp, type ChatCatchUpTarget } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
@@ -41,9 +38,11 @@ import {
   SheetBackToClose,
   SheetGrabber,
   SheetScrim,
+  useGuardedSheetRef,
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Catch me up on the phone (#3946, `spec/behavior/ai.md` § Catch me up): a
@@ -317,12 +316,15 @@ function CatchUpSheet({
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
+  // The thread dismisses it on every channel switch, up or not (#5059): the
+  // ref it holds only reaches a sheet that is up.
+  const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(sheetRef);
   const close = useCallback(() => sheetRef.current?.dismiss(), [sheetRef]);
   const working = !held && run?.phase === "working";
 
   return (
     <BottomSheetModal
-      ref={sheetRef}
+      ref={modalRef}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       // One fixed height: with dynamic sizing the sheet would grow with
       // every group that lands.
@@ -331,7 +333,11 @@ function CatchUpSheet({
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
-      onDismiss={onDismiss}
+      onAnimate={onAnimate}
+      onDismiss={() => {
+        markClosed();
+        onDismiss();
+      }}
     >
       <SheetBackToClose onClose={close} />
       {scope ? (

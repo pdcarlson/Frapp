@@ -1,6 +1,17 @@
+import {
+  ArgumentMetadata,
+  BadRequestException,
+  ValidationPipe,
+} from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { ListTasksQueryDto } from './task.dto';
+import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
+import {
+  CreateTaskDto,
+  DeleteTaskQueryDto,
+  ListTasksQueryDto,
+  UpdateTaskDto,
+} from './task.dto';
 
 /**
  * `GET /v1/tasks` (#4037). The cursor's two halves gate each other through
@@ -55,5 +66,76 @@ describe('ListTasksQueryDto', () => {
     ],
   ])('refuses %s', async (_name, payload, property) => {
     expect(await invalid(payload)).toEqual([property]);
+  });
+});
+
+/**
+ * A repeating task's `recurrence_rule` and `scope` (#5119) through the real
+ * global pipe, as `bootstrap.ts` registers it. The service specs build their
+ * inputs directly, so without this nothing would notice the DTO falling back
+ * to the event rule, which refuses a rule with no end: the headline case.
+ */
+describe('Task DTOs — repeating tasks (#5119)', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const transform = (
+    metatype: ArgumentMetadata['metatype'],
+    payload: unknown,
+    type: ArgumentMetadata['type'] = 'body',
+  ) => pipe.transform(payload, { type, metatype });
+
+  const create = {
+    title: 'Kitchen duty',
+    assignee_id: '0a000000-0000-4000-8000-000000000001',
+    due_date: '2026-11-16',
+  };
+
+  it.each([
+    ['create', CreateTaskDto, create],
+    ['update', UpdateTaskDto, { scope: 'series' }],
+  ] as const)(
+    '%s accepts a rule with no end, COUNT or UNTIL',
+    async (_, dto, base) => {
+      for (const rule of [
+        'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York',
+        'FREQ=DAILY;INTERVAL=2;COUNT=10;TZID=UTC',
+        'FREQ=MONTHLY;INTERVAL=1;BYMONTHDAY=31;UNTIL=20270601;TZID=UTC',
+      ]) {
+        await expect(
+          transform(dto, { ...base, recurrence_rule: rule }),
+        ).resolves.toEqual(expect.objectContaining({ recurrence_rule: rule }));
+      }
+    },
+  );
+
+  it.each([
+    ['create', CreateTaskDto, create],
+    ['update', UpdateTaskDto, { scope: 'series' }],
+  ] as const)('%s refuses legacy tokens and junk', async (_, dto, base) => {
+    for (const rule of [
+      'WEEKLY',
+      'FREQ=WEEKLY;BYDAY=MO',
+      'FREQ=DAILY;COUNT=3;UNTIL=20270101;TZID=UTC',
+      'x'.repeat(201),
+      12,
+    ]) {
+      await expect(
+        transform(dto, { ...base, recurrence_rule: rule }),
+      ).rejects.toThrow(BadRequestException);
+    }
+  });
+
+  it('takes only the two scopes, on an edit and a delete', async () => {
+    await expect(
+      transform(UpdateTaskDto, { scope: 'series' }),
+    ).resolves.toEqual(expect.objectContaining({ scope: 'series' }));
+    await expect(
+      transform(DeleteTaskQueryDto, { scope: 'instance' }, 'query'),
+    ).resolves.toEqual(expect.objectContaining({ scope: 'instance' }));
+    await expect(transform(UpdateTaskDto, { scope: 'all' })).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(
+      transform(DeleteTaskQueryDto, { scope: 'following' }, 'query'),
+    ).rejects.toThrow(BadRequestException);
   });
 });

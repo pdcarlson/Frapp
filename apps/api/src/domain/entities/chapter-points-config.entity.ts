@@ -28,6 +28,11 @@ export interface ChapterPointsConfig {
    * outright and lives in the DTO.
    */
   anomaly_threshold: number;
+  /**
+   * Most one member may stake in total on one prediction (#5133,
+   * `spec/behavior/predictions.md` § Who can stake). Default 25.
+   */
+  prediction_max_stake: number;
   created_at: string;
   updated_at: string;
 }
@@ -45,4 +50,5 @@ export type PointsConfig = Omit<
 export const POINTS_CONFIG_FIELDS = [
   'adjustment_rate_limit_per_hour',
   'anomaly_threshold',
+  'prediction_max_stake',
 ] as const satisfies ReadonlyArray<keyof PointsConfig>;

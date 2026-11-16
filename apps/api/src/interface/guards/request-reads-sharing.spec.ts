@@ -54,6 +54,7 @@ describe('one GET reads membership and roles once (#3728)', () => {
       const chain: Record<string, unknown> = {};
       chain.select = () => chain;
       chain.eq = () => chain;
+      chain.is = () => chain;
       chain.in = () => chain;
       chain.maybeSingle = answer;
       chain.then = (

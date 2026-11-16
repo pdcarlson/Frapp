@@ -22,13 +22,20 @@
  * `/realtime-manager`); the package has no barrel (#3228).
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useChatActivityHandler,
   useFrappClient,
   useViewerUserId,
+  type ChatActivity,
 } from "@repo/hooks";
 import type { OutboxStore } from "@repo/chat-core/adapters";
 import type { ChatActionContext } from "@repo/chat-core/chat-client";
@@ -41,6 +48,7 @@ import { useLatestTrack } from "@/lib/use-latest-track";
 import { useIsApiAuthenticated } from "@/lib/use-is-api-authenticated";
 import { getSupabaseClient } from "@/lib/supabase";
 import { connectionMonitor } from "@/lib/connection/monitor";
+import { dismissDeletedMessagePushes } from "@/lib/notifications/push";
 import { useChatScope } from "./chat-scope";
 import { getDraftStore, type DraftStore } from "./draft-store";
 import { createAsyncStorageKeyValueStore } from "./key-value-store";
@@ -123,7 +131,18 @@ export function useChatRealtimeBinding(): void {
   // token (the hazard `lib/notifications/use-badge-sync.ts` gates against).
   const signedIn = useIsApiAuthenticated();
   const viewerId = useViewerUserId({ enabled: signedIn });
-  const onMessageActivity = useChatActivityHandler(viewerId, isForeground);
+  const handleActivity = useChatActivityHandler(viewerId, isForeground);
+  // A delete seen live takes its push out of the tray at once (#4470); one
+  // made while the app was closed is caught by `use-badge-sync.ts`.
+  const onMessageActivity = useCallback(
+    (activity: ChatActivity) => {
+      handleActivity(activity);
+      if (activity.type === "changed" && activity.deleted) {
+        void dismissDeletedMessagePushes(new Set([activity.messageId]));
+      }
+    },
+    [handleActivity],
+  );
   /**
    * Once bound, the manager is rebound on every viewer change, a `null` one
    * included: `configure({ viewerId: null })` rejoins the inbox and every

@@ -44,6 +44,8 @@ export interface CatchUpMessage {
   threadRootId: string | null;
   /** The message `@`-mentions the reader. */
   mentionsReader: boolean;
+  /** `text`, `announcement` or `imported` (#4915). Missing reads as `text`. */
+  kind?: string;
 }
 
 /** A message as the model is shown it. `ref` is what a point names. */

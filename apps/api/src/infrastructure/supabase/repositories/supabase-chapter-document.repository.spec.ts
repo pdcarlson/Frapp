@@ -22,6 +22,8 @@ import {
 const DOC_A = '0a000000-0000-4000-8000-0000000000a0';
 const DOC_B = '0b000000-0000-4000-8000-0000000000a0';
 const FOLDER = 'Bylaws';
+const DRIVE_A = '0a000000-0000-4000-8000-0000000000a1';
+const DRIVE_B = '0b000000-0000-4000-8000-0000000000a1';
 
 const seed = () => ({
   chapter_documents: [
@@ -57,6 +59,52 @@ describe('SupabaseChapterDocumentRepository — tenant scope', () => {
       collisionExempt: { chapter_documents: ['storage_path'] },
     });
     repo = new SupabaseChapterDocumentRepository(harness.client);
+  });
+
+  it('findDriveCopies returns only the chapter’s Drive copies (#5157)', async () => {
+    harness = createTenantHarness({
+      tables: {
+        chapter_documents: [
+          ...seed().chapter_documents,
+          inA({
+            id: DRIVE_A,
+            title: 'Minutes',
+            folder: null,
+            storage_path: 'a/minutes.pdf',
+            uploaded_by: USER_SHARED,
+            drive_file_id: 'drive-file-1',
+          }),
+          inB({
+            id: DRIVE_B,
+            title: 'Minutes',
+            folder: null,
+            storage_path: 'b/minutes.pdf',
+            uploaded_by: USER_SHARED,
+            drive_file_id: 'drive-file-1',
+          }),
+        ],
+      },
+      collisionExempt: { chapter_documents: ['storage_path'] },
+    });
+    repo = new SupabaseChapterDocumentRepository(harness.client);
+
+    const copies = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findDriveCopies(CHAPTER_A),
+    );
+    expect(copies.map((d) => d.id)).toEqual([DRIVE_A]);
+
+    await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.updateDriveCopy(DRIVE_A, CHAPTER_B, { title: 'Crossed' }),
+    );
+    expect(
+      harness.rows('chapter_documents').find((r) => r.id === DRIVE_A)?.title,
+    ).toBe('Minutes');
+
+    // An upload is never rewritten as a Drive copy.
+    await repo.updateDriveCopy(DOC_A, CHAPTER_A, { title: 'Crossed' });
+    expect(
+      harness.rows('chapter_documents').find((r) => r.id === DOC_A)?.title,
+    ).toBe('Constitution');
   });
 
   it('findByChapter returns only the caller chapter documents', async () => {

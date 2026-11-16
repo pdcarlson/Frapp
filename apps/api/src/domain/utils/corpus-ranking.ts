@@ -8,7 +8,9 @@
  * extractor, what a minutes section renders as). Every source indexed under
  * an older number is then indexed again in the background.
  */
-export const CORPUS_PIPELINE_VERSION = 1;
+// 2 (#4915, 2026-11-16): a chat line names its kind ("posting an
+// announcement", "in history imported from Discord").
+export const CORPUS_PIPELINE_VERSION = 2;
 
 /**
  * What a source's passages were made with. A source whose stored fingerprint

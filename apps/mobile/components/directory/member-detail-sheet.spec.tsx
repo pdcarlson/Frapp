@@ -149,6 +149,7 @@ import {
   PRESENCE_NOT_READY,
   setChapterPresence,
 } from "@/lib/presence/presence-store";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 const dismiss = vi.fn();
 const present = vi.fn();
@@ -1179,5 +1180,15 @@ describe("MemberDetailSheet presence (#3917)", () => {
           node.props.children === "In lab until 6",
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe("MemberDetailSheet — dismissed by the thread while closed (#4229)", () => {
+  it("never reaches the modal unless it is up, so a profile still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <MemberDetailSheet ref={ref} member={null} />
+      </FrappThemeProvider>
+    ));
   });
 });

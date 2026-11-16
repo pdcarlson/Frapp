@@ -16,6 +16,7 @@ import type {
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   MemberContext,
+  authUserIdOf,
   RequestContext,
   getActiveChapterClaim,
   getHeaderValue,
@@ -140,6 +141,9 @@ function lookupAppUser(
         .from('users')
         .select('id')
         .eq('supabase_auth_id', supabaseAuthId)
+        // A deleted account's tombstone is no user (#5043): a read verified
+        // locally may still carry its token, and this refuses it at once.
+        .is('deleted_at', null)
         .maybeSingle<{ id: string }>(),
     );
   return keepAnswerForRequest(`chapter-guard:user:${supabaseAuthId}`, () =>
@@ -466,8 +470,12 @@ export class ChapterGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestContext>();
 
-    const supabaseUser = request.supabaseUser;
-    if (!supabaseUser) {
+    // Whichever way `SupabaseAuthGuard` checked the session: with Auth, or
+    // locally on a read that opted in (#5043). Either way the `users` row and
+    // membership below are read afresh, which is what refuses a deleted user
+    // or a removed member at once on the local path.
+    const authUserId = authUserIdOf(request);
+    if (!authUserId) {
       throw new ForbiddenException(
         'Authentication required before chapter check',
       );
@@ -482,7 +490,7 @@ export class ChapterGuard implements CanActivate {
       requested.kind === 'explicit' ? requested.chapterId : undefined;
 
     const [appUserResult, prefetchedChapter] = await Promise.all([
-      lookupAppUser(this.supabase, supabaseUser.id),
+      lookupAppUser(this.supabase, authUserId),
       explicitChapterId
         ? lookupChapter(this.supabase, explicitChapterId)
         : undefined,

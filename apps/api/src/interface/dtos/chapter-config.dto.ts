@@ -294,6 +294,18 @@ export class PointsConfigDto {
   @Min(1)
   @Max(POINTS_ADJUSTMENT_MAX)
   anomaly_threshold?: number;
+
+  @ApiPropertyOptional({
+    description: `Most one member may stake in total on one prediction (default 25). Must be between 1 and ${POINTS_ADJUSTMENT_MAX}.`,
+    minimum: 1,
+    maximum: POINTS_ADJUSTMENT_MAX,
+    example: 25,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(POINTS_ADJUSTMENT_MAX)
+  prediction_max_stake?: number;
 }
 
 export class PatchChapterConfigDto {

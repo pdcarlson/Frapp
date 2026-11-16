@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import React, { act, useState } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
+import { ActionSheetIOS } from "react-native";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ActResponse,
@@ -150,12 +151,46 @@ function show(proposal: unknown): ReactTestRenderer {
   });
   return tree;
 }
-const byLabel = (tree: ReactTestRenderer, label: string) =>
+const labelMatches = (actual: unknown, label: string | RegExp) =>
+  typeof label === "string"
+    ? actual === label
+    : typeof actual === "string" && label.test(actual);
+const byLabel = (tree: ReactTestRenderer, label: string | RegExp) =>
   tree.root.findAll(
     (node) =>
       (node.type as unknown) === "Pressable" &&
-      node.props.accessibilityLabel === label,
+      labelMatches(node.props.accessibilityLabel, label),
   )[0];
+
+/** The card's one named action: "Give 5 points", "Create task", "Create event" (#5148). */
+const CONFIRM = /^(Give|Take away) \d+ points?$|^Create (event|task)$/;
+/** The ··· in the card's corner. */
+const MORE = /^More: /;
+
+/**
+ * Picks a row from a card's ··· menu (#5148): the iOS action sheet, as the
+ * suite runs, read from its call instead of drawn.
+ */
+async function fromMenu(
+  tree: ReactTestRenderer,
+  row: string,
+  index = 0,
+): Promise<void> {
+  const sheet = vi
+    .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+    .mockImplementation(() => undefined);
+  const more = tree.root.findAll(
+    (node) =>
+      (node.type as unknown) === "Pressable" &&
+      labelMatches(node.props.accessibilityLabel, MORE),
+  )[index]!;
+  act(() => more.props.onPress());
+  const [options, pick] = sheet.mock.calls.at(-1) ?? [];
+  sheet.mockRestore();
+  const at = (options?.options ?? []).indexOf(row);
+  if (at < 0 || !pick) throw new Error(`No "${row}" in the card's menu`);
+  await act(async () => pick(at));
+}
 
 const BASE = {
   action: null,
@@ -236,20 +271,20 @@ describe("a proposal in the Ask conversation", () => {
     // Confirm is the chapter's solid accent, as web's is (#4702).
     const confirmStyle: Record<string, unknown> = Object.assign(
       {},
-      ...[byLabel(tree, ACT_COPY.confirm).props.style({ pressed: false })]
+      ...[byLabel(tree, CONFIRM).props.style({ pressed: false })]
         .flat(Infinity)
         .filter(Boolean),
     );
     expect(confirmStyle.backgroundColor).toBe("#7C3AED");
 
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
     // Nothing was changed on the card, so nothing is sent but the yes.
     expect(hooks.accept).toHaveBeenCalledWith({ id: "sg-1" });
     const after = screenText(tree);
     // One line in the card's place: what it was about, and what happened.
     expect(after).toContain("Came to chapter");
     expect(after).toContain(actPointsDoneLine(5, 2, 0));
-    expect(byLabel(tree, ACT_COPY.confirm)).toBeUndefined();
+    expect(byLabel(tree, CONFIRM)).toBeUndefined();
     // The phone has no points page to open.
     expect(onOpen).not.toHaveBeenCalled();
   });
@@ -272,7 +307,7 @@ describe("a proposal in the Ask conversation", () => {
     ).toEqual(["u2", "u3"]);
     act(() => picker.props.onPick("u3"));
 
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
     expect(hooks.accept).toHaveBeenCalledWith({
       id: "sg-1",
       points: { target_user_ids: ["u1", "u3"] },
@@ -286,7 +321,7 @@ describe("a proposal in the Ask conversation", () => {
         byLabel(tree, `${ACT_COPY.remove_member} ${name}`).props.onPress(),
       );
     }
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
     expect(hooks.accept).not.toHaveBeenCalled();
     expect(screenText(tree)).toContain(ACT_COPY.no_members);
   });
@@ -296,7 +331,7 @@ describe("a proposal in the Ask conversation", () => {
       result: { outcome: { adjusted: 1, skipped: 1 } },
     });
     const tree = show(POINTS);
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
     expect(screenText(tree)).toContain(actPointsDoneLine(5, 1, 1));
   });
 
@@ -309,12 +344,12 @@ describe("a proposal in the Ask conversation", () => {
     async (code) => {
       hooks.accept.mockRejectedValue({ code });
       const tree = show(POINTS);
-      await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+      await act(async () => byLabel(tree, CONFIRM).props.onPress());
       const text = screenText(tree);
       expect(text).toContain(ACT_COPY.gone);
       expect(text).not.toContain(ACT_COPY.cancelled);
-      expect(byLabel(tree, ACT_COPY.confirm)).toBeUndefined();
-      expect(byLabel(tree, ACT_COPY.cancel)).toBeUndefined();
+      expect(byLabel(tree, CONFIRM)).toBeUndefined();
+      expect(byLabel(tree, MORE)).toBeUndefined();
     },
   );
 
@@ -323,27 +358,27 @@ describe("a proposal in the Ask conversation", () => {
     const line = actConfirmRefusalLine(code);
     hooks.accept.mockRejectedValue({ code });
     const tree = show(POINTS);
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
     // Whatever the shared map says for a code, or the plain failure line.
     expect(screenText(tree)).toContain(line ?? ACT_COPY.failed);
   });
 
   it("cancels a proposal, and treats one already gone as cancelled", async () => {
     const tree = show(POINTS);
-    await act(async () => byLabel(tree, ACT_COPY.cancel).props.onPress());
+    await fromMenu(tree, ACT_COPY.dismiss);
     expect(hooks.dismiss).toHaveBeenCalledWith("sg-1");
     expect(screenText(tree)).toContain(ACT_COPY.cancelled);
 
     hooks.dismiss.mockRejectedValue({ code: "ai.suggestion.expired" });
     const again = show(POINTS);
-    await act(async () => byLabel(again, ACT_COPY.cancel).props.onPress());
+    await fromMenu(again, ACT_COPY.dismiss);
     expect(screenText(again)).toContain(ACT_COPY.cancelled);
   });
 
   it("does not say cancelled for a card decided somewhere else: it may have been confirmed", async () => {
     hooks.dismiss.mockRejectedValue({ code: "ai.suggestion.decided" });
     const tree = show(POINTS);
-    await act(async () => byLabel(tree, ACT_COPY.cancel).props.onPress());
+    await fromMenu(tree, ACT_COPY.dismiss);
     const text = screenText(tree);
     expect(text).toContain(ACT_COPY.gone);
     expect(text).not.toContain(ACT_COPY.cancelled);
@@ -353,7 +388,7 @@ describe("a proposal in the Ask conversation", () => {
     const tree = show(TASK);
     expect(screenText(tree)).toContain("Book the bus");
     expect(screenText(tree)).toContain("Jordan Lee");
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
     expect(hooks.accept).toHaveBeenCalledWith({ id: "sg-2" });
     const text = screenText(tree);
     expect(text).toContain("Book the bus");
@@ -368,42 +403,80 @@ describe("a proposal in the Ask conversation", () => {
   it("opens the task form, not a task, when who or when is missing", async () => {
     const tree = show(MISSING_WHO);
     expect(screenText(tree)).toContain(ACT_COPY.pick_member);
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
     expect(hooks.accept).not.toHaveBeenCalled();
     expect((hooks.seed as { title: string }).title).toBe("Book the bus");
   });
 
-  it("confirms an event proposal, and links to Events", async () => {
-    const tree = show({
-      ...BASE,
-      status: "proposed",
-      action: "create_event",
-      suggestion: {
-        id: "sg-3",
-        kind: "event",
-        points: null,
-        task: null,
-        new_event: {
-          name: "Study night",
-          start_time: "2026-11-17T23:00:00Z",
-          end_time: "2026-11-18T01:00:00Z",
-          location: "Library",
-          is_mandatory: false,
-          point_value: null,
-          description: null,
-        },
+  const STUDY_NIGHT = {
+    ...BASE,
+    status: "proposed",
+    action: "create_event",
+    suggestion: {
+      id: "sg-3",
+      kind: "event",
+      points: null,
+      task: null,
+      new_event: {
+        name: "Study night",
+        start_time: "2026-11-17T23:00:00Z",
+        end_time: "2026-11-18T01:00:00Z",
+        location: "Library",
+        is_mandatory: false,
+        point_value: 10,
+        points_from: null,
+        event_type_id: null,
+        description: null,
       },
+    },
+  };
+
+  it("confirms an event proposal, and opens the event it made", async () => {
+    hooks.accept.mockResolvedValue({
+      result: { kind: "new_event", id: "ev-1" },
     });
+    const tree = show(STUDY_NIGHT);
     const text = screenText(tree);
     expect(text).toContain("Study night");
     expect(text).toContain("Library");
-    expect(text).toContain(ACT_COPY.optional);
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
-    expect(screenText(tree)).toContain(ACT_COPY.done_event);
-    act(() => byLabel(tree, ACT_COPY.open_events).props.onPress());
+    expect(text).toContain(ACT_COPY.everyone_optional);
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
+    const done = screenText(tree);
+    expect(done).toContain(ACT_COPY.done_event);
+    // The card stays, greyed, with what it made (Paul, 2026-11-16).
+    expect(done).toContain("Study night");
+    expect(done).toContain("Library");
+    act(() => byLabel(tree, ACT_COPY.open_event).props.onPress());
     expect(onOpen).toHaveBeenCalledWith({
-      href: "/events",
-      label: ACT_COPY.open_events,
+      href: "/event-details?id=ev-1",
+      label: ACT_COPY.open_event,
+    });
+  });
+
+  it("asks for points it can't fill, and sends what the officer enters (#5148)", async () => {
+    hooks.accept.mockResolvedValue({
+      result: { kind: "new_event", id: "ev-1" },
+    });
+    const tree = show({
+      ...STUDY_NIGHT,
+      suggestion: {
+        ...STUDY_NIGHT.suggestion,
+        new_event: { ...STUDY_NIGHT.suggestion.new_event, point_value: null },
+      },
+    });
+    expect(screenText(tree)).toContain(ACT_COPY.points_missing);
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
+    expect(hooks.accept).not.toHaveBeenCalled();
+    const input = tree.root.findAll(
+      (node) =>
+        typeof node.type === "string" &&
+        node.props.accessibilityLabel === ACT_COPY.points_label,
+    )[0]!;
+    act(() => input.props.onChangeText("5"));
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
+    expect(hooks.accept).toHaveBeenCalledWith({
+      id: "sg-3",
+      newEventPoints: 5,
     });
   });
 
@@ -434,10 +507,8 @@ describe("a proposal in the Ask conversation", () => {
 
     it("says a series repeats, written out", () => {
       const text = screenText(show(EVENT));
-      expect(text).toContain(ACT_COPY.field_repeats);
-      expect(text).toContain(
-        "Every Sunday, 13 times, the last on Sunday, February 7, 2027",
-      );
+      expect(text).toContain("Every Sunday until February 7, 2027");
+      expect(text).toContain("13 times");
     });
 
     it("opens New event filled in from the card, and Create there is the confirm", async () => {
@@ -499,14 +570,14 @@ describe("a proposal in the Ask conversation", () => {
       expect(screenText(tree)).toContain(actPointsHeadline(10, 2));
 
       act(() => field(ACT_COPY.field_reason).props.onChangeText("  "));
-      await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+      await act(async () => byLabel(tree, CONFIRM).props.onPress());
       expect(hooks.accept).not.toHaveBeenCalled();
       expect(screenText(tree)).toContain(ACT_COPY.no_reason);
 
       act(() =>
         field(ACT_COPY.field_reason).props.onChangeText("Came to chapter"),
       );
-      await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+      await act(async () => byLabel(tree, CONFIRM).props.onPress());
       expect(hooks.accept).toHaveBeenCalledWith({
         id: "sg-1",
         points: { amount: 10 },
@@ -524,7 +595,7 @@ describe("a proposal in the Ask conversation", () => {
       )[0];
       for (const typed of ["0", "2.5", "five"]) {
         act(() => amount.props.onChangeText(typed));
-        await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+        await act(async () => byLabel(tree, CONFIRM).props.onPress());
         expect(screenText(tree)).toContain(ACT_COPY.bad_amount);
       }
       expect(hooks.accept).not.toHaveBeenCalled();
@@ -551,7 +622,7 @@ describe("a proposal in the Ask conversation", () => {
 
   it("accepts a task finished in the form with what the officer set there", async () => {
     const tree = show(MISSING_WHO);
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
     const seed = hooks.seed as { accept: (form: unknown) => Promise<void> };
     await act(async () =>
       seed.accept({
@@ -584,7 +655,7 @@ describe("a proposal in the Ask conversation", () => {
       );
     }
     expect(screenText(tree)).toContain(actPointsHeadline(5, 1));
-    await act(async () => byLabel(tree, ACT_COPY.confirm).props.onPress());
+    await act(async () => byLabel(tree, CONFIRM).props.onPress());
     expect(hooks.accept).toHaveBeenCalledWith({
       id: "sg-1",
       points: { target_user_ids: ["u1"] },
@@ -600,10 +671,10 @@ describe("a proposal in the Ask conversation", () => {
     );
     const tree = show(POINTS);
     await act(async () => {
-      void byLabel(tree, ACT_COPY.confirm).props.onPress();
+      void byLabel(tree, CONFIRM).props.onPress();
     });
-    expect(byLabel(tree, ACT_COPY.confirm).props.disabled).toBe(true);
-    expect(byLabel(tree, ACT_COPY.cancel).props.disabled).toBe(true);
+    expect(byLabel(tree, CONFIRM).props.disabled).toBe(true);
+    expect(byLabel(tree, MORE).props.disabled).toBe(true);
     await act(async () =>
       land({ result: { outcome: { adjusted: 2, skipped: 0 } } }),
     );
@@ -670,14 +741,9 @@ describe("a proposal in the Ask conversation", () => {
     expect(screenText(tree)).toContain(actMissingLine("members" as never));
   });
 
-  it("reports a proposal by its suggestion id", () => {
+  it("reports a proposal by its suggestion id", async () => {
     const tree = show(POINTS);
-    act(() =>
-      byLabel(
-        tree,
-        `${AI_REPORT_COPY.action}: ${ACT_COPY.card_points_title_give}`,
-      ).props.onPress(),
-    );
+    await fromMenu(tree, AI_REPORT_COPY.action);
     expect(reporting.report).toHaveBeenCalledWith({
       subject: "ai_suggestion",
       subjectId: "sg-1",
@@ -718,11 +784,11 @@ describe("AskAnswerCards", () => {
     });
     return tree;
   };
-  const labelled = (tree: ReactTestRenderer, label: string) =>
+  const labelled = (tree: ReactTestRenderer, label: string | RegExp) =>
     tree.root.findAll(
       (node) =>
         (node.type as unknown) === "Pressable" &&
-        node.props.accessibilityLabel === label,
+        labelMatches(node.props.accessibilityLabel, label),
     );
 
   beforeEach(() => {
@@ -742,14 +808,14 @@ describe("AskAnswerCards", () => {
     const tree = showCards(["s1", "s2"]);
     expect(screenText(tree)).toContain("Buy cups");
     expect(screenText(tree)).toContain("Book the hall");
-    expect(labelled(tree, ACT_COPY.cancel)).toHaveLength(2);
-    await act(async () => labelled(tree, ACT_COPY.cancel)[0]!.props.onPress());
+    expect(labelled(tree, MORE)).toHaveLength(2);
+    await fromMenu(tree, ACT_COPY.dismiss, 0);
     expect(hooks.dismiss).toHaveBeenCalledWith("s1");
     const text = screenText(tree);
     expect(text).toContain(ACT_COPY.cancelled);
     // The line still says what the card was about.
     expect(text).toContain("Buy cups");
-    expect(labelled(tree, ACT_COPY.confirm)).toHaveLength(1);
+    expect(labelled(tree, CONFIRM)).toHaveLength(1);
   });
 
   it("holds a frame while the cards are read, and says so when one is no longer waiting", () => {

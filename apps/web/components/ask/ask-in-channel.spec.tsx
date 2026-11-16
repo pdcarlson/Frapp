@@ -92,8 +92,18 @@ const DONE = {
     status: "answered",
     reason: null,
     text: "The budget vote is in the minutes.",
-    citations: [],
-    sources: [],
+    // Only a cited answer is offered for the channel (`askChannelPostOffer`).
+    citations: [{ source: 0, at: 34, quote: "budget vote" }],
+    sources: [
+      {
+        id: "s1",
+        kind: "minutes",
+        title: "Chapter meeting minutes",
+        detail: null,
+        date: "2026-11-10T00:00:00.000Z",
+        target: null,
+      },
+    ],
     left_out_messages: 0,
     unverified_citations: 0,
     truncated: false,

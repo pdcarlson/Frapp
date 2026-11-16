@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetFlatList,
-  BottomSheetModal,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Image } from "expo-image";
 import { useGifSearch, type GifResult } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -15,12 +11,14 @@ import {
   SHEET_STACK_BEHAVIOR,
   sheetFieldStyles,
   useSheetBackgroundStyle,
+  useGuardedSheetRef,
   useSheetClose,
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useReduceMotion } from "@/lib/use-reduce-motion";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /** How tall each grid tile draws; GIFs fill it, cropped to the tile. */
 const TILE_HEIGHT = 120;
@@ -62,6 +60,9 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
     const backgroundStyle = useSheetBackgroundStyle();
     const tallSheet = useTallSheetProps();
     const close = useSheetClose(ref);
+    // The composer dismisses it on every blur, up or not (#5059): the ref it
+    // holds only reaches a sheet that is up.
+    const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
     const search = useGifSearch(query, open);
@@ -154,7 +155,7 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
 
     return (
       <BottomSheetModal
-        ref={ref}
+        ref={modalRef}
         {...tallSheet}
         stackBehavior={SHEET_STACK_BEHAVIOR}
         keyboardBehavior="interactive"
@@ -162,7 +163,9 @@ export const GifPickerSheet = forwardRef<BottomSheetModal, GifPickerSheetProps>(
         handleComponent={SheetGrabber}
         backdropComponent={SheetScrim}
         onChange={(index) => setOpen(index >= 0)}
+        onAnimate={onAnimate}
         onDismiss={() => {
+          markClosed();
           setOpen(false);
           setQuery("");
         }}
