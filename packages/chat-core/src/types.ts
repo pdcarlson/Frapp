@@ -80,9 +80,6 @@ export function reactionActionType(emoji: string): string {
   return `${REACTION_ACTION_PREFIX}${emoji}`;
 }
 
-/** Alias of `reactionActionType` for callers that want the inverse-symmetric name. */
-export const actionTypeFromEmoji = reactionActionType;
-
 export function emojiFromActionType(actionType: string): string | null {
   return actionType.startsWith(REACTION_ACTION_PREFIX)
     ? actionType.slice(REACTION_ACTION_PREFIX.length)
@@ -444,7 +441,7 @@ export type ReplayRequest = {
  * sends neither; a replay is meaningless without both, since the whole point is
  * to re-send the original key to the original channel.
  */
-export type PointsAdjustBody = Omit<
+type PointsAdjustBody = Omit<
   components["schemas"]["AdjustPointsDto"],
   "channel_id" | "client_message_id"
 > & {
@@ -490,7 +487,7 @@ export interface ThreadSummary {
 }
 
 /** The parent's copy of its newest reply, as the API serves it. */
-export interface RawThreadLastReply {
+interface RawThreadLastReply {
   id?: unknown;
   sender_id?: unknown;
   content?: unknown;
@@ -900,7 +897,7 @@ const MAX_GIF_EDGE = 4096;
 const GIF_MEDIA_HOSTS: readonly string[] = ["klipy.com"];
 
 /** Whether a URL is the GIF provider's own https media, as the API requires. */
-export function isGifMediaUrl(raw: string): boolean {
+function isGifMediaUrl(raw: string): boolean {
   let url: URL;
   try {
     url = new URL(raw);

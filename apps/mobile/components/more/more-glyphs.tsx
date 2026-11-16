@@ -25,9 +25,9 @@ import { tint } from "@/lib/theme";
  * neutral). The bell still draws in it.
  */
 
-export const MORE_GLYPH_SIZE = 20;
+const MORE_GLYPH_SIZE = 20;
 
-export const STROKE_WIDTH = 1.6;
+const STROKE_WIDTH = 1.6;
 
 /** iconography.md §1: the emphasis fill is the stroke hue at 16–18%. */
 const EMPHASIS_FILL_ALPHA = 0.16;

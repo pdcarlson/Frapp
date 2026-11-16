@@ -502,7 +502,7 @@ const WEEK_MS = 7 * DAY_MS;
  */
 const SNOOZE_LOOKBACK_MS = 30 * DAY_MS;
 /** The furthest ahead a snooze may end. */
-export const SNOOZE_MAX_AHEAD_MS = 90 * DAY_MS;
+const SNOOZE_MAX_AHEAD_MS = 90 * DAY_MS;
 
 /** A member's snoozes, split by whether they still hold at `now`. */
 interface Snoozes {

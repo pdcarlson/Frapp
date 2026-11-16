@@ -84,7 +84,7 @@ function addDays(day: string, days: number): string {
  * further is not a week before this one, and the server's count stands. The
  * same for the first day, which a client east of UTC+12 knows better.
  */
-export function recapWindow(
+function recapWindow(
   end: Date,
   lastWeekStart: Date | undefined,
   firstDay: string | undefined,

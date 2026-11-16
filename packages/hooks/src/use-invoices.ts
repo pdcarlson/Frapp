@@ -128,7 +128,7 @@ const FAILED_AT_ROUNDING_MS = 1000;
  * processes. A failure from before `since` is that earlier decline, so it
  * doesn't count. Without `since`, any recorded failure does.
  */
-export function invoicePaymentFailure(
+function invoicePaymentFailure(
   data: unknown,
   since?: number,
 ): { failedAt: string; reason: string | null } | null {

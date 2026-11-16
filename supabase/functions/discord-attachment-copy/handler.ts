@@ -91,7 +91,7 @@ const START_BYTE_BUDGET = 256 * 1024 * 1024;
 const AUTH_CHECK_TIMEOUT_MS = 10_000;
 
 /** One attachment to copy. */
-export interface CopyItem {
+interface CopyItem {
   /** The attachment's CDN URL, straight from Discord's API response. */
   url: string;
   bucket: string;
@@ -116,9 +116,9 @@ export interface CopyItem {
  * - `deferred`: not attempted, or cut off after starting late, because the
  *   request's budget ran out. Send it again.
  */
-export type CopyStatus = "stored" | "gone" | "rejected" | "failed" | "deferred";
+type CopyStatus = "stored" | "gone" | "rejected" | "failed" | "deferred";
 
-export interface CopyResult {
+interface CopyResult {
   path: string;
   status: CopyStatus;
   /** The object's size from the CDN's `Content-Length`, when it sent one. */
@@ -142,7 +142,7 @@ export interface HandlerDeps {
 }
 
 /** The budgets one request works to. */
-export interface Limits {
+interface Limits {
   concurrency: number;
   startBudgetMs: number;
   hardDeadlineMs: number;
@@ -301,7 +301,7 @@ async function callerVerdict(
 }
 
 /** What {@link callerVerdict} decided about the caller. */
-export type CallerVerdict =
+type CallerVerdict =
   | { verdict: "service" }
   | { verdict: "refused" }
   | { verdict: "unconfirmed"; reason: string };

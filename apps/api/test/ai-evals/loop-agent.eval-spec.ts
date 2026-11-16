@@ -125,8 +125,8 @@ describe("the term chapter behind the loop's tools", () => {
       EVAL_NOW,
     );
     const names = world.readTools.map((tool) => tool.name);
-    expect(names).toHaveLength(22);
-    expect(new Set(names).size).toBe(22);
+    expect(names).toHaveLength(23);
+    expect(new Set(names).size).toBe(23);
     expect(world.proposeTools.map((tool) => tool.name).sort()).toEqual([
       'create_event',
       'create_task',
@@ -217,6 +217,36 @@ describe("what the loop's tools do with what a model asks for", () => {
       ),
     ).toBe(true);
     expect(records.answer.citations).toHaveLength(1);
+  });
+
+  it('finds backwork files by nickname and hands over the catalog only (#5209)', async () => {
+    const { results, shown } = await askWith(
+      findQuestion('backwork-member-nickname'),
+      [{ name: 'find_backwork', input: { query: 'calc 1' } }],
+    );
+    // Each file is its own source; the list's summary is the last one.
+    const files = results[0].sources.filter((source) =>
+      source.id.startsWith('backwork:'),
+    );
+    expect(files.map((source) => source.title).sort()).toEqual([
+      expect.stringContaining('Exam 2 · MATH 1010'),
+      expect.stringContaining('Quiz 3 · MATH 1010'),
+    ]);
+    // No storage key, hash or link ever reaches the model.
+    expect(shown).not.toContain('storage-key');
+    expect(shown).not.toContain('hash-bw-');
+    expect(shown).not.toMatch(/https?:\/\//);
+  });
+
+  it('does not offer the backwork catalog to an alumnus', async () => {
+    const { answer, shown } = await askWith(
+      findQuestion('refuse-backwork-alumnus'),
+      [{ name: 'find_backwork', input: { query: 'CSCI 1200' } }],
+    );
+    expect(
+      answer.toolCalls.filter((call) => call.toolName === 'find_backwork'),
+    ).toEqual([]);
+    expect(shown).not.toContain('Cutler');
   });
 
   it('returns a card a model asked for as a proposal, and changes nothing', async () => {

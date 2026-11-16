@@ -796,6 +796,14 @@ export const EDITED_MIGRATION_EXCEPTIONS = Object.freeze([
       "#4989's 20261114144355/144356 had reached staging, so db push refused 043300 and every " +
       "Deploy staging run halted (the #4795 race). Neither hosted database had applied it at the rename.",
   },
+  {
+    file: "supabase/migrations/20261116143425_ai_corpus_chat_kind.sql",
+    removed: true,
+    reason:
+      "Renamed to 20261116171551 with the same SQL. #5187 merged minutes after #5192's " +
+      "20261116143520; staging applied 143520 first and db push then refused 143425, so every " +
+      "Deploy staging run halted (the #4795 race). Neither hosted database had applied it at the rename.",
+  },
 ]);
 
 /** A dollar-quote tag, `$$` or `$name$`, matched at `lastIndex`. */

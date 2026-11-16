@@ -6,7 +6,7 @@
  * is written out here instead.
  */
 
-export interface NativeRecorderStatus {
+interface NativeRecorderStatus {
   isRecording: boolean;
   durationMillis: number;
   url: string | null;
@@ -26,7 +26,7 @@ export interface NativeRecorder {
   release: () => void;
 }
 
-export interface NativeAudio {
+interface NativeAudio {
   AudioModule: {
     AudioRecorder: new (options: Record<string, unknown>) => NativeRecorder;
   };
@@ -36,7 +36,7 @@ export interface NativeAudio {
   requestNotificationPermissionsAsync: () => Promise<{ granted: boolean }>;
 }
 
-export interface NativeFileHandle {
+interface NativeFileHandle {
   offset: number | null;
   readBytes: (length: number) => Uint8Array;
   close: () => void;
@@ -51,13 +51,13 @@ export interface NativeFile {
   open: () => NativeFileHandle;
 }
 
-export interface NativeDirectory {
+interface NativeDirectory {
   uri: string;
   exists: boolean;
   list: () => (NativeFile | NativeDirectory)[];
 }
 
-export interface NativeFiles {
+interface NativeFiles {
   File: new (...parts: (string | NativeDirectory)[]) => NativeFile;
   Directory: new (...parts: (string | NativeDirectory)[]) => NativeDirectory;
   Paths: { document: NativeDirectory; availableDiskSpace: number };

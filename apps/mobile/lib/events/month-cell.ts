@@ -17,7 +17,7 @@ import type { EventRow } from "./select";
 /** How many titled lines a cell holds above the line under them. */
 const TITLED_LINES = 2;
 
-export type MonthCellLine =
+type MonthCellLine =
   | { kind: "event"; key: string; title: string; required: boolean }
   | { kind: "birthday"; key: string; title: string };
 

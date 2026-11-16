@@ -2,6 +2,7 @@ import { requireOptionalNativeModule } from "expo";
 import { ImageManipulator } from "expo-image-manipulator";
 import { Platform } from "react-native";
 import type { components } from "@repo/api-sdk";
+import { localIsoDate } from "@repo/formatting";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 import {
   MAX_UPLOAD_LABEL,
@@ -126,7 +127,7 @@ export const DOCUMENT_FILE_TYPE_REFUSAL =
   "Documents can be PDF, Word, Excel, PowerPoint, text, CSV or photo files. Export a Pages, Numbers or Keynote file as PDF first.";
 
 /** A failed PUT of a file, in words that don't call a PDF a photo. */
-export const DOCUMENT_UPLOAD_FAILED =
+const DOCUMENT_UPLOAD_FAILED =
   "Couldn't upload that file. Try again in a moment.";
 
 /** A photo from Files that wouldn't decode or re-encode. */
@@ -348,6 +349,9 @@ export async function uploadDocumentPhoto(
       folder: folder ?? undefined,
       content_type: stored.contentType,
       byte_size: stored.byteSize,
+      // The phone sheet has no date row, so it files under the upload day,
+      // which is the web panel's default (Paul, 2026-11-16).
+      effective_date: localIsoDate(new Date()),
     });
     return { status: "uploaded", title };
   } catch (error) {

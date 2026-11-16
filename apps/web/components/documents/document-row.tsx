@@ -37,10 +37,21 @@ export function documentFacts(
     filed: [
       doc.folder,
       doc.document_type,
-      labelled("Effective", formatDay(doc.effective_date)),
+      effectiveFact(doc),
     ].filter((part): part is string => !!part),
     description: doc.description || null,
   };
+}
+
+/**
+ * "Effective <day>", left out when it is the day the file was uploaded: the
+ * upload panel starts the date on Today and the phone sends the upload day
+ * (#5207), so a matching date says nothing the Uploaded line doesn't.
+ */
+function effectiveFact(doc: ChapterDocument): string | null {
+  const effective = formatDay(doc.effective_date);
+  if (effective && effective === formatDay(doc.created_at)) return null;
+  return labelled("Effective", effective);
 }
 
 function DownloadButton({ id, title }: { id: string; title: string }) {

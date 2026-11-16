@@ -79,6 +79,10 @@ export function useListChapters(options?: { enabled?: boolean }) {
   });
 }
 
+/**
+ * @alias Both names have app callers; collapsing them into one is its own
+ * change across apps/web and apps/mobile (#4544), so knip lets the pair be.
+ */
 export const useAccessibleChapters = useListChapters;
 
 export function useCurrentChapter(options?: {

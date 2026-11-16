@@ -159,7 +159,11 @@ export function selectAllEventRows(data: unknown): EventRow[] {
   return sortEventsByStart(rows);
 }
 
-/** One row of the s06 list: an event and, for a series, how often it meets. */
+/**
+ * One row of the s06 list: an event and, for a series, how often it meets.
+ * @public Nothing imports it, but the exported `EventDayGroup` names it, and
+ * the app emits declarations, so it has to stay exported.
+ */
 export interface EventListEntry {
   event: EventRow;
   /** "Every Sunday" on a series' row, `null` on a one-time event. */

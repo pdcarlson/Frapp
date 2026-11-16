@@ -96,14 +96,6 @@ export function useChatReports(
 }
 
 /**
- * One attachment an open report holds, with a short-lived signed URL (#2481).
- * The queue row already carries each file's name and size
- * (`ChatReport["reported_attachments"]`); this is what opens them.
- */
-export type ChatReportAttachment =
-  components["schemas"]["ChatReportAttachmentDto"];
-
-/**
  * The files an open report holds, signed for the officer reviewing it
  * (`GET /v1/chat/reports/{id}/attachments`, #2481). They stay in storage
  * after the sender deletes the message, until the report is resolved.

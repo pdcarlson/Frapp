@@ -7,7 +7,7 @@ import type { CorpusSection } from '#domain/utils/corpus-chunker';
 import type { ChatPassageDraft } from '#domain/utils/corpus-chat';
 
 /** What a source says when the indexer reads it. */
-export interface CorpusSourceContent {
+interface CorpusSourceContent {
   /** What a citation calls the source: a document's title, "Chapter meeting, November 9, 2026". */
   title: string;
   /** When the source is "from": a document's effective date, a meeting's start. */

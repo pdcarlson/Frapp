@@ -11,7 +11,7 @@
  * fourth is ever needed, add it here rather than widening to the real module
  * type.
  */
-export type StripeError = { code?: string; message: string };
+type StripeError = { code?: string; message: string };
 
 export type StripeModule = {
   initStripe(options: { publishableKey: string }): Promise<unknown>;

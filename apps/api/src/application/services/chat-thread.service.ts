@@ -48,7 +48,7 @@ export interface MemberThreadView extends MemberThreadRow {
 }
 
 /** How many threads All threads shows; the newest activity wins. */
-export const MEMBER_THREADS_LIMIT = 50;
+const MEMBER_THREADS_LIMIT = 50;
 
 /** `PUT …/follow`: `none` unfollows. */
 export type ChatThreadFollowChoice = ChatThreadFollowState | 'none';

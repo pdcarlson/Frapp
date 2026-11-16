@@ -69,7 +69,7 @@ export function findInLibrary<
 }
 
 /** The folders along a file's path, outermost first, without its name. */
-export function folderSegments(path: string): string[] {
+function folderSegments(path: string): string[] {
   return path.split("/").slice(0, -1).filter(Boolean);
 }
 

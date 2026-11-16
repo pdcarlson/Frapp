@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import type { CategoryProgress } from "./category-progress";
 
 /** One channel or thread, as `GET :id/progress` names it. */
-export interface WatchedChannel {
+interface WatchedChannel {
   discord_channel_id: string;
   discord_channel_name: string;
   imported_count: number;

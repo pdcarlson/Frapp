@@ -21,7 +21,7 @@ import type { FlattenOptions } from "./pdf";
  * rule that matters most here is tested on its own: for a Student Copy, or
  * any document with a box, only the flattened bytes ever leave the browser.
  */
-export type ConfirmBody = Parameters<
+type ConfirmBody = Parameters<
   ReturnType<typeof useConfirmBackworkUpload>["mutateAsync"]
 >[0];
 

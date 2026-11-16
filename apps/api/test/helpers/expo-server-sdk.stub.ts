@@ -8,7 +8,7 @@
  * `sendToUser`. This only has to construct when `AppModule` boots
  * `ExpoPushProvider`, and no-op if a future spec does send.
  */
-export class Expo {
+class Expo {
   static isExpoPushToken(token: unknown): boolean {
     return (
       typeof token === 'string' &&

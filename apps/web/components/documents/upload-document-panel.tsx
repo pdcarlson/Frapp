@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { localIsoDate } from "@repo/formatting";
 import { ChevronRight, Loader2, Upload } from "lucide-react";
 import {
   putSignedUpload,
@@ -92,6 +93,12 @@ type UploadDraft = {
   autoTitle: boolean;
   autoType: boolean;
   autoFolder: boolean;
+  /**
+   * The effective date still reads Today (Paul, 2026-11-16): today is read
+   * when the panel draws and when it sends, so a draft kept overnight still
+   * means the day it is uploaded. Picking a date, or clearing it, ends that.
+   */
+  autoDate: boolean;
 };
 
 const EMPTY_UPLOAD_DRAFT: UploadDraft = {
@@ -104,6 +111,7 @@ const EMPTY_UPLOAD_DRAFT: UploadDraft = {
   autoTitle: true,
   autoType: true,
   autoFolder: true,
+  autoDate: true,
 };
 
 /** The kept draft's name (`@repo/hooks/kept-drafts`, #4593). */
@@ -121,8 +129,13 @@ function uploadSignature(draft: UploadDraft): string {
 /** The draft fields an officer edits by hand; editing one ends its guessing. */
 type EditableField = Exclude<
   keyof UploadDraft,
-  "file" | "autoTitle" | "autoType" | "autoFolder"
+  "file" | "autoTitle" | "autoType" | "autoFolder" | "autoDate"
 >;
+
+/** The date the draft files under: Today until the officer changes it. */
+function draftEffectiveDate(draft: UploadDraft): string {
+  return draft.autoDate ? localIsoDate(new Date()) : draft.effectiveDate;
+}
 
 /**
  * The upload panel's state and submit. The page calls this rather than the
@@ -218,6 +231,7 @@ export function useDocumentUpload(
         const next = { ...prev, [key]: value };
         if (key === "title") next.autoTitle = false;
         if (key === "folder") next.autoFolder = false;
+        if (key === "effectiveDate") next.autoDate = false;
         if (key === "documentType") {
           next.autoType = false;
           if (prev.autoFolder) {
@@ -316,7 +330,7 @@ export function useDocumentUpload(
         content_type: contentType,
         byte_size: file.size,
         document_type: uploadDraft.documentType.trim() || undefined,
-        effective_date: uploadDraft.effectiveDate || undefined,
+        effective_date: draftEffectiveDate(uploadDraft) || undefined,
       });
       const folder = uploadDraft.folder.trim();
       toast({
@@ -395,8 +409,9 @@ const NEW_FOLDER = "__new-folder__";
  * title from its name, guesses the type from it, and files it into the folder
  * on screen. Type is a row of chips over the chapter's own list of types
  * (#3642), and folder a picker of the chapter's folders, where both used to be
- * free text that let "Bylaws", "bylaws" and "By-laws" pile up as three. Description and effective date wait behind one
- * line, because most uploads never set them.
+ * free text that let "Bylaws", "bylaws" and "By-laws" pile up as three. The
+ * effective date shows and starts on Today; the description waits behind one
+ * line, because most uploads never set one.
  */
 export function UploadDocumentPanel({
   gate,
@@ -451,8 +466,7 @@ export function UploadDocumentPanel({
   }, [staleType, set]);
   const atTypeCap = typeOptions.length >= DOCUMENT_TYPES_MAX;
 
-  const hasDetails =
-    uploadDraft.description !== "" || uploadDraft.effectiveDate !== "";
+  const hasDetails = uploadDraft.description !== "";
   const [detailsOpen, setDetailsOpen] = useState(false);
   const showDetails = detailsOpen || hasDetails;
 
@@ -630,27 +644,26 @@ export function UploadDocumentPanel({
               ) : null}
             </UploadField>
 
+            <UploadField id="doc-effective-date" label="Effective date">
+              <DateField
+                id="doc-effective-date"
+                lean="back"
+                placeholder="e.g. September 1"
+                className={cn(UPLOAD_FIELD_CLASS, "w-48")}
+                value={draftEffectiveDate(uploadDraft)}
+                onChange={(date) => set("effectiveDate", date)}
+              />
+            </UploadField>
+
             {showDetails ? (
-              <>
-                <UploadField id="doc-description" label="Description">
-                  <Textarea
-                    id="doc-description"
-                    rows={2}
-                    value={uploadDraft.description}
-                    onChange={(event) => set("description", event.target.value)}
-                  />
-                </UploadField>
-                <UploadField id="doc-effective-date" label="Effective date">
-                  <DateField
-                    id="doc-effective-date"
-                    lean="back"
-                    placeholder="e.g. September 1"
-                    className={cn(UPLOAD_FIELD_CLASS, "w-48")}
-                    value={uploadDraft.effectiveDate}
-                    onChange={(date) => set("effectiveDate", date)}
-                  />
-                </UploadField>
-              </>
+              <UploadField id="doc-description" label="Description">
+                <Textarea
+                  id="doc-description"
+                  rows={2}
+                  value={uploadDraft.description}
+                  onChange={(event) => set("description", event.target.value)}
+                />
+              </UploadField>
             ) : (
               <button
                 type="button"
@@ -661,7 +674,7 @@ export function UploadDocumentPanel({
                 )}
               >
                 <ChevronRight aria-hidden className="h-4 w-4" />
-                Add a description or effective date
+                Add a description
               </button>
             )}
           </PanelBody>

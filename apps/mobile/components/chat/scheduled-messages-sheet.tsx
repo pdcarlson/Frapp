@@ -46,9 +46,9 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * The read lives in {@link ScheduledRows}, a child of the modal, so it runs
  * while the sheet is up; the line above the composer reads the same query.
  */
-export const SCHEDULED_TITLE = "Scheduled messages";
-export const SCHEDULED_EMPTY = "Nothing scheduled here.";
-export const SCHEDULED_NOTE =
+const SCHEDULED_TITLE = "Scheduled messages";
+const SCHEDULED_EMPTY = "Nothing scheduled here.";
+const SCHEDULED_NOTE =
   "Only you see these. Each posts as you at its time.";
 
 export const ScheduledMessagesSheet = forwardRef<

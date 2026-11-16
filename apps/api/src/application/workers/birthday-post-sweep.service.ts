@@ -43,12 +43,12 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
  * may go out: morning, not midnight, the way a Discord birthday bot posts in
  * each member's zone.
  */
-export const BIRTHDAY_POST_HOUR = 9;
+const BIRTHDAY_POST_HOUR = 9;
 /**
  * Where a member who never reported a time zone is placed: the zone their
  * pushes fall back to as well.
  */
-export const BIRTHDAY_FALLBACK_TIME_ZONE = DEFAULT_PUSH_TIME_ZONE;
+const BIRTHDAY_FALLBACK_TIME_ZONE = DEFAULT_PUSH_TIME_ZONE;
 
 /** A birthday whose post is due now: who, and their local date. */
 export interface DueBirthday {
