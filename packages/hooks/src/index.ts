@@ -96,6 +96,7 @@ export * from "./use-events";
 export * from "./use-frapp-client";
 export * from "./use-gifs";
 export * from "./use-google-calendar";
+export * from "./use-google-drive";
 export * from "./use-groups";
 export * from "./use-hidden-permissions";
 export * from "./use-important-messages";

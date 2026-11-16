@@ -64,6 +64,7 @@ import { ChatCatchUpModule } from './modules/chat-catch-up/chat-catch-up.module'
 import { AiReportModule } from './modules/ai-report/ai-report.module';
 import { CalendarFeedModule } from './modules/calendar-feed/calendar-feed.module';
 import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
+import { GoogleDriveModule } from './modules/google-drive/google-drive.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -140,6 +141,7 @@ import { validateEnv } from './config/env.validation';
     AiReportModule,
     CalendarFeedModule,
     GoogleCalendarModule,
+    GoogleDriveModule,
     // After the AI modules it imports, so their routes keep their place in
     // the exported contract.
     MeetingDraftModule,
