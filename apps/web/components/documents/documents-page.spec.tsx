@@ -2917,6 +2917,150 @@ describe("DocumentsPage who can see (#3642 piece 1)", () => {
     expect(mockUpdateFolder).not.toHaveBeenCalled();
   });
 
+  it("draws a lock on a file with its own list, outside any folder", () => {
+    documentsQuery.data = [
+      { ...BYLAWS, folder: null, who_can_see: ["tier:t-exec"] },
+      { ...BYLAWS, id: "doc-2", title: "Rush schedule", folder: null },
+    ];
+    render(<DocumentsPage />);
+
+    expect(screen.getAllByText("Not everyone can see this")).toHaveLength(1);
+  });
+
+  it("draws the lock on a pinned card too", () => {
+    foldersQuery.data = [
+      {
+        id: "f-1",
+        name: "Governance",
+        sort_order: 0,
+        pinned_at: "2026-11-11T00:00:00Z",
+        who_can_see: ["tier:t-exec"],
+      },
+    ];
+    documentsQuery.data = [{ ...BYLAWS, folder: null }];
+    render(<DocumentsPage />);
+
+    const pinned = screen.getByRole("region", { name: "Pinned" });
+    expect(
+      within(pinned).getByText("Not everyone can see this"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a stored list as it is and saves nothing when only looked at", async () => {
+    manageGate.granted = true;
+    accessQuery.data = { options: [EXEC_TIER, TREASURER], always: ["tier:t-exec"] };
+    documentsQuery.data = [{ ...BYLAWS, who_can_see: ["role:r-treasurer"] }];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Who can see Chapter bylaws" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    // Someone above set it to the Treasurer alone; this member's tier joins
+    // only when they change the list, as the API adds it on save.
+    expect(within(dialog).getByText("Treasurer")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Executive board")).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(mockSetAccess).not.toHaveBeenCalled();
+  });
+
+  it("waits for an entry before saving an empty Chosen list", async () => {
+    manageGate.granted = true;
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Who can see Chapter bylaws" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("radio", { name: "Chosen roles" }));
+
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("lets a member outside the tiers lift a list but not set one", async () => {
+    manageGate.granted = true;
+    accessQuery.data = { options: [EXEC_TIER], always: null };
+    documentsQuery.data = [{ ...BYLAWS, who_can_see: ["tier:t-exec"] }];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Who can see Chapter bylaws" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).queryByRole("button", { name: /add to who can see/i }),
+    ).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Save" })).toBeDisabled();
+
+    await user.click(within(dialog).getByRole("radio", { name: "Same as folder" }));
+    await user.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(mockSetAccess).toHaveBeenCalledWith({
+        id: "doc-1",
+        who_can_see: null,
+      }),
+    );
+  });
+
+  it("tells a member outside the tiers why a file with no list can't be limited", async () => {
+    manageGate.granted = true;
+    accessQuery.data = { options: [EXEC_TIER], always: null };
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Who can see Chapter bylaws" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      within(dialog).getByText(/once you hold a role in one of the chapter/i),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("radio", { name: "Chosen roles" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("creates a folder with its list", async () => {
+    manageGate.granted = true;
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await user.click(screen.getByRole("button", { name: /new folder/i }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText(/folder name/i), "Finance");
+    await user.click(within(dialog).getByRole("radio", { name: "Chosen roles" }));
+    await user.click(
+      within(dialog).getByRole("button", { name: /add to who can see/i }),
+    );
+    await user.click(await screen.findByRole("option", { name: /treasurer/i }));
+    await user.click(within(dialog).getByRole("button", { name: /^create folder$/i }));
+
+    await waitFor(() =>
+      expect(mockCreateFolder).toHaveBeenCalledWith({
+        name: "Finance",
+        who_can_see: ["role:r-treasurer"],
+      }),
+    );
+  });
+
+  it("leaves the upload panel's field out for a member outside the tiers", async () => {
+    accessQuery.data = { options: [EXEC_TIER], always: null };
+    render(<DocumentsPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).queryByRole("radio", { name: "Chosen roles" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("leaves the field out for a member outside the tiers", async () => {
     manageGate.granted = true;
     accessQuery.data = { options: [EXEC_TIER], always: null };

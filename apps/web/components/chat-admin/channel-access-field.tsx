@@ -89,6 +89,7 @@ export function ChannelAccessField({
   everyoneLabel,
   locked = [],
   alwaysLine,
+  canChoose = true,
 }: {
   id: string;
   question: ChannelAccessQuestion;
@@ -105,12 +106,21 @@ export function ChannelAccessField({
    */
   everyoneLabel?: string;
   /**
-   * Entries every list keeps, drawn without a remove and added when the
-   * list starts: a document list keeps the setter's tier and those above.
+   * Entries every list this member writes keeps: a document list keeps the
+   * setter's tier and those above. They start a new list and join a stored
+   * one at its first edit, the way the API adds them on save, and are drawn
+   * without a remove. A stored list is shown as it is until then, so an
+   * officer looking at a list someone else set sees who it really reaches.
    */
   locked?: readonly string[];
   /** Who passes every list, said under the chips; the President by default. */
   alwaysLine?: string;
+  /**
+   * False when this member may not write a list at all (a document list
+   * from outside every tier): the open choice stays on offer, so they can
+   * still lift a list, but Chosen roles and its chips are read-only.
+   */
+  canChoose?: boolean;
 }) {
   const mode = value === null ? EVERYONE : CHOSEN;
   const lockedSet = new Set(locked);
@@ -118,10 +128,8 @@ export function ChannelAccessField({
     () => new Map(options.map((option) => [option.entry, option])),
     [options],
   );
-  const chosen =
-    value === null
-      ? []
-      : (normalizeChannelAccessList([...locked, ...value]) ?? []);
+  const chosen = value === null ? [] : [...value];
+  const editable = !disabled && canChoose;
   const chosenSet = new Set(chosen);
   const remaining = options.filter(
     (option) => !chosenSet.has(option.entry) && !option.hidden,
@@ -137,11 +145,16 @@ export function ChannelAccessField({
     `The President can always ${question === "see" ? "see it" : "post"}.`;
 
   function remove(entry: string) {
-    onChange(chosen.filter((held) => held !== entry));
+    onChange(
+      normalizeChannelAccessList([
+        ...locked,
+        ...chosen.filter((held) => held !== entry),
+      ]) ?? [],
+    );
   }
 
   function add(entry: string) {
-    onChange(normalizeChannelAccessList([...chosen, entry]) ?? []);
+    onChange(normalizeChannelAccessList([...locked, ...chosen, entry]) ?? []);
   }
 
   return (
@@ -152,7 +165,15 @@ export function ChannelAccessField({
         </span>
         <SegmentedChoice
           label={label}
-          options={modeOptions}
+          options={
+            canChoose
+              ? modeOptions
+              : modeOptions.map((option) =>
+                  option.value === CHOSEN
+                    ? { ...option, disabled: true }
+                    : option,
+                )
+          }
           value={mode}
           disabled={disabled}
           onChange={(next) => onChange(next === EVERYONE ? null : [...locked])}
@@ -176,14 +197,14 @@ export function ChannelAccessField({
                   }
                   removeLabel={`Remove ${option?.name ?? "this entry"} from ${label.toLowerCase()}`}
                   onRemove={
-                    disabled || lockedSet.has(entry)
+                    !editable || lockedSet.has(entry)
                       ? undefined
                       : () => remove(entry)
                   }
                 />
               );
             })}
-            {disabled ? null : (
+            {!editable ? null : (
               <AddEntry
                 label={label}
                 options={remaining}

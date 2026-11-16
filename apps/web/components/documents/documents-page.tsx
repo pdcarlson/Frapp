@@ -301,7 +301,10 @@ function ChapterDocumentsPage() {
     doc.who_can_see != null ||
     (doc.folder !== null && limitedFolders.has(doc.folder));
   const canSetAccess = (doc: ChapterDocument) =>
-    canSetDocumentAccess(doc, viewerId, canManageTypes);
+    canSetDocumentAccess(doc, viewerId, {
+      manages: canManageTypes,
+      uploads: canUpload,
+    });
   const [accessDoc, setAccessDoc] = useState<ChapterDocument | null>(null);
   const folderNames = useMemo(
     () => folders.map((folder) => folder.name),
@@ -515,6 +518,11 @@ function ChapterDocumentsPage() {
               gate={gate}
               onOpenFolder={setActiveFolder}
               onOpenDocument={openDocument}
+              isLimited={(item) =>
+                item.kind === "folder"
+                  ? item.folder.who_can_see != null
+                  : isLimited(item.doc)
+              }
             />
           ) : null}
           <DocumentList

@@ -2,17 +2,14 @@
 
 import { useState } from "react";
 import { Loader2, Lock } from "lucide-react";
+import { useDocumentAccessOptions, useSetDocumentAccess } from "@repo/hooks";
 import {
-  useDocumentAccessOptions,
-  useMyPermissions,
-  useSetDocumentAccess,
-} from "@repo/hooks";
-import {
+  isEmptyChannelAccessChoice,
   selectChannelAccessOptions,
   type ChannelAccessOption,
 } from "@repo/hooks/channel-access";
 import { isDriveCopy } from "@repo/hooks/document-library";
-import { can } from "@repo/validation";
+import { sameChannelAccessList } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -63,20 +60,16 @@ export function useDocumentAccessChoices(enabled = true) {
 /**
  * Whether `userId` may set who can see this file: whoever uploaded it, or a
  * member who manages documents. A Drive copy has no uploader in that sense.
+ * The uploader also needs Upload documents, which the field's choices are
+ * read with, so the control isn't offered to someone whose list can't load.
  */
 export function canSetDocumentAccess(
   doc: Pick<ChapterDocument, "uploaded_by" | "drive_file_id">,
   userId: string | null,
-  manages: boolean,
+  { manages, uploads }: { manages: boolean; uploads: boolean },
 ): boolean {
   if (manages) return true;
-  return !!userId && doc.uploaded_by === userId && !isDriveCopy(doc);
-}
-
-/** Whether a member's permissions include Manage documents. */
-export function useManagesDocuments(): boolean {
-  const { data } = useMyPermissions();
-  return can("chapter_docs:manage", data?.permissions ?? []);
+  return uploads && !!userId && doc.uploaded_by === userId && !isDriveCopy(doc);
 }
 
 /**
@@ -147,11 +140,26 @@ function DocumentAccessForm({
   const { toast } = useToast();
   const choices = useDocumentAccessChoices();
   const setAccess = useSetDocumentAccess();
-  const [value, setValue] = useState<string[] | null>(doc.who_can_see ?? null);
+  const stored = doc.who_can_see ?? null;
+  const [value, setValue] = useState<string[] | null>(stored);
   const saving = setAccess.isPending;
+  /*
+    A member outside every tier may still lift a list (the API takes `null`
+    from them) but not write one, so the open choice stays on offer to them
+    and nothing else does. An empty Chosen list is refused by the API, so
+    Save waits for an entry.
+  */
+  const blocked =
+    isEmptyChannelAccessChoice(value) || (!choices.canLimit && value !== null);
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (blocked) return;
+    // Opened only to look: no write, so Save never widens a list by itself.
+    if (sameChannelAccessList(value, stored)) {
+      onClose();
+      return;
+    }
     try {
       await setAccess.mutateAsync({ id: doc.id, who_can_see: value });
       toast({
@@ -182,7 +190,9 @@ function DocumentAccessForm({
         </DialogDescription>
       </DialogHeader>
       <form id="doc-access-form" onSubmit={save}>
-        {choices.optionsState === "ready" && !choices.canLimit ? (
+        {choices.optionsState === "ready" &&
+        !choices.canLimit &&
+        stored === null ? (
           <p className="text-sm text-muted-foreground">
             You can limit who sees a file once you hold a role in one of the
             chapter&apos;s tiers.
@@ -197,8 +207,11 @@ function DocumentAccessForm({
             optionsState={choices.optionsState}
             everyoneLabel="Same as folder"
             locked={choices.locked}
-            alwaysLine={FILE_ALWAYS_LINE}
-            disabled={saving || !choices.canLimit}
+            alwaysLine={
+              isDriveCopy(doc) ? FOLDER_ALWAYS_LINE : FILE_ALWAYS_LINE
+            }
+            canChoose={choices.canLimit}
+            disabled={saving || choices.optionsState === "loading"}
           />
         )}
       </form>
@@ -209,7 +222,7 @@ function DocumentAccessForm({
         <Button
           form="doc-access-form"
           type="submit"
-          {...gate.controlProps(saving || !choices.canLimit)}
+          {...gate.controlProps(saving || blocked)}
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           Save

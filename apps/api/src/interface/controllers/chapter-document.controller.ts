@@ -30,7 +30,10 @@ import { ChapterDocumentTypeService } from '../../application/services/chapter-d
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { RequirePermissions } from '../decorators/permissions.decorator';
+import {
+  RequireAnyOfPermissions,
+  RequirePermissions,
+} from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
@@ -352,11 +355,15 @@ export class ChapterDocumentController {
     return this.chapterDocumentService.listFolders(chapterId, userId);
   }
 
-  // Who can see (#3642 piece 1): what the picker offers, for anyone who can
-  // upload (a file's list is its uploader's to set). Before `:id` like the
-  // folder routes, so it isn't read as a document id.
+  // Who can see (#3642 piece 1): what the picker offers, for anyone who sets
+  // a list: an uploader (a file's list is theirs) or whoever manages
+  // documents (a folder's list, and any file's), who need not hold upload.
+  // Before `:id` like the folder routes, so it isn't read as a document id.
   @Get('access-options')
-  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
+  @RequireAnyOfPermissions(
+    SystemPermissions.CHAPTER_DOCS_UPLOAD,
+    SystemPermissions.CHAPTER_DOCS_MANAGE,
+  )
   @ApiOperation({
     summary:
       "What a who-can-see list may hold, and the tiers the caller's lists always keep",

@@ -9,6 +9,7 @@ import {
   useRequestDocumentUploadUrl,
   type DocumentTypeRow,
 } from "@repo/hooks";
+import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DateField } from "@/components/ui/date-field";
@@ -306,6 +307,9 @@ export function useDocumentUpload(
       setUploadError("Choose a file to upload.");
       return;
     }
+    // The API refuses an empty Chosen list, and only after the file is in
+    // the bucket, so the panel waits for an entry (its field says so).
+    if (isEmptyChannelAccessChoice(uploadDraft.whoCanSee ?? null)) return;
     const inspected = inspectUploadFile("document", file);
     if (!inspected.ok) {
       setUploadError(uploadRejectionDescription(inspected.reason));
@@ -718,7 +722,9 @@ export function UploadDocumentPanel({
               form="doc-upload-form"
               type="submit"
               className={UPLOAD_SHEET_BUTTON_CLASS}
-              {...gate.controlProps(uploading)}
+              {...gate.controlProps(
+                uploading || isEmptyChannelAccessChoice(uploadDraft.whoCanSee),
+              )}
             >
               {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               Upload
@@ -894,7 +900,8 @@ function UploadAccessField({
       everyoneLabel={folder ? "Same as folder" : "Everyone"}
       locked={access.locked}
       alwaysLine={FILE_ALWAYS_LINE}
-      disabled={disabled || !access.canLimit}
+      canChoose={access.canLimit}
+      disabled={disabled || access.optionsState === "loading"}
     />
   );
 }

@@ -5,7 +5,10 @@ import { ChapterDocumentController } from './chapter-document.controller';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
 import { ChapterDocumentTypeService } from '../../application/services/chapter-document-type.service';
 import { RequestDocumentUploadUrlDto } from '../dtos/chapter-document.dto';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import {
+  PERMISSIONS_ANY_KEY,
+  PERMISSIONS_KEY,
+} from '../decorators/permissions.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 
 describe('ChapterDocumentController', () => {
@@ -134,13 +137,24 @@ describe('ChapterDocumentController', () => {
       ).toBeUndefined();
     });
 
-    it('accessOptions requires chapter_docs:upload, which every list setter holds', () => {
+    // A manager without upload sets folder lists, so either permission
+    // reads the choices.
+    it('accessOptions takes chapter_docs:upload or chapter_docs:manage', () => {
       expect(
         Reflect.getMetadata(
           PERMISSIONS_KEY,
           controller.accessOptions as object,
         ),
-      ).toEqual([SystemPermissions.CHAPTER_DOCS_UPLOAD]);
+      ).toBeUndefined();
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_ANY_KEY,
+          controller.accessOptions as object,
+        ),
+      ).toEqual([
+        SystemPermissions.CHAPTER_DOCS_UPLOAD,
+        SystemPermissions.CHAPTER_DOCS_MANAGE,
+      ]);
     });
 
     it('passes the caller through to every read, so the list is theirs', async () => {

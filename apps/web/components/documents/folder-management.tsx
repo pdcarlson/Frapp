@@ -7,6 +7,7 @@ import {
   useDeleteDocumentFolder,
   useUpdateDocumentFolder,
 } from "@repo/hooks";
+import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
 import { tierByMarks } from "@repo/hooks/document-library";
 import { sameChannelAccessList } from "@repo/validation";
 import { Button } from "@/components/ui/button";
@@ -140,6 +141,8 @@ export function useFolderManagement({
         folderDraft.whoCanSee,
         previous?.who_can_see ?? null,
       );
+    // An empty Chosen list is refused by the API; Save waits for an entry.
+    if (isEmptyChannelAccessChoice(folderDraft.whoCanSee)) return;
     if (editing && !renamed && !accessChanged) {
       folderDialog.setOpen(false);
       setFolderDraft(EMPTY_FOLDER_DRAFT);
@@ -380,7 +383,8 @@ export function FolderDialog({
           </div>
           {/*
             Left out for a member outside the tiers, who may not set a list
-            (the API refuses), rather than offered and refused on save.
+            (the API refuses), rather than offered and refused on save. On a
+            folder that already has one they may still open it to everyone.
           */}
           {access.canLimit || folderDraft.whoCanSee !== null ? (
             <ChannelAccessField
@@ -394,7 +398,8 @@ export function FolderDialog({
               optionsState={access.optionsState}
               locked={access.locked}
               alwaysLine={FOLDER_ALWAYS_LINE}
-              disabled={folderBusy || !access.canLimit}
+              canChoose={access.canLimit}
+              disabled={folderBusy || access.optionsState === "loading"}
             />
           ) : null}
         </form>
@@ -409,7 +414,11 @@ export function FolderDialog({
           <Button
             form="doc-folder-form"
             type="submit"
-            {...gate.controlProps(folderBusy || !folderDraft.name.trim())}
+            {...gate.controlProps(
+              folderBusy ||
+                !folderDraft.name.trim() ||
+                isEmptyChannelAccessChoice(folderDraft.whoCanSee),
+            )}
           >
             {folderBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
             {folderDraft.id ? "Save folder" : "Create folder"}
