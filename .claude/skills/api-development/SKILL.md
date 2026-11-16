@@ -46,7 +46,8 @@ Use the `task` feature as the reference, since it follows every convention below
 `interface/controllers/task.controller.ts`, `modules/task/task.module.ts`, and the spec beside each.
 
 0. Before writing a helper, guard, constant or validation rule, search for an existing one and
-   reuse or extend it: `apps/api/src/domain/utils/` (rules such as `channel-access.ts`,
+   reuse or extend it: `apps/api/src/interface/guards/` (request guards such as
+   `permissions.guard.ts`, `chapter.guard.ts`), `apps/api/src/domain/utils/` (rules such as `channel-access.ts`,
    `card-closing.ts`), `apps/api/src/domain/constants/` (limits, permissions, retention-style
    values), `packages/validation/src/` (anything the clients also enforce, such as
    `AI_REPORT_RETENTION_DAYS`), and `packages/formatting/src/` (dates and display). Grep for the
