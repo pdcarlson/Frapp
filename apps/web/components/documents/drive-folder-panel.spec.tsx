@@ -165,7 +165,7 @@ describe("DriveFolderPanel", () => {
       await screen.findByText("Disconnect Chapter files?"),
     ).toBeInTheDocument();
     const buttons = screen.getAllByRole("button", { name: "Disconnect" });
-    await user.click(buttons[buttons.length - 1]);
+    await user.click(buttons[buttons.length - 1]!);
     await waitFor(() => expect(disconnect).toHaveBeenCalled());
   });
 });
