@@ -143,6 +143,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Whoever made an event sees a Start minutes card in the sidebar while it is on.",
       "Starting minutes asks one thing at a time, picks the meeting that is on now for you, and only needs a day for a meeting that was never on the calendar.",
       "You can choose which tiers, roles or groups can see a Documents folder or a single file, and a lock marks the ones not everyone can see.",
+      "Bulk-uploaded backwork drafts now fill in their course, professor, term and type from the file's redacted pages, marked AI so you can check them before you publish.",
     ],
     phone: [
       "The Calendar has its own + at the top for adding an event from any view, and on the Calendar it starts on the day you've picked, today or later.",
