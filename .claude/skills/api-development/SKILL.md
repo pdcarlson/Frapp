@@ -45,6 +45,13 @@ Use the `task` feature as the reference, since it follows every convention below
 `application/services/task.service.ts`, `interface/dtos/task.dto.ts`,
 `interface/controllers/task.controller.ts`, `modules/task/task.module.ts`, and the spec beside each.
 
+0. Before writing a helper, guard, constant or validation rule, search for an existing one and
+   reuse or extend it: `apps/api/src/domain/utils/` (rules such as `channel-access.ts`,
+   `card-closing.ts`), `apps/api/src/domain/constants/` (limits, permissions, retention-style
+   values), `packages/validation/src/` (anything the clients also enforce, such as
+   `AI_REPORT_RETENTION_DAYS`), and `packages/formatting/src/` (dates and display). Grep for the
+   concept, not only your name for it. A copy you find is consolidated in this PR when small
+   ([`AGENTS.md` § Tech debt protocol](../../../AGENTS.md#tech-debt-protocol)).
 1. Add the entity, and export it from `domain/entities/index.ts`.
 2. Add the repository interface and its injection token.
 3. Add the Supabase repository and its tenant-scope spec (see the [`testing`](../testing/SKILL.md)

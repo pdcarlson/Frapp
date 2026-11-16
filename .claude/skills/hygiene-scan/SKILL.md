@@ -254,8 +254,11 @@ Ship a candidate only if it is:
   are not.
 - **Allowed:** clear of the hard limits and the behaviour rule.
 
-Prefer a fix that closes a `suggestion` issue, then one that shrinks a gate baseline, then one that
-deletes more than it adds. Decline to the ledger, with the reason, anything that is taste,
+Prefer a consolidation theme first: one subsystem's open duplicated-rule issues ("share one X",
+"put A and B on one helper"; search open issues for `share one`, `duplicated`, `hand-rolled`,
+`same rule`), cleared as one batch, so the weekly run pays down that backlog (Paul, 2026-11-16).
+Skip a batch whose files an open PR holds (one PR per screen). Then prefer a fix that closes a
+`suggestion` issue, then one that shrinks a gate baseline, then one that deletes more than it adds. Decline to the ledger, with the reason, anything that is taste,
 off-limits, adds copies, or needs a product or design decision. Zero fixes with written reasons is a
 pass; manufacturing a change to show work is a failure.
 

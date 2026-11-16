@@ -26,6 +26,14 @@ state, and topic teardown, see [`realtime-resilience`](../realtime-resilience/SK
 | Landing | `apps/landing/app/` | Separate Next.js app with inline Tailwind |
 | Mobile | `apps/mobile/app/` (Expo Router screens), `apps/mobile/components/` | React Native, no Tailwind classes |
 
+**Before writing a helper, hook, guard, constant or validation rule,** search for an existing one
+and reuse or extend it. Grep for the concept, not only your name for it, in: `packages/hooks/src/`
+(data hooks), `packages/validation/src/` (schemas, client gates, shared limits),
+`packages/chat-core/src/` (chat state, realtime, outbox), `packages/formatting/src/` (dates, times,
+display strings), `apps/mobile/components/sheet-scaffold.tsx` (bottom-sheet shell and
+`useGuardedSheetRef`), `apps/mobile/lib/` and `apps/web/lib/`. A copy you find is consolidated in
+this PR when small ([`AGENTS.md` § Tech debt protocol](../../../AGENTS.md#tech-debt-protocol)).
+
 ## Web components (`apps/web`)
 
 Primitives follow ShadCN conventions: CVA variants, `cn()` from `@/lib/utils`, and Radix for
