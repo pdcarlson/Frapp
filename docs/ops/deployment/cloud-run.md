@@ -40,6 +40,7 @@ The API is moving from Render to Google Cloud Run ([#5228](https://github.com/fr
   - Infisical signs in as its own `infisical-us@infisical-us.iam.gserviceaccount.com` and impersonates this account.
   - Infisical requires the account's name to end with the first two parts of the Infisical organization id. That is how it keeps one customer from impersonating another customer's account.
   - Infisical's Secret Sync setup asks for Secret Manager Admin, so this account can read, change and delete every secret in its project.
+  - It also has Service Usage Viewer, which only shows which Google services are on. Infisical checks that Secret Manager is on before it lists a project for a sync, so without it the sync's project list is empty (found 2026-11-16).
 
 ## Secrets
 

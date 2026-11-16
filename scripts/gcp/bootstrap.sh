@@ -265,6 +265,10 @@ if [[ -n "$INFISICAL_SA_NAME" ]]; then
   # creates, updates and deletes secrets, and imports existing ones. It can
   # therefore also read this project's values.
   project_role "serviceAccount:$INFISICAL_SA" roles/secretmanager.admin
+  # Infisical lists a project for a sync only after checking that Secret
+  # Manager is on there, which reads the project's services. Without this the
+  # sync's project list is empty (2026-11-16).
+  project_role "serviceAccount:$INFISICAL_SA" roles/serviceusage.serviceUsageViewer
   if ! gc iam service-accounts add-iam-policy-binding "$INFISICAL_SA" \
     --member="serviceAccount:$INFISICAL_PRINCIPAL" --role=roles/iam.serviceAccountTokenCreator >/dev/null; then
     echo "Google refused to let Infisical act as $INFISICAL_SA_NAME." >&2
