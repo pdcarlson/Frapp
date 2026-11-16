@@ -3,8 +3,8 @@ import type { ChapterDocumentFolder } from '../entities/chapter-document.entity'
 export const CHAPTER_DOCUMENT_FOLDER_REPOSITORY =
   'CHAPTER_DOCUMENT_FOLDER_REPOSITORY';
 
+/** A rename goes through `rename`, which re-files the documents with it. */
 export interface ChapterDocumentFolderUpdate {
-  name?: string;
   sort_order?: number;
   who_can_see?: string[] | null;
 }
@@ -35,7 +35,23 @@ export interface IChapterDocumentFolderRepository {
     chapterId: string,
     data: ChapterDocumentFolderUpdate,
   ): Promise<ChapterDocumentFolder>;
-  delete(id: string, chapterId: string): Promise<void>;
+  /**
+   * Renames the folder and re-files its documents in one transaction
+   * (`rename_document_folder`), so a restricted folder's files are never under
+   * a name no folder claims. A name the chapter uses is a unique violation
+   * (23505) and changes nothing. Null when the folder isn't in the chapter.
+   */
+  rename(
+    id: string,
+    chapterId: string,
+    name: string,
+  ): Promise<ChapterDocumentFolder | null>;
+  /**
+   * Moves the folder's documents to the top level, carrying a restricted
+   * folder's list onto them, and deletes it, in one transaction
+   * (`delete_document_folder`). False when the folder isn't in the chapter.
+   */
+  deleteMovingDocuments(id: string, chapterId: string): Promise<boolean>;
   /**
    * Pins (an ISO time) or unpins (null) a folder for the chapter (#3934).
    * Null when no folder with that id is in the chapter, including one deleted

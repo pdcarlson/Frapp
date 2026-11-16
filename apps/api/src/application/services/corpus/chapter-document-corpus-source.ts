@@ -23,6 +23,7 @@ import {
 import {
   canSeeDocument,
   folderListsByName,
+  listsInPlay,
 } from '#domain/utils/document-access';
 import { RbacService } from '../rbac.service';
 import type { CorpusSourceAdapter, CorpusSourceRead } from './corpus-source';
@@ -108,20 +109,29 @@ export class ChapterDocumentCorpusSource implements CorpusSourceAdapter {
       [SystemPermissions.MEMBERS_VIEW],
     );
     if (!mayOpenLibrary) return new Set();
-    const [documents, folders, member] = await Promise.all([
+    const [documents, folders] = await Promise.all([
       this.documents.findByIds([...sourceIds], chapterId),
       this.folders.findByChapter(chapterId),
-      this.members.findByUserAndChapter(userId, chapterId),
     ]);
+    const lists = folderListsByName(folders);
+    const inPlay = listsInPlay([
+      ...documents.map((document) => document.who_can_see),
+      ...folders.map((folder) => folder.who_can_see),
+    ]);
+    const ids = (kept: typeof documents) =>
+      new Set(kept.map((document) => document.id));
+    if (!inPlay.any) return ids(documents);
+    const member = await this.members.findByUserAndChapter(userId, chapterId);
     const viewer = {
       userId,
-      holder: await this.rbac.getChannelAccessHolder(chapterId, member, true),
+      holder: await this.rbac.getChannelAccessHolder(
+        chapterId,
+        member,
+        inPlay.groups,
+      ),
     };
-    const lists = folderListsByName(folders);
-    return new Set(
-      documents
-        .filter((document) => canSeeDocument(document, lists, viewer))
-        .map((document) => document.id),
+    return ids(
+      documents.filter((document) => canSeeDocument(document, lists, viewer)),
     );
   }
 }

@@ -3,6 +3,7 @@ import {
   canSeeFolder,
   documentListAdmits,
   folderListsByName,
+  listsInPlay,
   tiersAListKeeps,
 } from './document-access';
 import type { ChannelAccessHolder } from './channel-access';
@@ -48,7 +49,8 @@ describe('document-access (#3642 piece 1)', () => {
       folder: string | null,
       who_can_see: string[] | null,
       uploaded_by = 'u-2',
-    ) => ({ folder, who_can_see, uploaded_by });
+      drive_file_id: string | null = null,
+    ) => ({ folder, who_can_see, uploaded_by, drive_file_id });
 
     it('follows its folder while its own list is null', () => {
       expect(canSeeDocument(file('Exec', null), lists, viewer([]))).toBe(false);
@@ -74,6 +76,17 @@ describe('document-access (#3642 piece 1)', () => {
       ).toBe(true);
     });
 
+    it("gives whoever connected Google Drive no way past a copy's lists", () => {
+      // Copies are filed as uploaded by the connecting officer.
+      expect(
+        canSeeDocument(
+          file('Exec', null, 'u-1', 'drive-file-1'),
+          lists,
+          viewer([]),
+        ),
+      ).toBe(false);
+    });
+
     it('reads a top-level file, or one under a name no folder claims, by its own list alone', () => {
       expect(canSeeDocument(file(null, null), lists, viewer([]))).toBe(true);
       expect(canSeeDocument(file('Gone', null), lists, viewer([]))).toBe(true);
@@ -93,6 +106,26 @@ describe('document-access (#3642 piece 1)', () => {
         },
       ),
     ).toBe(true);
+  });
+
+  describe('listsInPlay', () => {
+    it('reads nothing when no list is set', () => {
+      expect(listsInPlay([null, undefined, null])).toEqual({
+        any: false,
+        groups: false,
+      });
+    });
+
+    it('reads groups only when a list names one', () => {
+      expect(listsInPlay([null, ['tier:t']])).toEqual({
+        any: true,
+        groups: false,
+      });
+      expect(listsInPlay([['tier:t'], ['group:g']])).toEqual({
+        any: true,
+        groups: true,
+      });
+    });
   });
 
   describe('tiersAListKeeps', () => {

@@ -184,6 +184,7 @@ export class ChapterDocumentController {
         byte_size: doc.byte_size,
         document_type: doc.document_type,
         effective_date: doc.effective_date,
+        who_can_see: doc.who_can_see,
       })),
     );
     return { results };

@@ -9,12 +9,14 @@
  * `null` is everyone who can open Documents, else `tier:`, `role:` and
  * `group:` entries. A file's `null` is "same as its folder", and a file's own
  * list narrows its folder's: a member passes both. `*` passes every list, so
- * a chapter can't lock itself out, and a file's uploader always sees it.
+ * a chapter can't lock itself out, and a file's uploader always sees it,
+ * unless it's a Google Drive copy: those are filed as uploaded by whoever
+ * connected the folder, who mustn't see past every list through that.
  * Holding `chapter_docs:manage` passes nothing (Paul's pick 2): a chair who
  * runs the library doesn't see the exec board's files.
  */
 import { channelAccessEntry } from '@repo/validation';
-import type { ChannelAccessHolder } from './channel-access';
+import { listAdmits, type ChannelAccessHolder } from './channel-access';
 import type {
   ChapterDocument,
   ChapterDocumentFolder,
@@ -32,9 +34,26 @@ export function documentListAdmits(
   list: readonly string[] | null | undefined,
   holder: ChannelAccessHolder,
 ): boolean {
-  if (list == null) return true;
-  if (holder.wildcard) return true;
-  return list.some((entry) => holder.entries.has(entry));
+  return listAdmits(list ?? null, holder);
+}
+
+/**
+ * What resolving the viewer must read for these folders and files: nothing
+ * when none has a list (every chapter until an officer sets one), and their
+ * groups only when some list names a group.
+ */
+export function listsInPlay(
+  lists: Iterable<readonly string[] | null | undefined>,
+): { any: boolean; groups: boolean } {
+  let any = false;
+  for (const list of lists) {
+    if (list == null) continue;
+    any = true;
+    if (list.some((entry) => entry.startsWith('group:'))) {
+      return { any, groups: true };
+    }
+  }
+  return { any, groups: false };
 }
 
 /** Each folder's list by its name, the key `ChapterDocument.folder` holds. */
@@ -54,17 +73,30 @@ export function canSeeFolder(
   return documentListAdmits(folder.who_can_see, viewer.holder);
 }
 
+/** Whether `userId` is the file's own uploader, who always sees it. */
+export function isOwnUpload(
+  document: Pick<ChapterDocument, 'uploaded_by' | 'drive_file_id'>,
+  userId: string,
+): boolean {
+  return document.uploaded_by === userId && document.drive_file_id === null;
+}
+
 /**
- * Whether the viewer sees a file: its uploader always does; anyone else
- * passes its folder's list and its own. A file filed under a name no folder
- * row claims has no folder list to pass.
+ * Whether the viewer sees a file: its uploader always does (a Drive copy has
+ * no uploader in that sense); anyone else passes its folder's list and its
+ * own. A file filed under a name no folder row claims has no folder list to
+ * pass; renaming and deleting a folder move its files in one transaction so
+ * that never happens to a restricted one.
  */
 export function canSeeDocument(
-  document: Pick<ChapterDocument, 'folder' | 'who_can_see' | 'uploaded_by'>,
+  document: Pick<
+    ChapterDocument,
+    'folder' | 'who_can_see' | 'uploaded_by' | 'drive_file_id'
+  >,
   folderLists: ReadonlyMap<string, readonly string[] | null>,
   viewer: DocumentViewer,
 ): boolean {
-  if (document.uploaded_by === viewer.userId) return true;
+  if (isOwnUpload(document, viewer.userId)) return true;
   const folderList =
     document.folder !== null
       ? (folderLists.get(document.folder) ?? null)

@@ -163,20 +163,6 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     return data;
   }
 
-  async keepFolderList(
-    folder: string,
-    whoCanSee: string[],
-    chapterId: string,
-  ): Promise<void> {
-    const { error } = await this.supabase
-      .from('chapter_documents')
-      .update({ who_can_see: whoCanSee })
-      .eq('chapter_id', chapterId)
-      .eq('folder', folder)
-      .is('who_can_see', null);
-    if (error) throw new SupabaseQueryError(error);
-  }
-
   async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chapter_documents')
@@ -207,30 +193,6 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .not('drive_file_id', 'is', null);
-    if (error) throw new SupabaseQueryError(error);
-  }
-
-  async moveToRoot(folder: string, chapterId: string): Promise<void> {
-    const patch: TablesUpdate<'chapter_documents'> = { folder: null };
-    const { error } = await this.supabase
-      .from('chapter_documents')
-      .update(patch)
-      .eq('chapter_id', chapterId)
-      .eq('folder', folder);
-    if (error) throw new SupabaseQueryError(error);
-  }
-
-  async renameFolder(
-    fromFolder: string,
-    toFolder: string,
-    chapterId: string,
-  ): Promise<void> {
-    const patch: TablesUpdate<'chapter_documents'> = { folder: toFolder };
-    const { error } = await this.supabase
-      .from('chapter_documents')
-      .update(patch)
-      .eq('chapter_id', chapterId)
-      .eq('folder', fromFolder);
     if (error) throw new SupabaseQueryError(error);
   }
 }

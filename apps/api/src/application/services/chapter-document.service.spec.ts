@@ -97,9 +97,6 @@ describe('ChapterDocumentService', () => {
       updateDriveCopy: jest.fn(),
       setPinnedAt: jest.fn(),
       setWhoCanSee: jest.fn(),
-      keepFolderList: jest.fn(),
-      moveToRoot: jest.fn(),
-      renameFolder: jest.fn(),
     };
 
     mockRbac = {
@@ -132,7 +129,8 @@ describe('ChapterDocumentService', () => {
       findByName: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(baseFolder),
       update: jest.fn(),
-      delete: jest.fn(),
+      rename: jest.fn(),
+      deleteMovingDocuments: jest.fn().mockResolvedValue(true),
       setPinnedAt: jest.fn(),
     };
 
@@ -1068,10 +1066,10 @@ describe('ChapterDocumentService', () => {
   });
 
   describe('updateFolder', () => {
-    it('should rename the folder and re-file its documents', async () => {
+    it('renames the folder and re-files its documents in one call', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
       mockFolderRepo.findByName.mockResolvedValue(null);
-      mockFolderRepo.update.mockResolvedValue({
+      mockFolderRepo.rename.mockResolvedValue({
         ...baseFolder,
         name: 'Bylaws',
       });
@@ -1080,23 +1078,41 @@ describe('ChapterDocumentService', () => {
         name: 'Bylaws',
       });
 
-      expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
-        name: 'Bylaws',
-      });
-      expect(mockDocumentRepo.renameFolder).toHaveBeenCalledWith(
-        'Governance',
-        'Bylaws',
+      expect(mockFolderRepo.rename).toHaveBeenCalledWith(
+        'folder-1',
         'ch-1',
+        'Bylaws',
       );
+      expect(mockFolderRepo.update).not.toHaveBeenCalled();
       expect(result.name).toBe('Bylaws');
     });
 
-    it('should reorder without touching documents', async () => {
+    it('renames first, then applies the rest of the patch', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockFolderRepo.update.mockResolvedValue({
-        ...baseFolder,
+      const calls: string[] = [];
+      mockFolderRepo.rename.mockImplementation(async () => {
+        calls.push('rename');
+        return { ...baseFolder, name: 'Bylaws' };
+      });
+      mockFolderRepo.update.mockImplementation(async () => {
+        calls.push('update');
+        return { ...baseFolder, name: 'Bylaws', sort_order: 3 };
+      });
+
+      await service.updateFolder('folder-1', 'ch-1', 'user-1', {
+        name: 'Bylaws',
         sort_order: 3,
       });
+
+      expect(calls).toEqual(['rename', 'update']);
+      expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
+        sort_order: 3,
+      });
+    });
+
+    it('should reorder without renaming', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.update.mockResolvedValue({ ...baseFolder, sort_order: 3 });
 
       await service.updateFolder('folder-1', 'ch-1', 'user-1', {
         sort_order: 3,
@@ -1105,18 +1121,20 @@ describe('ChapterDocumentService', () => {
       expect(mockFolderRepo.update).toHaveBeenCalledWith('folder-1', 'ch-1', {
         sort_order: 3,
       });
-      expect(mockDocumentRepo.renameFolder).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
     });
 
-    it('should not re-file documents when the name is unchanged', async () => {
+    it('should not rename when the name is unchanged', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockFolderRepo.update.mockResolvedValue(baseFolder);
 
-      await service.updateFolder('folder-1', 'ch-1', 'user-1', {
-        name: 'Governance',
-      });
+      await expect(
+        service.updateFolder('folder-1', 'ch-1', 'user-1', {
+          name: 'Governance',
+        }),
+      ).resolves.toEqual(baseFolder);
 
-      expect(mockDocumentRepo.renameFolder).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
+      expect(mockFolderRepo.update).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException when renaming onto an existing folder', async () => {
@@ -1130,8 +1148,28 @@ describe('ChapterDocumentService', () => {
       await expect(
         service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Minutes' }),
       ).rejects.toThrow(ConflictException);
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
-      expect(mockDocumentRepo.renameFolder).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
+    });
+
+    it('reports a rename that lost a race to the unique index as a conflict', async () => {
+      // The pre-check is advisory; the transaction's unique index is the real
+      // arbiter, and it rolls the documents back with the row.
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.findByName.mockResolvedValue(null);
+      mockFolderRepo.rename.mockRejectedValue({ code: '23505' });
+
+      await expect(
+        service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Minutes' }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('answers 404 when the folder goes between the read and the rename', async () => {
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.rename.mockResolvedValue(null);
+
+      await expect(
+        service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Bylaws' }),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw NotFoundException for a folder in another chapter', async () => {
@@ -1140,7 +1178,7 @@ describe('ChapterDocumentService', () => {
       await expect(
         service.updateFolder('folder-1', 'ch-2', 'user-1', { name: 'Bylaws' }),
       ).rejects.toThrow(NotFoundException);
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
     });
 
     it('should reject an empty rename', async () => {
@@ -1149,7 +1187,7 @@ describe('ChapterDocumentService', () => {
       await expect(
         service.updateFolder('folder-1', 'ch-1', 'user-1', { name: '   ' }),
       ).rejects.toThrow(BadRequestException);
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
     });
 
     it('should treat a no-op patch as a no-op, not an error', async () => {
@@ -1167,67 +1205,32 @@ describe('ChapterDocumentService', () => {
 
       expect(result).toEqual(baseFolder);
       expect(mockFolderRepo.update).not.toHaveBeenCalled();
-      expect(mockDocumentRepo.renameFolder).not.toHaveBeenCalled();
-    });
-
-    it('should re-file documents before renaming the folder row', async () => {
-      const calls: string[] = [];
-      mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockFolderRepo.findByName.mockResolvedValue(null);
-      mockDocumentRepo.renameFolder.mockImplementation(async () => {
-        calls.push('documents');
-      });
-      mockFolderRepo.update.mockImplementation(async () => {
-        calls.push('folder');
-        return { ...baseFolder, name: 'Bylaws' };
-      });
-
-      await service.updateFolder('folder-1', 'ch-1', 'user-1', {
-        name: 'Bylaws',
-      });
-
-      expect(calls).toEqual(['documents', 'folder']);
-    });
-
-    it('should leave the rename retryable when re-filing documents fails', async () => {
-      // The row keeps the old name, so a retry still sees a real rename and
-      // re-runs both steps. Renaming the row first would make the retry a
-      // no-op and strand the documents permanently.
-      mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockFolderRepo.findByName.mockResolvedValue(null);
-      mockDocumentRepo.renameFolder.mockRejectedValue(new Error('db down'));
-
-      await expect(
-        service.updateFolder('folder-1', 'ch-1', 'user-1', { name: 'Bylaws' }),
-      ).rejects.toThrow('db down');
-      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+      expect(mockFolderRepo.rename).not.toHaveBeenCalled();
     });
   });
 
   describe('deleteFolder', () => {
-    it('should move documents to root, then delete the folder', async () => {
+    it('moves the documents to the top level and deletes the folder in one call', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
 
       await service.deleteFolder('folder-1', 'ch-1', 'user-1');
 
-      expect(mockDocumentRepo.moveToRoot).toHaveBeenCalledWith(
-        'Governance',
+      expect(mockFolderRepo.deleteMovingDocuments).toHaveBeenCalledWith(
+        'folder-1',
         'ch-1',
       );
-      expect(mockFolderRepo.delete).toHaveBeenCalledWith('folder-1', 'ch-1');
       // Spec: no cascading delete of the files themselves.
       expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
       expect(mockDocumentRepo.delete).not.toHaveBeenCalled();
     });
 
-    it('should not delete the folder row if moving documents fails', async () => {
+    it('answers 404 when the folder goes between the read and the delete', async () => {
       mockFolderRepo.findById.mockResolvedValue(baseFolder);
-      mockDocumentRepo.moveToRoot.mockRejectedValue(new Error('db down'));
+      mockFolderRepo.deleteMovingDocuments.mockResolvedValue(false);
 
       await expect(
         service.deleteFolder('folder-1', 'ch-1', 'user-1'),
-      ).rejects.toThrow('db down');
-      expect(mockFolderRepo.delete).not.toHaveBeenCalled();
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw NotFoundException for a folder in another chapter', async () => {
@@ -1236,7 +1239,7 @@ describe('ChapterDocumentService', () => {
       await expect(
         service.deleteFolder('folder-1', 'ch-2', 'user-1'),
       ).rejects.toThrow(NotFoundException);
-      expect(mockDocumentRepo.moveToRoot).not.toHaveBeenCalled();
+      expect(mockFolderRepo.deleteMovingDocuments).not.toHaveBeenCalled();
     });
   });
 
@@ -1370,6 +1373,8 @@ describe('ChapterDocumentService', () => {
           created_at: '2026-11-02T00:00:00.000Z',
         },
       ]);
+      mockFolderRepo.findByChapter.mockResolvedValue([baseFolder]);
+      mockDocumentRepo.findByIds.mockResolvedValue([baseDocument]);
       await expect(service.listStars('user-1', 'ch-1')).resolves.toEqual({
         folder_ids: ['folder-1'],
         document_ids: ['doc-1'],
@@ -1549,25 +1554,143 @@ describe('ChapterDocumentService', () => {
       expect(mockDocumentRepo.create).not.toHaveBeenCalled();
     });
 
-    it("keeps a deleted folder's list on the files that followed it, before moving them", async () => {
-      mockRbac.getChannelAccessHolder.mockResolvedValue(holder(['tier:exec']));
+    it("answers 404 for deleting a folder the member can't see, managers included", async () => {
       mockFolderRepo.findById.mockResolvedValue(execFolder);
-      const calls: string[] = [];
-      mockDocumentRepo.keepFolderList.mockImplementation(async () => {
-        calls.push('keep');
-      });
-      mockDocumentRepo.moveToRoot.mockImplementation(async () => {
-        calls.push('move');
-      });
+      await expect(
+        service.deleteFolder('folder-exec', 'ch-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockFolderRepo.deleteMovingDocuments).not.toHaveBeenCalled();
+    });
 
-      await service.deleteFolder('folder-exec', 'ch-1', 'user-1');
+    it("answers 404 for deleting, pinning or starring a file the member can't see", async () => {
+      mockDocumentRepo.findById.mockResolvedValue(inExec);
+      await expect(
+        service.delete('doc-exec', 'ch-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.setDocumentPinned('doc-exec', 'ch-1', 'user-1', true),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.setDocumentStarred('user-1', 'ch-1', 'doc-exec', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockDocumentRepo.delete).not.toHaveBeenCalled();
+      expect(mockDocumentRepo.setPinnedAt).not.toHaveBeenCalled();
+      expect(mockStarRepo.add).not.toHaveBeenCalled();
+    });
 
-      expect(mockDocumentRepo.keepFolderList).toHaveBeenCalledWith(
-        'Exec',
-        ['tier:exec'],
-        'ch-1',
-      );
-      expect(calls).toEqual(['keep', 'move']);
+    it("answers 404 for pinning or starring a folder the member can't see", async () => {
+      mockFolderRepo.findById.mockResolvedValue(execFolder);
+      await expect(
+        service.setFolderPinned('folder-exec', 'ch-1', 'user-1', true),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.setFolderStarred('user-1', 'ch-1', 'folder-exec', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockFolderRepo.setPinnedAt).not.toHaveBeenCalled();
+      expect(mockStarRepo.add).not.toHaveBeenCalled();
+    });
+
+    it('leaves out stars on what the member can no longer see', async () => {
+      const star = (folder_id: string | null, document_id: string | null) => ({
+        id: `s-${folder_id ?? document_id}`,
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        folder_id,
+        document_id,
+        created_at: '2026-11-16T00:00:00.000Z',
+      });
+      mockStarRepo.findByUser.mockResolvedValue([
+        star('folder-1', null),
+        star('folder-exec', null),
+        star(null, 'doc-1'),
+        star(null, 'doc-exec'),
+      ]);
+      mockDocumentRepo.findByIds.mockResolvedValue([baseDocument, inExec]);
+      await expect(service.listStars('user-1', 'ch-1')).resolves.toEqual({
+        folder_ids: ['folder-1'],
+        document_ids: ['doc-1'],
+      });
+    });
+
+    it('files an upload with its checked list, from the single route and a batch', async () => {
+      mockRbac.getRankContext.mockResolvedValue({
+        reach: {
+          rank: 1,
+          wildcard: false,
+          permissions: new Set(),
+          memberId: 'm',
+        },
+        tiers: [
+          { id: 'president', position: 0 },
+          { id: 'exec', position: 1 },
+        ],
+        roles: [],
+        positions: new Map(),
+      });
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+      const input = {
+        chapter_id: 'ch-1',
+        title: 'Budget',
+        storage_path: 'chapters/ch-1/documents/doc-new/b.pdf',
+        uploaded_by: 'user-1',
+        who_can_see: ['role:treasurer'],
+      };
+      await service.confirmUpload(input);
+      await service.confirmUploads([
+        { ...input, storage_path: 'chapters/ch-1/documents/doc-2/c.pdf' },
+      ]);
+      expect(mockDocumentRepo.create).toHaveBeenCalledTimes(2);
+      for (const [row] of mockDocumentRepo.create.mock.calls) {
+        expect(row).toEqual(
+          expect.objectContaining({
+            who_can_see: ['role:treasurer', 'tier:exec', 'tier:president'],
+          }),
+        );
+      }
+    });
+
+    it('reads no viewer when nothing in the library has a list', async () => {
+      mockFolderRepo.findByChapter.mockResolvedValue([baseFolder]);
+      mockDocumentRepo.findByChapter.mockResolvedValue([baseDocument]);
+      await service.findByChapter('ch-1', 'user-1');
+      await service.listFolders('ch-1', 'user-1');
+      expect(mockRbac.getChannelAccessHolder).not.toHaveBeenCalled();
+    });
+
+    it('refuses to limit a folder that holds Google Drive copies until sync keeps lists (#5220)', async () => {
+      mockRbac.getRankContext.mockResolvedValue({
+        reach: {
+          rank: 0,
+          wildcard: true,
+          permissions: new Set(),
+          memberId: 'm',
+        },
+        tiers: [],
+        roles: [],
+        positions: new Map(),
+      });
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockDocumentRepo.findDriveCopies.mockResolvedValue([
+        { ...baseDocument, drive_file_id: 'drive-1' },
+      ]);
+      await expect(
+        service.updateFolder('folder-1', 'ch-1', 'user-1', {
+          who_can_see: ['role:treasurer'],
+        }),
+      ).rejects.toThrow("can't be limited yet");
+      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+    });
+
+    it("lets whoever connected Google Drive change no copy's list as its uploader", async () => {
+      mockRbac.getChannelAccessHolder.mockResolvedValue(holder(['tier:exec']));
+      mockDocumentRepo.findById.mockResolvedValue({
+        ...inExec,
+        uploaded_by: 'user-1',
+        drive_file_id: 'drive-1',
+      });
+      await expect(
+        service.setDocumentAccess('doc-exec', 'ch-1', 'user-1', null),
+      ).rejects.toThrow('Only whoever uploaded a file');
     });
 
     it("answers 404 for a folder the member can't see, so a manager can't change it", async () => {

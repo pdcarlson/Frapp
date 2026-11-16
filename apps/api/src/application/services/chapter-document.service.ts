@@ -20,9 +20,12 @@ import {
   canSeeDocument,
   canSeeFolder,
   folderListsByName,
+  isOwnUpload,
+  listsInPlay,
   tiersAListKeeps,
   type DocumentViewer,
 } from '#domain/utils/document-access';
+import type { ChannelAccessHolder } from '#domain/utils/channel-access';
 import {
   CHAPTER_DOCUMENT_REPOSITORY,
   type ChapterDocumentFilter,
@@ -136,31 +139,84 @@ export class ChapterDocumentService {
   // Who can see (#3642 piece 1; `document-access.ts` decides)
   // ---------------------------------------------------------------------------
 
-  /** The member reading Documents: what they hold for lists, groups included. */
-  async viewerFor(chapterId: string, userId: string): Promise<DocumentViewer> {
+  /**
+   * The member reading Documents: what they hold for lists, and their groups
+   * when a list in play names one (`listsInPlay`).
+   */
+  async viewerFor(
+    chapterId: string,
+    userId: string,
+    withGroups = true,
+  ): Promise<DocumentViewer> {
     const member = await this.memberRepo.findByUserAndChapter(
       userId,
       chapterId,
     );
     return {
       userId,
-      holder: await this.rbac.getChannelAccessHolder(chapterId, member, true),
+      holder: await this.rbac.getChannelAccessHolder(
+        chapterId,
+        member,
+        withGroups,
+      ),
     };
   }
 
-  /** The documents in `documents` the member sees. */
+  /**
+   * The documents in `documents` the member sees. With no list on any
+   * folder or file in play, that's all of them, read without the viewer.
+   */
   async visibleTo(
     chapterId: string,
     userId: string,
     documents: ChapterDocument[],
   ): Promise<ChapterDocument[]> {
     if (documents.length === 0) return [];
-    const [viewer, folders] = await Promise.all([
-      this.viewerFor(chapterId, userId),
+    const folders = await this.folderRepo.findByChapter(chapterId);
+    const lists = folderListsByName(folders);
+    const inPlay = listsInPlay([
+      ...documents.map((doc) => doc.who_can_see),
+      ...documents.map((doc) =>
+        doc.folder !== null ? lists.get(doc.folder) : null,
+      ),
+    ]);
+    if (!inPlay.any) return documents;
+    const viewer = await this.viewerFor(chapterId, userId, inPlay.groups);
+    return documents.filter((doc) => canSeeDocument(doc, lists, viewer));
+  }
+
+  /**
+   * The ids in `documentIds` that every one of `viewers` sees, for Ask's
+   * check before an answer is posted to a channel (`AskPostService`): a file
+   * one reader can't open is one the post would show them.
+   */
+  async visibleToAll(
+    chapterId: string,
+    documentIds: readonly string[],
+    viewers: readonly {
+      user_id: string;
+      channel_access: ChannelAccessHolder;
+    }[],
+  ): Promise<Set<string>> {
+    const ids = [...new Set(documentIds)];
+    if (ids.length === 0) return new Set();
+    const [documents, folders] = await Promise.all([
+      this.documentRepo.findByIds(ids, chapterId),
       this.folderRepo.findByChapter(chapterId),
     ]);
     const lists = folderListsByName(folders);
-    return documents.filter((doc) => canSeeDocument(doc, lists, viewer));
+    return new Set(
+      documents
+        .filter((doc) =>
+          viewers.every((viewer) =>
+            canSeeDocument(doc, lists, {
+              userId: viewer.user_id,
+              holder: viewer.channel_access,
+            }),
+          ),
+        )
+        .map((doc) => doc.id),
+    );
   }
 
   /**
@@ -187,7 +243,14 @@ export class ChapterDocumentService {
   ): Promise<ChapterDocumentFolder> {
     const folder = await this.folderRepo.findById(id, chapterId);
     if (!folder) throw new NotFoundException(NOT_FOUND_FOLDER);
-    if (!canSeeFolder(folder, await this.viewerFor(chapterId, userId))) {
+    if (folder.who_can_see === null) return folder;
+    const inPlay = listsInPlay([folder.who_can_see]);
+    if (
+      !canSeeFolder(
+        folder,
+        await this.viewerFor(chapterId, userId, inPlay.groups),
+      )
+    ) {
       throw new NotFoundException(NOT_FOUND_FOLDER);
     }
     return folder;
@@ -242,8 +305,10 @@ export class ChapterDocumentService {
     whoCanSee: string[] | null,
   ): Promise<ChapterDocument> {
     const document = await this.visibleDocument(id, chapterId, userId);
+    // A Drive copy's uploader is whoever connected the folder, which makes
+    // them no more its owner than anyone else.
     if (
-      document.uploaded_by !== userId &&
+      !isOwnUpload(document, userId) &&
       !(await this.rbac.memberHasAnyPermission(chapterId, userId, [
         SystemPermissions.CHAPTER_DOCS_MANAGE,
       ]))
@@ -422,10 +487,14 @@ export class ChapterDocumentService {
         folder,
       );
       if (
-        existing &&
+        existing?.who_can_see &&
         !canSeeFolder(
           existing,
-          await this.viewerFor(input.chapter_id, input.uploaded_by),
+          await this.viewerFor(
+            input.chapter_id,
+            input.uploaded_by,
+            listsInPlay([existing.who_can_see]).groups,
+          ),
         )
       ) {
         throw new ForbiddenException("You can't file into that folder");
@@ -599,10 +668,10 @@ export class ChapterDocumentService {
     chapterId: string,
     userId: string,
   ): Promise<ChapterDocumentFolder[]> {
-    const [folders, viewer] = await Promise.all([
-      this.folderRepo.findByChapter(chapterId),
-      this.viewerFor(chapterId, userId),
-    ]);
+    const folders = await this.folderRepo.findByChapter(chapterId);
+    const inPlay = listsInPlay(folders.map((folder) => folder.who_can_see));
+    if (!inPlay.any) return folders;
+    const viewer = await this.viewerFor(chapterId, userId, inPlay.groups);
     return folders.filter((folder) => canSeeFolder(folder, viewer));
   }
 
@@ -682,30 +751,52 @@ export class ChapterDocumentService {
       userId,
       changes.who_can_see,
     );
+    // Drive sync still files its copies by folder name, so a rename in Drive
+    // would move a limited synced folder's copies into a new open one. Until
+    // sync keeps lists across renames (#5220), a folder holding Drive copies
+    // can't be limited.
+    if (whoCanSee) {
+      const copies = await this.documentRepo.findDriveCopies(chapterId);
+      if (copies.some((copy) => copy.folder === folder.name)) {
+        throw new ConflictException(
+          "A folder synced from Google Drive can't be limited yet",
+        );
+      }
+    }
     const patch = {
-      ...(isRename ? { name: rename } : {}),
       ...(changes.sort_order !== undefined
         ? { sort_order: changes.sort_order }
         : {}),
       ...(whoCanSee !== undefined ? { who_can_see: whoCanSee } : {}),
     };
 
+    // A rename re-files the documents and renames the row in one transaction
+    // (`rename_document_folder`): done as two writes, a failure or a lost
+    // race between them left the files under a name no folder claims, which
+    // for a restricted folder opens them to the chapter. Before the rest of
+    // the patch, so a retry of a half-done PATCH sees the new name and only
+    // re-applies the rest.
+    let current = folder;
+    if (isRename) {
+      try {
+        const renamed = await this.folderRepo.rename(id, chapterId, rename);
+        if (!renamed) throw new NotFoundException(NOT_FOUND_FOLDER);
+        current = renamed;
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw new ConflictException(
+            `A folder named "${rename}" already exists`,
+          );
+        }
+        throw error;
+      }
+    }
+
     // A PATCH that changes nothing is a no-op, not an error. Every field of
     // UpdateDocumentFolderDto is optional, so `{}` is a valid body — and an
     // empty PostgREST update matches no row, failing `.single()` with PGRST116
     // and surfacing as a 500.
-    if (Object.keys(patch).length === 0) return folder;
-
-    // Re-file the documents *before* renaming the folder row, so a failure
-    // between the two is self-healing: the row still holds the old name, so
-    // retrying the same rename re-runs both steps and converges. Renaming the
-    // row first would leave documents under a name no folder claims, and the
-    // retry would then see `rename === folder.name`, skip the re-file, and
-    // strand them permanently.
-    if (isRename) {
-      await this.documentRepo.renameFolder(folder.name, rename, chapterId);
-    }
-
+    if (Object.keys(patch).length === 0) return current;
     return this.folderRepo.update(id, chapterId, patch);
   }
 
@@ -714,23 +805,15 @@ export class ChapterDocumentService {
     chapterId: string,
     userId: string,
   ): Promise<void> {
-    const folder = await this.visibleFolder(id, chapterId, userId);
+    await this.visibleFolder(id, chapterId, userId);
 
-    // A restricted folder's files that followed it keep its list, so moving
-    // them to the top level never opens them to the chapter (#3642). Done
-    // before the move, which a retry repeats safely.
-    if (folder.who_can_see !== null) {
-      await this.documentRepo.keepFolderList(
-        folder.name,
-        folder.who_can_see,
-        chapterId,
-      );
-    }
     // Spec: deleting a folder moves its documents to the root level — no
-    // cascading delete of files. Move first, so a failure here leaves the
-    // folder intact rather than stranding documents under a deleted name.
-    await this.documentRepo.moveToRoot(folder.name, chapterId);
-    await this.folderRepo.delete(id, chapterId);
+    // cascading delete of files — and a restricted folder's list goes with
+    // them (#3642), all in one transaction (`delete_document_folder`), so no
+    // failure part-way strands them under a deleted name or opens them.
+    if (!(await this.folderRepo.deleteMovingDocuments(id, chapterId))) {
+      throw new NotFoundException(NOT_FOUND_FOLDER);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -792,7 +875,25 @@ export class ChapterDocumentService {
       if (star.folder_id) result.folder_ids.push(star.folder_id);
       if (star.document_id) result.document_ids.push(star.document_id);
     }
-    return result;
+    if (result.folder_ids.length === 0 && result.document_ids.length === 0) {
+      return result;
+    }
+    // A star on something the member can no longer see (its folder or its
+    // own list changed since) is left out, as every read leaves it out.
+    const [folders, documents] = await Promise.all([
+      this.listFolders(chapterId, userId),
+      result.document_ids.length > 0
+        ? this.documentRepo
+            .findByIds(result.document_ids, chapterId)
+            .then((docs) => this.visibleTo(chapterId, userId, docs))
+        : Promise.resolve([]),
+    ]);
+    const seenFolders = new Set(folders.map((folder) => folder.id));
+    const seenDocuments = new Set(documents.map((doc) => doc.id));
+    return {
+      folder_ids: result.folder_ids.filter((id) => seenFolders.has(id)),
+      document_ids: result.document_ids.filter((id) => seenDocuments.has(id)),
+    };
   }
 
   /**
