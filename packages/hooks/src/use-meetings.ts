@@ -439,10 +439,10 @@ export function useMeetingNotes(
   const chapterId = useActiveChapterId();
   return useQuery({
     queryKey: meetingNotesKey(chapterId, id ?? ""),
-    queryFn: async (): Promise<MeetingNotesState | null> => {
+    queryFn: async ({ signal }): Promise<MeetingNotesState | null> => {
       const { data, error, response } = await client.GET(
         "/v1/meetings/{id}/notes",
-        { params: { path: { id: id! } } },
+        { params: { path: { id: id! } }, signal },
       );
       if (response.status === 404 || response.status === 403) return null;
       // Posted since: there is nothing left to take notes on.
@@ -540,10 +540,10 @@ export function useMeetingNoteTaking(options?: {
     queryKey: eventId
       ? ([...noteTakingKey(chapterId), "event", eventId] as const)
       : noteTakingKey(chapterId),
-    queryFn: async (): Promise<MeetingNoteTaking[]> => {
+    queryFn: async ({ signal }): Promise<MeetingNoteTaking[]> => {
       const { data, error, response } = await client.GET(
         "/v1/meeting-notes",
-        { params: { query: eventId ? { event_id: eventId } : {} } },
+        { params: { query: eventId ? { event_id: eventId } : {} }, signal },
       );
       if (response.status === 404 || response.status === 403) return [];
       if (error) throw error;
