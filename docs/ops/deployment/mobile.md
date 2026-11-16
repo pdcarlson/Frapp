@@ -445,7 +445,10 @@ stops if a later ship has tagged another commit; dispatch Deploy production for 
   instead, and the repeated entry is deleted from the second PR by hand.
 - **EAS accepted a submission and then failed to upload it** (the `confirm` job is red): the
   record PR already lists the build. Either, while its commit is still the latest `v*` tag, fix
-  the cause and upload it again, and keep the entry, or drop the entry. To upload it again, run
+  the cause and upload it again, and keep the entry, or drop the entry. Once EAS won't retry the
+  submission, only dropping it is left: the runner kept no copy of the binary, so the `confirm`
+  summary says to drop the entry and re-run that platform's job by itself (its own re-run button;
+  **Re-run failed jobs** skips it, since its upload was accepted) for a new build. To upload it again, run
   the **Retry a store upload** workflow (`mobile-retry-upload.yml`) with the platform and the
   submission id the `confirm` summary names: it retries that submission on EAS, any error
   included, and waits for it like `confirm` does, with nothing rebuilt or redeployed. Merge the
@@ -550,8 +553,11 @@ stops if a later ship has tagged another commit; dispatch Deploy production for 
 
 #### By hand
 
-Run from the repo root, after checking out the latest `v*` tag and building it on EAS
-(`npm run eas -- build --platform <p> --profile production`). A tag cut before `npm run eas`
+Run from the repo root, after checking out the latest `v*` tag and building it
+(`npm run eas -- build --platform <p> --profile production`). That builds on EAS and needs the Free
+plan's build credits; add `--local --output <file>` to build on your own Mac (iOS, with Xcode 26) or
+a machine with the Android SDK and Java 17, as the store build does on GitHub's runners, then
+submit that file with `--path <file>` in place of `--latest`. A tag cut before `npm run eas`
 existed (#3124) doesn't have it; there, use the global fallback at the top of § 6. Both platforms read the `production` submit
 profile in `apps/mobile/eas.json`; `eas submit` defaults to it, and falls back to it when the
 build's own profile has no submit profile of the same name.

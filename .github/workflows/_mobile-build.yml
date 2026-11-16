@@ -110,7 +110,10 @@ name: Mobile build
 # leave something a later step runs, and, on a hosted runner with sudo, read a
 # secret the job references from the runner's memory; and eas-cli and the
 # local-build plugin it fetches (an exact version, eas-cli's own pin) resolve
-# their dependencies at install time, not from a lockfile (#3118). Isolating
+# their dependencies at install time, not from a lockfile (#3118). The plugin
+# is worse off: eas-cli fetches it with `npx -y` inside the build step, so
+# neither the `--before` cutoff nor `--ignore-scripts` reaches it, and its
+# install scripts run beside both tokens (#5188). Isolating
 # the install from the token is #3125. The deployed commit is an ancestor of
 # `main` with green CI, so its own tree is already-reviewed code.
 #
@@ -700,7 +703,8 @@ jobs:
       # `eas env:pull` writes each File variable under
       # `apps/mobile/.eas/.env/`, and the plain and sensitive values to the
       # `.env` it is given. The file moves out of the tree before the tree is
-      # checked, the `.env` is deleted unread, and the variable points at the
+      # checked, `.eas/.env/` and the `.env` are deleted unread (only those:
+      # `.eas/workflows/` is tracked), and the variable points at the
       # file, which the build's own environment overrides EAS's with (read
       # from eas-cli 24.8.0's `runLocalBuildAsync`).
       - name: Fetch the Firebase config from EAS
@@ -717,7 +721,7 @@ jobs:
           if [ -s "$FILE" ]; then
             mv "$FILE" "$RUNNER_TEMP/google-services.json"
           fi
-          rm -rf .eas
+          rm -rf .eas/.env
           if [ "$STATUS" -ne 0 ]; then
             echo "::error::eas env:pull exited $STATUS, so the Firebase config couldn't be fetched. Production is live and tagged; nothing was built."
             exit "$STATUS"

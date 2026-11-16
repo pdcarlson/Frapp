@@ -1075,13 +1075,16 @@ describe("the Firebase fetch, against a stand-in eas", () => {
       ].join("\n"),
     );
     const mobile = join(dir, "apps", "mobile");
-    mkdirSync(mobile, { recursive: true });
+    // A tracked file under .eas/ (apps/mobile/.eas/workflows/), which the cleanup must keep.
+    mkdirSync(join(mobile, ".eas", "workflows"), { recursive: true });
+    writeFileSync(join(mobile, ".eas", "workflows", "device-smoke.yml"), "jobs: {}\n");
     const envFile = join(dir, "env");
     writeFileSync(envFile, "");
     const result = runStep(stepNamed(CALLED, "android", FIREBASE), { cwd: mobile, env: { PATH: path, RUNNER_TEMP: dir, GITHUB_ENV: envFile } });
     result.argv = readFileSync(join(dir, "argv"), "utf8");
     result.env = readFileSync(envFile, "utf8");
-    result.leftInTree = existsSync(join(mobile, ".eas"));
+    result.leftInTree = existsSync(join(mobile, ".eas", ".env"));
+    result.trackedKept = existsSync(join(mobile, ".eas", "workflows", "device-smoke.yml"));
     result.pulledLeft = existsSync(join(dir, "eas-production.env"));
     result.file = existsSync(join(dir, "google-services.json")) ? readFileSync(join(dir, "google-services.json"), "utf8") : null;
     rmSync(dir, { recursive: true, force: true });
@@ -1096,7 +1099,8 @@ describe("the Firebase fetch, against a stand-in eas", () => {
     assert.match(result.argv, /^env:pull --environment production --non-interactive --path /);
     assert.equal(result.file, '{"project_info":{}}');
     assert.match(result.env, /^GOOGLE_SERVICES_JSON=.*\/google-services\.json$/m);
-    assert.equal(result.leftInTree, false, "the tree check that follows would refuse .eas/");
+    assert.equal(result.leftInTree, false, "the pulled files leave the tree before the build packs it");
+    assert.equal(result.trackedKept, true, "the tree check that follows would refuse a deleted tracked file");
     assert.equal(result.pulledLeft, false, "the pulled values are deleted unread");
   });
 
@@ -1110,6 +1114,7 @@ describe("the Firebase fetch, against a stand-in eas", () => {
     assert.match(failed.stdout, /eas env:pull exited 4/);
     for (const result of [missing, failed]) {
       assert.equal(result.leftInTree, false);
+      assert.equal(result.trackedKept, true);
       assert.equal(result.pulledLeft, false);
     }
   });

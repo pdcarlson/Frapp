@@ -392,12 +392,18 @@ export function nextStep(row) {
       ? `with the **Retry a store upload** workflow (platform \`${row.store}\`, submission \`${row.id}\`), which sends the same build again without rebuilding`
       : ID.test(row.build ?? "")
         ? `with ${submitCommand(row.store, row.build)}`
-        : "by hand";
+        : null;
     const tried = row.retriedFrom?.length ? ` It was already retried ${row.retriedFrom.length === 1 ? "once" : `${row.retriedFrom.length} times`} (first try ${row.retriedFrom[0]}).` : "";
     const retryFailed = row.retryError
       ? ` Retrying it failed: ${row.retryError}. EAS may still have started that retry, so check expo.dev (Submissions) for a newer submission of this build before retrying again.`
       : "";
-    return `${name}'s upload to ${STORE[row.store]} ${row.status === "ERRORED" ? "failed" : "was cancelled"}${why}.${tried}${retryFailed} The record PR lists this build, so ${DROP}. Or, while its commit is still the latest \`v*\` tag, fix the cause, upload it again ${again} (\`docs/ops/deployment/mobile.md\` § 6.6), and keep the entry. Details: ${url}`;
+    const head = `${name}'s upload to ${STORE[row.store]} ${row.status === "ERRORED" ? "failed" : "was cancelled"}${why}.${tried}${retryFailed}`;
+    if (!again) {
+      // A build from a GitHub runner (#5162) exists only in that job's temp folder, so once EAS
+      // won't retry the submission, nothing can send this build number again.
+      return `${head} EAS won't retry it, and the runner that built it kept no copy, so this build can't be sent again. The record PR lists it, so ${DROP}. Then, while its commit is still the latest \`v*\` tag, fix the cause and re-run that run's ${name} job by itself (its own re-run button: **Re-run failed jobs** wouldn't pick it, since its upload was accepted), which builds and uploads a new one (\`docs/ops/deployment/mobile.md\` § 6.6). Details: ${url}`;
+    }
+    return `${head} The record PR lists this build, so ${DROP}. Or, while its commit is still the latest \`v*\` tag, fix the cause, upload it again ${again} (\`docs/ops/deployment/mobile.md\` § 6.6), and keep the entry. Details: ${url}`;
   }
   if (row.failedReads >= MAX_FAILED_READS || row.status === "unread") {
     return `${name}'s submission couldn't be read${row.readError ? ` (${row.readError})` : ""}, so this job doesn't know how it ended. Check ${url}. If it finished, the record PR is right as it is; if it failed, ${DROP}.`;
