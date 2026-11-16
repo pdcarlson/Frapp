@@ -27,8 +27,9 @@ import {
   REMINDER_PAST_NOTE,
   REMINDER_SET_LABEL,
   RemindSheet,
-  type RemindSheetHandle,
 } from "./remind-sheet";
+import type { GuardedSheetHandle } from "@/components/sheet-scaffold";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 import { MESSAGE_REMINDER_PRESETS } from "@repo/hooks/use-message-reminders";
 
 /** Saturday, Nov 14 2026, 2:00 PM local. */
@@ -37,7 +38,7 @@ const NOW = new Date(2026, 10, 14, 14, 0, 0, 0);
 const modal = { present: vi.fn(), dismiss: vi.fn() };
 
 function render(platform: string, onRemind = vi.fn()) {
-  const handle = createRef<RemindSheetHandle>();
+  const handle = createRef<GuardedSheetHandle>();
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
@@ -168,5 +169,44 @@ describe("RemindSheet (#4957)", () => {
     act(() => androidCall(1).onValueChange({}, new Date(2026, 0, 1, 9, 0)));
     expect(onRemind).not.toHaveBeenCalled();
     expect(screenText(tree)).toContain(REMINDER_PAST_NOTE);
+  });
+});
+
+describe("RemindSheet — dismissed by the menu while closed (#3795, #5173)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded<GuardedSheetHandle>((ref) => (
+      <FrappThemeProvider>
+        <RemindSheet ref={ref} messageId="m1" onRemind={vi.fn()} />
+      </FrappThemeProvider>
+    ));
+  });
+
+  it("opens each visit fresh, on the presets rather than a custom step left open", () => {
+    const handle = createRef<GuardedSheetHandle>();
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <RemindSheet
+            ref={handle}
+            messageId="m1"
+            onRemind={vi.fn()}
+            platform="ios"
+          />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) =>
+            (element.type as unknown) === "BottomSheetModal" ? modal : null,
+        },
+      );
+    });
+    act(() => handle.current?.present());
+    press(tree, REMINDER_CUSTOM_LABEL);
+    const pickers = () =>
+      tree.root.findAll((node) => (node.type as unknown) === "DateTimePicker");
+    expect(pickers()).toHaveLength(2);
+    act(() => handle.current?.present());
+    expect(pickers()).toHaveLength(0);
+    expect(screenText(tree)).toContain(REMINDER_CUSTOM_LABEL);
   });
 });

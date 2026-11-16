@@ -32,6 +32,7 @@ import {
   type EventAttendanceFields,
 } from "@repo/validation";
 import { formatDayHeading, localIsoDate, parseInstant } from "@repo/formatting";
+import { isRecord, str } from "@/lib/more/narrow";
 import { isCurrentOrUpcoming, sortEventsByStart } from "./format";
 
 export interface EventRow {
@@ -96,18 +97,6 @@ export interface EventDetail extends EventRow {
    * (`spec/behavior/events.md` § Excuses), who sees its Excuses list.
    */
   created_by: string | null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object";
-}
-
-function str(row: Record<string, unknown>, key: string): string | null {
-  const raw = row[key];
-  // Trim-checked, not just length-checked — matching `lib/more/narrow.ts`'s
-  // `str()`. A whitespace-only value (e.g. notes edited down to nothing) must
-  // read as absent, or a section renders with a label and an invisible body.
-  return typeof raw === "string" && raw.trim().length > 0 ? raw : null;
 }
 
 function toRow(row: Record<string, unknown>): EventRow | null {

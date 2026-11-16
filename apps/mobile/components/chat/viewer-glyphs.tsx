@@ -1,5 +1,5 @@
 import { Path } from "react-native-svg";
-import { Frame, paint } from "@/components/more/more-glyphs";
+import { Frame, paint } from "@/components/glyph-recipe";
 
 /**
  * The image viewer's own controls (`image-viewer.tsx`): the two step

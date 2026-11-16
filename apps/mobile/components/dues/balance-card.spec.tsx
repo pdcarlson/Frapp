@@ -18,6 +18,8 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import { BalanceCard } from "./balance-card";
 import { InvoiceHistoryRow } from "./invoice-row";
+import { OpenInvoiceRow } from "./open-invoice-row";
+import { HistoryRow } from "@/components/history-row";
 import type { InvoiceRow } from "@/lib/dues/invoices";
 
 function render(node: React.ReactElement): ReactTestRenderer {
@@ -234,5 +236,35 @@ describe("InvoiceHistoryRow", () => {
     );
     expect(texts(tree)).toContain("Void");
     expect(texts(tree)).not.toContain("Paid");
+  });
+});
+
+describe("OpenInvoiceRow", () => {
+  it("draws through the shared HistoryRow, not a copy of its styles (#3454)", () => {
+    const tree = render(
+      <OpenInvoiceRow
+        invoice={invoice({ status: "OPEN", paidAt: null })}
+        now={new Date("2026-01-20T12:00:00.000Z")}
+        isConfirming={false}
+        isLast={false}
+      />,
+    );
+    const row = tree.root.findByType(HistoryRow);
+    expect(row.props.title).toBe("Spring 2026 dues");
+    expect(row.props.meta).toBe("$425.00");
+    expect(row.props.isLast).toBe(false);
+  });
+
+  it("reads Pending while a captured payment is confirming", () => {
+    const tree = render(
+      <OpenInvoiceRow
+        invoice={invoice({ status: "OPEN", paidAt: null })}
+        now={new Date("2026-01-20T12:00:00.000Z")}
+        isConfirming
+        isLast
+      />,
+    );
+    expect(tree.root.findByType(HistoryRow)).toBeTruthy();
+    expect(texts(tree)).toContain("Pending");
   });
 });

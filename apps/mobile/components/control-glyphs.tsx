@@ -1,6 +1,6 @@
 import { Platform } from "react-native";
 import { Circle, Path } from "react-native-svg";
-import { Frame, paint } from "@/components/more/more-glyphs";
+import { Frame, paint } from "@/components/glyph-recipe";
 
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`

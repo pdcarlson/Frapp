@@ -1,6 +1,6 @@
 import { Path } from "react-native-svg";
 import { MARK_GLYPH_PATHS } from "@repo/theme/nav-glyphs";
-import { Frame, paint } from "@/components/more/more-glyphs";
+import { Frame, paint } from "@/components/glyph-recipe";
 
 /**
  * The pin and the star on s12 (#3934), drawn on the shared 24 grid with the

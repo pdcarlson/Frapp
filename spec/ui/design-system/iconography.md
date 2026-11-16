@@ -11,7 +11,11 @@ All Signet-reskinned surfaces draw icons with the duotone recipe locked in the
 throughout the [Canvas screens](reference/canvas-screens.dc.html). On web the
 recipe is one module — [`apps/web/components/ui/duotone.tsx`](../../../apps/web/components/ui/duotone.tsx)
 — which every stroke-recipe glyph composes, so a surface cannot drift off it
-while looking like it complies. The navigation glyphs, and the in-screen
+while looking like it complies. On mobile it is
+[`apps/mobile/components/glyph-recipe.tsx`](../../../apps/mobile/components/glyph-recipe.tsx)
+(`paint` and `Frame`, #3428), which every mobile stroke-recipe glyph draws
+through; the tab bar and the chat cards' eyebrows keep `tab-glyphs.tsx`'s own
+recipe, whose active fill is 18%. The navigation glyphs, and the in-screen
 glyphs that sit beside them, draw the two-tone nav set instead (§1.1):
 
 | Layer | Spec |
