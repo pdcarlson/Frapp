@@ -1,10 +1,4 @@
-import {
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, Alert, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import * as WebBrowser from "expo-web-browser";
@@ -30,6 +24,7 @@ import {
   SORT_OPTIONS,
   deleteDocumentTitle,
   isActiveDateFilter,
+  isDriveCopy,
   markedItems,
   NO_MARK_FILTER,
   tierByMarks,
@@ -326,11 +321,7 @@ export default function DocumentsScreen() {
       (entry) => !!entry.pinned_at,
       (entry) => starredFolders.has(entry.id),
     );
-    return [
-      ...tiers.pinned,
-      ...tiers.starred,
-      ...tiers.rest,
-    ];
+    return [...tiers.pinned, ...tiers.starred, ...tiers.rest];
   }, [folders, starredFolders]);
   const markFailed =
     markFailure && markFailure.chapterId === (chapterId ?? null)
@@ -364,6 +355,7 @@ export default function DocumentsScreen() {
     id: string;
     title: string;
     pinned_at: string | null;
+    drive_file_id?: string | null;
   }) {
     return {
       kind: "document" as const,
@@ -371,6 +363,7 @@ export default function DocumentsScreen() {
       name: doc.title,
       pinned: !!doc.pinned_at,
       starred: starredDocuments.has(doc.id),
+      fromDrive: isDriveCopy(doc),
     };
   }
 
@@ -572,7 +565,7 @@ export default function DocumentsScreen() {
         </SkeletonRegion>
       );
     }
-    if ((documentsQuery.isError && documentsQuery.data === undefined)) {
+    if (documentsQuery.isError && documentsQuery.data === undefined) {
       return (
         <ErrorState
           title="Couldn't load documents"
@@ -641,9 +634,7 @@ export default function DocumentsScreen() {
               )
             }
             deletingIds={deletingIds}
-            actionsLabel={
-              canManage ? "Star, pin or delete" : "Star or unstar"
-            }
+            actionsLabel={canManage ? "Star, pin or delete" : "Star or unstar"}
             onOpen={(doc) => void open(doc.id)}
             onActions={(doc) => openActions(documentTarget(doc))}
           />
@@ -893,11 +884,14 @@ export default function DocumentsScreen() {
           {deleteFailed}
         </Text>
       ) : null}
-      {truncated && !(documentsQuery.isError && documentsQuery.data === undefined) ? (
+      {truncated &&
+      !(documentsQuery.isError && documentsQuery.data === undefined) ? (
         <InlineNote>{DOCUMENT_CAP_NOTICE}</InlineNote>
       ) : null}
 
-      {showCards && !documentsQuery.isPending && !(documentsQuery.isError && documentsQuery.data === undefined) ? (
+      {showCards &&
+      !documentsQuery.isPending &&
+      !(documentsQuery.isError && documentsQuery.data === undefined) ? (
         <MarkedCards
           pinned={cards.pinned}
           starred={cards.starred}
