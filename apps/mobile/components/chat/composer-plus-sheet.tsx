@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useRef, type ComponentType } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
-import { Circle, Path, Rect, Text as SvgText } from "react-native-svg";
+import { Path, Rect, Text as SvgText } from "react-native-svg";
 import type { PlusMenuCommand, PlusMenuModel } from "@repo/chat-core/plus-menu";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -19,6 +19,7 @@ import {
   EventsGlyph,
   GlyphFrame,
   glyphPaint,
+  PhotoGlyph,
   STROKE_WIDTH,
   TabGlyph,
   TasksGlyph,
@@ -201,41 +202,6 @@ function PlusRow({
       <Text style={styles.rowLabel}>{label}</Text>
       {reason ? <Text style={styles.rowReason}>{reason}</Text> : null}
     </Pressable>
-  );
-}
-
-/** Photo: a framed picture, sun and hill, in the card eyebrows' stroke recipe. */
-function PhotoGlyph(props: TabGlyphProps) {
-  const { stroke, fill } = glyphPaint(props);
-  return (
-    <GlyphFrame size={props.size}>
-      <Rect
-        x={3.5}
-        y={5}
-        width={17}
-        height={14}
-        rx={2.4}
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-      />
-      <Circle
-        cx={9}
-        cy={10}
-        r={1.6}
-        fill="none"
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-      />
-      <Path
-        d="M4 17l5-4.6 3.2 2.8 3.3-3.4L20 16"
-        fill="none"
-        stroke={stroke}
-        strokeWidth={STROKE_WIDTH}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </GlyphFrame>
   );
 }
 

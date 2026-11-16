@@ -298,6 +298,7 @@ export const REQUIRED_REASON_APIS = {
  */
 export const MANIFESTLESS_REQUIRED_REASON_USERS = new Map([
   ["@stripe/stripe-react-native", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
+  ["expo-document-picker", ["NSPrivacyAccessedAPICategoryFileTimestamp"]],
   ["expo-eas-client", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
   ["expo-sharing", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
   ["expo-updates", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
