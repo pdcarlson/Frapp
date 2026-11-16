@@ -1,1 +1,0 @@
-Cards from Ask are easier to read, name what they will do on the button, stay on screen greyed out once done, and copy an event's points from a matching event type or ask you for them instead of guessing.
