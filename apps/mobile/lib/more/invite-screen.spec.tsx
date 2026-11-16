@@ -327,6 +327,7 @@ describe("Invite members", () => {
       "Cancel",
     ]);
     expect(options.destructiveButtonIndex).toBe(2);
+    expect(options.userInterfaceStyle).toBe("dark");
 
     await act(async () => pick(1));
     expect(emailInvites).toHaveBeenCalledWith({

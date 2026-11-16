@@ -1,9 +1,13 @@
 /**
  * The phone's one action menu (#5168): iOS's action sheet, or Android's
- * dialog, whose Cancel is a tap outside or back (`cancelable`). Every `⋯` and
- * long-press menu in the app opens through here, so the two platforms'
+ * dialog, whose Cancel is a tap outside or back (`cancelable`). Every menu
+ * drawn as the system's own sheet opens through here, so the two platforms'
  * plumbing (Cancel last on iOS, its index, the destructive rows) is written
- * once.
+ * once; `action-menu.spec.ts` fails on any other `showActionSheetWithOptions`
+ * call. The one held exception is the Ask proposal's card menu, left to
+ * #4898's slices (#5168). Menus drawn in the app's own glass (chat home's row
+ * menu, Documents' and a thread's long press) are not system sheets and
+ * don't come here.
  *
  * A row runs its `onPress` when tapped on either platform. iOS lists the rows
  * then Cancel; Android lists them as the dialog's buttons. The `android`

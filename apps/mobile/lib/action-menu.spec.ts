@@ -1,8 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { ActionSheetIOS, Alert, Linking, Platform } from "react-native";
+import { phoneHref } from "@repo/validation";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { showActionMenu } from "./action-menu";
+
+// The stub has no Linking; the phone row opens tel: and sms: through it.
+vi.mock("react-native", async () => {
+  const { reactNativeStub } = await import("@/test/react-native-stub");
+  return { ...reactNativeStub, Linking: { openURL: vi.fn() } };
+});
 import { showMemberMenu } from "./directory/member-menu";
 import { showPhoneActions } from "./directory/phone-actions";
 
@@ -167,6 +174,31 @@ describe("call sites", () => {
       ],
       { cancelable: true },
     ]);
+  });
+
+  it("showPhoneActions: Call dials and Text messages, on both platforms", () => {
+    const openURL = vi.mocked(Linking.openURL).mockResolvedValue(true);
+    const tel = phoneHref("(518) 555-0142", "call");
+    const sms = phoneHref("(518) 555-0142", "text");
+    try {
+      platform.OS = "ios";
+      showPhoneActions("Ada", "(518) 555-0142");
+      const pick = sheet.mock.calls.at(-1)![1];
+      pick(0);
+      pick(1);
+      pick(2);
+      expect(openURL.mock.calls).toEqual([[tel], [sms]]);
+
+      openURL.mockClear();
+      platform.OS = "android";
+      showPhoneActions("Ada", "(518) 555-0142");
+      const buttons = dialog.mock.calls.at(-1)![2]!;
+      buttons[0]!.onPress!();
+      buttons[1]!.onPress!();
+      expect(openURL.mock.calls).toEqual([[tel], [sms]]);
+    } finally {
+      openURL.mockReset();
+    }
   });
 
   it("showMemberMenu: destructive Block and Remove, every Android row styled", () => {
