@@ -77,6 +77,8 @@ describe("parseProviderIds", () => {
     assert.deepEqual(parseProviderIds(config(), "staging"), {
       environment: "staging",
       renderServiceId: "srv-staging1",
+      renderDeploySource: "commit",
+      apiImage: "",
       vercelTeamId: "team_abc",
       vercelWebProjectId: "prj_web",
       vercelLandingProjectId: "prj_landing",
@@ -95,6 +97,10 @@ describe("parseProviderIds", () => {
       ["a malformed team id", config((c) => ((c.vercel.teamId = "j9XL"), c)), "staging"],
       ["a malformed project id", config((c) => ((c.vercel.landingProjectId = "landing"), c)), "production"],
       ["one project for web and landing", config((c) => ((c.vercel.landingProjectId = "prj_web"), c)), "staging"],
+      ["an unknown deploy source", config((c) => ((c.environments.staging.renderDeploySource = "docker"), c)), "staging"],
+      ["an image source with no image", config((c) => ((c.environments.staging.renderDeploySource = "image"), c)), "staging"],
+      ["a tagged image", config((c) => ((c.apiImage = "ghcr.io/frapplive/frapp-api:latest"), c)), "production"],
+      ["an uppercase image", config((c) => ((c.apiImage = "ghcr.io/frapplive/Frapp"), c)), "production"],
     ];
     for (const [label, text, name] of refusals) {
       assert.throws(() => parseProviderIds(text, name), Error, label);
@@ -107,9 +113,18 @@ describe("provider-ids.mjs", () => {
     const ids = parseProviderIds(config(), "production");
     assert.equal(
       formatProviderOutputs(ids),
-      "render_service_id=srv-prod1\nvercel_team_id=team_abc\n" +
+      "render_service_id=srv-prod1\nrender_deploy_source=commit\napi_image=\nvercel_team_id=team_abc\n" +
         "vercel_web_project_id=prj_web\nvercel_landing_project_id=prj_landing\n",
     );
+  });
+
+  it("names the image an image-backed service pulls", () => {
+    const ids = parseProviderIds(
+      config((c) => ((c.environments.staging.renderDeploySource = "image"), (c.apiImage = "ghcr.io/frapplive/frapp-api"), c)),
+      "staging",
+    );
+    assert.equal(ids.renderDeploySource, "image");
+    assert.equal(ids.apiImage, "ghcr.io/frapplive/frapp-api");
   });
 
   it("appends the committed ids to GITHUB_OUTPUT, and fails on an unknown environment", () => {
@@ -158,7 +173,8 @@ describe("no workflow or action names a provider id", () => {
         });
     }
     // The pattern is live: it matches what the config holds.
-    for (const id of Object.values(providerIdsFor("production")).slice(1)) assert.match(id, LITERAL);
+    const { renderServiceId, vercelTeamId, vercelWebProjectId, vercelLandingProjectId } = providerIdsFor("production");
+    for (const id of [renderServiceId, vercelTeamId, vercelWebProjectId, vercelLandingProjectId]) assert.match(id, LITERAL);
   });
 });
 
@@ -168,6 +184,8 @@ describe("every consumer reads the ids step of its own job", () => {
   const OUTPUTS = PROVIDER_ID_OUTPUTS.map(([, output]) => output);
   const NAMES = new Map([
     ["RENDER_SERVICE_ID", "render_service_id"],
+    ["RENDER_DEPLOY_SOURCE", "render_deploy_source"],
+    ["API_IMAGE", "api_image"],
     ["VERCEL_TEAM_ID", "vercel_team_id"],
     ["VERCEL_WEB_PROJECT_ID", "vercel_web_project_id"],
     ["VERCEL_LANDING_PROJECT_ID", "vercel_landing_project_id"],

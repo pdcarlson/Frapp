@@ -132,6 +132,17 @@ export function loadEnvironments(options = {}) {
 // workflow reads them through `scripts/ci/provider-ids.mjs`.
 
 export const RENDER_SERVICE_ID_PATTERN = /^srv-[a-z0-9]+$/;
+/**
+ * How the deploy job ships an environment's API (#2506): `commit` asks Render
+ * to build the commit (a git-backed service); `image` builds the image on
+ * GitHub, pushes it to `apiImage`, and asks Render to pull it (an
+ * image-backed service). Absent means `commit`, what every service was before
+ * images: a wrong value still fails loudly, because Render refuses a commit
+ * deploy on an image-backed service and the reverse.
+ */
+export const RENDER_DEPLOY_SOURCES = ["commit", "image"];
+/** The API image's repository on GitHub's container registry: lowercase, no tag. */
+export const API_IMAGE_PATTERN = /^ghcr\.io\/[a-z0-9-]+\/[a-z0-9-]+$/;
 export const VERCEL_TEAM_ID_PATTERN = /^team_[A-Za-z0-9]+$/;
 export const VERCEL_PROJECT_ID_PATTERN = /^prj_[A-Za-z0-9]+$/;
 
@@ -160,6 +171,16 @@ export function parseProviderIds(text, name, { source = CONFIG_PATH } = {}) {
   if (new Set(services).size !== services.length) {
     throw new Error(`${source}: two environments share a renderServiceId.`);
   }
+  const deploySource = parsed.environments[name].renderDeploySource ?? "commit";
+  if (!RENDER_DEPLOY_SOURCES.includes(deploySource)) {
+    throw new Error(
+      `${source}: "${name}".renderDeploySource must be one of ${RENDER_DEPLOY_SOURCES.join(", ")} ` +
+        `(got ${JSON.stringify(deploySource)}).`,
+    );
+  }
+  // Required only once a service pulls it; when present, always well formed.
+  const apiImage = parsed.apiImage ?? "";
+  if (apiImage || deploySource === "image") check(apiImage, API_IMAGE_PATTERN, "apiImage");
   const vercel = parsed.vercel ?? {};
   const web = check(vercel.webProjectId, VERCEL_PROJECT_ID_PATTERN, "vercel.webProjectId");
   const landing = check(vercel.landingProjectId, VERCEL_PROJECT_ID_PATTERN, "vercel.landingProjectId");
@@ -167,6 +188,8 @@ export function parseProviderIds(text, name, { source = CONFIG_PATH } = {}) {
   return {
     environment: name,
     renderServiceId: services[ENVIRONMENTS.indexOf(name)],
+    renderDeploySource: deploySource,
+    apiImage,
     vercelTeamId: check(vercel.teamId, VERCEL_TEAM_ID_PATTERN, "vercel.teamId"),
     vercelWebProjectId: web,
     vercelLandingProjectId: landing,

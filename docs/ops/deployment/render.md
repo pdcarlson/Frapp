@@ -20,6 +20,9 @@ Create **two** Render Web Services: one for production, one for staging.
 
 ### 5.2 Environment Variables
 
+An image-backed service (§ 5.8) holds only an Infisical bootstrap and reads the rest when the API
+starts; this section is about the synced, git-backed services.
+
 As with Vercel ([environment variables](vercel.md#42-environment-variables-per-project)), these are **not entered by hand in the Render dashboard**. Infisical holds
 the canonical values and its syncs push them into `frapp-api-staging` and `frapp-api-prod`
 (`render-api-staging` and `render-api-production`); the dashboard is the destination. See
@@ -171,5 +174,46 @@ The one value the deploy workflows still take from **Infisical**, not GitHub, in
 - `API_HEALTHCHECK_URL` → smoke-check URL, in both `staging` and `prod` (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly, and staging's also requires the response's `commit` to be the deployed SHA; why the two differ is [`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
 
 **Don't create or store a deploy hook for either service**; [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md) gives the reason. Earlier revisions of these docs told operators to store one. The production hook was stored and synced onward, and was regenerated and its copies removed on 2026-09-24 ([#2540](https://github.com/pdcarlson/Frapp/issues/2540)). The staging hook, stored in Infisical `staging` until #2505, gets the same treatment in [#2679](https://github.com/pdcarlson/Frapp/issues/2679). Staging's auto-deploy, the other half of that issue, read **off** on 2026-09-29 (Render API).
+
+### 5.8 Image-backed service (#2506)
+
+Render builds a git-backed service's image itself, and every build spends the workspace's pipeline
+minutes: 500 a month on Hobby, which staging's deploys used up on 2026-11-16, after which every
+staging deploy failed until the month reset. An **image-backed** service builds nothing. The deploy
+job builds the commit's image on a GitHub runner (free, the repo being public), pushes it to
+`apiImage` in [`.github/environments.json`](../../../.github/environments.json)
+(`ghcr.io/frapplive/frapp-api`) tagged with the commit, and asks Render to deploy that tag
+(`imageUrl`; [`deploy-render-production.mjs`](../../../scripts/ci/deploy-render-production.mjs)).
+Which kind each environment's service is, is its `renderDeploySource` there: `commit` or `image`.
+
+Render can't turn one kind of service into the other, so moving an environment means a new service
+and a repointed domain. An image-backed service also gets no Infisical sync: it holds one read-only
+Infisical machine identity and the API reads its config when it starts
+([`SECRETS_MANAGEMENT.md` § Image-backed API](../../internal/environment/SECRETS_MANAGEMENT.md#image-backed-api-read-at-boot-not-synced)).
+`/health`'s `commit` comes from the image, which the build stamps with `RENDER_GIT_COMMIT`, since
+Render sets that only on a git-backed service.
+
+**State (2026-11-16):** staging's deploys build and push the image on every API deploy, while both
+services are still git-backed. Moving staging, in order:
+
+1. Make the `frapp-api` package public (GitHub → the `frapplive` organization → Packages →
+   `frapp-api` → Package settings → Change visibility), so Render pulls it with no registry
+   credential. The image holds the public repo's code and no secret.
+2. In Infisical, create a machine identity for staging's API with Universal Auth, add it to the
+   Frapp project with read access to `staging` only, and create its client secret.
+3. In Render, **New → Web Service → Existing image**, `ghcr.io/frapplive/frapp-api:<a commit staging
+   deployed>`, in the same project as `frapp-api-staging`: region Ohio, instance type Free, health
+   check path `/health`. Its environment holds only the three bootstrap names
+   ([`ENV_REFERENCE.md` § Image-backed API bootstrap](../../internal/environment/ENV_REFERENCE.md#image-backed-api-bootstrap-render-only)),
+   with the identity's Client ID and secret.
+4. A PR sets staging's `renderServiceId` to the new service and `renderDeploySource` to `image`, and
+   moves the staging conformance check to the new service's settings.
+5. Move `api-staging.frapp.live` from the old service to the new one (§ 5.3), and update the DNS
+   record to the new service's `onrender.com` host.
+6. Delete the `render-api-staging` sync (§ 5 of the secrets guide), then suspend the old service and
+   delete it once staging has run on the new one for a while.
+
+Production follows the same steps with the owner's go, after its deploy promotes the image staging
+already runs rather than building its own.
 
 ---

@@ -5,6 +5,7 @@ import {
   classifyRenderStatus,
   createRenderDeploy,
   deployRenderCommit,
+  resolveImageUrl,
   pollRenderDeploy,
   RENDER_MAX_CONSECUTIVE_READ_ERRORS,
 } from "../deploy-render-production.mjs";
@@ -86,6 +87,36 @@ describe("createRenderDeploy", () => {
       () => createRenderDeploy({ apiKey: API_KEY, serviceId: SERVICE_ID, sha: SHA, fetchImpl }),
       /returned no deploy id/,
     );
+  });
+});
+
+describe("an image-backed service (#2506)", () => {
+  const IMAGE = `ghcr.io/frapplive/frapp-api:${SHA}`;
+
+  it("sends the image, not the commit", async () => {
+    const { fetchImpl, calls } = makeFetchStub([okJson({ id: "dep-img" })]);
+    const result = await createRenderDeploy({ apiKey: API_KEY, serviceId: SERVICE_ID, sha: SHA, imageUrl: IMAGE, fetchImpl });
+    assert.equal(result.deployId, "dep-img");
+    assert.deepEqual(JSON.parse(calls[0].options.body), { imageUrl: IMAGE });
+  });
+
+  it("deploys by commit unless the environment says image", () => {
+    assert.equal(resolveImageUrl({ sha: SHA }), null);
+    assert.equal(resolveImageUrl({ deploySource: "commit", imageRef: IMAGE, sha: SHA }), null);
+    assert.equal(resolveImageUrl({ deploySource: "image", imageRef: IMAGE, sha: SHA }), IMAGE);
+  });
+
+  it("refuses a missing, malformed or other commit's image", () => {
+    const other = "fedcba9876543210fedcba9876543210fedcba98";
+    for (const [label, imageRef, pattern] of [
+      ["missing", "", /did not hand one over/],
+      ["a moving tag", "ghcr.io/frapplive/frapp-api:latest", /40-hex commit/],
+      ["another registry", `docker.io/frapplive/frapp-api:${SHA}`, /40-hex commit/],
+      ["another commit", `ghcr.io/frapplive/frapp-api:${other}`, /not the commit being deployed/],
+    ]) {
+      assert.throws(() => resolveImageUrl({ deploySource: "image", imageRef, sha: SHA }), pattern, label);
+    }
+    assert.throws(() => resolveImageUrl({ deploySource: "docker", sha: SHA }), /commit or image/);
   });
 });
 

@@ -1,5 +1,12 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readdirSync, rmSync, unlinkSync } from 'node:fs';
+import {
+  cpSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { readDeployedCommit } from './deployed-commit';
@@ -16,8 +23,12 @@ import { readDeployedCommit } from './deployed-commit';
  * Same skip as web: no `SENTRY_AUTH_TOKEN` → inject/upload are skipped, the
  * build still succeeds. CI `api-docker-build` must not pass the token — that
  * job's image is discarded, and a second inject would mint debug IDs that
- * never run. Upload belongs on the Render build of the image that serves
- * traffic.
+ * never run. Upload belongs on the build of the image that serves traffic:
+ * Render's own build of a git-backed service, which passes the token as a
+ * build ARG, or the deploy job's GitHub build of the image an image-backed
+ * service pulls (#2506), which mounts it as the BuildKit secret
+ * `sentry_auth_token` (`SENTRY_TOKEN_SECRET_FILE`) so it stays out of the
+ * image's build metadata.
  *
  * Best effort when the token IS set, too (#2431): if `sentry-cli` cannot be
  * resolved or started, exits non-zero, is killed by a signal, or outlives its
@@ -35,6 +46,29 @@ import { readDeployedCommit } from './deployed-commit';
  * Do not `ENV` the token in the Dockerfile. ARG is enough for this RUN.
  */
 export const API_SENTRY_ORG = 'frapp-live';
+
+/** Where BuildKit mounts `--secret id=sentry_auth_token` for the Docker step. */
+export const SENTRY_TOKEN_SECRET_FILE = '/run/secrets/sentry_auth_token';
+
+/**
+ * The env the Docker step runs on: `SENTRY_AUTH_TOKEN` from the build ARG when
+ * set, otherwise from the mounted BuildKit secret, when there is one. No
+ * secret mounted (CI, a laptop) leaves the env as it is, so the step skips.
+ */
+export function withMountedSentryToken(
+  env: NodeJS.ProcessEnv,
+  readFile: (path: string) => string = (path) => readFileSync(path, 'utf8'),
+): NodeJS.ProcessEnv {
+  if (env.SENTRY_AUTH_TOKEN) return env;
+  let token = '';
+  try {
+    token = readFile(SENTRY_TOKEN_SECRET_FILE).trim();
+  } catch {
+    // caught-failure-exempt: no secret mounted is the normal unset case, which the plan skips
+    return env;
+  }
+  return token ? { ...env, SENTRY_AUTH_TOKEN: token } : env;
+}
 export const API_SENTRY_PROJECT = 'frapp-api';
 
 /**
@@ -513,5 +547,5 @@ function isDirectCli(): boolean {
 }
 
 if (isDirectCli()) {
-  process.exitCode = main();
+  process.exitCode = main({ env: withMountedSentryToken(process.env) });
 }

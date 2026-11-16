@@ -518,11 +518,18 @@ describe("deploy-staging.yml: the deploy-outcome alert", () => {
   });
 
   it("grants issues: write to the alert job only", () => {
-    // The deploy job handles every staging credential; it stays read-only.
+    // The deploy job handles every staging credential; it writes nothing on
+    // GitHub but the API image (#2506). That write adds nothing a compromised
+    // job couldn't already ship: it holds RENDER_API_KEY, which deploys anything.
     assert.equal(workflowKeys(WORKFLOW).get("permissions").get("contents"), "read");
     assert.equal((uncommented.match(/issues: write/g) ?? []).length, 1, "exactly one job may hold issues: write");
     assert.equal(workflowKeys(SHARED).get("permissions").get("contents"), "read");
-    assert.doesNotMatch(sharedUncommented, /: write/, "the shared deploy job writes nothing on GitHub");
+    assert.deepEqual(
+      sharedUncommented.match(/^\s*[a-z-]+: write$/gm)?.map((line) => line.trim()),
+      ["packages: write"],
+      "the shared deploy job writes nothing on GitHub but the API image",
+    );
+    assert.deepEqual(Object.fromEntries(job("deploy").keys.get("permissions")), { contents: "read", packages: "write" });
     assert.equal(job("deploy-outcome").keys.get("permissions").get("issues"), "write");
   });
 
