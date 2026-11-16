@@ -2,6 +2,7 @@ import { requireOptionalNativeModule } from "expo";
 import { ImageManipulator } from "expo-image-manipulator";
 import { Platform } from "react-native";
 import type { components } from "@repo/api-sdk";
+import { localIsoDate } from "@repo/formatting";
 import { definitiveRefusalMessage } from "@repo/chat-core/chat-client";
 import {
   MAX_UPLOAD_LABEL,
@@ -348,6 +349,9 @@ export async function uploadDocumentPhoto(
       folder: folder ?? undefined,
       content_type: stored.contentType,
       byte_size: stored.byteSize,
+      // The phone sheet has no date row, so it files under the upload day,
+      // which is the web panel's default (Paul, 2026-11-16).
+      effective_date: localIsoDate(new Date()),
     });
     return { status: "uploaded", title };
   } catch (error) {
