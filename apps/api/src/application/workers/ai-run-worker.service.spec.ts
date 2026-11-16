@@ -448,8 +448,12 @@ describe('AiRunWorkerService', () => {
       .mockRejectedValue(new Error('connection refused'));
 
     await w.drain(T0);
-    // Renewals fail while the lease still holds: the try keeps going.
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    // Renewals fail while the lease still holds: the try keeps going. Wait
+    // for a second beat rather than a fixed time, which a loaded runner can
+    // outlast: by then the first failure has been handled.
+    while (renew.mock.calls.length < 2) {
+      await new Promise((resolve) => setTimeout(resolve, w.heartbeatMs));
+    }
     expect(renew).toHaveBeenCalled();
     expect(signal?.aborted).toBe(false);
     // AI off so the freed slot is not refilled: the run is claimable again

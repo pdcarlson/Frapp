@@ -214,12 +214,46 @@ describe('rewriteDiscordMentions', () => {
   });
 
   it('stays linear on a body of unclosed backticks', () => {
-    const body = `${'`'.repeat(1)}x`.repeat(20_000) + `<@${USER}>`;
-    const started = Date.now();
-    expect(rewrite(body).endsWith('@NiravBanerji')).toBe(true);
-    expect(Date.now() - started).toBeLessThan(1_000);
+    // Counted, not timed (#5178): a clock bound false-fails on a loaded
+    // runner. A rescan per backtick run reads the rest of the body each time,
+    // so its count grows with the square of the body, far past this bound.
+    const bodies = [
+      `${'`'.repeat(1)}x`.repeat(20_000) + `<@${USER}>`,
+      // An escaped tick shortens the run the scan sees, so every run here
+      // searches for a closer of length 1 that never comes: without
+      // `unclosedTicks` each one would walk the rest of the body.
+      '\\``'.repeat(2_000) + `<@${USER}>`,
+    ];
+    for (const text of bodies) {
+      const { body, reads } = countingReads(text);
+      expect(rewrite(body).endsWith('@NiravBanerji')).toBe(true);
+      expect(reads()).toBeLessThan(10 * text.length);
+    }
   });
 });
+
+/**
+ * `text` as a string that counts the work done on it: one for each property
+ * read (a character, its length or a method) and, for each string a method
+ * returns, its length, since it was copied. A walk that rescans the rest of
+ * the body shows as a count that grows with the square of its length.
+ */
+function countingReads(text: string): { body: string; reads: () => number } {
+  let reads = 0;
+  const body = new Proxy(Object(text) as object, {
+    get(owner, key) {
+      reads += 1;
+      const value: unknown = Reflect.get(owner, key);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        const result: unknown = Reflect.apply(value, owner, args);
+        if (typeof result === 'string') reads += result.length;
+        return result;
+      };
+    },
+  });
+  return { body: body as unknown as string, reads: () => reads };
+}
 
 function channelRow(
   overrides: Partial<DiscordImportChannel>,
