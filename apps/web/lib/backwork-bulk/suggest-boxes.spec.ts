@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import { boxesIntersect, type Box } from "./geometry";
 import { placeTextItems, textOutsideBoxes, type RawTextItem } from "./text-layer";
 import {
-  addBoxes,
   dropContained,
   namePatterns,
-  suggestBoxes,
   suggestPageBoxes,
   suggestionNote,
 } from "./suggest-boxes";
@@ -137,33 +135,54 @@ describe("suggested redaction boxes", () => {
     const items = [run("Name:", 72, 720), run("Answer all questions in pen.", 72, 702)];
     const [box] = suggest(items);
     expect(dropped(items, [box!])).toEqual([]);
-    // Lines set closer than that still get the field boxed.
-    expect(suggest([run("Name:", 72, 720), run("Answer all questions.", 72, 708)])).toHaveLength(1);
+    // Lines set closer than that still get a field that covers the line.
+    const [tight] = suggest([run("Name:", 72, 720), run("Answer all questions.", 72, 708)]);
+    expect(tight!.y + tight!.height).toBeGreaterThan(72);
+    expect(tight!.y).toBeLessThanOrEqual(72 - 12 * 0.6);
+  });
+
+  it("ends a field at text further along the line, such as a header's course name", () => {
+    const items = [run("Name:", 72, 720), run("CHEM 101 Midterm 2", 400, 720)];
+    const boxes = suggest(items);
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]!.x + boxes[0]!.width).toBeLessThan(400);
+    expect(dropped(items, boxes)).toEqual([]);
+  });
+
+  it("ends a field with its underscores, and at a field right beside it", () => {
+    const [blank] = suggest([run("Name: ________", 72, 720), run("Exam 2", 300, 720)]);
+    expect(blank!.x + blank!.width).toBeLessThan(72 + 14 * 6 + 6);
+    const [short] = suggest([run("Name:", 72, 720), run("Date:", 140, 720)]);
+    expect(short!.x + short!.width).toBeLessThan(140);
+  });
+
+  it("matches a label with a note in brackets", () => {
+    expect(suggest([run("Name (Last, First):", 72, 720)])).toHaveLength(1);
+    expect(suggest([run("Student ID (9 digits) ________", 72, 720)])).toHaveLength(1);
+  });
+
+  it("isn't cut short by rotated text beside it", () => {
+    const items = placeTextItems(
+      [run("Name:", 72, 720), { str: "DRAFT DRAFT", transform: [0, 40, -40, 0, 200, 730], width: 300, height: 40 }],
+      flip,
+      0,
+    );
+    const boxes = suggestPageBoxes({ width: 612, height: 792, items }, []);
+    const field = boxes.find((box) => box.x < 120);
+    expect(field!.height).toBeGreaterThan(12 * 1.45);
+  });
+
+  it("matches roster names past a note, a suffix or a curly apostrophe", () => {
+    const names = ["Alex Kim (he/him)", "John Smith Jr.", "Sean O'Brien"];
+    expect(suggest([run("Graded: Alex Kim", 72, 600)], names)).toHaveLength(1);
+    expect(suggest([run("John Smith", 72, 600)], names)).toHaveLength(1);
+    expect(suggest([run("Sean O\u2019Brien", 72, 600)], names)).toHaveLength(1);
+    expect(namePatterns(["Alex Kim (he/him)"])[0]).toMatchObject({ first: "alex", last: "kim" });
   });
 
   it("covers an ID number inside its field once", () => {
     const boxes = suggest([run("Student ID: 901234567", 72, 720)]);
     expect(boxes).toHaveLength(1);
-  });
-
-  it("keys pages from 1 and leaves out pages with nothing to box", () => {
-    const boxes = suggestBoxes(
-      [page([run("Question 1", 72, 700)]), page([run("Name:", 72, 720)])],
-      [],
-    );
-    expect(Object.keys(boxes)).toEqual(["2"]);
-  });
-
-  it("adds suggested boxes after the ones already drawn", () => {
-    const drawn = { 1: [{ x: 0, y: 0, width: 5, height: 5 }] };
-    const suggested = {
-      1: [{ x: 9, y: 9, width: 5, height: 5 }],
-      3: [{ x: 1, y: 1, width: 5, height: 5 }],
-    };
-    expect(addBoxes(drawn, suggested)).toEqual({
-      1: [drawn[1][0], suggested[1][0]],
-      3: suggested[3],
-    });
   });
 
   it("says what was boxed and what is still the person's to find", () => {

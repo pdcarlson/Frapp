@@ -61,7 +61,7 @@ import { getBulkSession, type Prepared, type Submission } from "@/lib/backwork-b
 import { InlineNote } from "@/components/shared/inline-note";
 import { DraftsReview } from "./drafts-review";
 import { useSuggestedBoxes } from "./use-suggested-boxes";
-import { addBoxes, suggestionNote, type BoxSuggestion } from "@/lib/backwork-bulk/suggest-boxes";
+import { suggestionNote, type BoxSuggestion } from "@/lib/backwork-bulk/suggest-boxes";
 
 /**
  * Backwork bulk upload (#3499): drop PDFs or folders, redact and describe each
@@ -163,14 +163,17 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
     setBoxes({});
   }
 
-  // Boxes suggested from the document's own text go on once, beside any the
-  // person drew while the search ran (`suggest-boxes.ts`).
+  // Boxes suggested from the document's own text (`suggest-boxes.ts`). The
+  // editor opens, and the document can be saved, only once they are on: so
+  // the editor's undo starts from them, and nothing is saved before the
+  // search has had its say.
   const suggestion = useSuggestedBoxes(current);
   const [suggestedFor, setSuggestedFor] = useState<string | null>(null);
   if (current && suggestion && suggestedFor !== current.id) {
     setSuggestedFor(current.id);
-    setBoxes((drawn) => addBoxes(drawn, suggestion.boxes));
+    setBoxes(suggestion.boxes);
   }
+  const searched = !!current && suggestedFor === current.id;
 
   const pending = snapshot.items.some((it) =>
     (["queued", "preparing", "ready", "waiting", "finishing"] as ItemStatus[]).includes(it.status),
@@ -238,7 +241,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
   );
 
   function submitCurrent() {
-    if (!current || current.status !== "ready" || !gate.allowed) return;
+    if (!current || current.status !== "ready" || !searched || !gate.allowed) return;
     const flatten = mustFlatten(fields, boxes);
     queue.submit(current.id, { fields, boxes, flatten });
     // Everything but the per-document fields carries to the next document.
@@ -295,7 +298,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
 
           <section className="order-1 min-w-0 @4xl:order-2" aria-label="Redact">
             {current ? (
-              <CurrentDocument item={current} suggestion={suggestion} boxes={boxes} onBoxes={setBoxes} loadPreview={loadPreview} onRetry={() => queue.retry(current.id)} onRemove={() => queue.remove(current.id)} />
+              <CurrentDocument item={current} suggestion={searched ? suggestion : null} boxes={boxes} onBoxes={setBoxes} loadPreview={loadPreview} onRetry={() => queue.retry(current.id)} onRemove={() => queue.remove(current.id)} />
             ) : (
               <AllCaughtUp finishing={pending} />
             )}
@@ -318,7 +321,7 @@ function BulkUploadWorkspace({ userId, chapterId }: { userId: string; chapterId:
               <Button
                 type="submit"
                 className="w-full gap-2"
-                {...gate.controlProps(!current || current.status !== "ready")}
+                {...gate.controlProps(!current || current.status !== "ready" || !searched)}
               >
                 <Upload className="h-4 w-4" /> Save and next
               </Button>
@@ -372,19 +375,29 @@ function CurrentDocument({
           <p className="text-caption text-muted-foreground" aria-live="polite">
             {suggestionNote(suggestion)}
           </p>
-          <PdfRedactor
-            key={item.id}
-            pageCount={item.prepared.pageCount}
-            loadPreview={loadPreview}
-            boxes={boxes}
-            onChange={onBoxes}
-          />
+          {suggestion ? (
+            <PdfRedactor
+              key={item.id}
+              pageCount={item.prepared.pageCount}
+              loadPreview={loadPreview}
+              boxes={boxes}
+              onChange={onBoxes}
+            />
+          ) : (
+            <PageLoading label="Looking for names and IDs to box" />
+          )}
         </>
       ) : (
-        <div className="flex aspect-[8.5/11] w-full max-w-[860px] items-center justify-center rounded-lg border border-border bg-surface-1">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label="Loading the PDF" />
-        </div>
+        <PageLoading label="Loading the PDF" />
       )}
+    </div>
+  );
+}
+
+function PageLoading({ label }: { label: string }) {
+  return (
+    <div className="flex aspect-[8.5/11] w-full max-w-[860px] items-center justify-center rounded-lg border border-border bg-surface-1">
+      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" aria-label={label} />
     </div>
   );
 }

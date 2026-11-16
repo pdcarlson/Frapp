@@ -39,6 +39,8 @@ const LABEL_FIELD_WIDTH = 240;
 /** Handwriting rises above the printed line, so a label's box does too. */
 const FIELD_ABOVE = 1.45;
 const FIELD_BELOW = 0.5;
+/** The least a field reaches above its line, however tight the lines. */
+const MIN_FIELD_ABOVE = 0.6;
 /** A printed glyph's reach below and above its baseline (`text-layer.ts`). */
 const DESCENT = 0.3;
 const ASCENT = 1.05;
@@ -53,15 +55,10 @@ const PAGE_MARGIN = 18;
  * question never matches.
  */
 const LABEL =
-  /\b(?:(?:student|full|print(?:ed)?|your|last|first)\s+)?(?:name|id(?:\s*(?:no\.?|number|num\.?))?|net\s*id|e-?mail|signature|sid|uin|pid|rin|banner\s*id|pennkey|onyen|eid|uni)\s*(?:[:#]|(?=_{3,}))/gi;
+  /\b(?:(?:student|full|print(?:ed)?|your|last|first)\s+)?(?:name|id(?:\s*(?:no\.?|number|num\.?))?|net\s*id|e-?mail|signature|sid|uin|pid|rin|banner\s*id|pennkey|onyen|eid|uni)(?:\s*\([^)\n]{0,30}\))?\s*(?:[:#]|(?=_{3,}))/gi;
 
-/**
- * What ends a label's field: the next "Word:" on the line (another field, such
- * as "Section:" or "Date:"). A field shorter than {@link MIN_FIELD_WIDTH} is
- * not cut there, since a name rarely fits in less.
- */
+/** What ends a label's field: the next "Word:" on the line (another field, such as "Section:" or "Date:"). */
 const FIELD_END = /[\p{L}#.]+\s*:/gu;
-const MIN_FIELD_WIDTH = 60;
 
 const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 
@@ -128,7 +125,8 @@ function buildLines(items: readonly PlacedText[]): Line[] {
 function appendItem(line: Line, item: PlacedText, index: number) {
   const chars = Array.from(item.str);
   chars.forEach((char, at) => {
-    line.text += char;
+    // One character for one, so the map stays aligned.
+    line.text += char.replace(APOSTROPHES, "'");
     line.map.push({ item: index, index: at });
   });
   line.items.push(index);
@@ -194,34 +192,55 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** A chapter member's full name, and the two words a line must hold to be worth testing. */
+export type NameMatcher = { pattern: RegExp; first: string; last: string };
+
+/** Typographic apostrophes, read as the plain one in names and on the page. */
+const APOSTROPHES = /[\u2018\u2019\u02bc]/g;
+/** Words after a surname that aren't part of it. */
+const SUFFIX = /^(?:jr|sr|ii|iii|iv|v)\.?$/i;
+
+/** The lowercase words of a line or name, for the cheap check before a name's pattern runs. */
+function wordsOf(text: string): string[] {
+  return text.toLowerCase().match(/[\p{L}'-]+/gu) ?? [];
+}
+
 /**
  * Patterns for the chapter's full names: "First Last", with an optional middle
  * name or initial, and "Last, First". A one-word name is never matched alone,
- * since it is too often an ordinary word.
+ * since it is too often an ordinary word. A note in brackets ("(he/him)") and a
+ * suffix ("Jr.", "III") are left off, so the surname is the surname.
  */
-export function namePatterns(names: readonly RosterName[]): RegExp[] {
-  const patterns: RegExp[] = [];
+export function namePatterns(names: readonly RosterName[]): NameMatcher[] {
+  const matchers: NameMatcher[] = [];
   const seen = new Set<string>();
   for (const name of names) {
     const words = name
       .normalize("NFKC")
-      .split(/\s+/)
+      .replace(APOSTROPHES, "'")
+      .replace(/\([^)]*\)|\[[^\]]*\]/g, " ")
+      .split(/[\s,]+/)
       .map((word) => word.replace(/^[^\p{L}]+|[^\p{L}'.-]+$/gu, ""))
       .filter((word) => word.length >= 2);
+    while (words.length > 2 && SUFFIX.test(words[words.length - 1]!)) words.pop();
     if (words.length < 2) continue;
-    const first = escapeRegExp(words[0]!);
-    const last = escapeRegExp(words[words.length - 1]!);
-    const key = `${first} ${last}`.toLowerCase();
+    const firstWord = words[0]!;
+    const lastWord = words[words.length - 1]!.replace(/\.$/, "");
+    const key = `${firstWord} ${lastWord}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    patterns.push(
-      new RegExp(
+    const first = escapeRegExp(firstWord);
+    const last = escapeRegExp(lastWord);
+    matchers.push({
+      pattern: new RegExp(
         `(?<![\\p{L}])(?:${first}(?:\\s+[\\p{L}]+\\.?)?\\s+${last}|${last}\\s*,\\s*${first})(?![\\p{L}])`,
         "giu",
       ),
-    );
+      first: wordsOf(firstWord)[0] ?? firstWord.toLowerCase(),
+      last: wordsOf(lastWord).at(-1) ?? lastWord.toLowerCase(),
+    });
   }
-  return patterns;
+  return matchers;
 }
 
 function unionBox(boxes: readonly Box[]): Box {
@@ -256,68 +275,106 @@ export function dropContained(boxes: readonly Box[]): Box[] {
   );
 }
 
+/**
+ * The field after one label: where the name is typed or written. It starts
+ * just past the label. When text follows straight on (a typed name, a run of
+ * underscores), it ends with that text; otherwise it takes the default width.
+ * Either way it ends before the next field on the line ("Section:", "Date:")
+ * and before any later text with a gap in front of it, such as a course name
+ * at the far end of a header line. Its height reaches up for handwriting but
+ * stays off the printed lines above and below, unless they sit too close for
+ * a name to fit, where it still covers the line itself.
+ */
+function fieldBox(
+  page: SuggestPage,
+  lines: readonly Line[],
+  line: Line,
+  end: number,
+  stop: number | null,
+): Box | null {
+  const { items } = page;
+  const lastChar = lastRef(line, end);
+  if (!lastChar) return null;
+  const labelItem = items[lastChar.item]!;
+  const cell = labelItem.rect.width / Math.max(Array.from(labelItem.str).length, 1);
+  const start = labelItem.rect.x + cell * (lastChar.index + 1) + LABEL_GAP;
+  const stopX = stop === null ? null : charX(line, stop, items);
+  const beforeStop = stopX === null ? Infinity : stopX - cell;
+  let limit = Math.min(start + LABEL_FIELD_WIDTH, page.width - PAGE_MARGIN, beforeStop);
+
+  // Text after the label, left to right: what runs straight on is the field's
+  // content; the first piece after a gap ends the field.
+  let covered = start;
+  let ran = false;
+  for (const box of spanBoxes(line, end, stop ?? line.text.length, items).sort((p, q) => p.x - q.x)) {
+    if (box.x > covered + line.size * 1.5) {
+      limit = Math.min(limit, box.x - cell);
+      break;
+    }
+    covered = Math.max(covered, box.x + box.width);
+    ran = true;
+  }
+  const right = ran ? Math.min(covered, beforeStop) : limit;
+  if (right - start < cell) return null;
+
+  const across = (other: Line) =>
+    other.items.every((index) => items[index]!.upright) &&
+    other.items.some((index) => {
+      const rect = items[index]!.rect;
+      return rect.x < right && rect.x + rect.width > start;
+    });
+  let top = line.baseline - line.size * FIELD_ABOVE;
+  let bottom = line.baseline + line.size * FIELD_BELOW;
+  for (const other of lines) {
+    if (other === line || !across(other)) continue;
+    if (other.baseline < line.baseline - line.size * 0.4) {
+      top = Math.max(top, other.baseline + other.size * DESCENT + LABEL_GAP);
+    } else if (other.baseline > line.baseline + line.size * 0.4) {
+      bottom = Math.min(bottom, other.baseline - other.size * ASCENT - LABEL_GAP);
+    }
+  }
+  // Lines set too tight for that still get a field that covers most of a
+  // written name: a name matters more than the next line's searchability.
+  top = Math.min(top, line.baseline - line.size * MIN_FIELD_ABOVE);
+  bottom = Math.max(bottom, line.baseline + 1);
+  return { x: start, y: top, width: right - start, height: bottom - top };
+}
+
 /** Suggested boxes for one page. */
-export function suggestPageBoxes(page: SuggestPage, names: readonly RegExp[]): Box[] {
+export function suggestPageBoxes(page: SuggestPage, names: readonly NameMatcher[]): Box[] {
   const { items } = page;
   const found: Box[] = [];
   const lines = buildLines(items);
   for (const line of lines) {
-    // Labels: the field after each one, up to whatever starts the next field.
     const upright = line.items.every((index) => items[index]!.upright);
     const labels = [...line.text.matchAll(LABEL)];
     labels.forEach((match, n) => {
       const end = match.index + match[0].length;
       FIELD_END.lastIndex = end;
-      const after = FIELD_END.exec(line.text)?.index ?? Infinity;
-      const nextIndex = Math.min(after, labels[n + 1]?.index ?? Infinity);
-      const next = Number.isFinite(nextIndex) ? { index: nextIndex } : null;
-      const stopIndex = next ? next.index : line.text.length;
+      const stop = Math.min(
+        FIELD_END.exec(line.text)?.index ?? Infinity,
+        labels[n + 1]?.index ?? Infinity,
+      );
+      const stopIndex = Number.isFinite(stop) ? stop : null;
       if (!upright) {
-        found.push(...spanBoxes(line, end, stopIndex, items));
+        // Rotated text: the label's own run after it, whole. A blank field
+        // there isn't found (#5250).
+        found.push(...spanBoxes(line, end, stopIndex ?? line.text.length, items));
         return;
       }
-      const lastChar = lastRef(line, end);
-      if (!lastChar) return;
-      const labelItem = items[lastChar.item]!;
-      const cell = labelItem.rect.width / Math.max(Array.from(labelItem.str).length, 1);
-      // A small gap keeps the label itself out of the box and readable.
-      const start = labelItem.rect.x + cell * (lastChar.index + 1) + LABEL_GAP;
-      const nextX = next ? charX(line, next.index, items) : null;
-      // Text typed into the field can run past the default width.
-      const typed = spanBoxes(line, end, stopIndex, items).reduce(
-        (right, box) => Math.max(right, box.x + box.width),
-        start,
-      );
-      const right =
-        nextX !== null && nextX - start >= MIN_FIELD_WIDTH
-          ? nextX - cell
-          : Math.max(Math.min(start + LABEL_FIELD_WIDTH, page.width - PAGE_MARGIN), typed);
-      if (right - start < cell) return;
-      // Room for handwriting above the line, but never over the printed
-      // lines above or below: a word the box touches leaves the search layer.
-      const across = (other: Line) =>
-        other.items.some((index) => {
-          const rect = items[index]!.rect;
-          return rect.x < right && rect.x + rect.width > start;
-        });
-      let top = line.baseline - line.size * FIELD_ABOVE;
-      let bottom = line.baseline + line.size * FIELD_BELOW;
-      for (const other of lines) {
-        if (other === line || !across(other)) continue;
-        if (other.baseline < line.baseline - line.size * 0.4) {
-          top = Math.max(top, other.baseline + other.size * DESCENT + LABEL_GAP);
-        } else if (other.baseline > line.baseline + line.size * 0.4) {
-          bottom = Math.min(bottom, other.baseline - other.size * ASCENT - LABEL_GAP);
-        }
-      }
-      // Lines set this tight still get their field boxed: a name matters
-      // more than the next line's searchability.
-      bottom = Math.max(bottom, line.baseline + 1);
-      found.push({ x: start, y: top, width: right - start, height: bottom - top });
+      const box = fieldBox(page, lines, line, end, stopIndex);
+      if (box) found.push(box);
     });
 
-    for (const pattern of [EMAIL, ID_NUMBER, ...names]) {
-      pattern.lastIndex = 0;
+    const words = new Set(wordsOf(line.text));
+    const patterns = [
+      EMAIL,
+      ID_NUMBER,
+      ...names
+        .filter((name) => words.has(name.first) && words.has(name.last))
+        .map((name) => name.pattern),
+    ];
+    for (const pattern of patterns) {
       for (const match of line.text.matchAll(pattern)) {
         const spans = spanBoxes(line, match.index, match.index + match[0].length, items);
         // A match across runs on one line is one box, gaps included.
@@ -333,20 +390,6 @@ export function suggestPageBoxes(page: SuggestPage, names: readonly RegExp[]): B
   );
 }
 
-/** Suggested boxes for every page that has any, keyed by 1-based page number. */
-export function suggestBoxes(
-  pages: readonly SuggestPage[],
-  names: readonly RosterName[],
-): BoxesByPage {
-  const patterns = namePatterns(names);
-  const boxes: BoxesByPage = {};
-  pages.forEach((page, index) => {
-    const pageBoxes = suggestPageBoxes(page, patterns);
-    if (pageBoxes.length > 0) boxes[index + 1] = pageBoxes;
-  });
-  return boxes;
-}
-
 /** What the search found for one document in the queue. */
 export type BoxSuggestion = {
   id: string;
@@ -354,16 +397,6 @@ export type BoxSuggestion = {
   /** Characters of text in the file; -1 when its text couldn't be read. */
   textLength: number;
 };
-
-/** Each page's boxes with the suggested ones added after them. */
-export function addBoxes(drawn: BoxesByPage, suggested: BoxesByPage): BoxesByPage {
-  const next: BoxesByPage = { ...drawn };
-  for (const [page, list] of Object.entries(suggested)) {
-    const number = Number(page);
-    next[number] = [...(next[number] ?? []), ...list];
-  }
-  return next;
-}
 
 /** "page 2", "pages 1 and 3", "pages 1, 2 and 4", or "9 pages" past five. */
 function pageList(pages: number[]): string {
