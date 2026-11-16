@@ -4,7 +4,14 @@ import {
   MemberFacingError,
 } from "@repo/hooks/error-copy";
 import { statusOf } from "@repo/api-sdk";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   AccessibilityInfo,
@@ -452,9 +459,7 @@ export default function TasksScreen() {
       if (id === null) return null;
       const onBoard = MY_TASKS_GROUPS.flatMap(
         (group) => board.groups[group],
-      ).find(
-        (row) => row.id === id,
-      );
+      ).find((row) => row.id === id);
       if (onBoard) return onBoard;
       // Opened from the Events calendar (#4144), which also shows a task the
       // board has let go of (finished more than a week ago): read it off the

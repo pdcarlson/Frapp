@@ -113,8 +113,18 @@ export function myTasksGroup(
  * day), then by title so the order holds between renders.
  */
 export function compareTasksByDue(
-  a: { due_date: string; due_at?: string | null; title: string; status: TaskStatus },
-  b: { due_date: string; due_at?: string | null; title: string; status: TaskStatus },
+  a: {
+    due_date: string;
+    due_at?: string | null;
+    title: string;
+    status: TaskStatus;
+  },
+  b: {
+    due_date: string;
+    due_at?: string | null;
+    title: string;
+    status: TaskStatus;
+  },
 ): number {
   const aLate = a.status === "OVERDUE" ? 0 : 1;
   const bLate = b.status === "OVERDUE" ? 0 : 1;
