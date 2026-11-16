@@ -1666,3 +1666,65 @@ describe("the + menu's Task, Service hours and Points forms post as their comman
     expect(placeholderCount(ctx)).toBe(1);
   });
 });
+
+describe("one member guard and one status read for every command", () => {
+  for (const [name, command, args] of [
+    ["/points", POINTS_COMMAND, "grant @bobby 5 for great work"],
+    ["/task", TASK_COMMAND, `"Clean the house" @bobby 2099-03-15 10`],
+  ] as const) {
+    it(`${name} refuses while the member directory loads, and on no match, without a write`, async () => {
+      const post = vi.fn();
+      const ctx = buildCtx(post);
+      const run = (resolveMember?: () => null) =>
+        dispatchSlashCommand(ctx, {
+          command,
+          args,
+          channelId: CHANNEL_ID,
+          announcementsChannelId: null,
+          resolveMember,
+        });
+      expect(await run()).toEqual({
+        ok: false,
+        error: "Member directory is still loading — try again in a moment",
+      });
+      expect(await run(() => null)).toEqual({
+        ok: false,
+        error: "No member matches @bobby",
+      });
+      expect(post).not.toHaveBeenCalled();
+      expect(placeholderCount(ctx)).toBe(0);
+    });
+  }
+
+  it("/rush vote does not read an empty-body gateway 502 as a recorded vote (#1717)", async () => {
+    const post = vi.fn().mockResolvedValue({
+      data: undefined,
+      error: undefined,
+      response: { status: 502 },
+    });
+    const result = await dispatchRushVoteCmd(
+      buildCtx(post),
+      "vote 11111111-1111-4111-8111-111111111111",
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("/rush vote does not take a lookup that errored with no response as a match", async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: { id: "cand-1" },
+      error: { message: "network" },
+      response: undefined,
+    });
+    const post = vi.fn();
+    const ctx: ChatActionContext = {
+      ...buildCtx(post),
+      apiClient: {
+        POST: post,
+        GET: get,
+      } as unknown as ChatActionContext["apiClient"],
+    };
+    const result = await dispatchRushVoteCmd(ctx, "vote Jane");
+    expect(result.ok).toBe(false);
+    expect(post).not.toHaveBeenCalled();
+  });
+});

@@ -5,9 +5,9 @@ import {
   FORM_QUESTION_TITLE_MAX_LENGTH,
   FORM_QUESTIONS_MAX,
   FORM_TITLE_MAX_LENGTH,
-  SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS,
   type FormQuestionType,
 } from "@repo/validation";
+import { checkCardEnd, foldOptionLabel } from "./card-closing";
 import { isChoiceQuestion, type FormMessageInput } from "./forms";
 
 /**
@@ -227,14 +227,8 @@ export type FormDraftCheck =
    */
   | { ok: false; problem: string | null; questionKey?: string };
 
-export const FORM_END_PASSED_PROBLEM =
-  "That end time has passed. Pick a later one, or none.";
 export const FORM_END_TOO_FAR_PROBLEM =
   "A form can close at most a year from now.";
-
-/** The API's furthest end time, less a day of slack (as sign-ups do). */
-const FORM_END_MAX_AHEAD_MS =
-  (SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS - 1) * 24 * 60 * 60 * 1000;
 
 /**
  * Whether the draft can be posted, and what it posts. A question with no
@@ -261,14 +255,8 @@ export function checkFormDraft(
     };
   }
   const closesAt = draft.closesAt;
-  if (closesAt) {
-    if (Number.isNaN(closesAt.getTime()) || closesAt.getTime() <= now) {
-      return { ok: false, problem: FORM_END_PASSED_PROBLEM };
-    }
-    if (closesAt.getTime() > now + FORM_END_MAX_AHEAD_MS) {
-      return { ok: false, problem: FORM_END_TOO_FAR_PROBLEM };
-    }
-  }
+  const endProblem = checkCardEnd(closesAt, now, FORM_END_TOO_FAR_PROBLEM);
+  if (endProblem) return { ok: false, problem: endProblem };
 
   const questions: FormMessageInput["questions"][number][] = [];
   for (const row of draft.questions) {
@@ -311,7 +299,7 @@ export function checkFormDraft(
             questionKey: row.key,
           };
         }
-        const folded = label.toLowerCase().replace(/\s+/g, " ");
+        const folded = foldOptionLabel(label);
         if (seen.has(folded)) {
           return {
             ok: false,

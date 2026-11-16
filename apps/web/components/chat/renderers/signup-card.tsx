@@ -15,14 +15,12 @@ import type { PendingPollPicks } from "@repo/chat-core/polls";
 import {
   CLOSE_SIGNUP_LABEL,
   SIGNUP_CLAIM_ACTION_TYPE,
-  canCloseSignup,
   canExportSignup,
   castSignupClaim,
   headcountAnswerPayload,
   headcountNotePayload,
   type PendingHeadcount,
   isHeadcountSignup,
-  isSignupClosed,
   readSignupPayload,
   signupDeadlineLine,
   signupCardEyebrow,
@@ -35,6 +33,7 @@ import {
   signupExportRows,
   tallySignups,
 } from "@repo/chat-core/signups";
+import { canCloseCard, isCardClosed } from "@repo/chat-core/card-closing";
 import { cardExportFilenamePrefix } from "@repo/chat-core/form-responses";
 import { ExportMenu } from "@/components/shared/export-menu";
 import {
@@ -60,7 +59,7 @@ interface SignupCardProps {
   ) => void;
   /**
    * Close sign-ups, offered to the card's creator or a `channels:manage`
-   * holder (`canCloseSignup`). The caller confirms first (`ChatShell`).
+   * holder (`canCloseCard`). The caller confirms first (`ChatShell`).
    */
   onCloseCard?: (messageId: string, kind: "signup") => void;
 }
@@ -115,12 +114,12 @@ export function SignupCard({
   }
 
   // `!viewerId`, not `!== null`, for the reason the poll card gives.
-  const closed = isSignupClosed(payload, now);
+  const closed = isCardClosed(payload, now);
   const headcount = isHeadcountSignup(payload);
   const canClaim = isConfirmed && !!viewerId && !closed;
   const showClose =
     !!onCloseCard &&
-    canCloseSignup(message, payload, viewerId, now, canManageChannels);
+    canCloseCard(message, payload, viewerId, now, canManageChannels);
   const showExport = canExportSignup(message, viewerId, canManageChannels);
   const deadline = signupDeadlineLine(payload, now);
   const myNote = tally.notes[viewerId] ?? "";

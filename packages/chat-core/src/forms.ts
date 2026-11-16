@@ -1,4 +1,4 @@
-import { formatEndsLabel, parseInstant } from "@repo/formatting";
+import { formatEndsLabel } from "@repo/formatting";
 import {
   FORM_CHOICE_QUESTION_TYPES,
   FORM_PARAGRAPH_ANSWER_MAX_LENGTH,
@@ -8,7 +8,7 @@ import {
 } from "@repo/validation";
 import { serverMessageOf, type components } from "@repo/api-sdk";
 import type { FrappApiClient } from "./chat-client";
-import { canActOnMessage, isOwnMessage } from "./message-actions";
+import { isCardClosed } from "./card-closing";
 import { makePollOptionId } from "./polls";
 import type { ChatMessage } from "./types";
 
@@ -194,36 +194,6 @@ export function readFormPayload(message: ChatMessage): FormPayload | null {
   };
 }
 
-/**
- * Whether the form takes no more answers: closed early, or its end time has
- * come. The API's answer (`isCardClosed`), including `<=` at the end time.
- */
-export function isFormClosed(payload: FormPayload, now: number): boolean {
-  if (payload.closed_at) return true;
-  const deadline = parseInstant(payload.closes_at);
-  return deadline ? deadline.getTime() <= now : false;
-}
-
-/**
- * Whether the viewer is offered Close form: it is on the server and not
- * deleted, still open, and the viewer posted it or holds `channels:manage`.
- * The same rule as Close sign-ups; the API enforces it
- * (`ChatService.closeCard`).
- */
-export function canCloseForm(
-  message: Pick<ChatMessage, "sender_id" | "_status" | "is_deleted">,
-  payload: FormPayload,
-  viewerId: string | null,
-  now: number,
-  canManageChannels: boolean,
-): boolean {
-  return (
-    (isOwnMessage(message, viewerId) || (canManageChannels && !!viewerId)) &&
-    canActOnMessage(message) &&
-    !isFormClosed(payload, now)
-  );
-}
-
 /** Close form asks first, in the same words on web and the phone. */
 export const CLOSE_FORM_LABEL = "Close form";
 export const CLOSE_FORM_CONFIRM_TITLE = "Close this form?";
@@ -397,7 +367,7 @@ export function formDeadlineLine(
   payload: FormPayload,
   now: number,
 ): string | null {
-  if (isFormClosed(payload, now)) return "Closed";
+  if (isCardClosed(payload, now)) return "Closed";
   return formatEndsLabel("Closes", payload.closes_at, new Date(now));
 }
 

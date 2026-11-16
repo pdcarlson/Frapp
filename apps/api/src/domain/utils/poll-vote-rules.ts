@@ -50,7 +50,7 @@ export interface CardPollPayload {
  * comparing the stamp to a clock: `closed_at` is stamped by whichever API
  * process ran the close, so a vote checked on a process whose clock runs
  * behind would otherwise see the close as still in the future. Both clients
- * read it by presence too (`isPollCardClosed`).
+ * read it by presence too (`isCardClosed` in `@repo/chat-core/card-closing`).
  */
 export function cardPollClosedEarly(card: CardPollPayload): boolean {
   return typeof card.closed_at === 'string' && card.closed_at !== '';

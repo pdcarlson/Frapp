@@ -1,4 +1,5 @@
 import { POLL_OPTIONS_MAX, POLL_OPTIONS_MIN } from "@repo/validation";
+import { foldOptionLabel } from "./card-closing";
 import { tokenizeQuotedArgs } from "./integrations/parsers";
 
 /**
@@ -134,7 +135,7 @@ export function checkPollDraft(draft: PollDraft): PollDraftCheck {
     .filter((option) => option.length > 0);
   const seen = new Set<string>();
   for (const option of options) {
-    const key = option.toLowerCase().replace(/\s+/g, " ");
+    const key = foldOptionLabel(option);
     if (seen.has(key)) return { ok: false, problem: DUPLICATE_OPTION_PROBLEM };
     seen.add(key);
   }

@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
-  SIGNUP_END_PASSED_PROBLEM,
   SIGNUP_END_TOO_FAR_PROBLEM,
   SIGNUP_SPOTS_PROBLEM,
   addSignupSlot,
-  canCloseSignup,
   canExportSignup,
   signupExportRows,
   headcountAnswerPayload,
   headcountNotePayload,
-  isSignupClosed,
   signupDeadlineLine,
   buildSignupMessage,
   castSignupClaim,
@@ -29,6 +26,11 @@ import {
   tallySignups,
   type SignupPayload,
 } from "./signups";
+import {
+  CARD_END_PASSED_PROBLEM,
+  canCloseCard,
+  isCardClosed,
+} from "./card-closing";
 import type { ChatMessage } from "./types";
 
 const card: SignupPayload = {
@@ -471,14 +473,14 @@ describe("headcount, end time and closing (#3926 step 2)", () => {
   it("closes at its end time or when closed early, and says when it ends", () => {
     const now = Date.parse("2026-11-12T12:00:00Z");
     const ends = { ...card, closes_at: "2026-11-12T12:00:00Z" };
-    expect(isSignupClosed(ends, now)).toBe(true);
-    expect(isSignupClosed(ends, now - 1)).toBe(false);
+    expect(isCardClosed(ends, now)).toBe(true);
+    expect(isCardClosed(ends, now - 1)).toBe(false);
     expect(signupDeadlineLine(ends, now - 1)).toMatch(/^Ends today at /);
     expect(signupDeadlineLine(ends, now)).toBeNull();
     const early = readSignupPayload(
       message({ ...card, closed_at: "2026-11-12T11:00:00Z", closed_by: "u1" }),
     )!;
-    expect(isSignupClosed(early, now)).toBe(true);
+    expect(isCardClosed(early, now)).toBe(true);
     const tally = tallySignups(message(early), early, "me");
     expect(signupCardEyebrow(early, tally, now)).toBe("Sign-up · Closed");
   });
@@ -489,14 +491,14 @@ describe("headcount, end time and closing (#3926 step 2)", () => {
       _status: "confirmed",
       is_deleted: false,
     } as const;
-    expect(canCloseSignup(row, card, "u1", 0, false)).toBe(true);
-    expect(canCloseSignup(row, card, "u2", 0, false)).toBe(false);
-    expect(canCloseSignup(row, card, "u2", 0, true)).toBe(true);
+    expect(canCloseCard(row, card, "u1", 0, false)).toBe(true);
+    expect(canCloseCard(row, card, "u2", 0, false)).toBe(false);
+    expect(canCloseCard(row, card, "u2", 0, true)).toBe(true);
+    expect(canCloseCard(row, { ...card, closed_at: "x" }, "u1", 0, false)).toBe(
+      false,
+    );
     expect(
-      canCloseSignup(row, { ...card, closed_at: "x" }, "u1", 0, false),
-    ).toBe(false);
-    expect(
-      canCloseSignup({ ...row, _status: "pending" }, card, "u1", 0, false),
+      canCloseCard({ ...row, _status: "pending" }, card, "u1", 0, false),
     ).toBe(false);
   });
 
@@ -511,7 +513,7 @@ describe("headcount, end time and closing (#3926 step 2)", () => {
     });
     expect(
       checkSignupDraft({ ...titled, closesAt: new Date(now - 60_000) }, now),
-    ).toEqual({ ok: false, problem: SIGNUP_END_PASSED_PROBLEM });
+    ).toEqual({ ok: false, problem: CARD_END_PASSED_PROBLEM });
     expect(
       checkSignupDraft(
         { ...titled, closesAt: new Date(now + 400 * 86_400_000) },
