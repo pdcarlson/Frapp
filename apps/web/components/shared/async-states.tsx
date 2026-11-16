@@ -305,7 +305,10 @@ export function anyReadUncached(
  * Whether a read is paused: pending, with TanStack holding its fetch until the
  * link comes back (the first case in the note above `anyReadUncached`).
  *
- * The one spelling of the rule, so no surface writes the conjunction by hand.
+ * The one spelling of the rule: no surface writes `isPending && fetchStatus
+ * === "paused"`, or its negation, by hand (a loading-but-not-paused branch is
+ * `isPending && !pausedRead(q)`). `async-states.spec.tsx` greps `apps/web`
+ * for a hand-written copy; `/backwork` keeps one until #5214 merges (#5222).
  * Both halves are load-bearing. `isPending` alone is also true of a read that
  * is merely loading; `fetchStatus === "paused"` alone is also true of a cached
  * read whose refetch paused, which has data to show. And never `isPending &&

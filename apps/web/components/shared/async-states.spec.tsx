@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { describe, it, expect } from "vitest";
 import { anyReadUncached, pausedRead } from "@/components/shared/async-states";
 
@@ -40,9 +42,9 @@ describe("anyReadUncached", () => {
   it("treats placeholder data as uncached", () => {
     // `useAlumni`'s `keepPreviousData` shape: `data` is defined, but it is the
     // previous filter's rows rather than this query's answer.
-    expect(anyReadUncached({ data: [{ id: "a" }], isPlaceholderData: true })).toBe(
-      true,
-    );
+    expect(
+      anyReadUncached({ data: [{ id: "a" }], isPlaceholderData: true }),
+    ).toBe(true);
   });
 
   it("does not treat settled data as placeholder", () => {
@@ -95,8 +97,64 @@ describe("pausedRead", () => {
   });
 
   it("is false for a cached read whose refetch paused", () => {
-    expect(pausedRead({ isPending: false, fetchStatus: "paused" })).toBe(
-      false,
+    expect(pausedRead({ isPending: false, fetchStatus: "paused" })).toBe(false);
+  });
+});
+
+/**
+ * `pausedRead` is the one spelling of the paused-read rule (#1782), so a
+ * surface that writes `isPending && fetchStatus === "paused"` (or `!==`, in
+ * either order) by hand turns this red. Comments are stripped first: prose
+ * that quotes the rule is not a copy of it.
+ */
+describe("pausedRead is the only spelling of the rule", () => {
+  const WEB_ROOT = join(__dirname, "..", "..");
+  const DEFINITION = "components/shared/async-states.tsx";
+  // `/backwork` is held by #5214 (one open PR per screen); #5222 moves it.
+  const ALLOWED = new Set(["components/backwork/backwork-page.tsx"]);
+  const HAND_WRITTEN = [
+    /isPending\s*&&\s*\(?\s*[\w.?]*fetchStatus\s*[!=]==\s*["']paused["']/,
+    /fetchStatus\s*[!=]==\s*["']paused["']\s*\)?\s*&&\s*[\w.?]*isPending\b/,
+  ];
+
+  function stripComments(source: string): string {
+    return source
+      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+  }
+
+  function sourceFiles(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) return sourceFiles(path);
+      return /\.tsx?$/.test(entry.name) &&
+        !/\.(spec|test)\.tsx?$/.test(entry.name)
+        ? [relative(WEB_ROOT, path)]
+        : [];
+    });
+  }
+
+  it("finds no hand-written copy outside the definition", () => {
+    const files = ["app", "components", "lib"].flatMap((dir) =>
+      sourceFiles(join(WEB_ROOT, dir)),
     );
+    expect(files).toContain(DEFINITION);
+    const copies = files.filter(
+      (file) =>
+        file !== DEFINITION &&
+        !ALLOWED.has(file) &&
+        HAND_WRITTEN.some((rule) =>
+          rule.test(stripComments(readFileSync(join(WEB_ROOT, file), "utf8"))),
+        ),
+    );
+    expect(copies).toEqual([]);
+  });
+
+  it("still sees the allowlisted copy, so the allowlist cannot go stale", () => {
+    for (const file of ALLOWED) {
+      const source = stripComments(readFileSync(join(WEB_ROOT, file), "utf8"));
+      expect(HAND_WRITTEN.some((rule) => rule.test(source))).toBe(true);
+    }
   });
 });
