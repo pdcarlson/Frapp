@@ -96,7 +96,7 @@ export function useInvites(options?: {
 
 /**
  * The ids of the roles the caller may invite someone into
- * (`GET /v1/invites/roles`, #4546): ranked at or below them, holding only
+ * (`GET /v1/invites/roles`, #4546, #1830): ranked below them, holding only
  * permissions they hold, never the President's. Web's role picker offers only
  * these. Undefined until it loads, or if it fails; a picker then offers every
  * role and the API still refuses the rest.

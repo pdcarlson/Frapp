@@ -943,7 +943,7 @@ describe('AskService', () => {
       expect(planCall[1].messages[0].content).not.toContain('Quorum');
     });
 
-    it('puts live data first, then the official record, then chat', async () => {
+    it('puts live data first, then what was found in the order retrieval ranked it, chat labelled as chat (#5179)', async () => {
       const { service, gateway } = build({
         tools: [tool()],
         plan: planning(['roster']),
@@ -966,12 +966,14 @@ describe('AskService', () => {
         string,
         { sources: Array<{ id: string; title: string }> },
       ];
+      // Retrieval ranked the chat passage first, and it stays there: chat is
+      // no longer held behind the record.
       expect(call[1].sources.map((source) => source.id)).toEqual([
         'tool:roster',
-        'p1',
         'chat-1',
+        'p1',
       ]);
-      expect(call[1].sources[2].title).toBe(
+      expect(call[1].sources[1].title).toBe(
         // The asker's day, like the "Today is" line: midnight UTC on
         // September 1 is still August 31 in New York.
         'Chat message in #general, Monday, August 31, 2026',
@@ -2528,6 +2530,93 @@ describe('AskService', () => {
         const { answer } = await run(service, { cards: 'one' });
         expect(answer.status).toBe('answered');
         expect(answer.proposals).toBeUndefined();
+      });
+    });
+
+    describe("one sentence in Frapp's own words (Paul, 2026-11-16)", () => {
+      /** A turn whose model wrote `text` and nothing a source backs. */
+      const uncited = (
+        text: string,
+        over: Partial<
+          Extract<AgentLoopOutcome['result'], { status: 'ok' }>
+        > = {},
+      ): AgentLoopOutcome => {
+        const base = outcome();
+        return {
+          ...base,
+          result:
+            base.result.status === 'ok'
+              ? { ...base.result, text, citations: [], ...over }
+              : base.result,
+        };
+      };
+      const shown = async (given: AgentLoopOutcome) => {
+        const { service } = build({
+          agentTools: [agentTool()],
+          loop: [{ type: 'end', outcome: given }],
+        });
+        return (await run(service)).answer;
+      };
+
+      it('shows a short reply with no source as its own words', async () => {
+        const answer = await shown(
+          uncited("I don't give out phone numbers. Message Caleb in Frapp."),
+        );
+        expect(answer).toMatchObject({
+          status: 'answered',
+          own_words: true,
+          text: "I don't give out phone numbers. Message Caleb in Frapp.",
+          citations: [],
+          sources: [],
+        });
+      });
+
+      it('links a member it names, as any answer does', async () => {
+        const base = uncited(
+          'Which one do you mean: @Jordan Lee or @Jordan Park?',
+        );
+        const answer = await shown({
+          ...base,
+          entities: [
+            { type: 'member', id: 'u1', name: 'Jordan Lee' },
+            { type: 'member', id: 'u2', name: 'Jordan Park' },
+          ],
+        });
+        expect(answer.own_words).toBe(true);
+        expect(answer.entities?.map((entity) => entity.id)).toEqual([
+          'u1',
+          'u2',
+        ]);
+      });
+
+      it.each([
+        [
+          'a quote was tried and dropped',
+          uncited('Dues are $450.', { droppedCitations: 1 }),
+        ],
+        ['it is a long answer', uncited('Dues are due on Friday. '.repeat(30))],
+        ['nothing was written', uncited('')],
+      ])("is still couldn't find that when %s", async (_why, given) => {
+        const answer = await shown(given);
+        expect(answer.status).toBe('not_found');
+        expect(answer.own_words).toBeUndefined();
+        expect(answer.text).toBe('');
+      });
+
+      it('shows a short reply on several lines whole, as own words (#5179)', async () => {
+        const answer = await shown(
+          uncited('Which Jordan do you mean?\n- @Jordan Lee\n- @Jordan Park'),
+        );
+        expect(answer.own_words).toBe(true);
+        expect(answer.text).toBe(
+          'Which Jordan do you mean?\n- @Jordan Lee\n- @Jordan Park',
+        );
+      });
+
+      it('marks no answer that stands on a source', async () => {
+        const answer = await shown(outcome());
+        expect(answer.status).toBe('answered');
+        expect(answer.own_words).toBeUndefined();
       });
     });
 

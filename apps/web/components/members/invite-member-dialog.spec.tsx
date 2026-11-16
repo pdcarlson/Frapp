@@ -270,7 +270,7 @@ describe("InviteMemberDialog default role", () => {
     expect(rolePicker().value).toBe("New Member");
   });
 
-  // #4546: a chair invites a peer or a brother, never a role above them.
+  // #4546, #1830: a chair invites only roles ranked below them.
   it("offers only the roles the sender may invite into", async () => {
     mockRoles.mockReturnValue({ data: ROLES, isError: false });
     mockOrgConfig.mockReturnValue({ data: {}, isError: false });

@@ -291,6 +291,25 @@ export class ChapterDocumentDto {
     description: 'When an officer pinned it for the whole chapter, or null',
   })
   pinned_at: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The Google Drive file this is a copy of, or null for an upload. Drive owns a copy: it cannot be deleted in Frapp (#5157)',
+  })
+  drive_file_id: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: "The Drive file's modified time when it was last copied",
+  })
+  drive_modified_at: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: "The file's page in Google Drive",
+  })
+  drive_url: string | null;
 }
 
 /** A folder as the folder list and pin routes return it (#3934). */

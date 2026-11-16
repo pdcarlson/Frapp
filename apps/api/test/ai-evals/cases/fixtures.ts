@@ -64,7 +64,8 @@ export const ALUMNUS: EvalCaller = {
 
 /**
  * Seeded Everyone role (once Member, #4191): members:view, ai:use (#4308), events:create (#3709), backwork:upload,
- * service:log, polls:create, and the six member recruitment keys (#4070).
+ * service:log, polls:create, the six member recruitment keys (#4070) and
+ * predictions:create (#5133).
  */
 export const MEMBER: EvalCaller = {
   memberId: 'member-rank-and-file',
@@ -83,6 +84,7 @@ export const MEMBER: EvalCaller = {
     'rush:vote',
     'rush:view_results',
     'rush:bid',
+    'predictions:create',
   ],
   channelIds: MEMBER_CHANNELS,
 };
@@ -127,6 +129,7 @@ export const TREASURER: EvalCaller = {
     'rush:vote',
     'rush:view_results',
     'rush:bid',
+    'predictions:create',
     'events:update',
     'events:delete',
     'polls:view_all',
@@ -140,6 +143,7 @@ export const TREASURER: EvalCaller = {
     'service:approve',
     'tasks:manage',
     'meetings:record',
+    'predictions:manage',
     'billing:view',
     'billing:manage',
     'points:adjust',
@@ -174,6 +178,7 @@ export const PRESIDENT: EvalCaller = {
     'rush:vote',
     'rush:view_results',
     'rush:bid',
+    'predictions:create',
     'events:update',
     'events:delete',
     'polls:view_all',
@@ -187,6 +192,7 @@ export const PRESIDENT: EvalCaller = {
     'service:approve',
     'tasks:manage',
     'meetings:record',
+    'predictions:manage',
     '*',
   ],
   channelIds: [...MEMBER_CHANNELS, CHANNEL.exec],

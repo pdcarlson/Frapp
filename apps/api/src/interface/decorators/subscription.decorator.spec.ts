@@ -70,6 +70,7 @@ import { SemesterRolloverController } from '../controllers/semester-rollover.con
 import { DiscordAuthorLinkController } from '../controllers/discord-author-link.controller';
 import { CalendarFeedController } from '../controllers/calendar-feed.controller';
 import { GoogleCalendarController } from '../controllers/google-calendar.controller';
+import { GoogleDriveController } from '../controllers/google-drive.controller';
 
 /** A route-level marker: its label, its handler, and the class it lives on. */
 type RouteMarker = [string, (...args: never[]) => unknown, Type<unknown>];
@@ -191,6 +192,13 @@ describe('subscription decorator wiring', () => {
       'GoogleCalendarController.disconnect',
       GoogleCalendarController.prototype.disconnect,
       GoogleCalendarController,
+    ],
+    // #5157: member safety, an officer can always stop Frapp copying the
+    // chapter's Google Drive folder.
+    [
+      'GoogleDriveController.disconnect',
+      GoogleDriveController.prototype.disconnect,
+      GoogleDriveController,
     ],
   ];
 

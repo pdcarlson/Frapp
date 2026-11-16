@@ -1,6 +1,6 @@
 import { forwardRef, useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   ALL_THREADS_EMPTY,
   ALL_THREADS_ERROR,
@@ -31,6 +31,7 @@ import {
   useTallSheetProps,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /** Where a row opens: the thread, over its channel. */
 export interface ThreadTarget {
@@ -157,7 +158,9 @@ export function ThreadRows({
             : preview.reply.text
           : null,
         replies:
-          thread.reply_count === 1 ? "1 reply" : `${thread.reply_count} replies`,
+          thread.reply_count === 1
+            ? "1 reply"
+            : `${thread.reply_count} replies`,
       };
     });
   }, [query.data, channelNameFor, nameFor, viewerId]);
@@ -186,7 +189,9 @@ export function ThreadRows({
             row.unread > 0 ? `, ${row.unread} new` : ""
           }`}
           accessibilityHint="Opens this thread."
-          onPress={() => onOpen({ channelId: row.channelId, rootId: row.rootId })}
+          onPress={() =>
+            onOpen({ channelId: row.channelId, rootId: row.rootId })
+          }
           style={({ pressed }) => [styles.row, pressed ? styles.pressed : null]}
         >
           <View style={styles.metaLine}>

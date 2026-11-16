@@ -27,6 +27,23 @@ export interface IChapterDocumentRepository {
    */
   create(data: Partial<ChapterDocument>): Promise<ChapterDocument>;
   delete(id: string, chapterId: string): Promise<void>;
+  /** The chapter's copies of Google Drive files (#5157). */
+  findDriveCopies(chapterId: string): Promise<ChapterDocument[]>;
+  /** Rewrites a Drive copy after the sync replaced, renamed or refiled it. */
+  updateDriveCopy(
+    id: string,
+    chapterId: string,
+    patch: Pick<
+      Partial<ChapterDocument>,
+      | 'title'
+      | 'folder'
+      | 'storage_path'
+      | 'content_type'
+      | 'byte_size'
+      | 'drive_modified_at'
+      | 'drive_url'
+    >,
+  ): Promise<void>;
   /**
    * Pins (an ISO time) or unpins (null) a document for the chapter (#3934).
    * Null when no document with that id is in the chapter, including one

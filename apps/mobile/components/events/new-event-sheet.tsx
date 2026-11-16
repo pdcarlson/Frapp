@@ -8,11 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import DateTimePicker, {
   DateTimePickerAndroid,
 } from "@react-native-community/datetimepicker";
@@ -58,7 +54,7 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  useGuardedSheetRef,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
 import { FilterChips } from "@/components/filter-chips";
@@ -96,7 +92,9 @@ import {
   useKeptSheetOpening,
 } from "@/lib/kept-sheet-draft";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
+import { useNotesLabel } from "@/lib/minutes/meetings-on";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The "New event" bottom sheet: an officer's quick create on the phone.
@@ -210,6 +208,7 @@ const EVENT_EDIT_KEYS = [
   "attendance",
   "repeat",
   "description",
+  "notes",
 ] as const satisfies readonly (keyof NewEventDraft)[];
 
 /** A kept edit over the event as it is now: only what the officer changed. */
@@ -298,8 +297,11 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const closeSheet = useSheetClose(ref);
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
     const createEvent = useCreateEvent();
     const updateEvent = useUpdateEvent();
     const deleteEvent = useDeleteEvent();
@@ -355,8 +357,15 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
       opening,
     );
     const [focused, setFocused] = useState<
-      "name" | "location" | "points" | "checkInOpens" | "description" | null
+      | "name"
+      | "location"
+      | "points"
+      | "checkInOpens"
+      | "description"
+      | "notes"
+      | null
     >(null);
+    const notesLabel = useNotesLabel();
     // Written by Create; a field's line goes when that field is edited.
     const [errors, setErrors] = useState<NewEventErrors>({});
     const [submitFailed, setSubmitFailed] = useState(false);
@@ -684,7 +693,7 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
     return (
       <>
         <BottomSheetModal
-          ref={ref}
+          ref={modalRef}
           stackBehavior={SHEET_STACK_BEHAVIOR}
           enableDynamicSizing
           keyboardBehavior="interactive"
@@ -942,6 +951,34 @@ export const NewEventSheet = forwardRef<BottomSheetModal, NewEventSheetProps>(
                     ]}
                   />
                 </View>
+
+                {/* Notes (#4934): every member the event invites reads them
+                    on Event details, named as that screen names them, and
+                    labeled so they read apart from a filled description. */}
+                <Text style={styles.notesLabel}>{notesLabel}</Text>
+                <View
+                  style={[
+                    styles.ring,
+                    focused === "notes" ? styles.ringActive : null,
+                  ]}
+                >
+                  <BottomSheetTextInput
+                    value={draft.notes ?? ""}
+                    onChangeText={(notes) => update({ notes }, [])}
+                    onFocus={() => setFocused("notes")}
+                    onBlur={() => setFocused(null)}
+                    editable={!pending}
+                    placeholder={`${notesLabel} (optional)`}
+                    placeholderTextColor={tokens.color.text.muted}
+                    accessibilityLabel={notesLabel}
+                    multiline
+                    style={[
+                      styles.field,
+                      styles.fieldMultiline,
+                      focused === "notes" ? styles.fieldFocused : null,
+                    ]}
+                  />
+                </View>
               </View>
             ) : null}
 
@@ -1149,6 +1186,12 @@ function createStyles(tokens: SignetTokens, brand: ChapterBranding) {
     fieldFocused: fieldStyles.fieldFocused,
     fieldError: {
       borderColor: tokens.color.semantic.destructive,
+    },
+    // Repeat's heading, so filled-in notes read apart from the description.
+    notesLabel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+      marginTop: tokens.spacing.xs,
     },
     // Starts and Ends as one grouped field, the way Calendar sets them; the
     // options under "More options" are rows of the same kind of group.

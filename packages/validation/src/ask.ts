@@ -357,6 +357,14 @@ export const AskAnswerSchema = z.object({
    * record: a client offers no thumbs then.
    */
   ask_id: z.string().nullish(),
+  /**
+   * `text` is one sentence in Frapp's own words that rests on no source: a
+   * greeting back, what Frapp can do, why it will not answer, or which of
+   * two members the asker means (Paul, 2026-11-16). It has no citations, and
+   * a client shows it as Frapp's own words, not as an answer from the
+   * chapter's records. Absent on every other answer.
+   */
+  own_words: z.boolean().nullish(),
 });
 export type AskAnswer = z.infer<typeof AskAnswerSchema>;
 
@@ -647,6 +655,8 @@ export const ASK_COPY = {
     "I couldn't find that in your chapter's documents, minutes or records.",
   not_found_hint:
     "Ask can only answer from what your chapter has uploaded or posted in Frapp.",
+  /** Under an answer in Frapp's own words (`AskAnswer.own_words`). */
+  own_words: "Frapp's own words, not from your chapter's records.",
   refused: "Ask can't help with that question.",
   failed: "That didn't go through. Try again.",
   truncated: "This answer was cut short. Ask a narrower question for the rest.",

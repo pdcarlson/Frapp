@@ -1,10 +1,6 @@
 import { forwardRef, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetFlatList,
-  BottomSheetModal,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   type ChannelAccessOption,
@@ -33,6 +29,7 @@ import {
   type ChannelAccessRow as Row,
 } from "@/lib/chat/channel-access-rows";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /** A search shows once the chapter has more tiers and roles than fit a screen. */
 const CHANNEL_ACCESS_SEARCH_FROM = 8;

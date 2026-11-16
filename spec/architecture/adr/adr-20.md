@@ -115,7 +115,8 @@ the ones a later reader would otherwise re-litigate.
   carrying all 21 roster contexts, with `migration-order` and `web-production-build` present and
   the demoted `migration-drift` absent — which, if it still holds when you read this, would mean
   step 4 of #1378's rollout had already happened. **Re-read it rather than citing this paragraph**
-  (`npm run configure:branch-protection:verify`, or the `gh api` call in the runbook); an admin can
+  (`npm run configure:branch-protection:verify`, or the `gh api` call in the runbook, both laptop
+  steps since sessions lost their GitHub token, corrected 2026-11-16); an admin can
   change any of it in the UI without touching this repo.
 
   The same read surfaced `allow_fork_syncing` live `false` against the roster's `true`. That one is
@@ -166,7 +167,10 @@ the ones a later reader would otherwise re-litigate.
   Direct egress is subject only to the environment's network allowlist, which includes
   `api.github.com`. So **reads are available to an agent as a ground-truth channel**:
   `npm run configure:branch-protection:verify` exits 0 from this sandbox, and step 4 of a rollout
-  is evidenceable by an agent rather than only by a human's run output. Never respond to the 403 by
+  is evidenceable by an agent rather than only by a human's run output. (Corrected 2026-11-16: no
+  longer true. Sessions lost `GITHUB_PAT` on 2026-11-15 and reach GitHub through the MCP only, so
+  `:verify` is a laptop step;
+  [`agent-infra.md` § GitHub access policy](../../../docs/ci-cd/agent-infra.md#github-access-policy).) Never respond to the 403 by
   regenerating the PAT with broader scopes — scope is not what it is about — and never set
   `NODE_USE_ENV_PROXY=1` for these scripts, which would push node onto the 403 route. What does
   **not** change: applying branch protection stays a human step with an admin PAT **by policy**,

@@ -38,7 +38,7 @@ export function roleNames(roles: readonly Role[]): Map<string, string> {
 }
 
 export function rolesHeld(
-  profile: ProfileForAsk,
+  profile: Pick<ProfileForAsk, 'role_ids' | 'custom_role_ids'>,
   names: ReadonlyMap<string, string>,
 ): string[] {
   return [...new Set([...profile.role_ids, ...(profile.custom_role_ids ?? [])])]

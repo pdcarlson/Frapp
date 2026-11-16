@@ -42,7 +42,9 @@ export function askChannelPostOffer(
     exchange.proposal ||
     !origin ||
     answer?.status !== "answered" ||
-    !answer.report_receipt
+    !answer.report_receipt ||
+    // Frapp's own words, or cards alone: nothing a channel could check.
+    answer.citations.length === 0
   ) {
     return { kind: "none" };
   }

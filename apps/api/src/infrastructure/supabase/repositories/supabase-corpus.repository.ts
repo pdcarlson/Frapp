@@ -258,6 +258,8 @@ export class SupabaseCorpusRepository implements ICorpusRepository {
                 createdAt: row.created_at,
                 threadRootId: row.thread_root_id,
                 conversationAt: row.conversation_at,
+                // An older database's read has no kind: plain text.
+                kind: row.kind ?? 'text',
               },
             ]
           : [],

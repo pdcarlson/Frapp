@@ -47,6 +47,7 @@ describe("selectDocuments", () => {
         content_type: null,
         storage_path: "chapters/c/documents/x/bylaws.pdf",
         pinned_at: "2026-11-11T00:00:00.000Z",
+        drive_file_id: null,
       },
     ]);
   });
@@ -84,6 +85,24 @@ describe("documentMeta", () => {
         { "u-1": "Ryan Castellano" },
       ),
     ).toEqual(["Uploaded Aug 12 by Ryan Castellano · Governance · Bylaws"]);
+  });
+
+  it("says a Drive copy came from Google Drive, not who filed it (#5157)", () => {
+    expect(
+      metaFor(
+        [
+          {
+            id: "d-1",
+            title: "Minutes",
+            folder: "Rush",
+            uploaded_by: "u-1",
+            created_at: "2026-08-12T14:00:00.000Z",
+            drive_file_id: "drive-1",
+          },
+        ],
+        { "u-1": "Ryan Castellano" },
+      ),
+    ).toEqual(["From Google Drive, added Aug 12 · Rush"]);
   });
 
   it("leaves off an uploader the roster can't name", () => {

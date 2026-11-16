@@ -156,6 +156,30 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     if (error) throw new SupabaseQueryError(error);
   }
 
+  async findDriveCopies(chapterId: string): Promise<ChapterDocument[]> {
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .not('drive_file_id', 'is', null);
+    if (error) throw new SupabaseQueryError(error);
+    return data ?? [];
+  }
+
+  async updateDriveCopy(
+    id: string,
+    chapterId: string,
+    patch: TablesUpdate<'chapter_documents'>,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('chapter_documents')
+      .update(patch)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .not('drive_file_id', 'is', null);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async moveToRoot(folder: string, chapterId: string): Promise<void> {
     const patch: TablesUpdate<'chapter_documents'> = { folder: null };
     const { error } = await this.supabase

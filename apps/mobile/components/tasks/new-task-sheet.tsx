@@ -1,7 +1,6 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
-  BottomSheetFlatList,
   BottomSheetModal,
   BottomSheetTextInput,
   BottomSheetView,
@@ -47,7 +46,7 @@ import {
   sheetFieldStyles,
   TallSheetHeader,
   useSheetBackgroundStyle,
-  useSheetVisit,
+  useGuardedSheetRef,
   useTallSheetProps,
   SheetBackToClose,
   useSheetClose,
@@ -95,6 +94,7 @@ import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /**
  * s19 — the "New task" bottom sheet (`canvas-screens.dc.html`, `id="s19"`).
@@ -355,8 +355,11 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const pickerRef = useRef<BottomSheetModal>(null);
     const closeSheet = useSheetClose(ref);
     const closePicker = useSheetClose(pickerRef);
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
 
     const viewerUserId = useViewerUserId();
     const rosterQuery = useChapterRoster();
@@ -416,10 +419,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       opening
         ? opening.due
         : editBase
-        ? editBase.due
-        : suggested
-          ? { kind: "date", date: suggested.dueDate }
-          : DEFAULT_DUE_CHOICE,
+          ? editBase.due
+          : suggested
+            ? { kind: "date", date: suggested.dueDate }
+            : DEFAULT_DUE_CHOICE,
     );
     // `HH:MM`, or null for a task due by the day (#4003).
     const [dueTime, setDueTime] = useState<string | null>(
@@ -912,7 +915,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     return (
       <>
         <BottomSheetModal
-          ref={ref}
+          ref={modalRef}
           stackBehavior={SHEET_STACK_BEHAVIOR}
           enableDynamicSizing
           keyboardBehavior="interactive"

@@ -621,6 +621,15 @@ Advertising Data, Browsing History, Search History.
 > [#3401](https://github.com/pdcarlson/Frapp/issues/3401), which keeps the Files picker). Deploy the
 > landing before submitting a binary that carries s20's photo row.
 >
+> **Task photos use this row too (#4565, #4611, 2026-11-16).** An officer's reference
+> photo on a task and the assignee's proof photo when they mark it done pick from the
+> library through the same pipeline (`lib/tasks/task-photos.ts`) and are kept in the
+> private `tasks` bucket. They are *Photos or Videos* items collected for *App
+> Functionality* and linked to the member, so the row's values don't change. The
+> privacy policy's permissions clause names them and, on the precedents above, the
+> edit moved only the page's pin. The iOS purpose string names them from the first
+> store build after 2026-11-16.
+>
 > ‡ **`Linked: No` on Crash Data and Performance Data is wrong, and this table's own
 > reasoning is what proves it (owner action — console change).** Found 2026-09-21. The
 > argument for calling User ID *linked* is that `distinct_id` is a pseudonym whose salt
@@ -641,6 +650,14 @@ Advertising Data, Browsing History, Search History.
 > linked to the user, and its product page preview has only a "Data Linked to You" section,
 > so nothing is declared as tracking. Crash Data and Performance Data are both
 > App Functionality, linked. Photos or Videos (†) is still declared.
+>
+> **Push-token device label (#5129, open in [#5159](https://github.com/pdcarlson/Frapp/issues/5159)).**
+> Since #5097 the push token's row also stores the platform, OS version and model
+> (`lib/notifications/push-device-name.ts`), linked to the member, and the privacy policy
+> names them beside the push token from 2026-11-16. Apple defines Device ID as "the
+> device's advertising identifier, or other device-level ID", which a model and OS
+> version are not, so the Identifiers → Device ID row above stands. Whether to add
+> *Diagnostics → Other Diagnostic Data* is the owner's console decision in #5159.
 
 Where each answer comes from:
 
@@ -653,11 +670,11 @@ Where each answer comes from:
   (`lib/chat/attachment-upload.ts`), so a member's photo goes from the library
   to the chat bucket from the phone. That is also what reinstated the
   Photos or Videos row above — read its footnote before touching either.
-  Documents now upload from the phone too, photos only (#3399): s12's sheet
-  sends a library photo to the documents bucket, and that photo is declared
-  under the Photos or Videos row above. A PDF or Office file still uploads only
-  from the web dashboard, since picking one needs `expo-document-picker`, a
-  native module no store build carries yet. Service-hour proof uploads from
+  Documents now upload from the phone too (#3399): s12's sheet sends a library
+  photo to the documents bucket, declared under the Photos or Videos row
+  above, and from 0.13.0 a PDF, Office or text file the member picks in Files
+  (#3401), which is a file they chose to share with the chapter, under Other
+  User Content here. Service-hour proof uploads from
   the phone too, photos only: the s20 sheet's "Add photo proof" row sends a
   library photo to the service bucket, declared under the same row. Backwork
   has no mobile screen, so it stays web-dashboard-only and is not claimed here
@@ -766,14 +783,14 @@ Two of Play's definitions differ from Apple's, and they change answers:
 | Personal info → Phone number | Yes | No | Optional | App functionality | Deleted | A chapter's `phone` member field, as in the App Store row |
 | Personal info → User IDs | Yes | No | Required | App functionality, Analytics | Kept as an anonymous tombstone; the analytics id is forgotten | Member and account ids; the pseudonymous analytics `distinct_id` (see *User ID carries Analytics* above) |
 | Messages → Other in-app messages | Yes | No | Optional | App functionality | **Kept, anonymised** | Chat channels and DMs |
-| Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos and service-hour proof photos are kept, anonymised, with their messages and entries; the profile photo is deleted; a chapter logo and document photos stay with the chapter | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages; a photo a member attaches as proof to a service-hour entry (s20, `lib/more/service-proof.ts`), kept in the private service bucket with its entry: deleting a pending entry deletes its photo, but account deletion keeps the entry, anonymised, and its photo with it, since the deletion purge reaches only profile photos and generated reports ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion); whether it should reach proof is [#3425](https://github.com/pdcarlson/Frapp/issues/3425)) (a photo uploaded for an entry that never saved stays unclaimed until [#2197](https://github.com/pdcarlson/Frapp/issues/2197)'s sweep); the chapter logo an officer adds in chapter setup (`lib/onboarding/chapter-wizard/chapter-logo.ts`, #3351), which belongs to the chapter and stays until an officer replaces or removes it; a photo a member holding `chapter_docs:upload` adds to the chapter's documents (`lib/more/document-upload.ts`, #3399), which is filed in the chapter's library and stays, attributed to "Deleted User" after its uploader's account is deleted, until an officer deletes the document; and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The owner entered this row in Play's Data safety form as written here, profile photo included, on 2026-11-05 (#2720, #2895). The camera only reads check-in codes on the device (s18's Scan code), and no frame leaves the phone. *2026-11-13 (#4763):* that sentence was dropped while 0.13.0 was to remove the in-app scanner, and is back now that 0.13.0 keeps Scan code; the answer to enter never changed |
+| Photos and videos → Photos | Yes | No | Optional | App functionality | **Mixed**: chat photos and service-hour proof photos are kept, anonymised, with their messages and entries; the profile photo is deleted; a chapter logo and document photos stay with the chapter | Chat photo attachments (`lib/chat/attachment-upload.ts`), kept with their messages; a photo a member attaches as proof to a service-hour entry (s20, `lib/more/service-proof.ts`), kept in the private service bucket with its entry: deleting a pending entry deletes its photo, but account deletion keeps the entry, anonymised, and its photo with it, since the deletion purge reaches only profile photos and generated reports ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion); whether it should reach proof is [#3425](https://github.com/pdcarlson/Frapp/issues/3425)) (a photo uploaded for an entry that never saved stays unclaimed until [#2197](https://github.com/pdcarlson/Frapp/issues/2197)'s sweep); the chapter logo an officer adds in chapter setup (`lib/onboarding/chapter-wizard/chapter-logo.ts`, #3351), which belongs to the chapter and stays until an officer replaces or removes it; a photo a member holding `chapter_docs:upload` adds to the chapter's documents (`lib/more/document-upload.ts`, #3399), which is filed in the chapter's library and stays, attributed to "Deleted User" after its uploader's account is deleted, until an officer deletes the document; a photo an officer adds to a task, or an assignee adds as proof they finished it (`lib/tasks/task-photos.ts`, #4565), kept in the private tasks bucket with the task (#4611 named it in the privacy policy, 2026-11-16); and the member's profile photo (`lib/more/profile-photo.ts`, #2897), deleted when it is replaced or removed (best effort: a failed delete there is logged, not retried), when the member leaves the chapter, and on account deletion ([`data-retention.md`](../../../spec/behavior/data-retention.md#individual-account-deletion)). The owner entered this row in Play's Data safety form as written here, profile photo included, on 2026-11-05 (#2720, #2895). The camera only reads check-in codes on the device (s18's Scan code), and no frame leaves the phone. *2026-11-13 (#4763):* that sentence was dropped while 0.13.0 was to remove the in-app scanner, and is back now that 0.13.0 keeps Scan code; the answer to enter never changed |
 | App activity → App interactions | Yes | No | Required | Analytics | Forgotten (the analytics forget) | The server-side product events behind the App Store *Product Interaction* row, the client's named `outbox-*` and `push-prompt-answered` events (#3164), plus the SDK's `$screen` route views and app lifecycle events (#3382). Required because the only opt-out is a chapter setting, not the member's choice |
 | App activity → In-app search history | Yes | **Yes** | Optional | App functionality | Nothing stored to delete | The directory and chapter-finder queries (`GET /v1/members/search`, `GET /v1/chapter-directory/search`). Ephemeral only while the App Store table's open question holds: if the API keeps query strings in its access logs, this answer is No |
 | App activity → Other user-generated content | Yes | No | Optional | App functionality | **Kept, anonymised** | Free text a member writes outside chat: service-hour entries, tasks they create, the details of a report they file (kept whole, as moderation history), and a chapter they create |
 | App activity → Other actions | Yes | No | Optional | App functionality | **Mixed**: event check-ins, task completions, poll votes and reactions are kept, anonymised; the Terms acceptance stays on the anonymised account record; study sessions, settings, notification preferences, read markers and the member's own blocks are deleted | Event check-ins (`event_attendance`), study sessions (`study_sessions`), task completions, poll votes, reactions, blocks, settings and notification preferences, read markers, and the Terms acceptance |
 | App info and performance → Crash logs | Yes | No | Required | App functionality | Not deleted with the account; aged out by Sentry's retention | Sentry, when the build has `EXPO_PUBLIC_SENTRY_DSN` (EAS `production` does, per #2415) |
 | App info and performance → Diagnostics | Yes | No | Required | App functionality | As Crash logs | Sentry tracing (`tracesSampleRate` in `lib/sentry/options.ts`; the rate is in [`observability.md` § Sampling](../../../spec/behavior/observability.md#sampling)) |
-| Device or other IDs | Yes | No | Optional | App functionality | Deleted | The Expo push token (`lib/notifications/push.ts`). Optional because it sits behind the notification permission. Since #4563 its row also stores the platform, OS version and model (`lib/notifications/push-device-name.ts`), never the name the member gave the device; that is diagnostics-type data rather than an ID, and whether it changes any answer is Paul's call |
+| Device or other IDs | Yes | No | Optional | App functionality | Deleted | The Expo push token (`lib/notifications/push.ts`). Optional because it sits behind the notification permission. Since #4563 its row also stores the platform, OS version and model (`lib/notifications/push-device-name.ts`), never the name the member gave the device; that is diagnostics-type data rather than an ID, and whether it changes any answer is Paul's call. *2026-11-16 (#5129):* the privacy policy now names the platform, OS version and model beside the push token. Apple's definition of Device ID is "the device's advertising identifier, or other device-level ID", which a model and OS version are not, so the App Store Device ID row stands; whether Apple's *Other Diagnostic Data* ("any other data collected for the purposes of measuring technical diagnostics") should be declared, and whether this Play answer changes, is the console decision in [#5159](https://github.com/pdcarlson/Frapp/issues/5159) |
 
 **On account deletion** is what `DELETE /v1/users/me` does to each type, and
 [`data-retention.md` § Individual Account Deletion](../../../spec/behavior/data-retention.md#individual-account-deletion)

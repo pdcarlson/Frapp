@@ -91,6 +91,7 @@ vi.mock("@/lib/haptics", () => ({
 }));
 
 import { NewTaskSheet } from "./new-task-sheet";
+import { expectHostDismissGuarded } from "@/test/wedging-sheet";
 
 function render({ keptDraft }: { keptDraft?: string } = {}): ReactTestRenderer {
   let tree!: ReactTestRenderer;
@@ -1060,5 +1061,15 @@ describe("New task photos and proof (#4635)", () => {
       reference_photo_paths: ["chapters/c/tasks/p2/mess.png"],
     });
     act(() => tree.unmount());
+  });
+});
+
+describe("NewTaskSheet — dismissed by its host while closed (#5059)", () => {
+  it("never reaches the modal unless it is up, so it still opens", () => {
+    expectHostDismissGuarded((ref) => (
+      <FrappThemeProvider>
+        <NewTaskSheet ref={ref} now={new Date("2026-09-27T12:00:00Z")} />
+      </FrappThemeProvider>
+    ));
   });
 });

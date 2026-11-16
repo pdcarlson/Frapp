@@ -1,4 +1,8 @@
-import { normalizeProofLink } from "./task-proof";
+import {
+  normalizeProofLink,
+  proofLinkDomain,
+  TASK_PROOF_LINK_MAX,
+} from "./task-proof";
 
 /**
  * An event's agenda and attachments (#4934, `spec/behavior/events.md`
@@ -86,4 +90,117 @@ export function agendaProblem(
     }
   }
   return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * An event read's agenda, as both apps draw it: the read has no response
+ * schema, so a missing or malformed list reads as empty, and an entry that
+ * isn't an item is skipped rather than drawn broken.
+ */
+export function readEventAgenda(value: unknown): EventAgendaItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry): EventAgendaItem[] =>
+    isRecord(entry) &&
+    typeof entry.id === "string" &&
+    typeof entry.text === "string"
+      ? [{ id: entry.id, text: entry.text, done: entry.done === true }]
+      : [],
+  );
+}
+
+/** An event read's attachments, read as defensively as its agenda. */
+export function readEventAttachments(value: unknown): EventAttachment[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry): EventAttachment[] => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.id !== "string" ||
+      typeof entry.title !== "string"
+    ) {
+      return [];
+    }
+    if (entry.kind === "link" && typeof entry.url === "string") {
+      // Re-checked here, not only on save: a row written some other way must
+      // never put a `javascript:` or `data:` address under a tap.
+      const url = normalizeAttachmentUrl(entry.url);
+      return url
+        ? [{ id: entry.id, kind: "link", url, title: entry.title }]
+        : [];
+    }
+    if (entry.kind === "document" && typeof entry.document_id === "string") {
+      return [
+        {
+          id: entry.id,
+          kind: "document",
+          document_id: entry.document_id,
+          title: entry.title,
+        },
+      ];
+    }
+    return [];
+  });
+}
+
+/** The agenda with one item checked or unchecked. */
+export function toggleAgendaItem(
+  items: readonly EventAgendaItem[],
+  id: string,
+): EventAgendaItem[] {
+  return items.map((item) =>
+    item.id === id ? { ...item, done: !item.done } : item,
+  );
+}
+
+/**
+ * The list with the entry at `from` moved one place up (`-1`) or down
+ * (`1`). A move past either end returns the list unchanged.
+ */
+export function moveEventEntry<T>(
+  items: readonly T[],
+  from: number,
+  step: -1 | 1,
+): T[] {
+  const to = from + step;
+  if (from < 0 || from >= items.length || to < 0 || to >= items.length) {
+    return [...items];
+  }
+  const next = [...items];
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
+}
+
+/**
+ * An attachment's title as the API takes it: whitespace collapsed and cut to
+ * `EVENT_ATTACHMENT_TITLE_MAX`. A Chapter Files name can run to 255
+ * characters, so a document's title is cut as well as a link's.
+ */
+export function attachmentTitle(title: string): string {
+  return title.replace(/\s+/g, " ").trim().slice(0, EVENT_ATTACHMENT_TITLE_MAX);
+}
+
+/**
+ * A link attachment's title when its adder left it empty: the link's domain
+ * ("docs.google.com"), the way a pasted link reads in chat.
+ */
+export function attachmentLinkTitle(title: string, url: string): string {
+  return attachmentTitle(title) || attachmentTitle(proofLinkDomain(url));
+}
+
+/**
+ * Why a pasted link can't be attached, or `null` when it can: the form's
+ * words for `normalizeAttachmentUrl`'s two refusals.
+ */
+export function attachmentLinkProblem(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "Paste a web address.";
+  if (trimmed.length > TASK_PROOF_LINK_MAX) {
+    return `That link is too long to attach (over ${TASK_PROOF_LINK_MAX} characters).`;
+  }
+  return normalizeAttachmentUrl(trimmed)
+    ? null
+    : "Paste a web address starting with http:// or https://.";
 }

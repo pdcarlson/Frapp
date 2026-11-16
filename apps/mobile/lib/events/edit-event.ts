@@ -64,6 +64,7 @@ export function draftFromEvent(target: EventEditTarget): NewEventDraft {
     attendance: attendanceFromEvent(event.attendance),
     repeat: repeatDraftFromRule(seriesRule),
     description: event.description ?? "",
+    notes: event.notes ?? "",
     showMore: false,
   };
 }
@@ -123,6 +124,7 @@ export function validateEventEdit(
     end,
     location: draft.location,
     description: draft.description,
+    notes: draft.notes,
     point_value: points.kind === "value" ? points.points : 0,
     check_in_opens_minutes: opens,
     attendance: wire,

@@ -166,11 +166,12 @@ export const IOS_PURPOSE_STRINGS = new Map([
   ],
   [
     // Chat photos, the s15 profile photo, the chapter logo, s21's document
-    // photo (#3399) and s20's service-hour proof all pick through this call,
-    // and the text names all five (widened 2026-11-05 for the 0.9.1 build).
+    // photo (#3399), s20's service-hour proof and a task's photos (#4565) all
+    // pick through this call, and the text names all six (widened 2026-11-05
+    // for the 0.9.1 build; tasks added 2026-11-16, #4611).
     "NSPhotoLibraryUsageDescription",
     {
-      text: "Frapp uses your photo library so you can set your profile photo, add your chapter's logo, send photos in chapter chat, add photos to your chapter's documents, and attach photo proof to service hours.",
+      text: "Frapp uses your photo library so you can set your profile photo, add your chapter's logo, send photos in chapter chat, add photos to your chapter's documents and to tasks, and attach photo proof to service hours.",
       requestedBy: {
         file: "apps/mobile/lib/chat/attachment-upload.ts",
         call: "requestMediaLibraryPermissionsAsync(",
@@ -297,6 +298,7 @@ export const REQUIRED_REASON_APIS = {
  */
 export const MANIFESTLESS_REQUIRED_REASON_USERS = new Map([
   ["@stripe/stripe-react-native", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
+  ["expo-document-picker", ["NSPrivacyAccessedAPICategoryFileTimestamp"]],
   ["expo-eas-client", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
   ["expo-sharing", ["NSPrivacyAccessedAPICategoryUserDefaults"]],
   ["expo-updates", ["NSPrivacyAccessedAPICategoryUserDefaults"]],

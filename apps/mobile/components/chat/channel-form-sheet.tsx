@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useRef, useState } from "react";
 import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { DELETE_CHANNEL_LABEL } from "@repo/hooks";
 import {
   describeChannelAccess,
@@ -40,6 +36,7 @@ import {
 } from "@/components/chat/channel-access-sheet";
 import { Toggle } from "@/components/toggle";
 import { successHaptic } from "@/lib/haptics";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /** The chip for "no category"; FilterChips keeps `null` for an "all" chip. */
 const NO_CATEGORY = "__none__";

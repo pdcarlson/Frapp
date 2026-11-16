@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   TASK_ACTION_LABELS,
   canReopenOwnTask,
@@ -30,6 +30,7 @@ import {
 import { markDoneLabel } from "@/lib/tasks/task-photos";
 import { SubtaskChecklist } from "@/components/tasks/subtask-checklist";
 import { TaskProof } from "@/components/tasks/task-photos";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * A task, opened: what the row has no room for (owner audit 2026-11-06, P6.1,

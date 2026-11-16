@@ -2,8 +2,8 @@
 // The repo's pinned EAS CLI, run as `npm run eas -- <command>` from the repo root (#3124).
 //
 // ONE VERSION, EVERYWHERE. CI's store build (`.github/workflows/_mobile-build.yml`, step
-// "Install EAS CLI") installs eas-cli at an exact version with `--before=<date>` and
-// `--ignore-scripts`. This script reads that line and installs the same thing, so a laptop runs
+// "Install EAS CLI" in each platform's job) installs eas-cli at an exact version with
+// `--before=<date>` and `--ignore-scripts`. This script reads that line and installs the same thing, so a laptop runs
 // the eas-cli CI runs, resolved the way CI resolves it, and a bump to the workflow moves both.
 // It reads rather than copies because a second literal would drift; it throws rather than
 // guessing because a failed parse that fell back to `eas-cli@latest` is the bug this replaces.
@@ -53,17 +53,23 @@ const INSTALL_LINE =
   /^\s+run: npm install --global --ignore-scripts --before=(\d{4}-\d{2}-\d{2}) eas-cli@(\d+\.\d+\.\d+)\s*$/gm;
 
 /**
- * The exact version and `--before` cutoff of CI's eas-cli install. Throws unless the workflow
- * has exactly one such line, so a changed install can't silently leave this on `latest`.
+ * The exact version and `--before` cutoff of CI's eas-cli install. Each store build job (iOS and
+ * Android, #5162) carries the line, so there may be several, and they must all be the same. Throws
+ * on none, or on two that differ, so a changed install can't silently leave this on `latest` or
+ * split the jobs across versions.
  */
 export function parseEasCliPin(workflowYaml) {
   const found = [...workflowYaml.matchAll(INSTALL_LINE)];
-  if (found.length !== 1) {
+  const where = path.relative(ROOT, MOBILE_BUILD_WORKFLOW);
+  if (found.length === 0) {
     throw new Error(
-      `expected exactly one \`npm install --global --ignore-scripts --before=<date> eas-cli@<x.y.z>\` ` +
-        `in ${path.relative(ROOT, MOBILE_BUILD_WORKFLOW)}, found ${found.length}. ` +
-        "If CI's install changed shape, change parseEasCliPin with it.",
+      `expected a \`npm install --global --ignore-scripts --before=<date> eas-cli@<x.y.z>\` ` +
+        `in ${where}, found none. If CI's install changed shape, change parseEasCliPin with it.`,
     );
+  }
+  const pins = new Set(found.map(([, before, version]) => `eas-cli@${version} --before=${before}`));
+  if (pins.size !== 1) {
+    throw new Error(`${where} installs eas-cli ${found.length} times, not all the same: ${[...pins].join(", ")}. Move them together.`);
   }
   const [, before, version] = found[0];
   return { version, before };

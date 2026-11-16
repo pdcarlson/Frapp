@@ -17,7 +17,6 @@ import {
 import Animated, { FadeIn } from "react-native-reanimated";
 import {
   BottomSheetModal,
-  BottomSheetScrollView,
   BottomSheetTextInput,
   type BottomSheetScrollViewMethods,
 } from "@gorhom/bottom-sheet";
@@ -71,6 +70,7 @@ import {
   typeRole,
   useFrappTheme,
 } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Ask Frapp on the phone (`spec/ui/mobile/screens.md` s17;

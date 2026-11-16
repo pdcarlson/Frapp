@@ -1,10 +1,6 @@
 import { forwardRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
   formatScheduledFor,
   schedulePresets,
@@ -31,10 +27,12 @@ import {
   sheetFieldStyles,
   TallSheetHeader,
   useSheetBackgroundStyle,
+  useGuardedSheetRef,
   useSheetClose,
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
 import { ScheduleWhenField } from "./schedule-send-sheet";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The member's scheduled messages in this channel (#4956), opened from the
@@ -59,6 +57,8 @@ export const ScheduledMessagesSheet = forwardRef<
   { channelId: string | null; threadRootId?: string | null }
 >(function ScheduledMessagesSheet({ channelId, threadRootId = null }, ref) {
   const closeSheet = useSheetClose(ref);
+  // Its host dismisses it on every blur, up or not (#5059): the ref it holds only reaches a sheet that is up.
+  const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens, useChapterBranding().accent);
   const backgroundStyle = useSheetBackgroundStyle();
@@ -66,7 +66,9 @@ export const ScheduledMessagesSheet = forwardRef<
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
+      onAnimate={onAnimate}
+      onDismiss={markClosed}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       {...tallSheet}
       backgroundStyle={backgroundStyle}

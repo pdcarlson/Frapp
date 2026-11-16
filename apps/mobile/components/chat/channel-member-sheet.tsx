@@ -1,10 +1,6 @@
 import { forwardRef, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
@@ -39,10 +35,12 @@ import {
   SheetScrim,
   TallSheetHeader,
   useSheetBackgroundStyle,
+  useGuardedSheetRef,
   useSheetClose,
   useTallSheetProps,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Who can read the open channel (#3536), as a tall sheet from the thread
@@ -79,6 +77,9 @@ export const ChannelMemberSheet = forwardRef<
   ChannelMemberSheetProps
 >(function ChannelMemberSheet({ channelId, onOpenProfile }, ref) {
   const closeSheet = useSheetClose(ref);
+  // The thread dismisses it on every blur and channel switch, up or not
+  // (#4229): the ref it holds only reaches a sheet that is up.
+  const { modalRef, onAnimate, markClosed } = useGuardedSheetRef(ref);
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
@@ -86,12 +87,14 @@ export const ChannelMemberSheet = forwardRef<
 
   return (
     <BottomSheetModal
-      ref={ref}
+      ref={modalRef}
       stackBehavior={SHEET_STACK_BEHAVIOR}
       {...tallSheet}
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
+      onAnimate={onAnimate}
+      onDismiss={markClosed}
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView

@@ -35,6 +35,7 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { StudyModule } from './modules/study/study.module';
 import { ChapterDocumentModule } from './modules/chapter-document/chapter-document.module';
 import { PollModule } from './modules/poll/poll.module';
+import { PredictionModule } from './modules/prediction/prediction.module';
 import { SemesterRolloverModule } from './modules/semester-rollover/semester-rollover.module';
 import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
@@ -63,6 +64,7 @@ import { ChatCatchUpModule } from './modules/chat-catch-up/chat-catch-up.module'
 import { AiReportModule } from './modules/ai-report/ai-report.module';
 import { CalendarFeedModule } from './modules/calendar-feed/calendar-feed.module';
 import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
+import { GoogleDriveModule } from './modules/google-drive/google-drive.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -109,6 +111,7 @@ import { validateEnv } from './config/env.validation';
     StudyModule,
     ChapterDocumentModule,
     PollModule,
+    PredictionModule,
     SemesterRolloverModule,
     ReportModule,
     SearchModule,
@@ -138,6 +141,7 @@ import { validateEnv } from './config/env.validation';
     AiReportModule,
     CalendarFeedModule,
     GoogleCalendarModule,
+    GoogleDriveModule,
     // After the AI modules it imports, so their routes keep their place in
     // the exported contract.
     MeetingDraftModule,

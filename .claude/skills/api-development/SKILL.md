@@ -117,7 +117,9 @@ per controller or per route with `@UseGuards()`, so a route missing one has no p
 that layer. Each guard reads what the previous one set, so keep this order:
 
 ```text
-SupabaseAuthGuard      validates the JWT, sets request.supabaseUser
+SupabaseAuthGuard      validates the JWT with Auth (getUser), sets request.supabaseUser; a
+                       GET/HEAD marked @VerifySessionLocally() on a ChapterGuard route
+                       verifies it locally instead and sets request.locallyVerifiedAuthId
 → ChapterGuard         chapter from the JWT active_chapter_id claim, x-chapter-id only as a
                        fallback (a disagreement is 403 chapter.context.mismatch); checks
                        membership, sets request.appUser, request.member and request.chapterId;
@@ -136,6 +138,14 @@ separate OR-groups.
 
 Every route that returns or touches chapter data needs a permission decorator, reads included. A
 `@Get()` without one leaks chapter data, and review treats it as a finding.
+
+`@VerifySessionLocally()` (#5043) is a per-method opt-in that trades the session check's round
+trip for a bound: a revoked session can keep making that read until its token expires. Add it
+only to a chapter-scoped `GET` that returns no credentials, signed URLs to private files,
+exports, account data or admin/audit records, and add the route to the roster in
+`session-check.decorator.spec.ts`. Read the caller's Auth id with `authUserIdOf(request)`, never
+`request.supabaseUser` alone, which a locally verified read doesn't have. The bound and the rules:
+[`multi-tenancy.md`](../../../spec/behavior/multi-tenancy.md).
 
 `AuthSyncInterceptor` goes only where the first request must create the `users` row. It is
 class-level on the user, invite, notification and analytics controllers, and per-route on the

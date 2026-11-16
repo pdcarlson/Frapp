@@ -56,6 +56,7 @@ import {
 } from '../dtos/task.dto';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Tasks')
 @ApiBearerAuth()
@@ -74,6 +75,7 @@ export class TaskController {
   ) {}
 
   @Get()
+  @VerifySessionLocally()
   @ApiOperation({
     summary: 'List tasks (own or all for admins)',
     description:

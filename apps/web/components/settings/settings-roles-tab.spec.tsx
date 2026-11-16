@@ -6,12 +6,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockUseRoles = vi.fn();
 const mockSaveDefaultRole = vi.fn();
 const mockPermissions = vi.fn();
+// Undefined (not loaded) unless a test says which roles the caller may invite
+// into (#1830).
+const mockInvitableRoleIds = vi.fn<() => string[] | undefined>();
 const mockParams = { value: new URLSearchParams("tab=roles") };
 const mockPush = vi.fn();
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
   useRoles: () => mockUseRoles(),
+  useInvitableRoleIds: () => ({ data: mockInvitableRoleIds() }),
   useMyPermissions: () => ({
     data: { permissions: mockPermissions() },
     isPending: false,
@@ -178,6 +182,33 @@ describe("SettingsRolesTab", () => {
      * to translate it — the sentinel reaching the API would fail uuid
      * validation with a 400 rather than clearing the setting.
      */
+    it("offers only roles the officer could invite into, keeping the configured one (#1830)", async () => {
+      const user = userEvent.setup();
+      // Member is ranked at or above this officer; only New Member is below.
+      mockInvitableRoleIds.mockReturnValue(["role-pledge"]);
+      const { unmount } = render(
+        <SettingsRolesTab
+          canManage
+          defaultInviteRoleId={null}
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+      await user.click(picker());
+      expect(screen.getByRole("option", { name: "New Member" })).toBeVisible();
+      expect(screen.queryByRole("option", { name: "Member" })).toBeNull();
+      unmount();
+
+      // A default someone higher set stays named, so the card doesn't call it gone.
+      render(
+        <SettingsRolesTab
+          canManage
+          defaultInviteRoleId="role-member"
+          onSaveDefaultInviteRole={mockSaveDefaultRole}
+        />,
+      );
+      expect(picker()).toHaveTextContent("Member");
+    });
+
     it("saves null when the default is cleared", async () => {
       const user = userEvent.setup();
       render(

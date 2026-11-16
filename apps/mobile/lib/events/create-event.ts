@@ -26,7 +26,7 @@ import { parsePointReward } from "@/lib/tasks/create-task";
  * The sheet opens simple: a name, when it starts and ends, and a place. The
  * rest sits behind "More options" (Paul, 2026-11-06: "nobody wants a billion
  * options showing up when they open create event"): who's coming by role,
- * points, how early check-in opens, repeat and a description. The check-in zone stays on the web
+ * points, how early check-in opens, repeat, a description and notes. The check-in zone stays on the web
  * editor, where a map belongs.
  *
  * `CreateEventDto` is the authority. These copies exist so the sheet can say
@@ -88,6 +88,12 @@ export interface NewEventDraft {
    */
   repeat: RepeatDraft;
   description: string;
+  /**
+   * The event's notes (#4934), read by every member it invites. Optional
+   * because an edit kept by an older build has none, and then takes the
+   * event's own.
+   */
+  notes?: string;
   /** Whether "More options" is open: kept with the draft, so a reopen keeps it. */
   showMore: boolean;
 }
@@ -108,6 +114,7 @@ export function emptyEventDraft(): NewEventDraft {
     attendance: emptyAttendanceDraft(),
     repeat: noRepeatDraft(),
     description: "",
+    notes: "",
     showMore: false,
   };
 }
@@ -271,6 +278,7 @@ export interface ValidatedNewEvent {
   end_time: string;
   location?: string;
   description?: string;
+  notes?: string;
   point_value: number;
   is_mandatory: boolean;
   others_invited?: boolean;
@@ -365,6 +373,7 @@ export function validateNewEvent(
 
   const location = draft.location.trim();
   const description = draft.description.trim();
+  const notes = (draft.notes ?? "").trim();
   const body: ValidatedNewEvent = {
     name,
     start_time: start.toISOString(),
@@ -378,6 +387,7 @@ export function validateNewEvent(
   if (othersInvited !== undefined) body.others_invited = othersInvited;
   if (location.length > 0) body.location = location;
   if (description.length > 0) body.description = description;
+  if (notes.length > 0) body.notes = notes;
   if (wire.required_role_ids.length > 0) {
     body.required_role_ids = wire.required_role_ids;
   }

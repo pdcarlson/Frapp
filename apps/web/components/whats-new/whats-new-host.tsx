@@ -38,6 +38,7 @@ import {
   skipWhatsNew,
   useWhatsNewPending,
 } from "@/lib/whats-new";
+import { startWhatsNewFresh } from "@/lib/whats-new-fresh";
 
 /**
  * Opens What's new by itself, once, after an update brings a new entry or new
@@ -110,6 +111,9 @@ export function WhatsNewHost() {
   // A quiet mark from an earlier page load stays until What's new is opened.
   useEffect(() => {
     restoreWhatsNewQuiet();
+    // Which lines this deploy brought, on every page load, so a deploy counts
+    // even when the notes are never opened on it (`lib/whats-new-fresh.ts`).
+    startWhatsNewFresh();
   }, []);
 
   useEffect(() => {

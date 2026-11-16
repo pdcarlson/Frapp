@@ -2560,7 +2560,7 @@
         ]
       },
       "get": {
-        "description": "Only invites granting a role the caller could invite someone into now (#4546): ranked at or below them, carrying only permissions they hold. The rest are left out, and still work. A `*` holder gets every invite.",
+        "description": "Only invites granting a role the caller could invite someone into now (#4546): ranked below them, carrying only permissions they hold. The rest are left out. A `*` holder gets every invite.",
         "operationId": "InviteController_list_v1",
         "parameters": [],
         "responses": {
@@ -2815,7 +2815,7 @@
     },
     "/v1/invites/roles": {
       "get": {
-        "description": "Roles ranked at or below the caller whose permissions they hold, never one carrying `*` (#4071, #4546). The invite dialog offers only these; POST /v1/invites refuses the rest.",
+        "description": "Roles ranked below the caller whose permissions they hold, never one carrying `*` (#4071, #4546, #1830). The Everyone role is always among them for a caller who may invite. The invite dialog offers only these; POST /v1/invites refuses the rest.",
         "operationId": "InviteController_listInvitableRoles_v1",
         "parameters": [],
         "responses": {
@@ -9077,7 +9077,8 @@
                 "SERVICE",
                 "FINE",
                 "MANUAL",
-                "STUDY"
+                "STUDY",
+                "PREDICTION"
               ]
             }
           },
@@ -14589,6 +14590,479 @@
         ]
       }
     },
+    "/v1/predictions": {
+      "get": {
+        "operationId": "PredictionController_list_v1",
+        "parameters": [
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "open",
+              "type": "string",
+              "enum": [
+                "open",
+                "mine",
+                "settled",
+                "all"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PredictionMarketViewDto"
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List predictions the caller can see",
+        "tags": [
+          "Predictions"
+        ]
+      },
+      "post": {
+        "operationId": "PredictionController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePredictionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Ask a prediction in a channel",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}": {
+      "get": {
+        "operationId": "PredictionController_get_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "One prediction with its pools and stakers",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/stakes": {
+      "post": {
+        "operationId": "PredictionController_stake_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlacePredictionStakeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Stake points on an answer",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/consent": {
+      "post": {
+        "operationId": "PredictionController_consent_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictionConsentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionConsentResultDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The member a prediction names agrees to it, or declines and it is removed",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/settle": {
+      "post": {
+        "operationId": "PredictionController_settle_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlePredictionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The settler (or predictions:manage with nothing staked) names the winning answer; it pays after 24 hours",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/questions": {
+      "post": {
+        "operationId": "PredictionController_question_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionPredictionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A staker questions the result within its 24-hour window",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/confirm": {
+      "post": {
+        "operationId": "PredictionController_confirm_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmPredictionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pay a settled result now, or settle it again on another answer (reverses a paid round)",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
+    "/v1/predictions/{id}/void": {
+      "post": {
+        "operationId": "PredictionController_void_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PredictionMarketViewDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Void a prediction and refund every stake (its settler before payout, predictions:manage any time)",
+        "tags": [
+          "Predictions"
+        ]
+      }
+    },
     "/v1/chapters/current/rollover": {
       "post": {
         "operationId": "SemesterRolloverController_rollover_v1",
@@ -18563,6 +19037,153 @@
         ]
       }
     },
+    "/v1/google-drive": {
+      "get": {
+        "operationId": "GoogleDriveController_status_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether Google Drive is offered here, and the chapter's connected folder.",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "put": {
+        "operationId": "GoogleDriveController_connect_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectGoogleDriveDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Connect a Google Drive folder shared with Frapp; its files are copied into Documents and kept in sync.",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "GoogleDriveController_disconnect_v1",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Disconnect the folder. Its copies leave Documents; the files in Drive are untouched.",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/google-drive/sync": {
+      "post": {
+        "operationId": "GoogleDriveController_syncNow_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveStatusDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Sync the connected folder now.",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/meetings/{id}/recording": {
       "get": {
         "operationId": "MeetingRecordingController_get_v1",
@@ -19647,6 +20268,13 @@
             "minimum": 1,
             "maximum": 100000,
             "example": 100
+          },
+          "prediction_max_stake": {
+            "type": "number",
+            "description": "Most one member may stake in total on one prediction (default 25). Must be between 1 and 100000.",
+            "minimum": 1,
+            "maximum": 100000,
+            "example": 25
           }
         }
       },
@@ -20660,7 +21288,7 @@
         "properties": {
           "role": {
             "type": "string",
-            "description": "Role name to assign. Omit to use the chapter's configured default invite role."
+            "description": "Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role."
           }
         }
       },
@@ -20734,7 +21362,7 @@
         "properties": {
           "role": {
             "type": "string",
-            "description": "Role name to assign. Omit to use the chapter's configured default invite role."
+            "description": "Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role."
           },
           "count": {
             "type": "number",
@@ -20750,7 +21378,7 @@
         "properties": {
           "role": {
             "type": "string",
-            "description": "Role name to assign. Omit to use the chapter's configured default invite role."
+            "description": "Role name to assign: one of the chapter's roles (400 otherwise), ranked below the caller and never one carrying `*` (403 otherwise; #1830). Omit to use the chapter's configured default invite role."
           },
           "emails": {
             "description": "Email addresses to invite, one invite token per address",
@@ -27243,6 +27871,26 @@
           "event_start_time"
         ]
       },
+      "NewEventPointsFromDto": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "type",
+              "event"
+            ],
+            "description": "`type`: the chapter event type of that name. `event`: its latest event of that name."
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "name"
+        ]
+      },
       "NewEventSuggestionDto": {
         "type": "object",
         "properties": {
@@ -27268,7 +27916,23 @@
           "point_value": {
             "type": "number",
             "nullable": true,
-            "description": "Null leaves the chapter’s usual amount."
+            "description": "Points for coming. Null when the caller did not say and nothing could be copied: accepting then needs `new_event.point_value`."
+          },
+          "points_from": {
+            "nullable": true,
+            "description": "Where points the caller did not say were copied from. Null when they were said, typed, or are missing.",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NewEventPointsFromDto"
+              }
+            ]
+          },
+          "event_type_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The chapter event type the event is one of, when one matched."
           },
           "is_mandatory": {
             "type": "boolean"
@@ -27286,6 +27950,8 @@
           "start_time",
           "end_time",
           "point_value",
+          "points_from",
+          "event_type_id",
           "is_mandatory",
           "recurrence_rule"
         ]
@@ -27503,12 +28169,15 @@
           "event_id": {
             "type": "string",
             "format": "uuid",
-            "description": "The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller."
+            "description": "The event the caller added from this proposal in the event form. It must be in the chapter and made by the caller. When set, nothing else is read."
+          },
+          "point_value": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100000,
+            "description": "Points for coming, typed on the card: needed when the proposal has none."
           }
-        },
-        "required": [
-          "event_id"
-        ]
+        }
       },
       "AcceptAiSuggestionDto": {
         "type": "object",
@@ -28800,6 +29469,21 @@
             "type": "string",
             "nullable": true,
             "description": "When an officer pinned it for the whole chapter, or null"
+          },
+          "drive_file_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Google Drive file this is a copy of, or null for an upload. Drive owns a copy: it cannot be deleted in Frapp (#5157)"
+          },
+          "drive_modified_at": {
+            "type": "string",
+            "nullable": true,
+            "description": "The Drive file's modified time when it was last copied"
+          },
+          "drive_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "The file's page in Google Drive"
           }
         },
         "required": [
@@ -28815,7 +29499,10 @@
           "byte_size",
           "document_type",
           "effective_date",
-          "pinned_at"
+          "pinned_at",
+          "drive_file_id",
+          "drive_modified_at",
+          "drive_url"
         ]
       },
       "DocumentConfirmResultDto": {
@@ -29073,6 +29760,411 @@
         "required": [
           "option_indexes"
         ]
+      },
+      "PredictionMarketDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chapter_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_by": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "settler_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "named_member_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "question": {
+            "type": "string"
+          },
+          "settle_rule": {
+            "type": "string"
+          },
+          "closes_at": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "awaiting_consent",
+              "open",
+              "settled",
+              "questioned",
+              "paid",
+              "voided"
+            ]
+          },
+          "winning_answer_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "known_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "settle_note": {
+            "type": "string",
+            "nullable": true
+          },
+          "settled_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "settled_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "question_window_ends_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "payout_round": {
+            "type": "number"
+          },
+          "paid_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "voided_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "voided_at": {
+            "type": "string",
+            "nullable": true
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "channel_id",
+          "message_id",
+          "created_by",
+          "settler_id",
+          "named_member_id",
+          "question",
+          "settle_rule",
+          "closes_at",
+          "status",
+          "winning_answer_id",
+          "known_at",
+          "settle_note",
+          "settled_by",
+          "settled_at",
+          "question_window_ends_at",
+          "payout_round",
+          "paid_at",
+          "voided_by",
+          "voided_at",
+          "client_message_id",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "PredictionAnswerViewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string"
+          },
+          "pool": {
+            "type": "number",
+            "description": "Points staked on this answer"
+          },
+          "chance": {
+            "type": "number",
+            "nullable": true,
+            "description": "Whole-percent share of all points staked; null before any"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "pool",
+          "chance"
+        ]
+      },
+      "PredictionStakerViewDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "answer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "user_id",
+          "answer_id",
+          "amount"
+        ]
+      },
+      "PredictionQuestionViewDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "note": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "note",
+          "created_at"
+        ]
+      },
+      "PredictionMarketViewDto": {
+        "type": "object",
+        "properties": {
+          "market": {
+            "$ref": "#/components/schemas/PredictionMarketDto"
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PredictionAnswerViewDto"
+            }
+          },
+          "total_staked": {
+            "type": "number"
+          },
+          "stakers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PredictionStakerViewDto"
+            }
+          },
+          "my_stakes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PredictionStakerViewDto"
+            }
+          },
+          "stake_blocked_reason": {
+            "type": "string",
+            "nullable": true,
+            "description": "Why the viewer can't stake right now; null when they can"
+          },
+          "open_questions": {
+            "description": "Unresolved questions about the result",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PredictionQuestionViewDto"
+            }
+          }
+        },
+        "required": [
+          "market",
+          "answers",
+          "total_staked",
+          "stakers",
+          "my_stakes",
+          "stake_blocked_reason",
+          "open_questions"
+        ]
+      },
+      "CreatePredictionDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The channel its card goes in"
+          },
+          "question": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "settle_rule": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "How the answer will be decided, shown on the card"
+          },
+          "answers": {
+            "description": "Answers (2-10), in order",
+            "example": [
+              "Yes",
+              "No"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "closes_at": {
+            "type": "string",
+            "description": "When staking stops (ISO 8601 with a zone)"
+          },
+          "settler_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Who settles it; the creator when omitted"
+          },
+          "named_member_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "A member the question is about; it waits for their OK before it opens"
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Replay key: a retry with the same key returns the same question"
+          }
+        },
+        "required": [
+          "channel_id",
+          "question",
+          "settle_rule",
+          "answers",
+          "closes_at"
+        ]
+      },
+      "PlacePredictionStakeDto": {
+        "type": "object",
+        "properties": {
+          "answer_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 100000
+          },
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Replay key: a retry with the same key places nothing more and returns the same result"
+          }
+        },
+        "required": [
+          "answer_id",
+          "amount",
+          "client_message_id"
+        ]
+      },
+      "PredictionConsentDto": {
+        "type": "object",
+        "properties": {
+          "agree": {
+            "type": "boolean",
+            "description": "true opens the question; false withdraws it"
+          }
+        },
+        "required": [
+          "agree"
+        ]
+      },
+      "PredictionConsentResultDto": {
+        "type": "object",
+        "properties": {
+          "prediction": {
+            "nullable": true,
+            "description": "The opened question, or null once a decline removed it",
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PredictionMarketViewDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "prediction"
+        ]
+      },
+      "SettlePredictionDto": {
+        "type": "object",
+        "properties": {
+          "answer_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The answer that won"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "known_at": {
+            "type": "string",
+            "description": "When the answer became known, if before now; stakes after it are refunded"
+          }
+        },
+        "required": [
+          "answer_id"
+        ]
+      },
+      "QuestionPredictionDto": {
+        "type": "object",
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "note"
+        ]
+      },
+      "ConfirmPredictionDto": {
+        "type": "object",
+        "properties": {
+          "answer_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Settle on this answer instead; omitted confirms the result as settled"
+          }
+        }
       },
       "RolloverDto": {
         "type": "object",
@@ -32955,6 +34047,99 @@
         "required": [
           "state",
           "code"
+        ]
+      },
+      "GoogleDriveConnectionDto": {
+        "type": "object",
+        "properties": {
+          "folder_id": {
+            "type": "string"
+          },
+          "folder_name": {
+            "type": "string",
+            "description": "The folder's name in Drive"
+          },
+          "folder_url": {
+            "type": "string",
+            "description": "The folder's page in Google Drive"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "no_access"
+            ],
+            "description": "`no_access` once Google answered that Frapp can no longer see the folder (unshared or deleted); copies stay as they were until it is shared again"
+          },
+          "last_synced_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When the last sync finished. Null before the first."
+          },
+          "synced_count": {
+            "type": "number",
+            "description": "Files the last sync left in Documents"
+          },
+          "skipped_count": {
+            "type": "number",
+            "description": "Files the last sync left out: a type Documents does not take, over 25 MB, or past 500 files"
+          },
+          "syncing": {
+            "type": "boolean",
+            "description": "Whether a sync is due or running now"
+          }
+        },
+        "required": [
+          "folder_id",
+          "folder_name",
+          "folder_url",
+          "status",
+          "last_synced_at",
+          "synced_count",
+          "skipped_count",
+          "syncing"
+        ]
+      },
+      "GoogleDriveStatusDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "Whether this server offers Google Drive. False until its service account is set; clients then hide the option."
+          },
+          "service_account_email": {
+            "type": "string",
+            "nullable": true,
+            "description": "The address a chapter shares its folder with"
+          },
+          "connection": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/GoogleDriveConnectionDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "available",
+          "service_account_email",
+          "connection"
+        ]
+      },
+      "ConnectGoogleDriveDto": {
+        "type": "object",
+        "properties": {
+          "folder_link": {
+            "type": "string",
+            "description": "The Drive folder link (or its id)",
+            "example": "https://drive.google.com/drive/folders/1AbC..."
+          }
+        },
+        "required": [
+          "folder_link"
         ]
       },
       "MeetingRecordingUploadDto": {

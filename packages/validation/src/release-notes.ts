@@ -126,13 +126,25 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Excuses on an event now sit on one tidy line each, and you can edit yours after sending it.",
       "Cards Ask Frapp proposes have Edit, so you can change an event's time, attendance, notes or repeat in the event form before it is added, and an event you ask for every week now comes back as a repeating series.",
       "Finished events, tasks and polls now leave Activity for one Archive at the foot of the page, laid out like Activity, so you can still open anything that's over.",
+      "Cards from Ask are easier to read, name what they will do on the button, stay on screen greyed out once done, and copy an event's points from a matching event type or ask you for them instead of guessing.",
+      "Ask Frapp now knows when a message was an announcement and who posted it, and weighs it that way when it answers.",
+      "A message deleted after it was sent no longer lingers as the last line under a conversation in your messages list.",
+      "Officers can now only invite people into roles ranked below their own, and an invite stops working if the person who sent it can no longer give that role.",
+      "What's new now shows in bold the lines that came with your latest update, so on a busy day you can spot what just arrived.",
     ],
     web: [
       "Tasks now groups your own tasks as Today, This week and Later, and officers can switch between My tasks and All tasks, group the chapter's tasks by person, and filter them by assignee, status and due date.",
+      "Officers can now add an agenda to any event and check items off during the meeting, and attach links or Chapter Files documents, all right on the event, where everyone invited can read them.",
     ],
     phone: [
       "The Calendar has its own + at the top for adding an event from any view, and on the Calendar it starts on the day you've picked, today or later.",
       "Tasks now groups your tasks as Today, This week and Later, with anything overdue at the top of Today.",
+      "Dragging a sheet by its handle while its list was scrolled no longer crashes the app.",
+      "When someone deletes a message you got a notification for, the notification leaves your phone's list right away if the app is open, or when you next open that conversation.",
+      "Upload PDFs and Word, Excel and PowerPoint files to Documents, from Files, iCloud Drive or Google Drive, not just photos.",
+      "A task's Mark done or Send back, or meeting notes, reopened while still sending now shows what you sent and waits for it, instead of opening blank.",
+      "Tapping a document now opens your phone's share sheet, where you can save it to Files or open it in an app that reads it.",
+      "In a chat, Members, a member's profile, Pinned and Saved, and the + menu and its forms open again after you leave a chat or switch channels, instead of sometimes showing nothing.",
     ],
   },
   {
@@ -649,6 +661,118 @@ export function decideWhatsNew(input: {
       : notes.filter((note) => isNewerReleaseNoteVersion(versionOf(note), marker));
   return { show, record: newestVersion };
 }
+
+/**
+ * What a device remembers to tell which lines came with the update it is
+ * running (Paul, 2026-11-16: on a big day of changes, see what is new since
+ * your last update). `date` and `lines` are the newest entry as the last
+ * bundle it ran had it; `fresh` holds the lines that bundle brought that the
+ * one before it didn't have. It is per device, like the What's new marker,
+ * and kept apart from it: the marker moves once the notes are read, while
+ * these lines stay marked until the next update brings more.
+ */
+export interface ReleaseNoteSnapshot {
+  readonly date: string;
+  readonly lines: readonly string[];
+  readonly fresh: readonly string[];
+}
+
+function releaseNoteLines(note: ReleaseNote): string[] {
+  return releaseNoteGroups(note).flatMap((group) => group.lines);
+}
+
+/**
+ * The snapshot after this bundle starts, given the one stored (`null`: none,
+ * or unreadable). Only an update that carries news by
+ * {@link isNewerReleaseNoteVersion} sets new fresh lines: every line of an
+ * entry dated after the stored one, and the stored day's lines it didn't
+ * have. A bundle with the same count on the same day (a reword) refreshes the
+ * remembered lines and keeps the fresh ones, under their new words; an
+ * update that rewords a line and adds others can't tell the reword from an
+ * addition, so it marks the reworded line too; anything older (a rollback, or a
+ * tab still on an earlier deploy) changes nothing, so going forward again
+ * doesn't mark lines twice. A device with no snapshot marks nothing: it
+ * can't know what its last update had.
+ */
+export function nextReleaseNoteSnapshot(
+  notes: readonly ReleaseNote[],
+  stored: ReleaseNoteSnapshot | null,
+): ReleaseNoteSnapshot | null {
+  const newest = notes[0];
+  if (!newest) return stored;
+  const lines = releaseNoteLines(newest);
+  if (stored === null) return { date: newest.date, lines, fresh: [] };
+  const current = { date: newest.date, lines: lines.length };
+  const seen = { date: stored.date, lines: stored.lines.length };
+  if (isNewerReleaseNoteVersion(current, seen)) {
+    const had = new Set(stored.lines);
+    const fresh = notes.flatMap((note) => {
+      if (note.date > stored.date) return releaseNoteLines(note);
+      if (note.date === stored.date)
+        return releaseNoteLines(note).filter((line) => !had.has(line));
+      return [];
+    });
+    return { date: newest.date, lines, fresh };
+  }
+  if (current.date === seen.date && current.lines === seen.lines) {
+    // A reword: a fresh line keeps its mark under its new words. The
+    // reworded lines are paired in order, which a reword of one line (the
+    // usual case) always gets right.
+    const now = new Set(lines);
+    const had = new Set(stored.lines);
+    const removed = stored.lines.filter((line) => !now.has(line));
+    const added = lines.filter((line) => !had.has(line));
+    const wasFresh = new Set(stored.fresh);
+    const fresh = stored.fresh.filter((line) => now.has(line));
+    removed.forEach((line, i) => {
+      const reworded = added[i];
+      if (wasFresh.has(line) && reworded !== undefined) fresh.push(reworded);
+    });
+    return { ...stored, lines, fresh };
+  }
+  return stored;
+}
+
+/** A stored snapshot read back, or `null` for anything that isn't one. */
+export function parseReleaseNoteSnapshot(
+  raw: string | null,
+): ReleaseNoteSnapshot | null {
+  if (raw === null) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (typeof value !== "object" || value === null) return null;
+    const { date, lines, fresh } = value as Record<string, unknown>;
+    const strings = (list: unknown): list is string[] =>
+      Array.isArray(list) && list.every((item) => typeof item === "string");
+    if (typeof date !== "string" || !strings(lines) || !strings(fresh)) {
+      return null;
+    }
+    return { date, lines, fresh };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The lines of `note` to set apart as new with this update: the fresh ones,
+ * but none when every line of the entry is fresh, because the whole entry is
+ * then new and its date already says so. Setting all of it apart would mark
+ * nothing.
+ */
+export function freshReleaseNoteLines(
+  note: ReleaseNote,
+  fresh: readonly string[],
+): ReadonlySet<string> {
+  if (fresh.length === 0) return new Set();
+  const all = new Set(fresh);
+  const lines = releaseNoteLines(note);
+  const marked = lines.filter((line) => all.has(line));
+  return marked.length === lines.length ? new Set() : new Set(marked);
+}
+
+/** The caption over an entry that sets lines apart, saying what bold means. */
+export const FRESH_RELEASE_NOTE_CAPTION =
+  "Lines in bold came with your latest update.";
 
 const MONTHS = [
   "January",

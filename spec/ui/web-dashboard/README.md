@@ -216,6 +216,8 @@ This section holds only what is the web's own.
 - **Lines for both first, then Web and Mobile.**
   An entry lists the changes members get everywhere, then the web-only ones under a Web subheading and the phone-only ones under Mobile, the same on the phone, the public changelog and the pasted text (`releaseNoteGroups`; Paul, 2026-11-12: "just 2 subheadings").
   Entries from before 2026-11-12 are one list.
+- **The latest deploy's lines stand out**, in the dialog and on the page, as on the phone ([`mobile/screens.md` s16](../mobile/screens.md) states the rule; Paul, 2026-11-16).
+  The browser keeps its own memory of the last deploy's newest entry ([`lib/whats-new-fresh.ts`](../../../apps/web/lib/whats-new-fresh.ts)), worked out on every page load by the host so a deploy counts even when the notes aren't opened on it.
 - **A dialog, not a sheet**, mounted in the dashboard shell beside the first-run tour ([`whats-new-host.tsx`](../../../apps/web/components/whats-new/whats-new-host.tsx)).
   It holds the entries this browser hasn't shown, drawn as the What's new page draws them, and scrolls inside itself when they run long.
   Esc, the X and a click outside close it.
@@ -336,13 +338,14 @@ a fixed 28px dot slot below `xl`, so it never resizes the find field), notificat
   changed in #4700 by pdcarlson, 2026-11-13): up to three questions and one request, as rows under the opening lines that fade in when they arrive, with nothing below them to move, and no rows at all for a member with nothing to ask about.
   Microsoft 365 Copilot and Gemini in Workspace open the same way, on prompts drawn from the person's own meetings, files and mail, above the field.
   Every card in the thread stays live; none is replaced by the next thing asked.
-  The card is on the `card` surface, one step above the panel's turn bubbles, and is a 14px-radius bordered block: an eyebrow naming the action, the headline (for points, the size in words, "Give 5 points to 42 members", with the total under it on a line that keeps its height when empty), each detail under its own eyebrow label, the members as a list with a remove control on each row (collapsed behind "Show members" above five) and an "Add a member" select, notes on a `surface-1` strip, a caption saying who is notified and that only the officer can see the card, and Cancel and Edit (ghost) beside Confirm (primary) at the bottom right.
+  The card is on the `card` surface, one step above the panel's turn bubbles, and is a 14px-radius bordered block. Its top line is a small mark and what it makes ("New event", "New task", "Give points") with a ··· menu at the right holding Dismiss and Report this (#5148). Then the headline (for points, the size in words, "Give 5 points to 42 members", with the total under it on a line that keeps its height when empty), each detail as a row led by a small Lucide mark in place of an all-caps label, the members as a list with a remove control on each row (collapsed behind "Show members" above five) and an "Add a member" select, notes on a `surface-1` strip, a caption saying that only the officer can see the card and who is notified, and Edit (secondary) beside one named action (primary: "Create event", "Create task", "Give 5 points") at the bottom right.
   A task card has the same who and when controls as a suggested task.
-  Edit (#5117) opens the event form filled in from an event card, and turns a task's name and details, or a points change's amount and reason, into fields on the card; a series adds a "Repeats" row written out in full.
-  An event's time is written out in full ("Tuesday, November 17, 7:00 PM to 8:00 PM").
+  Edit (#5117) opens the event form filled in from an event card, and turns a task's name and details, or a points change's amount and reason, into fields on the card; a series adds a repeat row ("Every Sunday until February 7, 2027", "13 times" under it).
+  An event's day sits in a date tile beside the written-out date and times ("Sunday, November 22", "6:48 to 7:48 PM").
+  An event whose points could not be filled shows an outlined "Points for coming" field that the action waits on.
   Confirm pressed with something missing marks that field; nothing validates while typing.
-  After Confirm or Cancel the card becomes a receipt in the same frame: what it was about, one line of what was done (or "Cancelled.
-  Nothing was changed."), and a link to the page it landed on.
+  After the action or Dismiss the card stays in the same frame on `surface-1`, its details faded (struck through when dismissed), under one line of what was done (or "Dismissed. Nothing was changed.") and a link to what it made, an event itself.
+  *(Changed in #5148 by pdcarlson, 2026-11-16: until then every detail sat under an eyebrow label, the buttons were Cancel, Edit and Confirm, and a decided card collapsed to a receipt.)*
   The pattern is Slack's `/remind` and Linear's create-from-text, which answer a typed request with the thing filled in to check, and Notion AI, which shows a change before making it.
   One field for both is how ChatGPT, Claude, Slack's assistant and Notion AI take a question and a request.
   Placed in the Ask panel, not the chat composer: a request typed in a channel reads as a message to the channel, and Slack and Discord both mark commands with a slash for that reason; the panel is already where a member types to Frapp.

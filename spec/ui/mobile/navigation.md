@@ -284,6 +284,13 @@ is the file half of the last two: a PDF or Office file on s21 needs
 `expo-document-picker`, which can only ship in a store build, and
 [#3401](https://github.com/pdcarlson/Frapp/issues/3401) adds it there and decides
 whether s20's proof takes a PDF from Files too.
+_2026-11-16:_ #3401 added `expo-document-picker` back to `package.json` for s21's
+Files pick (`lib/more/document-upload.ts`), in 0.13.0 before its first store build. It
+needs no `plugins` entry (its plugin only touches iCloud entitlements, still unset) and
+no purpose string. It reads a picked file's modification date and ships no privacy
+manifest, so `ios.privacyManifests` declares FileTimestamp reason 3B52.1 (files the
+user picked) beside C617.1. s20's proof stays photos only until
+[#5149](https://github.com/frapplive/Frapp/issues/5149) decides.
 
 **`package.json` and `app.json` gained `expo-audio`** (2026-11-12, the meeting
 recorder). The dependency, its `plugins` entry (`microphonePermission`,
@@ -377,6 +384,10 @@ _2026-11-05, later:_ the purpose string was widened on its own, ahead of #3401's
 picker, so the 0.9.1 store build carries it. `photosPermission` now names all five
 callers ("send photos in chapter chat, add photos to your chapter's documents, and attach
 photo proof to service hours"). #3401 keeps the picker and #2620.
+
+_2026-11-16:_ a sixth caller, a task's photos (`lib/tasks/task-photos.ts`, #4565, #4635),
+is named: "add photos to your chapter's documents and to tasks" (#4611). The privacy
+policy's permissions clause names it in the same change, moving only the page's pin.
 
 Both #2296 defects stay fixed, and the plugin entry is the place that proves it. It
 sets `photosPermission` and `microphonePermission: false`, and **no `cameraPermission`

@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { buildPollMessage, type PollPayload } from "@repo/chat-core/polls";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -27,7 +23,7 @@ import {
   sheetFieldStyles,
   useSheetBackgroundStyle,
   useSheetClose,
-  useSheetVisit,
+  useGuardedSheetRef,
 } from "@/components/sheet-scaffold";
 import { FilterChips } from "@/components/filter-chips";
 import { MoreOptionsRow } from "@/components/more-options-row";
@@ -51,6 +47,7 @@ import {
   type PollCloseChoice,
   type PollDraft,
 } from "@repo/chat-core/poll-draft";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * s05's New poll sheet (#3701): an officer on their phone in the group chat
@@ -102,8 +99,11 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
     const styles = createStyles(tokens, brand);
     const backgroundStyle = useSheetBackgroundStyle();
     const closeSheet = useSheetClose(ref);
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
 
     const [draft, setDraft] = useState<PollDraft>(emptyPollDraft);
     const [showMore, setShowMore] = useState(false);
@@ -158,12 +158,10 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
       // `sendPoll` never rejects, but the lock is released whatever happens:
       // a rejection would otherwise hold the sheet at "Posting…" for good.
       void onPost(poll)
-        .catch(
-          (): { ok: false; error: string } => ({
-            ok: false,
-            error: "Couldn't post that poll. Try again.",
-          }),
-        )
+        .catch((): { ok: false; error: string } => ({
+          ok: false,
+          error: "Couldn't post that poll. Try again.",
+        }))
         .then((result) => {
           sending.current = false;
           setPosting(false);
@@ -193,7 +191,7 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
 
     return (
       <BottomSheetModal
-        ref={ref}
+        ref={modalRef}
         stackBehavior={SHEET_STACK_BEHAVIOR}
         enableDynamicSizing
         keyboardBehavior="interactive"
@@ -260,7 +258,9 @@ export const NewPollSheet = forwardRef<BottomSheetModal, NewPollSheetProps>(
               }
               onFocus={() => setFocused(option.key)}
               onBlur={() =>
-                setFocused((current) => (current === option.key ? null : current))
+                setFocused((current) =>
+                  current === option.key ? null : current,
+                )
               }
               onMove={(step) =>
                 edit((current) => movePollOption(current, option.key, step))
@@ -386,7 +386,11 @@ function OptionRow({
   return (
     <View style={styles.optionRow}>
       <View
-        style={[styles.ring, styles.optionField, focused ? styles.ringActive : null]}
+        style={[
+          styles.ring,
+          styles.optionField,
+          focused ? styles.ringActive : null,
+        ]}
       >
         <BottomSheetTextInput
           value={value}

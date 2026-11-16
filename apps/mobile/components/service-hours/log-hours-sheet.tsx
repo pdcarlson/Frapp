@@ -25,7 +25,7 @@ import {
   SheetScrim,
   sheetFieldStyles,
   useSheetBackgroundStyle,
-  useSheetVisit,
+  useGuardedSheetRef,
   SheetBackToClose,
   useSheetClose,
   SHEET_STACK_BEHAVIOR,
@@ -192,8 +192,11 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
     // `postToChannel` isn't a mutation, so its flight is held here.
     const [posting, setPosting] = useState(false);
     const requestProofUploadUrl = useRequestServiceProofUploadUrl();
-    const { onAnimate, markClosed, dismiss, visit, isSameVisit } =
-      useSheetVisit(ref);
+    // Its hosts (the composer among them) dismiss it on a blur or a channel
+    // switch, up or not (#5059): the ref they hold only reaches a sheet that
+    // is up.
+    const { modalRef, onAnimate, markClosed, dismiss, visit, isSameVisit } =
+      useGuardedSheetRef(ref);
 
     /**
      * s20 has **no outbox**. A submit posted with no network is simply lost,
@@ -480,7 +483,7 @@ export const LogHoursSheet = forwardRef<BottomSheetModal, LogHoursSheetProps>(
 
     return (
       <BottomSheetModal
-        ref={ref}
+        ref={modalRef}
         stackBehavior={SHEET_STACK_BEHAVIOR}
         enableDynamicSizing
         keyboardBehavior="interactive"

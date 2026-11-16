@@ -41,6 +41,7 @@ import {
   UpdateUserSettingsDto,
   UserSettingsDto,
 } from '../dtos/notification.dto';
+import { VerifySessionLocally } from '../decorators/session-check.decorator';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
@@ -74,6 +75,7 @@ export class NotificationController {
   }
 
   @Get('notifications')
+  @VerifySessionLocally()
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @FreeTier()

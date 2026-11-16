@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useImperativeHandle,
   useRef,
   type ForwardedRef,
   type ReactNode,
@@ -393,7 +394,8 @@ export function SheetPrimaryButton({
  * (Settings → Blocked members, whose unblock leaves it open) needs only
  * `useSheetClose`. #3405 moved the ones it found closing unguarded after a
  * write onto it (Chapter accent, Chat background, Schedule message, the member
- * sheet's Remove and Message); #5059 checks the remaining candidates.
+ * sheet's Remove and Message); #5059 found no others. A sheet its host
+ * dismisses from outside takes {@link useGuardedSheetRef}, which wraps this.
  *
  * Wire `onAnimate` and call `markClosed` first thing in the modal's
  * `onDismiss`. Then:
@@ -418,7 +420,7 @@ export function SheetPrimaryButton({
  *   can be deleted as it opens: #3795); a Cancel inside a sheet can't be
  *   pressed before the sheet is drawn.
  */
-export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
+export function useSheetVisit(ref: SheetRef) {
   const presented = useRef(false);
   const closes = useRef(0);
   const opening = useRef(false);
@@ -476,6 +478,46 @@ export function useSheetVisit(ref: ForwardedRef<BottomSheetModal>) {
     visit,
     isSameVisit,
   };
+}
+
+/**
+ * {@link useSheetVisit} for a sheet its host closes from outside: a blur, a
+ * channel switch, a record that went away. The host keeps calling
+ * `ref.current?.dismiss()` whether or not the sheet is up, and that call is
+ * what wedges gorhom 5.2 (#4229, #5059), so the guard sits on the ref the host
+ * holds instead of at each of its call sites, where the next one would forget
+ * it.
+ *
+ * Give gorhom's modal `modalRef`, wire `onAnimate`, and call `markClosed`
+ * first thing in its `onDismiss`. The host's ref then gets a handle whose
+ * `present()` calls `willPresent()` first and whose `dismiss()` is the visit's
+ * guarded one; the rest go to the modal unchanged. Inside the sheet, use the
+ * returned visit (or `useSheetClose(ref)`, which now lands on the guard too).
+ */
+export function useGuardedSheetRef(ref: SheetRef) {
+  const modalRef = useRef<BottomSheetModal>(null);
+  const visit = useSheetVisit(modalRef);
+  const { willPresent, dismiss } = visit;
+  useImperativeHandle(
+    ref,
+    (): BottomSheetModal => ({
+      present: (data) => {
+        willPresent();
+        modalRef.current?.present(data);
+      },
+      dismiss: () => dismiss(),
+      snapToIndex: (index, config) =>
+        modalRef.current?.snapToIndex(index, config),
+      snapToPosition: (position, config) =>
+        modalRef.current?.snapToPosition(position, config),
+      expand: (config) => modalRef.current?.expand(config),
+      collapse: (config) => modalRef.current?.collapse(config),
+      close: (config) => modalRef.current?.close(config),
+      forceClose: (config) => modalRef.current?.forceClose(config),
+    }),
+    [willPresent, dismiss],
+  );
+  return { modalRef, ...visit };
 }
 
 /**

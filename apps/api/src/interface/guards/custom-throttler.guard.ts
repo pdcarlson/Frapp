@@ -20,7 +20,10 @@ import type { FrappSupabaseClient } from '../../infrastructure/supabase/database
  * issue. Anything else — `none`, a HMAC alg with a JWKS-shaped header — is
  * refused before any verifier sees it.
  */
-const JWKS_VERIFIED_ALGS: ReadonlySet<string> = new Set(['ES256', 'RS256']);
+export const JWKS_VERIFIED_ALGS: ReadonlySet<string> = new Set([
+  'ES256',
+  'RS256',
+]);
 
 /**
  * How often a token whose `kid` has never verified may reach the JWKS
@@ -104,9 +107,12 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     const userId = claims ? subjectOfUnexpired(claims) : null;
     if (claims && userId) {
       // Handed on so `SupabaseAuthGuard` can start the chapter lookups on
-      // this verified `sub` without verifying the token again (#3728). A
-      // second verifier there would sit outside this guard's unknown-`kid`
-      // bound below.
+      // this verified `sub` (#3728). On a read marked
+      // `@VerifySessionLocally()` (#5043) that guard verifies the token again
+      // itself, but only when these claims are present: so a token whose
+      // `kid` this guard's unknown-`kid` bound below kept from the JWKS
+      // verifier never reaches one from there either. Keep that
+      // precondition.
       (
         req as { throttlerVerifiedClaims?: JwtPayload }
       ).throttlerVerifiedClaims = claims;

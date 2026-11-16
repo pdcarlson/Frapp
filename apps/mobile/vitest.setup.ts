@@ -57,6 +57,20 @@ vi.mock("expo-image-picker", () => ({
   launchImageLibraryAsync: vi.fn().mockResolvedValue({ canceled: true }),
 }));
 
+// s21's Files pick (#3401). `expo` itself pulls in Metro's runtime, which
+// vitest can't load, and `lib/more/document-upload.ts` reads only
+// `requireOptionalNativeModule` from it, to ask whether the binary has the
+// file picker. Present by default; a spec for a binary without it says so.
+vi.mock("expo", () => ({
+  requireOptionalNativeModule: vi.fn(() => ({})),
+}));
+
+// Cancelled by default, as the image picker's library is denied: a spec that
+// wants a pick resolves one.
+vi.mock("expo-document-picker", () => ({
+  getDocumentAsync: vi.fn().mockResolvedValue({ canceled: true, assets: null }),
+}));
+
 // The chat event card (#3185) imports `lib/location.ts`, so every spec that
 // renders a chat thread loads it, and the native module can't. Default-denied
 // on purpose, as the image picker above is: a spec that wants a fix mocks

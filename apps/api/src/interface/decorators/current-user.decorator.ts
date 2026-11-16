@@ -1,4 +1,8 @@
-import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import {
+  createParamDecorator,
+  ExecutionContext,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import {
   getOptionalChapterId,
   type AppUserContext,
@@ -60,11 +64,20 @@ export const CurrentEnabledModules = createParamDecorator(
  * The caller's address as Supabase Auth verified it (`verifiedEmailOf`), or
  * null. Read from the user `SupabaseAuthGuard` fetched from Auth with the
  * caller's token, never from the request body or the token's own claims.
+ *
+ * Throws on a request whose session was verified locally
+ * (`@VerifySessionLocally()`, #5043): it has no Auth user to read, and
+ * answering null would quietly read as "no verified email". A route that needs
+ * this keeps `getUser` by not carrying that marker.
  */
 export const CurrentVerifiedEmail = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): string | null => {
-    return verifiedEmailOf(
-      ctx.switchToHttp().getRequest<RequestContext>().supabaseUser,
-    );
+    const request = ctx.switchToHttp().getRequest<RequestContext>();
+    if (request.locallyVerifiedAuthId) {
+      throw new InternalServerErrorException(
+        '@CurrentVerifiedEmail() needs the Auth user; remove @VerifySessionLocally() from this route',
+      );
+    }
+    return verifiedEmailOf(request.supabaseUser);
   },
 );

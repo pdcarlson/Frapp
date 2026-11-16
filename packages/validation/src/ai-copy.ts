@@ -42,7 +42,9 @@ export const AI_SWITCHES: readonly AiSwitchCopy[] = [
     key: "ask",
     label: "Ask Frapp",
     description:
-      "Members ask a question and get an answer from the chapter's documents, announcements and posted minutes, with the sources it used.",
+      // Announcements are chat (#4915): they reach Ask only with "Include
+      // channel messages" on, so this switch doesn't name them.
+      "Members ask a question and get an answer from the chapter's documents, posted minutes and records, with the sources it used.",
   },
   {
     key: "chat_source",

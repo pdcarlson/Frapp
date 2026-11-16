@@ -25,6 +25,8 @@ const FORMAL: EventDetail = {
   },
   description: "Black tie.",
   notes: null,
+  agenda: [],
+  attachments: [],
   check_in_zone_name: null,
   event_type_id: "type-1",
   created_by: null,
