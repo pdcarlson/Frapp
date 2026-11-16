@@ -327,7 +327,7 @@ A viewer who can create events (`events:create`, plus the `members:view` the eve
 The + opens the New event sheet (`components/events/new-event-sheet.tsx`, no Canvas screen; owner ask 2026-11-06): name, Starts and Ends as one grouped field the way Calendar sets them (day and time from the platform's own pickers, `@react-native-community/datetimepicker`: the compact pickers on iOS, the system date and time dialogs on Android), and a place, as `/event` creates events.
 A hand-drawn grid was tried first and dropped the same day at the owner's word.
 Moving the start moves the end with it.
-Who's coming by role, points, how many minutes early check-in opens (default 10, #3703), Repeat and a description sit behind More options; only the check-in zone stays on the web editor.
+Who's coming by role, points, how many minutes early check-in opens (default 10, #3703), Repeat, a description and notes (#4934) sit behind More options; only the check-in zone stays on the web editor.
 Checks run on Create, not per keystroke, and refuse a start that has passed While "This time last year" has events waiting for this officer, one row at the foot of the screen (`components/events/suggested-events-entry.tsx`, "2 events from this time last year") opens the Suggested list (2026-11-12, #3930).
 
 ### s07 Event detail
@@ -337,7 +337,7 @@ Route: `(app)/event-details.tsx`.
 Live — reads an `id` param; **filename contract, never rename**.
 No RSVP control: no RSVP model exists server-side ([`../../behavior/events.md`](../../behavior/events.md)), so the drawn row is omitted.
 It used to render disabled; removed under Guideline 2.1 (#2300), and returns with the endpoint (#1035).
-An INTERNAL NOTES section renders below DETAILS when the event carries meeting minutes (#1159), matching web's `event-detail-sheet.tsx` label — same terms as DETAILS, no extra client-side gate (neither field is actually role-scoped server-side despite the spec's claim — #1463).
+AGENDA and ATTACHMENTS sit below DETAILS, then the event's notes, labeled NOTES (MEETING MINUTES while the meetings module is off), as web's sheet labels them; every member the event invites reads all three, so none is called internal (#4934, [`events.md` § Agenda and attachments](../../behavior/events.md#agenda-and-attachments)). An `events:update` holder edits the agenda and attachments in place on this screen; the New event and Edit event sheets carry a Notes field under More options.
 An occurrence of a repeating series lists the series' other upcoming dates under its cadence ("EVERY SUNDAY"), each opening that occurrence (#3707), since the list draws a series once; an occurrence renamed on its own carries its name there.
 **Editing:** a viewer with `events:update` (plus `members:view`) gets a pencil in the back row for any event, not only their own; it opens the New event sheet as "Edit event", filled in, with Delete event at its foot for `events:delete`.
 A repeating event asks on save, in the platform alert, "This event only" or "All upcoming events" (a Repeat change is always the series; an event already under way edits and deletes only itself, since a series write never reaches a started event; an occurrence whose parent can't be read edits only itself but still asks on delete, which needs no parent; an "All upcoming events" save the server refuses says what to do instead and keeps Save);
