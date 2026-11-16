@@ -1747,6 +1747,35 @@ describe('ChapterDocumentService', () => {
         expect(mockDocumentRepo.updateDriveCopy).not.toHaveBeenCalled();
       });
 
+      it("hides which folder Drive put a held copy in from a reader who can't see that folder", async () => {
+        mockRbac.getChannelAccessHolder.mockResolvedValue(
+          holder(['tier:exec']),
+        );
+        mockFolderRepo.findByChapter.mockResolvedValue([
+          {
+            ...baseFolder,
+            id: 'exec',
+            name: 'Exec',
+            who_can_see: ['tier:exec'],
+          },
+          {
+            ...baseFolder,
+            id: 'folder-1',
+            name: 'Treasury',
+            who_can_see: ['role:treasurer'],
+          },
+          { ...baseFolder, id: 'open', name: 'Governance', who_can_see: null },
+        ]);
+
+        const [hidden] = await service.visibleTo('ch-1', 'user-1', [held]);
+        expect(hidden.drive_held_folder_id).toBeNull();
+
+        const [shown] = await service.visibleTo('ch-1', 'user-1', [
+          { ...held, drive_held_folder_id: 'open' },
+        ]);
+        expect(shown.drive_held_folder_id).toBe('open');
+      });
+
       it("answers 404 when the manager can't see the folder Drive put it in", async () => {
         mockRbac.getChannelAccessHolder.mockResolvedValue(
           holder(['tier:exec']),

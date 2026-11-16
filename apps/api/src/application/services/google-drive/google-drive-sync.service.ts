@@ -390,8 +390,19 @@ export class GoogleDriveSyncService {
           out.set(folder.driveId, existing);
           continue;
         }
-        const renamed = await this.folders.rename(existing.id, chapterId, name);
-        if (renamed) out.set(folder.driveId, renamed);
+        try {
+          const renamed = await this.folders.rename(
+            existing.id,
+            chapterId,
+            name,
+          );
+          if (renamed) out.set(folder.driveId, renamed);
+        } catch (error) {
+          // Someone took the name between the read and the write: keep the
+          // folder under its old name, and the next pass tries again.
+          if (!isUniqueViolation(error)) throw error;
+          out.set(folder.driveId, existing);
+        }
         continue;
       }
       const name = freeName(wanted, taken);

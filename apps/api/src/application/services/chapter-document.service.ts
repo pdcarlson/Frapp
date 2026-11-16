@@ -176,15 +176,30 @@ export class ChapterDocumentService {
     if (documents.length === 0) return [];
     const folders = await this.folderRepo.findByChapter(chapterId);
     const lists = folderListsByName(folders);
+    const byId = new Map(folders.map((folder) => [folder.id, folder]));
+    const heldIn = (doc: ChapterDocument) =>
+      doc.drive_held_folder_id !== null
+        ? byId.get(doc.drive_held_folder_id)
+        : undefined;
     const inPlay = listsInPlay([
       ...documents.map((doc) => doc.who_can_see),
       ...documents.map((doc) =>
         doc.folder !== null ? lists.get(doc.folder) : null,
       ),
+      ...documents.map((doc) => heldIn(doc)?.who_can_see),
     ]);
     if (!inPlay.any) return documents;
     const viewer = await this.viewerFor(chapterId, userId, inPlay.groups);
-    return documents.filter((doc) => canSeeDocument(doc, lists, viewer));
+    // A held Drive copy names the folder Drive put it in (#5220); a reader
+    // who can't see that folder gets no hint it exists.
+    return documents
+      .filter((doc) => canSeeDocument(doc, lists, viewer))
+      .map((doc) => {
+        const held = heldIn(doc);
+        return held && !canSeeFolder(held, viewer)
+          ? { ...doc, drive_held_folder_id: null }
+          : doc;
+      });
   }
 
   /**

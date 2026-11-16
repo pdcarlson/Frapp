@@ -537,6 +537,30 @@ describe('GoogleDriveSyncService', () => {
       ]);
     });
 
+    it('starts a new subfolder with its parent folder list, not the connection list', async () => {
+      tree[ROOT] = [folder('sub', 'Exec')];
+      tree.sub = [folder('deep', 'Minutes')];
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'exec',
+          name: 'Chapter files / Exec',
+          drive_folder_id: 'sub',
+          who_can_see: EXEC,
+        }),
+      ];
+
+      await service.process(connection(), NOW);
+
+      expect(byName('Chapter files / Exec / Minutes')?.who_can_see).toEqual(
+        EXEC,
+      );
+    });
+
     it('renames the same folder when Drive renames it, keeping its list', async () => {
       tree[ROOT] = [folder('sub', 'Exec Board')];
       tree.sub = [item({})];
@@ -574,6 +598,31 @@ describe('GoogleDriveSyncService', () => {
       expect(folders.create).not.toHaveBeenCalled();
       expect(byName('Chapter files / Exec Board')?.who_can_see).toEqual(EXEC);
       expect(documents.updateDriveCopy).not.toHaveBeenCalled();
+    });
+
+    it('keeps a synced folder under its old name when a rename races for a taken name', async () => {
+      tree[ROOT] = [folder('sub', 'Exec Board'), item({})];
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'exec',
+          name: 'Chapter files / Exec',
+          drive_folder_id: 'sub',
+          who_can_see: EXEC,
+        }),
+      ];
+      folders.rename.mockRejectedValueOnce({ code: '23505' });
+
+      await expect(service.process(connection(), NOW)).resolves.toBe('synced');
+
+      expect(byName('Chapter files / Exec')?.who_can_see).toEqual(EXEC);
+      expect(documents.create).toHaveBeenCalledWith(
+        expect.objectContaining({ folder: 'Chapter files' }),
+      );
     });
 
     it('numbers a synced folder whose name another folder already has', async () => {
@@ -718,6 +767,34 @@ describe('GoogleDriveSyncService', () => {
 
       expect(folders.deleteMovingDocuments).toHaveBeenCalledTimes(1);
       expect(folders.deleteMovingDocuments).toHaveBeenCalledWith('old', 'ch-1');
+    });
+
+    it('keeps a synced folder it did not see when the read was only in part', async () => {
+      tree[ROOT] = [folder('bad', 'Unreadable')];
+      drive.listChildren.mockImplementation((id: string) =>
+        id === 'bad'
+          ? Promise.reject(
+              new GoogleDriveApiError('not_found', 404, 'notFound'),
+            )
+          : Promise.resolve(tree[id] ?? []),
+      );
+      folderRows = [
+        frappFolder({
+          id: 'top',
+          name: 'Chapter files',
+          drive_folder_id: ROOT,
+        }),
+        frappFolder({
+          id: 'old',
+          name: 'Chapter files / Old',
+          drive_folder_id: 'old-id',
+          who_can_see: EXEC,
+        }),
+      ];
+
+      await service.process(connection(), NOW);
+
+      expect(folders.deleteMovingDocuments).not.toHaveBeenCalled();
     });
   });
 
