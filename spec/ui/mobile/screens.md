@@ -394,13 +394,8 @@ The drawn payment-plan link, payment-method sub-labels and receipts line are omi
 Route: `(app)/documents.tsx`.
 
 Live — real folders and documents; web's search, Uploaded by, Date added, File type, Pinned and Starred filters and sort, run by the same shared code over the whole library ([`chapter-docs.md` § Search](../../behavior/chapter-docs.md#search), #3938), behind a "Sort & filter" chip that opens a panel of chip rows;
-<<<<<<< HEAD
 rows read "Uploaded Aug 12 by … · folder · type"; PINNED and STARRED cards above the list on All, folder chips ordered pinned, starred, then the rest, and a long press on a chip, card or row opening a sheet with Star, Pin for the chapter (`chapter_docs:manage`) and, on a file, Delete document after a confirm (`chapter_docs:manage`) ([`chapter-docs.md` § Pinned and starred](../../behavior/chapter-docs.md#pinned-and-starred), #3934); a copy of a file in the chapter's Google Drive folder reads "From Google Drive, added Aug 12 · …" and has no Delete document, since Drive owns it ([`chapter-docs.md` § Google Drive folder](../../behavior/chapter-docs.md#google-drive-folder), #5157; connecting the folder is web only);
-opens the signed `downloadUrl` in the system browser.
-=======
-rows read "Uploaded Aug 12 by … · folder · type"; PINNED and STARRED cards above the list on All, folder chips ordered pinned, starred, then the rest, and a long press on a chip, card or row opening a sheet with Star, Pin for the chapter (`chapter_docs:manage`) and, on a file, Delete document after a confirm (`chapter_docs:manage`) ([`chapter-docs.md` § Pinned and starred](../../behavior/chapter-docs.md#pinned-and-starred), #3934);
 a tap downloads the file and presents the system share sheet, to save it to Files or open it in an app that reads it, never opening it as a page ([`chapter-docs.md` § Two links](../../behavior/chapter-docs.md#two-links-inline-and-saved), #4409).
->>>>>>> origin/main
 A List / Grid switch at the title row's trailing end ([`components.md` § Segmented control](../design-system/components.md), #4175) lays the files out two to a line as tiles, each a panel naming the file's type over its title and the row's meta line, wearing its pin and star, with the row's tap and long press; an upload in flight stays a row above them.
 The floating create button (Upload document) opens s21, drawn only for a viewer holding `chapter_docs:upload`.
 Upload closes s21 at once: the upload heads the list as a row with its title and a gray "Uploading…" until the filed document arrives in the list's order (Name A–Z by default, so not necessarily the same slot, since #3938), or "Didn't upload.
