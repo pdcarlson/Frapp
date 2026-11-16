@@ -435,7 +435,11 @@ function ChapterDocumentsPage() {
           />
         </Can>
         <Can permission="chapter_docs:manage">
-          <DriveFolderPanel gate={gate} />
+          <DriveFolderPanel
+            gate={gate}
+            documents={documents}
+            folders={folders}
+          />
         </Can>
       </PageActions>
       {/*
@@ -510,7 +514,7 @@ function ChapterDocumentsPage() {
           still gets its card. Not over the loading, error or offline states,
           which have nothing to say about the cards.
         */}
-        {showStrip && (listState === "ready" || listState === "empty") ? (
+          {showStrip && (listState === "ready" || listState === "empty") ? (
             <MarkedStrip
               pinned={strip.pinned}
               starred={strip.starred}

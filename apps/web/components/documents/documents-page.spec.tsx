@@ -1644,6 +1644,36 @@ describe("DocumentsPage folder management (#791)", () => {
     );
   });
 
+  // #5220: Drive names and deletes a folder its sync made; Documents follows.
+  it("leaves renaming and deleting a synced folder to Google Drive", async () => {
+    foldersQuery.data = [
+      {
+        id: "f-1",
+        name: "Governance",
+        sort_order: 0,
+        drive_folder_id: "drive-gov",
+      },
+      { id: "f-2", name: "Rush", sort_order: 1 },
+    ];
+    const user = userEvent.setup();
+    render(<DocumentsPage />);
+
+    await editFolders(user);
+    expect(
+      screen.queryByRole("button", { name: /delete folder governance/i }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /delete folder rush/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /edit governance/i }));
+    const input = await screen.findByLabelText(/folder name/i);
+    expect(input).toHaveAttribute("readonly");
+    expect(
+      screen.getByText(/comes from Google Drive: rename or delete it there/i),
+    ).toBeInTheDocument();
+  });
+
   it("follows the active tab across a rename", async () => {
     // Documents record their folder by name and the server re-files them, so a
     // tab left pointing at the old name would filter the list to nothing.
