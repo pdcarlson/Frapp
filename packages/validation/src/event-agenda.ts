@@ -1,4 +1,8 @@
-import { normalizeProofLink, proofLinkDomain } from "./task-proof";
+import {
+  normalizeProofLink,
+  proofLinkDomain,
+  TASK_PROOF_LINK_MAX,
+} from "./task-proof";
 
 /**
  * An event's agenda and attachments (#4934, `spec/behavior/events.md`
@@ -88,15 +92,6 @@ export function agendaProblem(
   return null;
 }
 
-/**
- * An id for a new agenda item or attachment, unique within its event. Not a
- * UUID on purpose: Hermes has no `crypto.randomUUID`, and the server only
- * asks for a short string that no other entry on the event holds.
- */
-export function newEventEntryId(): string {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -129,9 +124,12 @@ export function readEventAttachments(value: unknown): EventAttachment[] {
       return [];
     }
     if (entry.kind === "link" && typeof entry.url === "string") {
-      return [
-        { id: entry.id, kind: "link", url: entry.url, title: entry.title },
-      ];
+      // Re-checked here, not only on save: a row written some other way must
+      // never put a `javascript:` or `data:` address under a tap.
+      const url = normalizeAttachmentUrl(entry.url);
+      return url
+        ? [{ id: entry.id, kind: "link", url, title: entry.title }]
+        : [];
     }
     if (entry.kind === "document" && typeof entry.document_id === "string") {
       return [
@@ -176,11 +174,33 @@ export function moveEventEntry<T>(
 }
 
 /**
+ * An attachment's title as the API takes it: whitespace collapsed and cut to
+ * `EVENT_ATTACHMENT_TITLE_MAX`. A Chapter Files name can run to 255
+ * characters, so a document's title is cut as well as a link's.
+ */
+export function attachmentTitle(title: string): string {
+  return title.replace(/\s+/g, " ").trim().slice(0, EVENT_ATTACHMENT_TITLE_MAX);
+}
+
+/**
  * A link attachment's title when its adder left it empty: the link's domain
  * ("docs.google.com"), the way a pasted link reads in chat.
  */
 export function attachmentLinkTitle(title: string, url: string): string {
-  const trimmed = title.replace(/\s+/g, " ").trim();
-  if (trimmed) return trimmed.slice(0, EVENT_ATTACHMENT_TITLE_MAX);
-  return proofLinkDomain(url);
+  return attachmentTitle(title) || attachmentTitle(proofLinkDomain(url));
+}
+
+/**
+ * Why a pasted link can't be attached, or `null` when it can: the form's
+ * words for `normalizeAttachmentUrl`'s two refusals.
+ */
+export function attachmentLinkProblem(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return "Paste a web address.";
+  if (trimmed.length > TASK_PROOF_LINK_MAX) {
+    return `That link is too long to attach (over ${TASK_PROOF_LINK_MAX} characters).`;
+  }
+  return normalizeAttachmentUrl(trimmed)
+    ? null
+    : "Paste a web address starting with http:// or https://.";
 }

@@ -10,16 +10,24 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import { useDocuments, useSaveEventLists } from "@repo/hooks";
+import { randomClientId, statusOf } from "@repo/api-sdk";
+import {
+  selectDownloadUrl,
+  useDocumentDownloadUrl,
+  useDocuments,
+  useEventListsEditor,
+  type EventLists,
+} from "@repo/hooks";
 import {
   agendaProblem,
+  attachmentLinkProblem,
   attachmentLinkTitle,
+  attachmentTitle,
   EVENT_AGENDA_ITEM_MAX,
   EVENT_AGENDA_MAX,
   EVENT_ATTACHMENT_TITLE_MAX,
   EVENT_ATTACHMENTS_MAX,
   moveEventEntry,
-  newEventEntryId,
   normalizeAgendaText,
   normalizeAttachmentUrl,
   proofLinkDomain,
@@ -36,8 +44,9 @@ import {
   dashboardCheckboxHitAreaClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
-import { useDocumentDownload } from "@/components/documents/use-document-download";
+import { useSubscriptionGate } from "@/components/shared/subscription-gate";
 import { toastFailure } from "@/lib/failure-toast";
+import { useToast } from "@/lib/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 /**
@@ -45,48 +54,86 @@ import { cn } from "@/lib/utils";
  * `spec/behavior/events.md` § Agenda and attachments). Everyone who can see
  * the event reads them; an `events:update` holder edits them in place, the
  * way Notion's and Fellow's meeting agendas are a checklist on the meeting
- * itself rather than a field in a form. Each save is this meeting's alone,
- * never the series'.
+ * itself rather than a field in a form. Both lists share one editor
+ * (`useEventListsEditor`), so a run of quick changes goes out as one save
+ * of this meeting's whole lists, never the series'.
  */
 
 const SECTION = "grid gap-2 rounded-lg border border-border p-3";
 const LABEL = "text-caption text-muted-foreground";
 
-export function EventAgendaSection({
+/** Whether Chapter Files is on: `null` while the module read can't say. */
+export type DocumentsModule = boolean | null;
+
+export function EventMeetingLists({
   eventId,
-  agenda,
+  lists,
   canEdit,
+  documentsOn,
 }: {
   eventId: string;
+  lists: EventLists;
+  /** Holds `events:update`, and the event is there to write to. */
+  canEdit: boolean;
+  documentsOn: DocumentsModule;
+}) {
+  // A paid write, like the sheet's Edit: a lapsed chapter or an offline
+  // browser reads the lists but gets no controls that would only be refused.
+  const gate = useSubscriptionGate();
+  const editable = canEdit && gate.allowed;
+  const editor = useEventListsEditor(eventId, lists, {
+    onFailed: (error) =>
+      toastFailure({
+        title: "Couldn't save the agenda or attachments",
+        error,
+        fallback: "Your last change was undone. Try it again in a moment.",
+      }),
+  });
+  return (
+    <>
+      <EventAgendaSection
+        agenda={editor.agenda}
+        canEdit={editable}
+        onChange={(update) => editor.change("agenda", update)}
+      />
+      <EventAttachmentsSection
+        attachments={editor.attachments}
+        canEdit={editable}
+        documentsOn={documentsOn}
+        onChange={(update) => editor.change("attachments", update)}
+      />
+    </>
+  );
+}
+
+export function EventAgendaSection({
+  agenda,
+  canEdit,
+  onChange,
+}: {
   agenda: EventAgendaItem[];
   canEdit: boolean;
+  onChange: (update: (current: EventAgendaItem[]) => EventAgendaItem[]) => void;
 }) {
-  const save = useSaveEventLists(eventId);
+  const { toast } = useToast();
   const [draft, setDraft] = useState("");
   const inputId = useId();
   if (agenda.length === 0 && !canEdit) return null;
 
-  async function write(next: EventAgendaItem[], failTitle: string) {
-    try {
-      await save.mutateAsync({ agenda: next });
-    } catch (error) {
-      toastFailure({
-        title: failTitle,
-        error,
-        fallback: "Try again in a moment.",
-        retry: () => void write(next, failTitle),
-      });
-    }
-  }
-
-  async function add(event: FormEvent<HTMLFormElement>) {
+  function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = normalizeAgendaText(draft);
     if (!text) return;
-    const next = [...agenda, { id: newEventEntryId(), text, done: false }];
-    if (agendaProblem(next)) return;
+    const problem = agendaProblem([...agenda, { text }]);
+    if (problem) {
+      toast({ title: "Couldn't add that item", description: problem });
+      return;
+    }
     setDraft("");
-    await write(next, "Couldn't add that item");
+    onChange((current) => [
+      ...current,
+      { id: randomClientId(), text, done: false },
+    ]);
   }
 
   const full = agenda.length >= EVENT_AGENDA_MAX;
@@ -108,10 +155,7 @@ export function EventAgendaSection({
                     checked={item.done}
                     aria-label={item.text}
                     onChange={() =>
-                      void write(
-                        toggleAgendaItem(agenda, item.id),
-                        "Couldn't save that check-off",
-                      )
+                      onChange((current) => toggleAgendaItem(current, item.id))
                     }
                     className={dashboardTableCheckboxClassName}
                   />
@@ -130,7 +174,7 @@ export function EventAgendaSection({
                   item.done && "text-muted-foreground line-through",
                 )}
               >
-                {canEdit ? null : item.done ? (
+                {!canEdit && item.done ? (
                   <span className="sr-only">Done: </span>
                 ) : null}
                 {item.text}
@@ -141,9 +185,12 @@ export function EventAgendaSection({
                     label={`Move "${item.text}" up`}
                     disabled={index === 0}
                     onClick={() =>
-                      void write(
-                        moveEventEntry(agenda, index, -1),
-                        "Couldn't move that item",
+                      onChange((current) =>
+                        moveEventEntry(
+                          current,
+                          current.findIndex((entry) => entry.id === item.id),
+                          -1,
+                        ),
                       )
                     }
                   >
@@ -153,9 +200,12 @@ export function EventAgendaSection({
                     label={`Move "${item.text}" down`}
                     disabled={index === agenda.length - 1}
                     onClick={() =>
-                      void write(
-                        moveEventEntry(agenda, index, 1),
-                        "Couldn't move that item",
+                      onChange((current) =>
+                        moveEventEntry(
+                          current,
+                          current.findIndex((entry) => entry.id === item.id),
+                          1,
+                        ),
                       )
                     }
                   >
@@ -164,9 +214,8 @@ export function EventAgendaSection({
                   <IconButton
                     label={`Remove "${item.text}"`}
                     onClick={() =>
-                      void write(
-                        agenda.filter((entry) => entry.id !== item.id),
-                        "Couldn't remove that item",
+                      onChange((current) =>
+                        current.filter((entry) => entry.id !== item.id),
                       )
                     }
                   >
@@ -179,10 +228,7 @@ export function EventAgendaSection({
         </ol>
       ) : null}
       {canEdit && !full ? (
-        <form
-          onSubmit={(event) => void add(event)}
-          className="flex items-center gap-2"
-        >
+        <form onSubmit={add} className="flex items-center gap-2">
           <label htmlFor={inputId} className="sr-only">
             Add an agenda item
           </label>
@@ -215,41 +261,68 @@ export function EventAgendaSection({
   );
 }
 
+/**
+ * Open a Chapter Files document to read, in a new tab (the inline signed
+ * link, not the forced download). A file deleted since it was attached says
+ * so rather than failing generically.
+ */
+function useOpenDocument() {
+  const signedLinks = useDocumentDownloadUrl();
+  const { toast } = useToast();
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  async function open(documentId: string) {
+    setOpeningId(documentId);
+    try {
+      const url = selectDownloadUrl(await signedLinks.mutateAsync(documentId));
+      if (!url) throw new Error("No link to the file came back.");
+      window.open(url, "_blank", "noopener");
+    } catch (error) {
+      if (statusOf(error) === 404) {
+        toast({
+          title: "This file is gone from Chapter Files",
+          description: "Someone removed it after it was attached.",
+        });
+      } else {
+        toastFailure({
+          title: "Couldn't open that file",
+          error,
+          fallback: "Try again in a moment.",
+        });
+      }
+    } finally {
+      setOpeningId(null);
+    }
+  }
+  return { open, openingId };
+}
+
 export function EventAttachmentsSection({
-  eventId,
   attachments,
   canEdit,
   documentsOn,
+  onChange,
 }: {
-  eventId: string;
   attachments: EventAttachment[];
   canEdit: boolean;
-  /** Chapter Files is on, so a document can be opened and attached. */
-  documentsOn: boolean;
+  documentsOn: DocumentsModule;
+  onChange: (update: (current: EventAttachment[]) => EventAttachment[]) => void;
 }) {
-  const save = useSaveEventLists(eventId);
-  const { download, fetchingId } = useDocumentDownload();
+  const { open, openingId } = useOpenDocument();
   const [adding, setAdding] = useState<"link" | "document" | null>(null);
   if (attachments.length === 0 && !canEdit) return null;
-
-  async function write(next: EventAttachment[], failTitle: string) {
-    try {
-      await save.mutateAsync({ attachments: next });
-      return true;
-    } catch (error) {
-      toastFailure({
-        title: failTitle,
-        error,
-        fallback: "Try again in a moment.",
-      });
-      return false;
-    }
-  }
 
   const full = attachments.length >= EVENT_ATTACHMENTS_MAX;
   const attachedDocuments = new Set(
     attachments.flatMap((a) => (a.kind === "document" ? [a.document_id] : [])),
   );
+  const add = (attachment: EventAttachment) => {
+    onChange((current) =>
+      current.length >= EVENT_ATTACHMENTS_MAX
+        ? current
+        : [...current, attachment],
+    );
+    setAdding(null);
+  };
 
   return (
     <section aria-label="Attachments" className={SECTION}>
@@ -283,14 +356,16 @@ export function EventAttachmentsSection({
               ) : (
                 <button
                   type="button"
-                  disabled={!documentsOn || fetchingId !== null}
-                  onClick={() => void download(attachment.document_id)}
+                  // Only a module read that answered "off" disables it; one
+                  // that can't say yet lets the server answer.
+                  disabled={documentsOn === false || openingId !== null}
+                  onClick={() => void open(attachment.document_id)}
                   className={cn(
                     "flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-sm hover:underline disabled:no-underline",
                     FOCUS_RING_OFFSET,
                   )}
                 >
-                  {fetchingId === attachment.document_id ? (
+                  {openingId === attachment.document_id ? (
                     <Loader2
                       className="h-4 w-4 shrink-0 animate-spin text-muted-foreground"
                       aria-hidden="true"
@@ -303,7 +378,9 @@ export function EventAttachmentsSection({
                   )}
                   <span className="truncate">{attachment.title}</span>
                   <span className="shrink-0 text-caption text-muted-foreground">
-                    {documentsOn ? "Chapter Files" : "Chapter Files is off"}
+                    {documentsOn === false
+                      ? "Chapter Files is off"
+                      : "Chapter Files"}
                   </span>
                 </button>
               )}
@@ -311,9 +388,8 @@ export function EventAttachmentsSection({
                 <IconButton
                   label={`Remove "${attachment.title}"`}
                   onClick={() =>
-                    void write(
-                      attachments.filter((entry) => entry.id !== attachment.id),
-                      "Couldn't remove that attachment",
+                    onChange((current) =>
+                      current.filter((entry) => entry.id !== attachment.id),
                     )
                   }
                 >
@@ -332,37 +408,23 @@ export function EventAttachmentsSection({
       {canEdit && !full && adding === "link" ? (
         <AddLinkForm
           onCancel={() => setAdding(null)}
-          onAdd={async (url, title) => {
-            const added = await write(
-              [
-                ...attachments,
-                { id: newEventEntryId(), kind: "link", url, title },
-              ],
-              "Couldn't add that link",
-            );
-            if (added) setAdding(null);
-          }}
+          onAdd={(url, title) =>
+            add({ id: randomClientId(), kind: "link", url, title })
+          }
         />
       ) : null}
       {canEdit && !full && adding === "document" ? (
         <PickDocument
           attached={attachedDocuments}
           onCancel={() => setAdding(null)}
-          onPick={async (documentId, title) => {
-            const added = await write(
-              [
-                ...attachments,
-                {
-                  id: newEventEntryId(),
-                  kind: "document",
-                  document_id: documentId,
-                  title,
-                },
-              ],
-              "Couldn't attach that file",
-            );
-            if (added) setAdding(null);
-          }}
+          onPick={(documentId, title) =>
+            add({
+              id: randomClientId(),
+              kind: "document",
+              document_id: documentId,
+              title: attachmentTitle(title),
+            })
+          }
         />
       ) : null}
       {canEdit && !full && adding === null ? (
@@ -374,7 +436,7 @@ export function EventAttachmentsSection({
           >
             Add a link
           </button>
-          {documentsOn ? (
+          {documentsOn === true ? (
             <button
               type="button"
               className={QUIET_LINK}
@@ -393,34 +455,29 @@ function AddLinkForm({
   onAdd,
   onCancel,
 }: {
-  onAdd: (url: string, title: string) => Promise<void>;
+  onAdd: (url: string, title: string) => void;
   onCancel: () => void;
 }) {
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const urlId = useId();
   const titleId = useId();
   const problemId = useId();
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const refused = attachmentLinkProblem(url);
     const normalized = normalizeAttachmentUrl(url);
-    if (!normalized) {
-      setProblem("Paste a web address starting with http:// or https://.");
+    if (refused || !normalized) {
+      setProblem(refused ?? "Paste a web address.");
       return;
     }
-    setBusy(true);
-    try {
-      await onAdd(normalized, attachmentLinkTitle(title, normalized));
-    } finally {
-      setBusy(false);
-    }
+    onAdd(normalized, attachmentLinkTitle(title, normalized));
   }
 
   return (
-    <form onSubmit={(event) => void submit(event)} className="grid gap-2">
+    <form onSubmit={submit} className="grid gap-2">
       <label htmlFor={urlId} className="sr-only">
         Link
       </label>
@@ -453,7 +510,7 @@ function AddLinkForm({
         </p>
       ) : null}
       <div className="flex gap-2">
-        <Button type="submit" size="sm" disabled={busy || !url.trim()}>
+        <Button type="submit" size="sm" disabled={!url.trim()}>
           Add link
         </Button>
         <Button type="button" size="sm" variant="ghost" onClick={onCancel}>
@@ -470,7 +527,7 @@ function PickDocument({
   onCancel,
 }: {
   attached: ReadonlySet<string>;
-  onPick: (documentId: string, title: string) => Promise<void>;
+  onPick: (documentId: string, title: string) => void;
   onCancel: () => void;
 }) {
   const [search, setSearch] = useState("");
@@ -514,7 +571,7 @@ function PickDocument({
             <li key={doc.id}>
               <button
                 type="button"
-                onClick={() => void onPick(doc.id, doc.title)}
+                onClick={() => onPick(doc.id, doc.title)}
                 className={cn(
                   "flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-card-hover pointer-coarse:min-h-11",
                   FOCUS_RING_OFFSET,

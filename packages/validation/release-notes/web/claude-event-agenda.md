@@ -1,1 +1,1 @@
-Every event now has an agenda you can check off during the meeting and a place for links and Chapter Files documents, right on the event.
+Officers can now add an agenda to any event and check items off during the meeting, and attach links or Chapter Files documents, all right on the event, where everyone invited can read them.

@@ -4,7 +4,8 @@ import {
   attachmentLinkTitle,
   EVENT_AGENDA_ITEM_MAX,
   moveEventEntry,
-  newEventEntryId,
+  attachmentLinkProblem,
+  attachmentTitle,
   readEventAgenda,
   readEventAttachments,
   toggleAgendaItem,
@@ -33,6 +34,7 @@ describe("event agenda helpers (#4934)", () => {
         { id: "1", kind: "link", url: "https://a.example", title: "A" },
         { id: "2", kind: "document", document_id: "d1", title: "Bylaws" },
         { id: "3", kind: "link", title: "no url" },
+        { id: "5", kind: "link", url: "javascript:alert(1)", title: "bad" },
         { id: "4", kind: "file", title: "unknown kind" },
       ]),
     ).toEqual([
@@ -66,8 +68,16 @@ describe("event agenda helpers (#4934)", () => {
     ).toMatch(/under/);
   });
 
-  it("makes distinct ids", () => {
-    const ids = new Set(Array.from({ length: 50 }, newEventEntryId));
-    expect(ids.size).toBe(50);
+  it("cuts every attachment title to the API's limit", () => {
+    expect(attachmentTitle(`  ${"x".repeat(300)}  `)).toHaveLength(120);
+    expect(attachmentTitle(" Spring   budget ")).toBe("Spring budget");
+  });
+
+  it("says why a link can't be attached", () => {
+    expect(attachmentLinkProblem("https://a.example")).toBeNull();
+    expect(attachmentLinkProblem("ftp://a.example")).toMatch(/http/);
+    expect(
+      attachmentLinkProblem(`https://a.example/${"x".repeat(2100)}`),
+    ).toMatch(/too long/);
   });
 });
