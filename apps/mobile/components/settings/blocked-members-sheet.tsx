@@ -6,7 +6,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   memberFallbackLabel,
   useBlockedUserIds,
@@ -33,17 +33,18 @@ import {
   useSheetClose,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
-import {
-  ErrorState,
-  SkeletonLines,
-} from "@/components/state-block";
+import { ErrorState, SkeletonLines } from "@/components/state-block";
 import {
   confirmUnblockMember,
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { type ChapterBranding, useChapterBranding } from "@/lib/chapter-branding";
+import {
+  type ChapterBranding,
+  useChapterBranding,
+} from "@/lib/chapter-branding";
 import { InlineNote } from "@/components/inline-note";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Settings → Blocked members: the one place a block can always be undone

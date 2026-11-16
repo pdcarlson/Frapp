@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import type { SignetTokens } from "@repo/theme/signet";
 import {
   buildFindResults,
@@ -18,6 +17,7 @@ import { isDirectChannel, selectChannels } from "@/lib/chat/channel-list";
 import type { NotificationTarget } from "@/lib/notifications/targets";
 import { selectionHaptic } from "@/lib/haptics";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The search half of the phone's one field (#4904; Paul's pick of

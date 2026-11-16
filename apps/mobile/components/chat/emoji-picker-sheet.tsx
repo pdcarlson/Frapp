@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetFlatList,
-  BottomSheetModal,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { SectionHeader } from "@/components/list-section";
 import {
@@ -25,6 +21,7 @@ import {
 } from "@repo/chat-core/emoji";
 import { useRecentEmoji } from "@/lib/chat/recent-emoji";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /**
  * Every emoji, for a reaction the quick row doesn't have: the long-press

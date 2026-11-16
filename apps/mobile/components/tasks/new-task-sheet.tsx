@@ -1,7 +1,6 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
-  BottomSheetFlatList,
   BottomSheetModal,
   BottomSheetTextInput,
   BottomSheetView,
@@ -95,6 +94,7 @@ import {
   SUBSCRIPTION_REFUSAL_COPY,
   subscriptionRefusalOf,
 } from "@/lib/subscription-refusal";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /**
  * s19 — the "New task" bottom sheet (`canvas-screens.dc.html`, `id="s19"`).
@@ -416,10 +416,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
       opening
         ? opening.due
         : editBase
-        ? editBase.due
-        : suggested
-          ? { kind: "date", date: suggested.dueDate }
-          : DEFAULT_DUE_CHOICE,
+          ? editBase.due
+          : suggested
+            ? { kind: "date", date: suggested.dueDate }
+            : DEFAULT_DUE_CHOICE,
     );
     // `HH:MM`, or null for a task due by the day (#4003).
     const [dueTime, setDueTime] = useState<string | null>(

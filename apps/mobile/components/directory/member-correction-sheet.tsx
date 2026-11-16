@@ -1,10 +1,6 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { useCorrectMemberProfile } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
@@ -29,6 +25,7 @@ import {
   useSheetVisit,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * An officer fixes another member's name or graduation year (#4367), from

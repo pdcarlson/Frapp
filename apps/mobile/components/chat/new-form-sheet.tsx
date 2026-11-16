@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
   FORM_END_PASSED_PROBLEM,
   FORM_QUESTION_TYPE_CHOICES,
@@ -61,6 +57,7 @@ import { CloseGlyph, DisclosureGlyph } from "@/components/control-glyphs";
 import { successHaptic } from "@/lib/haptics";
 import { EndTimeField } from "./end-time-field";
 import { InlinePicker } from "./form-controls";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The New form sheet (#3926 step 3), opened from the composer's +: a title,

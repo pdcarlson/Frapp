@@ -1,10 +1,6 @@
 import { forwardRef, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetFlatList,
-  BottomSheetModal,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { useRoles } from "@repo/hooks";
 import {
@@ -36,6 +32,7 @@ import {
 } from "@/components/sheet-scaffold";
 import { Segmented } from "@/components/segmented";
 import { toRoleOptions } from "@repo/hooks/chapter-roles";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /**
  * "Who's coming": an event's attendance by role (`spec/behavior/events.md`

@@ -1,10 +1,6 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { SignetTokens } from "@repo/theme/signet";
 import { useAssignPledgeClasses, usePledgeClasses } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
@@ -30,6 +26,7 @@ import {
   usePledgeClassTerms,
   type ClassEditorDraft,
 } from "@/lib/directory/pledge-class";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Set one member's pledge class and order number from their profile (#3991):

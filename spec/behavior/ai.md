@@ -272,6 +272,9 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
 - **No answer without a source.**
   The server checks every quote against its source ([Citation requirement](#citation-requirement)).
   An answer left with no checked citation is not shown: the member reads "I couldn't find that in your chapter's documents, minutes or records."
+  Through the tool loop, one exception (changed by Paul, 2026-11-16): some right answers rest on no source, such as "hi" back, what Frapp can do, "I don't give out phone numbers" or "which Jordan do you mean?".
+  Frapp answers those at once without reading, and one short sentence with no citation is shown, marked as Frapp's own words (`own_words`), when no quote was tried and dropped and the whole reply is one line of at most 400 characters (the sentence itself at most 240).
+  Anything longer with no checked citation is still "couldn't find that". An answer in Frapp's own words cannot be posted to a channel.
   When some quotes were dropped and others stood, the answer says part of it could not be matched.
 - **What streams is a preview.**
   Text appears as it is written, over one line that says what Frapp is doing.
