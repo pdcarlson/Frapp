@@ -1,5 +1,6 @@
 "use client";
 
+import { NoteTakerPageSkeleton } from "@/components/meetings/meetings-skeleton";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { codeOf } from "@repo/api-sdk";
@@ -323,7 +324,7 @@ export function NoteTakersList({
                 ) : null}
               </div>
               {open === row.key && row.text ? (
-                <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted p-3 text-sm">
+                <p className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border p-3 text-sm">
                   {row.text}
                 </p>
               ) : null}
@@ -400,12 +401,7 @@ export function NoteTakersList({
 export function NoteTakerPage({ id }: { id: string }) {
   const query = useMeetingNotes(id);
   if (query.isPending) {
-    return (
-      <div className="mx-auto max-w-3xl space-y-4" aria-busy="true">
-        <div className="h-8 w-2/3 animate-pulse rounded bg-muted" />
-        <div className="h-64 animate-pulse rounded-lg bg-muted" />
-      </div>
-    );
+    return <NoteTakerPageSkeleton />;
   }
   if (!query.data) {
     return (

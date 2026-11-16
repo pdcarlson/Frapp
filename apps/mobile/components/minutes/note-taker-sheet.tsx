@@ -1,10 +1,6 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
   useCurrentUser,
   useMeetingNotes,
@@ -30,6 +26,7 @@ import {
   useTallSheetProps,
 } from "@/components/sheet-scaffold";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 import { confirmAlert } from "@/lib/minutes/meetings-on";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 

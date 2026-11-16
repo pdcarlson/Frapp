@@ -49,3 +49,13 @@ export function MinutesPageSkeleton() {
     </PageSkeleton>
   );
 }
+
+/** `/meetings/:id/notes` while it loads: the heading, then the notes box. */
+export function NoteTakerPageSkeleton() {
+  return (
+    <PageSkeleton label="Loading notes" className="mx-auto max-w-3xl space-y-4">
+      <SkeletonText lines={2} />
+      <SkeletonText lines={8} />
+    </PageSkeleton>
+  );
+}
