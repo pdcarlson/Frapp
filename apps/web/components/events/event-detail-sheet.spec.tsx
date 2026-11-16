@@ -107,6 +107,37 @@ vi.mock("@/lib/hooks/use-toast", () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+// The agenda and attachments have their own spec (`event-agenda.spec.tsx`);
+// here, what the sheet hands them (#4934).
+vi.mock("@/components/events/event-agenda", () => ({
+  EventAgendaSection: ({
+    agenda,
+    canEdit,
+  }: {
+    agenda: { text: string }[];
+    canEdit: boolean;
+  }) => (
+    <div
+      data-testid="event-agenda"
+      data-can-edit={String(canEdit)}
+      data-items={agenda.map((item) => item.text).join("|")}
+    />
+  ),
+  EventAttachmentsSection: ({
+    attachments,
+    canEdit,
+  }: {
+    attachments: { title: string }[];
+    canEdit: boolean;
+  }) => (
+    <div
+      data-testid="event-attachments"
+      data-can-edit={String(canEdit)}
+      data-items={attachments.map((item) => item.title).join("|")}
+    />
+  ),
+}));
+
 // The minutes entry has its own spec (`event-minutes.spec.tsx`).
 vi.mock("@/components/meetings/event-minutes", () => ({
   EventMinutes: () => null,
@@ -869,6 +900,43 @@ describe("EventDetailSheet for a live event, by role (#3855)", () => {
     expect(
       screen.getByRole("button", { name: "Delete event" }),
     ).toBeInTheDocument();
+  });
+
+  it("hands the meeting's agenda and attachments to their sections, editable only by an officer (#4934)", () => {
+    const withLists = {
+      ...baseEvent,
+      agenda: [{ id: "a1", text: "Treasurer report", done: false }, "junk"],
+      attachments: [
+        { id: "x1", kind: "link", url: "https://a.example", title: "Budget" },
+      ],
+    };
+    eventQueryState.data = withLists;
+    permissionsState.value = ["members:view"];
+    const { unmount } = renderLive(withLists);
+    expect(screen.getByTestId("event-agenda")).toHaveAttribute(
+      "data-items",
+      "Treasurer report",
+    );
+    expect(screen.getByTestId("event-agenda")).toHaveAttribute(
+      "data-can-edit",
+      "false",
+    );
+    expect(screen.getByTestId("event-attachments")).toHaveAttribute(
+      "data-items",
+      "Budget",
+    );
+    unmount();
+
+    permissionsState.value = ["members:view", "events:update"];
+    renderLive(withLists);
+    expect(screen.getByTestId("event-agenda")).toHaveAttribute(
+      "data-can-edit",
+      "true",
+    );
+    expect(screen.getByTestId("event-attachments")).toHaveAttribute(
+      "data-can-edit",
+      "true",
+    );
   });
 
   it("splits Edit from Delete by their own permissions", () => {

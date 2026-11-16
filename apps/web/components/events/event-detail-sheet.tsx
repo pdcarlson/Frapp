@@ -4,6 +4,8 @@ import {
   can,
   checkInZoneLine,
   deleteOffersSeriesChoice,
+  readEventAgenda,
+  readEventAttachments,
   SERIES_SCOPE_COPY,
 } from "@repo/validation";
 import { useMemo } from "react";
@@ -51,6 +53,11 @@ import {
 import { AttendancePanel } from "@/components/events/attendance-panel";
 import { checkInZoneState, MyCheckIn } from "@/components/events/my-check-in";
 import { ExcuseReview, MyExcuse } from "@/components/events/event-excuses";
+import {
+  EventAgendaSection,
+  EventAttachmentsSection,
+} from "@/components/events/event-agenda";
+import { useChapterModuleGateState } from "@/lib/hooks/use-chapter-module-gate";
 import { Can } from "@/components/shared/can";
 import { PermissionsOfflineSurface } from "@/components/shared/async-states";
 import { toRoleOptions } from "@repo/hooks/chapter-roles";
@@ -160,6 +167,12 @@ export function EventDetailSheet({
     usingPreviewData ||
     permissionsUnanswerable ||
     can("events:update", permissions);
+  // Editing the agenda in place writes at once, so it waits for a real
+  // answer rather than the optimistic one the Edit icon may show.
+  const canEditInPlace = !usingPreviewData && can("events:update", permissions);
+  const moduleGate = useChapterModuleGateState();
+  const documentsOn =
+    moduleGate.status === "ready" && moduleGate.isModuleEnabled("documents");
   const canDeleteEvent =
     usingPreviewData ||
     permissionsUnanswerable ||
@@ -239,6 +252,10 @@ export function EventDetailSheet({
       : "";
   const notes =
     typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
+  // This meeting's own agenda and attachments (#4934). The read has no
+  // response schema, so both are read defensively.
+  const agenda = readEventAgenda(resolvedEvent?.agenda);
+  const attachments = readEventAttachments(resolvedEvent?.attachments);
   // `checkInZoneState`: a zone with a bad point refuses every check-in, which
   // is not "no zone", and a zoneless event whose check-in needs an officer's
   // code (#4808) is not "check in from anywhere" either.
@@ -604,6 +621,26 @@ export function EventDetailSheet({
                   {description}
                 </p>
               </div>
+            ) : null}
+
+            {eventId && !usingPreviewData ? (
+              <>
+                {/* Keyed by meeting: a half-typed item must not carry over
+                    to another occurrence the sheet switches to. */}
+                <EventAgendaSection
+                  key={`agenda-${eventId}`}
+                  eventId={eventId}
+                  agenda={agenda}
+                  canEdit={canEditInPlace}
+                />
+                <EventAttachmentsSection
+                  key={`attachments-${eventId}`}
+                  eventId={eventId}
+                  attachments={attachments}
+                  canEdit={canEditInPlace}
+                  documentsOn={documentsOn}
+                />
+              </>
             ) : null}
 
             {eventId && !usingPreviewData ? (

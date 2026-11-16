@@ -143,6 +143,12 @@ function fillRequiredFields() {
   setSchedule("Ends", "2026-07-01", "19:00");
 }
 
+// Which label the notes field takes follows the meetings module (#4934).
+const meetingsState = vi.hoisted(() => ({ on: false }));
+vi.mock("@/components/meetings/event-minutes", () => ({
+  useMeetingsModuleOn: () => meetingsState.on,
+}));
+
 describe("EventEditorDialog form shape and attendance by role", () => {
   beforeEach(() => {
     createMutate.mockReset();
@@ -199,6 +205,31 @@ describe("EventEditorDialog form shape and attendance by role", () => {
     );
     expect(screen.getByLabelText("Meeting minutes")).toBeInTheDocument();
     expect(screen.queryByLabelText("Internal notes")).not.toBeInTheDocument();
+  });
+
+  it("labels the notes field Notes on edit while minutes are their own record", () => {
+    meetingsState.on = true;
+    try {
+      render(
+        <EventEditorDialog
+          open
+          mode="edit"
+          event={{
+            id: "e0",
+            name: "Chapter",
+            start_time: "2026-07-01T18:00:00.000Z",
+            end_time: "2026-07-01T19:00:00.000Z",
+          }}
+          usingPreviewData={false}
+          onOpenChange={() => {}}
+          onSaved={async () => {}}
+        />,
+      );
+      expect(screen.getByLabelText("Notes")).toBeInTheDocument();
+      expect(screen.queryByLabelText("Meeting minutes")).toBeNull();
+    } finally {
+      meetingsState.on = false;
+    }
   });
 
   it("creates an event required for one role and optional for everyone else", async () => {
