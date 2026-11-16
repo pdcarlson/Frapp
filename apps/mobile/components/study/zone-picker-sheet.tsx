@@ -1,10 +1,6 @@
 import { forwardRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetFlatList,
-  BottomSheetModal,
-  BottomSheetView,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
@@ -25,6 +21,7 @@ import {
   sortByProximity,
   type ProximityMap,
 } from "@/lib/study/proximity";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /**
  * Zone picker for s10.
@@ -58,103 +55,104 @@ export interface ZonePickerSheetProps {
   onDismiss?: () => void;
 }
 
-export const ZonePickerSheet = forwardRef<BottomSheetModal, ZonePickerSheetProps>(
-  function ZonePickerSheet(
-    { zones, selectedZoneId, proximity = null, onSelect, onDismiss },
-    ref,
-  ) {
-    const closeSheet = useSheetClose(ref);
-    const { tokens } = useFrappTheme();
-    const { accent } = useChapterBranding();
-    const insets = useSafeAreaInsets();
-    const styles = createStyles(tokens);
-    const backgroundStyle = useSheetBackgroundStyle();
-    const ordered = sortByProximity(zones, proximity);
-    const fitsContent = ordered.length <= MAX_ROWS_SIZED_TO_CONTENT;
-    const bottomPad = { paddingBottom: insets.bottom + tokens.spacing.md };
+export const ZonePickerSheet = forwardRef<
+  BottomSheetModal,
+  ZonePickerSheetProps
+>(function ZonePickerSheet(
+  { zones, selectedZoneId, proximity = null, onSelect, onDismiss },
+  ref,
+) {
+  const closeSheet = useSheetClose(ref);
+  const { tokens } = useFrappTheme();
+  const { accent } = useChapterBranding();
+  const insets = useSafeAreaInsets();
+  const styles = createStyles(tokens);
+  const backgroundStyle = useSheetBackgroundStyle();
+  const ordered = sortByProximity(zones, proximity);
+  const fitsContent = ordered.length <= MAX_ROWS_SIZED_TO_CONTENT;
+  const bottomPad = { paddingBottom: insets.bottom + tokens.spacing.md };
 
-    const renderRow = (item: StudyZoneModel, isLast: boolean) => {
-      const selected = item.id === selectedZoneId;
-      const where = proximity?.get(item.id) ?? null;
-      const reward = zoneRewardCopy(item);
-      return (
-        <Pressable
-          key={item.id}
-          accessibilityRole="radio"
-          accessibilityState={{ selected }}
-          accessibilityLabel={
-            where ? `${item.name}, ${proximityCopy(where)}` : item.name
-          }
-          accessibilityHint={reward}
-          onPress={() => onSelect(item.id)}
-          style={({ pressed }) => [
-            styles.row,
-            isLast ? styles.rowLast : null,
-            pressed ? styles.rowPressed : null,
-          ]}
-        >
-          <View style={styles.rowText}>
-            <Text style={styles.name}>{item.name}</Text>
-            <Text style={styles.meta}>
-              {where ? (
-                <Text style={where.inside ? styles.here : styles.away}>
-                  {proximityCopy(where)}
-                  {" · "}
-                </Text>
-              ) : null}
-              {reward}
-            </Text>
-          </View>
-          {selected ? (
-            <Text style={[styles.check, { color: accent }]}>✓</Text>
-          ) : null}
-        </Pressable>
-      );
-    };
-
+  const renderRow = (item: StudyZoneModel, isLast: boolean) => {
+    const selected = item.id === selectedZoneId;
+    const where = proximity?.get(item.id) ?? null;
+    const reward = zoneRewardCopy(item);
     return (
-      <BottomSheetModal
-        ref={ref}
-        stackBehavior={SHEET_STACK_BEHAVIOR}
-        {...(fitsContent
-          ? { enableDynamicSizing: true }
-          : { enableDynamicSizing: false, snapPoints: LONG_LIST_SNAP_POINTS })}
-        backgroundStyle={backgroundStyle}
-        handleComponent={SheetGrabber}
-        backdropComponent={SheetScrim}
-        onDismiss={onDismiss}
+      <Pressable
+        key={item.id}
+        accessibilityRole="radio"
+        accessibilityState={{ selected }}
+        accessibilityLabel={
+          where ? `${item.name}, ${proximityCopy(where)}` : item.name
+        }
+        accessibilityHint={reward}
+        onPress={() => onSelect(item.id)}
+        style={({ pressed }) => [
+          styles.row,
+          isLast ? styles.rowLast : null,
+          pressed ? styles.rowPressed : null,
+        ]}
       >
-        <SheetBackToClose onClose={closeSheet} />
-        {fitsContent ? (
-          <BottomSheetView
-            onAccessibilityEscape={closeSheet}
-            style={[styles.body, bottomPad]}
-          >
-            <SheetHeader title="Study zone" />
-            {ordered.map((zone, index) =>
-              renderRow(zone, index === ordered.length - 1),
-            )}
-          </BottomSheetView>
-        ) : (
-          <BottomSheetFlatList
-            onAccessibilityEscape={closeSheet}
-            data={ordered}
-            keyExtractor={(zone: StudyZoneModel) => zone.id}
-            ListHeaderComponent={<SheetHeader title="Study zone" />}
-            contentContainerStyle={[styles.body, bottomPad]}
-            renderItem={({
-              item,
-              index,
-            }: {
-              item: StudyZoneModel;
-              index: number;
-            }) => renderRow(item, index === ordered.length - 1)}
-          />
-        )}
-      </BottomSheetModal>
+        <View style={styles.rowText}>
+          <Text style={styles.name}>{item.name}</Text>
+          <Text style={styles.meta}>
+            {where ? (
+              <Text style={where.inside ? styles.here : styles.away}>
+                {proximityCopy(where)}
+                {" · "}
+              </Text>
+            ) : null}
+            {reward}
+          </Text>
+        </View>
+        {selected ? (
+          <Text style={[styles.check, { color: accent }]}>✓</Text>
+        ) : null}
+      </Pressable>
     );
-  },
-);
+  };
+
+  return (
+    <BottomSheetModal
+      ref={ref}
+      stackBehavior={SHEET_STACK_BEHAVIOR}
+      {...(fitsContent
+        ? { enableDynamicSizing: true }
+        : { enableDynamicSizing: false, snapPoints: LONG_LIST_SNAP_POINTS })}
+      backgroundStyle={backgroundStyle}
+      handleComponent={SheetGrabber}
+      backdropComponent={SheetScrim}
+      onDismiss={onDismiss}
+    >
+      <SheetBackToClose onClose={closeSheet} />
+      {fitsContent ? (
+        <BottomSheetView
+          onAccessibilityEscape={closeSheet}
+          style={[styles.body, bottomPad]}
+        >
+          <SheetHeader title="Study zone" />
+          {ordered.map((zone, index) =>
+            renderRow(zone, index === ordered.length - 1),
+          )}
+        </BottomSheetView>
+      ) : (
+        <BottomSheetFlatList
+          onAccessibilityEscape={closeSheet}
+          data={ordered}
+          keyExtractor={(zone: StudyZoneModel) => zone.id}
+          ListHeaderComponent={<SheetHeader title="Study zone" />}
+          contentContainerStyle={[styles.body, bottomPad]}
+          renderItem={({
+            item,
+            index,
+          }: {
+            item: StudyZoneModel;
+            index: number;
+          }) => renderRow(item, index === ordered.length - 1)}
+        />
+      )}
+    </BottomSheetModal>
+  );
+});
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({

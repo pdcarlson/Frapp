@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useAccountWhatsNewSeen,
   useCurrentUser,
@@ -25,10 +25,7 @@ import {
 } from "@/components/sheet-scaffold";
 import { ReleaseNoteCard } from "@/components/whats-new/release-note-card";
 import { isTourDue } from "@/lib/onboarding/tour";
-import {
-  releaseStartupSheet,
-  requestStartupSheet,
-} from "@/lib/startup-sheets";
+import { releaseStartupSheet, requestStartupSheet } from "@/lib/startup-sheets";
 import { useFrappTheme } from "@/lib/theme";
 import {
   clearWhatsNewQuiet,
@@ -38,6 +35,7 @@ import {
   recordWhatsNewSeen,
   startWhatsNewBootRead,
 } from "@/lib/whats-new";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Opens What's new by itself, once, after an update brings a new entry or new

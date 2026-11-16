@@ -1,10 +1,6 @@
 import { forwardRef, useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { codeOf } from "@repo/api-sdk";
 import {
   useDiscardMeetingDraft,
@@ -61,6 +57,7 @@ interface KeptNotes {
 }
 import { confirmAlert } from "@/lib/minutes/meetings-on";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Minutes drafted from an officer's notes, on the phone
@@ -275,8 +272,7 @@ export const NotesDraftSheet = forwardRef<
         // Said No since the draft was read: the next press asks.
         setConsentNow("required");
         setProblem(MEETING_DRAFT_FAILURE_COPY.consent_required);
-      }
-      else if (code === "ai.chapter_off")
+      } else if (code === "ai.chapter_off")
         setProblem(MEETING_DRAFT_FAILURE_COPY.chapter_off);
       else if (code === "meeting.stale") {
         // Someone saved on the web in the moment between the read and the
@@ -505,7 +501,9 @@ export const NotesDraftSheet = forwardRef<
                   ? AI_REPORT_COPY.reported
                   : AI_REPORT_COPY.titles.meeting_draft
               }
-              accessibilityState={draftReported ? { disabled: true } : undefined}
+              accessibilityState={
+                draftReported ? { disabled: true } : undefined
+              }
               disabled={draftReported}
               onPress={() => reporting.report(reportTarget)}
               style={({ pressed }) => [

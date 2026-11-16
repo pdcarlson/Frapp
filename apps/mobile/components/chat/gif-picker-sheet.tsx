@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetFlatList,
-  BottomSheetModal,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { Image } from "expo-image";
 import { useGifSearch, type GifResult } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -21,6 +17,7 @@ import {
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { useReduceMotion } from "@/lib/use-reduce-motion";
+import { BottomSheetFlatList } from "@/lib/sheet-scrollables";
 
 /** How tall each grid tile draws; GIFs fill it, cropped to the tile. */
 const TILE_HEIGHT = 120;

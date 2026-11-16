@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
   buildRolePickerMessage,
   ROLE_PICKER_DEFAULT_TITLE,
@@ -35,6 +31,7 @@ import {
 import { ListRow, ListSection } from "@/components/list-section";
 import { Toggle } from "@/components/toggle";
 import { successHaptic } from "@/lib/haptics";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /** With no role marked Non-chapter business, where the officer turns one on. */
 export const NO_PICKABLE_ROLES_LINE =

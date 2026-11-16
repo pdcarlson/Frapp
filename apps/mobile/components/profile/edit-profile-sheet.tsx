@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useFieldReveal, useUpdateUser } from "@repo/hooks";
 import {
   BIRTHDAY_COPY,
@@ -44,6 +40,7 @@ import {
 } from "@/lib/more/edit-profile";
 import type { ViewerProfile } from "@/lib/more/profile";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * s15's Edit sheet (#3387): the member's name, phone (#3711), major,

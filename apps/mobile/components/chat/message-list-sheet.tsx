@@ -1,6 +1,6 @@
 import { forwardRef, useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { BottomSheetModal, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   resolveAuthorLabel,
   useBookmarks,
@@ -29,6 +29,7 @@ import {
   useTallSheetProps,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The thread header's two message lists (#3723), the phone's face of web's

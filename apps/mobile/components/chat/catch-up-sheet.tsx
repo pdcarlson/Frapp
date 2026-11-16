@@ -7,10 +7,7 @@ import {
   type RefObject,
 } from "react";
 import { Keyboard, Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useChatCatchUp, type ChatCatchUpTarget } from "@repo/hooks";
 import { errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
@@ -44,6 +41,7 @@ import {
   useSheetBackgroundStyle,
 } from "@/components/sheet-scaffold";
 import { fontFamilyFor, typeRole, useFrappTheme } from "@/lib/theme";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * Catch me up on the phone (#3946, `spec/behavior/ai.md` § Catch me up): a

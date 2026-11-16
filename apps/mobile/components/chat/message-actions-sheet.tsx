@@ -17,7 +17,6 @@ import {
 } from "react-native";
 import {
   BottomSheetModal,
-  BottomSheetScrollView,
   BottomSheetTextInput,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
@@ -75,6 +74,7 @@ import {
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { MESSAGE_FLAG_OPTIONS } from "@repo/chat-core/flags";
 import type { ChatMessageFlag } from "@repo/validation";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The actions on one message: react to it, reply to it, edit or delete it

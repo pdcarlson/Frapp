@@ -1,10 +1,6 @@
 import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import {
-  BottomSheetModal,
-  BottomSheetScrollView,
-  BottomSheetTextInput,
-} from "@gorhom/bottom-sheet";
+import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
   addSignupSlot,
   buildSignupMessage,
@@ -49,6 +45,7 @@ import { Segmented } from "@/components/segmented";
 import { CloseGlyph } from "@/components/control-glyphs";
 import { successHaptic } from "@/lib/haptics";
 import { EndTimeField } from "./end-time-field";
+import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /**
  * The New sign-up sheet (#3926), opened from the composer's +: a title,
