@@ -179,8 +179,11 @@ const LIST_TYPES: ReadonlySet<string> = new Set<ChannelType>([
   'ROLE_GATED',
 ]);
 
-/** Whether `list` admits `holder`: `null` admits everyone, `*` passes any list. */
-function listAdmits(
+/**
+ * Whether `list` admits `holder`: `null` admits everyone, `*` passes any list.
+ * Documents' who can see asks the same (`document-access.ts`).
+ */
+export function listAdmits(
   list: readonly string[] | null,
   holder: ChannelAccessHolder,
 ): boolean {

@@ -4101,6 +4101,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/access-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a who-can-see list may hold, and the tiers the caller's lists always keep */
+        get: operations["ChapterDocumentController_accessOptions_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/stars": {
         parameters: {
             query?: never;
@@ -4132,7 +4149,7 @@ export interface paths {
         delete: operations["ChapterDocumentController_deleteFolder_v1"];
         options?: never;
         head?: never;
-        /** Rename or reorder a document folder */
+        /** Rename or reorder a document folder, or set who can see it */
         patch: operations["ChapterDocumentController_updateFolder_v1"];
         trace?: never;
     };
@@ -4185,6 +4202,23 @@ export interface paths {
         post?: never;
         /** Delete a document */
         delete: operations["ChapterDocumentController_delete_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set who can see one document */
+        put: operations["ChapterDocumentController_setAccess_v1"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -9468,6 +9502,8 @@ export interface components {
             document_type?: string;
             /** @description Date this document took effect (ISO date), distinct from the upload timestamp */
             effective_date?: string;
+            /** @description Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
         };
         ConfirmDocumentUploadsDto: {
             /** @description One to 25 uploads to file, each as the single confirm route takes it */
@@ -9494,6 +9530,8 @@ export interface components {
             drive_modified_at: string | null;
             /** @description The file's page in Google Drive */
             drive_url: string | null;
+            /** @description Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's */
+            who_can_see: string[] | null;
         };
         DocumentConfirmResultDto: {
             /** @description The storage path this result is for */
@@ -9539,6 +9577,13 @@ export interface components {
             created_at: string;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+            /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents */
+            who_can_see: string[] | null;
+        };
+        DocumentAccessOptionsDto: {
+            options: components["schemas"]["ChannelAccessOptionDto"][];
+            /** @description The tiers every list the caller sets keeps (their own and those above), shown fixed; empty for the President, null when the caller ranks outside the tiers and can't set a list */
+            always: string[] | null;
         };
         DocumentStarsDto: {
             /** @description Ids of the folders the caller starred, oldest star first */
@@ -9551,12 +9596,20 @@ export interface components {
             name: string;
             /** @description Display position. Defaults to the end of the list. */
             sort_order?: number;
+            /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
         };
         UpdateDocumentFolderDto: {
             /** @description New folder name. Renaming re-files every document in the folder. */
             name?: string;
             /** @description New display position */
             sort_order?: number;
+            /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept. Left out, it stays as it is; null opens it to everyone. */
+            who_can_see?: string[] | null;
+        };
+        SetDocumentAccessDto: {
+            /** @description Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
         };
         CreatePollDto: {
             /** @description Poll question */
@@ -20915,6 +20968,34 @@ export interface operations {
             };
         };
     };
+    ChapterDocumentController_accessOptions_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentAccessOptionsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChapterDocumentController_listStars_v1: {
         parameters: {
             query?: never;
@@ -21163,6 +21244,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_setAccess_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDocumentAccessDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
             };
             /** @description Error */
             default: {
