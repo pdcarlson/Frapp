@@ -2,7 +2,7 @@
 
 The API is moving from Render to Google Cloud Run ([#5228](https://github.com/frapplive/Frapp/issues/5228)). Paul decided this on 2026-11-16, which changes [ADR-24](../../../spec/architecture/adr/adr-24.md) decision 1. This page is the runbook for the Google side. Until the cutover finishes, [`render.md`](render.md) still describes what serves traffic.
 
-**State (2026-11-16):** both projects have run the setup script (staging's project number is `211663803311`, production's is `930610426605`). The Infisical sync account isn't set up yet. Both ran the script before it turned on Vertex AI and gave `frapp-api-runtime` access to it, so both need one more run of the current script before the API can drop its Vertex key file. Nothing on Google serves traffic.
+**State (2026-11-16):** both projects have run the setup script (staging's project number is `211663803311`, production's is `930610426605`). Both have Infisical's sync account, and Infisical syncs each environment into its project ([`SECRETS_MANAGEMENT.md` § Cloud Run API](../../internal/environment/SECRETS_MANAGEMENT.md#cloud-run-api-synced-to-secret-manager)). Both ran the script before it turned on Vertex AI and gave `frapp-api-runtime` access to it, so both need one more run of the current script before the API can drop its Vertex key file. Nothing on Google serves traffic.
 
 ## Shape
 
@@ -40,6 +40,7 @@ The API is moving from Render to Google Cloud Run ([#5228](https://github.com/fr
   - Infisical signs in as its own `infisical-us@infisical-us.iam.gserviceaccount.com` and impersonates this account.
   - Infisical requires the account's name to end with the first two parts of the Infisical organization id. That is how it keeps one customer from impersonating another customer's account.
   - Infisical's Secret Sync setup asks for Secret Manager Admin, so this account can read, change and delete every secret in its project.
+  - It also has Service Usage Viewer, which only shows which Google services are on. Infisical checks that Secret Manager is on before it lists a project for a sync, so without it the sync's project list is empty (found 2026-11-16).
 
 ## Secrets
 
