@@ -284,6 +284,103 @@ describe("useChapterBranding accent source", () => {
     expect(result.current.accentPrimary).toBe(BRAND);
     expect(result.current.accentOnPrimary).toBe(BRAND_ON);
   });
+
+  // #1640: a palette key that is not a colour paints house gold, as a missing
+  // one does, rather than reaching `tint()` as `rgba(NaN,NaN,NaN,…)`. An
+  // 8-digit value counts as not a colour: dropping its alpha would paint the
+  // wrong opacity with no sign of it.
+  it.each(["not-a-color", "#FF907F80", "#12345"])(
+    "paints the house tokens when the palette's colours read %j",
+    async (bad) => {
+      const { result } = renderBranding(
+        {
+          "chapter-1": {
+            id: "chapter-1",
+            name: "Tau Nu",
+            accent_color: CRIMSON,
+            theme_palette: {
+              "--signet-accent-text": bad,
+              "--signet-accent-primary": bad,
+              "--signet-accent-on-primary": bad,
+              "--signet-accent-subtle-bg": bad,
+              "--signet-accent-border": bad,
+            },
+          },
+        },
+        "chapter-1",
+      );
+
+      await waitFor(() => expect(result.current.chapterName).toBe("Tau Nu"));
+      expect(result.current.accent).toBe(BRAND);
+      expect(result.current.accentPrimary).toBe(BRAND);
+      expect(result.current.accentOnPrimary).toBe(BRAND_ON);
+      expect(result.current.accentSubtle).toBe(
+        signetDarkTokens.color.gold.askFill,
+      );
+      expect(result.current.accentBorder).toBe(
+        signetDarkTokens.color.gold.askBorder,
+      );
+    },
+  );
+
+  it.each([
+    ["#ff907f", "#FF907F"],
+    ["#f97", "#FF9977"],
+  ])("normalizes the palette colour %j to %s", async (stored, painted) => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          name: "Tau Nu",
+          theme_palette: { "--signet-accent-text": stored },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => expect(result.current.accent).toBe(painted));
+  });
+
+  // Each role is guarded on its own: one bad key beside valid ones still
+  // falls back, through the both-or-neither gates the hook already has.
+  const VALID = {
+    "--signet-accent-text": "#FF907F",
+    "--signet-accent-primary": "#8B0000",
+    "--signet-accent-on-primary": "#FFFFFF",
+    "--signet-accent-subtle-bg": "#3A1414",
+    "--signet-accent-border": "#6E2323",
+  };
+
+  it.each([
+    "--signet-accent-on-primary",
+    "--signet-accent-subtle-bg",
+    "--signet-accent-border",
+  ])("falls back when only %s is not a colour", async (key) => {
+    const { result } = renderBranding(
+      {
+        "chapter-1": {
+          id: "chapter-1",
+          name: "Tau Nu",
+          theme_palette: { ...VALID, [key]: "not-a-color" },
+        },
+      },
+      "chapter-1",
+    );
+
+    await waitFor(() => expect(result.current.chapterName).toBe("Tau Nu"));
+    expect(result.current.accent).toBe("#FF907F");
+    if (key === "--signet-accent-on-primary") {
+      expect(result.current.accentPrimary).toBe(BRAND);
+      expect(result.current.accentOnPrimary).toBe(BRAND_ON);
+    } else {
+      expect(result.current.accentSubtle).toBe(
+        signetDarkTokens.color.gold.askFill,
+      );
+      expect(result.current.accentBorder).toBe(
+        signetDarkTokens.color.gold.askBorder,
+      );
+    }
+  });
 });
 
 /**
@@ -292,7 +389,7 @@ describe("useChapterBranding accent source", () => {
  * (`packages/chapter-theme/src/signet.spec.ts`).
  *
  * The split is deliberate: `apps/mobile/package.json` is a frozen hotspot file
- * and declares neither `@repo/chapter-theme` nor `@repo/color`, so importing the
+ * and does not declare `@repo/chapter-theme`, so importing the
  * generator here would create an undeclared workspace dependency — the exact
  * trap `spec/ui/mobile/navigation.md` § Hotspot freeze calls out, because npm
  * hoisting makes it resolve anyway and breaks only under an isolated install.

@@ -1,8 +1,8 @@
 /**
  * Which membership the first-run gate cares about.
  *
- * Web's tutorial keys off the *active* membership
- * (`apps/web/components/onboarding/onboarding-tutorial.tsx`). Mobile does the
+ * Web's first-run tour keys off the *active* membership
+ * (`apps/web/components/onboarding/onboarding-tour.tsx`). Mobile does the
  * same when the JWT carries `active_chapter_id`. The claim is absent when the
  * user has no membership (production until first onboard) or when the hook is
  * disabled as an incident mitigation — #805's dashboard toggle is on, so the

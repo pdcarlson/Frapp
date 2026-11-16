@@ -147,7 +147,7 @@ describe("selectMemberDetail", () => {
     expect(detail?.customFields).toEqual([]);
   });
 
-  it("formats a boolean custom field as Yes/No and a null value as an em dash", () => {
+  it("formats a boolean custom field as Yes/No and leaves an unset one out (#1749)", () => {
     const detail = selectMemberDetail(
       profile({
         custom_fields: [
@@ -163,7 +163,6 @@ describe("selectMemberDetail", () => {
     );
     expect(detail?.customFields).toEqual([
       { fieldId: "f-1", label: "Vaccinated", value: "No" },
-      { fieldId: "f-2", label: "Notes", value: "—" },
     ]);
   });
 

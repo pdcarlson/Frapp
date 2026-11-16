@@ -4,6 +4,8 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { act } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { signetDarkTokens } from "@repo/theme/signet";
+import { inSheet, skeletonBarFills } from "@/test/sheet-skeleton";
 import { TOMBSTONE_TEXT } from "@repo/chat-core/block-copy";
 import { ALL_THREADS_EMPTY, ALL_THREADS_ERROR } from "@repo/hooks";
 
@@ -103,6 +105,16 @@ beforeEach(() => {
 });
 
 describe("All threads (#4960)", () => {
+  // #4690: the rows sit straight on the sheet's fill.
+  it("draws its loading bars a step under the sheet, never in its fill", () => {
+    read.value = { ...read.value, data: undefined, isPending: true };
+    const fills = inSheet(() => skeletonBarFills(render()));
+    expect(fills.length).toBeGreaterThan(0);
+    expect(new Set(fills)).toEqual(
+      new Set([signetDarkTokens.color.surface.card]),
+    );
+  });
+
   it("shows the channel, parent and latest reply, says what's new, and opens the thread", () => {
     const onOpen = vi.fn();
     const tree = render(onOpen);
