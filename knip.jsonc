@@ -61,6 +61,11 @@
   // Vendored from Radix; kept whole so it diffs cleanly against upstream.
   "ignoreIssues": { "packages/chapter-theme/src/vendor/**": ["exports"] },
   // Every workspace lints through @repo/eslint-config, which owns eslint; the
-  // rest are system binaries the scripts expect on PATH.
-  "ignoreBinaries": ["eslint", "gitleaks", "jq", "flock", "supabase"],
+  // rest are system binaries the scripts expect on PATH (faketime is
+  // libfaketime, which clock-ahead-tests.yml installs with apt).
+  "ignoreBinaries": ["eslint", "gitleaks", "jq", "flock", "supabase", "faketime"],
+  // The API's DTO drift guards (apps/api/src/interface/dtos/drift-guard.ts):
+  // type aliases tsc checks and nothing imports, exported only so ESLint's
+  // no-unused-vars accepts them.
+  "tags": ["-driftguard"],
 }

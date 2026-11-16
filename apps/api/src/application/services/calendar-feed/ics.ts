@@ -9,7 +9,7 @@
  */
 
 /** When an item happens: a moment, or a whole day with no time. */
-export type IcsWhen =
+type IcsWhen =
   | { kind: 'instant'; start: string; end: string }
   | { kind: 'day'; date: string };
 
