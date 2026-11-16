@@ -85,6 +85,7 @@ import {
   activityWeekSummary,
   findActivityTaskRow,
   activityRowAction,
+  activityArchiveKeys,
   activityKeys,
   activityStandingKeys,
   useActiveChapterId,
@@ -1054,6 +1055,12 @@ export function ActivityPage() {
           }),
           queryClient.invalidateQueries({
             queryKey: activityStandingKeys.chapter(chapterId),
+            exact: true,
+          }),
+          // And the Archive (#5127): acting on a row can finish it, or
+          // change one opened from the Archive.
+          queryClient.invalidateQueries({
+            queryKey: activityArchiveKeys.chapter(chapterId),
             exact: true,
           }),
         ])

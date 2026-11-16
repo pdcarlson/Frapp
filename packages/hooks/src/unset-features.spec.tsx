@@ -130,7 +130,10 @@ describe("useHiddenUnsetFeatures", () => {
       useHiddenUnsetFeatures(MEMBER, ALL_ON),
     );
     expect(result.current).toEqual(new Set(["study"]));
-    reads.zones = [{ id: "z1", is_active: false }, { id: "z2", is_active: true }];
+    reads.zones = [
+      { id: "z1", is_active: false },
+      { id: "z2", is_active: true },
+    ];
     rerender();
     expect(result.current.size).toBe(0);
   });

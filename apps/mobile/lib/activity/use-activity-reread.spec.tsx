@@ -5,7 +5,11 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import * as expoRouter from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { activityKeys, activityStandingKeys } from "@repo/hooks";
+import {
+  activityArchiveKeys,
+  activityKeys,
+  activityStandingKeys,
+} from "@repo/hooks";
 
 /**
  * The re-read More and the Activity screen share (#3897): a tab is never
@@ -19,7 +23,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useActiveChapterId: () => chapterId,
 }));
 
-import { useActivityReread, useActivityRereadOnTab } from "./use-activity-reread";
+import {
+  useActivityReread,
+  useActivityRereadOnTab,
+} from "./use-activity-reread";
 
 /** Every mounted focus effect, run again: the member came back. */
 const refocus = (expoRouter as unknown as { __refocus: () => void }).__refocus;
@@ -71,16 +78,21 @@ describe("useActivityReread (#3897)", () => {
   it("reads again each time the screen comes back into focus", () => {
     act(() => refocus());
     act(() => refocus());
-    expect(invalidate).toHaveBeenCalledTimes(2);
-    expect(invalidate).toHaveBeenLastCalledWith({
+    // The page and the Archive (#5127), each time.
+    expect(invalidate).toHaveBeenCalledTimes(4);
+    expect(invalidate).toHaveBeenCalledWith({
       queryKey: activityKeys.chapter("chapter-1"),
+      exact: true,
+    });
+    expect(invalidate).toHaveBeenLastCalledWith({
+      queryKey: activityArchiveKeys.chapter("chapter-1"),
       exact: true,
     });
   });
 
   it("hands back the re-read for a screen's own actions", () => {
     act(() => hook.reread());
-    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(invalidate).toHaveBeenCalledTimes(2);
   });
 
   it("re-reads the standing too when the screen draws it", () => {

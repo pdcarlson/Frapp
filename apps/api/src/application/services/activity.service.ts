@@ -407,8 +407,11 @@ export interface ActivityView {
   reminders: ActivityReminder[];
   made_by_you: {
     /**
-     * The caller's open poll cards, newest first, up to 25. A closed one is
-     * in the Archive (`getArchive`, #5127).
+     * The caller's poll cards, newest first: up to 25 open and the 25 most
+     * recent closed, so a run of closed polls never pushes an open one out
+     * (#4258). A current client lists the open ones and the Archive the
+     * closed (#5127); the closed are served for phone builds from before the
+     * Archive, which draw them as Archived polls.
      */
     polls: ActivityPoll[];
     tasks: ActivityTask[];
@@ -485,6 +488,12 @@ const MADE_EVENTS_SCAN_LIMIT = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** How far back the Archive's events and tasks reach (#5127). */
 const ARCHIVE_WINDOW_MS = 30 * DAY_MS;
+/**
+ * Tasks each Archive read takes, newest made first, before the 25 most
+ * recently done are kept: the database orders by when a task was made, not
+ * when it was done.
+ */
+const ARCHIVE_TASK_SCAN_LIMIT = 100;
 const WEEK_MS = 7 * DAY_MS;
 /**
  * How long an ended snooze still counts for `unread`: a row that came back
@@ -591,6 +600,24 @@ function pollCardClosed(card: PollCardFields, now: Date): boolean {
 /** The Activity read kind a card's id is recorded under. */
 function cardReadKind(card: Pick<ActivityCard, 'kind'>): ActivityItemKind {
   return card.kind === 'form' ? 'form' : 'signup';
+}
+
+/**
+ * Other members' poll cards the caller may see: in a channel chat lists for
+ * them, not their own, and not from someone they blocked.
+ */
+function othersPollsOf(
+  recent: ChatMessage[],
+  userId: string,
+  channelById: Map<string, PollChannel>,
+  blocked: Set<string>,
+): ChatMessage[] {
+  return recent.filter((message) => {
+    if (!channelById.has(message.channel_id)) return false;
+    if (message.sender_id === userId) return false;
+    if (message.sender_id && blocked.has(message.sender_id)) return false;
+    return readPollCard(message) !== null;
+  });
 }
 
 /**
@@ -839,18 +866,7 @@ export class ActivityService {
     // decides it, from the shared role id.
     let viewerRead: Promise<EventViewer> | null = null;
     const viewer = () =>
-      (viewerRead ??= Promise.all([
-        this.memberRepo.findByUserAndChapter(userId, chapterId),
-        chapter.alumniRoleId(),
-      ]).then(([member, alumniRoleId]) => {
-        const joined = member ? new Date(member.created_at).getTime() : NaN;
-        const roleIds = member?.role_ids ?? [];
-        return {
-          roleIds,
-          isAlumni: alumniRoleId !== null && roleIds.includes(alumniRoleId),
-          joinedAt: Number.isNaN(joined) ? null : joined,
-        };
-      }));
+      (viewerRead ??= this.readViewer(chapterId, userId, chapter.alumniRoleId));
 
     // Chat's channel list and the caller's block list, read once and shared
     // by the two sections that list chat messages (polls and links), and only
@@ -1069,7 +1085,7 @@ export class ActivityService {
       links: awakeFirst(withSnooze('link', myLinks, (row) => row.id)),
       reminders: myReminders,
       made_by_you: {
-        // Open only, capped in `readPolls`.
+        // Capped per state in `readPolls`: 25 open and 25 closed.
         polls: pollLists.mine,
         tasks: taskLists.assigned.slice(0, LIST_LIMIT),
         files: [],
@@ -1420,10 +1436,34 @@ export class ActivityService {
   }
 
   /**
+   * What the event sections need to know about the caller: their roles,
+   * whether they are an alumnus (as `RbacService.hasAlumniRole` decides it,
+   * from the chapter's Alumni role), and when they joined.
+   */
+  private async readViewer(
+    chapterId: string,
+    userId: string,
+    alumniRoleId: () => Promise<string | null>,
+  ): Promise<EventViewer> {
+    const [member, alumniRole] = await Promise.all([
+      this.memberRepo.findByUserAndChapter(userId, chapterId),
+      alumniRoleId(),
+    ]);
+    const joined = member ? new Date(member.created_at).getTime() : NaN;
+    const roleIds = member?.role_ids ?? [];
+    return {
+      roleIds,
+      isAlumni: alumniRole !== null && roleIds.includes(alumniRole),
+      joinedAt: Number.isNaN(joined) ? null : joined,
+    };
+  }
+
+  /**
    * Events that invited the caller and are over: their check-in has closed
    * (15 minutes after the end), the moment Coming up and Events you made let
    * them go. Each meeting of a series is its own row, since each happened.
-   * Read as the caller, so an event that leaves them out is never here.
+   * Read as the caller, so an event that leaves them out is never here, and
+   * never one that started before they joined.
    */
   private async readArchivedEvents(
     chapterId: string,
@@ -1431,16 +1471,15 @@ export class ActivityService {
     now: number,
     since: number,
   ): Promise<ActivityEvent[]> {
-    const [events, member, alumniRoleId] = await Promise.all([
+    const [events, { roleIds, isAlumni, joinedAt }] = await Promise.all([
       this.eventService.findByChapter(chapterId, userId, {
         endsAfter: new Date(since).toISOString(),
         startsBefore: new Date(now).toISOString(),
       }),
-      this.memberRepo.findByUserAndChapter(userId, chapterId),
-      this.rbacService.getAlumniRoleId(chapterId),
+      this.readViewer(chapterId, userId, () =>
+        this.rbacService.getAlumniRoleId(chapterId),
+      ),
     ]);
-    const roleIds = member?.role_ids ?? [];
-    const isAlumni = alumniRoleId !== null && roleIds.includes(alumniRoleId);
     const kept = events
       .map((event) => ({
         event,
@@ -1448,10 +1487,14 @@ export class ActivityService {
         answer: attendanceFor(event, roleIds),
       }))
       .filter(
-        ({ window, answer }) =>
+        ({ event, window, answer }) =>
           answer.status !== 'not_invited' &&
           window !== null &&
-          window.closesAt <= now,
+          window.closesAt <= now &&
+          // Not one from before they joined: it was never theirs, and with no
+          // Checked in it would read as one they missed.
+          (joinedAt === null ||
+            new Date(event.start_time).getTime() > joinedAt),
       )
       .sort(
         (a, b) =>
@@ -1486,7 +1529,7 @@ export class ActivityService {
    * officer: their part is finished) and, while they hold `tasks:manage`,
    * the tasks they assigned that are confirmed. A completion that waits on
    * the caller's own confirm stays on the page, in To review. Most recently
-   * done first.
+   * done first, of the 100 most recently made of each kind.
    */
   private async readArchivedTasks(
     chapterId: string,
@@ -1499,23 +1542,31 @@ export class ActivityService {
     );
     const completedSince = new Date(since).toISOString();
     const [own, assigned] = await Promise.all([
+      // Each read capped, newest made first, so a busy month never reads
+      // (with every task's subtasks and photos) hundreds of rows to keep 25.
       this.taskService.list(chapterId, userId, false, {
         status: TaskStatus.COMPLETED,
         completedSince,
+        limit: ARCHIVE_TASK_SCAN_LIMIT,
       }),
       can(SystemPermissions.TASKS_MANAGE, permissions)
         ? this.taskService.list(chapterId, userId, true, {
             createdBy: userId,
             status: TaskStatus.COMPLETED,
             confirmed: true,
-            completedSince,
+            // Not by when it was done: one confirmed today that was done 40
+            // days ago leaves Tasks you assigned today, so it lands here.
+            limit: ARCHIVE_TASK_SCAN_LIMIT,
           })
         : Promise.resolve([]),
     ]);
     const byId = new Map<string, TaskView>();
     for (const task of [...own, ...assigned]) byId.set(task.id, task);
+    // When it last finished: confirmed, or marked done.
     const doneAt = (task: TaskView) =>
-      new Date(task.completed_at ?? task.created_at).getTime() || 0;
+      new Date(
+        latest(task.completed_at ?? task.created_at, task.confirmed_at),
+      ).getTime() || 0;
     const finished = [...byId.values()]
       .sort((a, b) => doneAt(b) - doneAt(a))
       .slice(0, LIST_LIMIT);
@@ -1537,18 +1588,10 @@ export class ActivityService {
     now: number,
   ): Promise<ActivityPoll[]> {
     const nowDate = new Date(now);
-    const [channels, blockedUserIds, recent, own] = await Promise.all([
+    const [channels, blockedUserIds, [recent, own]] = await Promise.all([
       this.chatService.getChannels(chapterId, userId),
       this.chatBlocks.listBlockedUserIds(chapterId, userId),
-      this.messageRepo.findCardsByChapter(chapterId, {
-        kind: 'poll',
-        limit: POLL_SCAN_LIMIT,
-      }),
-      this.messageRepo.findCardsByChapter(chapterId, {
-        kind: 'poll',
-        senderId: userId,
-        limit: POLL_SCAN_LIMIT,
-      }),
+      this.pollScans(chapterId, userId),
     ]);
     const channelById = new Map(
       channels.map((channel) => [channel.id, channel]),
@@ -1561,24 +1604,13 @@ export class ActivityService {
     const mine = own.filter(
       (message) => channelById.has(message.channel_id) && closed(message),
     );
-    const others = recent.filter(
-      (message) =>
-        channelById.has(message.channel_id) &&
-        message.sender_id !== userId &&
-        !(message.sender_id && blocked.has(message.sender_id)) &&
-        closed(message),
+    const others = othersPollsOf(recent, userId, channelById, blocked).filter(
+      closed,
     );
-    // A vote row with no picks is a cleared vote, not a vote (#3793).
     const voted = new Set(
-      (
-        await this.actionRepo.findActionsOnMessages(
-          [...mine, ...others].map((message) => message.id),
-          userId,
-          CARD_VOTE_ACTION_TYPE,
-        )
-      )
-        .filter((row) => cardVoteSelection(row.payload ?? undefined).length > 0)
-        .map((row) => row.message_id),
+      (await this.votesOn([...mine, ...others], userId)).map(
+        (row) => row.message_id,
+      ),
     );
     return pollRowsOf(
       [...mine, ...others.filter((message) => voted.has(message.id))],
@@ -1615,6 +1647,44 @@ export class ActivityService {
       });
       return { ok: false };
     }
+  }
+
+  /**
+   * The poll cards Activity reads: the chapter's 100 newest, and the caller's
+   * own 100 newest, so the caller's own are found however busy the chapter.
+   */
+  private pollScans(
+    chapterId: string,
+    userId: string,
+  ): Promise<[ChatMessage[], ChatMessage[]]> {
+    return Promise.all([
+      this.messageRepo.findCardsByChapter(chapterId, {
+        kind: 'poll',
+        limit: POLL_SCAN_LIMIT,
+      }),
+      this.messageRepo.findCardsByChapter(chapterId, {
+        kind: 'poll',
+        senderId: userId,
+        limit: POLL_SCAN_LIMIT,
+      }),
+    ]);
+  }
+
+  /**
+   * The caller's votes on `messages`. A vote row with no picks is a cleared
+   * vote, not a vote: a member who clears every pick on a multi-choice card
+   * keeps the row with an empty list (#3793), and the poll goes back to
+   * needing them.
+   */
+  private async votesOn(messages: ChatMessage[], userId: string) {
+    const rows = await this.actionRepo.findActionsOnMessages(
+      messages.map((message) => message.id),
+      userId,
+      CARD_VOTE_ACTION_TYPE,
+    );
+    return rows.filter(
+      (row) => cardVoteSelection(row.payload ?? undefined).length > 0,
+    );
   }
 
   private async readTasks(
@@ -1661,9 +1731,6 @@ export class ActivityService {
       canManage
         ? this.taskService.list(chapterId, userId, true, {
             createdBy: userId,
-            // A confirmed task is finished: it is in the Archive
-            // (`getArchive`, #5127), not waiting on anyone.
-            confirmed: false,
             limit: LIST_LIMIT,
           })
         : Promise.resolve([]),
@@ -1748,19 +1815,9 @@ export class ActivityService {
     // that cannot be read is not an empty block list", so a failure fails the
     // section (served empty and named `unavailable`) rather than listing a
     // blocked member's question.
-    const [{ channels, blockedUserIds }, recent, own] = await Promise.all([
+    const [{ channels, blockedUserIds }, [recent, own]] = await Promise.all([
       chatReads(),
-      this.messageRepo.findCardsByChapter(chapterId, {
-        kind: 'poll',
-        limit: POLL_SCAN_LIMIT,
-      }),
-      this.messageRepo.findCardsByChapter(chapterId, {
-        kind: 'poll',
-        senderId: userId,
-        // Wider than the list: the open and closed lists are cut apart below,
-        // so closed polls can't crowd an open one out of the read.
-        limit: POLL_SCAN_LIMIT,
-      }),
+      this.pollScans(chapterId, userId),
     ]);
     const nowDate = new Date(now);
     // No deadline sorts last: it is the least pressing.
@@ -1775,11 +1832,7 @@ export class ActivityService {
       channelById.has(message.channel_id);
     // Other members' polls the caller can read, open or closed: the closed
     // ones only to count a vote cast this week on a poll that has since ended.
-    const others = recent.filter((message) => {
-      if (!readable(message) || message.sender_id === userId) return false;
-      if (message.sender_id && blocked.has(message.sender_id)) return false;
-      return readPollCard(message) !== null;
-    });
+    const others = othersPollsOf(recent, userId, channelById, blocked);
     const openOthers = others.filter((message) => {
       const card = readPollCard(message);
       return !!card && !pollCardClosed(card, nowDate);
@@ -1789,13 +1842,7 @@ export class ActivityService {
     // A vote row with no picks is a cleared vote, not a vote: a member who
     // clears every pick on a multi-choice card keeps the row with an empty
     // list (#3793), and the poll goes back to needing them.
-    const voteRows = (
-      await this.actionRepo.findActionsOnMessages(
-        [...others, ...mine].map((message) => message.id),
-        userId,
-        CARD_VOTE_ACTION_TYPE,
-      )
-    ).filter((row) => cardVoteSelection(row.payload ?? undefined).length > 0);
+    const voteRows = await this.votesOn([...others, ...mine], userId);
     const votedIds = new Set(voteRows.map((row) => row.message_id));
     // By the vote row's `created_at`, which is when the member last voted:
     // changing a vote rewrites it (`updateForVote`, ADR-07). So a vote counts
@@ -1814,16 +1861,20 @@ export class ActivityService {
       unvoted: rowsOf(openOthers)
         .filter((row) => !row.has_voted)
         .sort((a, b) => closesAtMs(a) - closesAtMs(b)),
-      // Newest first, as read, and open only: a closed one is finished, in
-      // the Archive (`getArchive`, #5127). Read 100 deep, so a run of closed
-      // polls never pushes an open one out (#4258).
-      mine: await this.withPollProgress(
-        chapterId,
-        userId,
-        mineRows.filter((row) => !row.is_closed).slice(0, LIST_LIMIT),
-        channelById,
-        chapter,
-      ),
+      // Newest first, as read: the open ones, then the closed, 25 of each.
+      // Only a phone build from before the Archive (#5127) draws the closed
+      // ones, as its Archived polls; a current client lists them from the
+      // Archive.
+      mine: [
+        ...(await this.withPollProgress(
+          chapterId,
+          userId,
+          mineRows.filter((row) => !row.is_closed).slice(0, LIST_LIMIT),
+          channelById,
+          chapter,
+        )),
+        ...mineRows.filter((row) => row.is_closed).slice(0, LIST_LIMIT),
+      ].sort(byNewest),
       votedThisWeek,
     };
   }

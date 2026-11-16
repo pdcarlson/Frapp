@@ -776,14 +776,14 @@ export class ActivityMadeByYouDto {
   @ApiProperty({
     type: [ActivityPollDto],
     description:
-      'Open poll cards the caller posted, newest first, at most 25; the caller’s 100 newest poll cards are read to find them, so closed ones never push an open one out. A closed one is in `GET /v1/activity/archive` (#5127).',
+      'Poll cards the caller posted, newest first: up to 25 open and the 25 most recently posted closed ones, so closed polls never push an open one out of the read. A current client lists the open ones and finds the closed in `GET /v1/activity/archive` (#5127); the closed ones are served for phone builds from before it, which draw them as Archived polls (#4258).',
   })
   polls: ActivityPollDto[];
 
   @ApiProperty({
     type: [ActivityTaskDto],
     description:
-      'Tasks the caller assigned that are not yet confirmed, newest first; a confirmed one is in `GET /v1/activity/archive`. Empty unless the caller still holds `tasks:manage`.',
+      'Tasks the caller assigned, newest first. A current client lists those not yet confirmed and finds a confirmed one in `GET /v1/activity/archive` (#5127). Empty unless the caller still holds `tasks:manage`.',
   })
   tasks: ActivityTaskDto[];
 
@@ -1146,14 +1146,14 @@ export class ActivityArchiveDto implements ActivityArchive {
   @ApiProperty({
     type: [ActivityEventDto],
     description:
-      'Events that invited the caller whose check-in has closed (15 minutes after the end), ending in the last 30 days, newest first, at most 25. Each meeting of a series is its own row. `checked_in` says whether the caller was marked present or late; `check_in_open` is always false.',
+      'Events that invited the caller whose check-in has closed (15 minutes after the end), ending in the last 30 days and starting after the caller joined, newest first, at most 25. Each meeting of a series is its own row. `checked_in` says whether the caller was marked present or late; `check_in_open` is always false.',
   })
   events: ActivityEventDto[];
 
   @ApiProperty({
     type: [ActivityTaskDto],
     description:
-      'The caller’s own tasks marked done in the last 30 days, confirmed or still waiting on an officer, and, while the caller holds `tasks:manage`, the tasks they assigned that are confirmed. Most recently done first, at most 25.',
+      'The caller’s own tasks marked done in the last 30 days, confirmed or still waiting on an officer, and, while the caller holds `tasks:manage`, the tasks they assigned that are confirmed. Most recently finished (confirmed or marked done) first, at most 25, from the 100 most recently made of each kind.',
   })
   tasks: ActivityTaskDto[];
 

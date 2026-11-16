@@ -740,9 +740,11 @@ export function activityGroups(
   const madeEvents = activity.made_by_you.events.map((event) =>
     eventRow(event, "made", now),
   );
-  const madeTasks = activity.made_by_you.tasks.map((task) =>
-    taskRow(task, "made", "assigned", now),
-  );
+  // A confirmed task is finished: it is in the Archive (#5127). The read
+  // still serves it, for phone builds from before the Archive.
+  const madeTasks = activity.made_by_you.tasks
+    .filter((task) => !task.confirmed_at)
+    .map((task) => taskRow(task, "made", "assigned", now));
 
   return [
     {

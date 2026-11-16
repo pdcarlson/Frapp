@@ -190,8 +190,7 @@ export function createChatActivityHandler(
     });
     const neverRead =
       !unread ||
-      (unread.state.dataUpdatedAt === 0 &&
-        unread.state.fetchStatus === "idle");
+      (unread.state.dataUpdatedAt === 0 && unread.state.fetchStatus === "idle");
     if (neverRead) return;
     const promiseAtJoin = unread.promise;
     let readSinceJoin = false;

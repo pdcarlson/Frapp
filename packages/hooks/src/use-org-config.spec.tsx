@@ -44,7 +44,9 @@ describe("usePatchOrgConfig optimistic cache", () => {
 
   it("optimistically merges the diff into the cache on mutate", async () => {
     const qc = makeClient();
-    qc.setQueryData(QUERY_KEY, { enabled_modules: { events: true, tasks: true } });
+    qc.setQueryData(QUERY_KEY, {
+      enabled_modules: { events: true, tasks: true },
+    });
     mockPatch.mockResolvedValueOnce({ data: {}, error: undefined });
 
     const { result } = renderHook(() => usePatchOrgConfig(), {
@@ -66,7 +68,10 @@ describe("usePatchOrgConfig optimistic cache", () => {
   it("rolls the cache back to the previous value when the PATCH fails", async () => {
     const qc = makeClient();
     qc.setQueryData(QUERY_KEY, { vocabulary: { recruitment: "Rush" } });
-    mockPatch.mockResolvedValueOnce({ data: undefined, error: { message: "boom" } });
+    mockPatch.mockResolvedValueOnce({
+      data: undefined,
+      error: { message: "boom" },
+    });
 
     const { result } = renderHook(() => usePatchOrgConfig(), {
       wrapper: makeWrapper(qc),
@@ -127,7 +132,10 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
     const qc = makeClient();
     qc.setQueryData(QUERY_KEY, { enabled_modules: { reports: true } });
     qc.setQueryData(CHAPTER_KEY, { enabled_modules: { reports: true } });
-    mockPatch.mockResolvedValueOnce({ data: undefined, error: { message: "boom" } });
+    mockPatch.mockResolvedValueOnce({
+      data: undefined,
+      error: { message: "boom" },
+    });
 
     const { result } = renderHook(() => usePatchOrgConfig(), {
       wrapper: makeWrapper(qc),
@@ -156,8 +164,12 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
 
   it("keeps a later toggle when an earlier one fails", async () => {
     const qc = makeClient();
-    qc.setQueryData(QUERY_KEY, { enabled_modules: { reports: true, polls: true } });
-    qc.setQueryData(CHAPTER_KEY, { enabled_modules: { reports: true, polls: true } });
+    qc.setQueryData(QUERY_KEY, {
+      enabled_modules: { reports: true, polls: true },
+    });
+    qc.setQueryData(CHAPTER_KEY, {
+      enabled_modules: { reports: true, polls: true },
+    });
     const first = deferred<{ data: undefined; error: { message: string } }>();
     const second = deferred<{ data: object; error: undefined }>();
     mockPatch
@@ -173,7 +185,9 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
       reportsWrite = result.current
         .mutateAsync({ enabled_modules: { reports: false } })
         .catch(() => undefined);
-      pollsWrite = result.current.mutateAsync({ enabled_modules: { polls: false } });
+      pollsWrite = result.current.mutateAsync({
+        enabled_modules: { polls: false },
+      });
       await Promise.resolve();
     });
     await waitFor(() =>
@@ -213,8 +227,12 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
     let reportsWrite!: Promise<unknown>;
     let pollsWrite!: Promise<unknown>;
     await act(async () => {
-      reportsWrite = result.current.mutateAsync({ enabled_modules: { reports: false } });
-      pollsWrite = result.current.mutateAsync({ enabled_modules: { polls: false } });
+      reportsWrite = result.current.mutateAsync({
+        enabled_modules: { reports: false },
+      });
+      pollsWrite = result.current.mutateAsync({
+        enabled_modules: { polls: false },
+      });
       await Promise.resolve();
     });
 
@@ -274,7 +292,10 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
       enabled_modules: { reports: true },
       analytics_opt_out: false,
     });
-    mockPatch.mockResolvedValueOnce({ data: undefined, error: { message: "boom" } });
+    mockPatch.mockResolvedValueOnce({
+      data: undefined,
+      error: { message: "boom" },
+    });
 
     const { result } = renderHook(() => usePatchOrgConfig(), {
       wrapper: makeWrapper(qc),
@@ -306,7 +327,9 @@ describe("usePatchOrgConfig and the current-chapter cache", () => {
       wrapper: makeWrapper(qc),
     });
     await act(async () => {
-      await result.current.mutateAsync({ vocabulary: { recruitment: "Intake" } });
+      await result.current.mutateAsync({
+        vocabulary: { recruitment: "Intake" },
+      });
     });
 
     expect(seenDuringFlight).toBe(chapter);

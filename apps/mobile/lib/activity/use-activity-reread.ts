@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useFocusEffect } from "expo-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  activityArchiveKeys,
   activityKeys,
   activityStandingKeys,
   useActiveChapterId,
@@ -40,6 +41,12 @@ export function useActivityReread(
     if (!chapterId) return;
     void queryClient.invalidateQueries({
       queryKey: activityKeys.chapter(chapterId),
+      exact: true,
+    });
+    // The Archive (#5127) too: acting on a row can finish it, or change one
+    // opened from the Archive. Read again only while it is shown.
+    void queryClient.invalidateQueries({
+      queryKey: activityArchiveKeys.chapter(chapterId),
       exact: true,
     });
     if (withStanding) {

@@ -619,13 +619,17 @@ describe('ActivityService', () => {
           is_closed: false,
           has_voted: true,
         }),
+        expect.objectContaining({
+          message_id: 'mine-closed',
+          is_closed: true,
+          has_voted: false,
+        }),
       ]);
-      // A closed one is in the Archive (#5127).
       // Your own poll is not something waiting on you.
       expect(view.needs_you_count).toBe(0);
     });
 
-    it('reads the caller’s polls deep enough that closed ones never push an open one out, and serves the open ones only (#4258, #5127)', async () => {
+    it('caps the caller’s open and closed polls apart, so closed ones never push an open one out (#4258)', async () => {
       const { service, messageRepo } = build();
       const closedPayload = {
         ...pollCard({ id: 'x' }).payload,
@@ -651,7 +655,12 @@ describe('ActivityService', () => {
       const view = await service.getActivity(CHAPTER, ME, null);
       const ids = view.made_by_you.polls.map((poll) => poll.message_id);
 
-      expect(ids).toEqual(['old-open']);
+      expect(ids).toContain('old-open');
+      expect(ids.filter((id) => id.startsWith('closed-'))).toEqual(
+        closed.slice(0, 25).map((poll) => poll.id),
+      );
+      // Newest first, the open one last since it is the oldest.
+      expect(ids.at(-1)).toBe('old-open');
       expect(messageRepo.findCardsByChapter).toHaveBeenCalledWith(CHAPTER, {
         kind: 'poll',
         senderId: ME,
@@ -1023,7 +1032,6 @@ describe('ActivityService', () => {
       );
       expect(taskService.list).toHaveBeenCalledWith(CHAPTER, ME, true, {
         createdBy: ME,
-        confirmed: false,
         limit: 25,
       });
       // Every chapter-wide read is narrowed and capped.
@@ -2642,8 +2650,8 @@ describe('ActivityService', () => {
         view.made_by_you.polls.map((poll) => [poll.message_id, poll]),
       );
       expect(byId.get('mine-open')?.progress).toEqual({ done: 1, total: 3 });
-      // A closed poll is not on the page at all: it is in the Archive (#5127).
-      expect(byId.has('mine-closed')).toBe(false);
+      // A closed poll waits on nobody.
+      expect(byId.get('mine-closed')?.progress).toBeNull();
       expect(view.needs_you.polls[0].progress).toBeNull();
       expect(voteReads(actionRepo)).toEqual([[['mine-open'], 'vote']]);
       // Chat's own reader rule, once for every channel.
@@ -3011,6 +3019,27 @@ describe('ActivityService', () => {
             completed_at: iso(-HOUR),
             confirmed_at: iso(-HOUR / 2),
           }),
+          // Done six weeks ago, confirmed just now: it left Tasks you
+          // assigned now, so it is here, by when it was confirmed.
+          task({
+            id: 'assigned-late-confirm',
+            assignee_id: OTHER,
+            created_by: ME,
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-42 * 24 * HOUR),
+            confirmed_at: iso(-HOUR / 4),
+          }),
+          // Another officer's: never the caller's to list.
+          task({
+            id: 'someone-elses-confirmed',
+            assignee_id: 'user-third',
+            created_by: OTHER,
+            stored_status: TaskStatus.COMPLETED,
+            status: TaskStatus.COMPLETED,
+            completed_at: iso(-HOUR),
+            confirmed_at: iso(-HOUR),
+          }),
           // Waits on the caller's confirm: still live, in To review.
           task({
             id: 'assigned-waiting',
@@ -3026,6 +3055,7 @@ describe('ActivityService', () => {
       const archive = await service.getArchive(CHAPTER, ME, null);
 
       expect(archive.tasks.map((row) => row.id)).toEqual([
+        'assigned-late-confirm',
         'assigned-confirmed',
         'own-waiting',
       ]);
@@ -3116,6 +3146,68 @@ describe('ActivityService', () => {
         'mine-closed',
       ]);
       expect(archive.polls.every((row) => row.is_closed)).toBe(true);
+    });
+
+    it('leaves out events from before the caller joined', async () => {
+      const { service, eventService, memberRepo } = build();
+      memberRepo.findByUserAndChapter.mockResolvedValue({
+        user_id: ME,
+        role_ids: ['role-member'],
+        created_at: iso(-48 * HOUR),
+      });
+      eventService.findByChapter.mockResolvedValue([
+        event({
+          id: 'before-joining',
+          start_time: iso(-72 * HOUR),
+          end_time: iso(-71 * HOUR),
+        }),
+        event({
+          id: 'since-joining',
+          start_time: iso(-26 * HOUR),
+          end_time: iso(-25 * HOUR),
+        }),
+      ]);
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.events.map((row) => row.id)).toEqual(['since-joining']);
+    });
+
+    it('reads no events while the Events module is off', async () => {
+      const { service, eventService } = build();
+
+      const archive = await service.getArchive(CHAPTER, ME, { events: false });
+
+      expect(eventService.findByChapter).not.toHaveBeenCalled();
+      expect(archive.events).toEqual([]);
+      expect(archive.unavailable).toEqual([]);
+    });
+
+    it('never lists a closed poll from someone the caller blocked, even one they voted in', async () => {
+      const { service, messageRepo, actionRepo, chatBlocks } = build();
+      chatBlocks.listBlockedUserIds.mockResolvedValue([BLOCKED]);
+      const closedPayload = {
+        ...pollCard({ id: 'x' }).payload,
+        closes_at: iso(-HOUR),
+      };
+      servePolls(messageRepo, [
+        pollCard({
+          id: 'from-blocked',
+          sender_id: BLOCKED,
+          payload: closedPayload,
+        }),
+        pollCard({ id: 'from-other', payload: closedPayload }),
+      ]);
+      actionRepo.findActionsOnMessages.mockResolvedValue([
+        { message_id: 'from-blocked', payload: { option_id: 'a' } },
+        { message_id: 'from-other', payload: { option_id: 'a' } },
+      ]);
+
+      const archive = await service.getArchive(CHAPTER, ME, null);
+
+      expect(archive.polls.map((row) => row.message_id)).toEqual([
+        'from-other',
+      ]);
     });
 
     it('reads nothing for a module that is off, and serves a failed section empty and named', async () => {

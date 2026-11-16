@@ -78,7 +78,9 @@ describe("useAdjustPoints", () => {
     >;
     const Wrapper = ({ children }: { children: React.ReactNode }) => (
       <FrappClientProvider client={client} chapterId={activeChapter}>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+        <QueryClientProvider client={queryClient}>
+          {children}
+        </QueryClientProvider>
       </FrappClientProvider>
     );
     Wrapper.displayName = "AdjustPointsWrapper";
@@ -88,8 +90,9 @@ describe("useAdjustPoints", () => {
   /** The `client_message_id` of each POST, in call order. */
   function sentKeys(): string[] {
     return post.mock.calls.map(
-      (call) => (call[1] as { body: { client_message_id: string } }).body
-        .client_message_id,
+      (call) =>
+        (call[1] as { body: { client_message_id: string } }).body
+          .client_message_id,
     );
   }
 
@@ -248,16 +251,19 @@ describe("useAdjustPoints", () => {
     ["member", { target_user_id: "22222222-2222-4222-8222-222222222222" }],
     ["category", { category: "FINE" as const }],
     ["reason", { reason: "Ran the philanthropy table, corrected" }],
-  ])("mints a fresh key when the %s changes after a failure", async (_l, change) => {
-    post.mockResolvedValue(badGateway());
-    const { result } = render();
+  ])(
+    "mints a fresh key when the %s changes after a failure",
+    async (_l, change) => {
+      post.mockResolvedValue(badGateway());
+      const { result } = render();
 
-    await submit(result);
-    await submit(result, { ...BODY, ...change });
+      await submit(result);
+      await submit(result, { ...BODY, ...change });
 
-    const keys = sentKeys();
-    expect(keys[3]).not.toBe(keys[0]);
-  });
+      const keys = sentKeys();
+      expect(keys[3]).not.toBe(keys[0]);
+    },
+  );
 
   it("keeps the key when a retry is refused after an attempt that may have committed", async () => {
     // A throttler 429 or a guard 403 runs before the server's replay check, so
@@ -276,7 +282,9 @@ describe("useAdjustPoints", () => {
   });
 
   it("drops a key the server says was used for another adjustment", async () => {
-    post.mockResolvedValueOnce(badGateway()).mockResolvedValueOnce(refused(409));
+    post
+      .mockResolvedValueOnce(badGateway())
+      .mockResolvedValueOnce(refused(409));
     const { result } = render();
 
     await submit(result);

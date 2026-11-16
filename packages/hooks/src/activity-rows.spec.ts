@@ -359,7 +359,7 @@ describe("activityGroups", () => {
     ]);
   });
 
-  it("gives a finished task no due countdown, and the shared word for where it stands", () => {
+  it("gives a finished task no due countdown, and leaves a confirmed one for the Archive (#5127)", () => {
     const done = {
       due_date: "2020-01-01",
       status: "COMPLETED",
@@ -385,7 +385,6 @@ describe("activityGroups", () => {
 
     expect(made?.rows.map((row) => [row.detail, row.badge?.label])).toEqual([
       ["Ada", "Waiting on an officer"],
-      ["Ada", "Confirmed"],
     ]);
   });
 

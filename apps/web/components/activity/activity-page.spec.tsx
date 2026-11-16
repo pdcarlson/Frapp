@@ -22,13 +22,14 @@ const mockArchive = vi.fn<
 const mockInvalidate = vi.fn();
 /**
  * How many times the page re-read its list. Each re-read also re-reads the
- * standing ("This semester"), so counting every invalidation would double.
+ * standing ("This semester") and the Archive, so counting every invalidation
+ * would triple.
  */
 const listRereads = () =>
   mockInvalidate.mock.calls.filter(
     ([options]) =>
       Array.isArray(options?.queryKey) &&
-      !JSON.stringify(options.queryKey).includes("standing"),
+      options.queryKey[0] === "activity",
   ).length;
 const standingRereads = () =>
   mockInvalidate.mock.calls.filter(([options]) =>
@@ -79,6 +80,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
     activityStandingGauges: actual.activityStandingGauges,
     activityWeekSummary: actual.activityWeekSummary,
     findActivityTaskRow: actual.findActivityTaskRow,
+    activityArchiveKeys: actual.activityArchiveKeys,
     activityKeys: actual.activityKeys,
     activityStandingKeys: actual.activityStandingKeys,
     useNowDate: actual.useNowDate,

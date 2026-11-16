@@ -23,6 +23,9 @@ export function useActivityArchive(options: { enabled?: boolean } = {}) {
       if (error) throw error;
       return data;
     },
+    // Read fresh each time it opens: something finished on the page a moment
+    // ago belongs here now, and a section that failed is tried again.
+    staleTime: 0,
     enabled: !!chapterId && (options.enabled ?? true),
   });
 }
