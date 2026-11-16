@@ -147,6 +147,36 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     return data;
   }
 
+  async setWhoCanSee(
+    id: string,
+    chapterId: string,
+    whoCanSee: string[] | null,
+  ): Promise<ChapterDocument | null> {
+    const { data, error } = await this.supabase
+      .from('chapter_documents')
+      .update({ who_can_see: whoCanSee })
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
+  async keepFolderList(
+    folder: string,
+    whoCanSee: string[],
+    chapterId: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('chapter_documents')
+      .update({ who_can_see: whoCanSee })
+      .eq('chapter_id', chapterId)
+      .eq('folder', folder)
+      .is('who_can_see', null);
+    if (error) throw new SupabaseQueryError(error);
+  }
+
   async delete(id: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chapter_documents')

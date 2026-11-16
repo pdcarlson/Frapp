@@ -13825,6 +13825,43 @@
         ]
       }
     },
+    "/v1/documents/access-options": {
+      "get": {
+        "operationId": "ChapterDocumentController_accessOptions_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentAccessOptionsDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "What a who-can-see list may hold, and the tiers the caller's lists always keep",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
     "/v1/documents/stars": {
       "get": {
         "operationId": "ChapterDocumentController_listStars_v1",
@@ -13905,7 +13942,7 @@
             "bearer": []
           }
         ],
-        "summary": "Rename or reorder a document folder",
+        "summary": "Rename or reorder a document folder, or set who can see it",
         "tags": [
           "Documents"
         ]
@@ -14185,6 +14222,62 @@
           }
         ],
         "summary": "Delete a document",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/{id}/access": {
+      "put": {
+        "operationId": "ChapterDocumentController_setAccess_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDocumentAccessDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDocumentDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set who can see one document",
         "tags": [
           "Documents"
         ]
@@ -29781,6 +29874,15 @@
           "effective_date": {
             "type": "string",
             "description": "Date this document took effect (ISO date), distinct from the upload timestamp"
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -29868,6 +29970,14 @@
             "type": "string",
             "nullable": true,
             "description": "The file's page in Google Drive"
+          },
+          "who_can_see": {
+            "nullable": true,
+            "description": "Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -29886,7 +29996,8 @@
           "pinned_at",
           "drive_file_id",
           "drive_modified_at",
-          "drive_url"
+          "drive_url",
+          "who_can_see"
         ]
       },
       "DocumentConfirmResultDto": {
@@ -30026,6 +30137,14 @@
             "type": "string",
             "nullable": true,
             "description": "When an officer pinned it for the whole chapter, or null"
+          },
+          "who_can_see": {
+            "nullable": true,
+            "description": "Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -30034,7 +30153,31 @@
           "name",
           "sort_order",
           "created_at",
-          "pinned_at"
+          "pinned_at",
+          "who_can_see"
+        ]
+      },
+      "DocumentAccessOptionsDto": {
+        "type": "object",
+        "properties": {
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelAccessOptionDto"
+            }
+          },
+          "always": {
+            "nullable": true,
+            "description": "The tiers every list the caller sets keeps (their own and those above), shown fixed; empty for the President, null when the caller ranks outside the tiers and can't set a list",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "options",
+          "always"
         ]
       },
       "DocumentStarsDto": {
@@ -30071,6 +30214,15 @@
             "type": "number",
             "description": "Display position. Defaults to the end of the list.",
             "maximum": 1000000000
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -30088,6 +30240,29 @@
             "type": "number",
             "description": "New display position",
             "maximum": 1000000000
+          },
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept. Left out, it stays as it is; null opens it to everyone.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SetDocumentAccessDto": {
+        "type": "object",
+        "properties": {
+          "who_can_see": {
+            "nullable": true,
+            "maxItems": 500,
+            "description": "Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

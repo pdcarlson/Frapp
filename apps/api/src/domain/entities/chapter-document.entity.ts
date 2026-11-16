@@ -38,6 +38,12 @@ export interface ChapterDocument {
   drive_modified_at: string | null;
   /** The file's page in Google Drive. */
   drive_url: string | null;
+  /**
+   * Who can see it (#3642): `null` is the same as its folder; a list of
+   * `tier:`, `role:` and `group:` entries narrows the folder's, since a member
+   * must pass both (`document-access.ts`).
+   */
+  who_can_see: string[] | null;
 }
 
 /**
@@ -56,6 +62,11 @@ export interface ChapterDocumentFolder {
   created_at: string;
   /** When an officer pinned this folder for the whole chapter, or null (#3934). */
   pinned_at: string | null;
+  /**
+   * Who sees the folder and its files (#3642): `null` is everyone who can
+   * open Documents, else a list of `tier:`, `role:` and `group:` entries.
+   */
+  who_can_see: string[] | null;
 }
 
 /**

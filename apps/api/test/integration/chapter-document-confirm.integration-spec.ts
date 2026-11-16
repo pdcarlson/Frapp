@@ -58,8 +58,9 @@ describeIntegration(
 
     beforeAll(async () => {
       supabase = createServiceRoleClient();
-      // With no folder and no type, `confirmUpload` reads neither the folder
-      // nor the type repository, nor storage.
+      // With no folder, no type and no who-can-see list, `confirmUpload`
+      // reads neither the folder nor the type repository, nor storage, nor
+      // the member, rank and access-list services.
       const unused = {} as never;
       repo = new SupabaseChapterDocumentRepository(supabase);
       documents = new ChapterDocumentService(
@@ -68,6 +69,9 @@ describeIntegration(
         unused,
         unused,
         new ChapterDocumentTypeService(unused),
+        unused,
+        unused,
+        unused,
       );
 
       assertOk(

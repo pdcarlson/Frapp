@@ -12,6 +12,18 @@ import {
   CHAPTER_DOCUMENT_REPOSITORY,
   type IChapterDocumentRepository,
 } from '#domain/repositories/chapter-document.repository.interface';
+import {
+  CHAPTER_DOCUMENT_FOLDER_REPOSITORY,
+  type IChapterDocumentFolderRepository,
+} from '#domain/repositories/chapter-document-folder.repository.interface';
+import {
+  MEMBER_REPOSITORY,
+  type IMemberRepository,
+} from '#domain/repositories/member.repository.interface';
+import {
+  canSeeDocument,
+  folderListsByName,
+} from '#domain/utils/document-access';
 import { RbacService } from '../rbac.service';
 import type { CorpusSourceAdapter, CorpusSourceRead } from './corpus-source';
 
@@ -21,9 +33,10 @@ const DOCUMENTS_BUCKET = 'documents';
  * Chapter Docs as a corpus source (#720).
  *
  * Who may read: whoever may open the library, which is `members:view`
- * (`spec/behavior/chapter-docs.md` § Permissions). Every folder is open to
- * every member today; when restricted folders land (#3642) the rule changes
- * here and nowhere else in retrieval.
+ * (`spec/behavior/chapter-docs.md` § Permissions), and then only the files
+ * they see there (§ Who can see, #3642 piece 1): the same
+ * `document-access.ts` answer the library's own list gives, so Ask never
+ * quotes a file the member can't open.
  *
  * A document does not decay: bylaws and policies are as true next year as
  * today, and an amendment that supersedes one is a second document an answer
@@ -40,6 +53,9 @@ export class ChapterDocumentCorpusSource implements CorpusSourceAdapter {
     @Inject(DOCUMENT_TEXT_EXTRACTOR)
     private readonly extractor: IDocumentTextExtractor,
     private readonly rbac: RbacService,
+    @Inject(CHAPTER_DOCUMENT_FOLDER_REPOSITORY)
+    private readonly folders: IChapterDocumentFolderRepository,
+    @Inject(MEMBER_REPOSITORY) private readonly members: IMemberRepository,
   ) {}
 
   async read(chapterId: string, sourceId: string): Promise<CorpusSourceRead> {
@@ -91,6 +107,21 @@ export class ChapterDocumentCorpusSource implements CorpusSourceAdapter {
       userId,
       [SystemPermissions.MEMBERS_VIEW],
     );
-    return mayOpenLibrary ? new Set(sourceIds) : new Set();
+    if (!mayOpenLibrary) return new Set();
+    const [documents, folders, member] = await Promise.all([
+      this.documents.findByIds([...sourceIds], chapterId),
+      this.folders.findByChapter(chapterId),
+      this.members.findByUserAndChapter(userId, chapterId),
+    ]);
+    const viewer = {
+      userId,
+      holder: await this.rbac.getChannelAccessHolder(chapterId, member, true),
+    };
+    const lists = folderListsByName(folders);
+    return new Set(
+      documents
+        .filter((document) => canSeeDocument(document, lists, viewer))
+        .map((document) => document.id),
+    );
   }
 }

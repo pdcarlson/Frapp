@@ -54,6 +54,21 @@ export interface IChapterDocumentRepository {
     chapterId: string,
     pinnedAt: string | null,
   ): Promise<ChapterDocument | null>;
+  /** Sets one file's own who can see (`null`: the same as its folder). */
+  setWhoCanSee(
+    id: string,
+    chapterId: string,
+    whoCanSee: string[] | null,
+  ): Promise<ChapterDocument | null>;
+  /**
+   * Gives every file in `folder` that follows it the folder's list, before
+   * the folder goes, so leaving it never opens them wider.
+   */
+  keepFolderList(
+    folder: string,
+    whoCanSee: string[],
+    chapterId: string,
+  ): Promise<void>;
   moveToRoot(folder: string, chapterId: string): Promise<void>;
   /** Re-files every document under `fromFolder` into `toFolder`. */
   renameFolder(

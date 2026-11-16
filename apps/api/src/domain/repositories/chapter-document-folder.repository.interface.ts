@@ -6,6 +6,7 @@ export const CHAPTER_DOCUMENT_FOLDER_REPOSITORY =
 export interface ChapterDocumentFolderUpdate {
   name?: string;
   sort_order?: number;
+  who_can_see?: string[] | null;
 }
 
 export interface IChapterDocumentFolderRepository {
@@ -27,6 +28,7 @@ export interface IChapterDocumentFolderRepository {
     chapter_id: string;
     name: string;
     sort_order: number;
+    who_can_see?: string[] | null;
   }): Promise<ChapterDocumentFolder>;
   update(
     id: string,

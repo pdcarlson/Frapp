@@ -59,6 +59,7 @@ export class SupabaseChapterDocumentFolderRepository implements IChapterDocument
     chapter_id: string;
     name: string;
     sort_order: number;
+    who_can_see?: string[] | null;
   }): Promise<ChapterDocumentFolder> {
     const row: TablesInsert<'chapter_document_folders'> = data;
     const { data: created, error } = await this.supabase

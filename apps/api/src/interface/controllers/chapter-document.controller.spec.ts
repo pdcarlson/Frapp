@@ -125,6 +125,31 @@ describe('ChapterDocumentController', () => {
     );
   });
 
+  describe('who can see (#3642 piece 1)', () => {
+    // A file's list is its uploader's to set, so the route adds nothing past
+    // the class floor and the service decides uploader or manager.
+    it('setAccess adds no permission beyond the class floor', () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.setAccess as object),
+      ).toBeUndefined();
+    });
+
+    it('accessOptions requires chapter_docs:upload, which every list setter holds', () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.accessOptions as object),
+      ).toEqual([SystemPermissions.CHAPTER_DOCS_UPLOAD]);
+    });
+
+    it('passes the caller through to every read, so the list is theirs', async () => {
+      const findByChapter = jest.fn().mockResolvedValue([]);
+      Object.assign(mockChapterDocumentService, { findByChapter });
+      await controller.list('chapter-123', 'user-1', 'Exec');
+      expect(findByChapter).toHaveBeenCalledWith('chapter-123', 'user-1', {
+        folder: 'Exec',
+      });
+    });
+  });
+
   describe('document types (#3642)', () => {
     // Every member reads the list (the upload form and filters show it);
     // only document managers change it.

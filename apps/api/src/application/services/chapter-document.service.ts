@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   HttpException,
   Inject,
   Injectable,
@@ -11,7 +12,17 @@ import {
   isAllowedUploadMime,
   isWithinUploadSizeLimit,
   MAX_UPLOAD_LABEL,
+  normalizeChannelAccessList,
 } from '@repo/validation';
+import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '#domain/repositories/member.repository.interface';
+import {
+  canSeeDocument,
+  canSeeFolder,
+  folderListsByName,
+  tiersAListKeeps,
+  type DocumentViewer,
+} from '#domain/utils/document-access';
 import {
   CHAPTER_DOCUMENT_REPOSITORY,
   type ChapterDocumentFilter,
@@ -38,6 +49,7 @@ import {
   type IStorageProvider,
 } from '#domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
+import { SystemPermissions } from '#domain/constants/permissions';
 import {
   isObjectKeySegment,
   safeObjectFilename,
@@ -45,6 +57,11 @@ import {
 } from '#domain/constants/storage';
 
 import { ChapterDocumentTypeService } from './chapter-document-type.service';
+import {
+  ChannelAccessListService,
+  type ChannelAccessOption,
+} from './channel-access-list.service';
+import { RbacService } from './rbac.service';
 
 export const DOCUMENTS_BUCKET = 'documents';
 
@@ -77,7 +94,26 @@ export interface ConfirmUploadInput {
   byte_size?: number | null;
   document_type?: string | null;
   effective_date?: string | null;
+  /**
+   * The file's own who can see (#3642): omitted or `null` is the same as its
+   * folder; a list narrows the folder's.
+   */
+  who_can_see?: string[] | null;
 }
+
+/** What a who-can-see picker offers the caller (`GET /documents/access-options`). */
+export interface DocumentAccessOptions {
+  options: ChannelAccessOption[];
+  /**
+   * The tiers every list the caller sets keeps (their own and those above,
+   * Paul's pick 3), shown fixed in the picker; `[]` for `*`, and `null` when
+   * the caller ranks outside the tiers and may not set a list.
+   */
+  always: string[] | null;
+}
+
+const NOT_FOUND_DOCUMENT = 'Document not found';
+const NOT_FOUND_FOLDER = 'Folder not found';
 
 @Injectable()
 export class ChapterDocumentService {
@@ -91,7 +127,136 @@ export class ChapterDocumentService {
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
     private readonly typeService: ChapterDocumentTypeService,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    private readonly rbac: RbacService,
+    private readonly accessLists: ChannelAccessListService,
   ) {}
+
+  // ---------------------------------------------------------------------------
+  // Who can see (#3642 piece 1; `document-access.ts` decides)
+  // ---------------------------------------------------------------------------
+
+  /** The member reading Documents: what they hold for lists, groups included. */
+  async viewerFor(chapterId: string, userId: string): Promise<DocumentViewer> {
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    return {
+      userId,
+      holder: await this.rbac.getChannelAccessHolder(chapterId, member, true),
+    };
+  }
+
+  /** The documents in `documents` the member sees. */
+  async visibleTo(
+    chapterId: string,
+    userId: string,
+    documents: ChapterDocument[],
+  ): Promise<ChapterDocument[]> {
+    if (documents.length === 0) return [];
+    const [viewer, folders] = await Promise.all([
+      this.viewerFor(chapterId, userId),
+      this.folderRepo.findByChapter(chapterId),
+    ]);
+    const lists = folderListsByName(folders);
+    return documents.filter((doc) => canSeeDocument(doc, lists, viewer));
+  }
+
+  /**
+   * The document, when the member sees it. One they can't is a 404, as one
+   * never there is, so a hidden file's existence doesn't leak.
+   */
+  private async visibleDocument(
+    id: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChapterDocument> {
+    const document = await this.documentRepo.findById(id, chapterId);
+    if (!document) throw new NotFoundException(NOT_FOUND_DOCUMENT);
+    const [visible] = await this.visibleTo(chapterId, userId, [document]);
+    if (!visible) throw new NotFoundException(NOT_FOUND_DOCUMENT);
+    return document;
+  }
+
+  /** The folder, when the member sees it; a 404 otherwise. */
+  private async visibleFolder(
+    id: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChapterDocumentFolder> {
+    const folder = await this.folderRepo.findById(id, chapterId);
+    if (!folder) throw new NotFoundException(NOT_FOUND_FOLDER);
+    if (!canSeeFolder(folder, await this.viewerFor(chapterId, userId))) {
+      throw new NotFoundException(NOT_FOUND_FOLDER);
+    }
+    return folder;
+  }
+
+  /** What the caller's who-can-see picker offers, and the tiers it keeps. */
+  async accessOptions(
+    chapterId: string,
+    userId: string,
+  ): Promise<DocumentAccessOptions> {
+    const [options, context] = await Promise.all([
+      this.accessLists.listOptions(chapterId),
+      this.rbac.getRankContext(chapterId, userId),
+    ]);
+    return { options, always: tiersAListKeeps(context.reach, context.tiers) };
+  }
+
+  /**
+   * A list a write sends, as stored: `undefined` leaves it alone, `null` is
+   * everyone (or, on a file, the same as its folder). A list is checked as a
+   * channel's is (every entry this chapter's, no class year, not empty) and
+   * keeps the caller's tier and every tier above (Paul's pick 3), so nobody
+   * hides a file from those who outrank them, or from themselves.
+   */
+  private async checkedList(
+    chapterId: string,
+    userId: string,
+    list: string[] | null | undefined,
+  ): Promise<string[] | null | undefined> {
+    if (list === undefined || list === null) return list;
+    const [{ who_can_see: checked }, context] = await Promise.all([
+      this.accessLists.normalize(chapterId, { who_can_see: list }),
+      this.rbac.getRankContext(chapterId, userId),
+    ]);
+    const kept = tiersAListKeeps(context.reach, context.tiers);
+    if (kept === null) {
+      throw new ForbiddenException(
+        "You can't limit who sees a file until you hold a role in one of the chapter's tiers",
+      );
+    }
+    return normalizeChannelAccessList([...(checked ?? []), ...kept]);
+  }
+
+  /**
+   * Sets who can see one file (`PUT /documents/:id/access`): its uploader, or
+   * a member with `chapter_docs:manage`, among those who see it.
+   */
+  async setDocumentAccess(
+    id: string,
+    chapterId: string,
+    userId: string,
+    whoCanSee: string[] | null,
+  ): Promise<ChapterDocument> {
+    const document = await this.visibleDocument(id, chapterId, userId);
+    if (
+      document.uploaded_by !== userId &&
+      !(await this.rbac.memberHasAnyPermission(chapterId, userId, [
+        SystemPermissions.CHAPTER_DOCS_MANAGE,
+      ]))
+    ) {
+      throw new ForbiddenException(
+        'Only whoever uploaded a file, or someone who manages documents, can change who sees it',
+      );
+    }
+    const list = (await this.checkedList(chapterId, userId, whoCanSee)) ?? null;
+    const updated = await this.documentRepo.setWhoCanSee(id, chapterId, list);
+    if (!updated) throw new NotFoundException(NOT_FOUND_DOCUMENT);
+    return updated;
+  }
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
     const ext = input.filename.includes('.')
@@ -249,6 +414,30 @@ export class ChapterDocumentService {
     );
     if (filed) return this.filedFor(filed, input.uploaded_by);
 
+    // Filing into a folder the uploader can't see would hand them a way to
+    // add to it unseen; a folder that doesn't exist yet is made open below.
+    if (folder !== null) {
+      const existing = await this.folderRepo.findByName(
+        input.chapter_id,
+        folder,
+      );
+      if (
+        existing &&
+        !canSeeFolder(
+          existing,
+          await this.viewerFor(input.chapter_id, input.uploaded_by),
+        )
+      ) {
+        throw new ForbiddenException("You can't file into that folder");
+      }
+    }
+    const whoCanSee =
+      (await this.checkedList(
+        input.chapter_id,
+        input.uploaded_by,
+        input.who_can_see,
+      )) ?? null;
+
     // Uploading into a folder that was never explicitly created is still
     // allowed — it is how every folder came into being before folders were
     // first-class. Register it so it shows up in the folder list and can be
@@ -277,6 +466,7 @@ export class ChapterDocumentService {
       byte_size: input.byte_size ?? null,
       document_type: documentType,
       effective_date: input.effective_date ?? null,
+      who_can_see: whoCanSee,
     });
     return this.filedFor(document, input.uploaded_by);
   }
@@ -296,11 +486,17 @@ export class ChapterDocumentService {
     return document;
   }
 
+  /** The chapter's documents the member sees. */
   async findByChapter(
     chapterId: string,
+    userId: string,
     filter?: ChapterDocumentFilter,
   ): Promise<ChapterDocument[]> {
-    return this.documentRepo.findByChapter(chapterId, filter);
+    return this.visibleTo(
+      chapterId,
+      userId,
+      await this.documentRepo.findByChapter(chapterId, filter),
+    );
   }
 
   /**
@@ -323,13 +519,11 @@ export class ChapterDocumentService {
   async findById(
     id: string,
     chapterId: string,
+    userId: string,
   ): Promise<
     ChapterDocument & { downloadUrl: string; forcedDownloadUrl: string }
   > {
-    const document = await this.documentRepo.findById(id, chapterId);
-    if (!document) {
-      throw new NotFoundException('Document not found');
-    }
+    const document = await this.visibleDocument(id, chapterId, userId);
 
     const { inline: downloadUrl, attachment: forcedDownloadUrl } =
       await this.storageProvider.getSignedInlineAndAttachmentUrls(
@@ -354,6 +548,7 @@ export class ChapterDocumentService {
   async previewUrls(
     ids: string[],
     chapterId: string,
+    userId: string,
   ): Promise<{ id: string; url: string }[]> {
     const unique = [...new Set(ids)];
     if (unique.length > MAX_PREVIEW_IDS) {
@@ -361,7 +556,11 @@ export class ChapterDocumentService {
         `At most ${MAX_PREVIEW_IDS} documents per request`,
       );
     }
-    const documents = await this.documentRepo.findByIds(unique, chapterId);
+    const documents = await this.visibleTo(
+      chapterId,
+      userId,
+      await this.documentRepo.findByIds(unique, chapterId),
+    );
     if (documents.length === 0) return [];
     const signed = await this.storageProvider.getSignedDownloadUrls(
       DOCUMENTS_BUCKET,
@@ -374,11 +573,8 @@ export class ChapterDocumentService {
     });
   }
 
-  async delete(id: string, chapterId: string): Promise<void> {
-    const document = await this.documentRepo.findById(id, chapterId);
-    if (!document) {
-      throw new NotFoundException('Document not found');
-    }
+  async delete(id: string, chapterId: string, userId: string): Promise<void> {
+    const document = await this.visibleDocument(id, chapterId, userId);
     // Drive owns a copy: deleting it here would only bring it back on the
     // next sync (`spec/behavior/chapter-docs.md` § Google Drive folder).
     if (document.drive_file_id !== null) {
@@ -398,14 +594,24 @@ export class ChapterDocumentService {
   // Folders
   // ---------------------------------------------------------------------------
 
-  async listFolders(chapterId: string): Promise<ChapterDocumentFolder[]> {
-    return this.folderRepo.findByChapter(chapterId);
+  /** The chapter's folders the member sees. */
+  async listFolders(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChapterDocumentFolder[]> {
+    const [folders, viewer] = await Promise.all([
+      this.folderRepo.findByChapter(chapterId),
+      this.viewerFor(chapterId, userId),
+    ]);
+    return folders.filter((folder) => canSeeFolder(folder, viewer));
   }
 
   async createFolder(
     chapterId: string,
     name: string,
-    sortOrder?: number,
+    sortOrder: number | undefined,
+    userId: string,
+    whoCanSee?: string[] | null,
   ): Promise<ChapterDocumentFolder> {
     const folderName = normalizeFolderName(name);
     if (folderName === null) {
@@ -419,11 +625,13 @@ export class ChapterDocumentService {
       );
     }
 
+    const list = (await this.checkedList(chapterId, userId, whoCanSee)) ?? null;
     try {
       return await this.folderRepo.create({
         chapter_id: chapterId,
         name: folderName,
         sort_order: sortOrder ?? (await this.nextSortOrder(chapterId)),
+        who_can_see: list,
       });
     } catch (error) {
       // The check above is advisory — the unique index is the real arbiter, and
@@ -441,12 +649,14 @@ export class ChapterDocumentService {
   async updateFolder(
     id: string,
     chapterId: string,
-    changes: { name?: string; sort_order?: number },
+    userId: string,
+    changes: {
+      name?: string;
+      sort_order?: number;
+      who_can_see?: string[] | null;
+    },
   ): Promise<ChapterDocumentFolder> {
-    const folder = await this.folderRepo.findById(id, chapterId);
-    if (!folder) {
-      throw new NotFoundException('Folder not found');
-    }
+    const folder = await this.visibleFolder(id, chapterId, userId);
 
     const rename =
       changes.name !== undefined
@@ -467,11 +677,17 @@ export class ChapterDocumentService {
       }
     }
 
+    const whoCanSee = await this.checkedList(
+      chapterId,
+      userId,
+      changes.who_can_see,
+    );
     const patch = {
       ...(isRename ? { name: rename } : {}),
       ...(changes.sort_order !== undefined
         ? { sort_order: changes.sort_order }
         : {}),
+      ...(whoCanSee !== undefined ? { who_can_see: whoCanSee } : {}),
     };
 
     // A PATCH that changes nothing is a no-op, not an error. Every field of
@@ -493,12 +709,23 @@ export class ChapterDocumentService {
     return this.folderRepo.update(id, chapterId, patch);
   }
 
-  async deleteFolder(id: string, chapterId: string): Promise<void> {
-    const folder = await this.folderRepo.findById(id, chapterId);
-    if (!folder) {
-      throw new NotFoundException('Folder not found');
-    }
+  async deleteFolder(
+    id: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<void> {
+    const folder = await this.visibleFolder(id, chapterId, userId);
 
+    // A restricted folder's files that followed it keep its list, so moving
+    // them to the top level never opens them to the chapter (#3642). Done
+    // before the move, which a retry repeats safely.
+    if (folder.who_can_see !== null) {
+      await this.documentRepo.keepFolderList(
+        folder.name,
+        folder.who_can_see,
+        chapterId,
+      );
+    }
     // Spec: deleting a folder moves its documents to the root level — no
     // cascading delete of files. Move first, so a failure here leaves the
     // folder intact rather than stranding documents under a deleted name.
@@ -518,12 +745,10 @@ export class ChapterDocumentService {
   async setFolderPinned(
     id: string,
     chapterId: string,
+    userId: string,
     pinned: boolean,
   ): Promise<ChapterDocumentFolder> {
-    const folder = await this.folderRepo.findById(id, chapterId);
-    if (!folder) {
-      throw new NotFoundException('Folder not found');
-    }
+    const folder = await this.visibleFolder(id, chapterId, userId);
     if ((folder.pinned_at !== null) === pinned) return folder;
     const updated = await this.folderRepo.setPinnedAt(
       id,
@@ -540,12 +765,10 @@ export class ChapterDocumentService {
   async setDocumentPinned(
     id: string,
     chapterId: string,
+    userId: string,
     pinned: boolean,
   ): Promise<ChapterDocument> {
-    const document = await this.documentRepo.findById(id, chapterId);
-    if (!document) {
-      throw new NotFoundException('Document not found');
-    }
+    const document = await this.visibleDocument(id, chapterId, userId);
     if ((document.pinned_at !== null) === pinned) return document;
     const updated = await this.documentRepo.setPinnedAt(
       id,
@@ -588,10 +811,7 @@ export class ChapterDocumentService {
       await this.starRepo.remove(userId, chapterId, { folder_id: folderId });
       return;
     }
-    const folder = await this.folderRepo.findById(folderId, chapterId);
-    if (!folder) {
-      throw new NotFoundException('Folder not found');
-    }
+    await this.visibleFolder(folderId, chapterId, userId);
     await this.addStar(userId, chapterId, { folder_id: folderId }, 'Folder');
   }
 
@@ -608,10 +828,7 @@ export class ChapterDocumentService {
       });
       return;
     }
-    const document = await this.documentRepo.findById(documentId, chapterId);
-    if (!document) {
-      throw new NotFoundException('Document not found');
-    }
+    await this.visibleDocument(documentId, chapterId, userId);
     await this.addStar(
       userId,
       chapterId,
