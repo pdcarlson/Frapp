@@ -419,7 +419,7 @@ export interface Database {
         Returns: AiRun[];
       };
       /**
-       * `20261116140905` (#5157) — Google Drive folders to sync or clean up
+       * `20261116164304` (#5157) — Google Drive folders to sync or clean up
        * next, each leased; `returns setof chapter_drive_connections`.
        */
       claim_chapter_drive_syncs: {
