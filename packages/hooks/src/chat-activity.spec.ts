@@ -311,9 +311,8 @@ describe("createChatActivityHandler: the inbox's first join (#4961)", () => {
   };
 
   const badge = () =>
-    queryClient.getQueryData<ChannelUnreadCount[]>(
-      CHANNEL_UNREAD_COUNTS_KEY,
-    )?.[0]?.unread_count;
+    queryClient.getQueryData<ChannelUnreadCount[]>(CHANNEL_UNREAD_COUNTS_KEY)?.[0]
+      ?.unread_count;
 
   test("a message between the counts' read and the join lights the badge", async () => {
     await mountBadge();

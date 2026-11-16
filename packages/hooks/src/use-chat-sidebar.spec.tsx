@@ -64,9 +64,7 @@ describe("useChatSidebar", () => {
     const { result } = renderHook(() => useChatSidebar(), { wrapper: Wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(GET).toHaveBeenCalledWith("/v1/chat-sidebar", {
-      signal: expect.any(AbortSignal),
-    });
+    expect(GET).toHaveBeenCalledWith("/v1/chat-sidebar", { signal: expect.any(AbortSignal) });
     expect(queryClient.getQueryData(KEY)).toEqual(stored);
   });
 
