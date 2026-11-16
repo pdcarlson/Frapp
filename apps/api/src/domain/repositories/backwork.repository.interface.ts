@@ -81,6 +81,21 @@ export interface IBackworkResourceRepository {
     fields: BackworkDraftFields,
   ): Promise<BackworkResource | null>;
   /**
+   * Points a draft at a new stored file and sets its fields, only while it is
+   * the uploader's draft. Null when it isn't.
+   */
+  replaceDraftFile(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    update: {
+      storage_path: string;
+      file_hash: string;
+      is_redacted: boolean;
+      draft_fields: BackworkDraftFields;
+    },
+  ): Promise<BackworkResource | null>;
+  /**
    * Writes the resolved columns and clears `draft_fields`, only while the row
    * is still the uploader's draft. Null when it isn't (published by another
    * tab, deleted), so a publish never runs twice.

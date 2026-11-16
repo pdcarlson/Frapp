@@ -3008,6 +3008,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/backwork/drafts/{id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A short-lived link to one of the caller's drafts' file */
+        get: operations["BackworkController_draftFileUrl_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/drafts/{id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark one of the caller's drafts' pages checked, with its file flattened again when a box was added */
+        post: operations["BackworkController_checkDraft_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/backwork/drafts/{id}": {
         parameters: {
             query?: never;
@@ -5569,7 +5603,7 @@ export interface paths {
         put?: never;
         /**
          * Propose fields for one of the caller's drafts from its redacted text
-         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted` and is not read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.
+         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.
          */
         post: operations["BackworkFillController_fill_v1"];
         delete?: never;
@@ -8584,6 +8618,11 @@ export interface components {
             is_redacted: boolean;
             /** @description Save as a draft: the fields are kept as sent, not filed, and only the uploader sees the file until it is published (POST /v1/backwork/drafts/publish). */
             draft?: boolean;
+            /**
+             * @description For a draft: false when it was saved without anyone looking at its pages (bulk upload's "Save the rest"). Such a draft is not read by the AI fill and can't be published until POST /v1/backwork/drafts/{id}/check.
+             * @default true
+             */
+            pages_checked: boolean;
         };
         BackworkFieldsDto: {
             title?: string | null;
@@ -8624,6 +8663,16 @@ export interface components {
             /** @description The filed resources. */
             published: Record<string, never>[];
             failed: components["schemas"]["BackworkDraftFailureDto"][];
+        };
+        BackworkDraftFileUrlDto: {
+            /** @description A link to the draft's stored file, good for five minutes, for the uploader's browser to show its pages. */
+            url: string;
+        };
+        CheckBackworkDraftDto: {
+            /** @description Storage path from upload-url of the file flattened again with the boxes added during the check. Leave out when no box was added. */
+            storage_path?: string;
+            /** @description SHA-256 hash of that file. Required with storage_path. */
+            file_hash?: string;
         };
         BackworkDownloadUrlDto: {
             /** Format: uuid */
@@ -11156,10 +11205,10 @@ export interface components {
         };
         BackworkDraftFillResponseDto: {
             /**
-             * @description `filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).
+             * @description `filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `not_checked` (saved without its pages being looked at, so it waits for the uploader to check it), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).
              * @enum {string}
              */
-            status: "filled" | "nothing_found" | "unreadable" | "not_redacted" | "refused" | "unavailable" | "invalid_output";
+            status: "filled" | "nothing_found" | "unreadable" | "not_redacted" | "not_checked" | "refused" | "unavailable" | "invalid_output";
             /** @description The fields this fill set. Absent when the draft is unchanged. */
             filled?: string[];
             /** @description The draft as it now stands. `draft_fields.ai_filled` lists the fields an AI fill set that nobody has edited since. */
@@ -18431,6 +18480,68 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PublishBackworkDraftsResponseDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_draftFileUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkDraftFileUrlDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_checkDraft_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckBackworkDraftDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {

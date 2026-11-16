@@ -55,7 +55,7 @@ export class BackworkFillController {
     summary:
       "Propose fields for one of the caller's drafts from its redacted text",
     description:
-      "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted` and is not read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.",
+      "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.",
   })
   @ApiOkResponse({ type: BackworkDraftFillResponseDto })
   @ApiForbiddenResponse({

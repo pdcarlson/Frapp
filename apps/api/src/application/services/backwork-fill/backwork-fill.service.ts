@@ -28,6 +28,8 @@ const TASK = 'backwork.fill';
  *   (`draft_fields.ai_fill`), and `draft` is the draft as it now stands.
  * - `not_redacted`: the draft was uploaded as-is, so its stored file is the
  *   original, which no model may read; unchanged, and no call is made.
+ * - `not_checked`: saved with suggested boxes the uploader has not looked at
+ *   yet (#5252), so a missed name could still be on it; unchanged, no call.
  * - `refused`: the provider declined; the draft is unchanged.
  * - `unavailable`: AI is off here or a spend cap is reached; unchanged.
  * - `invalid_output`: the model's answer did not fit; unchanged, try again.
@@ -39,7 +41,12 @@ export type BackworkFillResult =
       draft: BackworkResource;
     }
   | {
-      status: 'not_redacted' | 'refused' | 'unavailable' | 'invalid_output';
+      status:
+        | 'not_redacted'
+        | 'not_checked'
+        | 'refused'
+        | 'unavailable'
+        | 'invalid_output';
       reason?: string;
     };
 
@@ -100,6 +107,7 @@ export class BackworkFillService {
     const draft = await this.backwork.findOwnDraft(draftId, chapterId, userId);
     if (!draft) throw new NotFoundException('Draft not found');
     if (!draft.is_redacted) return { status: 'not_redacted' };
+    if (draft.draft_fields?.pages_unchecked) return { status: 'not_checked' };
     if (!backworkDraftHasEmptyFields(draft.draft_fields ?? {})) {
       return this.record(chapterId, userId, draftId, 'nothing_found', {}, []);
     }

@@ -199,6 +199,30 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     return data;
   }
 
+  async replaceDraftFile(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    update: {
+      storage_path: string;
+      file_hash: string;
+      is_redacted: boolean;
+      draft_fields: BackworkDraftFields;
+    },
+  ): Promise<BackworkResource | null> {
+    const { data, error } = await this.supabase
+      .from('backwork_resources')
+      .update(update)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('uploader_id', uploaderId)
+      .not('draft_fields', 'is', null)
+      .select()
+      .maybeSingle();
+    if (error) throw new SupabaseQueryError(error);
+    return data;
+  }
+
   async publishDraft(
     id: string,
     chapterId: string,

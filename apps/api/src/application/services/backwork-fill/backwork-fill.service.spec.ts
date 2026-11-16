@@ -175,6 +175,17 @@ describe('BackworkFillService', () => {
     expect(backwork.applyAiFill).not.toHaveBeenCalled();
   });
 
+  it('never reads a folder draft before its uploader has checked the pages', async () => {
+    const { run, gateway, extractor, backwork } = setup({
+      stored: { pages_unchecked: true },
+    });
+    await expect(run()).resolves.toEqual({ status: 'not_checked' });
+    expect(backwork.redactedDraftFile).not.toHaveBeenCalled();
+    expect(extractor.extract).not.toHaveBeenCalled();
+    expect(gateway.generateObject).not.toHaveBeenCalled();
+    expect(backwork.applyAiFill).not.toHaveBeenCalled();
+  });
+
   it('marks a draft with every field set without reading its file', async () => {
     const { run, gateway, backwork } = setup({
       stored: {
