@@ -12,7 +12,7 @@
 #   bash scripts/gcp/load-balancer.sh production <prod-project-id>
 #
 # It is safe to run again: every step looks for what it would create first, and
-# a run after the DNS records are in place reports where the certificate is.
+# a run after the DNS records are in place reports where the certificates are.
 #
 # Why a load balancer: Cloud Run's own domain mapping is a preview that Google
 # calls not production-ready and doesn't offer in us-east5, and a balancer is
@@ -30,6 +30,14 @@
 #
 # Every request is logged at the balancer (sample rate 1.0), next to the
 # service's own request log.
+#
+# The balancer is the API's only public path (#5269): the deploy sets the
+# service's ingress to internal-and-cloud-load-balancing, so its run.app
+# addresses refuse the public. A second host, candidate.<API host>, reaches the
+# revision tagged `candidate`, which is where the deploy checks a new revision
+# before it takes traffic (scripts/ci/deploy-cloud-run.mjs). Its certificate is
+# a wildcard for the API host, proved by the same _acme-challenge record, so it
+# needs one more DNS record: the A record the Done block prints.
 
 set -euo pipefail
 
@@ -49,6 +57,13 @@ DNS_AUTH="frapp-api-dns-auth"
 CERT="frapp-api-cert"
 CERT_MAP="frapp-api-certs"
 CERT_MAP_ENTRY="frapp-api-host"
+# The deploy's candidate tag (CANDIDATE_TAG in scripts/ci/deploy-cloud-run.mjs).
+CANDIDATE_TAG="candidate"
+CANDIDATE_NEG="frapp-api-candidate-neg"
+CANDIDATE_BACKEND="frapp-api-candidate-backend"
+CANDIDATE_MATCHER="candidate"
+CANDIDATE_CERT="frapp-api-candidate-cert"
+CANDIDATE_CERT_MAP_ENTRY="frapp-api-candidate-host"
 # Not HTTPS_PROXY / HTTP_PROXY: those names are the proxy settings gcloud reads.
 HTTPS_TARGET="frapp-api-https"
 HTTP_TARGET="frapp-api-http"
@@ -68,6 +83,7 @@ case "$ENVIRONMENT" in
   production) REGION="$GCP_PRODUCTION_REGION"; HOST="$PRODUCTION_HOST" ;;
   *) usage ;;
 esac
+CANDIDATE_HOST="$CANDIDATE_TAG.$HOST"
 
 exists() { gc "$@" >/dev/null 2>&1; }
 
@@ -111,7 +127,29 @@ if ! exists compute url-maps describe "$URL_MAP" --global; then
   gc compute url-maps create "$URL_MAP" --global --default-service="$BACKEND"
 fi
 
-step "Certificate for $HOST, proved by a DNS record"
+step "Candidate: $CANDIDATE_HOST reaches the revision tagged $CANDIDATE_TAG"
+if ! exists compute network-endpoint-groups describe "$CANDIDATE_NEG" --region="$REGION"; then
+  gc compute network-endpoint-groups create "$CANDIDATE_NEG" --region="$REGION" \
+    --network-endpoint-type=serverless --cloud-run-service="$SERVICE" --cloud-run-tag="$CANDIDATE_TAG"
+fi
+if ! exists compute backend-services describe "$CANDIDATE_BACKEND" --global; then
+  gc compute backend-services create "$CANDIDATE_BACKEND" --global --load-balancing-scheme=EXTERNAL_MANAGED \
+    --enable-logging --logging-sample-rate=1.0
+else
+  gc compute backend-services update "$CANDIDATE_BACKEND" --global --enable-logging --logging-sample-rate=1.0 >/dev/null
+fi
+CANDIDATE_BACKENDS="$(gc compute backend-services describe "$CANDIDATE_BACKEND" --global --format='value(backends[].group)')"
+if [[ "$CANDIDATE_BACKENDS" != *"/networkEndpointGroups/$CANDIDATE_NEG"* ]]; then
+  gc compute backend-services add-backend "$CANDIDATE_BACKEND" --global \
+    --network-endpoint-group="$CANDIDATE_NEG" --network-endpoint-group-region="$REGION"
+fi
+HOST_RULES="$(gc compute url-maps describe "$URL_MAP" --global --format='value(hostRules[].hosts)')"
+if [[ "$HOST_RULES" != *"$CANDIDATE_HOST"* ]]; then
+  gc compute url-maps add-path-matcher "$URL_MAP" --global --path-matcher-name="$CANDIDATE_MATCHER" \
+    --default-service="$CANDIDATE_BACKEND" --new-hosts="$CANDIDATE_HOST"
+fi
+
+step "Certificates for $HOST and $CANDIDATE_HOST, proved by one DNS record"
 if ! exists certificate-manager dns-authorizations describe "$DNS_AUTH"; then
   gc certificate-manager dns-authorizations create "$DNS_AUTH" --domain="$HOST"
 fi
@@ -127,7 +165,17 @@ if ! exists certificate-manager maps entries describe "$CERT_MAP_ENTRY" --map="$
   gc certificate-manager maps entries create "$CERT_MAP_ENTRY" --map="$CERT_MAP" \
     --certificates="$CERT" --hostname="$HOST"
 fi
+# A DNS authorization for the host covers its wildcard too, so the candidate
+# host needs no challenge record of its own.
+if ! exists certificate-manager certificates describe "$CANDIDATE_CERT"; then
+  gc certificate-manager certificates create "$CANDIDATE_CERT" --domains="*.$HOST" --dns-authorizations="$DNS_AUTH"
+fi
+if ! exists certificate-manager maps entries describe "$CANDIDATE_CERT_MAP_ENTRY" --map="$CERT_MAP"; then
+  gc certificate-manager maps entries create "$CANDIDATE_CERT_MAP_ENTRY" --map="$CERT_MAP" \
+    --certificates="$CANDIDATE_CERT" --hostname="$CANDIDATE_HOST"
+fi
 CERT_STATE="$(gc certificate-manager certificates describe "$CERT" --format='value(managed.state)')"
+CANDIDATE_CERT_STATE="$(gc certificate-manager certificates describe "$CANDIDATE_CERT" --format='value(managed.state)')"
 
 step "HTTPS on $IP:443"
 if ! exists compute target-https-proxies describe "$HTTPS_TARGET" --global; then
@@ -164,6 +212,8 @@ environment:        $ENVIRONMENT
 host:               $HOST
 balancerAddress:    $IP
 certificateState:   ${CERT_STATE:-unknown}
+candidateCertState: ${CANDIDATE_CERT_STATE:-unknown}
 challengeRecord:    CNAME ${CHALLENGE_NAME%.} -> $CHALLENGE_DATA
 cutoverRecord:      A $HOST -> $IP   (only once certificateState is ACTIVE)
+candidateRecord:    A $CANDIDATE_HOST -> $IP
 EOF

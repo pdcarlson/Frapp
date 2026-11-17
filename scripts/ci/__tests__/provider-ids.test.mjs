@@ -89,7 +89,6 @@ describe("parseProviderIds", () => {
       cloudRunProvider: "",
       cloudRunMinInstances: "",
       cloudRunMaxInstances: "",
-      cloudRunUrl: "",
       vercelTeamId: "team_abc",
       vercelWebProjectId: "prj_web",
       vercelLandingProjectId: "prj_landing",
@@ -154,7 +153,6 @@ describe("Cloud Run (#5228)", () => {
       "projects/211663803311/locations/global/workloadIdentityPools/github/providers/frapplive-frapp",
     );
     assert.equal(ids.cloudRunMinInstances, "0");
-    assert.equal(ids.cloudRunUrl, "https://frapp-api-211663803311.us-east4.run.app");
   });
 
   it("refuses a bad block, a shared project, a missing image, and production on Cloud Run", () => {
@@ -208,7 +206,6 @@ describe("provider-ids.mjs", () => {
       "render_service_id=srv-prod1\nrender_deploy_source=commit\napi_image=\napi_host=render\n" +
         "gcp_project_id=\ngcp_region=\ncloud_run_service=\ncloud_run_image=\ncloud_run_deployer=\n" +
         "cloud_run_runtime=\ncloud_run_provider=\ncloud_run_min_instances=\ncloud_run_max_instances=\n" +
-        "cloud_run_url=\n" +
         "vercel_team_id=team_abc\n" +
         "vercel_web_project_id=prj_web\nvercel_landing_project_id=prj_landing\n",
     );
@@ -292,7 +289,6 @@ describe("every consumer reads the ids step of its own job", () => {
     ["CLOUD_RUN_PROVIDER", "cloud_run_provider"],
     ["CLOUD_RUN_MIN_INSTANCES", "cloud_run_min_instances"],
     ["CLOUD_RUN_MAX_INSTANCES", "cloud_run_max_instances"],
-    ["CLOUD_RUN_URL", "cloud_run_url"],
     ["VERCEL_TEAM_ID", "vercel_team_id"],
     ["VERCEL_WEB_PROJECT_ID", "vercel_web_project_id"],
     ["VERCEL_LANDING_PROJECT_ID", "vercel_landing_project_id"],

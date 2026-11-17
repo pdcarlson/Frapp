@@ -5,6 +5,7 @@ import {
   CANDIDATE_TAG,
   assertDigestRef,
   buildService,
+  candidateHealthUrl,
   injectedNames,
   deployCloudRun,
   pinnedSecrets,
@@ -34,7 +35,7 @@ const noSleep = { now: () => 0, sleep: async () => {} };
 const quiet = { log() {} };
 
 /** A fake Google: routes by method and URL, records every call. */
-function fakeGoogle({ service = null, secrets = [], versions = {} } = {}) {
+function fakeGoogle({ service = null, secrets = [], versions = {}, tagOn = null } = {}) {
   const calls = [];
   let current = service;
   const fetchImpl = async (url, init = {}) => {
@@ -57,17 +58,15 @@ function fakeGoogle({ service = null, secrets = [], versions = {} } = {}) {
       if (method === "GET") return current ? json(200, current) : json(404, {});
       if (method === "PATCH") {
         const revision = body.template.revision;
+        // `tagOn` stands in for Cloud Run leaving the tag on some other revision.
         const traffic = body.traffic.map((t) => ({
           ...t,
-          revision: t.type.endsWith("LATEST") ? revision : t.revision,
-          uri: t.tag ? `https://${t.tag}---frapp-api-x.a.run.app` : undefined,
+          revision: t.type.endsWith("LATEST") ? revision : t.tag && tagOn ? tagOn : t.revision,
         }));
         current = {
           ...body,
           name: SERVICE_NAME,
           etag: '"e2"',
-          uri: "https://frapp-api-x.a.run.app",
-          urls: ["https://frapp-api-123.us-east4.run.app", "https://frapp-api-x.a.run.app"],
           latestReadyRevision: `${SERVICE_NAME}/revisions/${revision}`,
           trafficStatuses: traffic,
         };
@@ -90,7 +89,8 @@ const baseArgs = (overrides = {}) => ({
   maxInstances: 1,
   image: `us-east4-docker.pkg.dev/nonprod-1/frapp/api@sha256:${"a".repeat(64)}`,
   sha: SHA,
-  expectedUrl: "https://frapp-api-123.us-east4.run.app",
+  healthUrl: "https://api-staging.frapp.live/health",
+  resolveHost: async () => ({ address: "203.0.113.7" }),
   env: OIDC_ENV,
   clock: noSleep,
   logger: quiet,
@@ -188,6 +188,8 @@ describe("buildService", () => {
       traffic: [],
     });
     assert.equal(body.invokerIamDisabled, true);
+    // Only the balancer reaches it: one public path, one chain to trust (#5269).
+    assert.equal(body.ingress, "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER");
     assert.deepEqual(body.template.scaling, { minInstanceCount: 0, maxInstanceCount: 1 });
     assert.equal(body.template.labels.commit, SHA);
     const [container] = body.template.containers;
@@ -206,18 +208,19 @@ describe("buildService", () => {
 describe("deployCloudRun", () => {
   const existingService = () => ({
     name: SERVICE_NAME,
-    uri: "https://frapp-api-x.a.run.app",
     latestReadyRevision: `${SERVICE_NAME}/revisions/frapp-api-old`,
     trafficStatuses: [{ type: "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", revision: "frapp-api-old", percent: 100 }],
   });
   const google = () => fakeGoogle({ service: existingService(), secrets: ["API_URL"], versions: { API_URL: { n: 2 } } });
 
-  it("checks the tagged revision, then moves traffic, then checks the service", async () => {
+  it("checks the tagged revision through the balancer, then moves traffic", async () => {
     const { fetchImpl, calls } = google();
     const checked = [];
     const verify = async ({ healthUrl }) => (checked.push(healthUrl), { status: "success", message: "ok" });
     const result = await deployCloudRun(baseArgs({ fetchImpl, verify }));
-    assert.deepEqual(checked, ["https://candidate---frapp-api-x.a.run.app/health", "https://frapp-api-x.a.run.app/health"]);
+    // Never a run.app address: the service refuses those from outside Google.
+    // The API host itself is the workflow's next step.
+    assert.deepEqual(checked, ["https://candidate.api-staging.frapp.live/health"]);
     const writes = calls.filter((c) => c.method === "PATCH");
     assert.equal(writes.length, 2);
     assert.equal(new URL(writes[0].url).searchParams.get("allowMissing"), "true");
@@ -229,14 +232,42 @@ describe("deployCloudRun", () => {
     // was made from, so a change made in between refuses the write.
     assert.deepEqual(writes[1].body.template, writes[0].body.template);
     assert.equal(writes[1].body.etag, '"e2"');
-    assert.equal(result.url, "https://frapp-api-x.a.run.app");
+    assert.equal(result.url, "https://api-staging.frapp.live/health");
   });
 
-  it("leaves traffic on the old revision when the new one never serves the commit", async () => {
+  it("leaves traffic on the old revision, and drops the tag, when the new one never serves the commit", async () => {
     const { fetchImpl, calls } = google();
     const verify = async () => ({ status: "failure", message: "did not serve it." });
     await assert.rejects(deployCloudRun(baseArgs({ fetchImpl, verify })), /previous revision still serves/);
+    const writes = calls.filter((c) => c.method === "PATCH");
+    assert.equal(writes.length, 2);
+    // The failed revision, which holds every secret, answers on no public host.
+    assert.deepEqual(writes[1].body.traffic, [
+      { type: "TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION", revision: "frapp-api-old", percent: 100 },
+    ]);
+    assert.equal(writes[1].body.etag, '"e2"');
+  });
+
+  it("refuses to check when the tag landed on another revision", async () => {
+    const { fetchImpl, calls } = fakeGoogle({ service: existingService(), secrets: ["API_URL"], versions: { API_URL: { n: 2 } }, tagOn: "frapp-api-old" });
+    const verify = async () => ({ status: "success", message: "ok" });
+    await assert.rejects(deployCloudRun(baseArgs({ fetchImpl, verify })), /no candidate tag on frapp-api-0123456-/);
     assert.equal(calls.filter((c) => c.method === "PATCH").length, 1);
+  });
+
+  it("writes nothing while the candidate host has no DNS record", async () => {
+    const { fetchImpl, calls } = google();
+    const resolveHost = async () => {
+      throw Object.assign(new Error("not found"), { code: "ENOTFOUND" });
+    };
+    await assert.rejects(deployCloudRun(baseArgs({ fetchImpl, resolveHost })), /candidate\.api-staging\.frapp\.live doesn't resolve \(ENOTFOUND\).*Nothing was written/);
+    assert.equal(calls.filter((c) => c.method === "PATCH").length, 0);
+  });
+
+  it("refuses a plain-HTTP API address before writing anything", async () => {
+    const { fetchImpl, calls } = google();
+    await assert.rejects(deployCloudRun(baseArgs({ fetchImpl, healthUrl: "http://api-staging.frapp.live/health" })), /must be https/);
+    assert.equal(calls.length, 0);
   });
 
   it("refuses to deploy with no secrets, before writing anything", async () => {
@@ -245,21 +276,26 @@ describe("deployCloudRun", () => {
     assert.equal(calls.filter((c) => c.method === "PATCH").length, 0);
   });
 
-  it("refuses a service that doesn't answer on the address the deploy plan reads", async () => {
-    const { fetchImpl } = google();
-    const verify = async () => ({ status: "success", message: "ok" });
-    await assert.rejects(
-      deployCloudRun(baseArgs({ fetchImpl, verify, expectedUrl: "https://frapp-api-999.us-east4.run.app" })),
-      /Fix the derivation/,
-    );
-  });
-
-  it("sends a first deploy's traffic at once and checks the service URL", async () => {
+  it("sends a first deploy's traffic at once, needing no candidate host", async () => {
     const { fetchImpl, calls } = fakeGoogle({ secrets: ["API_URL"], versions: { API_URL: { n: 1 } } });
     const checked = [];
     const verify = async ({ healthUrl }) => (checked.push(healthUrl), { status: "success", message: "ok" });
-    await deployCloudRun(baseArgs({ fetchImpl, verify }));
-    assert.deepEqual(checked, ["https://frapp-api-x.a.run.app/health"]);
+    const resolveHost = async () => {
+      throw new Error("not asked");
+    };
+    await deployCloudRun(baseArgs({ fetchImpl, verify, resolveHost }));
+    assert.deepEqual(checked, []);
     assert.equal(calls.filter((c) => c.method === "PATCH").length, 1);
+  });
+});
+
+describe("candidateHealthUrl", () => {
+  it("puts candidate. in front of the API's host, the name the balancer sends to the tagged revision", () => {
+    assert.equal(candidateHealthUrl("https://api-staging.frapp.live/health"), "https://candidate.api-staging.frapp.live/health");
+    assert.equal(candidateHealthUrl("https://api.frapp.live/health"), "https://candidate.api.frapp.live/health");
+  });
+
+  it("refuses a plain-HTTP address", () => {
+    assert.throws(() => candidateHealthUrl("http://api-staging.frapp.live/health"), /must be https/);
   });
 });
