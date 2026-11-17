@@ -39,7 +39,10 @@ export interface IChapterDocumentRepository {
   ): Promise<ChapterDocument | null>;
   /** The Drive file ids the chapter added by link (#5434). */
   findLinkedDriveFileIds(chapterId: string): Promise<Set<string>>;
-  /** Rewrites a Drive copy after the sync replaced, renamed or refiled it. */
+  /**
+   * Rewrites a Drive copy after the sync replaced, renamed or refiled it.
+   * False when no such copy is in the chapter (deleted since it was read).
+   */
   updateDriveCopy(
     id: string,
     chapterId: string,
@@ -56,7 +59,7 @@ export interface IChapterDocumentRepository {
       | 'drive_link_status'
       | 'drive_synced_at'
     >,
-  ): Promise<void>;
+  ): Promise<boolean>;
   /**
    * Pins (an ISO time) or unpins (null) a document for the chapter (#3934).
    * Null when no document with that id is in the chapter, including one

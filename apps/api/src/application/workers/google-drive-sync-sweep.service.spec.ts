@@ -68,10 +68,19 @@ describe('GoogleDriveSyncSweepService', () => {
     expect(linkRepo.claim).not.toHaveBeenCalled();
   });
 
-  it('runs folders, then linked files, each tick', async () => {
-    await sweep.handleGoogleDriveSync();
-    expect(repo.claim).toHaveBeenCalledTimes(1);
+  it('checks linked files on their own tick, so a long folder pass never holds them up', async () => {
+    let finish: () => void = () => {};
+    repo.claim.mockReturnValue(
+      new Promise((resolve) => {
+        finish = () => resolve([]);
+      }),
+    );
+    const folders = sweep.handleGoogleDriveSync();
+    await sweep.handleGoogleDriveLinkSync();
     expect(linkRepo.claim).toHaveBeenCalledTimes(1);
+    expect(linkRepo.claim.mock.calls[0][2]).toBeGreaterThanOrEqual(30 * 60);
+    finish();
+    await folders;
   });
 
   it('does nothing while Google Drive is off on this server', async () => {

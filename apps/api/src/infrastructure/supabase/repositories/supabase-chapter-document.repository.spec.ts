@@ -107,6 +107,83 @@ describe('SupabaseChapterDocumentRepository — tenant scope', () => {
     ).toBe('Constitution');
   });
 
+  // #5434: a file added by its own link is the link's, never the folder's.
+  it('tells linked files from folder copies, each read in the caller chapter only', async () => {
+    const LINKED_A = '0a000000-0000-4000-8000-0000000000a2';
+    const LINKED_B = '0b000000-0000-4000-8000-0000000000a2';
+    const row = (over: Record<string, unknown>) => ({
+      title: 'Minutes',
+      folder: null,
+      uploaded_by: USER_SHARED,
+      ...over,
+    });
+    harness = createTenantHarness({
+      tables: {
+        chapter_documents: [
+          ...seed().chapter_documents,
+          inA(
+            row({
+              id: DRIVE_A,
+              storage_path: 'a/m.pdf',
+              drive_file_id: 'folder-file',
+              drive_link_status: null,
+            }),
+          ),
+          inB(
+            row({
+              id: DRIVE_B,
+              storage_path: 'b/m.pdf',
+              drive_file_id: 'folder-file',
+              drive_link_status: null,
+            }),
+          ),
+          inA(
+            row({
+              id: LINKED_A,
+              storage_path: 'a/l.pdf',
+              drive_file_id: 'linked-file',
+              drive_link_status: 'active',
+            }),
+          ),
+          inB(
+            row({
+              id: LINKED_B,
+              storage_path: 'b/l.pdf',
+              drive_file_id: 'linked-file',
+              drive_link_status: 'active',
+            }),
+          ),
+        ],
+      },
+      collisionExempt: { chapter_documents: ['storage_path'] },
+    });
+    repo = new SupabaseChapterDocumentRepository(harness.client);
+
+    const copies = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findDriveCopies(CHAPTER_A),
+    );
+    expect(copies.map((d) => d.id)).toEqual([DRIVE_A]);
+
+    const linked = await harness.expectTenantScoped(CHAPTER_A, () =>
+      repo.findLinkedDriveFileIds(CHAPTER_A),
+    );
+    expect([...linked]).toEqual(['linked-file']);
+
+    const found = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByDriveFileId(CHAPTER_B, 'linked-file'),
+    );
+    expect(found?.id).toBe(LINKED_B);
+
+    await expect(
+      harness.expectTenantScoped(CHAPTER_A, () =>
+        repo.updateDriveCopy(LINKED_A, CHAPTER_A, { title: 'Minutes v2' }),
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      repo.updateDriveCopy(LINKED_A, CHAPTER_B, { title: 'Crossed' }),
+    ).resolves.toBe(false);
+  });
+
   it('findByChapter returns only the caller chapter documents', async () => {
     const docs = await harness.expectTenantScoped(CHAPTER_B, () =>
       repo.findByChapter(CHAPTER_B),

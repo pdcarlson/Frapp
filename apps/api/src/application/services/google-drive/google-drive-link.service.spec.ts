@@ -157,7 +157,7 @@ describe('GoogleDriveLinkService', () => {
       delete: jest.fn().mockResolvedValue(undefined),
       findById: jest.fn().mockResolvedValue(doc()),
       findByDriveFileId: jest.fn().mockResolvedValue(null),
-      updateDriveCopy: jest.fn().mockResolvedValue(undefined),
+      updateDriveCopy: jest.fn().mockResolvedValue(true),
     };
     storage = {
       uploadFile: jest.fn().mockResolvedValue(undefined),
@@ -245,6 +245,40 @@ describe('GoogleDriveLinkService', () => {
       expect(links.create).toHaveBeenCalledWith(
         expect.objectContaining({ proven: true }),
       );
+    });
+
+    // #5434 review: Frapp's account reads a file shared with it directly
+    // without the resource key a link needs since Google's 2021 update, so a
+    // bare id must not stand in for a working link.
+    it('asks for the code when the file needs a resource key the pasted link lacks', async () => {
+      drive.getItem.mockResolvedValue(googleDoc({ resourceKey: '0-key' }));
+
+      await expect(
+        service.add('ch-1', 'user-1', { link: FILE_ID }),
+      ).rejects.toThrow(CODE);
+
+      await service.add('ch-1', 'user-1', {
+        link: `https://drive.google.com/file/d/${FILE_ID}/view?resourcekey=0-key`,
+      });
+      expect(links.create).toHaveBeenCalledWith(
+        expect.objectContaining({ proven: false, resource_key: '0-key' }),
+      );
+    });
+
+    it('names no title when refusing a file already in Documents, and only after the proof', async () => {
+      documentRepo.findByDriveFileId.mockResolvedValue(
+        doc({ title: 'Exec minutes', drive_link_status: null }),
+      );
+      drive.getItem.mockResolvedValue(googleDoc({ permissionIds: [] }));
+      await expect(
+        service.add('ch-1', 'user-1', { link: DOC_LINK }),
+      ).rejects.toThrow(CODE);
+      expect(documentRepo.findByDriveFileId).not.toHaveBeenCalled();
+
+      drive.getItem.mockResolvedValue(googleDoc());
+      const refusal = service.add('ch-1', 'user-1', { link: DOC_LINK });
+      await expect(refusal).rejects.toThrow(ConflictException);
+      await expect(refusal).rejects.not.toThrow('Exec minutes');
     });
 
     it('says what to do with a file Frapp can’t open', async () => {
@@ -408,6 +442,29 @@ describe('GoogleDriveLinkService', () => {
         last_error: 'rate_limited',
         sync_due_at: '2026-11-17T20:05:00.000Z',
       });
+    });
+
+    it('drops the new copy when the document was deleted while it was made', async () => {
+      drive.getItem.mockResolvedValue(
+        googleDoc({ modifiedTime: '2026-11-17T19:30:00.000Z' }),
+      );
+      documentRepo.updateDriveCopy.mockResolvedValue(false);
+
+      await expect(service.process(link(), NOW)).resolves.toBe('gone');
+      const fresh = storage.uploadFile.mock.calls[0][1];
+      expect(storage.deleteFile).toHaveBeenCalledWith('documents', fresh);
+      expect(storage.deleteFile).not.toHaveBeenCalledWith(
+        'documents',
+        'chapters/ch-1/documents/old/Bylaws.pdf',
+      );
+    });
+
+    it('stops following an unproven file whose link no longer carries its key', async () => {
+      drive.getItem.mockResolvedValue(googleDoc({ resourceKey: '0-key' }));
+      await expect(service.process(link(), NOW)).resolves.toBe('no_access');
+      await expect(
+        service.process(link({ resource_key: '0-key' }), NOW),
+      ).resolves.toBe('unchanged');
     });
 
     it('does nothing for a document deleted mid-check', async () => {

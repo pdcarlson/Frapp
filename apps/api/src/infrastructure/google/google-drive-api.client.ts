@@ -26,7 +26,7 @@ const LIST_MAX_PAGES = 10;
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 const ITEM_FIELDS = 'id,name,mimeType,modifiedTime,size,webViewLink';
 /** One item read on its own also brings what the connect check reads. */
-const GET_ITEM_FIELDS = `${ITEM_FIELDS},description,parents,permissionIds,trashed`;
+const GET_ITEM_FIELDS = `${ITEM_FIELDS},description,parents,permissionIds,trashed,resourceKey`;
 /** 8 characters, 40 bits. */
 const CODE_LENGTH = 8;
 const CONFIG_REASONS = new Set(['accessNotConfigured', 'SERVICE_DISABLED']);
@@ -332,6 +332,10 @@ function toItem(raw: unknown): GoogleDriveItem {
       ? file.parents.filter((id): id is string => typeof id === 'string')
       : [],
     trashed: file.trashed === true,
+    resourceKey:
+      typeof file.resourceKey === 'string' && file.resourceKey !== ''
+        ? file.resourceKey
+        : null,
     permissionIds: Array.isArray(file.permissionIds)
       ? file.permissionIds.filter((id): id is string => typeof id === 'string')
       : [],

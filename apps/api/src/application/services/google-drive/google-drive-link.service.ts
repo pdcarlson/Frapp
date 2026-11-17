@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
@@ -31,15 +30,18 @@ import {
 } from '#domain/repositories/chapter-drive-link.repository.interface';
 import type { ChapterDocument } from '#domain/entities/chapter-document.entity';
 import type { ChapterDriveLink } from '#domain/entities/chapter-drive-link.entity';
-import { safeObjectFilename } from '#domain/constants/storage';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
-import { normalizeManualCode } from '#domain/utils/check-in-token';
 import {
   ChapterDocumentService,
   DOCUMENTS_BUCKET,
   normalizeFolderName,
 } from '../chapter-document.service';
-import { planFile } from './google-drive-sync.service';
+import {
+  driveCopyPath,
+  planFile,
+  sameInstant,
+} from './google-drive-sync.service';
+import { holdsCode } from './google-drive.service';
 import { toReportableError } from '../../../infrastructure/observability/reportable-error';
 
 /** How long a check waits after Google asks Frapp to slow down. */
@@ -157,15 +159,17 @@ export class GoogleDriveLinkService {
         'Documents can’t hold that file: it’s over 25 MB, or a type Documents doesn’t take (Google Forms, Drawings and shortcuts can’t be copied).',
       );
     }
-    await this.refuseIfFiled(chapterId, item.id);
-    const proven = !openToLink(item);
+    const proven = !openToLink(item, parsed.resourceKey);
     if (proven) this.requireProof(chapterId, item, email);
+    // Only once the member has shown they can open the file anyway, so the
+    // answer tells them nothing they couldn't see in Drive.
+    await this.refuseIfFiled(chapterId, item.id);
 
     const bytes = await this.fromDrive(
       () => this.bytesOf(planned, parsed.resourceKey),
       email,
     );
-    const storagePath = `chapters/${chapterId}/documents/${randomUUID()}/${safeObjectFilename(planned.filename)}`;
+    const storagePath = driveCopyPath(chapterId, planned.filename);
     await this.storage.uploadFile(
       DOCUMENTS_BUCKET,
       storagePath,
@@ -255,7 +259,10 @@ export class GoogleDriveLinkService {
       const item = await this.drive.getItem(link.file_id, link.resource_key);
       // A file added because anyone with the link could open it is followed
       // only while that holds (see the class comment).
-      if (item.trashed || (!link.proven && !openToLink(item))) {
+      if (
+        item.trashed ||
+        (!link.proven && !openToLink(item, link.resource_key))
+      ) {
         return await this.lostAccess(
           link,
           document,
@@ -292,23 +299,38 @@ export class GoogleDriveLinkService {
         }
         throw error;
       }
-      const storagePath = `chapters/${chapterId}/documents/${randomUUID()}/${safeObjectFilename(planned.filename)}`;
+      const storagePath = driveCopyPath(chapterId, planned.filename);
       await this.storage.uploadFile(
         DOCUMENTS_BUCKET,
         storagePath,
         bytes,
         planned.contentType,
       );
-      await this.documentRepo.updateDriveCopy(document.id, chapterId, {
-        title: planned.title,
-        storage_path: storagePath,
-        content_type: planned.contentType,
-        byte_size: bytes.byteLength,
-        drive_modified_at: item.modifiedTime,
-        drive_url: item.webViewLink,
-        drive_link_status: 'active',
-        drive_synced_at: now.toISOString(),
-      });
+      let replaced: boolean;
+      try {
+        replaced = await this.documentRepo.updateDriveCopy(
+          document.id,
+          chapterId,
+          {
+            title: planned.title,
+            storage_path: storagePath,
+            content_type: planned.contentType,
+            byte_size: bytes.byteLength,
+            drive_modified_at: item.modifiedTime,
+            drive_url: item.webViewLink,
+            drive_link_status: 'active',
+            drive_synced_at: now.toISOString(),
+          },
+        );
+      } catch (error) {
+        await this.dropObject(storagePath);
+        throw error;
+      }
+      if (!replaced) {
+        // Deleted while this check ran: the new copy has no row to belong to.
+        await this.dropObject(storagePath);
+        return 'gone';
+      }
       await this.dropObject(document.storage_path);
       await this.links.finish(link.id, { last_error: null });
       return 'updated';
@@ -352,7 +374,10 @@ export class GoogleDriveLinkService {
     return 'no_access';
   }
 
-  /** A Drive file already in the chapter's Documents is refused, by where it came from. */
+  /**
+   * A Drive file already in the chapter's Documents is refused, by where it
+   * came from. Never by title: the copy may sit where this member can't see.
+   */
   private async refuseIfFiled(
     chapterId: string,
     fileId: string,
@@ -364,8 +389,8 @@ export class GoogleDriveLinkService {
     if (!existing) return;
     throw new ConflictException(
       existing.drive_link_status !== null
-        ? `That file is already in Documents, as “${existing.title}”.`
-        : `That file already comes from the chapter’s Google Drive folder, as “${existing.title}”.`,
+        ? 'That file is already in Documents.'
+        : 'That file already comes from the chapter’s Google Drive folder.',
     );
   }
 
@@ -381,10 +406,9 @@ export class GoogleDriveLinkService {
         'Google Drive isn’t available on this server yet.',
       );
     }
-    const wanted = normalizeManualCode(code);
-    const holds = (text: string | null | undefined) =>
-      !!text && normalizeManualCode(text).includes(wanted);
-    if (holds(item.name) || holds(item.description)) return;
+    if (holdsCode(code, item.name) || holdsCode(code, item.description)) {
+      return;
+    }
     throw new BadRequestException(
       `This file isn’t open to anyone with the link, so Frapp needs to know it’s your chapter’s. Add ${code} to its name in Google Drive (or set it to Anyone with the link), then add it again. Once it’s in, you can rename it back. Frapp reads it as ${email}.`,
     );
@@ -442,18 +466,18 @@ export class GoogleDriveLinkService {
   }
 }
 
-/** Whether anyone with the link can open the file, as Google tells Frapp. */
-function openToLink(item: GoogleDriveItem): boolean {
-  return (item.permissionIds ?? []).some((id) =>
+/**
+ * Whether anyone holding the link the member pasted could open the file, as
+ * Google tells Frapp: link sharing is on, and when the file needs a resource
+ * key (Google's 2021 update), the pasted link carried that very key. Frapp's
+ * service account reads such a file without the key when it was shared with
+ * it directly, so the key is what shows the member holds a working link.
+ */
+function openToLink(item: GoogleDriveItem, pastedKey: string | null): boolean {
+  const shared = (item.permissionIds ?? []).some((id) =>
     GOOGLE_DRIVE_LINK_PERMISSION_IDS.has(id),
   );
-}
-
-/** Postgres hands back `+00:00` where Drive wrote `.000Z`: compare instants. */
-function sameInstant(stored: string | null, drive: string): boolean {
-  if (!stored || !drive) return false;
-  const a = Date.parse(stored);
-  return !Number.isNaN(a) && a === Date.parse(drive);
+  return shared && (!item.resourceKey || item.resourceKey === pastedKey);
 }
 
 const DRIVE_ID = /^[A-Za-z0-9_-]{10,}$/;

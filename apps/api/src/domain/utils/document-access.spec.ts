@@ -51,7 +51,14 @@ describe('document-access (#3642 piece 1)', () => {
       who_can_see: string[] | null,
       uploaded_by = 'u-2',
       drive_file_id: string | null = null,
-    ) => ({ folder, who_can_see, uploaded_by, drive_file_id });
+      drive_link_status: 'active' | 'no_access' | null = null,
+    ) => ({
+      folder,
+      who_can_see,
+      uploaded_by,
+      drive_file_id,
+      drive_link_status,
+    });
 
     it('follows its folder while its own list is null', () => {
       expect(canSeeDocument(file('Exec', null), lists, viewer([]))).toBe(false);
@@ -86,6 +93,16 @@ describe('document-access (#3642 piece 1)', () => {
           viewer([]),
         ),
       ).toBe(false);
+    });
+
+    it('lets a member who added a Drive file by its link see it, as an upload (#5434)', () => {
+      expect(
+        canSeeDocument(
+          file('Exec', null, 'u-1', 'drive-file-1', 'active'),
+          lists,
+          viewer([]),
+        ),
+      ).toBe(true);
     });
 
     it('reads a top-level file, or one under a name no folder claims, by its own list alone', () => {

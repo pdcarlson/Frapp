@@ -38,6 +38,12 @@ export interface GoogleDriveItem {
   permissionIds?: string[];
   /** In the owner's trash. Only `getItem` asks; a listing leaves trash out. */
   trashed?: boolean;
+  /**
+   * The key a link must carry to open the file for someone without direct
+   * access (Google's 2021 link-sharing update), or null when it needs none.
+   * Only `getItem` asks.
+   */
+  resourceKey?: string | null;
 }
 
 /**

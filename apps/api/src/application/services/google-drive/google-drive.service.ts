@@ -145,11 +145,7 @@ export class GoogleDriveService {
         'Google Drive isn’t available on this server yet.',
       );
     }
-    // Case, spaces, dashes and the Crockford look-alikes (I or L for 1, O
-    // for 0) don't matter, as with a check-in code typed by hand.
-    const wanted = normalizeManualCode(code);
-    const holds = (text: string | null | undefined) =>
-      !!text && normalizeManualCode(text).includes(wanted);
+    const holds = (text: string | null | undefined) => holdsCode(code, text);
     if (holds(folder.name) || holds(folder.description)) return;
     const children = await this.fromDrive(
       () => this.drive.listChildren(folder.id),
@@ -288,6 +284,20 @@ function toStatus(
         (live.sync_lease_until !== null &&
           Date.parse(live.sync_lease_until) > now.getTime())),
   };
+}
+
+/**
+ * Whether `text` holds a connect code (#5185). Case, spaces, dashes and the
+ * Crockford look-alikes (I or L for 1, O for 0) don't matter, as with a
+ * check-in code typed by hand. Shared by folder connect and file links.
+ */
+export function holdsCode(
+  code: string,
+  text: string | null | undefined,
+): boolean {
+  return (
+    !!text && normalizeManualCode(text).includes(normalizeManualCode(code))
+  );
 }
 
 /**

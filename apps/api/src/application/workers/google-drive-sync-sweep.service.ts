@@ -30,8 +30,12 @@ const CONCURRENCY = 2;
 export const GOOGLE_DRIVE_LINK_BATCH = 40;
 /** Linked files checked at once within a tick. */
 const LINK_CONCURRENCY = 4;
-/** A claimed link's lease: one download is capped at 90 seconds. */
-const LINK_LEASE_SECONDS = 10 * 60;
+/**
+ * A claimed link's lease. Longer than a tick's checks can take, so two replicas
+ * never copy one file at once: 40 links over 4 workers is 10 checks each, and
+ * one download is capped at 90 seconds.
+ */
+const LINK_LEASE_SECONDS = 30 * 60;
 /**
  * How long a claimed folder is this replica's. Longer than a pass can take, so
  * two replicas never copy one folder at once: a pass stops listing folders at
@@ -55,6 +59,7 @@ const LEASE_SECONDS = 45 * 60;
 export class GoogleDriveSyncSweepService {
   private readonly logger = new Logger(GoogleDriveSyncSweepService.name);
   private running = false;
+  private runningLinks = false;
 
   constructor(
     @Inject(CHAPTER_DRIVE_REPOSITORY)
@@ -70,11 +75,24 @@ export class GoogleDriveSyncSweepService {
     if (this.running) return;
     this.running = true;
     try {
-      const now = new Date();
-      await this.sweep(now);
-      await this.sweepLinks(now);
+      await this.sweep(new Date());
     } finally {
       this.running = false;
+    }
+  }
+
+  /**
+   * Linked files tick on their own, so a long folder pass never holds up
+   * their 15-minute checks or Sync now.
+   */
+  @ReportedCron(CronExpression.EVERY_MINUTE)
+  async handleGoogleDriveLinkSync(): Promise<void> {
+    if (this.runningLinks) return;
+    this.runningLinks = true;
+    try {
+      await this.sweepLinks(new Date());
+    } finally {
+      this.runningLinks = false;
     }
   }
 

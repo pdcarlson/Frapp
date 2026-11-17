@@ -215,13 +215,15 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
     id: string,
     chapterId: string,
     patch: TablesUpdate<'chapter_documents'>,
-  ): Promise<void> {
-    const { error } = await this.supabase
+  ): Promise<boolean> {
+    const { data, error } = await this.supabase
       .from('chapter_documents')
       .update(patch)
       .eq('id', id)
       .eq('chapter_id', chapterId)
-      .not('drive_file_id', 'is', null);
+      .not('drive_file_id', 'is', null)
+      .select('id');
     if (error) throw new SupabaseQueryError(error);
+    return (data ?? []).length > 0;
   }
 }
