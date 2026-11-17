@@ -8,7 +8,7 @@ import { FrappThemeProvider } from "@/lib/theme";
 import { drawnText, screenText } from "@/test/screen-text";
 import { SUBSCRIPTION_REFUSAL_COPY } from "@/lib/subscription-refusal";
 import { MODULE_REFUSAL_COPY } from "@/lib/module-refusal";
-import { moduleDisabledMessage } from "@repo/validation";
+import { TASK_AUDIENCE_COPY, moduleDisabledMessage } from "@repo/validation";
 import type { DispatchResult } from "@repo/chat-core/dispatch";
 
 /**
@@ -1071,5 +1071,74 @@ describe("NewTaskSheet — dismissed by its host while closed (#5059)", () => {
         <NewTaskSheet ref={ref} now={new Date("2026-09-27T12:00:00Z")} />
       </FrappThemeProvider>
     ));
+  });
+});
+
+describe("NewTaskSheet for everyone (#4295 step 3)", () => {
+  function renderOffering(): ReactTestRenderer {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <NewTaskSheet now={new Date("2026-09-27T12:00:00Z")} offerEveryone />
+        </FrappThemeProvider>,
+      );
+    });
+    return tree;
+  }
+
+  /** The picker's Everyone row, read off its pinned header. */
+  function everyoneRow(tree: ReactTestRenderer) {
+    const list = tree.root.find(
+      (node) => node.type === ("BottomSheetFlatList" as never),
+    );
+    const walk = (node: unknown): { props: { onPress: () => void } } | null => {
+      if (!node || typeof node !== "object") return null;
+      const props = (node as { props?: Record<string, unknown> }).props;
+      if (!props) return null;
+      if (props.accessibilityHint === TASK_AUDIENCE_COPY.everyoneHint(null)) {
+        return node as { props: { onPress: () => void } };
+      }
+      const children = ([] as unknown[]).concat(props.children ?? []);
+      for (const child of children) {
+        const found = walk(child);
+        if (found) return found;
+      }
+      return null;
+    };
+    return walk(list.props.ListHeaderComponent);
+  }
+
+  it("offers Everyone, sets the photos aside, and sends audience in place of a member", () => {
+    const tree = renderOffering();
+    const row = everyoneRow(tree);
+    expect(row).not.toBeNull();
+    act(() => row!.props.onPress());
+
+    expect(
+      tree.root.find(
+        (node) =>
+          node.type === ("Pressable" as never) &&
+          node.props.accessibilityLabel === "Assignee: Everyone",
+      ),
+    ).toBeTruthy();
+    expect(screenText(tree)).toContain(TASK_AUDIENCE_COPY.noPhotos);
+    expect(
+      tree.root.findAll(
+        (node) => (node.type as { name?: string }).name === "TaskPhotoPicker",
+      ),
+    ).toHaveLength(0);
+
+    submitTask(tree);
+    const body = mutate.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(body.audience).toBe("everyone");
+    expect("assignee_id" in body).toBe(false);
+    act(() => tree.unmount());
+  });
+
+  it("doesn't offer Everyone where the host didn't ask for it", () => {
+    const tree = render();
+    expect(everyoneRow(tree)).toBeNull();
+    act(() => tree.unmount());
   });
 });

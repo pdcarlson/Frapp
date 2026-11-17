@@ -245,6 +245,7 @@ export function useQuickActionsHost({
           <NewTaskSheet
             ref={taskRef}
             now={now}
+            offerEveryone
             onCreated={(assigneeName, wasSelf) =>
               confirm(taskCreatedLine(assigneeName, wasSelf))
             }
