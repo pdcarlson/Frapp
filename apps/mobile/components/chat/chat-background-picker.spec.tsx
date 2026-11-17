@@ -3,19 +3,14 @@ import React, { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: "Alpha Beta",
-    textMark: null,
-  }),
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock({ ...PURPLE_BRANDING, chapterName: "Alpha Beta" });
+});
+vi.mock("@repo/hooks", () => ({
+  useChatBackground: () => ({ data: undefined }),
 }));
-vi.mock("@repo/hooks", () => ({ useChatBackground: () => ({ data: undefined }) }));
 
 import { FrappThemeProvider } from "@/lib/theme";
 import { ChatBackgroundSwatches } from "./chat-background-picker";
@@ -25,7 +20,9 @@ import { ChatBackgroundSwatches } from "./chat-background-picker";
  * twin: the same choices in the same order, each drawn with the thread's own
  * paint, the stored one marked.
  */
-function render(props: Partial<React.ComponentProps<typeof ChatBackgroundSwatches>>) {
+function render(
+  props: Partial<React.ComponentProps<typeof ChatBackgroundSwatches>>,
+) {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
