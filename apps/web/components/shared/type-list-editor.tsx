@@ -20,7 +20,8 @@ import { cn, getErrorMessage } from "@/lib/utils";
  * which are edited from the menu that applies them): one row open at a time,
  * Add type disabled at the cap, a Keep / Delete confirm on each row, and an
  * inline form the caller fills (#4723). The documents upload panel's type row
- * renders it (`document-types-editor.tsx`).
+ * (`document-types-editor.tsx`) and the event form's Type row
+ * (`event-type-picker.tsx`) render it.
  */
 
 /** What every editable type carries. */
@@ -53,6 +54,11 @@ export interface TypeListEditorProps<T extends TypeListItem> {
   max: number;
   /** The line under a row's name while its delete is being confirmed. */
   deleteConsequence: string;
+  /**
+   * The line under a row's name the rest of the time; without it, a row shows
+   * only its name until a delete is being confirmed.
+   */
+  describe?: (type: T) => string;
   /** The row's edit button label, from the type's name. */
   editLabel: (name: string) => string;
   /** One delete mutation per row, so only that row shows it pending. */
@@ -70,6 +76,7 @@ export function TypeListEditor<T extends TypeListItem>({
   blurb,
   max,
   deleteConsequence,
+  describe,
   editLabel,
   useDeleteType,
   renderForm,
@@ -110,6 +117,7 @@ export function TypeListEditor<T extends TypeListItem>({
                 key={type.id}
                 type={type}
                 deleteConsequence={deleteConsequence}
+                description={describe?.(type)}
                 editLabel={editLabel}
                 useDeleteType={useDeleteType}
                 onEdit={() => setEditing(type.id)}
@@ -150,12 +158,14 @@ export function TypeListEditor<T extends TypeListItem>({
 function TypeListRow({
   type,
   deleteConsequence,
+  description,
   editLabel,
   useDeleteType,
   onEdit,
 }: {
   type: TypeListItem;
   deleteConsequence: string;
+  description: string | undefined;
   editLabel: (name: string) => string;
   useDeleteType: () => TypeDeleteMutation;
   onEdit: () => void;
@@ -184,9 +194,9 @@ function TypeListRow({
     <li className="flex items-center gap-2 px-3 py-1">
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{type.name}</p>
-        {confirming ? (
+        {confirming || description !== undefined ? (
           <p className="truncate text-caption text-muted-foreground">
-            {deleteConsequence}
+            {confirming ? deleteConsequence : description}
           </p>
         ) : null}
       </div>

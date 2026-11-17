@@ -1,29 +1,23 @@
-import { Test } from '@nestjs/testing';
 import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { RbacService } from './rbac.service';
-import { ChapterAuditLogService } from './chapter-audit-log.service';
-import { ROLE_REPOSITORY } from '#domain/repositories/role.repository.interface';
-import { MEMBER_REPOSITORY } from '#domain/repositories/member.repository.interface';
-import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
-import { ROLE_TIER_REPOSITORY } from '#domain/repositories/role-tier.repository.interface';
-import type { Role, RoleTier } from '#domain/entities/role.entity';
-import { effectivePermissions } from '#domain/utils/role-rank';
-import { createAuditLogServiceMock } from '#test/helpers/audit-log.mock';
-import { createChapterGroupRepoMock } from '#test/helpers/chapter-group-repo.mock';
-import { CHAPTER_GROUP_REPOSITORY } from '#domain/repositories/chapter-group.repository.interface';
+import type { RbacService } from './rbac.service';
+import type { Role } from '#domain/entities/role.entity';
+import {
+  createTieredRbacHarness,
+  type TieredMemberRepoMock,
+  type TieredRoleRepoMock,
+} from '#test/helpers/rbac-service.harness';
+import type { AuditLogServiceMock } from '#test/helpers/audit-log.mock';
 import {
   CHAPTER_ID,
   ROLE,
   TIER,
   USER,
-  tieredChapterMembers,
   tieredChapterRoles,
-  tieredChapterTiers,
 } from '#test/helpers/tiered-chapter.fixture';
 
 const INTRAMURALS = 'role-intramurals';
@@ -38,23 +32,9 @@ const BRAND_NEW = 'role-brand-new';
 describe('RbacService self-assignable roles (#4958)', () => {
   let service: RbacService;
   let roles: Role[];
-  let tiers: RoleTier[];
-  let audit: ReturnType<typeof createAuditLogServiceMock>;
-  const roleRepo = {
-    findById: jest.fn(),
-    findByChapter: jest.fn(),
-    findByIds: jest.fn(),
-    findByChapterAndName: jest.fn(),
-    findByChapterAndSystemKey: jest.fn(),
-    create: jest.fn(),
-    createMany: jest.fn(),
-    update: jest.fn(),
-    delete: jest.fn(),
-  };
-  const memberRepo = {
-    findByUserAndChapter: jest.fn(),
-    setSelfAssignedRole: jest.fn(),
-  };
+  let audit: AuditLogServiceMock;
+  let roleRepo: TieredRoleRepoMock;
+  let memberRepo: TieredMemberRepoMock;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -68,42 +48,13 @@ describe('RbacService self-assignable roles (#4958)', () => {
       permission_overrides: {},
       self_assignable: marked,
     });
-    roles = [
+    const harness = await createTieredRbacHarness([
       ...base,
       interest(INTRAMURALS, 'Intramurals', true),
       interest(BRAND_NEW, 'Study group', false),
-    ];
-    tiers = tieredChapterTiers();
-    const members = tieredChapterMembers();
-    roleRepo.findByChapter.mockResolvedValue(roles);
-    roleRepo.findById.mockImplementation(
-      async (id: string) => roles.find((role) => role.id === id) ?? null,
-    );
-    roleRepo.findByChapterAndName.mockResolvedValue(null);
-    roleRepo.create.mockImplementation(async (data: Partial<Role>) => ({
-      ...data,
-      id: 'role-new',
-    }));
-    // What the database's trigger does with the write.
-    roleRepo.update.mockImplementation(
-      async (id: string, data: Partial<Role>) => {
-        const before = roles.find((role) => role.id === id)!;
-        const next = { ...before, ...data };
-        if (data.permissions === undefined) {
-          const tierPermissions =
-            tiers.find((tier) => tier.id === next.tier_id)?.permissions ?? [];
-          next.permissions = effectivePermissions(
-            tierPermissions,
-            next.permission_overrides,
-          );
-        }
-        return next;
-      },
-    );
-    roleRepo.delete.mockResolvedValue({
-      strippedMemberIds: [],
-      givenEveryoneMemberIds: [],
-    });
+    ]);
+    ({ service, roles, audit, roleRepo, memberRepo } = harness);
+    const { members } = harness;
     memberRepo.setSelfAssignedRole.mockImplementation(
       async (_c: string, memberId: string, roleId: string, join: boolean) => {
         const held = members.find((m) => m.id === memberId)!.role_ids;
@@ -115,30 +66,6 @@ describe('RbacService self-assignable roles (#4958)', () => {
         };
       },
     );
-    memberRepo.findByUserAndChapter.mockImplementation(
-      async (userId: string) =>
-        members.find((member) => member.user_id === userId) ?? null,
-    );
-    audit = createAuditLogServiceMock();
-
-    const module = await Test.createTestingModule({
-      providers: [
-        RbacService,
-        { provide: ROLE_REPOSITORY, useValue: roleRepo },
-        { provide: MEMBER_REPOSITORY, useValue: memberRepo },
-        { provide: CHAPTER_REPOSITORY, useValue: {} },
-        {
-          provide: ROLE_TIER_REPOSITORY,
-          useValue: { findByChapter: jest.fn().mockResolvedValue(tiers) },
-        },
-        { provide: ChapterAuditLogService, useValue: audit },
-        {
-          provide: CHAPTER_GROUP_REPOSITORY,
-          useValue: createChapterGroupRepoMock(),
-        },
-      ],
-    }).compile();
-    service = module.get(RbacService);
   });
 
   const roleById = (id: string) => roles.find((r) => r.id === id)!;

@@ -1,7 +1,7 @@
 /**
- * Narrowing for s15 (Profile). The stat cards' reads and arithmetic are shared
- * with web, in `@repo/hooks` (`profile-stats.ts`), as are the major · company ·
- * year line and `formatGraduationYear`.
+ * Narrowing for s15 (Profile). The points and service-hours reads and their
+ * arithmetic are shared with web, in `@repo/hooks` (`profile-stats.ts`), as are
+ * the major · company · year line and `formatGraduationYear`.
  */
 import {
   type BirthdayVisibility,

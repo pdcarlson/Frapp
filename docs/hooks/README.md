@@ -111,14 +111,13 @@ narrower there — but it is the same race, and neither is the shape to imitate.
 Hooks in `packages/hooks/src` are tested with Vitest, React Testing Library, and a
 real `QueryClient` wrapped with `FrappClientProvider` and `QueryClientProvider`.
 
-## Event query keys
-
-`useEvent` caches each event under `["events", chapterId, id]` (see `use-events.ts`), not `["events", id]`. Any TanStack Query invalidation that should refresh the event detail after related data changes (for example realtime attendance updates in the web app) must include the same `chapterId` segment from `useActiveChapterId()` so prefix matching hits the mounted query.
-
 - Vitest (`packages/hooks/vitest.config.ts`)
 - `@testing-library/react` `renderHook`
-- `FrappClientProvider` + `QueryClientProvider` wrappers for realistic hook context
-- Query retries disabled in tests for deterministic assertions
+- The wrapper and client come from `src/test-utils.tsx`: `createHookWrapper`
+  (`FrappClientProvider` outside `QueryClientProvider`, with an optional chapter
+  id) and `createTestQueryClient` (query and mutation retries off, for
+  deterministic assertions). A new spec uses them rather than building its own;
+  older specs still being moved over are tracked in #815.
 
 Core expectations for mutation hooks:
 
@@ -126,6 +125,10 @@ Core expectations for mutation hooks:
 - assert mutation state transitions (`isSuccess` / `isError`)
 - verify cache invalidation side effects on success
 - verify invalidation does not run on failure
+
+## Event query keys
+
+`useEvent` caches each event under `["events", chapterId, id]` (see `use-events.ts`), not `["events", id]`. Any TanStack Query invalidation that should refresh the event detail after related data changes (for example realtime attendance updates in the web app) must include the same `chapterId` segment from `useActiveChapterId()` so prefix matching hits the mounted query.
 
 ## Current focused hook coverage
 

@@ -1,9 +1,7 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
-import type { createFrappClient } from "@repo/api-sdk";
-import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 import {
   useAwaitInvoicePaid,
   useCreateInvoice,
@@ -21,43 +19,23 @@ const CREATE_INVOICE_PATH = "/v1/invoices";
 const PAYMENT_INTENT_PATH = "/v1/invoices/{id}/payment-intent";
 const INVOICE_PATH = "/v1/invoices/{id}";
 
-function makeWrapper(
+const makeWrapper = (
   queryClient: QueryClient,
   mockClient: unknown,
   displayName: string,
-) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={mockClient as unknown as ReturnType<typeof createFrappClient>}
-      chapterId={CHAPTER_ID}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-
-  Wrapper.displayName = displayName;
-  return Wrapper;
-}
-
-function makeQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
+) =>
+  createHookWrapper({
+    queryClient,
+    client: mockClient,
+    chapterId: CHAPTER_ID,
+    displayName,
   });
-}
 
 describe("useCreateInvoice", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: { retry: false },
-        mutations: { retry: false },
-      },
-    });
+    queryClient = createTestQueryClient();
   });
 
   const createWrapper = (mockClient: unknown) =>
@@ -131,7 +109,7 @@ describe("usePayInvoice", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
   });
 
   it("mints a payment intent for the given invoice and returns the client secret", async () => {
@@ -196,7 +174,7 @@ describe("useAwaitInvoicePaid", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = makeQueryClient();
+    queryClient = createTestQueryClient();
   });
 
   it("resolves paid once the webhook has flipped the invoice to PAID", async () => {
@@ -358,9 +336,7 @@ describe("useInvoices cancellation (#3433)", () => {
       if (init?.signal) signals.push(init.signal);
       return new Promise(() => undefined);
     });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    const queryClient = createTestQueryClient();
     renderHook(() => useInvoices(), {
       wrapper: makeWrapper(queryClient, { GET }, "CancelWrapper"),
     });
