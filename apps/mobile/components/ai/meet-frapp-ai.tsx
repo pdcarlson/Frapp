@@ -7,13 +7,14 @@ import {
   type ReactNode,
 } from "react";
 import { StyleSheet, Text, View } from "react-native";
-import Svg, { Path } from "react-native-svg";
+import { Path } from "react-native-svg";
 import * as WebBrowser from "expo-web-browser";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { errorCopy, shouldMeetFrappAi, useFrappAiChoice } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { FRAPP_AI_COPY, joinNames, type FrappAiPoint } from "@repo/validation";
 import { ChatGlyph, TasksGlyph } from "@/components/tab-glyphs";
+import { Frame, paint } from "@/components/glyph-recipe";
 import { OnboardingPrimaryButton } from "@/components/onboarding/onboarding-primary-button";
 import { OnboardingPressable } from "@/components/onboarding/onboarding-pressable";
 import {
@@ -369,33 +370,20 @@ export function useAiConsentGate(): {
 }
 
 /**
- * Ask's mark: a four-point spark, a 1.6px stroke on a 24px grid with a
- * low-opacity fill of its own hue, as the bell is drawn
+ * Ask's mark: a four-point spark in the §1 stroke recipe
+ * (`components/glyph-recipe.tsx`), as the bell is drawn
  * (`spec/ui/design-system/iconography.md` §1).
  */
-function SparkGlyph({
-  color,
-  size = 22,
-}: {
-  color: string;
-  size?: number;
-}) {
+function SparkGlyph({ color, size = 22 }: { color: string; size?: number }) {
+  const { body, detail } = paint({ color });
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+    <Frame size={size} hidden={false}>
       <Path
         d="M12 3.5c.5 4.3 2.2 6 6.5 6.5-4.3.5-6 2.2-6.5 6.5-.5-4.3-2.2-6-6.5-6.5 4.3-.5 6-2.2 6.5-6.5Z"
-        stroke={color}
-        strokeWidth={1.6}
-        strokeLinejoin="round"
-        fill={tint(color, 0.16)}
+        {...body}
       />
-      <Path
-        d="M18.5 15.5v4M16.5 17.5h4"
-        stroke={color}
-        strokeWidth={1.6}
-        strokeLinecap="round"
-      />
-    </Svg>
+      <Path d="M18.5 15.5v4M16.5 17.5h4" {...detail} />
+    </Frame>
   );
 }
 

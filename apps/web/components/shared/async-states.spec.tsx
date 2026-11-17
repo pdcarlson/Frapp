@@ -1,5 +1,7 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative } from "node:path";
 import { describe, it, expect } from "vitest";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { anyReadUncached, pausedRead } from "@/components/shared/async-states";
 
 /**
  * The predicate behind every `isOffline && …` gate on the dashboard (#1621).
@@ -40,9 +42,9 @@ describe("anyReadUncached", () => {
   it("treats placeholder data as uncached", () => {
     // `useAlumni`'s `keepPreviousData` shape: `data` is defined, but it is the
     // previous filter's rows rather than this query's answer.
-    expect(anyReadUncached({ data: [{ id: "a" }], isPlaceholderData: true })).toBe(
-      true,
-    );
+    expect(
+      anyReadUncached({ data: [{ id: "a" }], isPlaceholderData: true }),
+    ).toBe(true);
   });
 
   it("does not treat settled data as placeholder", () => {
@@ -67,5 +69,82 @@ describe("anyReadUncached", () => {
     // a page that has a correct empty state to show.
     expect(anyReadUncached({ data: [] })).toBe(false);
     expect(anyReadUncached({ data: null })).toBe(false);
+  });
+});
+
+/**
+ * The paused-read rule (#1782): pending *and* paused. Each half rules out a
+ * state the other admits, so deleting either conjunct turns one of these red:
+ * without `isPending`, a cached read whose refetch paused reads as paused;
+ * without the `fetchStatus` test, a read that is merely loading, or was never
+ * started, does.
+ */
+describe("pausedRead", () => {
+  it("is true for a pending read whose fetch paused", () => {
+    expect(pausedRead({ isPending: true, fetchStatus: "paused" })).toBe(true);
+  });
+
+  it("is false for a pending read that is still fetching", () => {
+    expect(pausedRead({ isPending: true, fetchStatus: "fetching" })).toBe(
+      false,
+    );
+  });
+
+  it("is false for a pending read that was never started", () => {
+    // `isPending && !isFetching` would say true here, conflating "we could
+    // not ask" with "we did not ask".
+    expect(pausedRead({ isPending: true, fetchStatus: "idle" })).toBe(false);
+  });
+
+  it("is false for a cached read whose refetch paused", () => {
+    expect(pausedRead({ isPending: false, fetchStatus: "paused" })).toBe(false);
+  });
+});
+
+/**
+ * `pausedRead` is the one spelling of the paused-read rule (#1782), so a
+ * surface that writes `isPending && fetchStatus === "paused"` (or `!==`, in
+ * either order) by hand turns this red. Comments are stripped first: prose
+ * that quotes the rule is not a copy of it.
+ */
+describe("pausedRead is the only spelling of the rule", () => {
+  const WEB_ROOT = join(__dirname, "..", "..");
+  const DEFINITION = "components/shared/async-states.tsx";
+  const HAND_WRITTEN = [
+    /isPending\s*&&\s*\(?\s*[\w.?]*fetchStatus\s*[!=]==\s*["']paused["']/,
+    /fetchStatus\s*[!=]==\s*["']paused["']\s*\)?\s*&&\s*[\w.?]*isPending\b/,
+  ];
+
+  function stripComments(source: string): string {
+    return source
+      .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+  }
+
+  function sourceFiles(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) return sourceFiles(path);
+      return /\.tsx?$/.test(entry.name) &&
+        !/\.(spec|test)\.tsx?$/.test(entry.name)
+        ? [relative(WEB_ROOT, path)]
+        : [];
+    });
+  }
+
+  it("finds no hand-written copy outside the definition", () => {
+    const files = ["app", "components", "lib"].flatMap((dir) =>
+      sourceFiles(join(WEB_ROOT, dir)),
+    );
+    expect(files).toContain(DEFINITION);
+    const copies = files.filter(
+      (file) =>
+        file !== DEFINITION &&
+        HAND_WRITTEN.some((rule) =>
+          rule.test(stripComments(readFileSync(join(WEB_ROOT, file), "utf8"))),
+        ),
+    );
+    expect(copies).toEqual([]);
   });
 });

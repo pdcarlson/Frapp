@@ -6,9 +6,11 @@ import {
   useConnectGoogleDrive,
   useDisconnectGoogleDrive,
   useGoogleDriveStatus,
+  useOpenUpDriveCopy,
   useSyncGoogleDrive,
   type GoogleDriveStatus,
 } from "@repo/hooks";
+import { isEmptyChannelAccessChoice } from "@repo/hooks/channel-access";
 import { formatRelativeDayTime } from "@repo/formatting";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +27,15 @@ import {
   type SubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
+import { ChannelAccessField } from "@/components/chat-admin/channel-access-field";
+import {
+  FOLDER_ALWAYS_LINE,
+  useDocumentAccessChoices,
+} from "@/components/documents/document-access";
+import type {
+  ChapterDocument,
+  FolderRow,
+} from "@/components/documents/document-types";
 import { useToast } from "@/lib/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -37,7 +48,17 @@ import { getErrorMessage } from "@/lib/utils";
  * Comparable: Notion's and Slack's Google Drive connections, which also ask
  * for the folder and then show its last sync with a Sync now control.
  */
-export function DriveFolderPanel({ gate }: { gate: SubscriptionGate }) {
+export function DriveFolderPanel({
+  gate,
+  documents = [],
+  folders = [],
+}: {
+  gate: SubscriptionGate;
+  /** The documents the officer sees, for the copies sync is holding back. */
+  documents?: readonly ChapterDocument[];
+  /** The chapter's folders, to name where Drive put a held copy. */
+  folders?: readonly FolderRow[];
+}) {
   const status = useGoogleDriveStatus();
   const dialog = useGatedDialog(gate);
   const data = status.data;
@@ -71,12 +92,14 @@ export function DriveFolderPanel({ gate }: { gate: SubscriptionGate }) {
             <ConnectedView
               status={data}
               gate={gate}
+              held={heldCopies(documents, folders)}
               onClose={() => dialog.setOpen(false)}
             />
           ) : (
             <ConnectView
               email={data.service_account_email}
               gate={gate}
+              open={dialog.open}
               onCancel={() => dialog.setOpen(false)}
             />
           )}
@@ -89,25 +112,39 @@ export function DriveFolderPanel({ gate }: { gate: SubscriptionGate }) {
 function ConnectView({
   email,
   gate,
+  open,
   onCancel,
 }: {
   email: string | null;
   gate: SubscriptionGate;
+  open: boolean;
   onCancel: () => void;
 }) {
   const connect = useConnectGoogleDrive();
+  const access = useDocumentAccessChoices(open);
   const { toast } = useToast();
   const [link, setLink] = useState("");
+  const [whoCanSee, setWhoCanSee] = useState<string[] | null>(null);
+  const accessId = useId();
+  const hideAccess = access.optionsState === "ready" && !access.canLimit;
+  const accessReady = access.optionsState === "ready";
   const [error, setError] = useState<string | null>(null);
   const inputId = useId();
   const errorId = useId();
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!link.trim() || connect.isPending) return;
+    if (
+      !link.trim() ||
+      connect.isPending ||
+      !accessReady ||
+      isEmptyChannelAccessChoice(whoCanSee)
+    ) {
+      return;
+    }
     setError(null);
     try {
-      await connect.mutateAsync(link.trim());
+      await connect.mutateAsync({ folderLink: link.trim(), whoCanSee });
       toast({
         title: "Google Drive connected",
         description: "Its files will show up in Documents in a minute or two.",
@@ -128,9 +165,9 @@ function ConnectView({
       <PanelHeader>Connect Google Drive</PanelHeader>
       <PanelBody className="space-y-6">
         <p className="text-body text-muted-foreground">
-          Every file in the folder shows up in Documents for everyone who can
-          open Documents, and stays in sync as the folder changes. Google Docs
-          and Slides come in as PDFs, and Sheets as Excel files.
+          Every file in the folder shows up in Documents for the people you
+          choose, and stays in sync as the folder changes. Google Docs and
+          Slides come in as PDFs, and Sheets as Excel files.
         </p>
         <ol className="space-y-6">
           <li className="space-y-2">
@@ -166,6 +203,34 @@ function ConnectView({
               </p>
             ) : null}
           </li>
+          {/*
+            Left out only once the choices have loaded and say this member
+            may not set a list (outside every tier); the folder then comes in
+            open, as any folder they make does. While the choices load or
+            fail the field shows that, and Connect waits, so a folder is never
+            connected open because the picker didn't appear.
+          */}
+          {!hideAccess ? (
+            <li className="space-y-2">
+              <p className="text-body font-medium">3. Choose who sees it</p>
+              <ChannelAccessField
+                id={accessId}
+                question="see"
+                value={whoCanSee}
+                onChange={setWhoCanSee}
+                options={access.options}
+                optionsState={access.optionsState}
+                locked={access.locked}
+                alwaysLine={FOLDER_ALWAYS_LINE}
+                canChoose={access.canLimit}
+                disabled={connect.isPending}
+              />
+              <p className="text-caption text-muted-foreground">
+                Its subfolders start the same way. You can narrow any of them
+                later from Edit folder.
+              </p>
+            </li>
+          ) : null}
         </ol>
       </PanelBody>
       <PanelFooter>
@@ -174,7 +239,13 @@ function ConnectView({
         </Button>
         <Button
           type="submit"
-          disabled={!link.trim() || connect.isPending || !gate.allowed}
+          disabled={
+            !link.trim() ||
+            connect.isPending ||
+            !accessReady ||
+            isEmptyChannelAccessChoice(whoCanSee) ||
+            !gate.allowed
+          }
           aria-busy={connect.isPending}
         >
           {connect.isPending ? "Connecting…" : "Connect"}
@@ -221,10 +292,12 @@ function CopyAddress({ email }: { email: string }) {
 function ConnectedView({
   status,
   gate,
+  held,
   onClose,
 }: {
   status: GoogleDriveStatus;
   gate: SubscriptionGate;
+  held: HeldCopy[];
   onClose: () => void;
 }) {
   const connection = status.connection!;
@@ -335,9 +408,12 @@ function ConnectedView({
           ) : null}
         </dl>
 
+        {held.length > 0 ? <HeldCopies held={held} gate={gate} /> : null}
+
         <p className="text-caption text-muted-foreground">
           Changes in the folder reach Documents within 15 minutes. Subfolders
-          become folders here. To remove a file, remove it in Google Drive.
+          become folders here, and keep who can see them when renamed in Drive.
+          To rename, remove or delete anything, do it in Google Drive.
         </p>
       </PanelBody>
       <PanelFooter>
@@ -364,4 +440,108 @@ function ConnectedView({
 
 function fileCount(count: number): string {
   return count === 1 ? "1 file" : `${count} files`;
+}
+
+/** A copy sync left in place because Drive moved it somewhere wider (#5220). */
+type HeldCopy = { doc: ChapterDocument; movedTo: string };
+
+/**
+ * The copies sync is holding back, each with the folder Drive put it in. A
+ * copy whose folder the officer can't see comes back without one from the
+ * API, so it isn't listed: it isn't theirs to open up.
+ */
+export function heldCopies(
+  documents: readonly ChapterDocument[],
+  folders: readonly FolderRow[],
+): HeldCopy[] {
+  const names = new Map(
+    folders.flatMap((folder) =>
+      folder.id ? [[folder.id, folder.name] as const] : [],
+    ),
+  );
+  return documents.flatMap((doc) => {
+    const movedTo = doc.drive_held_folder_id
+      ? names.get(doc.drive_held_folder_id)
+      : undefined;
+    return movedTo ? [{ doc, movedTo }] : [];
+  });
+}
+
+/**
+ * "Held back": files Drive moved into a folder more people may see. Sync
+ * never widens who sees a file by itself, so each stays where it was until
+ * an officer opens it up, the way Drive itself asks before a move changes
+ * who has access.
+ */
+function HeldCopies({
+  held,
+  gate,
+}: {
+  held: HeldCopy[];
+  gate: SubscriptionGate;
+}) {
+  const openUp = useOpenUpDriveCopy();
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const { toast } = useToast();
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function onOpenUp({ doc, movedTo }: HeldCopy) {
+    const ok = await confirm({
+      title: `Move ${doc.title} to ${movedTo}?`,
+      description: `Everyone who can see ${movedTo} will see it.`,
+      confirmLabel: "Open it up",
+    });
+    if (!ok) return;
+    setBusyId(doc.id);
+    try {
+      await openUp.mutateAsync(doc.id);
+      toast({ title: `${doc.title} moved to ${movedTo}` });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Couldn't move it",
+        description: getErrorMessage(error, "Try again in a moment."),
+      });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="space-y-2" aria-labelledby="drive-held-heading">
+      <h3 id="drive-held-heading" className="text-body font-medium">
+        Held back
+      </h3>
+      <p className="text-caption text-muted-foreground">
+        Someone moved these in Google Drive into a folder more people can see.
+        They stay where they were until you open them up.
+      </p>
+      <ul className="divide-y divide-border">
+        {held.map((copy) => (
+          <li
+            key={copy.doc.id}
+            className="flex min-h-11 items-center gap-3 py-1.5"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-body">{copy.doc.title}</span>
+              <span className="block truncate text-caption text-muted-foreground">
+                In {copy.doc.folder ?? "Documents"}, moved to {copy.movedTo} in
+                Drive
+              </span>
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void onOpenUp(copy)}
+              aria-busy={busyId === copy.doc.id}
+              {...gate.controlProps(busyId !== null)}
+            >
+              Open it up
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {confirmDialog}
+    </section>
+  );
 }

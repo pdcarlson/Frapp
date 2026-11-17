@@ -17,12 +17,25 @@ import {
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, MONO_FONT_FAMILY } from "@/lib/theme";
 import { drawnText } from "@/test/screen-text";
+import Markdown from "react-markdown";
 import {
   linkA11yActions,
   MessageMarkdown,
   parseMessageMarkdown,
   runLinkA11yAction,
 } from "./message-markdown";
+
+// The real react-markdown, recorded: what remark was handed tells whether a
+// body skipped the parse without timing it.
+vi.mock("react-markdown", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-markdown")>();
+  return { ...actual, default: vi.fn(actual.default) };
+});
+
+/** The source remark was last handed: `""` when the parse was skipped. */
+const parsedSource = () =>
+  (vi.mocked(Markdown).mock.lastCall?.[0] as { children?: unknown })
+    .children;
 
 function render(
   content: string,
@@ -451,12 +464,11 @@ describe("MessageMarkdown: the #2209 depth cap", () => {
   it("skips the parse for a list-marker line at the length cap", () => {
     // remark's parse is quadratic in one line's list markers: this body took
     // 6.8 s in Node when it reached the parser (`markdown-depth-cap.ts`). The
-    // cap after the parse would draw the same text, so only the time shows
-    // whether `opensTooManyContainers` skipped it.
+    // cap after the parse would draw the same text, so only what remark was
+    // handed shows whether `opensTooManyContainers` skipped it.
     const content = "- ".repeat(4_999) + "hi";
-    const started = performance.now();
     const parsed = parseMessageMarkdown(content);
-    expect(performance.now() - started).toBeLessThan(1_500);
+    expect(parsedSource()).toBe("");
     expect(parsed.links).toEqual([]);
     expect(drawn(content)).toBe(content);
   });
@@ -496,8 +508,8 @@ describe("MessageMarkdown: the #2209 depth cap", () => {
  * Where the parse would draw something else (emphasis, a link, a decoded
  * entity, an unwrapped quote or list), drawing the body exactly as typed
  * proves the parse was skipped. Where it would draw the same text (a run the
- * depth cap flattens, raw HTML shown as typed), the loose time bound is what
- * tells.
+ * depth cap flattens, raw HTML shown as typed), the empty source remark was
+ * handed is what tells.
  */
 describe("MessageMarkdown: bodies too costly to parse", () => {
   it.each(COSTLY_MARKDOWN_BODIES.map((c) => [c.label, c.body]))(
@@ -505,15 +517,8 @@ describe("MessageMarkdown: bodies too costly to parse", () => {
     (_label, content) => {
       expect(content.length).toBeLessThanOrEqual(10_000);
       expect(skipsMarkdownParse(content)).toBe(true);
-      const started = performance.now();
       const parsed = parseMessageMarkdown(content);
-      // Timed only on one line. A body of thousands of lines costs a break
-      // per line even as raw text, and each of those carries quote or list
-      // markers a parse would strip, so the raw-text assertion below is the
-      // proof for them.
-      if (!content.includes("\n")) {
-        expect(performance.now() - started).toBeLessThan(500);
-      }
+      expect(parsedSource()).toBe("");
       expect(parsed.links).toEqual([]);
       // The raw-text path keeps every character but a line's leading
       // indentation, which `remark-breaks` drops at each break.
@@ -529,6 +534,7 @@ describe("MessageMarkdown: bodies too costly to parse", () => {
     const started = performance.now();
     parseMessageMarkdown(content);
     expect(performance.now() - started).toBeLessThan(1_000);
+    expect(parsedSource()).toBe(content);
   });
 });
 

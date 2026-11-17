@@ -43,8 +43,23 @@ export type FinishDeps<Doc> = {
 export type FinishJob<Doc> = {
   file: File;
   prepared: { bytes: Uint8Array; hash: string; doc: Doc };
-  submission: { fields: BulkFields; boxes: BoxesByPage; flatten: boolean };
+  submission: {
+    fields: BulkFields;
+    boxes: BoxesByPage;
+      flatten: boolean;
+    /**
+     * Saved by "Save the rest" without the person looking at it (#5252): the
+     * draft waits for its uploader to check its pages.
+     */
+    unchecked?: boolean;
+  };
 };
+
+/** What `storePdf` needs: the upload-url request, the PUT, and the checks. */
+export type StoreDeps = Pick<
+  FinishDeps<unknown>,
+  "assertChapter" | "sleep" | "requestUpload" | "put"
+>;
 
 /** Second try when a flattened file comes out over the cap. */
 const SMALLER: FlattenOptions = { dpi: 110, quality: 0.7 };
@@ -120,24 +135,66 @@ export async function finishUpload<Doc>(
   // render every page only to be refused.
   await deps.assertChapter?.();
   const flatten = submission.flatten || mustFlatten(submission.fields, submission.boxes);
-  let body = prepared.bytes;
-  if (flatten) {
-    body = await deps.flatten(prepared.doc, submission.boxes);
-    if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
-      body = await deps.flatten(prepared.doc, submission.boxes, SMALLER);
-    }
+  const body = flatten
+    ? await flattenWithinCap(prepared.doc, submission.boxes, deps.flatten)
+    : prepared.bytes;
+  if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
+    throw new MemberFacingError(`This file is over ${MAX_BACKWORK_UPLOAD_LABEL}.`);
+  }
+  const fileHash = flatten ? await sha256Hex(body) : prepared.hash;
+  const storagePath = await storePdf(
+    body,
+    flatten ? flattenedFileName(submission.fields.title) : file.name,
+    deps,
+  );
+  await deps.assertChapter?.();
+  await deps.confirm({
+    storage_path: storagePath,
+    file_hash: fileHash,
+    ...confirmFields(submission.fields, flatten ? "Redacted backwork" : file.name),
+    is_redacted: flatten,
+    // Saved as a draft (#5208): the person reviews the batch in one table
+    // and publishes it, so a field left blank here is fixed there.
+    draft: true,
+    ...(submission.unchecked ? { pages_checked: false } : {}),
+  });
+}
+
+/**
+ * Flattens a document with its boxes burned in, once more at a lower quality
+ * when the first pass comes out over the upload cap, and refuses one that is
+ * still over it.
+ */
+export async function flattenWithinCap<Doc>(
+  doc: Doc,
+  boxes: BoxesByPage,
+  flatten: FinishDeps<Doc>["flatten"],
+): Promise<Uint8Array> {
+  let body = await flatten(doc, boxes);
+  if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
+    body = await flatten(doc, boxes, SMALLER);
   }
   if (body.byteLength > MAX_BACKWORK_UPLOAD_BYTES) {
     throw new MemberFacingError(
-      flatten
-        ? `This file is over ${MAX_BACKWORK_UPLOAD_LABEL} once flattened. Split the PDF and try again.`
-        : `This file is over ${MAX_BACKWORK_UPLOAD_LABEL}.`,
+      `This file is over ${MAX_BACKWORK_UPLOAD_LABEL} once flattened. Split the PDF and try again.`,
     );
   }
-  const fileHash = flatten ? await sha256Hex(body) : prepared.hash;
+  return body;
+}
+
+/**
+ * Uploads a PDF through `upload-url` and returns where it is stored. A 429
+ * waits and asks again (`RATE_LIMIT_WAITS_MS`). Shared by the bulk finish and
+ * a draft's page check, which uploads the file flattened again (#5252).
+ */
+export async function storePdf(
+  body: Uint8Array,
+  filename: string,
+  deps: StoreDeps,
+): Promise<string> {
   const sleep = deps.sleep ?? realSleep;
   const request = {
-    filename: flatten ? flattenedFileName(submission.fields.title) : file.name,
+    filename,
     content_type: "application/pdf",
     size_bytes: body.byteLength,
   };
@@ -158,14 +215,5 @@ export async function finishUpload<Doc>(
     signedUrl,
     body: new Blob([body as BlobPart], { type: "application/pdf" }),
   });
-  await deps.assertChapter?.();
-  await deps.confirm({
-    storage_path: storagePath,
-    file_hash: fileHash,
-    ...confirmFields(submission.fields, flatten ? "Redacted backwork" : file.name),
-    is_redacted: flatten,
-    // Saved as a draft (#5208): the person reviews the batch in one table
-    // and publishes it, so a field left blank here is fixed there.
-    draft: true,
-  });
+  return storagePath;
 }

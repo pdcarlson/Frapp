@@ -79,6 +79,16 @@ describe("parseProviderIds", () => {
       renderServiceId: "srv-staging1",
       renderDeploySource: "commit",
       apiImage: "",
+      apiHost: "render",
+      gcpProjectId: "",
+      gcpRegion: "",
+      cloudRunService: "",
+      cloudRunImage: "",
+      cloudRunDeployer: "",
+      cloudRunRuntime: "",
+      cloudRunProvider: "",
+      cloudRunMinInstances: "",
+      cloudRunMaxInstances: "",
       vercelTeamId: "team_abc",
       vercelWebProjectId: "prj_web",
       vercelLandingProjectId: "prj_landing",
@@ -117,12 +127,86 @@ describe("parseProviderIds", () => {
   });
 });
 
+describe("Cloud Run (#5228)", () => {
+  const cloudRun = (overrides = {}) => ({
+    projectId: "nonprod-123",
+    projectNumber: "211663803311",
+    region: "us-east4",
+    minInstances: 0,
+    maxInstances: 1,
+    ...overrides,
+  });
+  const onCloudRun = (mutate = (c) => c) =>
+    config((c) =>
+      mutate(((c.environments.staging.apiHost = "cloud-run"), (c.environments.staging.cloudRun = cloudRun()), (c.apiImage = "ghcr.io/frapplive/frapp-api"), c)),
+    );
+
+  it("derives the service, registry, accounts and sign-in provider from the project", () => {
+    const ids = parseProviderIds(onCloudRun(), "staging");
+    assert.equal(ids.apiHost, "cloud-run");
+    assert.equal(ids.cloudRunService, "frapp-api");
+    assert.equal(ids.cloudRunImage, "us-east4-docker.pkg.dev/nonprod-123/frapp/api");
+    assert.equal(ids.cloudRunDeployer, "frapp-deployer@nonprod-123.iam.gserviceaccount.com");
+    assert.equal(ids.cloudRunRuntime, "frapp-api-runtime@nonprod-123.iam.gserviceaccount.com");
+    assert.equal(
+      ids.cloudRunProvider,
+      "projects/211663803311/locations/global/workloadIdentityPools/github/providers/frapplive-frapp",
+    );
+    assert.equal(ids.cloudRunMinInstances, "0");
+  });
+
+  it("refuses a bad block, a shared project, a missing image, and production on Cloud Run", () => {
+    const refusals = [
+      ["an unknown host", onCloudRun((c) => ((c.environments.staging.apiHost = "fly"), c)), "staging"],
+      ["cloud-run with no block", onCloudRun((c) => (delete c.environments.staging.cloudRun, c)), "staging"],
+      ["a malformed project", onCloudRun((c) => ((c.environments.staging.cloudRun.projectId = "Bad_Id"), c)), "staging"],
+      ["a missing number", onCloudRun((c) => (delete c.environments.staging.cloudRun.projectNumber, c)), "staging"],
+      ["min above max", onCloudRun((c) => ((c.environments.staging.cloudRun.minInstances = 2), c)), "staging"],
+      ["no max", onCloudRun((c) => (delete c.environments.staging.cloudRun.maxInstances, c)), "staging"],
+      [
+        "one project for both",
+        onCloudRun((c) => ((c.environments.production.cloudRun = cloudRun({ minInstances: 1 })), c)),
+        "staging",
+      ],
+      ["no image to build", onCloudRun((c) => (delete c.apiImage, c)), "staging"],
+      [
+        "production on Cloud Run",
+        onCloudRun(
+          (c) => (
+            (c.environments.production.apiHost = "cloud-run"),
+            (c.environments.production.cloudRun = cloudRun({ projectId: "prod-456" })),
+            c
+          ),
+        ),
+        "production",
+      ],
+    ];
+    for (const [label, text, name] of refusals) {
+      assert.throws(() => parseProviderIds(text, name), Error, label);
+    }
+  });
+
+  it("pins the committed projects: staging deploys to nonprod, production's block names prod", () => {
+    const staging = providerIdsFor("staging");
+    assert.equal(staging.apiHost, "cloud-run");
+    assert.equal(staging.gcpProjectId, "cs-project-6vw9f5xp");
+    assert.equal(staging.gcpRegion, "us-east4");
+    const production = providerIdsFor("production");
+    assert.equal(production.apiHost, "render");
+    assert.equal(production.gcpProjectId, "cs-project-nyit2x59");
+    assert.equal(production.gcpRegion, "us-east5");
+  });
+});
+
 describe("provider-ids.mjs", () => {
   it("writes one output per id, named as the workflows read them", () => {
     const ids = parseProviderIds(config(), "production");
     assert.equal(
       formatProviderOutputs(ids),
-      "render_service_id=srv-prod1\nrender_deploy_source=commit\napi_image=\nvercel_team_id=team_abc\n" +
+      "render_service_id=srv-prod1\nrender_deploy_source=commit\napi_image=\napi_host=render\n" +
+        "gcp_project_id=\ngcp_region=\ncloud_run_service=\ncloud_run_image=\ncloud_run_deployer=\n" +
+        "cloud_run_runtime=\ncloud_run_provider=\ncloud_run_min_instances=\ncloud_run_max_instances=\n" +
+        "vercel_team_id=team_abc\n" +
         "vercel_web_project_id=prj_web\nvercel_landing_project_id=prj_landing\n",
     );
   });
@@ -195,6 +279,16 @@ describe("every consumer reads the ids step of its own job", () => {
     ["RENDER_SERVICE_ID", "render_service_id"],
     ["RENDER_DEPLOY_SOURCE", "render_deploy_source"],
     ["API_IMAGE", "api_image"],
+    ["API_HOST", "api_host"],
+    ["GCP_PROJECT_ID", "gcp_project_id"],
+    ["GCP_REGION", "gcp_region"],
+    ["CLOUD_RUN_SERVICE", "cloud_run_service"],
+    ["CLOUD_RUN_IMAGE", "cloud_run_image"],
+    ["CLOUD_RUN_DEPLOYER", "cloud_run_deployer"],
+    ["CLOUD_RUN_RUNTIME", "cloud_run_runtime"],
+    ["CLOUD_RUN_PROVIDER", "cloud_run_provider"],
+    ["CLOUD_RUN_MIN_INSTANCES", "cloud_run_min_instances"],
+    ["CLOUD_RUN_MAX_INSTANCES", "cloud_run_max_instances"],
     ["VERCEL_TEAM_ID", "vercel_team_id"],
     ["VERCEL_WEB_PROJECT_ID", "vercel_web_project_id"],
     ["VERCEL_LANDING_PROJECT_ID", "vercel_landing_project_id"],

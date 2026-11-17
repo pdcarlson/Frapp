@@ -32,6 +32,7 @@ import {
   ErrorState,
   OfflineState,
   anyReadUncached,
+  pausedRead,
 } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
 import { InlineNote } from "@/components/shared/inline-note";
@@ -91,7 +92,7 @@ export function SettingsGroupsTab({ canManage }: { canManage: boolean }) {
   const members = membersQuery.data;
   const editing = groups.find((group) => group.id === editingId) ?? null;
 
-  const paused = groupsQuery.isPending && groupsQuery.fetchStatus === "paused";
+  const paused = pausedRead(groupsQuery);
 
   let body: ReactNode;
   if (isOffline && anyReadUncached(groupsQuery)) {

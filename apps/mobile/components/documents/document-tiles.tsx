@@ -1,7 +1,10 @@
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
-import { classifyFile, type LibraryDocument } from "@repo/hooks/document-library";
+import {
+  classifyFile,
+  type LibraryDocument,
+} from "@repo/hooks/document-library";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -10,6 +13,7 @@ import { PressableRow } from "@/components/list-section";
 import { GridLine, toGridChunks } from "@/components/grid-line";
 import { documentMeta, type MobileDocument } from "@/lib/more/documents";
 import { PinGlyph, StarGlyph } from "./document-glyphs";
+import { LIMITED_LABEL, LimitedMark } from "./limited-mark";
 
 type DocumentRowData = LibraryDocument<MobileDocument>;
 
@@ -31,6 +35,7 @@ type DocumentRowData = LibraryDocument<MobileDocument>;
 export function DocumentTiles({
   rows,
   isStarred,
+  isLimited,
   busyIds,
   deletingIds,
   actionsLabel,
@@ -39,6 +44,8 @@ export function DocumentTiles({
 }: {
   rows: readonly DocumentRowData[];
   isStarred: (id: string) => boolean;
+  /** Whether not everyone can see the file: a lock (#5216). */
+  isLimited: (doc: MobileDocument) => boolean;
   /** Files being opened or deleted: each shows a spinner and takes no press. */
   busyIds: ReadonlySet<string>;
   /** Files being deleted take no long press either, as their rows don't. */
@@ -59,10 +66,12 @@ export function DocumentTiles({
             const { doc } = row;
             const pinned = !!doc.pinned_at;
             const starred = isStarred(doc.id);
+            const limited = isLimited(doc);
             const busy = busyIds.has(doc.id);
             const actionable = !busy && !deletingIds.has(doc.id);
             const meta = documentMeta(row);
             const marks = [
+              limited ? LIMITED_LABEL : null,
               pinned ? "Pinned for the chapter" : null,
               starred ? "Starred" : null,
             ]
@@ -74,7 +83,10 @@ export function DocumentTiles({
                 onCard
                 accessibilityRole="button"
                 accessibilityLabel={doc.title}
-                accessibilityHint={[meta, "Opens the share sheet to save it or open it in another app."]
+                accessibilityHint={[
+                  meta,
+                  "Opens the share sheet to save it or open it in another app.",
+                ]
                   .filter(Boolean)
                   .join(". ")}
                 accessibilityValue={marks ? { text: marks } : undefined}
@@ -85,7 +97,10 @@ export function DocumentTiles({
                     : undefined
                 }
                 onAccessibilityAction={(event) => {
-                  if (actionable && event.nativeEvent.actionName === "longpress") {
+                  if (
+                    actionable &&
+                    event.nativeEvent.actionName === "longpress"
+                  ) {
                     onActions(doc);
                   }
                 }}
@@ -111,8 +126,13 @@ export function DocumentTiles({
                   <Text style={styles.type} numberOfLines={1}>
                     {classifyFile(doc).label}
                   </Text>
-                  {pinned || starred ? (
+                  {pinned || starred || limited ? (
                     <View style={styles.marks}>
+                      {limited ? (
+                        <LimitedMark
+                          color={tokens.color.text.mutedForeground}
+                        />
+                      ) : null}
                       {pinned ? <PinGlyph color={accent} on size={14} /> : null}
                       {starred ? (
                         <StarGlyph color={accent} on size={14} />

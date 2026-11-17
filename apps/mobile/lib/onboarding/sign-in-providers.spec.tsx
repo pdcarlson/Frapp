@@ -8,10 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider, tint } from "@/lib/theme";
 import { flatStyle } from "@/test/flat-style";
-import {
-  OAUTH_MEMBERSHIP_HINT,
-  signInProviderLayout,
-} from "@/lib/auth-providers";
+import { OAUTH_MEMBERSHIP_HINT } from "@repo/hooks/auth-error-copy";
+import { signInProviderLayout } from "@/lib/auth-providers";
 
 /**
  * Which sign-in providers s01 shows, and in what order, per platform (#3349).

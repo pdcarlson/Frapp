@@ -186,6 +186,41 @@ export class ConfirmBackworkUploadDto extends BackworkFieldsDto {
   @IsOptional()
   @IsStrictBoolean()
   draft?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'For a draft: false when it was saved without anyone looking at its pages (bulk upload\'s "Save the rest"). Such a draft is not read by the AI fill and can\'t be published until POST /v1/backwork/drafts/{id}/check. Left out, the draft counts as checked.',
+  })
+  @IsOptional()
+  @IsStrictBoolean()
+  pages_checked?: boolean;
+}
+
+/** A draft whose pages the uploader has looked at, with the new file when they added boxes. */
+export class CheckBackworkDraftDto {
+  @ApiPropertyOptional({
+    description:
+      'Storage path from upload-url of the file flattened again with the boxes added during the check. Leave out when no box was added.',
+  })
+  @IsOptional()
+  @IsString()
+  storage_path?: string;
+
+  @ApiPropertyOptional({
+    description: 'SHA-256 hash of that file. Required with storage_path.',
+  })
+  @ValidateIf((dto: CheckBackworkDraftDto) => dto.storage_path !== undefined)
+  @IsString()
+  @Matches(/^[0-9a-f]{64}$/)
+  file_hash?: string;
+}
+
+export class BackworkDraftFileUrlDto {
+  @ApiProperty({
+    description:
+      "A link to the draft's stored file, good for five minutes, for the uploader's browser to show its pages.",
+  })
+  url: string;
 }
 
 /** Ids of the caller's own drafts, for an edit or a publish. */
@@ -407,4 +442,40 @@ export class BackworkDownloadUrlsResponseDto {
       'In the order asked. An id not in this chapter, or that could not be signed, is left out.',
   })
   files: BackworkDownloadUrlDto[];
+}
+
+export class BackworkDraftFillResponseDto {
+  @ApiProperty({
+    enum: [
+      'filled',
+      'nothing_found',
+      'unreadable',
+      'not_redacted',
+      'not_checked',
+      'refused',
+      'unavailable',
+      'invalid_output',
+    ],
+    description:
+      '`filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `not_checked` (saved without its pages being looked at, so it waits for the uploader to check it), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).',
+  })
+  status: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'The fields this fill set. Absent when the draft is unchanged.',
+  })
+  filled?: string[];
+
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: true,
+    description:
+      'The draft as it now stands. `draft_fields.ai_filled` lists the fields an AI fill set that nobody has edited since.',
+  })
+  draft?: object;
+
+  @ApiPropertyOptional()
+  reason?: string;
 }

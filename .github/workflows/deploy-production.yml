@@ -355,9 +355,12 @@ jobs:
     # `_deploy.yml`'s job asks for `packages: write` to push the API image
     # (#2506), and a called job may not ask for more than its caller grants.
     # Production builds no image yet, so it goes unused here until it does.
+    # Likewise `id-token: write`, which signs the job in to Google Cloud for a
+    # Cloud Run deploy (#5228): production still deploys to Render.
     permissions:
       contents: read
       packages: write
+      id-token: write
     secrets: inherit
     with:
       environment: production

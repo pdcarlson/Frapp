@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import {
   anyReadUncached,
   PermissionsOfflineSurface,
+  pausedRead,
 } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { StaleReadNotice } from "@/components/shared/stale-read-notice";
@@ -233,7 +234,7 @@ function DiscordImportView({
   // The channel-by-channel panel (#2857), opened from the import's own page.
   const [channelsOpen, setChannelsOpen] = useState(false);
 
-  const paused = imports.isPending && imports.fetchStatus === "paused";
+  const paused = pausedRead(imports);
 
   // Above every state branch, and so above anything the page's own read can
   // do. The wizard holds every choice the admin has made (source, consent,

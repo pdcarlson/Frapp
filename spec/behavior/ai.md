@@ -73,7 +73,7 @@ It answers "do we have old CSCI 1200 midterms?" and "how much do we have for CSC
 It never reads, indexes or quotes a file's contents, and no backwork file is in the [indexed corpus](#indexed-corpus-retrieved).
 It is offered only to a member who may browse the library (`backwork:upload` or `backwork:admin`) in a chapter with backwork on, like every `/v1/backwork` route.
 An answer built on it warns before it is posted to a channel, because not everyone there may open the library.
-The AI that reads redacted pages to fill in upload fields ([#3487](https://github.com/frapplive/Frapp/issues/3487) phase 4) is a separate system with its own rule, not this one.
+The AI that reads redacted pages to fill in upload fields ([#5233](https://github.com/frapplive/Frapp/issues/5233), 2026-11-16) is a separate system with its own rule, not this one: [`backwork.md`](backwork.md) § AI Fill.
 
 > **The mobile s17 mock that flattened this split is gone** (2026-11-12, #4415).
 > Until then `apps/mobile/lib/ask/corpus.ts` answered from one keyword table that mixed events and dues amounts in with indexed prose, behind a build flag (`EXPO_PUBLIC_ASK_ENABLED`), so the screen could be reviewed before any API existed.
@@ -200,6 +200,7 @@ How the first two gates are kept (#4308, #4790):
   The AI gateway asks before it sends anything: the call's family must be switched on in the chapter the call is made in, and the member it acts for must have said yes on the current sheet.
   Nothing is cached, so a switch turned off or an answer changed to No stops the very next call.
   Indexing and searching the chapter's sources sit behind the Ask switch, since they exist for Ask.
+  So does the backwork upload fill (family `backwork`, #5233, 2026-11-16), with the uploader's own Yes: [`backwork.md`](backwork.md) § AI Fill.
   Indexing the chapter's records needs only that switch, not a member's Yes: they are the chapter's, whoever uploaded or posted them, so a document from an officer who said No is still indexed.
   A member's own question is their own use, so it is embedded for a search only after they said yes.
   Chat as a source is not a call's switch: it decides which messages the corpus reads and whether a summary may read a channel ([Catch me up](#catch-me-up), 2026-11-12), and with it off no member's messages are read.

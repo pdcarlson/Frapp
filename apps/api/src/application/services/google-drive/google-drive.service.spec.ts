@@ -12,6 +12,7 @@ import {
 import type { IChapterDriveRepository } from '#domain/repositories/chapter-drive.repository.interface';
 import type { ChapterDriveConnection } from '#domain/entities/chapter-drive-connection.entity';
 import { GoogleDriveService, parseDriveFolderId } from './google-drive.service';
+import type { ChapterDocumentService } from '../chapter-document.service';
 
 const FOLDER_ID = '1AbCdEfGhIjKlMnOp';
 const EMAIL = 'frapp-docs@signet-frapp.iam.gserviceaccount.com';
@@ -32,12 +33,14 @@ const live = (
   synced_count: 12,
   skipped_count: 1,
   created_at: '2026-11-16T15:00:00.000Z',
+  who_can_see: null,
   ...over,
 });
 
 describe('GoogleDriveService', () => {
   let drive: jest.Mocked<IGoogleDriveApi>;
   let repo: jest.Mocked<IChapterDriveRepository>;
+  let documents: jest.Mocked<ChapterDocumentService>;
   let service: GoogleDriveService;
 
   beforeEach(() => {
@@ -67,7 +70,10 @@ describe('GoogleDriveService', () => {
       releaseLease: jest.fn(),
       delete: jest.fn(),
     };
-    service = new GoogleDriveService(drive, repo);
+    documents = {
+      checkedList: jest.fn(async (_c: string, _u: string, list) => list),
+    } as unknown as jest.Mocked<ChapterDocumentService>;
+    service = new GoogleDriveService(drive, repo, documents);
   });
 
   it('reports the connection, with the folder link and whether a sync is due', async () => {
@@ -90,6 +96,7 @@ describe('GoogleDriveService', () => {
         synced_count: 12,
         skipped_count: 1,
         syncing: false,
+        who_can_see: null,
       },
     });
   });
@@ -107,7 +114,23 @@ describe('GoogleDriveService', () => {
       folder_id: FOLDER_ID,
       folder_name: 'Chapter files',
       connected_by: 'user-1',
+      who_can_see: null,
     });
+  });
+
+  // #5220: what the folder brings in starts behind the list the officer
+  // picked, checked (and their own tier kept) as any folder's list is.
+  it('connects with a who-can-see list, checked as a folder list is', async () => {
+    documents.checkedList.mockResolvedValue(['tier:exec', 'tier:pres']);
+
+    await service.connect('ch-1', 'user-1', FOLDER_ID, ['tier:exec']);
+
+    expect(documents.checkedList).toHaveBeenCalledWith('ch-1', 'user-1', [
+      'tier:exec',
+    ]);
+    expect(repo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ who_can_see: ['tier:exec', 'tier:pres'] }),
+    );
   });
 
   it('refuses a folder not shared with Frapp, naming the address to share it with', async () => {

@@ -37,7 +37,10 @@ const git = (...args) => spawnSync("git", args, { env: GIT_ENV, encoding: "utf8"
 
 function scratch(t, { prePush = true, bringup = true, installer = true, bringupBody = "" } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), "session-start-"));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => {
+    stopRecordedBringup(dir, path.join(dir, "cloud-sandbox-up.lock"));
+    rmSync(dir, { recursive: true, force: true });
+  });
   const root = path.join(dir, "repo");
   mkdirSync(root);
   execFileSync("git", ["init", "-q", root], { env: GIT_ENV });
@@ -68,6 +71,37 @@ function scratch(t, { prePush = true, bringup = true, installer = true, bringupB
     bootFile: path.join(dir, "boot_id"),
     procStat: path.join(dir, "proc-stat"),
   };
+}
+
+/**
+ * Stop the bringup a scratch lock records, and its children, so a stand-in the hook launched
+ * (`sleep 3`) does not outlive the test (#2570). The hook starts it with `nohup ... &` and no
+ * setsid, so it shares the test runner's process group: a group kill here would take the
+ * runner down with it. The pid is signalled only while its command line still names this
+ * scratch directory, since a test may have removed the lock, or pointed it at a process that
+ * has since exited and whose pid may now be anyone's.
+ */
+function stopRecordedBringup(dir, lock) {
+  let pid;
+  try {
+    pid = Number(readFileSync(path.join(lock, "pid"), "utf8").trim());
+  } catch {
+    return; // no lock, or no pid in it
+  }
+  if (!Number.isInteger(pid) || pid <= 1) return;
+  const args = spawnSync("ps", ["-o", "args=", "-p", String(pid)], { encoding: "utf8" }).stdout;
+  if (!args.includes(dir)) return;
+  const children = spawnSync("ps", ["-o", "pid=", "--ppid", String(pid)], { encoding: "utf8" })
+    .stdout.split("\n")
+    .map(Number)
+    .filter((child) => child > 1);
+  for (const target of [...children, pid]) {
+    try {
+      process.kill(target, "SIGKILL");
+    } catch {
+      // already gone
+    }
+  }
 }
 
 /**
@@ -244,14 +278,22 @@ test("an old hook's lock (no boot id) last written before this boot is stale", a
   assert.equal(readFileSync(path.join(s.lock, "boot_id"), "utf8").trim(), "boot-B");
 });
 
-/** A live process whose command line is `args`, killed when the test ends. */
+/**
+ * A live process whose command line is `args`, killed with everything it started when the
+ * test ends: it leads its own process group, so a `bash` running `sleep 30` leaves no
+ * `sleep` behind (#2570).
+ */
 function liveProcess(t, command, args) {
   const child = spawn(command, args, { detached: true, stdio: "ignore" });
   t.after(() => {
     try {
-      process.kill(child.pid);
+      process.kill(-child.pid, "SIGKILL");
     } catch {
-      // already gone
+      try {
+        process.kill(child.pid, "SIGKILL");
+      } catch {
+        // already gone
+      }
     }
   });
   return child.pid;
@@ -369,13 +411,17 @@ test("the lock decision waits for the guard another session start holds", async 
   // happen not to interleave, which is most runs. This pins the flock itself: hold the
   // guard from outside and the hook must wait for it before deciding.
   const s = scratch(t);
-  const holder = spawn("flock", [`${s.lock}.guard`, "sleep", "1.5"], { stdio: "ignore" });
-  t.after(() => holder.kill());
+  // The holder keeps the guard until a release file appears, and that file is written
+  // a second after `started`, never sooner: a hold timed from when the holder took the
+  // lock could end before `started` plus a second on a loaded runner.
+  const release = `${s.lock}.release`;
+  liveProcess(t, "flock", [`${s.lock}.guard`, "sh", "-c", `while [ ! -e '${release}' ]; do sleep 0.05; done`]);
   assert.ok(
     await eventually(() => spawnSync("flock", ["-n", `${s.lock}.guard`, "true"]).status !== 0, 3000),
     "precondition: the guard is held",
   );
   const started = Date.now();
+  liveProcess(t, "sh", ["-c", `sleep 1; touch '${release}'`]);
   runHook(s, { boot: "boot-B" });
   assert.ok(Date.now() - started >= 1000, `the hook decided without waiting (${Date.now() - started}ms)`);
 });

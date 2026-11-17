@@ -1,13 +1,5 @@
 import { useRef, useState } from "react";
-import {
-  ActionSheetIOS,
-  Alert,
-  Platform,
-  Share,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Share, StyleSheet, Text, View } from "react-native";
 import {
   INVITE_STATUS_LABEL,
   inviteMenuActions,
@@ -21,6 +13,7 @@ import { errorCopy } from "@repo/hooks/error-copy";
 import { formatSentLabel } from "@repo/formatting";
 import { SignetTokens } from "@repo/theme/signet";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { showActionMenu } from "@/lib/action-menu";
 import {
   inviteShareContent,
   inviteShareOptions,
@@ -207,39 +200,18 @@ export function InvitedList({
     if (running.current) return;
     const actions = inviteActions(invite, !!chapterName);
     const title = invite.email ?? "Invite link";
-    if (Platform.OS === "ios") {
-      const options = [...actions, "Cancel"];
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          title,
-          options,
-          destructiveButtonIndex: options.indexOf(REVOKE_INVITE),
-          cancelButtonIndex: options.length - 1,
-          userInterfaceStyle: "dark",
-        },
-        (index) => {
-          const picked = options[index];
-          if (picked && picked !== "Cancel") void run(invite, picked);
-        },
-      );
-      return;
-    }
     // Android's dialog draws at most three buttons and drops the rest, and
     // an emailed pending invite has three actions, so it has no Cancel
-    // button: back or a tap outside closes it (`cancelable`).
-    Alert.alert(
+    // button: back or a tap outside closes it.
+    showActionMenu({
       title,
-      undefined,
-      actions.map((action) => ({
-        text: action,
-        style:
-          action === REVOKE_INVITE
-            ? ("destructive" as const)
-            : ("default" as const),
+      rows: actions.map((action) => ({
+        label: action,
+        style: action === REVOKE_INVITE ? "destructive" : "default",
         onPress: () => void run(invite, action),
       })),
-      { cancelable: true },
-    );
+      userInterfaceStyle: "dark",
+    });
   }
 
   return (

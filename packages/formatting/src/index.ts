@@ -54,6 +54,9 @@ export {
   formatDateEntry,
   parseDateEntry,
   parseDateEntryWithTime,
+  parseTimeEntry,
+  addMinutesToTime,
+  timeSpanMinutes,
 } from "./date-entry";
 export { nextUpLine } from "./next-up";
 export {

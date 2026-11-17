@@ -1,10 +1,7 @@
 "use client";
 
-import {
-  isAuthApiError,
-  isAuthSessionMissingError,
-  type User,
-} from "@supabase/supabase-js";
+import { isSessionOver } from "@repo/hooks/auth-error-copy";
+import { isAuthSessionMissingError, type User } from "@supabase/supabase-js";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { signOutCurrentSession, signingOutHere } from "@/lib/auth/session";
 import { reportAuthFailure } from "@/lib/sentry/auth-failures";
@@ -15,40 +12,6 @@ import { reportAuthFailure } from "@/lib/sentry/auth-failures";
  */
 export const SESSION_ENDED_PARAM = "signedOut";
 export const SESSION_ENDED_VALUE = "session_ended";
-
-/**
- * Whether Supabase Auth's answer to `getUser()` means this session is over.
- *
- * The API answers 401 when `SupabaseAuthGuard`'s `getUser(token)` rejects the
- * token, and the commonest way to get there with a signed-in tab is an account
- * deleted somewhere else: the access token in this browser stays valid until it
- * expires, but its user no longer exists, so every read fails and each screen
- * used to render its own failure for it ("Chapter unavailable", "Couldn't load
- * messages", a stuck "Reconnecting…").
- *
- * The browser asks Auth itself before acting on the API's word, so a stray 401
- * never signs a member out. Auth must judge the token to count: an outage
- * (a dropped request, a 5xx, a 429, an unreadable body) is not a verdict. This
- * is stricter than the guard's `isAuthOutage`: here a wrong "over" signs a
- * member out.
- */
-export function isSessionOver(result: {
-  data: { user: unknown };
-  error: unknown;
-}): boolean {
-  const { data, error } = result;
-  if (!error) return !data.user;
-  // Only Auth's own 4xx judges the token. Anything else (a dropped request, a
-  // 5xx, a 429, an unreadable body from a proxy in front of Auth, or no local
-  // session left to ask about) is not a verdict, and signing out on it would
-  // sign every member out during an outage.
-  return (
-    isAuthApiError(error) &&
-    error.status >= 400 &&
-    error.status < 500 &&
-    error.status !== 429
-  );
-}
 
 /**
  * Auth's verdict on a session this browser held when it asked. A session

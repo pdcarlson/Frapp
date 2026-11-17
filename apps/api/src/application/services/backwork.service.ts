@@ -52,6 +52,7 @@ import {
 import { assertSafeStoragePath } from '#domain/utils/storage-path';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
 import { safeObjectFilename, storedFilename } from '#domain/constants/storage';
+import { hasValue } from '#domain/utils/backwork-fill';
 import {
   applyNicknameEdit,
   courseEditRefusal,
@@ -123,6 +124,11 @@ export interface ConfirmUploadInput extends BackworkFieldsInput {
   file_hash: string;
   is_redacted?: boolean;
   /**
+   * For a draft: false when it was saved without anyone looking at its
+   * pages (#5252), so it waits for the uploader's check.
+   */
+  pages_checked?: boolean;
+  /**
    * Save as a draft (#5208): the fields are kept as typed, not filed, and the
    * row is visible only to the uploader until it is published.
    */
@@ -185,6 +191,9 @@ function draftFieldsFrom(input: BackworkFieldsInput): BackworkDraftFields {
   return out;
 }
 
+/** How long the link a draft's pages are read from stays good. */
+const DRAFT_FILE_URL_SECONDS = 300;
+
 @Injectable()
 export class BackworkService {
   private readonly logger = new Logger(BackworkService.name);
@@ -238,10 +247,9 @@ export class BackworkService {
     return { signedUrl, storagePath, resourceId };
   }
 
-  async confirmUpload(input: ConfirmUploadInput): Promise<BackworkResource> {
-    if (
-      !input.storage_path.startsWith(`chapters/${input.chapter_id}/backwork/`)
-    ) {
+  /** A storage path a client sent: inside this chapter's backwork folder, with no way out of it. */
+  private assertChapterStoragePath(chapterId: string, storagePath: string) {
+    if (!storagePath.startsWith(`chapters/${chapterId}/backwork/`)) {
       throw new BadRequestException(
         'storage_path must be within the chapter backwork folder',
       );
@@ -257,12 +265,62 @@ export class BackworkService {
     // consumers have always seen on an unsafe path.
     try {
       assertSafeStoragePath(
-        input.storage_path,
+        storagePath,
         'storage_path must not contain relative path segments',
       );
     } catch (error) {
       throw new BadRequestException((error as Error).message);
     }
+  }
+
+  /**
+   * A path a client names for a new row's file: inside the chapter's folder,
+   * and not already another row's file. Without the second check a member
+   * could point a draft at a published resource's object (every path is in
+   * the library list) and then delete it by deleting the draft.
+   */
+  private async assertUnusedStoragePath(
+    chapterId: string,
+    storagePath: string,
+  ) {
+    this.assertChapterStoragePath(chapterId, storagePath);
+    if (
+      (await this.resourceRepo.countByStoragePath(chapterId, storagePath)) > 0
+    ) {
+      throw new ConflictException(
+        'storage_path is already in use; request a new upload URL',
+      );
+    }
+  }
+
+  /**
+   * Deletes a file a row no longer points at, unless another row still does,
+   * and only logs when storage refuses: the row change already stands.
+   */
+  private async deleteFileIfUnused(
+    chapterId: string,
+    storagePath: string,
+    context: string,
+  ) {
+    try {
+      if (
+        (await this.resourceRepo.countByStoragePath(chapterId, storagePath)) > 0
+      ) {
+        this.logger.warn(
+          `${context}: kept ${storagePath}, another backwork row still uses it`,
+        );
+        return;
+      }
+      await this.storageProvider.deleteFile(BACKWORK_BUCKET, storagePath);
+    } catch (error) {
+      this.logger.warn(
+        `${context}: couldn't delete ${storagePath}: ${(error as Error)?.message ?? String(error)}`,
+      );
+    }
+  }
+
+  async confirmUpload(input: ConfirmUploadInput): Promise<BackworkResource> {
+    await this.assertUnusedStoragePath(input.chapter_id, input.storage_path);
 
     const existing = await this.resourceRepo.findByFileHash(
       input.chapter_id,
@@ -289,7 +347,10 @@ export class BackworkService {
         storage_path: input.storage_path,
         file_hash: input.file_hash,
         is_redacted: input.is_redacted ?? false,
-        draft_fields: draftFieldsFrom(input),
+        draft_fields: {
+          ...draftFieldsFrom(input),
+          ...(input.pages_checked === false ? { pages_unchecked: true } : {}),
+        },
       });
     }
 
@@ -345,6 +406,14 @@ export class BackworkService {
         ...set,
       };
       for (const key of cleared) delete next[key];
+      // A value the uploader set or cleared is theirs now, not the AI's.
+      const aiFilled = draft.draft_fields?.ai_filled;
+      if (aiFilled) {
+        const touched = new Set<string>([...Object.keys(set), ...cleared]);
+        const left = aiFilled.filter((key) => !touched.has(key));
+        if (left.length > 0) next.ai_filled = left;
+        else delete next.ai_filled;
+      }
       const row = await this.resourceRepo.updateDraftFields(
         draft.id,
         chapterId,
@@ -354,6 +423,157 @@ export class BackworkService {
       if (row) updated.push(row);
     }
     return updated;
+  }
+
+  /** One of the caller's drafts, or null when it isn't theirs or is gone. */
+  async findOwnDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<BackworkResource | null> {
+    const [draft] = await this.resourceRepo.findDraftsByIds(
+      [id],
+      chapterId,
+      uploaderId,
+    );
+    return draft ?? null;
+  }
+
+  /**
+   * A redacted draft's stored file, for the AI fill (#5233): the flattened
+   * copy, whose text layer holds only the words outside its redaction boxes.
+   * Refuses a draft uploaded as-is, whose stored file is the original, so
+   * no caller can hand an unredacted file to a model by mistake. Null when
+   * the file is gone.
+   */
+  async redactedDraftFile(draft: BackworkResource): Promise<Uint8Array | null> {
+    if (!draft.is_redacted) {
+      throw new Error(`Backwork draft ${draft.id} was uploaded as-is`);
+    }
+    return this.storageProvider.downloadFile(
+      BACKWORK_BUCKET,
+      draft.storage_path,
+    );
+  }
+
+  /**
+   * Puts an AI fill on one of the caller's drafts. The draft is read again
+   * here, so a field the uploader set while the model ran is kept: only
+   * fields still empty take the fill's value. Null when the draft is gone.
+   */
+  async applyAiFill(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    fill: {
+      fields: BackworkDraftFields;
+      outcome: NonNullable<BackworkDraftFields['ai_fill']>;
+    },
+  ): Promise<BackworkResource | null> {
+    const [draft] = await this.resourceRepo.findDraftsByIds(
+      [id],
+      chapterId,
+      uploaderId,
+    );
+    if (!draft) return null;
+    const current = draft.draft_fields ?? {};
+    const next: Record<string, unknown> = { ...current };
+    const filled = new Set(current.ai_filled ?? []);
+    for (const [key, value] of Object.entries(fill.fields)) {
+      if (hasValue((current as Record<string, unknown>)[key])) continue;
+      next[key] = value;
+      filled.add(key);
+    }
+    if (filled.size > 0) next.ai_filled = [...filled];
+    next.ai_fill = fill.outcome;
+    return this.resourceRepo.updateDraftFields(id, chapterId, uploaderId, next);
+  }
+
+  /**
+   * A short-lived link to one of the caller's drafts' stored file, so the
+   * uploader's browser can show its pages for checking (#5252). Not a forced
+   * download: the page reads it, nobody opens it.
+   */
+  async draftFileUrl(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+  ): Promise<string> {
+    const draft = await this.findOwnDraft(id, chapterId, uploaderId);
+    if (!draft) throw new NotFoundException('Draft not found');
+    return this.storageProvider.getSignedDownloadUrl(
+      BACKWORK_BUCKET,
+      draft.storage_path,
+      DRAFT_FILE_URL_SECONDS,
+    );
+  }
+
+  /**
+   * Records that the uploader has looked at a draft's pages (#5252), so the AI
+   * fill may read it and it can be published. When they added boxes, the
+   * browser flattened the file again and uploaded it to a new path, which
+   * replaces the stored file here; the old object is deleted after the row
+   * points away from it.
+   */
+  async checkDraft(
+    id: string,
+    chapterId: string,
+    uploaderId: string,
+    replacement?: { storage_path: string; file_hash: string },
+  ): Promise<BackworkResource> {
+    const draft = await this.findOwnDraft(id, chapterId, uploaderId);
+    if (!draft) throw new NotFoundException('Draft not found');
+    const rest: BackworkDraftFields = { ...draft.draft_fields };
+    delete rest.pages_unchecked;
+    if (!replacement) {
+      const row = await this.resourceRepo.updateDraftFields(
+        id,
+        chapterId,
+        uploaderId,
+        rest,
+      );
+      if (!row) throw new NotFoundException('Draft not found');
+      return row;
+    }
+
+    // Only a draft still waiting for its check takes a new file: the check
+    // is the one flow that flattens the file again (#5252).
+    if (!draft.draft_fields?.pages_unchecked) {
+      throw new ConflictException("This draft's pages are already checked.");
+    }
+    await this.assertUnusedStoragePath(chapterId, replacement.storage_path);
+    const existing = await this.resourceRepo.findByFileHash(
+      chapterId,
+      replacement.file_hash,
+    );
+    if (existing && existing.id !== id) {
+      throw new ConflictException({
+        message: 'A file with the same hash already exists in this chapter',
+        existingResourceId: existing.id,
+      });
+    }
+    // The new file has every box the old one had and more, so whatever an
+    // earlier fill read is stale: it may read the file again.
+    const fields: BackworkDraftFields = { ...rest };
+    delete fields.ai_fill;
+    const row = await this.resourceRepo.replaceDraftFile(
+      id,
+      chapterId,
+      uploaderId,
+      {
+        storage_path: replacement.storage_path,
+        file_hash: replacement.file_hash,
+        is_redacted: true,
+        draft_fields: fields,
+      },
+    );
+    if (!row) throw new NotFoundException('Draft not found');
+    await this.deleteFileIfUnused(
+      chapterId,
+      draft.storage_path,
+      `Replaced backwork draft ${id}'s file`,
+    );
+    return row;
   }
 
   /**
@@ -388,7 +608,9 @@ export class BackworkService {
         continue;
       }
       const fields = (draft.draft_fields ?? {}) as BackworkFieldsInput;
-      const refusal = fileRefusal(fields, draft.is_redacted);
+      const refusal = draft.draft_fields?.pages_unchecked
+        ? 'Check its pages before you publish it.'
+        : fileRefusal(fields, draft.is_redacted);
       if (refusal) {
         result.failed.push({ id, message: refusal });
         continue;
@@ -442,16 +664,11 @@ export class BackworkService {
       uploaderId,
     );
     if (!deleted) throw new NotFoundException('Draft not found');
-    try {
-      await this.storageProvider.deleteFile(
-        BACKWORK_BUCKET,
-        draft.storage_path,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Deleted backwork draft ${id} but not its file ${draft.storage_path}: ${(error as Error)?.message ?? String(error)}`,
-      );
-    }
+    await this.deleteFileIfUnused(
+      chapterId,
+      draft.storage_path,
+      `Deleted backwork draft ${id}`,
+    );
   }
 
   /**

@@ -309,6 +309,11 @@ const blockListState = vi.hoisted(() => ({
   },
 }));
 
+// The live-meeting card has its own spec (#5219).
+vi.mock("@/components/meetings/live-meeting-card", () => ({
+  LiveMeetingCard: () => null,
+}));
+
 vi.mock("./use-unblock-flow", () => ({
   useUnblockFlow: () => ({
     requestUnblock: vi.fn(),

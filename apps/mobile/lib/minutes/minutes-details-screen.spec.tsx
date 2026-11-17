@@ -230,7 +230,10 @@ describe("Recording on the minutes screen", () => {
     expect(state.recordingEnabled).toBe(false);
     expect(state.recordingRow).toBeNull();
 
-    state.meeting = meeting({ status: "posted", posted_at: "2026-11-10T02:00:00Z" });
+    state.meeting = meeting({
+      status: "posted",
+      posted_at: "2026-11-10T02:00:00Z",
+    });
     render();
     expect(state.recordingEnabled).toBe(false);
 
@@ -251,7 +254,11 @@ describe("Recording on the minutes screen", () => {
   describe("while this phone holds this meeting's recording", () => {
     const live = {
       phase: "recording",
-      subject: { meetingId: "m1", eventName: "Chapter meeting", maxSeconds: 7200 },
+      subject: {
+        meetingId: "m1",
+        eventName: "Chapter meeting",
+        maxSeconds: 7200,
+      },
       seconds: 600,
       paused: null,
     };
@@ -260,7 +267,10 @@ describe("Recording on the minutes screen", () => {
       state.recorder = live;
       state.recordingPending = true;
       render();
-      expect(state.recordingRow).toMatchObject({ meetingId: "m1", server: null });
+      expect(state.recordingRow).toMatchObject({
+        meetingId: "m1",
+        server: null,
+      });
       expect(state.recordingPlaceholder).toBe(0);
     });
 
@@ -278,11 +288,17 @@ describe("Recording on the minutes screen", () => {
         posted_at: "2026-11-10T02:00:00Z",
       });
       render();
-      expect(state.recordingRow).toMatchObject({ meetingId: "m1", server: null });
+      expect(state.recordingRow).toMatchObject({
+        meetingId: "m1",
+        server: null,
+      });
     });
 
     it("shows no row for a recording of another meeting once the minutes are posted", () => {
-      state.recorder = { ...live, subject: { ...live.subject, meetingId: "m2" } };
+      state.recorder = {
+        ...live,
+        subject: { ...live.subject, meetingId: "m2" },
+      };
       state.meeting = meeting({
         status: "posted",
         posted_at: "2026-11-10T02:00:00Z",
@@ -338,26 +354,17 @@ describe("Minutes on the phone", () => {
     expect(button(tree, MEETING_COPY.post).props.disabled).toBe(true);
   });
 
-  it("asks before posting, then posts the version the server holds now", async () => {
+  it("posts the version the server holds now, without asking first", async () => {
     const tree = render();
     state.refetch.mockImplementation(async () => ({
       data: meeting({ updated_at: "v2" }),
     }));
     await act(async () => button(tree, MEETING_COPY.post).props.onPress());
-    expect(confirm).toHaveBeenCalledWith(
-      expect.objectContaining({ title: MEETING_COPY.postConfirmTitle }),
-    );
+    expect(confirm).not.toHaveBeenCalled();
     expect(state.post).toHaveBeenCalledWith({
       id: "m1",
       expectedUpdatedAt: "v2",
     });
-  });
-
-  it("posts nothing when the officer says Cancel", async () => {
-    confirm.mockResolvedValue(false);
-    const tree = render();
-    await act(async () => button(tree, MEETING_COPY.post).props.onPress());
-    expect(state.post).not.toHaveBeenCalled();
   });
 
   it("says a post failed in the web line's place", async () => {

@@ -27,19 +27,28 @@ export function channelAccessSummaryLine(
   value: readonly string[] | null,
   options: readonly ChannelAccessOption[],
   optionsReady: boolean,
+  /**
+   * A document's own sentences (#5216): what the open choice means (a file
+   * follows its folder) and who passes every list (its uploader too).
+   */
+  lines: { everyone?: string; always?: string } = {},
 ): string {
   const verb = question === "see" ? "see it" : "post";
+  const always = lines.always ?? `The President can always ${verb}.`;
   if (value === null) {
-    return question === "see"
-      ? "Everyone in the chapter can see it."
-      : "Everyone who can see it can post.";
+    return (
+      lines.everyone ??
+      (question === "see"
+        ? "Everyone in the chapter can see it."
+        : "Everyone who can see it can post.")
+    );
   }
   if (value.length === 0) {
     return `Pick a tier, role or group. Until you do, only the President can ${verb}.`;
   }
   return optionsReady
-    ? `Reaches ${peopleCount(channelAccessReach(value, options))}. The President can always ${verb}.`
-    : `The President can always ${verb}.`;
+    ? `Reaches ${peopleCount(channelAccessReach(value, options))}. ${always}`
+    : always;
 }
 
 /**

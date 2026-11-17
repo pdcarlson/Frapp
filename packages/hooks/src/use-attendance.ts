@@ -508,6 +508,42 @@ export function useUpdateAttendanceStatus() {
   });
 }
 
+/**
+ * Marks members who were at an event by hand, in one request (the minutes
+ * page, for a meeting nobody checked in to). Members with a row keep it.
+ */
+export function useMarkAttendanceByHand() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["attendance", "by-hand"],
+    mutationFn: async ({
+      eventId,
+      userIds,
+      status,
+    }: {
+      eventId: string;
+      userIds: string[];
+      status: "PRESENT" | "LATE" | "EXCUSED";
+    }) => {
+      const result = await client.POST(
+        "/v1/events/{eventId}/attendance/by-hand",
+        {
+          params: { path: { eventId } },
+          body: { user_ids: userIds, status },
+        },
+      );
+      throwUnlessOk(result);
+      return result.data!;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["attendance", variables.eventId],
+      });
+    },
+  });
+}
+
 export function useAutoAbsent() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

@@ -2,12 +2,11 @@
 
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FOCUS_RING } from "@/components/ui/focus";
-import { cn } from "@/lib/utils";
 import type { MessageAuthor } from "@repo/hooks";
 import { resolveAuthorLabel } from "@repo/hooks";
 import { formatClock } from "@repo/formatting";
 import { forwardedFromOf } from "@repo/chat-core/types";
+import { MESSAGE_LIST_CLASS, MessageListRow } from "./message-list-row";
 import { replyPreviewText } from "./reply-quote";
 
 /**
@@ -116,109 +115,79 @@ export function BookmarksPanel({
           your bookmarks.
         </p>
       ) : (
-        <ul className="max-h-72 divide-y divide-border overflow-y-auto">
+        <ul className={MESSAGE_LIST_CLASS}>
           {bookmarks.map((bookmark) => {
             // `!== false` rather than truthiness: an older cached payload has
             // no such field, and treating "unknown" as "unavailable" would
             // make every row inert for one render after a deploy.
             const available = bookmark.message_available !== false;
-            const body = (
-              <>
-                <span className="block font-semibold text-foreground">
-                  {/* viewerId null, matching the pins panel: this list names
-                      every author including the viewer rather than "You". */}
-                  {available
-                    ? resolveAuthorLabel(bookmark.message, nameFor, null)
-                    : "Unavailable"}
-                </span>
-                <span className="block text-muted-foreground">
-                  {formatClock(bookmark.created_at)}
-                </span>
-                {/*
-                  A deleted message keeps its row here carrying the
-                  `[message deleted]` placeholder the API returns — the spec
-                  requires the bookmark to survive the deletion rather than
-                  vanish. It is italicised so it reads as a tombstone rather
-                  than as somebody having typed that. A redacted row is
-                  italicised for the same reason: neither string was typed by
-                  a person.
-
-                  foundations §7 is a hard MUST NOT on body text below 16, and
-                  a bookmark's body is a message.
-                */}
-                <span
-                  className={cn(
-                    "mt-1 line-clamp-3 block whitespace-pre-wrap text-base text-muted-foreground",
-                    (bookmark.message.is_deleted || !available) && "italic",
-                  )}
-                >
-                  {replyPreviewText({
-                    ...bookmark.message,
-                    // A forward with no comment previews its copy (#4875).
-                    forwarded_from: forwardedFromOf(
-                      bookmark.message.forwarded_from,
-                    ),
-                  })}
-                </span>
-              </>
-            );
             return (
-              <li key={bookmark.id} className="relative">
-                {/*
-                  A row whose channel the viewer can no longer read is a
-                  static <div>, not a disabled <button>. Jumping would set the
-                  shell's channel to one absent from the viewer's channel
-                  list, which silently resolves to #general and never scrolls
-                  — a control that appears to work and quietly does the wrong
-                  thing, which is worse than the dead ends
-                  spec/ui/design-system/README.md §5 rule 2 already bans.
-                */}
-                {available ? (
-                  <button
-                    type="button"
-                    // Dismissing on jump is the host menu's job now — it closes
-                    // the popover when this fires, for the reason the pins
-                    // panel records: a 320px panel left open over the pane it
-                    // just scrolled hides the message it navigated to.
-                    onClick={() =>
-                      onJump?.(bookmark.message.channel_id, bookmark.message_id)
-                    }
-                    className={cn(
-                      "block w-full py-3 pl-3 pr-11 text-left text-caption transition-colors",
-                      "hover:bg-card-hover hover:text-foreground",
-                      FOCUS_RING,
-                    )}
-                  >
-                    {body}
-                  </button>
-                ) : (
-                  <div className="block w-full py-3 pl-3 pr-11 text-left text-caption">
-                    {body}
-                  </div>
-                )}
-                {onRemove ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    // The shared primitive, not a hand-rolled button:
-                    // The old `thread-panel.tsx` (deleted in #2142) used exactly this for the same
-                    // dismiss-an-item job, and a bespoke 22px target here
-                    // sat under the design system's touch floor — on the one
-                    // control that exists so a member can clear a bookmark
-                    // they have no other way to reach.
-                    //
-                    // Absolutely positioned rather than a flex sibling so the
-                    // row's own hit area stays full-width for the jump:
-                    // shrinking the common action to fit the rare one is the
-                    // wrong trade.
-                    className="absolute right-1 top-1"
-                    aria-label="Remove bookmark"
-                    onClick={() => onRemove(bookmark.message_id)}
-                  >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                ) : null}
-              </li>
+              <MessageListRow
+                key={bookmark.id}
+                // viewerId null, matching the pins panel: this list names
+                // every author including the viewer rather than "You".
+                author={
+                  available
+                    ? resolveAuthorLabel(bookmark.message, nameFor, null)
+                    : "Unavailable"
+                }
+                time={formatClock(bookmark.created_at)}
+                body={replyPreviewText({
+                  ...bookmark.message,
+                  // A forward with no comment previews its copy (#4875).
+                  forwarded_from: forwardedFromOf(
+                    bookmark.message.forwarded_from,
+                  ),
+                })}
+                // A deleted message keeps its row here carrying the
+                // `[message deleted]` placeholder the API returns — the spec
+                // requires the bookmark to survive the deletion rather than
+                // vanish. It is italicised so it reads as a tombstone rather
+                // than as somebody having typed that. A redacted row is
+                // italicised for the same reason: neither string was typed by
+                // a person.
+                italic={bookmark.message.is_deleted || !available}
+                // A row whose channel the viewer can no longer read is a
+                // static <div>, not a disabled <button>. Jumping would set the
+                // shell's channel to one absent from the viewer's channel
+                // list, which silently resolves to #general and never scrolls
+                // — a control that appears to work and quietly does the wrong
+                // thing, which is worse than the dead ends
+                // spec/ui/design-system/README.md §5 rule 2 already bans.
+                inert={!available}
+                // Dismissing on jump is the host menu's job now — it closes
+                // the popover when this fires, for the reason the pins
+                // panel records: a 320px panel left open over the pane it
+                // just scrolled hides the message it navigated to.
+                onJump={() =>
+                  onJump?.(bookmark.message.channel_id, bookmark.message_id)
+                }
+                reserveTrailing
+                trailing={
+                  onRemove ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      // The shared primitive, not a hand-rolled button:
+                      // The old `thread-panel.tsx` (deleted in #2142) used exactly this for the same
+                      // dismiss-an-item job, and a bespoke 22px target here
+                      // sat under the design system's touch floor — on the one
+                      // control that exists so a member can clear a bookmark
+                      // they have no other way to reach.
+                      //
+                      // Absolutely positioned rather than a flex sibling so the
+                      // row's own hit area stays full-width for the jump:
+                      // shrinking the common action to fit the rare one is the
+                      // wrong trade.
+                      className="absolute right-1 top-1"
+                      aria-label="Remove bookmark"
+                      onClick={() => onRemove(bookmark.message_id)}
+                    >
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  ) : null
+                }
+              />
             );
           })}
         </ul>
