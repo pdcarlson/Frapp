@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -143,15 +143,22 @@ export function FolderRail({
     folders above it, so the lit row is never hidden in a closed branch.
     Closing one afterwards is the member's call.
   */
+  const openedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!activeFolder) return;
-    const above = folderAncestors(tree, activeFolder);
-    if (above.length === 0) return;
-    const keys = above.flatMap((name) => {
+    // Once per choice: a refetch rebuilds the tree, and must not reopen a
+    // folder the member closed since.
+    if (!activeFolder) {
+      openedFor.current = null;
+      return;
+    }
+    if (openedFor.current === activeFolder) return;
+    if (!railFolders.some((entry) => entry.name === activeFolder)) return;
+    openedFor.current = activeFolder;
+    const keys = folderAncestors(tree, activeFolder).flatMap((name) => {
       const folder = railFolders.find((entry) => entry.name === name);
       return folder ? [openKey(folder)] : [];
     });
-    setOpen(keys, true);
+    if (keys.length > 0) setOpen(keys, true);
   }, [activeFolder, tree, railFolders, setOpen]);
 
   /*
