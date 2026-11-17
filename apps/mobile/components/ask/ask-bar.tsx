@@ -41,7 +41,17 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 /** What the bar opens, for a screen reader. */
 export const ASK_BAR_HINT = "Ask a question about your chapter";
 
-export function AskBar({ onPress }: { onPress: () => void }) {
+export function AskBar({
+  onPress,
+  folded = false,
+}: {
+  onPress: () => void;
+  /**
+   * Folded into the tab bar's row while the member reads down a tab screen
+   * (#4904): narrower, so the field's words keep the room and the arrow goes.
+   */
+  folded?: boolean;
+}) {
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -63,10 +73,12 @@ export function AskBar({ onPress }: { onPress: () => void }) {
         <Text style={styles.words} numberOfLines={1}>
           {ASK_COPY.placeholder}
         </Text>
-        <View style={[styles.arrow, { backgroundColor: tint(accent) }]}>
-          {/* The conversation's own send arrow (`ask-sheet.tsx`). */}
-          <AskSendGlyph color={accent} size={16} />
-        </View>
+        {folded ? null : (
+          <View style={[styles.arrow, { backgroundColor: tint(accent) }]}>
+            {/* The conversation's own send arrow (`ask-sheet.tsx`). */}
+            <AskSendGlyph color={accent} size={16} />
+          </View>
+        )}
       </Pressable>
     </GlassSurface>
   );
@@ -75,8 +87,11 @@ export function AskBar({ onPress }: { onPress: () => void }) {
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     bar: {
-      height: FLOATING_ASK_BAR.height,
-      borderRadius: FLOATING_ASK_BAR.height / 2,
+      // Fills its frame: the tab bar sizes it, 48pt open and the row's 62pt
+      // folded (#4904), always fully round.
+      flex: 1,
+      minHeight: FLOATING_ASK_BAR.height,
+      borderRadius: 999,
       borderWidth: 1,
     },
     press: {

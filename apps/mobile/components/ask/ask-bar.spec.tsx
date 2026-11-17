@@ -66,12 +66,31 @@ describe("AskBar", () => {
     expect(strokes).toContain("#8B5CF6");
   });
 
-  it("is a full touch target", () => {
+  it("is a full touch target, filling the frame the tab bar gives it, never under the 48pt control step", () => {
     const tree = render();
-    const capsule = tree.root.findAll(
-      (node) => flat(node.props.style).borderWidth === 1,
-    )[0];
-    expect(flat(capsule.props.style).height).toBeGreaterThanOrEqual(44);
+    const capsule = flat(
+      tree.root.findAll((node) => flat(node.props.style).borderWidth === 1)[0]
+        .props.style,
+    );
+    // 48pt open, the row's 62pt folded (#4904): the tab bar sizes the frame.
+    expect(capsule.flex).toBe(1);
+    expect(capsule.minHeight).toBe(48);
+  });
+
+  it("drops its arrow when folded into the tab bar's row, keeping the words", () => {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <AskBar onPress={() => undefined} folded />
+        </FrappThemeProvider>,
+      );
+    });
+    const strokes = tree.root
+      .findAll((node) => node.props.stroke !== undefined)
+      .map((node) => node.props.stroke);
+    expect(strokes).toHaveLength(0);
+    expect(screenText(tree)).toContain(ASK_COPY.placeholder);
   });
 
   it("opens the conversation on a tap, with the selection tick", () => {

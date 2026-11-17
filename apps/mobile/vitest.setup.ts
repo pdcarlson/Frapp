@@ -426,13 +426,29 @@ vi.mock("react-native-reanimated", () => {
           value: updater()[key as keyof T],
         }),
       }),
-    withTiming: <T>(value: T) => value,
+    // A spec can read what an animation was asked for (the tab bar fold).
+    withTiming: vi.fn(<T>(value: T) => value),
     withRepeat: vi.fn(<T>(value: T) => value),
     cancelAnimation: vi.fn(),
     useReducedMotion: vi.fn(() => false),
     Easing: {
       ease: (t: number) => t,
+      sin: (t: number) => t,
+      cubic: (t: number) => t,
       inOut: (easing: (t: number) => number) => easing,
+      out: (easing: (t: number) => number) => easing,
+    },
+    // Linear between the stops, held at the ends, as the tab bar's fold
+    // (#4904) reads it: enough for a spec to read the drawn geometry.
+    interpolate: (value: number, input: number[], output: number[]) => {
+      if (value <= input[0]) return output[0];
+      for (let i = 1; i < input.length; i++) {
+        if (value <= input[i]) {
+          const t = (value - input[i - 1]) / (input[i] - input[i - 1]);
+          return output[i - 1] + t * (output[i] - output[i - 1]);
+        }
+      }
+      return output[output.length - 1];
     },
     // Setup's live mark zooms in; join's views and setup's steps fade in.
     ZoomIn: entering({ animation: "ZoomIn" }),
