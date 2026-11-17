@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Text } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
+  fitsContent,
   MAX_ROWS_SIZED_TO_CONTENT,
   OptionSheet,
   type SheetOption,
@@ -105,23 +106,23 @@ describe("OptionSheet (#5278)", () => {
     expect(long.snapPoints).toEqual(["70%"]);
   });
 
-  it("sizes exactly the threshold's rows to content, and one more scrolls", () => {
-    const sheet = (tree: ReactTestRenderer) =>
-      tree.root.find((node) => (node.type as unknown) === "BottomSheetModal")
-        .props;
-    const rows = (n: number) =>
+  it("sizes eight one-line rows or six two-line rows to content, and one more scrolls", () => {
+    const rows = (n: number, detail?: string) =>
       Array.from({ length: n }, (_, i) => ({
         value: `r${i}`,
         label: `Row ${i}`,
+        detail,
       }));
-    expect(
-      sheet(render(rows(MAX_ROWS_SIZED_TO_CONTENT), null).tree)
-        .enableDynamicSizing,
-    ).toBe(true);
-    expect(
-      sheet(render(rows(MAX_ROWS_SIZED_TO_CONTENT + 1), null).tree)
-        .enableDynamicSizing,
-    ).toBe(false);
+    expect(fitsContent(rows(MAX_ROWS_SIZED_TO_CONTENT))).toBe(true);
+    expect(fitsContent(rows(MAX_ROWS_SIZED_TO_CONTENT + 1))).toBe(false);
+    expect(fitsContent(rows(6, "1 pt / hour"))).toBe(true);
+    expect(fitsContent(rows(7, "1 pt / hour"))).toBe(false);
+    const sheet = (tree: ReactTestRenderer) =>
+      tree.root.find((node) => (node.type as unknown) === "BottomSheetModal")
+        .props;
+    expect(sheet(render(rows(7, "x"), null).tree).enableDynamicSizing).toBe(
+      false,
+    );
   });
 });
 

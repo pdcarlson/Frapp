@@ -3,9 +3,16 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
+import { Text } from "react-native";
 import { FrappThemeProvider } from "@/lib/theme";
+import { proximityCopy, type ProximityMap } from "@/lib/study/proximity";
+import { zoneRewardCopy } from "@/lib/study/zones";
 import { ZonePickerSheet } from "@/components/study/zone-picker-sheet";
 import { selectActiveZones } from "@/lib/study/zones";
+import {
+  MAX_ROWS_SIZED_TO_CONTENT,
+  TWO_LINE_ROW_WEIGHT,
+} from "@/components/option-sheet";
 
 vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#DDB844" }),
@@ -54,14 +61,21 @@ describe("ZonePickerSheet sizing", () => {
     expect(props.snapPoints).toEqual(["70%"]);
   });
 
-  it("sizes six zones to content: one threshold with every pick-one sheet (#5318)", () => {
-    expect(sheetProps(6).enableDynamicSizing).toBe(true);
-    expect(sheetProps(7).enableDynamicSizing).toBe(false);
+  it("sizes through the shared rule, two-line rows weighed (#5318)", () => {
+    // Six two-line zone rows fill the one-line budget; one more scrolls.
+    const fitting = Math.floor(MAX_ROWS_SIZED_TO_CONTENT / TWO_LINE_ROW_WEIGHT);
+    expect(sheetProps(fitting).enableDynamicSizing).toBe(true);
+    expect(sheetProps(fitting + 1).enableDynamicSizing).toBe(false);
   });
 });
 
 describe("ZonePickerSheet rows (#5318)", () => {
-  function renderSheet(selectedZoneId: string | null, onSelect = vi.fn()) {
+  function renderSheet(
+    selectedZoneId: string | null,
+    onSelect = vi.fn(),
+    proximity: ProximityMap | null = null,
+    onDismiss?: () => void,
+  ) {
     const dismiss = vi.fn();
     let tree!: ReactTestRenderer;
     act(() => {
@@ -72,6 +86,8 @@ describe("ZonePickerSheet rows (#5318)", () => {
             zones={zonesOf(2)}
             selectedZoneId={selectedZoneId}
             onSelect={onSelect}
+            proximity={proximity}
+            onDismiss={onDismiss}
           />
         </FrappThemeProvider>,
         {
@@ -104,6 +120,44 @@ describe("ZonePickerSheet rows (#5318)", () => {
     act(() => rows[0]!.props.onPress());
     expect(onSelect).toHaveBeenCalledWith("z0");
     expect(dismiss).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  it("lists the nearest zone first, saying how far and what it pays", () => {
+    const proximity: ProximityMap = new Map([
+      ["z0", { inside: false, distanceM: 300 }],
+      ["z1", { inside: true, distanceM: 0 }],
+    ]);
+    const { tree, rows } = renderSheet(null, vi.fn(), proximity);
+    const reward = zoneRewardCopy(zonesOf(1)[0]!);
+    // Zone 1 is the one the member is in, so it leads.
+    expect(rows.map((row) => row.props.accessibilityLabel)).toEqual([
+      "Zone 1, You're here",
+      `Zone 0, ${proximityCopy({ inside: false, distanceM: 300 })}`,
+    ]);
+    expect(rows[0]!.props.accessibilityHint).toBe(reward);
+    const flat = (node: unknown): string =>
+      typeof node === "string"
+        ? node
+        : Array.isArray(node)
+          ? node.map(flat).join("")
+          : node && typeof node === "object" && "props" in node
+            ? flat((node as { props: { children?: unknown } }).props.children)
+            : "";
+    const lines = rows[0]!
+      .findAllByType(Text)
+      .map((text) => flat(text.props.children));
+    expect(lines).toContain(`You're here · ${reward}`);
+    act(() => tree.unmount());
+  });
+
+  it("tells the screen when it closes, so its distances move again", () => {
+    const onDismiss = vi.fn();
+    const { tree } = renderSheet(null, vi.fn(), null, onDismiss);
+    tree.root
+      .find((node) => (node.type as unknown) === "BottomSheetModal")
+      .props.onDismiss();
+    expect(onDismiss).toHaveBeenCalled();
     act(() => tree.unmount());
   });
 });

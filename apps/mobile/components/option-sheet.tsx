@@ -35,14 +35,30 @@ export interface SheetOption {
 }
 
 /**
- * Past this many rows the sheet stops growing and scrolls, at a fixed detent
- * with the sheet-aware list inside: one sheet cannot be both
- * (`spec/ui/mobile/patterns.md` § Bottom sheets). Six, so six two-line rows
- * still fit a small phone; the study zone picker's own copy of this switch
- * opened cut off on 2026-11-12 when it passed a fixed detent with dynamic
- * sizing left on. One threshold for every pick-one sheet (#5318).
+ * How tall a list the sheet sizes to its rows, in single-line rows; past it
+ * the sheet stops growing and scrolls, at a fixed detent with the sheet-aware
+ * list inside, since one sheet cannot be both (`spec/ui/mobile/patterns.md`
+ * § Bottom sheets). A row with a second line counts as
+ * {@link TWO_LINE_ROW_WEIGHT} of one, so eight one-line rows or six two-line
+ * ones still fit a small phone. One rule for every pick-one sheet (#5318).
+ *
+ * The study zone picker, which had its own copy of this switch until then,
+ * is why it exists: it passed a fixed `["55%"]` detent with gorhom v5's
+ * dynamic sizing left on, which adds a content-height detent measured before
+ * the list lays out, so it opened at the height of its title with the zones
+ * cut off below the screen edge (Paul's screenshot, 2026-11-12).
  */
-export const MAX_ROWS_SIZED_TO_CONTENT = 6;
+export const MAX_ROWS_SIZED_TO_CONTENT = 8;
+export const TWO_LINE_ROW_WEIGHT = 4 / 3;
+
+/** Whether a list of these rows opens sized to them rather than scrolling. */
+export function fitsContent(options: readonly SheetOption[]): boolean {
+  const height = options.reduce(
+    (sum, option) => sum + (option.detail ? TWO_LINE_ROW_WEIGHT : 1),
+    0,
+  );
+  return height <= MAX_ROWS_SIZED_TO_CONTENT + 1e-9;
+}
 const LONG_LIST_SNAP_POINTS = ["70%"];
 
 /**
@@ -71,7 +87,7 @@ export const OptionSheet = forwardRef<
   const insets = useSafeAreaInsets();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
-  const fits = options.length <= MAX_ROWS_SIZED_TO_CONTENT;
+  const fits = fitsContent(options);
   const bottomPad = { paddingBottom: insets.bottom + tokens.spacing.md };
 
   const rows = options.map((option, index) => {
@@ -96,9 +112,9 @@ export const OptionSheet = forwardRef<
         {option.mark ? <View style={styles.mark}>{option.mark}</View> : null}
         {option.detail ? (
           <View style={styles.twoLine}>
-            <Text numberOfLines={1} style={styles.title}>
-              {option.label}
-            </Text>
+            {/* A name may wrap: zones that share a long prefix stay
+                distinguishable, as they were in the zone picker's own rows. */}
+            <Text style={styles.title}>{option.label}</Text>
             <Text style={styles.detail}>{option.detail}</Text>
           </View>
         ) : (

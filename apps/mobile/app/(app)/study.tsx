@@ -515,10 +515,7 @@ export default function StudyScreen() {
           apply(null);
           return;
         }
-        const fix = await readForegroundFix(
-          "balanced",
-          PROXIMITY_FIX_TIMEOUT_MS,
-        );
+        const fix = await readForegroundFix("balanced", PROXIMITY_FIX_TIMEOUT_MS);
         const next = measureZones(zonesRef.current, fix);
         apply(next);
         if ([...next.values()].some((p) => p.inside)) {
@@ -545,9 +542,7 @@ export default function StudyScreen() {
    */
   useEffect(() => {
     if (!proximity || pickedByHandRef.current) return;
-    setSelectedZoneId(
-      (current) => bestZoneId(zones, proximity, current) ?? current,
-    );
+    setSelectedZoneId((current) => bestZoneId(zones, proximity, current) ?? current);
   }, [proximity, zones]);
 
   /**
@@ -838,7 +833,9 @@ export default function StudyScreen() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- the timer belongs to the session it was started in
     if (!session) setFocusStartedAt(null);
   }, [session]);
-  const breakMinutes = breakMinutesFor(activeZone?.pauseGraceMinutes ?? 5);
+  const breakMinutes = breakMinutesFor(
+    activeZone?.pauseGraceMinutes ?? 5,
+  );
   const focusReading =
     focusStartedAt === null
       ? null
@@ -850,11 +847,7 @@ export default function StudyScreen() {
   const lastPhaseRef = useRef<string | null>(null);
   useEffect(() => {
     const key = focusPhase === null ? null : `${focusRound}:${focusPhase}`;
-    if (
-      lastPhaseRef.current !== null &&
-      key !== null &&
-      key !== lastPhaseRef.current
-    ) {
+    if (lastPhaseRef.current !== null && key !== null && key !== lastPhaseRef.current) {
       successHaptic();
     }
     lastPhaseRef.current = key;
