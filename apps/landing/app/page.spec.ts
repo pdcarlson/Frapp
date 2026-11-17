@@ -321,6 +321,20 @@ describe("landing page structure", () => {
     }
   });
 
+  it("draws the app's check-in card, not the retired Scan QR button (#4768)", () => {
+    // The app's open check-in card says to scan the officer's code here or
+    // with the phone's camera, under a quieter Scan code text action
+    // (`apps/mobile/app/(app)/event-details.tsx`, `CheckInCard`). The boards
+    // still draw a gold "Scan QR to check in" button the app no longer has.
+    const frame = flatten(homeSource("event-frame.tsx"));
+    expect(frame).not.toMatch(/Scan QR/i);
+    expect(frame).not.toContain("bg-primary");
+    expect(frame).toContain(
+      "Scan the code on the officer&apos;s screen, here or with your phone&apos;s camera.",
+    );
+    expect(frame).toContain("Scan code");
+  });
+
   describe("the chat thread draws chat's compact layout, not the retired bubbles", () => {
     // `components.md` § Chat messages (#2873): chat has had no bubbles on web
     // or mobile since 2026-09-29, so the frame that pictures it can't draw any
