@@ -15,7 +15,9 @@ import type { ChannelSections, GroupableChannel } from "./channel-sections";
  * come from `GET /v1/chat-sidebar`.
  *
  * Pure: every number it reads (unread, mentions, mute) is the server's, passed
- * in. Nothing here derives an unread count or a mute from anything else.
+ * in. One exception derives an unread count: `withUnreadThreadChannels` counts
+ * a read channel whose thread has new replies as one unread, for arranging
+ * only (#5277, #5300), so a folded section's total can include those.
  */
 
 /** The fields of a channel row the arrangement reads. */

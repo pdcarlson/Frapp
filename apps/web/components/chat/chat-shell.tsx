@@ -2767,23 +2767,33 @@ export function ChatShell({
   // The quiet window runs from when the list was read, which its
   // minute-by-minute re-read keeps current.
   const memberThreadsQuery = useMemberThreads();
-  const railThreads = useMemo(
-    () => ({
-      byChannel: sidebarThreadsByChannel(
+  const threadsByChannel = useMemo(
+    () =>
+      sidebarThreadsByChannel(
         memberThreadsQuery.data,
         memberThreadsQuery.dataUpdatedAt,
       ),
+    [memberThreadsQuery.data, memberThreadsQuery.dataUpdatedAt],
+  );
+  // A thread row is in the channels column, so below `lg` its tap has to
+  // navigate as a channel row's does: the thread pane gets its history entry,
+  // so Back returns to the list (#3824), and a stale jump notice goes.
+  const openRailThread = useCallback(
+    (channelId: string, rootId: string) => {
+      openThreadInChannel(channelId, rootId);
+      openThreadPane();
+      setUnreachableTarget(null);
+    },
+    [openThreadInChannel, openThreadPane],
+  );
+  const railThreads = useMemo(
+    () => ({
+      byChannel: threadsByChannel,
       activeRootId: threadRootId,
       nameFor,
-      onOpen: openThreadInChannel,
+      onOpen: openRailThread,
     }),
-    [
-      memberThreadsQuery.data,
-      memberThreadsQuery.dataUpdatedAt,
-      threadRootId,
-      nameFor,
-      openThreadInChannel,
-    ],
+    [threadsByChannel, threadRootId, nameFor, openRailThread],
   );
 
   // Catch me up (#3946). Offered only where the server, the president's two

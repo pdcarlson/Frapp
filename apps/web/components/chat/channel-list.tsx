@@ -64,7 +64,9 @@ import {
   CHANNEL_MARK_PX,
   ChannelThreadRows,
   DIRECT_MARK_PX,
+  THREAD_ROW_PX,
 } from "./channel-thread-rows";
+import { RailUnreadPip, railRowTone } from "./rail-row";
 import {
   useRailReorder,
   type RailDrag,
@@ -931,21 +933,15 @@ export function ChannelList({
               // A row in Hidden conversations has no line (the server keeps
               // no preview for it), so it stays one line.
               twoLine ? "h-12" : "h-8",
-              isActive
-                ? "bg-accent-subtle font-semibold text-accent-text"
-                : looksUnread
-                  ? "font-bold text-foreground hover:bg-card"
-                  : isMuted
-                    ? "text-muted hover:bg-card hover:text-foreground"
-                    : "text-muted-foreground hover:bg-card hover:text-foreground",
+              railRowTone({
+                active: isActive,
+                unread: looksUnread,
+                muted: isMuted,
+              }),
             )}
           >
             {looksUnread && !isActive ? (
-              <span
-                aria-hidden
-                data-testid="channel-unread-pip"
-                className="absolute left-0 top-1/2 h-2 w-1 -translate-y-1/2 rounded-r-full bg-foreground"
-              />
+              <RailUnreadPip testId="channel-unread-pip" />
             ) : null}
             <ChannelMark
               channel={channel}
@@ -1019,24 +1015,28 @@ export function ChannelList({
         </li>
       </ChannelRowMenu>
     );
-    if (!threads || !rowThreads || rowThreads.length === 0) return row;
+    // Always the same keyed Fragment, so a channel gaining its first thread
+    // or losing its last adds or drops only the sibling below, and the row
+    // keeps its open menu and its focus.
     return (
       <Fragment key={channel.id}>
         {row}
-        {/* Slides with its channel while an officer drags the rail (#4178). */}
-        <li data-flip={`threads:${channel.id}`}>
-          <ChannelThreadRows
-            threads={rowThreads}
-            channelLabel={
-              isDm(channel) ? titleFor(channel) : `#${titleFor(channel)}`
-            }
-            markPx={isDm(channel) ? DIRECT_MARK_PX : CHANNEL_MARK_PX}
-            activeThreadRootId={threads.activeRootId}
-            nameFor={threads.nameFor}
-            viewerId={viewerId}
-            onOpen={threads.onOpen}
-          />
-        </li>
+        {threads && rowThreads && rowThreads.length > 0 ? (
+          // Slides with its channel while an officer drags the rail (#4178).
+          <li data-flip={`threads:${channel.id}`}>
+            <ChannelThreadRows
+              threads={rowThreads}
+              channelLabel={
+                isDm(channel) ? titleFor(channel) : `#${titleFor(channel)}`
+              }
+              markPx={isDm(channel) ? DIRECT_MARK_PX : CHANNEL_MARK_PX}
+              activeThreadRootId={threads.activeRootId}
+              nameFor={threads.nameFor}
+              viewerId={viewerId}
+              onOpen={threads.onOpen}
+            />
+          </li>
+        ) : null}
       </Fragment>
     );
   };
@@ -1126,7 +1126,15 @@ export function ChannelList({
     slot = { kind: "category", before: others[index] ?? null, others };
   }
 
-  /** The slot a dragged channel would land in, drawn as a row-sized space. */
+  /**
+   * The slot a dragged channel would land in, drawn as a space its size: its
+   * row, and the thread rows under it (#5300), which leave with it, so the
+   * rows below don't close up under the pointer as the drag starts.
+   */
+  const draggedThreadRows =
+    dragging?.kind === "channel"
+      ? (threads?.byChannel.get(dragging.id)?.length ?? 0)
+      : 0;
   const channelSlot = (
     <li
       key="__reorder-slot"
@@ -1134,7 +1142,9 @@ export function ChannelList({
       data-reorder-gap=""
       aria-hidden="true"
       className={DROP_SLOT}
-      style={{ height: lift?.height ?? 32 }}
+      style={{
+        height: (lift?.height ?? 32) + draggedThreadRows * THREAD_ROW_PX,
+      }}
     />
   );
 

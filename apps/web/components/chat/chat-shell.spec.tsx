@@ -253,6 +253,8 @@ const mockSetSectionCollapsed = vi.fn();
 const mockSetSidebarFilter = vi.fn();
 // #2877: what the shell hands the pin hook, and the levels the rail filters on.
 const sidebarState = {
+  /** `GET /v1/threads` rows, for the rail's thread rows (#5300). */
+  memberThreads: [] as unknown[],
   sort: "chapter" as "chapter" | "recent" | "alpha",
   pinOptions: undefined as { onError?: () => void } | undefined,
   foldOptions: undefined as { onError?: () => void } | undefined,
@@ -682,7 +684,10 @@ vi.mock("@repo/hooks", async () => ({
   // The Forward dialog (#4907) mounts only once a row asks for it.
   useForwardMessage: () => ({ mutateAsync: vi.fn(), isPending: false }),
   // Threads under their channel in the rail (#5300): none listed here.
-  useMemberThreads: () => ({ data: [], dataUpdatedAt: 0 }),
+  useMemberThreads: () => ({
+    data: sidebarState.memberThreads,
+    dataUpdatedAt: Date.now(),
+  }),
   useMemberDisplayNames: () => ({
     byId: sidebarState.memberNames,
     nameFor: (id: string) => sidebarState.memberNames[id] ?? null,
@@ -972,7 +977,12 @@ vi.mock("./channel-list", () => ({
     unreadByChannelId,
     rowActions,
     reorder,
+    threads,
   }: {
+    threads?: {
+      byChannel: ReadonlyMap<string, unknown[]>;
+      onOpen: (channelId: string, rootId: string) => void;
+    };
     rowActions?: import("./channel-row-menu").ChannelRowActions;
     reorder?: import("./channel-list").ChannelReorderControls;
     unreadByChannelId?: Map<string, unknown>;
@@ -1027,6 +1037,17 @@ vi.mock("./channel-list", () => ({
         onClick={() => sidebar?.onClearFilters()}
       >
         rail clear filters
+      </button>
+      {/* The rail's thread rows (#5300): which channels have some, and a
+          tap on one. */}
+      <span data-testid="rail-threads">
+        {threads ? [...threads.byChannel.keys()].join(",") : "none"}
+      </span>
+      <button
+        data-testid="rail-open-thread"
+        onClick={() => threads?.onOpen("chan-random", "root-rail")}
+      >
+        rail thread
       </button>
       <span data-testid="rail-unread">
         {unreadByChannelId === undefined
@@ -2022,6 +2043,24 @@ describe("ChatShell sidebar arrangement (#2877)", () => {
     sidebarState.levels = [];
     sidebarState.levelsError = false;
     sidebarState.unreadError = false;
+    sidebarState.memberThreads = [];
+  });
+
+  it("hands the rail the member's active threads by channel (#5300)", () => {
+    sidebarState.memberThreads = [
+      {
+        thread_root_id: "root-1",
+        channel_id: "chan-general",
+        state: "following",
+        last_read_at: null,
+        last_reply_at: new Date().toISOString(),
+        reply_count: 1,
+        unread_count: 1,
+        root: { created_at: new Date().toISOString() },
+      },
+    ];
+    render(<ChatShell initialChannelId="chan-general" />);
+    expect(screen.getByTestId("rail-threads").textContent).toBe("chan-general");
   });
 
   it("hands the rail the unread counts, and none while their last read failed", () => {
@@ -4486,6 +4525,25 @@ describe("ChatShell narrow viewports (#2142)", () => {
     await waitFor(() => {
       expect(columns().thread.className).not.toContain("max-lg:hidden");
     });
+  });
+
+  it("navigates to a thread tapped in the rail, with its own entry for Back (#5300)", async () => {
+    window.history.replaceState(null, "");
+    render(<ChatShell />);
+    fireEvent.click(screen.getByRole("button", { name: "Back to channels" }));
+    await waitFor(() => {
+      expect(columns().channels.className).not.toContain("max-lg:hidden");
+    });
+    const push = vi.spyOn(window.history, "pushState");
+    try {
+      fireEvent.click(screen.getByTestId("rail-open-thread"));
+      await waitFor(() => {
+        expect(columns().thread.className).not.toContain("max-lg:hidden");
+      });
+      expect(push).toHaveBeenCalledTimes(1);
+    } finally {
+      push.mockRestore();
+    }
   });
 
   it("gives the way back a 40px target, not the 32px compact control (#3824)", () => {

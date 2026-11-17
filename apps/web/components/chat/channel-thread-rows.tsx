@@ -5,21 +5,29 @@ import {
   resolveAuthorName,
   type MemberThread,
 } from "@repo/hooks";
-import { memberThreadPreview } from "@repo/chat-core/threads";
+import {
+  memberThreadPreview,
+  sidebarThreadRowLabel,
+} from "@repo/chat-core/threads";
 import type { RawChatMessage } from "@repo/chat-core/types";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { cn } from "@/lib/utils";
+import { RailUnreadPip, railRowTone } from "./rail-row";
 
 /**
  * Where the parent row's mark sits, so the connector drops from its middle and
  * the thread's words start where the channel's name does: the row's `px-2`,
  * then the `#` (16px) or a conversation's avatar (24px), then the row's
- * `gap-2`. Pinned by `channel-thread-rows.spec.tsx` against `ChannelMark`.
+ * `gap-2`. These restate `ChannelMark`'s `w-4` and `h-6 w-6` and the channel
+ * row's padding and gap in `channel-list.tsx`, and nothing checks them against
+ * those classes: change them together.
  */
 const ROW_PADDING_PX = 8;
 const ROW_GAP_PX = 8;
 export const CHANNEL_MARK_PX = 16;
 export const DIRECT_MARK_PX = 24;
+/** A thread row's height, the channel row's `h-8`. */
+export const THREAD_ROW_PX = 32;
 
 /**
  * A channel's active threads, indented under its row in the rail (#5300,
@@ -96,34 +104,22 @@ export function ChannelThreadRows({
               type="button"
               data-testid="channel-thread-row"
               aria-current={active ? "true" : undefined}
-              aria-label={[
-                `Thread: ${rootText}`,
-                `in ${channelLabel}`,
-                muted ? "muted" : null,
-                unread ? `${thread.unread_count} new` : null,
-              ]
-                .filter(Boolean)
-                .join(", ")}
+              aria-label={sidebarThreadRowLabel({
+                rootText,
+                channelLabel,
+                muted,
+                unreadCount: thread.unread_count,
+              })}
               onClick={() => onOpen(thread.channel_id, thread.thread_root_id)}
               className={cn(
                 "relative flex h-8 w-full items-center rounded-xs pr-2 text-left text-sm transition-colors",
                 FOCUS_RING,
-                active
-                  ? "bg-accent-subtle font-semibold text-accent-text"
-                  : unread
-                    ? "font-bold text-foreground hover:bg-card"
-                    : muted
-                      ? "text-muted hover:bg-card hover:text-foreground"
-                      : "text-muted-foreground hover:bg-card hover:text-foreground",
+                railRowTone({ active, unread, muted }),
               )}
               style={{ paddingLeft: textX }}
             >
               {unread && !active ? (
-                <span
-                  aria-hidden="true"
-                  data-testid="channel-thread-unread-pip"
-                  className="absolute left-0 top-1/2 h-2 w-1 -translate-y-1/2 rounded-r-full bg-foreground"
-                />
+                <RailUnreadPip testId="channel-thread-unread-pip" />
               ) : null}
               <span className="truncate">{rootText}</span>
             </button>

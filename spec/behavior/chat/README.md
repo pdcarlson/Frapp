@@ -432,6 +432,7 @@ The categories themselves stay the chapter's (§ Channels).
 - **Filters,** off by default, either or both on:
   - **Unread only** keeps rows with something unread by the server's counts (§ Read Receipts), an @-mention included.
     A muted channel's plain unread (nothing that addresses the member) doesn't count, since its row reads as read (below).
+    A channel with a thread listed under it that has new replies counts too (§ All threads, [#5277](https://github.com/frapplive/Frapp/issues/5277), [#5300](https://github.com/frapplive/Frapp/issues/5300)), since thread replies never count toward the channel's own unread and its thread rows would otherwise be filtered away; its row keeps reading the server's counts.
   - **Hide muted** drops rows whose effective notification level is `off` ([`../notifications.md`](../notifications.md#chat-notification-preferences)).
     A muted row that addresses the member stays: an unread @-mention, or anything unread in a DM.
     That matches push, where a mention gets past a mute.
@@ -450,6 +451,7 @@ The categories themselves stay the chapter's (§ Channels).
 - **Folds.**
   Any section header, Pinned included, folds its section, and the choice is remembered.
   A folded header shows the unread total of the rows inside it that pass the filters, a muted channel's plain unread left out (above), in the mention red when any of them addresses the member, so folding never hides a mention.
+  A channel whose only news is a thread with new replies adds one to that total (`withUnreadThreadChannels` in `@repo/hooks`), so a folded section over it still reads unread.
   The open channel stays visible under a folded header.
   While the list scrolls, the section in view keeps its header pinned at the top, so it can still be folded from there ([`../../ui/design-system/components.md`](../../ui/design-system/components.md#sidebar-item) § Sidebar item, "Pinned section headings").
 - **Where it lives.**

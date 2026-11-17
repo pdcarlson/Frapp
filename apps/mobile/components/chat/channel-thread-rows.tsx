@@ -10,6 +10,7 @@ import {
 } from "@repo/hooks";
 import {
   memberThreadPreview,
+  sidebarThreadRowLabel,
   sidebarThreadsByChannel,
 } from "@repo/chat-core/threads";
 import type { RawChatMessage } from "@repo/chat-core/types";
@@ -118,14 +119,12 @@ export function ChannelThreadRows({
             key={thread.thread_root_id}
             testID="channel-thread-row"
             accessibilityRole="button"
-            accessibilityLabel={[
-              `Thread: ${rootText}`,
-              `in ${channelLabel}`,
-              muted ? "muted" : null,
-              unread ? `${thread.unread_count} new` : null,
-            ]
-              .filter(Boolean)
-              .join(", ")}
+            accessibilityLabel={sidebarThreadRowLabel({
+              rootText,
+              channelLabel,
+              muted,
+              unreadCount: thread.unread_count,
+            })}
             accessibilityHint="Opens this thread."
             onPress={() =>
               openThreadOverChannel(router, {

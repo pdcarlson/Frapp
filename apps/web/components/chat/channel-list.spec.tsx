@@ -1574,6 +1574,57 @@ describe("ChannelList threads under their channel (#5300)", () => {
     expect(open).toHaveAttribute("aria-current", "true");
   });
 
+  it("draws no threads under a hidden conversation", () => {
+    render(
+      <ChannelList
+        kind="direct"
+        channels={[{ ...dm, hidden: true }]}
+        activeChannelId={null}
+        viewerId={VIEWER}
+        memberNames={NAMES}
+        unreadByChannelId={new Map()}
+        onPick={vi.fn()}
+        threads={{
+          byChannel: new Map([["c-dm", [thread({ channel_id: "c-dm" })]]]),
+          activeRootId: null,
+          nameFor: () => null,
+          onOpen: vi.fn(),
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("channel-thread-row")).toBeNull();
+  });
+
+  it("keeps the channel row mounted when its first thread arrives", () => {
+    const props = {
+      channels: [general],
+      activeChannelId: null,
+      viewerId: VIEWER,
+      memberNames: NAMES,
+      unreadByChannelId: new Map<string, ChannelUnread>(),
+      onPick: vi.fn(),
+    };
+    const threadsWith = (byChannel: Map<string, MemberThread[]>) => ({
+      byChannel,
+      activeRootId: null,
+      nameFor: () => null,
+      onOpen: vi.fn(),
+    });
+    const { rerender } = render(
+      <ChannelList {...props} threads={threadsWith(new Map())} />,
+    );
+    const before = screen.getByRole("button", { name: /^[#\s]*general/ });
+    rerender(
+      <ChannelList
+        {...props}
+        threads={threadsWith(new Map([["c-gen", [thread()]]]))}
+      />,
+    );
+    expect(screen.getAllByTestId("channel-thread-row")).toHaveLength(1);
+    // The same node: an open menu or focus on it survives the re-read.
+    expect(screen.getByRole("button", { name: /^[#\s]*general/ })).toBe(before);
+  });
+
   it("draws nothing under a channel with no active threads", () => {
     renderThreads(new Map());
     expect(screen.queryByTestId("channel-threads")).toBeNull();
