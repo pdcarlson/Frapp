@@ -1,22 +1,14 @@
-import { useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { View } from "react-native";
 import { useRouter } from "expo-router";
-import {
-  unreadThreadCount,
-  useMemberThreads,
-  useNotifications,
-} from "@repo/hooks";
+import { useNotifications } from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { HeaderButton } from "@/components/header-button";
 import { NotificationsGlyph } from "@/components/more/more-glyphs";
-import { SearchGlyph, ThreadsGlyph } from "@/components/control-glyphs";
-import { gutterBleed, PressableRow } from "@/components/list-section";
-import { InboxCountBadge } from "@/components/chat/channel-row";
+import { SearchGlyph } from "@/components/control-glyphs";
 import { NavGlyph } from "@/components/nav-glyph";
 import { useTourAnchor } from "@/components/onboarding/tour";
 import { selectUnreadNonChatCount } from "@/lib/more/notifications";
-import type { SignetTokens } from "@repo/theme/signet";
-import { typeRole, useFrappTheme } from "@/lib/theme";
+import { useFrappTheme } from "@/lib/theme";
 
 /**
  * Chat home's top-right rounds: Search (#5139), a door to Messages, the member's direct
@@ -132,8 +124,12 @@ export function NotificationsButton() {
  *
  * > Changed in #5139 by pdcarlson, 2026-11-16: this round was Threads
  * > (#4960, Shawn, 2026-11-14). Threads is now the first row of the channel
- * > list ({@link ThreadsRow}), as Slack's Home lists it, so the title row
+ * > list (`ThreadsRow`), as Slack's Home lists it, so the title row
  * > keeps three rounds beside a long chapter name.
+ * >
+ * > Changed in #5277 by pdcarlson, 2026-11-17: the Threads row and its sheet
+ * > are gone; each channel lists its active threads under its own row
+ * > (`ChannelThreadRows`), as Discord's channel list does.
  */
 export function SearchButton() {
   const { tokens } = useFrappTheme();
@@ -147,88 +143,4 @@ export function SearchButton() {
       <SearchGlyph color={tokens.color.text.foreground} size={GLYPH} />
     </HeaderButton>
   );
-}
-
-/**
- * All threads (#4960): the member's threads across channels, in a sheet over
- * Chat home (`AllThreadsSheet`). The first row of Chat home since #5139, as
- * Slack's Home lists Threads above its channels; it was a round in the title
- * row before. It is always drawn, in every state of the channel list, like
- * the round was: hiding it until the threads read answers would push the
- * list down under a thumb, and a failed read would hide the sheet's own
- * retry. While any thread has new replies it reads as an unread channel row
- * does (a bolder title and the leading pip) and badges that count in house
- * gold, on the channel badge's geometry (`InboxCountBadge`): not direct
- * address.
- */
-export function ThreadsRow({ onPress }: { onPress: () => void }) {
-  const { tokens } = useFrappTheme();
-  const styles = useMemo(() => createStyles(tokens), [tokens]);
-  const unread = unreadThreadCount(useMemberThreads().data);
-  return (
-    <PressableRow
-      testID="threads-row"
-      accessibilityRole="button"
-      accessibilityLabel={
-        unread > 0 ? `Threads, ${unread} with new replies` : "Threads"
-      }
-      accessibilityHint="Opens the threads you're part of."
-      onPress={onPress}
-      style={styles.row}
-    >
-      {unread > 0 ? <View style={styles.pip} /> : null}
-      <ThreadsGlyph
-        color={
-          unread > 0 ? tokens.color.text.foreground : tokens.color.text.muted
-        }
-        size={tokens.typography.role.title.size}
-      />
-      <Text
-        numberOfLines={1}
-        style={[styles.title, unread > 0 ? styles.titleUnread : null]}
-      >
-        Threads
-      </Text>
-      {unread > 0 ? (
-        <InboxCountBadge count={unread} testID="threads-badge" />
-      ) : null}
-    </PressableRow>
-  );
-}
-
-function createStyles(tokens: SignetTokens) {
-  return StyleSheet.create({
-    // A channel row's one-line geometry and its unread pip and title
-    // weights (`channel-row.tsx`).
-    row: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-      ...gutterBleed(tokens),
-    },
-    pip: {
-      position: "absolute",
-      left: 0,
-      top: "50%",
-      marginTop: -4,
-      width: 4,
-      height: 8,
-      borderTopRightRadius: 4,
-      borderBottomRightRadius: 4,
-      backgroundColor: tokens.color.text.foreground,
-    },
-    title: {
-      flex: 1,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
-    titleUnread: {
-      ...typeRole({
-        ...tokens.typography.role.body,
-        weight: tokens.typography.weight.bold,
-      }),
-      color: tokens.color.text.foreground,
-    },
-  });
 }
