@@ -1,6 +1,6 @@
 # Google Cloud organization
 
-Every Google Cloud project Frapp uses sits in the frapp.live organization (`1033325313086`), administered from `pdcarlson@frapp.live`. This page records how the organization is laid out and who can do what. What runs in each project is in that project's runbook: the API in [`cloud-run.md`](cloud-run.md), Google sign-in in [`supabase.md` § Auth OAuth providers](supabase.md#auth-oauth-providers-google-and-apple), and Calendar and Drive in [`integrations.md` § 7B](integrations.md#7b-google-calendar) and [§ 7C](integrations.md#7c-google-drive-folder).
+Every Google Cloud project Frapp uses sits in the frapp.live organization (`1033325313086`), administered from `pdcarlson@frapp.live`. This page records how the organization is laid out and who can do what. What runs in each project is in that project's runbook: the API in [`cloud-run.md`](cloud-run.md), Google sign-in in [`supabase.md` § Auth OAuth providers](supabase.md#auth-oauth-providers-google-and-apple), and Calendar and Drive in [`integrations.md` § 7B](integrations.md#7b-google-calendar) and [§ 7C](integrations.md#7c-google-drive).
 
 Moving everything off the owner's personal Google account, and the rest of the clean-up, is tracked in [#5323](https://github.com/frapplive/Frapp/issues/5323).
 

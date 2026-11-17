@@ -444,46 +444,63 @@ on Events, a toast says connected, and within a minute a calendar named
 | "Google hasn't verified this app" | Step 2's scope is sensitive and the review is pending |
 | Connected, but nothing appears | The API logs `Google Calendar sync failed for connection …` with Google's reason |
 
-## 7C. Google Drive folder
+## 7C. Google Drive
 
 **Optional.** Unset, Documents doesn't offer Google Drive; set, an officer can
 connect a chapter's Drive folder and Frapp copies its files into Documents and
 keeps them matching it
 ([`chapter-docs.md` § Google Drive folder](../../../spec/behavior/chapter-docs.md#google-drive-folder),
-#5157). Frapp reads only folders a chapter shares with its service account, so
-there is no consent screen, no scope review and nothing on the Google sign-in
-client. Owner-only, in the `signet-frapp` Google Cloud project.
+#5157). Frapp reads only what a chapter shares with its Drive account, or
+what anyone with the link can open, so there is no consent screen, no scope
+review and nothing on the Google sign-in client. Owner-only.
 
-> **Don't set this up yet (2026-11-17).** `signet-frapp` joined the frapp.live
-> organization, whose policy blocks service account key files, so step 3
-> fails there. [#5323](https://github.com/frapplive/Frapp/issues/5323) moves
-> these accounts to the `nonprod` and `prod` projects and has the API on
-> Cloud Run act as them with no key file; these steps change with it.
+**No key file (2026-11-17, #5434).** The frapp.live organization blocks
+service account key files (#5323), so the API signs in to Drive the way it
+signs in to Vertex AI: on Cloud Run, as its runtime identity
+`frapp-api-runtime`, which may mint tokens for one other account,
+`frapp-docs`. Chapters share with `frapp-docs`, never with the runtime
+identity, so what Drive grants stays on an account that can do nothing else.
+Each environment's project has its own `frapp-docs`, so a staging chapter can
+never read something shared with production.
 
-1. **Enable the API.** Google Cloud console, project `signet-frapp` → APIs &
-   Services → Library → **Google Drive API** → Enable.
-2. **Make two service accounts**, one per environment, so a staging chapter
-   can never read a folder shared with production. IAM & Admin → Service
-   Accounts → Create service account: name **Frapp Documents (staging)**, no
-   roles, Done. Then again, **Frapp Documents**. Members see each account's
-   email (the address they share folders with), so keep the ids readable,
-   such as `frapp-docs-staging` and `frapp-docs`.
-3. **Make a key for each.** Open the account → Keys → Add key → Create new
-   key → JSON. The file downloads once; it is a secret.
-4. **Store each in Infisical** as `GOOGLE_DRIVE_CREDENTIALS_JSON`, the whole
-   file's contents: the staging account's in staging, the production
-   account's in prod. Delete the downloaded files. Redeploy the API after the
-   sync reaches Secret Manager: each deploy pins the secret versions it finds.
+For each environment, staging first:
 
-**Verify after setup.** `GET /v1/google-drive` (signed in as an officer with Manage documents)
-answers `"available": true` with the account's email. In a test chapter, share
-a Drive folder with that email as a Viewer and connect it from Documents:
-within a minute its files appear there.
+1. **Run the setup script again** in Cloud Shell, signed in as
+   `pdcarlson@frapp.live`. It turns on the Google Drive API, makes
+   `frapp-docs` ("Frapp Documents (Google Drive)") and lets
+   `frapp-api-runtime` act as it (Service Account Token Creator on that one
+   account). Nothing else changes, and it makes no key.
+
+   ```bash
+   bash scripts/gcp/bootstrap.sh staging cs-project-6vw9f5xp
+   bash scripts/gcp/bootstrap.sh production cs-project-nyit2x59 --staging-project cs-project-6vw9f5xp
+   ```
+
+   Its last block prints `driveAccount:`, the address chapters share with.
+2. **In Infisical**, set two values in that environment (staging, then prod;
+   never the same values in both):
+   - `GOOGLE_DRIVE_SERVICE_ACCOUNT`: the `driveAccount:` address from step 1.
+   - `GOOGLE_DRIVE_PROOF_SECRET`: a new random value, `openssl rand -hex 32`.
+     It keys the codes that prove a folder or file is the chapter's (#5185).
+3. **Redeploy the API** once the sync has reached Secret Manager: each deploy
+   pins the secret versions it finds.
+
+`GOOGLE_DRIVE_CREDENTIALS_JSON` (a key file) still works, for a laptop or a
+project the policy doesn't cover; leave it unset in staging and prod. Setting
+it beside `GOOGLE_DRIVE_SERVICE_ACCOUNT` fails boot.
+
+**Verify after setup.** `GET /v1/google-drive` (signed in as an officer with
+Manage documents) answers `"available": true` with the `frapp-docs` address.
+In a test chapter, share a Drive folder with that address as a Viewer and
+connect it from Documents: within a minute its files appear there.
 
 **What goes wrong.**
 
 | Symptom | Cause |
 | --- | --- |
-| The API won't boot: `GOOGLE_DRIVE_CREDENTIALS_JSON must be a service account key file` | Step 4 holds something other than the JSON key file, or only part of it |
-| Connecting says Frapp can't see the folder, though it is shared | The folder was shared with the other environment's account, or with a person instead of the account's email |
-| Connecting says it couldn't reach Google Drive, or a connected folder stops syncing and the API reports `accessNotConfigured` | Step 1 |
+| The API won't boot: `GOOGLE_DRIVE_SERVICE_ACCOUNT needs GOOGLE_DRIVE_PROOF_SECRET`, or `must be a service account address` | Step 2 is half done, or holds something other than the address |
+| The API won't boot: `Only Cloud Run signs in without a key file` | `GOOGLE_DRIVE_SERVICE_ACCOUNT` reached a laptop or another host; leave it unset there |
+| `available` stays `false` after the deploy | The deploy pinned the secrets before the sync reached Secret Manager: step 3 again |
+| Connecting says it couldn't reach Google Drive, and the API logs `Google Drive: failed (403): act_as_PERMISSION_DENIED` (or `failed (404): act_as_NOT_FOUND`, or `no_runtime_token`) | Step 1 didn't finish, or step 2's address is wrong: `frapp-api-runtime` can't act as `frapp-docs`. Run step 1 again and check the address |
+| Connecting says it couldn't reach Google Drive, or a connected folder stops syncing and the API reports `accessNotConfigured` | The Google Drive API is off in the project: step 1 |
+| Connecting says Frapp can't see the folder, though it is shared | It was shared with the other environment's `frapp-docs`, or with a person instead of the address |

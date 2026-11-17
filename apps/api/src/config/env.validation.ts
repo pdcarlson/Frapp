@@ -180,8 +180,9 @@ export function validateEnv(config: Record<string, unknown>) {
     throw new Error(googleCalendarProblems.join(' '));
   }
 
-  // Optional: the service account behind Google Drive folders (#5157). Unset
-  // turns the feature off; set, it must be a real key file.
+  // Optional: the service account behind Google Drive (#5157, #5434). Unset
+  // turns the feature off; set, it is a service account address with a proof
+  // secret, or a real key file, never both.
   const googleDriveProblems = validateGoogleDriveEnv(config);
   if (googleDriveProblems.length > 0) {
     throw new Error(googleDriveProblems.join(' '));

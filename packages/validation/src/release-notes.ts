@@ -135,6 +135,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Frapp's entries in the audit log can no longer be deleted, and nothing there can be newly pinned or flagged.",
       "Settings has a Linked apps page: Google Calendar, Discord and the ways you sign in each show a green check when connected, and red when they need reconnecting.",
       "Drafted minutes now come with full notes, topic by topic with every point and detail, and posted minutes keep the meeting's transcript for members to read and for Frapp AI to answer from.",
+      "Sharing your birthday with your chapter is now one clearly labelled switch on your profile, shown once you enter the date.",
     ],
     web: [
       "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
@@ -155,6 +156,10 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Documents, the Directory and Tasks switch between list and grid with one button in the top corner.",
       "The + menu has one New minutes option again: it starts the minutes, or records the meeting from the same sheet.",
       "Recording a meeting is now one screen: tap Record, pause and stop with two buttons at the bottom, watch it upload and transcribe, then read the draft, your notes and the transcript in place, and play the recording back until the minutes are posted.",
+      "A Calendar row at the bottom of your Activity list opens the chapter's whole month.",
+      "Activity now opens on a strip of the next seven days, where coloured dots show which days have events, tasks or polls due, and tapping a day takes you to it.",
+      "In Ask Frapp, what you send now shows right away just above the box with the keyboard up, the newest words stay in view as the keyboard opens and closes, and dragging the conversation puts the keyboard away.",
+      "An event's host checks themselves in with one tap, a member at an event with no code on screen checks in with one tap too, and Scan code is the button wherever a code is needed.",
     ],
   },
   {

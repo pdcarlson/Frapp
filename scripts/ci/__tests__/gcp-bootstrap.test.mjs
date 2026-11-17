@@ -72,6 +72,18 @@ test("the API's identity may call Vertex AI in its own project, so it needs no k
   assert.match(grant, /serviceAccount:frapp-api-runtime@nonprod-123\.iam\.gserviceaccount\.com/);
 });
 
+test("the API may act as frapp-docs for Google Drive, and only that account, with no key (#5434)", () => {
+  const r = run(["staging", "nonprod-123"], "nonprod");
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.calls.some((c) => c.includes("services enable") && c.includes("drive.googleapis.com")));
+  assert.ok(r.calls.some((c) => c.includes("service-accounts create frapp-docs")));
+  const grants = r.calls.filter((c) => c.includes("roles/iam.serviceAccountTokenCreator"));
+  assert.equal(grants.length, 1);
+  assert.match(grants[0], /service-accounts add-iam-policy-binding frapp-docs@nonprod-123\.iam\.gserviceaccount\.com/);
+  assert.match(grants[0], /--member=serviceAccount:frapp-api-runtime@nonprod-123\.iam\.gserviceaccount\.com/);
+  assert.ok(!r.calls.some((c) => c.includes("keys create")));
+});
+
 test("production: sign-in is limited to the production environment, and it may read staging's images", () => {
   const r = run(["production", "prod-456", "--staging-project", "nonprod-123"], "prod");
   assert.equal(r.status, 0, r.stderr);
@@ -108,7 +120,8 @@ test("--infisical-org-id names the sync account with the suffix Infisical requir
   const r = run(["staging", "nonprod-123", "--infisical-org-id", "df92581a-0fe9-42b5-b526-0a1e88ec8085"], "nonprod");
   assert.equal(r.status, 0, r.stderr);
   assert.ok(r.calls.some((c) => c.includes("service-accounts create infisical-df92581a-0fe9")));
-  const grant = r.calls.find((c) => c.includes("roles/iam.serviceAccountTokenCreator")) ?? "";
+  const grant =
+    r.calls.find((c) => c.includes("roles/iam.serviceAccountTokenCreator") && c.includes("infisical-df92581a-0fe9")) ?? "";
   assert.match(grant, /infisical-us@infisical-us\.iam\.gserviceaccount\.com/);
   // Infisical lists a project for a sync only once it can see Secret Manager is on there.
   const viewer = r.calls.find((c) => c.includes("roles/serviceusage.serviceUsageViewer")) ?? "";

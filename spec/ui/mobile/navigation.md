@@ -469,6 +469,18 @@ the camera path ("why not?"), so 0.13.0 ships `expo-camera` again, for s18's Sca
 `microphonePermission` is carried by `expo-image-picker`, `expo-camera` and `expo-audio`
 again, the three plugins that write the key.
 
+_2026-11-17 ([#5276](https://github.com/frapplive/Frapp/issues/5276)):_ **`package.json`
+and `app.json` gained `expo-speech-recognition`** for dictating into Ask Frapp (Paul picked
+the phone's own recogniser over sending audio to a provider), through the integrator
+carve-out as a standalone PR, with the native version 0.13.0 to 0.14.0. Its plugin is a
+fourth writer of `microphonePermission`, with the same text as the other three, and the
+only writer of `speechRecognitionPermission`. Paul approved both texts that day, and the
+microphone text now names dictation as well as the recorder. Dictation's isolation module
+is `lib/dictation/speech.ts`, behind `speech-module.ts` / `speech-module.native.ts`, and
+its `requestPermissionsAsync(` is the speech key's requester in `IOS_PURPOSE_STRINGS`.
+The plugin adds no Android permission the recorder hadn't (RECORD_AUDIO), plus a
+`<queries>` entry so the app can see the Google app's recognition service.
+
 The pairing is also pinned from the other side: `app.config.spec.ts` asserts a media
 picker is depended on **only while a non-spec source file imports one**, which is the
 check that would have caught #1045 shipping the dependency a month ahead of any
