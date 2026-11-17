@@ -57,6 +57,23 @@ function userIdOf(data: unknown): string | null {
   return typeof raw === "string" && raw.length > 0 ? raw : null;
 }
 
+/**
+ * The viewer's display name, or `null` until it is known or when it is blank.
+ * Narrowed at runtime for the reason {@link useViewerUserId} gives. Ask's
+ * greeting reads it (#4904).
+ */
+export function useViewerDisplayName(options?: {
+  enabled?: boolean;
+}): string | null {
+  const query = useCurrentUser(options);
+  const data: unknown = query.data;
+  const raw =
+    data && typeof data === "object" && "display_name" in data
+      ? (data as { display_name?: unknown }).display_name
+      : null;
+  return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
+}
+
 export function useUpdateUser() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

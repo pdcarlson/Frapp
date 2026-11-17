@@ -130,3 +130,34 @@
     animation: none !important;
   }
 }
+
+/*
+ * The glow behind the crest on Ask's opening (#4904): it breathes from 94% to
+ * 106% every 4.2s, as the phone's does (`apps/mobile/components/ask/ask-opening.tsx`).
+ * Still under reduced motion.
+ */
+@keyframes ask-glow {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+.ask-glow {
+  background: radial-gradient(
+    circle closest-side,
+    color-mix(in srgb, var(--primary) 55%, transparent) 0%,
+    color-mix(in srgb, var(--primary) 18%, transparent) 60%,
+    transparent 100%
+  );
+  animation: ask-glow 4.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-glow {
+    animation: none;
+  }
+}

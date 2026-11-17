@@ -11,6 +11,7 @@ import {
   ACT_COPY,
   AI_REPORT_COPY,
   ASK_COPY,
+  ASK_STARTER,
   askSavedLine,
   askUnavailableLine,
   type AskAnswer,
@@ -43,6 +44,10 @@ const hooks = vi.hoisted(() => ({
   mayAct: false,
   suggestions: [] as Array<{ kind: string; text: string; request: boolean }>,
   suggestionsEnabled: [] as boolean[],
+  starter: false,
+}));
+vi.mock("@/lib/ask/starter-seen", () => ({
+  useAskStarter: () => hooks.starter,
 }));
 vi.mock("@/lib/ai/availability", () => ({
   useMayAct: () => hooks.mayAct,
@@ -94,6 +99,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
     isPending: false,
   }),
   useCurrentUser: () => ({ data: { id: "me" } }),
+  useViewerUserId: () => "me",
+  useViewerDisplayName: () => "Marcus Ellison",
 }));
 
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
@@ -279,6 +286,7 @@ beforeEach(() => {
   hooks.mayAct = false;
   hooks.suggestions = [EVENT];
   hooks.suggestionsEnabled = [];
+  hooks.starter = false;
   reporting.offered = true;
   reporting.reported = false;
   gate.ensureConsent.mockResolvedValue(true);
@@ -288,18 +296,29 @@ beforeEach(() => {
 });
 
 describe("AskSheet", () => {
-  it("opens on what Frapp answers from and what this member could ask about their own account, with no word about one question at a time", () => {
+  it("opens on the crest, the day and a greeting, with what this member could ask as arrow rows and no word about how Ask works (#4904)", () => {
     const tree = render();
     open(tree);
     const text = screenText(tree);
-    expect(text).toContain(ASK_COPY.name);
-    expect(text).toContain(ASK_COPY.empty_title);
-    expect(text).toContain(ASK_COPY.empty_body);
+    expect(text).toMatch(/Good (morning|afternoon|evening), Marcus\./);
+    expect(text).not.toContain("Ask about your chapter");
+    expect(text).not.toContain(ASK_STARTER.answer);
     expect(text).toContain(EVENT.text);
     expect(text).not.toContain("answered on its own");
-    // They fade in where nothing sits below them.
+    // Read to a screen reader as Ask's header, with the greeting.
+    expect(
+      tree.root.findAll(
+        (node) =>
+          node.props.accessibilityRole === "header" &&
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.startsWith(`${ASK_COPY.name}. Good `),
+      ).length,
+    ).toBeGreaterThan(0);
+    // The rows fade in at the bottom, where nothing sits below them.
     const list = tree.root.findAll(
-      (node) => (node.type as unknown) === "Animated.View",
+      (node) =>
+        (node.type as unknown) === "Animated.View" &&
+        node.props.entering !== undefined,
     );
     expect(list).toHaveLength(1);
     expect(list[0].props.entering).toMatchObject({ animation: "FadeIn" });
@@ -312,12 +331,26 @@ describe("AskSheet", () => {
     hooks.suggestions = [];
     const tree = render();
     open(tree);
-    expect(screenText(tree)).toContain(ASK_COPY.empty_title);
+    expect(screenText(tree)).toMatch(/Good (morning|afternoon|evening), Marcus\./);
     expect(
       tree.root.findAll(
         (node) => node.props.accessibilityHint === "Sends this.",
       ),
     ).toHaveLength(0);
+  });
+
+  it("opens a member's first time on the exchange that says what Frapp can do, in place of the greeting", () => {
+    hooks.starter = true;
+    const tree = render();
+    open(tree);
+    const text = screenText(tree);
+    expect(text).toContain("Hey Marcus, I'm Frapp.");
+    expect(text).toContain(ASK_STARTER.question);
+    expect(text).toContain(ASK_STARTER.answer);
+    expect(text).not.toContain(ASK_STARTER.answer_act);
+    expect(text).toContain(EVENT.text);
+    // The starter is never sent.
+    expect(hooks.ask).not.toHaveBeenCalled();
   });
 
   it("sends a tapped question as a suggestion, and the one request like typed words", async () => {
@@ -383,7 +416,8 @@ describe("AskSheet", () => {
     expect(text.indexOf("What is quorum?")).toBeLessThan(
       text.indexOf("And for elections?"),
     );
-    expect(text).not.toContain(ASK_COPY.empty_body);
+    expect(text).not.toContain(ASK_STARTER.answer);
+    expect(text).not.toMatch(/Good (morning|afternoon|evening), Marcus/);
   });
 
   it("starts a new conversation from the header", () => {
@@ -595,7 +629,7 @@ describe("AskSheet", () => {
     it("is one field for everyone: no switch, and no word about acting for a member who can't", () => {
       const tree = render();
       const text = screenText(tree);
-      expect(text).not.toContain(ASK_COPY.empty_body_act);
+      expect(text).not.toContain(ASK_STARTER.answer_act);
       expect(
         tree.root.findAll((node) => node.props.accessibilityRole === "radio"),
       ).toHaveLength(0);
@@ -605,7 +639,7 @@ describe("AskSheet", () => {
       hooks.mayAct = true;
       const tree = render();
       // The list only words the opening.
-      expect(screenText(tree)).not.toContain(ASK_COPY.empty_body_act);
+      expect(screenText(tree)).not.toContain(ASK_STARTER.answer_act);
       act(() => field(tree).props.onChangeText("Give Ana 5 points"));
       act(() => field(tree).props.onSubmitEditing());
       expect(hooks.ask).toHaveBeenCalledWith("Give Ana 5 points", {
@@ -631,8 +665,9 @@ describe("AskSheet", () => {
     it("tells a member Frapp can act for, and says so with what they type", () => {
       hooks.mayAct = true;
       hooks.actions = ["give_points", "create_task"];
+      hooks.starter = true;
       const tree = render();
-      expect(screenText(tree)).toContain(ASK_COPY.empty_body_act);
+      expect(screenText(tree)).toContain(ASK_STARTER.answer_act);
       expect(
         tree.root.findAll((node) => node.props.accessibilityRole === "radio"),
       ).toHaveLength(0);

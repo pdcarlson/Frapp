@@ -14,7 +14,6 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import Animated, { FadeIn } from "react-native-reanimated";
 import {
   BottomSheetModal,
   BottomSheetTextInput,
@@ -24,6 +23,8 @@ import {
   useAsk,
   useAskStatus,
   useAskSuggestions,
+  useViewerDisplayName,
+  useViewerUserId,
   type AskOptions,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
@@ -36,6 +37,7 @@ import {
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskSendGlyph } from "@/components/ask/ask-bar";
+import { AskOpening } from "@/components/ask/ask-opening";
 import { AskTurn } from "@/components/ask/ask-turn";
 import {
   SOURCE_OPEN_FAILED,
@@ -63,6 +65,7 @@ import {
   useFrappTheme,
 } from "@/lib/theme";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
+import { useAskStarter } from "@/lib/ask/starter-seen";
 
 /**
  * Ask Frapp on the phone (`spec/ui/mobile/screens.md` s17;
@@ -116,11 +119,18 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * three questions and one request the server built from what this member's
  * account holds now: their next event, their open tasks, minutes they can
  * read, their points. The same list, in the same words, as web's panel.
- * There is no fixed list; with nothing to ask about, the two opening lines
- * stand alone. They are read once the sheet is open and fade in under the
- * opening words, where nothing sits below them to move. A tapped question
- * is sent as a suggestion, never as words the member typed (`useAsk`'s
- * `suggested`).
+ * There is no fixed list; with nothing to ask about, the crest and the
+ * greeting stand alone. They are read once the sheet is open and fade in as
+ * arrow rows at the bottom, above the field, where nothing sits below them to
+ * move. A tapped question is sent as a suggestion, never as words the member
+ * typed (`useAsk`'s `suggested`).
+ *
+ * **It opens on the crest, not on instructions** (#4904; Paul, 2026-11-17).
+ * Before the first turn: the crest in the chapter's colour with a glow, the
+ * day and a greeting, and on the member's first open on this phone the
+ * "What can you do?" exchange (`ask-opening.tsx`, `lib/ask/starter-seen.ts`).
+ * Until then every open began with "Ask about your chapter" and a paragraph
+ * on where answers come from.
  *
  * **Consent is asked at the first question**, not when the sheet opens
  * (`useAiConsentGate`; `ai.md` § Consent). The question shows in the thread
@@ -169,9 +179,6 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
 
 /** Within this of the bottom, the member is reading the newest words. */
 const FOLLOW_SLACK = 80;
-
-/** An opacity change only, so it is the same with reduced motion on. */
-const SUGGESTIONS_FADE_MS = 200;
 
 export const AskSheet = forwardRef<
   BottomSheetModal,
@@ -226,6 +233,13 @@ export const AskSheet = forwardRef<
   const canAct = actions.length > 0;
   const mayAct = useMayAct();
   const { suggestions } = useAskSuggestions({ enabled: shownOpen });
+  const displayName = useViewerDisplayName();
+  const viewerId = useViewerUserId();
+  const starter = useAskStarter({
+    userId: viewerId,
+    open: shownOpen,
+    empty: exchanges.length === 0,
+  });
 
   const [draft, setDraft] = useState(initialDraft ?? "");
   const leftForSource = useRef(false);
@@ -338,12 +352,19 @@ export const AskSheet = forwardRef<
       >
         <SheetBackToClose onClose={closeSheet} />
         <View style={styles.headerRow}>
-          <View style={styles.headerName}>
-            <FrappCrest height={20} color={accent} />
-            <Text accessibilityRole="header" style={styles.headerTitle}>
-              {ASK_COPY.name}
-            </Text>
-          </View>
+          {/* Before the first turn the opening's big crest is the mark, and
+              the bar that opened the sheet already said "Ask Frapp"; the
+              name comes back here with the conversation (#4904). */}
+          {exchanges.length > 0 ? (
+            <View style={styles.headerName}>
+              <FrappCrest height={20} color={accent} />
+              <Text accessibilityRole="header" style={styles.headerTitle}>
+                {ASK_COPY.name}
+              </Text>
+            </View>
+          ) : (
+            <View />
+          )}
           <View style={styles.headerActions}>
             {exchanges.length > 0 ? (
               <IconButton
@@ -369,7 +390,10 @@ export const AskSheet = forwardRef<
           ref={scroller}
           onAccessibilityEscape={closeSheet}
           style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            exchanges.length === 0 ? styles.scrollContentOpening : null,
+          ]}
           keyboardShouldPersistTaps="handled"
           onScrollBeginDrag={() => {
             dragged.current = true;
@@ -402,11 +426,12 @@ export const AskSheet = forwardRef<
               </View>
             ))
           ) : (
-            <AskEmpty
+            <AskOpening
+              displayName={displayName}
+              starter={starter}
               canAct={canAct}
               suggestions={suggestions}
               onPick={pick}
-              styles={styles}
             />
           )}
         </BottomSheetScrollView>
@@ -457,59 +482,6 @@ export const AskSheet = forwardRef<
   );
 });
 
-/**
- * Before the first turn: what Frapp answers from, and what this member could
- * ask about their own account right now. A member Frapp can act for is told
- * so. With nothing to suggest, the two lines stand alone.
- */
-function AskEmpty({
-  canAct,
-  suggestions,
-  onPick,
-  styles,
-}: {
-  /** Frapp can take at least one action for this member. */
-  canAct: boolean;
-  suggestions: readonly AskSuggestion[];
-  onPick: (suggestion: AskSuggestion) => void;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  return (
-    <>
-      <View style={styles.emptyWords}>
-        <Text style={styles.emptyTitle}>{ASK_COPY.empty_title}</Text>
-        <Text style={styles.emptyBody}>
-          {ASK_COPY.empty_body}
-          {canAct ? ` ${ASK_COPY.empty_body_act}` : ""}
-        </Text>
-      </View>
-      {suggestions.length > 0 ? (
-        // Fades in when it arrives. Nothing sits below it, so nothing moves.
-        <Animated.View
-          entering={FadeIn.duration(SUGGESTIONS_FADE_MS)}
-          style={styles.examples}
-        >
-          {suggestions.map((suggestion) => (
-            <Pressable
-              key={suggestion.text}
-              accessibilityRole="button"
-              accessibilityLabel={suggestion.text}
-              accessibilityHint="Sends this."
-              onPress={() => onPick(suggestion)}
-              style={({ pressed }) => [
-                styles.example,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={styles.exampleText}>{suggestion.text}</Text>
-            </Pressable>
-          ))}
-        </Animated.View>
-      ) : null}
-    </>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     scroll: {
@@ -523,6 +495,11 @@ function createStyles(tokens: SignetTokens) {
       paddingTop: tokens.spacing.sm,
       paddingBottom: tokens.spacing.md,
       gap: tokens.spacing.xl,
+    },
+    scrollContentOpening: {
+      // The opening fills the room above the field: its crest in the middle
+      // and its rows at the bottom, in thumb reach (`ask-opening.tsx`).
+      flexGrow: 1,
     },
     headerRow: {
       flexDirection: "row",
@@ -556,35 +533,6 @@ function createStyles(tokens: SignetTokens) {
     },
     turn: {
       gap: tokens.spacing.sm,
-    },
-    emptyWords: {
-      gap: tokens.spacing.xs,
-    },
-    emptyTitle: {
-      ...typeRole(tokens.typography.role.label),
-      fontFamily: fontFamilyFor(600),
-      color: tokens.color.text.foreground,
-    },
-    emptyBody: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
-    examples: {
-      gap: tokens.spacing.sm,
-    },
-    example: {
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.md,
-      paddingVertical: tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.surface1,
-    },
-    exampleText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
     },
     caption: {
       ...typeRole(tokens.typography.role.caption),
