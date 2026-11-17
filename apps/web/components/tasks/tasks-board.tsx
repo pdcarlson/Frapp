@@ -1184,11 +1184,10 @@ function TaskCard({
           </>
         ) : null}
         <span className="min-w-0 truncate">{assigneeName}</span>
+        {/* No `·` before it either: its ↻ separates it, as the checklist's
+            icon does (#5119). */}
         {task.series && !task.series.ended ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <TaskRepeatLine task={task} next />
-          </>
+          <TaskRepeatLine task={task} next />
         ) : null}
         {/* No `·` before it: its checklist icon separates it, the way
             Todoist's sub-task count sits, so a wrapped line never starts or
