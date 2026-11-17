@@ -19,7 +19,7 @@ Read with `gcloud` from Cloud Shell on 2026-11-17. The folders, the four admin g
 
 A project ID never changes, so `signet-frapp` keeps its old ID. Members never see it: the consent screen shows the brand, and the client IDs carry only the project number (`661618060468`).
 
-Billing: one account, "My Billing Account" (`0192F1-ED549B-AD9589`), upgraded from the free trial, with a $100 monthly budget alert (both read in the console on 2026-11-16, not re-read on 11-17). `signet-frapp` has no billing account linked, because sign-in and Calendar don't need one.
+Billing: one account, "My Billing Account" (`0192F1-ED549B-AD9589`), upgraded from the free trial, with a $100 monthly budget alert (both read in the console on 2026-11-16, not re-read on 11-17). `signet-frapp` was linked to it on 2026-11-17 only because Cloud Monitoring alerts need a billing account; sign-in and Calendar themselves cost nothing.
 
 ## Who can do what
 
@@ -50,6 +50,16 @@ To list them all: `gcloud org-policies list --organization=1033325313086 --billi
 ## Audit logs
 
 The sink `org-level-logsink-1033325313086` copies every project's audit logs (admin activity, system events, data access and access transparency) into the bucket `1033325313086-logs` in `central-logging-monitoring`. [Logs Explorer for that project](https://console.cloud.google.com/logs/query?project=cs-project-cob1stf1) shows who changed what anywhere in the organization.
+
+## Alerts
+
+Google's log-based alerts can watch only changes made inside a project. A change made at the organization or a folder (an organization IAM grant, an organization policy) can't trigger one; those land only in the [audit logs](#audit-logs).
+
+| Project | Policy | Emails | Fires on |
+| --- | --- | --- | --- |
+| `signet-frapp` | "Frapp sign-in: brand, client or IAM changed" (`5857347625677147635`) | `pdcarlson@frapp.live` (channel `4661716387777912`) | Any Admin Activity audit entry from `clientauthconfig.googleapis.com` (brand and OAuth client changes) or `cloudresourcemanager.googleapis.com` (IAM, owner invites, moves, renames). At most one email per five minutes. |
+
+The filter's two services come from the project's own audit log of the 2026-11-17 changes (`CreateClient`, `UpdateBrandWithMask`, `SetIamPolicy`, `UpdateProject`, the ownership invite methods). Made from Cloud Shell on 2026-11-17 ([#5323](https://github.com/frapplive/Frapp/issues/5323)) and tested the same day: renaming the project and back sent the email within two minutes. [Alerting policies for the project](https://console.cloud.google.com/monitoring/alerting?project=signet-frapp).
 
 ## The sign-in project
 
