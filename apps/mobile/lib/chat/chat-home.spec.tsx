@@ -181,32 +181,9 @@ vi.mock("@/lib/account/own-status", () => ({
   useSaveOwnStatus: () => ({ save: vi.fn(), isSaving: false }),
 }));
 
-// All threads (#4960): the sheet's rows have their own spec
-// (`all-threads-sheet.spec.tsx`); here the screen's half, the badge and where
-// a tapped row goes, is under test.
-const allThreads = vi.hoisted(() => ({
-  data: [] as { unread_count: number }[],
-  onOpen: null as
-    null | ((target: { channelId: string; rootId: string }) => void),
-  present: vi.fn(),
-}));
-vi.mock("@/components/chat/all-threads-sheet", async () => {
-  const { forwardRef, useImperativeHandle } = await import("react");
-  return {
-    AllThreadsSheet: forwardRef(function AllThreadsSheet(
-      {
-        onOpen,
-      }: {
-        onOpen: (target: { channelId: string; rootId: string }) => void;
-      },
-      ref,
-    ) {
-      allThreads.onOpen = onOpen;
-      useImperativeHandle(ref, () => ({ present: allThreads.present }));
-      return null;
-    }),
-  };
-});
+// Threads under their channel (#5277): the member's followed threads, as
+// `GET /v1/threads` serves them; the rule picking which show runs for real.
+const allThreads = vi.hoisted(() => ({ data: [] as unknown[] }));
 
 vi.mock("@repo/hooks", async () => {
   // The pure helpers run for real: the point is to catch the screen using
@@ -233,9 +210,11 @@ vi.mock("@repo/hooks", async () => {
     }),
     useChatBackground: () => query(undefined),
     useChapterChatBackground: () => query(undefined),
-    // All threads (#4960): the header's Threads door; its sheet has its own spec.
-    unreadThreadCount: actual.unreadThreadCount,
-    useMemberThreads: () => query(allThreads.data),
+    // Threads under their channel (#5277).
+    useMemberThreads: () => ({
+      ...query(allThreads.data),
+      dataUpdatedAt: Date.now(),
+    }),
     lastChannelLandingId: actual.lastChannelLandingId,
     lastChannelStorageKey: actual.lastChannelStorageKey,
     useActiveChapterId: () => "chapter-1",
@@ -2625,64 +2604,84 @@ describe("Chat home: the swipe to Messages", () => {
   });
 });
 
-describe("Chat home's Threads row (#4960, a row since #5139)", () => {
-  const byTestId = (tree: ReactTestRenderer, testID: string) =>
-    tree.root.findAllByProps({ testID });
-  it("counts threads with new replies on its badge", () => {
-    allThreads.data = [{ unread_count: 2 }, { unread_count: 0 }];
+describe("threads under their channel (#5277)", () => {
+  const thread = (over: Record<string, unknown> = {}) => ({
+    thread_root_id: "root-1",
+    channel_id: "c-general",
+    state: "following",
+    unread_count: 0,
+    reply_count: 2,
+    last_reply_at: new Date().toISOString(),
+    root: {
+      id: "root-1",
+      channel_id: "c-general",
+      sender_id: "u-2",
+      content: "who has the tent",
+      kind: "text",
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+    },
+    ...over,
+  });
+  const threadRows = (tree: ReactTestRenderer) =>
+    tree.root.findAll(
+      (node) =>
+        (node.type as unknown) === "Pressable" &&
+        typeof node.props.accessibilityLabel === "string" &&
+        node.props.accessibilityLabel.startsWith("Thread: "),
+    );
+
+  it("draws no Threads row, and nothing under a channel with no threads", () => {
+    allThreads.data = [];
+    const tree = render();
+    expect(
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          node.props.accessibilityLabel === "Threads",
+      ),
+    ).toHaveLength(0);
+    expect(threadRows(tree)).toHaveLength(0);
+  });
+
+  it("lists an active thread right under its channel and opens it there", () => {
+    allThreads.data = [thread({ unread_count: 2 })];
     try {
       const tree = render();
-      const [badge] = byTestId(tree, "threads-badge").filter(
-        (node) => (node.type as unknown) === "View",
-      );
-      expect(screenTextOf(badge!)).toBe("1");
-      expect(
-        pressableLabelled(tree, "Threads, 1 with new replies"),
-      ).toBeTruthy();
+      const labels = tree.root
+        .findAll(
+          (node) =>
+            (node.type as unknown) === "Pressable" &&
+            typeof node.props.accessibilityLabel === "string",
+        )
+        .map((node) => node.props.accessibilityLabel as string);
+      const label = "Thread: who has the tent, in #general, 2 new";
+      const at = labels.indexOf(label);
+      expect(at).toBeGreaterThan(0);
+      expect(labels[at - 1]).toMatch(/^#general/);
+      act(() => pressableLabelled(tree, label).props.onPress());
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
+        pathname: "/chat-thread",
+        params: { channelId: "c-general", threadRootId: "root-1" },
+      });
     } finally {
       allThreads.data = [];
     }
   });
 
-  it("is always there, first above the channels, and opens All threads", () => {
-    allThreads.data = [];
-    allThreads.present.mockClear();
-    const tree = render();
-    // No count while nothing is new.
-    expect(byTestId(tree, "threads-badge")).toHaveLength(0);
-    const row = pressableLabelled(tree, "Threads");
-    act(() => row.props.onPress());
-    expect(allThreads.present).toHaveBeenCalledTimes(1);
-    // Before the first section heading in the screen's own order.
-    const labels = tree.root
-      .findAll(
-        (node) =>
-          (node.type as unknown) === "Pressable" &&
-          typeof node.props.accessibilityLabel === "string",
-      )
-      .map((node) => node.props.accessibilityLabel as string);
-    const threadsAt = labels.indexOf("Threads");
-    const firstChannelAt = labels.findIndex((label) =>
-      /general|announcements|random/i.test(label),
-    );
-    expect(threadsAt).toBeGreaterThanOrEqual(0);
-    expect(firstChannelAt).toBeGreaterThan(threadsAt);
+  it("leaves out a read thread gone quiet", () => {
+    const old = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString();
+    allThreads.data = [thread({ last_reply_at: old })];
+    try {
+      expect(threadRows(render())).toHaveLength(0);
+    } finally {
+      allThreads.data = [];
+    }
   });
+});
 
-  it("puts Search in the title row, where Threads was", () => {
-    const tree = render();
-    act(() => pressableLabelled(tree, "Search").props.onPress());
-    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/search");
-  });
-
-  it("opens a tapped thread over its channel", () => {
-    render();
-    act(() =>
-      allThreads.onOpen?.({ channelId: "c-general", rootId: "root-1" }),
-    );
-    expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
-      pathname: "/chat-thread",
-      params: { channelId: "c-general", threadRootId: "root-1" },
-    });
-  });
+it("puts Search in the title row", () => {
+  const tree = render();
+  act(() => pressableLabelled(tree, "Search").props.onPress());
+  expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/search");
 });

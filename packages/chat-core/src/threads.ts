@@ -565,6 +565,57 @@ export function memberThreadPreview(
 }
 
 /**
+ * How long a read thread stays under its channel after its last activity
+ * (the newest reply, else the parent). Discord drops a thread from the
+ * channel list when it auto-archives, three days quiet by default; Frapp
+ * never archives a thread, so the list applies the same quiet window.
+ */
+export const SIDEBAR_THREAD_QUIET_MS = 3 * 24 * 60 * 60 * 1000;
+
+/** At most this many threads sit under one channel, newest first. */
+export const SIDEBAR_THREADS_PER_CHANNEL = 5;
+
+/** The fields of a `GET /v1/threads` row the channel list reads. */
+export interface SidebarThreadInput {
+  channel_id: string;
+  unread_count: number;
+  last_reply_at: string | null;
+  root: { created_at: string };
+}
+
+/**
+ * Which of the member's threads sit under each channel in the channel list
+ * (#5277, Paul 2026-11-17, after Discord's): a followed or muted thread with
+ * replies new to the member always, else one active within
+ * {@link SIDEBAR_THREAD_QUIET_MS}, newest activity first and at most
+ * {@link SIDEBAR_THREADS_PER_CHANNEL} per channel. A channel with none is
+ * absent from the map, so it draws nothing under it: no empty state. A
+ * thread that drops off is still one tap away on its parent's thread card.
+ */
+export function sidebarThreadsByChannel<T extends SidebarThreadInput>(
+  threads: readonly T[] | undefined,
+  now: number,
+): Map<string, T[]> {
+  const activityOf = (thread: T) =>
+    Date.parse(thread.last_reply_at ?? thread.root.created_at);
+  const byChannel = new Map<string, T[]>();
+  const kept = (threads ?? [])
+    .filter(
+      (thread) =>
+        thread.unread_count > 0 ||
+        now - activityOf(thread) <= SIDEBAR_THREAD_QUIET_MS,
+    )
+    .sort((a, b) => activityOf(b) - activityOf(a));
+  for (const thread of kept) {
+    const rows = byChannel.get(thread.channel_id) ?? [];
+    if (rows.length >= SIDEBAR_THREADS_PER_CHANNEL) continue;
+    rows.push(thread);
+    byChannel.set(thread.channel_id, rows);
+  }
+  return byChannel;
+}
+
+/**
  * What a screen reader hears for the thread card (#4297), on web and the
  * phone alike: "3 replies, 2 new, last reply 5m ago, latest from Devin: grill
  * is in my garage", without the parts the card doesn't draw.

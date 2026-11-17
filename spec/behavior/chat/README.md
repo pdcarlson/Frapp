@@ -756,8 +756,13 @@ The #489 decision above, that a reply lands in the timeline, still holds for Rep
   A message from a member the viewer blocked reads as the tombstone, unnamed.
   `GET /v1/threads` serves it: the API reads which chapter channels hold the member's follows, authorizes them before the limit applies, and masks the parents for blocks.
   On the web it is a Threads button in the chat header, beside Members, with a dot while any thread has new replies; tapping a row switches to the thread's channel and opens the thread there, waiting for the channel list when the channel is new to the tab.
-  On the phone it is the Threads row, the first row of Chat home's channel list and always drawn ([`../../ui/mobile/navigation.md`](../../ui/mobile/navigation.md)), badged in house gold with how many threads have new replies, opening a sheet of the same rows; a row pushes the thread over its channel. (It was a button in Chat home's title row until #5139, 2026-11-16, when Search took that place.)
-  The list is re-read when it opens, once a minute behind the button, and right after the member reads a thread.
+  On the phone the threads sit under their channel instead ([#5277](https://github.com/frapplive/Frapp/issues/5277), asked by Paul, after Discord's channel list): Chat home draws a channel's active threads indented under its row, joined to its `#` by a curved connector, and Messages does the same under a group DM's row.
+  A thread row is one line, the parent's words as the All threads row's title reads them; it reads unread (bold, the leading pip, no number) while it has new replies and muted while muted, and a tap pushes the thread over its channel.
+  Active is one rule in `sidebarThreadsByChannel` (`@repo/chat-core/threads`): a thread with new replies always, else one with activity in the last three days (Discord's default auto-archive; Frapp archives nothing), newest first, at most five per channel.
+  A channel with none draws nothing under it, so there is no Threads entry, no empty state and no sheet; a thread that has dropped off is still on its parent's thread card.
+  The list is the same `GET /v1/threads` read, re-read once a minute and right after the member reads a thread.
+  _Changed 2026-11-17 ([#5277](https://github.com/frapplive/Frapp/issues/5277), asked by Paul):_ it was the Threads row, the first row of Chat home's channel list and always drawn, badged in house gold, opening a sheet of the rows above (#5139, 2026-11-16; a title-row button before that, #4960).
+  On the web the list is re-read when it opens, once a minute behind the button, and right after the member reads a thread.
 - **No auto-archive.**
   A thread stays open as long as its parent exists.
 - **Slices.**

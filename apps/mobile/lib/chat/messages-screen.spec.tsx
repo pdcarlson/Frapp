@@ -101,6 +101,9 @@ const {
   },
 }));
 
+// A group DM's threads sit under its row (#5277).
+const memberThreads = vi.hoisted(() => ({ value: [] as unknown[] }));
+
 vi.mock("@repo/hooks", async () => {
   const actual =
     await vi.importActual<typeof import("@repo/hooks")>("@repo/hooks");
@@ -121,20 +124,25 @@ vi.mock("@repo/hooks", async () => {
         ? {
             ...query(undefined, rosterState.refetch),
             isPending: true,
-            fetchStatus: rosterState.unread === "paused" ? "paused" : "fetching",
+            fetchStatus:
+              rosterState.unread === "paused" ? "paused" : "fetching",
           }
         : rosterState.failed
-        ? {
-            ...query(undefined, rosterState.refetch),
-            isError: true,
-          }
-        : query([
-            { user_id: VIEWER, display_name: "Viewer Person" },
-            { user_id: ALICE, display_name: "Alice Chen" },
-            { user_id: BOB, display_name: "Bob Diaz" },
-            { user_id: CAROL, display_name: "Carol Alvarez" },
-          ]),
+          ? {
+              ...query(undefined, rosterState.refetch),
+              isError: true,
+            }
+          : query([
+              { user_id: VIEWER, display_name: "Viewer Person" },
+              { user_id: ALICE, display_name: "Alice Chen" },
+              { user_id: BOB, display_name: "Bob Diaz" },
+              { user_id: CAROL, display_name: "Carol Alvarez" },
+            ]),
     useBlockedUserIds: () => blockListState.value,
+    useMemberThreads: () => ({
+      ...query(memberThreads.value),
+      dataUpdatedAt: Date.now(),
+    }),
     useMemberDisplayNames: () => ({
       avatarTintFor: () => null,
       byId: {
@@ -363,6 +371,44 @@ describe("Messages lists direct messages only", () => {
       pathname: "/chat-thread",
       params: { channelId: dmAlice.id },
     });
+  });
+
+  it("lists a group DM's active thread under it and opens it there", () => {
+    memberThreads.value = [
+      {
+        thread_root_id: "root-g",
+        channel_id: group.id,
+        state: "following",
+        unread_count: 0,
+        reply_count: 1,
+        last_reply_at: new Date().toISOString(),
+        root: {
+          id: "root-g",
+          channel_id: group.id,
+          sender_id: ALICE,
+          content: "carpool plan",
+          kind: "text",
+          is_deleted: false,
+          created_at: new Date().toISOString(),
+        },
+      },
+    ];
+    try {
+      const tree = render();
+      const row = tree.root.find(
+        (node) =>
+          (node.type as unknown) === "Pressable" &&
+          typeof node.props.accessibilityLabel === "string" &&
+          node.props.accessibilityLabel.startsWith("Thread: carpool plan, in "),
+      );
+      act(() => row.props.onPress());
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith({
+        pathname: "/chat-thread",
+        params: { channelId: group.id, threadRootId: "root-g" },
+      });
+    } finally {
+      memberThreads.value = [];
+    }
   });
 });
 

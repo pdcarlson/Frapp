@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useFocusEffect, useIsFocused, useRouter } from "expo-router";
 import {
   Alert,
@@ -73,9 +80,11 @@ import {
   MessagesButton,
   NotificationsButton,
   SearchButton,
-  ThreadsRow,
 } from "@/components/chat/home-header";
-import { AllThreadsSheet } from "@/components/chat/all-threads-sheet";
+import {
+  ChannelThreadRows,
+  useChannelThreads,
+} from "@/components/chat/channel-thread-rows";
 import { DisclosureGlyph, PlusGlyph } from "@/components/control-glyphs";
 import { IconButton } from "@/components/icon-button";
 import { selectChannelAccessOptions } from "@repo/hooks/channel-access";
@@ -460,18 +469,10 @@ export default function ChatHomeScreen() {
   const unreadConversations = directChannels.filter(
     (channel) => (unreadByChannelId?.get(channel.id)?.unreadCount ?? 0) > 0,
   ).length;
-  // All threads (#4960): the member's threads across channels, in a sheet.
-  // A channel reads `#name`, a DM its people, as the thread header does.
-  const threadsSheetRef = useRef<BottomSheetModal>(null);
-  const threadChannelLabel = useCallback(
-    (channelId: string) => {
-      const channel = allChannels.find((row) => row.id === channelId);
-      if (!channel) return null;
-      const name = displayChannelName(channel, viewerId, memberNames);
-      return isDirectChannel(channel) ? name : `#${name}`;
-    },
-    [allChannels, viewerId, memberNames],
-  );
+  // Threads under their channel (#5277, Paul 2026-11-17, after Discord's):
+  // the member's active threads, indented under each channel row. They were
+  // a Threads row and sheet (#4960, #5139) until then.
+  const threadsByChannel = useChannelThreads();
   const threadAuthorName = useCallback(
     (userId: string) => memberNames[userId] ?? null,
     [memberNames],
@@ -631,49 +632,62 @@ export default function ChatHomeScreen() {
     const togglePin = () =>
       setChannelPinned({ channelId: channel.id, pinned: !pinned });
     return (
-      <ChannelRow
-        key={channel.id}
-        name={name}
-        mark={channelMarkFor(channel)}
-        isPinned={pinned}
-        isMuted={mutedChannelIds?.has(channel.id) ?? false}
-        unreadCount={counts?.unreadCount ?? 0}
-        mentionCount={counts?.mentionCount ?? 0}
-        onPress={() => openChannel(channel.id)}
-        onTogglePin={togglePin}
-        onLongPress={(event) => {
-          pressHaptic();
-          setMenuTarget({
-            channelId: channel.id,
-            name,
-            // A screen reader's "Channel actions" has no press point, so the
-            // menu opens a third of the way down.
-            pageY: event?.nativeEvent.pageY ?? windowHeight / 3,
-            pinned,
-            level: levelFor(channel.id),
-            fromChapterLevel: selectFromChapterLevel(
-              notificationPrefsQuery.data,
-              channel.id,
-            ),
-            actions: channelRowActions({
-              channel,
-              unread:
-                (counts?.unreadCount ?? 0) > 0 ||
-                (counts?.mentionCount ?? 0) > 0,
+      <Fragment key={channel.id}>
+        <ChannelRow
+          name={name}
+          mark={channelMarkFor(channel)}
+          isPinned={pinned}
+          isMuted={mutedChannelIds?.has(channel.id) ?? false}
+          unreadCount={counts?.unreadCount ?? 0}
+          mentionCount={counts?.mentionCount ?? 0}
+          onPress={() => openChannel(channel.id)}
+          onTogglePin={togglePin}
+          onLongPress={(event) => {
+            pressHaptic();
+            setMenuTarget({
+              channelId: channel.id,
+              name,
+              // A screen reader's "Channel actions" has no press point, so the
+              // menu opens a third of the way down.
+              pageY: event?.nativeEvent.pageY ?? windowHeight / 3,
               pinned,
-              permissions,
-              surface: { copyLink: false, edit: true, arrange: true },
-            }),
-            canSetDisplayLock: canSetChannelDisplayLock(
-              channel,
-              viewerId,
-              permissions,
-            ),
-            canSetBackground: canSetChannelBackground(channel, permissions),
-            onTogglePin: togglePin,
-          });
-        }}
-      />
+              level: levelFor(channel.id),
+              fromChapterLevel: selectFromChapterLevel(
+                notificationPrefsQuery.data,
+                channel.id,
+              ),
+              actions: channelRowActions({
+                channel,
+                unread:
+                  (counts?.unreadCount ?? 0) > 0 ||
+                  (counts?.mentionCount ?? 0) > 0,
+                pinned,
+                permissions,
+                surface: { copyLink: false, edit: true, arrange: true },
+              }),
+              canSetDisplayLock: canSetChannelDisplayLock(
+                channel,
+                viewerId,
+                permissions,
+              ),
+              canSetBackground: canSetChannelBackground(channel, permissions),
+              onTogglePin: togglePin,
+            });
+          }}
+        />
+        <ChannelThreadRows
+          threads={threadsByChannel.get(channel.id)}
+          channelLabel={`#${name}`}
+          nameFor={threadAuthorName}
+          viewerId={viewerId}
+          onOpen={({ channelId, rootId }) =>
+            router.push({
+              pathname: "/chat-thread",
+              params: { channelId, threadRootId: rootId },
+            })
+          }
+        />
+      </Fragment>
     );
   }
 
@@ -742,7 +756,7 @@ export default function ChatHomeScreen() {
         <View style={styles.headerActions}>
           {/* Search (#5139), the Messages door, then the inbox's bell
               (#3362). The member's avatar is the You tab since #3839;
-              Threads is the list's first row since #5139. */}
+              threads sit under their channels since #5277. */}
           <SearchButton />
           <MessagesButton unreadConversations={unreadConversations} />
           <NotificationsButton />
@@ -795,13 +809,6 @@ export default function ChatHomeScreen() {
         </Text>
       ) : null}
 
-      {/* Threads, first above the channels as Slack's Home lists it
-          (#5139; a title-row round from #4960 until then). Drawn in every
-          state of the list below, as the round was. */}
-      {chapterScope !== "none" ? (
-        <ThreadsRow onPress={() => threadsSheetRef.current?.present?.()} />
-      ) : null}
-
       <ScreenReady
         ready={
           chapterScope === "none" ||
@@ -815,7 +822,7 @@ export default function ChatHomeScreen() {
         <NoChapterState noun="its channels" />
       ) : channelsQuery.isPending || holdingForLaunch ? (
         <ChannelListSkeleton />
-      ) : (channelsQuery.isError && channelsQuery.data === undefined) ? (
+      ) : channelsQuery.isError && channelsQuery.data === undefined ? (
         // An explicit retry as well as the pull (#3385): this tab stays
         // mounted for the session, and a button is the recovery a member
         // sees without knowing the gesture. A *connectivity* blip
@@ -1011,18 +1018,6 @@ export default function ChatHomeScreen() {
         </>
       )}
 
-      <AllThreadsSheet
-        ref={threadsSheetRef}
-        channelNameFor={threadChannelLabel}
-        nameFor={threadAuthorName}
-        viewerId={viewerId}
-        onOpen={({ channelId, rootId }) =>
-          router.push({
-            pathname: "/chat-thread",
-            params: { channelId, threadRootId: rootId },
-          })
-        }
-      />
       {channelForm ? (
         <ChannelFormSheet
           key={channelForm.key}
