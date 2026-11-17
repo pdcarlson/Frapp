@@ -351,7 +351,8 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   A turn the member walked away from (the panel closed, or a new question sent) stops at its next wait: nothing more is read, written or kept for it.
 - **The answer reads as markdown** (#5429; Paul, 2026-11-17: "We should process the raw markdown? Packages exist for this.").
   Bold, italic, code and short lists are drawn as chat draws a message, through the same renderer on web and the phone (`@repo/chat-core/ask-markdown`), with the markers and named people and channels kept where the server put them; a list reads as lines led by a bullet or its number.
-  The prompts ask for lists as `- ` lines and bold only where it helps the member find something, and still for no headings, tables or emojis; a heading that slips through reads as a line of text.
+  A link is not drawn: it reads as its words and its address is dropped, so text planted in a source can't put a link in Frapp's voice ([`ai-prompt-injection.md`](../../docs/security/ai-prompt-injection.md)).
+  The prompts ask for lists as `- ` lines and bold only where it helps the member find something, and still for no headings, tables, links or emojis; a heading that slips through reads as a line of text.
   A streamed answer never shows half of a `**`: an unclosed one waits for the chunk that closes it.
   Copy copies the words as read, without the asterisks.
   Until #5429 an answer was plain text and the prompts asked for no markdown, which long answers broke, showing `**` as typed.

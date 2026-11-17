@@ -614,10 +614,10 @@ function AnswerNotes({ answer }: { answer: AskAnswer }) {
 }
 
 /**
- * The answer's own words: each cited sentence ends in its marker, and a
- * person or channel the server named is drawn as chat draws a mention
- * (`ask-entity-text.tsx`). With no names listed, as from a server before the
- * agent build, it is the text and its markers, as it was.
+ * The answer's own words, drawn as markdown (#5429, `ask-markdown.tsx`):
+ * each cited sentence ends in its marker, and a person or channel the server
+ * named is drawn as chat draws a mention. With no names listed, as from a
+ * server before the agent build, it is the text and its markers.
  */
 function AnswerText({
   answer,

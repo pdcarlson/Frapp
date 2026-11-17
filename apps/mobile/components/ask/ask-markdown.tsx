@@ -20,7 +20,8 @@ import {
  * lists as chat draws a message (`message-markdown.tsx`), with Ask's gold
  * markers and the people and channels the server named
  * (`@repo/chat-core/ask-markdown` says how the three are carried through the
- * parse). Web's twin is `components/ask/ask-markdown.tsx`.
+ * parse, and why a link is drawn as its words). Web's twin is
+ * `components/ask/ask-markdown.tsx`.
  */
 
 interface AskMarkdownContextValue {
@@ -99,20 +100,29 @@ function Entity({ node, children }: { node?: unknown; children?: ReactNode }) {
   return <>{children}</>;
 }
 
+/** This module's own, so React never sees a new element type. */
+const COMPONENTS: MessageMarkdownExtras["components"] = {
+  sup: ({ node }) => <Marker node={node} />,
+  span: ({ node, children }) => <Entity node={node}>{children}</Entity>,
+};
+
 /** What the parse adds for Ask: its pass, its lists, its two elements. */
 function extrasFor(
+  text: string,
   entities: readonly AskEntity[],
   markers: readonly AskMarker[],
 ): MessageMarkdownExtras {
   return {
-    remarkPlugins: [[remarkAskAnswer, { entities, markers }], remarkAskLists],
+    remarkPlugins: [
+      [remarkAskAnswer, { entities, markers, source: text }],
+      remarkAskLists,
+    ],
     allowedElements: ASK_RENDER_ELEMENTS,
-    components: {
-      sup: ({ node }) => <Marker node={node} />,
-      span: ({ node, children }) => <Entity node={node}>{children}</Entity>,
-    },
+    components: COMPONENTS,
   };
 }
+
+const NO_CHANNELS = () => false;
 
 export function AskMarkdown({
   text,
@@ -122,7 +132,7 @@ export function AskMarkdown({
   sourceName,
   canOpen,
   onOpenSource,
-  canOpenChannel = () => false,
+  canOpenChannel = NO_CHANNELS,
   onOpenChannel,
   style,
   markerStyle,
@@ -142,17 +152,29 @@ export function AskMarkdown({
   markerStyle: StyleProp<TextStyle>;
   mentionStyle: StyleProp<TextStyle>;
 }) {
+  // Parsed once per answer: every turn re-renders while another streams,
+  // and a caller's lists are new arrays each time, so they key by value.
+  // What only drawing needs reaches the components through context.
+  const entitiesKey = JSON.stringify(entities);
+  const citationsKey = JSON.stringify(citations);
   const markers = useMemo(
     () =>
       askMarkers({
         text,
-        citations: citations.map((citation) => ({ ...citation, quote: "" })),
+        citations: (JSON.parse(citationsKey) as AskCitation[]).map(
+          (citation) => ({ ...citation, quote: "" }),
+        ),
       }),
-    [text, citations],
+    [text, citationsKey],
   );
   const parsed = useMemo(
-    () => parseMessageMarkdown(text, undefined, extrasFor(entities, markers)),
-    [text, entities, markers],
+    () =>
+      parseMessageMarkdown(
+        text,
+        undefined,
+        extrasFor(text, JSON.parse(entitiesKey) as AskEntity[], markers),
+      ),
+    [text, entitiesKey, markers],
   );
   const context = useMemo<AskMarkdownContextValue>(
     () => ({
@@ -194,14 +216,9 @@ export function AskPreviewMarkdown({
   style: StyleProp<TextStyle>;
 }) {
   // An unclosed `**` waits for the chunk that closes it.
-  const parsed = useMemo(
-    () =>
-      parseMessageMarkdown(
-        askPreviewMarkdown(text),
-        undefined,
-        extrasFor([], []),
-      ),
-    [text],
-  );
+  const parsed = useMemo(() => {
+    const shown = askPreviewMarkdown(text);
+    return parseMessageMarkdown(shown, undefined, extrasFor(shown, [], []));
+  }, [text]);
   return <MessageMarkdown parsed={parsed} style={style} />;
 }

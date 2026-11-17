@@ -235,7 +235,10 @@ describe("AskTurn", () => {
         phase: "working",
         step: "writing",
         preview: "Dues are",
-        steps: stepsAfter([...READS, { v: 1, type: "status", step: "writing" }]),
+        steps: stepsAfter([
+          ...READS,
+          { v: 1, type: "status", step: "writing" },
+        ]),
       }),
     );
     expect(screenText(tree)).toContain("Dues are");
@@ -548,8 +551,7 @@ describe("an answer's markdown (#5429)", () => {
     tree.root.findAll(
       (node) =>
         node.type === Text &&
-        // The marker that ends the bold sits inside it.
-        drawnText(node).startsWith(words) &&
+        drawnText(node) === words &&
         (node.props.style as { fontFamily?: string } | undefined)
           ?.fontFamily === "Figtree_700Bold",
     );
@@ -567,10 +569,31 @@ describe("an answer's markdown (#5429)", () => {
     );
     const screen = screenText(tree);
     expect(screen).not.toContain("**");
+    // Exactly the bold words: the marker stands after the bold, on its
+    // sentence, not inside it.
     expect(bold(tree, "Photos.")).toHaveLength(1);
     expect(screen).toContain("• ");
     expect(screen).toContain(" For the slideshow.\n• Tickets");
     expect(byLabel(tree, "Source 1: Bylaws")).toHaveLength(1);
+  });
+
+  it("draws a link in an answer as its words, never as a link", () => {
+    const tree = render(
+      exchange({
+        answer: answer({
+          text: "Pay at [the dues page](https://example.test/pay?d=1).",
+          citations: [],
+        }),
+      }),
+    );
+    const screen = screenText(tree);
+    expect(screen).toContain("Pay at the dues page.");
+    expect(screen).not.toContain("example.test");
+    expect(
+      tree.root.findAll(
+        (node) => node.type === Text && node.props.accessibilityRole === "link",
+      ),
+    ).toHaveLength(0);
   });
 
   it("copies the words without the asterisks", async () => {
@@ -683,7 +706,10 @@ describe("under an answer", () => {
       exchange({
         answer: answer(),
         askId: "ask-1",
-        steps: stepsAfter([...READS, { v: 1, type: "status", step: "writing" }]),
+        steps: stepsAfter([
+          ...READS,
+          { v: 1, type: "status", step: "writing" },
+        ]),
       }),
     );
     const text = screenText(tree);

@@ -1039,14 +1039,32 @@ describe("an answer's markdown (#5429)", () => {
     );
     expect(container.textContent).not.toContain("**");
     const bold = container.querySelector("strong");
-    expect(bold?.textContent).toMatch(/^Photos\./);
-    // The marker that ends the bold sits inside it.
+    expect(bold?.textContent).toBe("Photos.");
+    // The marker stands right after the bold, on its sentence.
+    // The marker comes before the source chip of the same name.
+    const [marker] = screen.getAllByRole("link", {
+      name: /^Source 1: Bylaws/,
+    });
+    expect(bold?.contains(marker!)).toBe(false);
     expect(
-      within(bold as HTMLElement).getByRole("link", {
-        name: /^Source 1: Bylaws/,
-      }),
-    ).toBeInTheDocument();
+      bold!.compareDocumentPosition(marker!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(container.textContent).toContain("• Tickets");
+  });
+
+  it("draws a link in an answer as its words, never as a link", () => {
+    const { container } = show(
+      exchange({
+        answer: {
+          ...ANSWER,
+          text: "Pay at [the dues page](https://example.test/pay?d=1).",
+          citations: [],
+        },
+      }),
+    );
+    expect(container.textContent).toContain("Pay at the dues page.");
+    expect(container.querySelector('a[href*="example.test"]')).toBeNull();
+    expect(container.textContent).not.toContain("example.test");
   });
 
   it("copies the words without the asterisks", async () => {

@@ -49,14 +49,12 @@ describe("remarkAskAnswer", () => {
     nodes.map((node) => node.data?.hName ?? node.value);
 
   it("puts a marker in the text that holds its offset, and lifts listed names", () => {
-    // "Ask @Ana Ruiz now. Then go."
-    const paragraph: Node = {
-      type: "paragraph",
-      children: [at("Ask @Ana Ruiz now. Then go.", 0)],
-    };
+    const source = "Ask @Ana Ruiz now. Then go.";
+    const paragraph: Node = { type: "paragraph", children: [at(source, 0)] };
     remarkAskAnswer({
       entities,
       markers: [{ at: 18, source: 0, index: 0 }],
+      source,
     })({ type: "root", children: [paragraph] } as never);
     expect(kinds(paragraph.children!)).toEqual([
       "Ask ",
@@ -74,8 +72,29 @@ describe("remarkAskAnswer", () => {
     });
   });
 
-  it("puts a marker that falls after a closing ** at the end of the bold", () => {
-    // "**Photos.** Bring one." with the marker at 11, after the "**".
+  it("keeps a marker on its sentence where the parse dropped characters", () => {
+    // A space before the line break is not in the text node's value.
+    const source = "Fact one. \nFact two.";
+    const node: Node = {
+      type: "text",
+      value: "Fact one.\nFact two.",
+      position: { start: { offset: 0 }, end: { offset: 20 } },
+    };
+    const paragraph: Node = { type: "paragraph", children: [node] };
+    remarkAskAnswer({
+      entities: [],
+      markers: [{ at: 9, source: 0, index: 0 }],
+      source,
+    })({ type: "root", children: [paragraph] } as never);
+    expect(kinds(paragraph.children!)).toEqual([
+      "Fact one.",
+      "sup",
+      "\nFact two.",
+    ]);
+  });
+
+  it("puts a marker that falls after a closing ** right after the bold", () => {
+    const source = "**Photos.** Bring one.";
     const strong: Node = { type: "strong", children: [at("Photos.", 2)] };
     const paragraph: Node = {
       type: "paragraph",
@@ -84,19 +103,27 @@ describe("remarkAskAnswer", () => {
     remarkAskAnswer({
       entities: [],
       markers: [{ at: 11, source: 0, index: 0 }],
+      source,
     })({ type: "root", children: [paragraph] } as never);
-    expect(kinds(strong.children!)).toEqual(["Photos.", "sup"]);
-    expect(kinds(paragraph.children!.slice(1))).toEqual([" Bring one."]);
+    expect(kinds(strong.children!)).toEqual(["Photos."]);
+    expect(kinds(paragraph.children!.slice(1))).toEqual(["sup", " Bring one."]);
   });
 
-  it("leaves a link's label alone", () => {
-    const link: Node = { type: "link", children: [at("@Ana Ruiz", 1)] };
-    const paragraph: Node = { type: "paragraph", children: [link] };
-    remarkAskAnswer({ entities, markers: [] })({
-      type: "root",
-      children: [paragraph],
-    } as never);
-    expect(kinds(link.children!)).toEqual(["@Ana Ruiz"]);
+  it("never puts a marker or a name inside a link's words", () => {
+    // "See [Bylaws](https://x.y). Next" with the marker just after the link.
+    const source = "See [Bylaws](https://x.y). Next";
+    const link: Node = { type: "link", children: [at("Bylaws", 5)] };
+    const paragraph: Node = {
+      type: "paragraph",
+      children: [at("See ", 0), link, at(". Next", 25)],
+    };
+    remarkAskAnswer({
+      entities,
+      markers: [{ at: 25, source: 0, index: 0 }],
+      source,
+    })({ type: "root", children: [paragraph] } as never);
+    expect(kinds(link.children!)).toEqual(["Bylaws"]);
+    expect(kinds(paragraph.children!.slice(2))).toEqual(["sup", ". Next"]);
   });
 });
 
@@ -142,8 +169,19 @@ describe("remarkAskLists", () => {
 describe("askPreviewMarkdown", () => {
   it("holds back an unclosed bold until the chunk that closes it", () => {
     expect(askPreviewMarkdown("Bring **Pho")).toBe("Bring Pho");
-    expect(askPreviewMarkdown("Bring **Photos**")).toBe("Bring **Photos**");
-    expect(askPreviewMarkdown("Run `npm")).toBe("Run npm");
+    expect(askPreviewMarkdown("Bring **Photos** now")).toBe(
+      "Bring **Photos** now",
+    );
+    expect(askPreviewMarkdown("Bring ***Pho")).toBe("Bring Pho");
+    expect(askPreviewMarkdown("Bring *")).toBe("Bring ");
+    expect(askPreviewMarkdown("Use `a**b` and **Pho")).toBe(
+      "Use `a**b` and Pho",
+    );
+  });
+
+  it("closes an open code fence for now, and leaves a list bullet alone", () => {
+    expect(askPreviewMarkdown("```\nnpm")).toBe("```\nnpm\n```");
+    expect(askPreviewMarkdown("* Tickets\n* Pho")).toBe("* Tickets\n* Pho");
   });
 });
 
@@ -152,5 +190,15 @@ describe("askPlainWords", () => {
     expect(
       askPlainWords("**Photos.** Bring *one* camera:\n- `Canon`\n- Nikon"),
     ).toBe("Photos. Bring one camera:\n• Canon\n• Nikon");
+    expect(askPlainWords("Bring _one_. See [the bylaws](https://x.y).")).toBe(
+      "Bring one. See the bylaws.",
+    );
+  });
+
+  it("leaves what is not emphasis as written", () => {
+    expect(askPlainWords("Form: https://x.org/a__b__c")).toBe(
+      "Form: https://x.org/a__b__c",
+    );
+    expect(askPlainWords("Use \\*args.")).toBe("Use *args.");
   });
 });

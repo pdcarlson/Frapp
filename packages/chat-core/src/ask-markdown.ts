@@ -5,6 +5,7 @@ import {
   type AskEntity,
 } from "@repo/validation";
 import { MESSAGE_RENDER_ELEMENTS } from "./markdown";
+import { flattenMessageMarkdown } from "./reply-preview";
 
 /**
  * Ask Frapp's answer drawn as markdown, on the phone and on web (#5429; Paul,
@@ -35,6 +36,13 @@ import { MESSAGE_RENDER_ELEMENTS } from "./markdown";
  *
  * Headings stay out of the set, as in chat: the prompts ask for none, and one
  * that slips through reads as a line of text.
+ *
+ * **Links are not drawn.** An answer is model output over chapter documents
+ * and messages any member can write, so a planted `[the dues page](url)`
+ * would be a link in Frapp's own voice whose address the reader can't see,
+ * and one that carries the asker's data out in its query string
+ * (`docs/security/ai-prompt-injection.md`). A link in an answer reads as its
+ * words, as it did when answers were plain text, and its address is dropped.
  */
 
 /** A marker: where the server put it, and the citation it stands for. */
@@ -84,9 +92,12 @@ interface MdastNode {
   data?: Record<string, unknown>;
 }
 
-/** The elements an answer renders: chat's set, plus Ask's marker and name. */
+/**
+ * The elements an answer renders: chat's set without links (see the
+ * header), plus Ask's marker and name.
+ */
 export const ASK_RENDER_ELEMENTS: readonly string[] = [
-  ...MESSAGE_RENDER_ELEMENTS,
+  ...MESSAGE_RENDER_ELEMENTS.filter((element) => element !== "a"),
   "sup",
   "span",
 ];
@@ -160,38 +171,49 @@ function textNodes(root: MdastNode): Found[] {
 
 /**
  * Where in a text node's value a marker at source offset `at` goes. The
- * value is its source slice unless an escape or an entity was decoded; then
- * the marker goes at the node's start or end, whichever it is past.
+ * value can be shorter than its source slice: an escape's backslash, an
+ * entity, a space before a line break and a list item's indent are dropped.
+ * So the slice is walked beside the value, and the marker goes after the
+ * value characters its offset has passed.
  */
-function indexIn(node: MdastNode, at: number): number {
+function indexIn(node: MdastNode, at: number, source: string): number {
   const value = node.value ?? "";
   const start = startOf(node);
-  if (value.length === endOf(node) - start) {
-    return Math.min(Math.max(at - start, 0), value.length);
+  const slice = source.slice(start, Math.min(at, endOf(node)));
+  if (value.length === endOf(node) - start) return slice.length;
+  let consumed = 0;
+  for (const char of slice) {
+    if (consumed < value.length && value[consumed] === char) consumed += 1;
   }
-  return at <= start ? 0 : value.length;
+  return consumed;
 }
 
 /**
- * Each marker's text node and place in it: the node whose last character is
- * just before its offset, or the last text before it when the offset falls
- * among delimiters. One placed before any text goes at the first.
+ * Each marker's text node and place in it: the node it falls inside, or the
+ * one that starts right where it does (just after a closing `**` or a link),
+ * or else the last text before it. Never a link's label: a marker there
+ * would sit inside the link. One before any text goes at the first.
  */
 function placeMarkers(
   found: readonly Found[],
   markers: readonly AskMarker[],
+  source: string,
 ): Map<MdastNode, Array<{ index: number; marker: number }>> {
   const placed = new Map<MdastNode, Array<{ index: number; marker: number }>>();
+  const prose = found.filter(({ opaque }) => !opaque);
   markers.forEach((marker, number) => {
-    const target =
-      found.find(
-        ({ node }) => startOf(node) < marker.at && marker.at <= endOf(node),
-      ) ??
-      [...found].reverse().find(({ node }) => endOf(node) <= marker.at) ??
-      found[0];
+    const at = marker.at;
+    const inside = prose.find(
+      ({ node }) => startOf(node) < at && at <= endOf(node),
+    );
+    const starting = prose.find(({ node }) => startOf(node) === at);
+    const before = [...prose].reverse().find(({ node }) => endOf(node) <= at);
+    const target = inside ?? starting ?? before ?? prose[0];
     if (!target) return;
+    const index =
+      target === starting && !inside ? 0 : indexIn(target.node, at, source);
     const list = placed.get(target.node) ?? [];
-    list.push({ index: indexIn(target.node, marker.at), marker: number });
+    list.push({ index, marker: number });
     placed.set(target.node, list);
   });
   return placed;
@@ -219,14 +241,17 @@ function splitWords(
 export function remarkAskAnswer({
   entities,
   markers,
+  source,
 }: {
   entities: readonly AskEntity[];
   /** From `askMarkers`; a marker element's `data-ask-marker` indexes it. */
   markers: readonly AskMarker[];
+  /** The answer's text as parsed, which the positions index into. */
+  source: string;
 }) {
   return (root: MdastNode): void => {
     const found = textNodes(root);
-    const placed = placeMarkers(found, markers);
+    const placed = placeMarkers(found, markers, source);
     for (const { node, parent, opaque } of found) {
       const value = node.value ?? "";
       const cuts = (placed.get(node) ?? []).sort((a, b) => a.index - b.index);
@@ -246,6 +271,32 @@ export function remarkAskAnswer({
       siblings.splice(siblings.indexOf(node), 1, ...parts);
     }
   };
+}
+
+/**
+ * A block inside a list item as inline content: a paragraph's own, a code
+ * block's text as code, a quote's paragraphs as lines. Nothing is dropped.
+ */
+function inlineOf(block: MdastNode): MdastNode[] {
+  if (block.type === "code") {
+    return [{ type: "inlineCode", value: block.value ?? "" }];
+  }
+  if (block.type === "html")
+    return [{ type: "text", value: block.value ?? "" }];
+  if (block.type === "thematicBreak") return [];
+  if (block.type === "blockquote") {
+    const lines: MdastNode[] = [];
+    for (const child of block.children ?? []) {
+      if (lines.length > 0) lines.push({ type: "break" });
+      lines.push(...inlineOf(child));
+    }
+    return lines;
+  }
+  if (block.type === "list") return listLines(block, 0);
+  return (
+    block.children ??
+    (block.value ? [{ type: "text", value: block.value }] : [])
+  );
 }
 
 /** How far a nested list's lines sit in: two no-break spaces a level. */
@@ -271,8 +322,7 @@ function listLines(list: MdastNode, depth: number): MdastNode[] {
         continue;
       }
       if (started) out.push({ type: "break" });
-      // A paragraph's inline content, or a block's own children otherwise.
-      out.push(...(block.children ?? []));
+      out.push(...inlineOf(block));
       started = true;
     }
   });
@@ -304,29 +354,38 @@ export function remarkAskLists() {
 
 /**
  * A streaming answer's preview as markdown that never shows a half-written
- * delimiter: an unclosed `**`, `__` or backtick at the end is left out until
- * the chunk that closes it arrives (#5429).
+ * delimiter (#5429): a run of `*`, `_` or backticks the chunk ended on is
+ * held back, an unclosed `**` or lone `*` outside code is left out until the
+ * chunk that closes it, and an open code fence is closed for now.
  */
 export function askPreviewMarkdown(preview: string): string {
-  let text = preview;
-  for (const delimiter of ["**", "__", "`"]) {
-    const count = text.split(delimiter).length - 1;
-    if (count % 2 === 1) {
-      const at = text.lastIndexOf(delimiter);
-      text = text.slice(0, at) + text.slice(at + delimiter.length);
-    }
+  let text = preview.replace(/[*_`]+$/, "");
+  const fences = (text.match(/^```/gm) ?? []).length;
+  if (fences % 2 === 1) return `${text}\n\`\`\``;
+  // Code spans keep their characters: count delimiters outside them only.
+  const outside = (value: string) => value.replace(/`[^`\n]*`/g, "");
+  if ((outside(text).match(/\*\*/g) ?? []).length % 2 === 1) {
+    const at = text.lastIndexOf("**");
+    text = text.slice(0, at) + text.slice(at + 2);
+  }
+  // A lone `*` (not half of a `**`, not a `* ` list bullet) left unpaired.
+  const lone = /(?<!\*)\*(?!\*)/g;
+  const bullets = /^\s*\*\s/gm;
+  const singles =
+    (outside(text).match(lone) ?? []).length -
+    (outside(text).match(bullets) ?? []).length;
+  if (singles % 2 === 1) {
+    const at = text.search(/(?<!\*)\*(?!\*)[^*]*$/);
+    if (at >= 0) text = text.slice(0, at) + text.slice(at + 1);
   }
   return text;
 }
 
 /**
- * The answer's words to copy: what the reader sees, without the markdown's
- * delimiters. Lists keep their lines; bold, italic and code keep their words.
+ * The answer's words to copy, as the reader sees them: chat's own flattening
+ * (`flattenMessageMarkdown`, which keeps a link's words and drops its
+ * address), and each list item a line led by its bullet.
  */
 export function askPlainWords(text: string): string {
-  return text
-    .replace(/(\*\*|__)(.+?)\1/gs, "$2")
-    .replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?!\w)/g, "$1$2")
-    .replace(/`([^`\n]+)`/g, "$1")
-    .replace(/^(\s*)[-*+]\s+/gm, "$1• ");
+  return flattenMessageMarkdown(text).replace(/^(\s*)[-*+]\s+/gm, "$1• ");
 }
