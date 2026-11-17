@@ -9,6 +9,7 @@ import {
 import {
   AI_SETTINGS_COPY,
   AI_SWITCHES,
+  aiSwitchState,
   formatAiAnswerDate,
   type AiSwitchCopy,
 } from "@repo/validation";
@@ -139,9 +140,10 @@ function AiSwitchList({
   return (
     <RulesList>
       {AI_SWITCHES.map((entry) => {
-        const parentOff =
-          entry.dependsOn !== undefined && settings?.[entry.dependsOn] !== true;
-        const checked = settings?.[entry.key] === true;
+        const { checked, parentOff, waitsOnParent } = aiSwitchState(
+          entry,
+          settings,
+        );
         return (
           <SwitchRule
             key={entry.key}
@@ -149,9 +151,7 @@ function AiSwitchList({
             hint={
               <div className="space-y-1">
                 <p>{entry.description}</p>
-                {parentOff && !checked ? (
-                  <p>{AI_SETTINGS_COPY.dependsOnAsk}</p>
-                ) : null}
+                {waitsOnParent ? <p>{AI_SETTINGS_COPY.dependsOnAsk}</p> : null}
               </div>
             }
             checked={checked}
@@ -162,7 +162,7 @@ function AiSwitchList({
               disabled === true ||
               // Waiting on its parent blocks turning it on, never off: a
               // president who turned Ask off can still clear what it reads.
-              (parentOff && !checked)
+              waitsOnParent
             }
             onChange={(next) => onToggle(entry, next)}
           />

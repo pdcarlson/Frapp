@@ -18,7 +18,7 @@ import {
 import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_SETTINGS_COPY,
-  AI_SWITCHES,
+  aiSwitchesInEffect,
   FRAPP_AI_COPY,
   chatChapterLevelLabel,
   shownNotificationCategories,
@@ -219,6 +219,9 @@ export default function PreferencesScreen() {
   const meetAiSheetRef = useRef<BottomSheetModal>(null);
   const frappAi = useFrappAiChoice();
   const [aiOffFailed, setAiOffFailed] = useState(false);
+  // The AI footnote's privacy link reports a failed open under itself, not in
+  // the shared slot under Account, which is a screen away.
+  const [aiPrivacyFailed, setAiPrivacyFailed] = useState(false);
   // The nudge card on Activity (#4781): the member's own switch, offered
   // only once they have Frapp AI on, since the card is an AI feature.
   const aiYes =
@@ -309,15 +312,14 @@ export default function PreferencesScreen() {
   } = useNotificationPreferencesSync();
 
   const permissions = usePermissionList();
-  // The Chapter AI row: for a member who can open Chapter settings, where the
-  // president's switches are, and only where the server has AI (the consent
-  // read answers first; with AI off it is null and nothing here is drawn).
+  // The Chapter AI row: for a member who sees Chapter settings' AI switches
+  // (`chapter-config:view`, as web's AI tab), and only where the server has
+  // AI (the consent read answers first; with AI off it is null and nothing
+  // here is drawn). Its value counts the features working, so Include
+  // channel messages left on under an Ask that is off doesn't count.
   const showChapterAi =
-    !!frappAi.consent && chapterSettingsAccess(permissions).any;
+    !!frappAi.consent && chapterSettingsAccess(permissions).chapter;
   const chapterAi = useAiChapterSettings({ enabled: showChapterAi });
-  const chapterAiOn = chapterAi.data
-    ? AI_SWITCHES.filter((entry) => chapterAi.data?.[entry.key] === true).length
-    : null;
   const chapterQuery = useCurrentChapter();
   const donationUrl = chapterQuery.data?.donation_url;
   const showDonationCta = shouldShowDonationCta(permissions, donationUrl);
@@ -523,11 +525,9 @@ export default function PreferencesScreen() {
             {showChapterAi && chapterAi.data ? (
               <ListRow
                 label={AI_SETTINGS_COPY.chapterRow}
-                value={
-                  chapterAiOn === null
-                    ? null
-                    : AI_SETTINGS_COPY.chapterRowValue(chapterAiOn)
-                }
+                value={AI_SETTINGS_COPY.chapterRowValue(
+                  aiSwitchesInEffect(chapterAi.data),
+                )}
                 accessibilityHint="Opens Chapter settings, where the president turns the chapter's AI features on or off."
                 onPress={() => router.push("/chapter-settings")}
               />
@@ -543,14 +543,23 @@ export default function PreferencesScreen() {
             <Text
               style={styles.footnoteLink}
               accessibilityRole="link"
-              onPress={() =>
-                openExternalLink(PRIVACY_LINK.label, PRIVACY_LINK.url)
-              }
+              onPress={() => {
+                setAiPrivacyFailed(false);
+                WebBrowser.openBrowserAsync(PRIVACY_LINK.url).catch(() =>
+                  setAiPrivacyFailed(true),
+                );
+              }}
             >
               {FRAPP_AI_COPY.privacyLink}
             </Text>
             .
           </Text>
+          {aiPrivacyFailed ? (
+            <Text style={styles.footnoteError}>
+              {PRIVACY_LINK.label} couldn&apos;t be opened. Try again in a
+              moment.
+            </Text>
+          ) : null}
         </>
       ) : null}
 

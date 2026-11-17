@@ -32,6 +32,7 @@ const h = vi.hoisted(() => ({
   // The chapter's AI switches (#4789), read only where the server has AI.
   aiSettings: null as Record<string, unknown> | null,
   updateAi: vi.fn(),
+  aiSaving: false,
 }));
 
 vi.mock("react-native", async () => {
@@ -75,7 +76,7 @@ vi.mock("@repo/hooks", async (importOriginal) => {
       ok(options?.enabled === false ? undefined : h.aiSettings),
     useUpdateAiChapterSettings: () => ({
       mutate: h.updateAi,
-      isPending: false,
+      isPending: h.aiSaving,
       isError: false,
     }),
   };
@@ -258,6 +259,7 @@ describe("Chapter settings → AI (#4789)", () => {
   afterEach(() => {
     h.aiConsent = null;
     h.aiSettings = null;
+    h.aiSaving = false;
   });
 
   it("isn't drawn where the server has no AI", () => {
@@ -274,7 +276,10 @@ describe("Chapter settings → AI (#4789)", () => {
     const tree = render(<ChapterSettingsScreen />);
     expect(aiSwitch(tree, "Ask Frapp").props.value).toBe(true);
     act(() => aiSwitch(tree, "Minutes from notes").props.onValueChange(true));
-    expect(h.updateAi).toHaveBeenCalledWith({ meeting_notes: true });
+    expect(h.updateAi).toHaveBeenCalledWith(
+      { meeting_notes: true },
+      expect.anything(),
+    );
     expect(screenText(tree)).not.toMatch(/Anthropic|Google|AssemblyAI/);
   });
 
@@ -288,6 +293,59 @@ describe("Chapter settings → AI (#4789)", () => {
     h.aiSettings = settings({ ask: false, chat_source: true });
     const on = render(<ChapterSettingsScreen />);
     expect(aiSwitch(on, "Include channel messages").props.disabled).toBe(false);
+  });
+
+  it("draws Include channel messages nested under Ask, muted while Ask is off", () => {
+    h.aiConsent = { answer: "yes" };
+    h.aiSettings = settings({ ask: false });
+    const tree = render(<ChapterSettingsScreen />);
+    const row = tree.root.find(
+      (node) =>
+        node.props.label === "Include channel messages" &&
+        node.props.trailing !== undefined,
+    );
+    expect(row.props.nested).toBe(true);
+    expect(row.props.muted).toBe(true);
+  });
+
+  it("holds every switch while one saves", () => {
+    h.aiConsent = { answer: "yes" };
+    h.aiSettings = settings();
+    h.aiSaving = true;
+    const tree = render(<ChapterSettingsScreen />);
+    expect(aiSwitch(tree, "Ask Frapp").props.disabled).toBe(true);
+    expect(aiSwitch(tree, "Minutes from notes").props.disabled).toBe(true);
+  });
+
+  it("says on the switch's own row when its save failed", () => {
+    h.aiConsent = { answer: "yes" };
+    h.aiSettings = settings();
+    h.updateAi.mockReset();
+    h.updateAi.mockImplementation(
+      (_body: unknown, options?: { onError?: () => void }) =>
+        options?.onError?.(),
+    );
+    const tree = render(<ChapterSettingsScreen />);
+    act(() => aiSwitch(tree, "Minutes from notes").props.onValueChange(true));
+    const row = tree.root.find(
+      (node) =>
+        node.props.label === "Minutes from notes" &&
+        node.props.trailing !== undefined,
+    );
+    expect(row.props.description).toBe(
+      "Couldn't change the AI setting. Try again.",
+    );
+    expect(row.props.descriptionTone).toBe("destructive");
+    h.updateAi.mockReset();
+  });
+
+  it("leaves the switches to chapter-config:view, as web's AI tab", () => {
+    h.aiConsent = { answer: "yes" };
+    h.aiSettings = settings();
+    h.permissions = ["roles:manage", "members:view"];
+    const text = screenText(render(<ChapterSettingsScreen />));
+    expect(text).toContain("Roles");
+    expect(text).not.toContain("Ask Frapp");
   });
 
   it("shows an officer the switches read-only, saying only the president changes them", () => {

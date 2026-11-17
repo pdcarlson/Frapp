@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  aiSwitchState,
+  aiSwitchesInEffect,
   AI_SWITCHES,
   FRAPP_AI_COPY,
   formatAiAnswerDate,
@@ -51,5 +53,31 @@ describe("AI copy", () => {
     for (const point of FRAPP_AI_COPY.points) {
       expect(point.text.length).toBeLessThanOrEqual(80);
     }
+  });
+});
+
+describe("the chapter's AI switches (#4789)", () => {
+  const channel = AI_SWITCHES.find((entry) => entry.key === "chat_source")!;
+
+  it("holds Include channel messages off until Ask is on, but never on", () => {
+    expect(aiSwitchState(channel, { ask: false })).toEqual({
+      checked: false,
+      parentOff: true,
+      waitsOnParent: true,
+    });
+    expect(aiSwitchState(channel, { ask: false, chat_source: true })).toEqual({
+      checked: true,
+      parentOff: true,
+      waitsOnParent: false,
+    });
+    expect(aiSwitchState(channel, { ask: true }).parentOff).toBe(false);
+  });
+
+  it("counts only the features that work", () => {
+    expect(aiSwitchesInEffect(null)).toBe(0);
+    expect(
+      aiSwitchesInEffect({ ask: true, meeting_notes: true, chat_source: true }),
+    ).toBe(3);
+    expect(aiSwitchesInEffect({ ask: false, chat_source: true })).toBe(0);
   });
 });

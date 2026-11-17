@@ -458,6 +458,16 @@ export type ListRowProps = {
    * way round, because there the label names what a tap does.
    */
   variant?: "default" | "detail";
+  /**
+   * A switch that only matters under the row above it, drawn indented under
+   * it (`components.md` § Toggle, "A switch that only matters under another").
+   */
+  nested?: boolean;
+  /**
+   * The label in muted foreground: a nested row while the switch it depends
+   * on is off. Unlike `disabled`, the row's own control still works.
+   */
+  muted?: boolean;
 };
 
 export function ListRow({
@@ -477,6 +487,8 @@ export function ListRow({
   disabled = false,
   busy = false,
   variant = "default",
+  nested = false,
+  muted = false,
 }: ListRowProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -484,7 +496,7 @@ export function ListRow({
   const detail = variant === "detail";
 
   const content = (
-    <View style={styles.row}>
+    <View style={[styles.row, nested ? styles.rowNested : null]}>
       {leading}
       <View style={[styles.rowText, detail ? styles.rowTextDetail : null]}>
         <Text
@@ -492,6 +504,7 @@ export function ListRow({
             styles.rowLabel,
             detail ? styles.rowLabelDetail : null,
             destructive ? styles.rowLabelDestructive : null,
+            muted ? styles.rowLabelMuted : null,
             disabled ? styles.rowLabelDisabled : null,
           ]}
         >
@@ -670,6 +683,13 @@ function createStyles(tokens: SignetTokens) {
     },
     rowLabelDisabled: {
       color: tokens.color.text.disabled,
+    },
+    rowLabelMuted: {
+      color: tokens.color.text.mutedForeground,
+    },
+    rowNested: {
+      // The row's own inset (lg) plus one more step.
+      paddingLeft: tokens.spacing["2xl"],
     },
     rowDescription: {
       ...typeRole(tokens.typography.role.caption),

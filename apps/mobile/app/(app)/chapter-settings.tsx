@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -16,7 +16,9 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_SETTINGS_COPY,
   AI_SWITCHES,
+  aiSwitchState,
   canAll,
+  type AiChapterSwitchKey,
   CHAPTER_PROFILE_PERMISSIONS,
   CHAT_BACKGROUND_LABELS,
   isModuleEnabled,
@@ -44,7 +46,9 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * - **AI**: the president's three switches (#4789), the same ones and the
  *   same rules as web's AI tab (`settings-ai-tab.tsx`): every member here can
  *   read them, only the president changes them, and Include channel messages
- *   waits for Ask Frapp to be on before it can be turned on (never off).
+ *   sits nested under Ask Frapp and waits for it to be on before it can be
+ *   turned on (never off), by `aiSwitchState`, which web's tab shares. For
+ *   `chapter-config:view`, as web's tab is.
  *   Inline switches, as iOS Settings draws a short list of them, rather than
  *   a page of their own. Drawn only where the server has AI.
  * - **People**: Roles, the chapter's tiers and their roles
@@ -90,11 +94,20 @@ export default function ChapterSettingsScreen() {
 
   // The consent read says whether the server has AI at all (null when it
   // doesn't), as every AI entry on the phone asks before drawing.
-  const aiConsent = useAiConsent({ enabled: access.any });
-  const aiAvailable = !!aiConsent.data;
+  // Web's AI tab is a Chapter settings page, so it opens for
+  // `chapter-config:view` (`settings-access.ts`); the phone draws its
+  // switches for the same people, not for a roles manager without it.
+  const aiConsent = useAiConsent({ enabled: access.chapter });
+  const aiAvailable = access.chapter && !!aiConsent.data;
   const aiSettingsQuery = useAiChapterSettings({ enabled: aiAvailable });
   const aiSettings = aiSettingsQuery.data;
   const updateAi = useUpdateAiChapterSettings();
+  // The switch whose last save failed. The phone has no toast, so the failure
+  // is that row's second line, and the switch snaps back (navigation.md §
+  // Chapter settings).
+  const [aiFailedKey, setAiFailedKey] = useState<AiChapterSwitchKey | null>(
+    null,
+  );
 
   const readOnlyLine = canEditProfile
     ? null
@@ -170,19 +183,25 @@ export default function ChapterSettingsScreen() {
           <SectionHeader>{AI_SETTINGS_COPY.title}</SectionHeader>
           <ListSection>
             {AI_SWITCHES.map((entry) => {
-              const checked = aiSettings[entry.key] === true;
-              const parentOff =
-                entry.dependsOn !== undefined &&
-                aiSettings[entry.dependsOn] !== true;
+              const { checked, parentOff, waitsOnParent } = aiSwitchState(
+                entry,
+                aiSettings,
+              );
+              const failed = aiFailedKey === entry.key;
               return (
                 <ListRow
                   key={entry.key}
                   label={entry.label}
+                  nested={entry.dependsOn !== undefined}
+                  muted={parentOff}
                   description={
-                    parentOff && !checked
-                      ? `${entry.short} ${AI_SETTINGS_COPY.dependsOnAsk}`
-                      : entry.short
+                    failed
+                      ? `${AI_SETTINGS_COPY.saveFailed}. Try again.`
+                      : waitsOnParent
+                        ? `${entry.short} ${AI_SETTINGS_COPY.dependsOnAsk}`
+                        : entry.short
                   }
+                  descriptionTone={failed ? "destructive" : "default"}
                   trailing={
                     <Toggle
                       value={checked}
@@ -192,11 +211,15 @@ export default function ChapterSettingsScreen() {
                         // cached row, so two in flight could draw one wrong.
                         updateAi.isPending ||
                         // Waiting on Ask blocks turning it on, never off.
-                        (parentOff && !checked)
+                        waitsOnParent
                       }
-                      onValueChange={(next) =>
-                        updateAi.mutate({ [entry.key]: next })
-                      }
+                      onValueChange={(next) => {
+                        setAiFailedKey(null);
+                        updateAi.mutate(
+                          { [entry.key]: next },
+                          { onError: () => setAiFailedKey(entry.key) },
+                        );
+                      }}
                       accessibilityLabel={entry.label}
                     />
                   }
@@ -204,11 +227,6 @@ export default function ChapterSettingsScreen() {
               );
             })}
           </ListSection>
-          {updateAi.isError ? (
-            <Text style={styles.footnoteError}>
-              {AI_SETTINGS_COPY.saveFailed}. Try again.
-            </Text>
-          ) : null}
           <Text style={styles.footnote}>
             {aiSettings.can_change
               ? AI_SETTINGS_COPY.phoneFootnote
@@ -246,11 +264,6 @@ function createStyles(tokens: SignetTokens) {
     footnote: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
-      paddingHorizontal: tokens.spacing.xs,
-    },
-    footnoteError: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.destructive,
       paddingHorizontal: tokens.spacing.xs,
     },
     swatch: {

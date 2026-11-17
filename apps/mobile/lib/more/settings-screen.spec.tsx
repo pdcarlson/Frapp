@@ -4,7 +4,10 @@ import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import { AI_SETTINGS_COPY, FRAPP_AI_COPY } from "@repo/validation";
+import { SectionHeader } from "@/components/list-section";
+import { PRIVACY_LINK } from "@/lib/more/legal";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   defaultNotificationCategoryState,
@@ -429,6 +432,13 @@ describe("Settings copy", () => {
       );
     afterEach(() => {
       state.aiConsent = null;
+      state.aiChapter = {
+        ask: true,
+        meeting_notes: false,
+        chat_source: true,
+        can_change: true,
+        updated_at: null,
+      };
     });
 
     it("isn't drawn where the server has no AI", () => {
@@ -454,14 +464,45 @@ describe("Settings copy", () => {
 
     it("sits in its own AI section, before Account", () => {
       state.aiConsent = { answer: "yes", sheet_changed: false };
-      const text = screenText(render());
-      expect(text.indexOf("AI")).toBeGreaterThan(-1);
+      const tree = render();
+      // The header itself, not a row label that happens to contain "AI".
+      const headers = tree.root
+        .findAll((node) => node.type === SectionHeader)
+        .map((node) => node.props.children);
+      expect(headers).toEqual(["Notifications", "Chat", "AI", "Account"]);
+      const text = screenText(tree);
+      expect(text.indexOf("Nudges on Activity")).toBeGreaterThan(
+        text.indexOf("Chat density"),
+      );
       expect(text.indexOf("Nudges on Activity")).toBeLessThan(
         text.indexOf("Appearance"),
       );
     });
 
-    it("offers Chapter AI only to a member who can open Chapter settings", () => {
+    it("links the privacy policy under the section, and says so there if it can't open", async () => {
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const open = vi.mocked(WebBrowser.openBrowserAsync);
+      open.mockClear();
+      const tree = render();
+      const link = tree.root.find(
+        (node) =>
+          node.props.accessibilityRole === "link" &&
+          node.props.children === FRAPP_AI_COPY.privacyLink &&
+          typeof node.props.onPress === "function",
+      );
+      open.mockRejectedValueOnce(new Error("already presenting"));
+      await act(async () => {
+        link.props.onPress();
+      });
+      expect(open).toHaveBeenCalledWith(PRIVACY_LINK.url);
+      const text = screenText(tree);
+      const error = text.indexOf("Privacy Policy couldn't be opened");
+      expect(error).toBeGreaterThan(-1);
+      // Under the AI section, not a screen away under Account.
+      expect(error).toBeLessThan(text.indexOf("Appearance"));
+    });
+
+    it("offers Chapter AI only to a member who sees the chapter's AI switches", () => {
       vi.mocked(useRouter().push).mockClear();
       state.aiConsent = { answer: "yes", sheet_changed: false };
       const chapterRow = (tree: ReactTestRenderer) =>
@@ -472,6 +513,10 @@ describe("Settings copy", () => {
         );
       state.permissions = [];
       expect(chapterRow(render())).toHaveLength(0);
+      // A roles manager opens Chapter settings for Roles, but web's AI tab
+      // is `chapter-config:view`'s, so neither shows them the switches.
+      state.permissions = ["roles:manage"];
+      expect(chapterRow(render())).toHaveLength(0);
 
       state.permissions = ["chapter-config:view"];
       const [row] = chapterRow(render());
@@ -480,6 +525,26 @@ describe("Settings copy", () => {
       expect(vi.mocked(useRouter().push)).toHaveBeenCalledWith(
         "/chapter-settings",
       );
+    });
+
+    it("counts only the chapter's AI features that work", () => {
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      state.permissions = ["chapter-config:view"];
+      // Include channel messages left on under an Ask that is off does
+      // nothing, so it isn't counted.
+      state.aiChapter = {
+        ask: false,
+        meeting_notes: false,
+        chat_source: true,
+        can_change: true,
+        updated_at: null,
+      };
+      const row = render().root.find(
+        (node) =>
+          node.props.label === AI_SETTINGS_COPY.chapterRow &&
+          typeof node.props.onPress === "function",
+      );
+      expect(row.props.value).toBe("0 on");
     });
 
     it("offers the nudge switch only to a member who said yes to AI (#4781)", () => {

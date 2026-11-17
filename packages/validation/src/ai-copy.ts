@@ -66,6 +66,43 @@ export const AI_SWITCHES: readonly AiSwitchCopy[] = [
   },
 ];
 
+/** The chapter's switches as the API serves them; a missing one reads as off. */
+export type AiChapterSwitchValues = Partial<
+  Record<AiChapterSwitchKey, boolean>
+>;
+
+/**
+ * How one switch draws, the same on web and the phone (#4789): its own
+ * value; whether the switch it depends on is off (`parentOff`, drawn
+ * muted); and whether it waits on that parent (`waitsOnParent`: off, so it
+ * can't be turned on until the parent is, and says so). A switch whose
+ * parent is off but which is still on stays usable, so a president can
+ * clear what it would do.
+ */
+export function aiSwitchState(
+  entry: AiSwitchCopy,
+  settings: AiChapterSwitchValues | null | undefined,
+) {
+  const checked = settings?.[entry.key] === true;
+  const parentOff =
+    entry.dependsOn !== undefined && settings?.[entry.dependsOn] !== true;
+  return { checked, parentOff, waitsOnParent: parentOff && !checked };
+}
+
+/**
+ * How many of the chapter's AI features are working: a switch counts only
+ * when it and the one it depends on are on, since Include channel messages
+ * does nothing with Ask off (the server keeps it either way).
+ */
+export function aiSwitchesInEffect(
+  settings: AiChapterSwitchValues | null | undefined,
+): number {
+  return AI_SWITCHES.filter((entry) => {
+    const { checked, parentOff } = aiSwitchState(entry, settings);
+    return checked && !parentOff;
+  }).length;
+}
+
 export const AI_SETTINGS_COPY = {
   title: "AI",
   /**
