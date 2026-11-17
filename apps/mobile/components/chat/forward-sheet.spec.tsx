@@ -76,17 +76,11 @@ vi.mock("@/lib/connection/use-connection", () => ({
 
 vi.mock("@/lib/haptics", () => ({ selectionHaptic: haptics.selection }));
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#C49A3A",
-    accentPrimary: "#C49A3A",
-    accentOnPrimary: "#2B2009",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, MUTED_GOLD_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(MUTED_GOLD_BRANDING);
+});
 
 import { ForwardSheet } from "./forward-sheet";
 import type { GuardedSheetHandle } from "@/components/sheet-scaffold";
