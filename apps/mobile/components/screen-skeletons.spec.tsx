@@ -368,7 +368,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
 
   // The You tab's head (#3839): its rows draw at once, and Details waits for
   // the profile, so the skeleton is the head alone.
-  it("Profile: the photo's circle and two stat cards, and no detail rows", () => {
+  it("Profile: the photo's circle and the name lines, no stat cards and no detail rows (#5281)", () => {
     const tree = render(<ProfileSkeleton />);
     const photo = tree.root
       .findAllByType("Animated.View" as never)
@@ -381,7 +381,7 @@ describe("Screen skeletons sit on their screen's frames", () => {
           style.flex === 1 &&
           style.backgroundColor === tokens.color.surface.surface1,
       ),
-    ).toHaveLength(2);
+    ).toHaveLength(0);
     expect(tree.root.findAllByType(ListRowSkeleton)).toHaveLength(0);
   });
 

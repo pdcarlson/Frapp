@@ -12,7 +12,7 @@ import type {
 } from '#domain/repositories/ai-consent.repository.interface';
 
 const SETTINGS_SELECT =
-  'chapter_id, ask_enabled, meeting_notes_enabled, chat_source_enabled, updated_by, updated_at';
+  'chapter_id, ask_enabled, meeting_notes_enabled, chat_source_enabled, nudges_enabled, updated_by, updated_at';
 const CONSENT_SELECT = 'user_id, sheet_version, accepted, answered_at';
 const ID_BATCH = 200;
 
@@ -62,7 +62,8 @@ export class SupabaseAiConsentRepository implements IAiConsentRepository {
   ): Promise<ChapterAiSettings> {
     // `chapter_id` last, so nothing spread from the patch can point the
     // upsert at another chapter's row. A column the patch leaves out keeps
-    // its stored value on update, and its default (off) on the first write.
+    // its stored value on update, and its column default on the first write (off, except
+    // `nudges_enabled`, which starts on).
     const row: TablesInsert<'chapter_ai_settings'> = {
       ...patch,
       updated_by: updatedBy,

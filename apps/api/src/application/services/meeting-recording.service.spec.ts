@@ -854,6 +854,31 @@ describe('MeetingRecordingService', () => {
     });
   });
 
+  describe('availability before any minutes exist (#5287)', () => {
+    it('reports the provider and the limits without reading a meeting', async () => {
+      const { service, meetings } = setup({
+        limits: { maxDurationSeconds: 3600, maxBytes: 100 * 1024 ** 2 },
+      });
+      await expect(service.availability(CHAPTER, SECRETARY)).resolves.toEqual({
+        available: true,
+        blocked: null,
+        max_bytes: 100 * 1024 ** 2,
+        max_seconds: 3600,
+      });
+      expect(meetings.editableBy).not.toHaveBeenCalled();
+    });
+
+    it('says when nothing can be written out, and why the member is held', async () => {
+      const { service } = setup({
+        available: false,
+        consent: { allowed: false, reason: 'chapter_off' },
+      });
+      await expect(
+        service.availability(CHAPTER, SECRETARY),
+      ).resolves.toMatchObject({ available: false, blocked: 'chapter_off' });
+    });
+  });
+
   describe('the sweeps', () => {
     it('fails an upload nobody finished, and leaves a fresh one alone', async () => {
       const harness = setup();

@@ -4,9 +4,8 @@
  * once older than this, posted or not (`spec/behavior/meetings.md`
  * § Retention: a transcript "is kept as the officer's notes are").
  *
- * One number for the sweeps, so the notes window and the recording window
- * can't drift apart. `MeetingDraftService` still holds its own copy, left for
- * after the Minutes PR (#5227) that edits that file; #5200 stays open for it.
+ * One number for all three sweeps (notes, draft requests and recordings), so
+ * their windows can't drift apart.
  */
 export const MEETING_NOTES_RETENTION_DAYS = 30;
 

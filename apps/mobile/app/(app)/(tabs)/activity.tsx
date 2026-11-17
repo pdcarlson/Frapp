@@ -360,12 +360,16 @@ export default function ActivityScreen() {
   }, [reviewTaskId, refetchActivity, router]);
 
   // The nudge card (#4781): one card Frapp's AI wrote about one of the
-  // member's own tasks, or nothing. Asked for only where the server offers
-  // this member AI; any failure is no card. It is asked again after the task
-  // sheet closes, since acting on the task is what the card was for.
+  // member's own tasks, or nothing. Asked for only where the chapter has
+  // nudges on (its own switch, on by default since 2026-11-17; Ask's switch
+  // until then) and the member holds `ai:use`; any failure is no card. It is
+  // asked again after the task sheet closes, since acting on the task is
+  // what the card was for.
   const ai = useAiSurfaces();
-  const nudgeRead = useMemberNudge({ enabled: ai.ask && moduleOn("tasks") });
-  const nudge = ai.ask ? (nudgeRead.data ?? null) : null;
+  const nudgeRead = useMemberNudge({
+    enabled: ai.nudges && moduleOn("tasks"),
+  });
+  const nudge = ai.nudges ? (nudgeRead.data ?? null) : null;
   const nudgeActions = useMemberNudgeActions();
   const setNudgesEnabled = useSetMemberNudgesEnabled();
   const askRef = useRef<BottomSheetModal>(null);

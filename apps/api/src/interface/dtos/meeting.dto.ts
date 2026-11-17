@@ -769,3 +769,28 @@ export class MeetingRecordingDto {
   })
   upload: MeetingRecordingUploadDto | null;
 }
+
+/**
+ * What recording would do for the caller before any minutes exist (#5287):
+ * the phone's + reads it to decide what Record meeting offers.
+ */
+export class MeetingRecorderAvailabilityDto {
+  @ApiProperty({
+    description:
+      'False when this server has no transcription provider set up, so a recording can’t be written out.',
+  })
+  available: boolean;
+  @ApiProperty({
+    enum: ['chapter_off', 'consent_required'],
+    nullable: true,
+    description:
+      'Why the caller can’t send a recording now: the chapter has meeting notes off, or they have not said yes on the AI sheet.',
+  })
+  blocked: 'chapter_off' | 'consent_required' | null;
+  @ApiProperty({ description: 'The largest file this server takes, in bytes.' })
+  max_bytes: number;
+  @ApiProperty({
+    description: 'The longest recording this server takes, in seconds.',
+  })
+  max_seconds: number;
+}

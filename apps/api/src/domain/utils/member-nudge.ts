@@ -389,8 +389,18 @@ export function buildNudgeFacts(input: {
   history: NudgeHistory;
   timeZone: string;
   now: Date;
+  /**
+   * Whether words someone else wrote on the task (its description, usually
+   * the assigner's, and the officer's sent-back note) may go to the model.
+   * Only where the chapter has Ask on: a chapter that never turned any AI on
+   * still gets nudges by default, and there a card is written from the
+   * title, due date, steps and counts alone (Paul, 2026-11-17). Defaults to
+   * true.
+   */
+  othersWords?: boolean;
 }): NudgeFacts {
   const { task, kind } = input.candidate;
+  const othersWords = input.othersWords ?? true;
   const at = input.now.getTime();
   // A day-only deadline is the day the creator picked, whatever the zone;
   // one with a time is that instant where the member is.
@@ -415,7 +425,8 @@ export function buildNudgeFacts(input: {
       timeZone: input.timeZone,
     }).format(input.now),
     taskTitle: clip(task.title, 120),
-    taskDescription: task.description ? clip(task.description, 400) : null,
+    taskDescription:
+      othersWords && task.description ? clip(task.description, 400) : null,
     due,
     daysLeft: open && dueDay >= today ? dueDay - today : null,
     daysOverdue: open && dueDay < today ? today - dueDay : null,
@@ -430,7 +441,7 @@ export function buildNudgeFacts(input: {
         ? task.proof_kind
         : 'none',
     sentBackReason:
-      kind === 'task_sent_back' && task.sent_back_reason
+      othersWords && kind === 'task_sent_back' && task.sent_back_reason
         ? clip(task.sent_back_reason, 240)
         : null,
     steps: [...input.subtasks]

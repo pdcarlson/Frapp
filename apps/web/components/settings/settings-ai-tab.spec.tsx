@@ -60,6 +60,7 @@ const settings = (overrides: Record<string, unknown> = {}) => ({
   ask: false,
   meeting_notes: false,
   chat_source: false,
+  nudges: true,
   updated_at: null,
   can_change: true,
   ...overrides,
@@ -82,7 +83,7 @@ describe("the chapter's AI switches", () => {
     state.settings = settings();
     render(<SettingsAiTab />);
     expect(
-      screen.getByText(/off until the president turns it on/i),
+      screen.getByText(/off until the president turns them on/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/anthropic|google|assemblyai/i)).toBeNull();
   });

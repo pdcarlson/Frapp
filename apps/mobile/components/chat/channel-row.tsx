@@ -67,7 +67,7 @@ import {
  */
 
 /** A DM row's avatar diameter. */
-const DIRECT_AVATAR_SIZE = 34;
+export const DIRECT_AVATAR_SIZE = 34;
 
 export interface ChannelRowProps {
   name: string;
@@ -240,9 +240,7 @@ export function ChannelRow({
       }
       style={[styles.row, preview == null ? styles.rowOneLine : null]}
     >
-      {looksUnread ? (
-        <View testID="channel-row-unread-pip" style={styles.unreadPip} />
-      ) : null}
+      {looksUnread ? <UnreadPip testID="channel-row-unread-pip" /> : null}
       {isDirect ? (
         <MemberAvatar
           uri={avatarUrl}
@@ -320,6 +318,16 @@ export function ChannelRow({
 }
 
 /**
+ * Discord's unread pip on a row's leading edge, in the bleed before its mark.
+ * Shared with the thread rows under a channel (`channel-thread-rows.tsx`).
+ */
+export function UnreadPip({ testID }: { testID?: string }) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  return <View testID={testID} style={styles.unreadPip} />;
+}
+
+/**
  * The lock or audit shield in the `#`'s slot and colour, at the sigil's size
  * (the title role's 18). Decorative: the row's label says "private channel".
  */
@@ -380,29 +388,6 @@ export function UnreadBadge({
     <View style={[styles.badge, styles.badgeMention]}>
       <Text style={[styles.badgeText, styles.badgeTextMention]}>
         {badgeLabel(unreadCount, mentionCount)}
-      </Text>
-    </View>
-  );
-}
-
-/**
- * A count that is not direct address, on the channel badge's own geometry in
- * house gold (foundations.md §5): Chat home's Threads row (#5139) sits above
- * the channels, so its count matches theirs in size, corner and type.
- */
-export function InboxCountBadge({
-  count,
-  testID,
-}: {
-  count: number;
-  testID?: string;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  return (
-    <View testID={testID} style={[styles.badge, styles.badgeInbox]}>
-      <Text style={[styles.badgeText, styles.badgeTextInbox]}>
-        {count > 99 ? "99+" : String(count)}
       </Text>
     </View>
   );
@@ -488,6 +473,31 @@ export function accessibilityLabelFor({
   // The preview last, after the counts a member listens for first.
   if (preview) parts.push(preview);
   return parts.join(", ");
+}
+
+/**
+ * A row title's three states, shared with the thread rows under a channel
+ * (`channel-thread-rows.tsx`): unread is white at 700, read is grey at 400
+ * (2026-11-08), muted is the muted hue.
+ */
+export function channelTitleStyles(tokens: SignetTokens) {
+  return {
+    titleUnread: {
+      ...typeRole({
+        ...tokens.typography.role.body,
+        weight: tokens.typography.weight.bold,
+      }),
+      color: tokens.color.text.foreground,
+    },
+    titleRead: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
+    },
+    titleMuted: {
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.muted,
+    },
+  };
 }
 
 function createStyles(tokens: SignetTokens) {
@@ -578,22 +588,7 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       gap: 2,
     },
-    // Unread is white at 700, read is grey at 400 (2026-11-08).
-    titleUnread: {
-      ...typeRole({
-        ...tokens.typography.role.body,
-        weight: tokens.typography.weight.bold,
-      }),
-      color: tokens.color.text.foreground,
-    },
-    titleRead: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.mutedForeground,
-    },
-    titleMuted: {
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.muted,
-    },
+    ...channelTitleStyles(tokens),
     previewUnread: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
@@ -629,12 +624,6 @@ function createStyles(tokens: SignetTokens) {
     },
     badgeTextMention: {
       color: tokens.color.semantic.mentionForeground,
-    },
-    badgeInbox: {
-      backgroundColor: tokens.color.gold.house,
-    },
-    badgeTextInbox: {
-      color: tokens.color.gold.onHouse,
     },
   });
 }

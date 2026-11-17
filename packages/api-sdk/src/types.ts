@@ -3624,7 +3624,7 @@ export interface paths {
         };
         /**
          * Get the chapter’s AI switches
-         * @description Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then. `can_change` says whether the caller is the president, who alone may change them.
+         * @description Which AI features are on for the chapter: Ask, meeting notes, chat as a source, and nudges. Nudges are on until the president turns them off; the rest are off until the president turns them on. `can_change` says whether the caller is the president, who alone may change them.
          */
         get: operations["AiChapterSettingsController_getSettings_v1"];
         put?: never;
@@ -6019,6 +6019,23 @@ export interface paths {
         put?: never;
         /** The file is in storage: transcribe it, as a background AI run, and tell the members who were at the meeting. Safe to call twice. 409 `meeting.recording_incomplete` when the file is not there, 409 `meeting.recording_replaced` when the upload was replaced or removed */
         post: operations["MeetingRecordingController_uploaded_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/meeting-recorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether this server can write a recording out, why the caller can’t send one yet, and its limits, before any minutes exist */
+        get: operations["MeetingRecorderController_get_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9320,6 +9337,8 @@ export interface components {
             meeting_notes: boolean;
             /** @description Messages in chapter channels, from members who said yes, are a source. */
             chat_source: boolean;
+            /** @description Nudge cards on members' Activity. On unless the president turned them off; a member still gets one only after their own yes. */
+            nudges: boolean;
             /**
              * Format: date-time
              * @description When a switch last changed. Null when none ever has.
@@ -9332,6 +9351,7 @@ export interface components {
             ask?: boolean;
             meeting_notes?: boolean;
             chat_source?: boolean;
+            nudges?: boolean;
         };
         AiRunDto: {
             /** Format: uuid */
@@ -11621,6 +11641,19 @@ export interface components {
              * @description The upload that finished.
              */
             upload_id: string;
+        };
+        MeetingRecorderAvailabilityDto: {
+            /** @description False when this server has no transcription provider set up, so a recording can’t be written out. */
+            available: boolean;
+            /**
+             * @description Why the caller can’t send a recording now: the chapter has meeting notes off, or they have not said yes on the AI sheet.
+             * @enum {string|null}
+             */
+            blocked: "chapter_off" | "consent_required" | null;
+            /** @description The largest file this server takes, in bytes. */
+            max_bytes: number;
+            /** @description The longest recording this server takes, in seconds. */
+            max_seconds: number;
         };
         BootstrapDto: {
             /** @description As `GET /v1/users/me`. */
@@ -25435,6 +25468,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecorderController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecorderAvailabilityDto"];
                 };
             };
             /** @description Error */

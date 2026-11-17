@@ -33,17 +33,11 @@ vi.mock("@repo/hooks", async () => {
   };
 });
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#C49A3A",
-    accentPrimary: "#C49A3A",
-    accentOnPrimary: "#2B2009",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, MUTED_GOLD_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(MUTED_GOLD_BRANDING);
+});
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const SENDER = "22222222-2222-4222-8222-222222222222";

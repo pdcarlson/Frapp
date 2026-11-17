@@ -175,13 +175,14 @@ export const AI_MODEL_CATALOG = {
   /**
    * Member nudges (#4781): a short list of facts about one of a member's
    * tasks in, a card's title, line and starting point out, which the caller
-   * checks against the facts. In the `ask` family: the card is the AI
-   * reading the member's own tasks for them, as Ask's "your tasks" does, so
-   * it stands behind the Ask switch and the member's yes.
+   * checks against the facts. Its own `nudges` family, behind its own
+   * chapter switch that starts on (Paul, 2026-11-17), and always behind the
+   * member's own yes. Until then it sat in the `ask` family, so a chapter
+   * without Ask switched on got no cards.
    */
   'nudges.write': {
     ...CLAUDE_SONNET,
-    family: 'ask',
+    family: 'nudges',
     kind: 'structured',
     maxOutputTokens: 400,
     effort: 'low',
