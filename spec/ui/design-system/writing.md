@@ -360,12 +360,10 @@ There a creator makes an event with the day list's New event, which replaces the
 The time-window line is its own row because the default window (Upcoming) hides every past event without the officer touching a filter, and "No events yet" there would be false (2026-11-05).
 The lines are `InlineNote`s, like [Points (dashboard)](#points-dashboard); error and offline keep their cards.
 
-Mobile's Calendar tab (s06, Events until #4610) opens on whichever of List and Calendar the member last used (#3823).
-With nothing scheduled, either view says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). *(Changed in #5113 by shawnatomklein-eng, 2026-11-15: the + the line names is the Calendar header's own, drawn for the same viewers; the words didn't change.)*
+Mobile's Calendar (s06, Events until #4610) is the month alone since #5310: it has no List and no switch to remember.
+With nothing current or upcoming, the picked day's list under the month says one line where the rows go: `Nothing scheduled yet. Tap + to add the first event.` for a viewer the tab bar's + offers New event to, and `Nothing scheduled yet.` for everyone else (2026-11-07). *(Changed in #5113 by shawnatomklein-eng, 2026-11-15: the + the line names is the Calendar header's own, drawn for the same viewers; the words didn't change.)* *(Changed in #5310 by `pdcarlson`, 2026-11-17: the line was the List's or the Calendar's, whichever was showing; the month's day list is the only place left for it.)*
 It is mobile's `InlineNote` (`components/inline-note.tsx`), which replaced the `Nothing scheduled` card.
-When the chapter has events but none in the next two weeks, the List says `Nothing in the next two weeks.` above its folded Later row, which reads as web's does: `Later`, its count (`3 events`) and a disclosure chevron (right while folded, down while open), the whole row the control (#4135, 2026-11-13;
-it read `Show 3` and `Hide` until then);
-a Calendar day with nothing on it says `Nothing on this day.` (2026-11-09).
+Otherwise a day with nothing on it says `Nothing on this day.` (2026-11-09). The List's `Nothing in the next two weeks.` and its folded `Later` row (#4135, 2026-11-13) went with the List in #5310; web's Events list keeps its own.
 
 ### Attendance (dashboard)
 
@@ -956,17 +954,12 @@ No title: the lit control is the subject.
 | Stop | Line |
 |---|---|
 | Top channel section | `You're in <chapter>. Tap a channel to start talking.` (`your chapter` when the name isn't loaded) |
-| The Messages door | `Direct messages are here. Swiping left opens them too.` (#4610 step 3) |
+| The Messages tab | `Direct messages have their own tab.` (#5310; `Direct messages are here. Swiping left opens them too.` on the door, #4610 step 3, until then) |
 | The tab bar's + | `Shortcuts live under the +. Hold it to pick your own.` |
 | The You tab | `Your profile, the directory and settings are under You.` (the More tab's line until #3839) |
 
 Under each line: the count, `1 of 4`, muted, and `Next` in the chapter accent (`Done` on the last stop).
 `Skip` in the top corner, white on the dim, read out as `Skip the tour`.
-
-### Swipe hint (mobile)
-
-The label Chat home shows while it teaches the swipe to Messages ([`../mobile/navigation.md`](../mobile/navigation.md) § Global entries, Swipe to Messages): `Swipe left for Messages`, after a drawn back chevron that points the way the finger goes.
-One line, no title, no button: any touch ends it.
 
 ### Push opt-in (mobile)
 

@@ -18,7 +18,6 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { useRaisedSurfaces } from "@/lib/surfaces";
 import { ForwardGlyph } from "@/components/control-glyphs";
 import { eyebrowStyle } from "@/components/eyebrow";
-import { guardedBySwipe, useSwipeClaim } from "@/lib/swipe-claim";
 
 /**
  * The grouped-list chrome the reference draws on s09, s12, s14, s15 and s16: an
@@ -326,11 +325,6 @@ export type PressableRowProps = Omit<
  * the row keeps the radius too, for its own border and iOS lift. Any other
  * outer layout (`flex`, `alignSelf`, a position) would also belong on the clip,
  * and no row passes one yet. Everything else goes to the `Pressable` as given.
- *
- * Inside a screen-wide swipe (Chat home's swipe to Messages), the row drops a
- * press or long press that came from the swipe's own touch: a full-width row
- * never sees the finger leave it, so it would take the release as a tap
- * (`lib/swipe-claim.ts`).
  */
 export function PressableRow({
   style,
@@ -341,7 +335,6 @@ export function PressableRow({
   ...pressable
 }: PressableRowProps) {
   const feedback = usePressFeedback({ onCard, onControl });
-  const claim = useSwipeClaim();
   const { clip, row } = splitRowStyle(style);
   return (
     // The clip takes the row's `hitSlop` too: Android hands a touch to a
@@ -350,8 +343,6 @@ export function PressableRow({
     <View style={clip} hitSlop={pressable.hitSlop}>
       <Pressable
         {...pressable}
-        onPress={guardedBySwipe(claim, pressable.onPress)}
-        onLongPress={guardedBySwipe(claim, pressable.onLongPress)}
         android_ripple={pressable.disabled ? undefined : feedback.ripple}
         style={({ pressed }) => [row, lifts ? feedback.lift(pressed) : null]}
       >

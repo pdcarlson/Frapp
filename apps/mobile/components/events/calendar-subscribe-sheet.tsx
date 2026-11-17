@@ -37,13 +37,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 /** How long "Copied" stands in for "Copy link" before it reads as a row again. */
 const COPIED_HOLD_MS = 1500;
 /**
- * Where Google's sign-in comes back to by default: the Events tab, which is
- * where the member started, so the router has a real screen to land on when the system
+ * Where Google's sign-in comes back to by default: the Calendar (the `events`
+ * route), which is where the member started, so the router has a real screen to land on when the system
  * also hands the address to the app.
  */
 const GOOGLE_RETURN_PATH = "events";
 /**
- * Subscribe (#3322): the Events header's sheet that puts the chapter's events,
+ * Subscribe (#3322): the Calendar header's sheet that puts the chapter's events,
  * and the member's own open tasks, on the calendar they already use, through
  * a private link the calendar app keeps checking.
  * Behavior: `spec/behavior/events.md` § Calendar subscription.

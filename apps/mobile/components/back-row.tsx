@@ -62,7 +62,7 @@ export const BACK_TO_ROLES: BackTarget = {
   label: "Roles",
   href: "/chapter-roles",
 };
-/** s07, opened from an Events row (and from Chat home's Up next). */
+/** s07, opened from a Calendar row (and from Chat home's Up next). */
 export const BACK_TO_EVENTS: BackTarget = {
   label: "Calendar",
   href: "/events",
@@ -113,8 +113,8 @@ type BackRowProps = {
  * `spec/ui/mobile/navigation.md` § Back rows owns the rule.
  *
  * It goes back through the stack, exactly as the iOS edge swipe and Android's
- * back do, and names the screen it returns to (`useScreenBelow`): `‹ Events`
- * over an event opened from Events, `‹ Chat` over the same event opened from
+ * back do, and names the screen it returns to (`useScreenBelow`): `‹ Calendar`
+ * over an event opened from the Calendar, `‹ Chat` over the same event opened from
  * Chat home's Up next. A row that went somewhere other than the swipe would
  * be two answers to "back", and a label that names where it goes is one a
  * member can trust. The `label` and `href` a screen passes are the fallback

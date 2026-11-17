@@ -213,14 +213,13 @@ describe("app stack", () => {
     }
   });
 
-  // Messages lives to the right of Chat, so it pushes in from the right on
-  // Android too, where the stack's default is a short fade-and-shift (#4447).
-  it("pushes Messages in from the right on both platforms", () => {
-    const { screens } = stack();
-    const messages = screens.find((screen) => screen.props.name === "messages");
-    expect(resolved(messages!.props.options, "messages").animation).toBe(
-      "ios_from_right",
-    );
+  // #5310: Messages is a tab and the Calendar a pushed screen, with its one
+  // day's hour grid pushed over it.
+  it("registers the Calendar and its day on the stack, and Messages not", () => {
+    const names = stack().screens.map((screen) => screen.props.name);
+    expect(names).toContain("events");
+    expect(names).toContain("calendar-day");
+    expect(names).not.toContain("messages");
   });
 
   it("puts the tabs under a screen opened by link", () => {

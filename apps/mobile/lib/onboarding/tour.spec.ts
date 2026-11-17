@@ -39,12 +39,9 @@ describe("first-run tour stops", () => {
     }
   });
 
-  // #3774, #4610: nothing on Chat home shows the swipe, so the tour says it
-  // at the door the swipe stands in for.
-  it("teaches the swipe to Messages at the Messages door", () => {
-    expect(TOUR_STOPS[1]!.text).toBe(
-      "Direct messages are here. Swiping left opens them too.",
-    );
+  // #5310: Messages is the third tab, so its stop points at the tab.
+  it("names the Messages tab on the second stop", () => {
+    expect(TOUR_STOPS[1]!.text).toBe("Direct messages have their own tab.");
   });
 
   it("names the chapter on the first stop", () => {

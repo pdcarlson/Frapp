@@ -12,7 +12,7 @@ export function asRoute(path: string): Href {
 const TAB_PATHS: ReadonlySet<string> = new Set([
   "/",
   "/activity",
-  "/events",
+  "/messages",
   "/you",
 ]);
 
@@ -25,7 +25,6 @@ export function isTabHref(href: Href): boolean {
 type TabRouter = {
   push: (href: Href) => void;
   replace: (href: Href) => void;
-  navigate: (href: Href) => void;
   dismissTo: (href: Href) => void;
 };
 
@@ -61,11 +60,15 @@ function pathOf(href: Href): string {
 }
 
 /**
- * A drawn way back's fixed destination, for when nothing is under the screen
- * to pop to: a tab is popped down to, for the reason `openHref` gives, and any
- * other screen is navigated to.
+ * A drawn way back's fixed destination, for when the screen under this one
+ * isn't where back should land (or nothing is under it). It pops the stack
+ * down to `href` (`dismissTo`): to the tabs and that tab for a tab, for the
+ * reason `openHref` gives, and to the screen itself when it is already in the
+ * stack. When it isn't, the current screen is replaced by it, so back never
+ * stacks a second copy of the destination over the screen being left: a
+ * plain navigate pushed a second Calendar over a just-deleted event once
+ * Calendar became a pushed screen (#5310).
  */
 export function goBackTo(router: TabRouter, href: Href): void {
-  if (isTabHref(href)) router.dismissTo(href);
-  else router.navigate(href);
+  router.dismissTo(href);
 }

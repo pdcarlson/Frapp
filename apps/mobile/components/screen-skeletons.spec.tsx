@@ -47,8 +47,7 @@ import { StartCardSkeleton } from "./study/start-card";
 import { ThreadSkeleton } from "./chat/thread-skeleton";
 import { ChannelListSkeleton } from "./chat/channel-row";
 import { JoinedChannelsSkeleton } from "./onboarding/joined-channels-card";
-import { EventListSkeleton } from "@/app/(app)/(tabs)/events";
-import { LEAD_TILE_SIZE } from "@/components/lead-tile";
+import { EventsCalendarSkeleton } from "@/components/events/events-calendar";
 import { EventDetailSkeleton } from "@/app/(app)/event-details";
 import {
   NotificationListRow,
@@ -245,7 +244,7 @@ describe("Every skeleton draws its shapes with SkeletonBlock", () => {
     ["ThreadSkeleton", <ThreadSkeleton key="t" />],
     ["ChannelListSkeleton", <ChannelListSkeleton key="ch" />],
     ["JoinedChannelsSkeleton", <JoinedChannelsSkeleton key="j" />],
-    ["EventListSkeleton", <EventListSkeleton key="e" />],
+    ["EventsCalendarSkeleton", <EventsCalendarSkeleton key="e" />],
     ["EventDetailSkeleton", <EventDetailSkeleton key="ed" />],
     ["NotificationListSkeleton", <NotificationListSkeleton key="n" />],
     ["ProfileSkeleton", <ProfileSkeleton key="p" />],
@@ -279,51 +278,26 @@ describe("Screen skeletons sit on their screen's frames", () => {
   const views = (tree: ReactTestRenderer) =>
     tree.root.findAllByType("View" as never).map((v) => flatten(v.props.style));
 
-  it("Events: a day caption over the next-event card, then a caption and flat rows", () => {
-    const tree = render(<EventListSkeleton rows={3} />);
-    const cards = views(tree).filter(
-      (style) => style.borderRadius === tokens.radius.cardLarge,
+  it("Calendar: the month row, seven columns of weeks, then the day heading", () => {
+    const tree = render(<EventsCalendarSkeleton />);
+    // No card: the loaded month sits on the floor (#5310 dropped the List and
+    // its next-event card).
+    expect(
+      views(tree).filter(
+        (style) => style.borderRadius === tokens.radius.cardLarge,
+      ),
+    ).toHaveLength(0);
+    // The weekday initials are real; each week is seven cells, each with a
+    // bar where the day's number sits.
+    const weeks = views(tree).filter(
+      (style) => style.flexDirection === "row" && style.minHeight === undefined,
     );
-    // One card, as the loaded list draws only the next event as a card.
-    expect(cards).toHaveLength(1);
-    expect(cards[0]).toMatchObject({
-      flexDirection: "row",
-      gap: tokens.spacing.md,
-      padding: tokens.spacing.lg,
-      borderWidth: 1,
-      backgroundColor: tokens.color.surface.surface1,
-    });
-    // No date column: the day is the caption over the rows (#3707).
-    expect(views(tree).filter((style) => style.width === 52)).toHaveLength(0);
-    // A flat row leads with its tile (#4679), so it takes the tile row's
-    // small padding and a block the tile's size.
-    const flat = views(tree).filter(
-      (style) =>
-        style.minHeight === tokens.touch.minimum &&
-        style.paddingVertical === tokens.spacing.sm,
-    );
-    expect(flat).toHaveLength(3);
+    expect(weeks.length).toBeGreaterThanOrEqual(5);
     expect(
       tree.root
         .findAllByType(SkeletonBlock)
-        .filter(
-          (block) =>
-            block.props.width === LEAD_TILE_SIZE.lead &&
-            block.props.height === LEAD_TILE_SIZE.lead,
-        ),
-    ).toHaveLength(3);
-    // Each flat row's name bar is the label role's, the loaded row's name.
-    expect(
-      tree.root
-        .findAllByType(SkeletonText)
-        .filter((line) => line.props.role === tokens.typography.role.label),
-    ).toHaveLength(3);
-    // Hairline-split: no rule above the first row.
-    expect(flat.map((style) => style.borderTopWidth ?? 0)).toEqual([
-      0,
-      expect.any(Number),
-      expect.any(Number),
-    ]);
+        .filter((block) => block.props.width === 18),
+    ).toHaveLength(35);
   });
 
   it("Event details: the check-in card's frame, and no section an event may not carry", () => {

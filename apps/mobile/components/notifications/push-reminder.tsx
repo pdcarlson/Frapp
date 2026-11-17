@@ -5,7 +5,6 @@ import { BellGlyph } from "@/components/notifications/push-ask";
 import { usePushReminder } from "@/lib/notifications/use-push-primer";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
-import { useGuardedBySwipe } from "@/lib/swipe-claim";
 
 /**
  * The chat home's one come-back for push (`shouldOfferReminder`): a member who
@@ -21,12 +20,10 @@ export function PushReminder() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const reminder = usePushReminder();
-  // On Chat home, inside the swipe to Messages: a slide that starts here is
-  // the swipe, not a press (`lib/swipe-claim.ts`).
-  const turnOn = useGuardedBySwipe(() => {
+  const turnOn = () => {
     void reminder.turnOn();
-  });
-  const dismiss = useGuardedBySwipe(reminder.dismiss);
+  };
+  const dismiss = reminder.dismiss;
   if (!reminder.show) return null;
 
   const label = reminder.action === "settings" ? "Open Settings" : "Turn on";

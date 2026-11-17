@@ -197,7 +197,7 @@ second, filled variant to swap to.
 |---|---|---|
 | Chat tab (home) | `chat`, `chat-circle-dots` | |
 | Activity tab | `activity`, `tray` | Tab 2 since #4610 (2026-11-12); the glyph web's Activity row draws. |
-| Calendar tab (the `events` route) | `events`, `calendar-dots` | Named Events until #4610. |
+| Messages tab | `direct`, `paper-plane-tilt` | Tab 3 since #5310, where the Calendar tab (`events`, `calendar-dots`; named Events until #4610) was. |
 | You tab | — | The member's own avatar, not a glyph (#3839, `components/you-tab-avatar.tsx`): their photo, else their initials in their member tint, never the accent; active, a 1.5pt accent ring with a gap ([`navigation.md` § Tab bar](../mobile/navigation.md#tab-bar--4-tabs-locked)). The More tab drew `more` (`squares-four`, a 2×2 grid) until then; nothing else drew it, so it left the nav set. |
 | Task board (pushed, and the task card) | `tasks`, `seal-check` | A tab until #4610; the glyph stays on the task card, Up next and the + panel. |
 
@@ -269,7 +269,7 @@ except the audit card's).
 
 | Semantic intent | Glyph | Lives in |
 |---|---|---|
-| Event card | `EventsGlyph` (the Calendar tab's) | `components/tab-glyphs.tsx` |
+| Event card | `EventsGlyph` (the Calendar row's on Activity) | `components/tab-glyphs.tsx` |
 | Task card | `TasksGlyph` (the task board's; a tab until #4610) | `components/tab-glyphs.tsx` |
 | Points card | `PointsGlyph` (the nav set's trophy, §1.1) | `components/chat/card-glyphs.tsx` |
 | Hours card | `ServiceHoursGlyph` (the nav set's hand-heart, the You tab's row shape) | `components/chat/card-glyphs.tsx` |
@@ -337,7 +337,7 @@ This table is the intent → glyph map; it MUST change in the same PR as
 | Semantic intent | Glyph | Shape (nav set key, Phosphor name) |
 |---|---|---|
 | Chat | `ChatGlyph` | `chat`, `chat-circle-dots` |
-| Direct messages ([#3774](https://github.com/pdcarlson/Frapp/issues/3774)) | `DirectMessagesGlyph` | `direct`, `paper-plane-tilt`: Instagram's sign for messages, so the row under Chat reads apart from Chat's bubble. Mobile's Messages door draws the same plane since #4610 step 3 (2026-11-12); it was a speech bubble, which read as a second Chat tab. |
+| Direct messages ([#3774](https://github.com/pdcarlson/Frapp/issues/3774)) | `DirectMessagesGlyph` | `direct`, `paper-plane-tilt`: Instagram's sign for messages, so the row under Chat reads apart from Chat's bubble. Mobile's Messages tab draws the same plane (#5310), as its Messages door did from #4610 step 3 (2026-11-12); the door was a speech bubble before, which read as a second Chat tab. |
 | Activity (what needs you, what you made) | `ActivityGlyph` | `activity`, `tray` |
 | Events | `EventsGlyph` | `events`, `calendar-dots` |
 | Tasks | `TasksGlyph` | `tasks`, `seal-check` |

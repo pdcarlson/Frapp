@@ -607,7 +607,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
     The Channels list then holds channels only, and the Direct messages list holds DMs and group DMs, with Pinned above them and Hidden conversations below, no heading of its own, and no officer reordering (a DM has no place in the chapter's order).
     Channels land on their last channel as before; Direct messages open only the DM the member last had open there, and with none ask them to pick one, since opening one they didn't pick would mark it read unseen ([`spec/behavior/chat/README.md`](../../behavior/chat/README.md) § Where Chat opens).
     `/chat`'s top-bar title follows the list ([§ Top bar](#top-bar)).
-    The Chat row lights for channels and @-mentions; the Direct messages row carries a mention-red count of conversations with anything unread, the count the phone's Messages door shows.
+    The Chat row lights for channels and @-mentions; the Direct messages row carries a mention-red count of conversations with anything unread, the count the phone's Messages tab shows.
     The list on screen is a cookie read on the server, `/chat?view=direct` and `/chat?view=channels` name it in a link, a bare `/chat` (Chat's own link, or Back to it) shows channels, and a link, notification, Find hit or bookmark that opens a DM moves the panel to Direct messages (and the reverse), so the open conversation is always on the list.
     With none, the thread column says how to start one: "Find someone to message" opens the people search ([#4668](https://github.com/pdcarlson/Frapp/issues/4668); until then it linked to the Directory's Message).
     Below 1056px both rows are links to `/chat`, and the list on screen marks which is the current page.
@@ -799,7 +799,7 @@ Flushed together on 2026-11-05 (with `/polls`, since retired, #3871); the board 
   The bulk button also takes the event write subscription gate, as the attendance panel's does.
   Rows sit under written-out day headings; a repeating series is one row, its next meeting, reading `Every Sunday · 6:48 PM`, and opening it lists the series' upcoming meetings under the one it opened.
   Under Upcoming the list holds today through the next 14 days, and what starts later waits behind a **Later** disclosure ([#3707](https://github.com/pdcarlson/Frapp/issues/3707);
-  the series and horizon rules are `@repo/hooks/event-series`, which mobile's Events tab reads too ([#3823](https://github.com/pdcarlson/Frapp/issues/3823))).
+  the series and horizon rules are `@repo/hooks/event-series`; mobile's Calendar reads only its cadence line from there since #5310 ([#3823](https://github.com/pdcarlson/Frapp/issues/3823))).
   Mandatory is the hairline badge, not a red pill on every row, and it means the event requires this viewer, by default or by a role of theirs ([`events.md` § Attendance by role](../../behavior/events.md#event-creation); #4132, 2026-11-13: until then web drew it for an event required of everyone, and the chat event card drew it red).
   The toolbar is `PageActions` like every route's: the List and Calendar toggle leads as the page's primary control, a segmented control ([`components.md`](../design-system/components.md) § Segmented control;
   it was underlined tabs until #3822), and the page opens on whichever view this person last used on this browser;

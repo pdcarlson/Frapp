@@ -35,11 +35,11 @@ export const TOUR_STOPS: readonly TourStop[] = [
     text: "You're in {chapter}. Tap a channel to start talking.",
     maxHeight: 220,
   },
-  // The door, and the swipe nothing on screen shows (#3774, #4610): the tour
-  // is the one moment a new member is reading every line.
+  // The Messages tab in the bar (#5310), which was a door at the top right
+  // of Chat home and a swipe left until then.
   {
     key: "messages",
-    text: "Direct messages are here. Swiping left opens them too.",
+    text: "Direct messages have their own tab.",
   },
   {
     key: "quickActions",

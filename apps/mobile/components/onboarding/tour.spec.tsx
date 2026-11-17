@@ -30,7 +30,7 @@ type Node = ReactTestRenderer["root"];
 /** Where each anchored control sits in the window, by its testID. */
 const RECTS: Record<string, [number, number, number, number]> = {
   "anchor-channels": [0, 220, 390, 600],
-  "anchor-messages": [300, 60, 36, 36],
+  "anchor-messages": [160, 754, 70, 50],
   "anchor-quickActions": [314, 748, 62, 62],
   "anchor-you": [230, 754, 70, 50],
 };
@@ -153,11 +153,9 @@ describe("first-run tour", () => {
     );
     expect(texts(root)).toContain("1 of 4");
 
-    // The Messages door, where the swipe is taught (#3774).
+    // The Messages tab (#5310).
     await press(buttonLabelled(root, "Next"));
-    expect(texts(root)).toContain(
-      "Direct messages are here. Swiping left opens them too.",
-    );
+    expect(texts(root)).toContain("Direct messages have their own tab.");
     await press(buttonLabelled(root, "Next"));
     expect(texts(root)).toContain(
       "Shortcuts live under the +. Hold it to pick your own.",
@@ -196,9 +194,7 @@ describe("first-run tour", () => {
     const { root } = await render(false);
 
     expect(texts(root)).toContain("1 of 3");
-    expect(texts(root)).toContain(
-      "Direct messages are here. Swiping left opens them too.",
-    );
+    expect(texts(root)).toContain("Direct messages have their own tab.");
   });
 
   it("steps back on Android back, and skips from the first stop", async () => {

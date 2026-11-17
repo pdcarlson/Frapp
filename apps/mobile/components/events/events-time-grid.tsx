@@ -39,39 +39,38 @@ function longDay(day: Date): string {
 }
 
 /**
- * The Calendar's 3 days and Day views on the phone (#4818), drawn as web's
- * Week and Day are (`apps/web/components/events/events-time-grid.tsx`) and as
- * Google Calendar's phone app draws them: an hour gutter at the left, a
- * column per day, each timed event a block at its start and as tall as it
- * lasts, events that overlap side by side (`@repo/hooks/calendar-time-grid`,
- * which web reads too), and an All day strip for the day's tasks and any
- * event of a whole day or more, on every day it covers. A red line marks the
- * time now in today's column. A member who can create events taps an hour
- * that isn't over to open New event starting then (`calendarHourStart`).
+ * One day's hour grid on the phone (#4818), the Day screen pushed from the
+ * Calendar month's day heading since #5310 (the 3 days range and the
+ * Month | 3 days | Day switch went then), drawn as web's Day is
+ * (`apps/web/components/events/events-time-grid.tsx`) and as Google
+ * Calendar's phone app draws it: an hour gutter at the left, each timed event
+ * a block at its start and as tall as it lasts, events that overlap side by
+ * side (`@repo/hooks/calendar-time-grid`, which web reads too), and an All
+ * day strip for the day's tasks and any event of a whole day or more. A red
+ * line marks the time now when the day is today. A member who can create
+ * events taps an hour that isn't over to open New event starting then
+ * (`calendarHourStart`).
  *
- * `now` is the screen's ticking clock, which also decides which column is
- * today, so a tab left open past midnight moves both together.
+ * `now` is the screen's ticking clock, which also decides whether the day is
+ * today, so a screen left open past midnight moves both together.
  */
 export function EventsTimeGrid({
-  days,
+  day,
   events,
   now,
   tasksByDay,
   onOpen,
   onOpenTask,
-  onOpenDay,
   canCreate,
   onCreateAt,
 }: {
-  /** The columns, each at local midnight: three for 3 days, one for Day. */
-  days: Date[];
+  /** The day, at local midnight. */
+  day: Date;
   events: EventRow[];
   now: Date;
   tasksByDay: Map<string, CalendarItem[]>;
   onOpen: (id: string) => void;
   onOpenTask: (taskId: string) => void;
-  /** A column's heading opens that day in the Day view (3 days only). */
-  onOpenDay?: (day: Date) => void;
   canCreate: boolean;
   onCreateAt: (day: Date, hour: number) => void;
 }) {
@@ -83,18 +82,16 @@ export function EventsTimeGrid({
   const todayKey = localIsoDate(now);
   const hourLabels = useMemo(() => HOURS.map(hourLabel), []);
 
-  const columns = useMemo(
-    () => timeGridColumns(days, events, tasksByDay),
-    [days, events, tasksByDay],
+  // The shared layout lays out a range of days; this grid asks for one.
+  const { key, allDay, tasks, placed } = useMemo(
+    () => timeGridColumns([day], events, tasksByDay)[0]!,
+    [day, events, tasksByDay],
   );
+  const isToday = key === todayKey;
+  const dayLabel = longDay(day);
+  const hasStrip = allDay.length > 0 || tasks.length > 0;
 
-  const hasStrip = columns.some(
-    (column) => column.allDay.length > 0 || column.tasks.length > 0,
-  );
-  const isDayView = days.length === 1;
-
-  // Opened at 8 AM once; stepping the range keeps where the member scrolled,
-  // as web's does.
+  // Opened at 8 AM once.
   const scrollRef = useRef<ScrollView>(null);
   const scrolled = useRef(false);
   const gridHeight = Math.min(
@@ -113,56 +110,30 @@ export function EventsTimeGrid({
     <View style={styles.root}>
       <View style={styles.row}>
         <View style={styles.gutter} />
-        {columns.map(({ day, key }) => {
-          const isToday = key === todayKey;
-          const weekday = day.toLocaleDateString(undefined, {
-            weekday: "short",
-          });
-          const heading = (
-            <View
-              style={[styles.heading, isDayView ? styles.headingStart : null]}
+        <View
+          accessible
+          accessibilityRole="header"
+          accessibilityLabel={dayLabel}
+          style={styles.column}
+        >
+          <View style={styles.heading}>
+            <Text
+              style={[styles.weekday, isToday ? styles.weekdayToday : null]}
             >
+              {day.toLocaleDateString(undefined, { weekday: "short" })}
+            </Text>
+            <View style={[styles.dateChip, isToday ? styles.todayChip : null]}>
               <Text
-                style={[styles.weekday, isToday ? styles.weekdayToday : null]}
+                style={[
+                  styles.dateNumber,
+                  isToday ? styles.dateNumberToday : null,
+                ]}
               >
-                {weekday}
+                {day.getDate()}
               </Text>
-              <View
-                style={[styles.dateChip, isToday ? styles.todayChip : null]}
-              >
-                <Text
-                  style={[
-                    styles.dateNumber,
-                    isToday ? styles.dateNumberToday : null,
-                  ]}
-                >
-                  {day.getDate()}
-                </Text>
-              </View>
             </View>
-          );
-          return onOpenDay && !isDayView ? (
-            <Pressable
-              key={key}
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${longDay(day)}`}
-              onPress={() => onOpenDay(day)}
-              style={styles.column}
-            >
-              {heading}
-            </Pressable>
-          ) : (
-            <View
-              key={key}
-              accessible
-              accessibilityRole="header"
-              accessibilityLabel={longDay(day)}
-              style={styles.column}
-            >
-              {heading}
-            </View>
-          );
-        })}
+          </View>
+        </View>
       </View>
 
       {hasStrip ? (
@@ -170,34 +141,32 @@ export function EventsTimeGrid({
           <View style={styles.gutter}>
             <Text style={styles.allDayLabel}>All day</Text>
           </View>
-          {columns.map(({ key, allDay, tasks }) => (
-            <View key={key} style={[styles.column, styles.stripColumn]}>
-              {allDay.map((event) => (
-                <Pressable
-                  key={event.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Open ${event.name}, all day${required(event)}`}
-                  onPress={() => onOpen(event.id)}
-                  style={({ pressed }) => [
-                    styles.allDayChip,
-                    { borderLeftColor: blockBorder(event) },
-                    pressed ? styles.pressed : null,
-                  ]}
-                >
-                  <Text numberOfLines={1} style={styles.blockName}>
-                    {event.name}
-                  </Text>
-                </Pressable>
-              ))}
-              {tasks.map((item) => (
-                <CalendarTaskChip
-                  key={item.key}
-                  item={item}
-                  onOpenTask={onOpenTask}
-                />
-              ))}
-            </View>
-          ))}
+          <View style={[styles.column, styles.stripColumn]}>
+            {allDay.map((event) => (
+              <Pressable
+                key={event.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Open ${event.name}, all day${required(event)}`}
+                onPress={() => onOpen(event.id)}
+                style={({ pressed }) => [
+                  styles.allDayChip,
+                  { borderLeftColor: blockBorder(event) },
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text numberOfLines={1} style={styles.blockName}>
+                  {event.name}
+                </Text>
+              </Pressable>
+            ))}
+            {tasks.map((item) => (
+              <CalendarTaskChip
+                key={item.key}
+                item={item}
+                onOpenTask={onOpenTask}
+              />
+            ))}
+          </View>
         </View>
       ) : null}
 
@@ -232,105 +201,98 @@ export function EventsTimeGrid({
             ))}
           </View>
 
-          {columns.map(({ day, key, placed }) => {
-            const isToday = key === todayKey;
-            const dayLabel = longDay(day);
-            return (
+          <View
+            testID={`time-grid-day-${key}`}
+            style={[styles.column, styles.dayColumn]}
+          >
+            {HOURS.map((hour) => {
+              const lineStyle = [
+                styles.hourSlot,
+                { top: hour * HOUR_HEIGHT },
+                hour > 0 ? styles.hourLine : null,
+              ];
+              // An hour already over isn't offered: the form refuses a
+              // start that has passed.
+              const over =
+                new Date(
+                  day.getFullYear(),
+                  day.getMonth(),
+                  day.getDate(),
+                  hour + 1,
+                ) <= now;
+              if (!canCreate || over) {
+                return <View key={hour} style={lineStyle} />;
+              }
+              return (
+                <Pressable
+                  key={hour}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Create event on ${dayLabel} at ${hourLabels[hour]}`}
+                  onPress={() => onCreateAt(day, hour)}
+                  style={({ pressed }) => [
+                    lineStyle,
+                    pressed ? styles.pressed : null,
+                  ]}
+                />
+              );
+            })}
+
+            {placed.map((span) => {
+              const event = span.item;
+              const { top, height } = blockGeometry(span);
+              const startLabel = formatEventClock(
+                parseInstant(event.start_time),
+              );
+              const endLabel = endsWithinDay(span)
+                ? formatEventClock(parseInstant(event.end_time))
+                : "";
+              const clock = endLabel
+                ? `${startLabel} – ${endLabel}`
+                : startLabel;
+              return (
+                <Pressable
+                  key={event.id}
+                  testID={`time-grid-block-${event.id}-${key}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Open ${event.name}, ${clock}${required(event)}`}
+                  onPress={() => onOpen(event.id)}
+                  style={({ pressed }) => [
+                    styles.block,
+                    {
+                      top,
+                      height: height - 1,
+                      left: `${(span.lane / span.lanes) * 100}%`,
+                      width: `${100 / span.lanes}%`,
+                      borderLeftColor: blockBorder(event),
+                    },
+                    pressed ? styles.pressed : null,
+                  ]}
+                >
+                  <Text numberOfLines={1} style={styles.blockName}>
+                    {event.name}
+                  </Text>
+                  {height >= TWO_LINE_MIN_HEIGHT && clock ? (
+                    <Text numberOfLines={1} style={styles.blockTime}>
+                      {clock}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+
+            {isToday ? (
               <View
-                key={key}
-                testID={`time-grid-day-${key}`}
-                style={[styles.column, styles.dayColumn]}
+                testID="time-grid-now"
+                pointerEvents="none"
+                style={[
+                  styles.nowLine,
+                  { top: (minuteOfDay(now) / 60) * HOUR_HEIGHT - 1 },
+                ]}
               >
-                {HOURS.map((hour) => {
-                  const lineStyle = [
-                    styles.hourSlot,
-                    { top: hour * HOUR_HEIGHT },
-                    hour > 0 ? styles.hourLine : null,
-                  ];
-                  // An hour already over isn't offered: the form refuses a
-                  // start that has passed.
-                  const over =
-                    new Date(
-                      day.getFullYear(),
-                      day.getMonth(),
-                      day.getDate(),
-                      hour + 1,
-                    ) <= now;
-                  if (!canCreate || over) {
-                    return <View key={hour} style={lineStyle} />;
-                  }
-                  return (
-                    <Pressable
-                      key={hour}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Create event on ${dayLabel} at ${hourLabels[hour]}`}
-                      onPress={() => onCreateAt(day, hour)}
-                      style={({ pressed }) => [
-                        lineStyle,
-                        pressed ? styles.pressed : null,
-                      ]}
-                    />
-                  );
-                })}
-
-                {placed.map((span) => {
-                  const event = span.item;
-                  const { top, height } = blockGeometry(span);
-                  const startLabel = formatEventClock(
-                    parseInstant(event.start_time),
-                  );
-                  const endLabel = endsWithinDay(span)
-                    ? formatEventClock(parseInstant(event.end_time))
-                    : "";
-                  const clock = endLabel
-                    ? `${startLabel} – ${endLabel}`
-                    : startLabel;
-                  return (
-                    <Pressable
-                      key={`${event.id}-${key}`}
-                      testID={`time-grid-block-${event.id}-${key}`}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Open ${event.name}, ${clock}${required(event)}`}
-                      onPress={() => onOpen(event.id)}
-                      style={({ pressed }) => [
-                        styles.block,
-                        {
-                          top,
-                          height: height - 1,
-                          left: `${(span.lane / span.lanes) * 100}%`,
-                          width: `${100 / span.lanes}%`,
-                          borderLeftColor: blockBorder(event),
-                        },
-                        pressed ? styles.pressed : null,
-                      ]}
-                    >
-                      <Text numberOfLines={1} style={styles.blockName}>
-                        {event.name}
-                      </Text>
-                      {height >= TWO_LINE_MIN_HEIGHT && clock ? (
-                        <Text numberOfLines={1} style={styles.blockTime}>
-                          {clock}
-                        </Text>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-
-                {isToday ? (
-                  <View
-                    testID="time-grid-now"
-                    pointerEvents="none"
-                    style={[
-                      styles.nowLine,
-                      { top: (minuteOfDay(now) / 60) * HOUR_HEIGHT - 1 },
-                    ]}
-                  >
-                    <View style={styles.nowDot} />
-                  </View>
-                ) : null}
+                <View style={styles.nowDot} />
               </View>
-            );
-          })}
+            ) : null}
+          </View>
         </View>
       </ScrollView>
     </View>
@@ -359,14 +321,11 @@ function createStyles(tokens: SignetTokens) {
     heading: {
       flexDirection: "row",
       alignItems: "center",
-      justifyContent: "center",
+      justifyContent: "flex-start",
       gap: 4,
       paddingVertical: tokens.spacing.xs,
-      minHeight: tokens.touch.minimum,
-    },
-    headingStart: {
-      justifyContent: "flex-start",
       paddingHorizontal: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
     },
     weekday: {
       ...typeRole({ ...caption, weight: tokens.typography.weight.semibold }),

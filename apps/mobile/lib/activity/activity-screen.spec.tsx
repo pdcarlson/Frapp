@@ -790,11 +790,12 @@ describe("Activity screen (#3897)", () => {
       });
     });
 
-    it("opens the chapter's month from the Calendar row", () => {
-      vi.mocked(useRouter().navigate).mockClear();
+    // #5310 step 2: the month is a pushed screen, not a tab.
+    it("pushes the chapter's month from the Calendar row", () => {
+      vi.mocked(useRouter().push).mockClear();
       const tree = render();
       act(() => pressable(tree, "activity-calendar-row").props.onPress());
-      expect(vi.mocked(useRouter)().navigate).toHaveBeenCalledWith("/events");
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/events");
     });
   });
 
@@ -1731,13 +1732,14 @@ describe("Activity screen (#3897)", () => {
       expect(screenText(render())).not.toContain("This semester");
     });
 
-    it("opens the screen that owns each number, switching tabs rather than stacking them", () => {
+    it("pushes the screen that owns each number", () => {
       vi.mocked(useRouter().navigate).mockClear();
       vi.mocked(useRouter().push).mockClear();
       standing.value = { ...standing.value, data: standingRead };
       const tree = render();
+      // The Calendar left the tab bar (#5310), so required events push it.
       act(() => gauge(tree, "required_events").props.onPress());
-      expect(vi.mocked(useRouter)().navigate).toHaveBeenCalledWith("/events");
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith("/events");
       act(() => gauge(tree, "service").props.onPress());
       expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
         "/service-hours",

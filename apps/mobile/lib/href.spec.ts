@@ -12,7 +12,7 @@ const router = () => ({
   navigate: vi.fn(),
   dismissTo: vi.fn(),
 });
-const TABS = ["/", "/activity", "/events", "/you", "/events?focus=1"];
+const TABS = ["/", "/activity", "/messages", "/you", "/messages?focus=1"];
 
 describe("openHref", () => {
   it.each(TABS)("pops down to the tab %s", (href) => {
@@ -27,7 +27,9 @@ describe("openHref", () => {
     const r = router();
     openHref(r, "/dues" as never);
     openHref(r, { pathname: "/event-details", params: { id: "e1" } } as never);
-    expect(r.push).toHaveBeenCalledTimes(2);
+    // The Calendar is a pushed screen since #5310.
+    openHref(r, "/events" as never);
+    expect(r.push).toHaveBeenCalledTimes(3);
     expect(r.dismissTo).not.toHaveBeenCalled();
   });
 
@@ -64,10 +66,14 @@ describe("goBackTo", () => {
     expect(r.navigate).not.toHaveBeenCalled();
   });
 
-  it("navigates to a screen that isn't a tab", () => {
+  // A pushed screen is popped down to, or replaces the current one when it
+  // isn't in the stack, never pushed again over it (#5310: a deleted event's
+  // way back stacked a second Calendar).
+  it("pops down to a screen that isn't a tab rather than pushing it", () => {
     const r = router();
-    goBackTo(r, "/profile" as never);
-    expect(r.navigate).toHaveBeenCalledWith("/profile");
-    expect(r.dismissTo).not.toHaveBeenCalled();
+    goBackTo(r, "/events" as never);
+    expect(r.dismissTo).toHaveBeenCalledWith("/events");
+    expect(r.navigate).not.toHaveBeenCalled();
+    expect(r.push).not.toHaveBeenCalled();
   });
 });

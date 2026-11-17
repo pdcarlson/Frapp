@@ -4,9 +4,8 @@ import type { AskStarterSeen } from "@repo/validation";
 
 /**
  * Where the phone remembers that a member has seen Ask's first-open starter
- * (#4904; Paul, 2026-11-17): per member, like the Messages hint
- * (`lib/chat/messages-hint.ts`), so a second account on the same phone gets
- * its own first open. When the record is read and written, and what it
+ * (#4904; Paul, 2026-11-17): per member, so a second account on the same
+ * phone gets its own first open. When the record is read and written, and what it
  * decides, is `useAskStarter` in `@repo/hooks`, shared with web.
  */
 
