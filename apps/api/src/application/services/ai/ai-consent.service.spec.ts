@@ -434,6 +434,25 @@ describe('AiConsentService', () => {
       expect(record).not.toHaveBeenCalled();
     });
 
+    it('lets the president turn nudges off on a chapter that never set a switch', async () => {
+      const view = await service.updateChapterSettings(
+        CHAPTER,
+        { userId: PRESIDENT, roleIds: [PRESIDENT_ROLE] },
+        { nudges: false },
+      );
+      expect(view).toMatchObject({ nudges: false, ask: false });
+      expect(repo.settings.get(CHAPTER)?.nudges_enabled).toBe(false);
+      expect(record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          diff: { nudges: { from: true, to: false } },
+        }),
+      );
+      await sayYes(MEMBER);
+      await expect(
+        service.check(call({ task: 'nudges.write', family: 'nudges' })),
+      ).resolves.toEqual({ allowed: false, reason: 'chapter_off' });
+    });
+
     it("refuses another chapter's president role", async () => {
       await expect(
         service.updateChapterSettings(

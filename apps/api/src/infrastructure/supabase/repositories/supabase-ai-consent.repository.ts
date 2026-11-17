@@ -62,7 +62,8 @@ export class SupabaseAiConsentRepository implements IAiConsentRepository {
   ): Promise<ChapterAiSettings> {
     // `chapter_id` last, so nothing spread from the patch can point the
     // upsert at another chapter's row. A column the patch leaves out keeps
-    // its stored value on update, and its default (off) on the first write.
+    // its stored value on update, and its column default on the first write (off, except
+    // `nudges_enabled`, which starts on).
     const row: TablesInsert<'chapter_ai_settings'> = {
       ...patch,
       updated_by: updatedBy,

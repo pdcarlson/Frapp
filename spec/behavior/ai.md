@@ -165,7 +165,7 @@ Each governs a different thing.
 1. **The chapter turned the feature on.**
    The president switches on each family separately: Ask, meeting notes, chat as a source, and nudges.
    Each is off until then, except nudges, which are on until the president turns them off.
-   *Changed 2026-11-17 by `pdcarlson` (Paul: "We should turn on nudges on activity by default"):* nudges got their own switch, on by default. Until then a nudge stood behind Ask's switch, so a chapter whose president never turned Ask on got no cards. A nudge reads only the member's own tasks and counts of the chapter's earlier ones, for that member, and still needs gate 2, so a member who hasn't said yes gets no card and nothing is sent for them.
+   *Changed 2026-11-17 by `pdcarlson` (Paul: "We should turn on nudges on activity by default"):* nudges got their own switch, on by default. Until then a nudge stood behind Ask's switch, so a chapter whose president never turned Ask on got no cards. A nudge reads only the member's own tasks (including words others wrote on them: the description an officer gave it and the note an officer sent it back with) and counts of the chapter's earlier ones, never names, for that member, and still needs gate 2, so a member who hasn't said yes gets no card and nothing is sent for them.
    This gate governs the chapter's records, which are the chapter's to share: documents, minutes and roster fields, whoever uploaded or posted them.
    An announcement is chat, so it also needs its author's yes ([Chat as a source](#chat-as-a-source)).
 2. **The member turned Frapp AI on, once, on Meet Frapp AI.**

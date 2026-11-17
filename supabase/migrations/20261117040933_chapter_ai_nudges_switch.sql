@@ -19,3 +19,9 @@ alter table public.ai_usage_events
   check (family in ('meetings', 'ask', 'corpus', 'backwork', 'nudges')) not valid;
 alter table public.ai_usage_events
   validate constraint ai_usage_events_family_check;
+
+comment on table public.chapter_ai_settings is
+  'The president''s AI switches, one per feature family; no row is all off except nudges, which the API reads as on (AI_SWITCHES_ON_BY_DEFAULT). API only. See 20261112165040_ai_consent.sql and 20261117040933_chapter_ai_nudges_switch.sql.';
+
+comment on table public.chapter_ai_settings is
+  'The president''s AI switches, one per feature family; no row is all off except nudges, which the API reads as on (AI_SWITCHES_ON_BY_DEFAULT). API only. See 20261112165040_ai_consent.sql and 20261117040933_chapter_ai_nudges_switch.sql.';

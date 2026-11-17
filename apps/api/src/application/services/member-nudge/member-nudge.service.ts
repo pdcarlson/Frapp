@@ -100,8 +100,9 @@ function firstName(displayName: string | undefined): string {
  * Nothing here is scheduled and nothing is pushed. The card is worked out
  * when the member opens Activity, for that member, about their own tasks:
  *
- * 1. **AI is on for them.** The president's Ask switch and the member's own
- *    yes, the same check Ask makes. Off: no card, and nothing is read.
+ * 1. **AI is on for them.** The chapter's nudges switch (its own, on unless
+ *    the president turns it off; Ask's switch until 2026-11-17) and the
+ *    member's own yes. Off: no card, and nothing is read.
  * 2. **A card already showing is checked against the task as it is now.**
  *    Done, handed to someone else, or out of date: it is closed and its
  *    words deleted. Still true: it is the answer, and no model is called.
