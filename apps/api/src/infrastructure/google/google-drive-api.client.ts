@@ -9,6 +9,7 @@ import {
   type GoogleDriveItem,
   type IGoogleDriveApi,
 } from '#domain/adapters/google-drive.interface';
+import { CROCKFORD } from '#domain/utils/check-in-token';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
@@ -26,8 +27,6 @@ const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 const ITEM_FIELDS = 'id,name,mimeType,modifiedTime,size,webViewLink';
 /** One item read on its own also brings what the connect check reads. */
 const GET_ITEM_FIELDS = `${ITEM_FIELDS},description,parents`;
-/** Crockford base32: no I, L, O or U, so a code reads back unambiguously. */
-const CODE_ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
 /** 8 characters, 40 bits. */
 const CODE_LENGTH = 8;
 const CONFIG_REASONS = new Set(['accessNotConfigured', 'SERVICE_DISABLED']);
@@ -72,9 +71,11 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
       .digest();
     let code = '';
     for (let i = 0; i < CODE_LENGTH; i += 1) {
-      code += CODE_ALPHABET[digest[i] % CODE_ALPHABET.length];
+      // Crockford base32 (no I, L, O or U), as check-in codes use, so a
+      // code typed by hand matches through the same substitutions.
+      code += CROCKFORD[digest[i] % CROCKFORD.length];
     }
-    return `frapp-${code}`;
+    return `frapp-${code.toLowerCase()}`;
   }
 
   async getItem(id: string): Promise<GoogleDriveItem> {

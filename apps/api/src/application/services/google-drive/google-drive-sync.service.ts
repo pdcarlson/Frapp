@@ -226,7 +226,10 @@ export class GoogleDriveSyncService {
       await this.plan(
         root,
         startedAt,
-        await this.connections.liveFolderIdsElsewhere(chapterId),
+        await this.connections.folderIdsConnectedEarlierElsewhere(
+          chapterId,
+          connection.created_at,
+        ),
       );
     // Folders first: a rename re-files the copies in it, so they are read
     // after.
@@ -340,7 +343,7 @@ export class GoogleDriveSyncService {
   private async plan(
     root: GoogleDriveItem,
     startedAt: number,
-    /** Folders other chapters have connected: never read into this one. */
+    /** Folders other chapters connected first: never read into this one. */
     elsewhere: ReadonlySet<string>,
   ): Promise<{
     planned: PlannedFile[];
@@ -406,8 +409,8 @@ export class GoogleDriveSyncService {
       }
       for (const item of children) {
         if (item.mimeType === GOOGLE_DRIVE_FOLDER_MIME) {
-          // A folder shared into itself is read once, and another chapter's
-          // connected folder is that chapter's alone (#5185).
+          // A folder shared into itself is read once, and a folder another
+          // chapter connected before this one is that chapter's (#5185).
           if (seen.has(item.id) || elsewhere.has(item.id)) continue;
           seen.add(item.id);
           if (next.depth + 1 >= DRIVE_MAX_DEPTH) {

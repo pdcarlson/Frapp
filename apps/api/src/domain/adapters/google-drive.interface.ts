@@ -20,13 +20,13 @@ export interface GoogleDriveItem {
   /** The item's page in Drive. */
   webViewLink: string | null;
   /**
-   * The item's Description in Drive. Read by `getItem` only (a listing
-   * leaves it out), for the connect check's code (#5185).
+   * The item's Description in Drive, for the connect check's code (#5185).
+   * Only `getItem` asks Google for it: a listing's items always carry null.
    */
   description?: string | null;
   /**
    * The folders that hold it, as far as the service account can see them.
-   * Read by `getItem` only.
+   * Only `getItem` asks Google for them: a listing's items always carry [].
    */
   parents?: string[];
 }

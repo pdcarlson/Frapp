@@ -128,7 +128,9 @@ describe('GoogleDriveSyncService', () => {
       findLive: jest.fn(),
       findAny: jest.fn(),
       folderTakenElsewhere: jest.fn(),
-      liveFolderIdsElsewhere: jest.fn().mockResolvedValue(new Set()),
+      folderIdsConnectedEarlierElsewhere: jest
+        .fn()
+        .mockResolvedValue(new Set()),
       create: jest.fn(),
       markDue: jest.fn(),
       disconnect: jest.fn(),
@@ -286,17 +288,20 @@ describe('GoogleDriveSyncService', () => {
     ]);
   });
 
-  // #5185: a folder this chapter's tree holds that another chapter has
-  // connected is that chapter's, and is never read into this one.
-  it('never reads in another chapter’s connected folder from inside the tree', async () => {
-    connections.liveFolderIdsElsewhere.mockResolvedValue(new Set(['theirs']));
+  // #5185: a folder this chapter's tree holds that another chapter
+  // connected first is that chapter's, and is never read into this one.
+  it('never reads in a folder another chapter connected first', async () => {
+    connections.folderIdsConnectedEarlierElsewhere.mockResolvedValue(
+      new Set(['theirs']),
+    );
     tree[ROOT] = [folder('theirs', 'Their files'), folder('ours', 'Rush')];
     tree.theirs = [item({ id: 'secret', name: 'Minutes.pdf' })];
 
     await service.process(connection(), NOW);
 
-    expect(connections.liveFolderIdsElsewhere).toHaveBeenCalledWith(
+    expect(connections.folderIdsConnectedEarlierElsewhere).toHaveBeenCalledWith(
       connection().chapter_id,
+      connection().created_at,
     );
     expect(drive.listChildren).not.toHaveBeenCalledWith('theirs');
     expect(folderRows.map((row) => row.drive_folder_id)).not.toContain(

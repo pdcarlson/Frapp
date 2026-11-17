@@ -19,11 +19,15 @@ import {
 } from '#domain/repositories/chapter-drive.repository.interface';
 import type { ChapterDriveConnection } from '#domain/entities/chapter-drive-connection.entity';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
+import { normalizeManualCode } from '#domain/utils/check-in-token';
 import { ChapterDocumentService } from '../chapter-document.service';
 import { toReportableError } from '../../../infrastructure/observability/reportable-error';
 
-/** Folders read up the tree from the one being connected. */
-const MAX_ANCESTORS = 10;
+/**
+ * Folders read up the tree from the one being connected: Drive's own nesting
+ * limit, so the walk ends where Frapp can no longer see a parent, not sooner.
+ */
+const MAX_ANCESTORS = 100;
 
 export interface GoogleDriveStatus {
   available: boolean;
@@ -99,8 +103,10 @@ export class GoogleDriveService {
         'That link is to a file, not a folder. Connect the folder that holds it.',
       );
     }
-    await this.requireProof(chapterId, folder);
+    // Taken first, so an editor of another chapter's folder is refused
+    // before being asked to rename it (which that chapter would then see).
     await this.refuseIfTaken(chapterId, folder);
+    await this.requireProof(chapterId, folder);
     try {
       await this.connections.create({
         chapter_id: chapterId,
@@ -139,8 +145,11 @@ export class GoogleDriveService {
         'Google Drive isn’t available on this server yet.',
       );
     }
+    // Case, spaces, dashes and the Crockford look-alikes (I or L for 1, O
+    // for 0) don't matter, as with a check-in code typed by hand.
+    const wanted = normalizeManualCode(code);
     const holds = (text: string | null | undefined) =>
-      !!text && text.toLowerCase().includes(code);
+      !!text && normalizeManualCode(text).includes(wanted);
     if (holds(folder.name) || holds(folder.description)) return;
     const children = await this.fromDrive(
       () => this.drive.listChildren(folder.id),

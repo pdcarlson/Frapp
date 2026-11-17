@@ -69,7 +69,9 @@ describe('GoogleDriveService', () => {
       findLive: jest.fn().mockResolvedValue(null),
       findAny: jest.fn().mockResolvedValue(null),
       folderTakenElsewhere: jest.fn().mockResolvedValue(false),
-      liveFolderIdsElsewhere: jest.fn().mockResolvedValue(new Set()),
+      folderIdsConnectedEarlierElsewhere: jest
+        .fn()
+        .mockResolvedValue(new Set()),
       create: jest.fn().mockResolvedValue(live()),
       markDue: jest.fn().mockResolvedValue(true),
       disconnect: jest.fn().mockResolvedValue(true),
@@ -196,7 +198,25 @@ describe('GoogleDriveService', () => {
       await expect(attempt).rejects.toThrow(BadRequestException);
       await expect(attempt).rejects.toThrow(CODE);
       expect(repo.create).not.toHaveBeenCalled();
-      expect(repo.folderTakenElsewhere).not.toHaveBeenCalled();
+    });
+
+    it('refuses a taken folder before asking for the code, so nobody renames another chapter’s folder', async () => {
+      drive.getItem.mockResolvedValue(plain());
+      repo.folderTakenElsewhere.mockResolvedValue(true);
+
+      await expect(
+        service.connect('ch-1', 'user-1', FOLDER_ID),
+      ).rejects.toThrow(ConflictException);
+      expect(drive.listChildren).not.toHaveBeenCalled();
+    });
+
+    it('takes a code typed by hand, with look-alike letters and spacing', async () => {
+      // frapp-k3x9qm2p typed as "FRAPP K3X9QM2P" with the 2 fine, and an O
+      // for a 0 elsewhere would match too.
+      drive.proofCode.mockReturnValue('frapp-k3x0qm1p');
+      drive.getItem.mockResolvedValue(plain({ name: 'Rush FRAPP K3XO QMLP' }));
+      await service.connect('ch-1', 'user-1', FOLDER_ID);
+      expect(repo.create).toHaveBeenCalled();
     });
 
     it.each([
