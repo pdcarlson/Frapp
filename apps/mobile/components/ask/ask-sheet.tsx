@@ -24,6 +24,7 @@ import {
   useAskStatus,
   useAskStarter,
   useAskSuggestions,
+  useCleanDictation,
   useViewerDisplayName,
   useViewerUserId,
   type AskOptions,
@@ -38,6 +39,15 @@ import {
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskSendGlyph } from "@/components/ask/ask-bar";
+import {
+  DictationDone,
+  DictationHeard,
+  DictationListening,
+  DictationMic,
+  DictationNotice,
+  DictationOriginal,
+  DictationTidying,
+} from "@/components/ask/ask-dictation";
 import { AskOpening } from "@/components/ask/ask-opening";
 import { AskTurn } from "@/components/ask/ask-turn";
 import {
@@ -59,9 +69,10 @@ import {
 } from "@/components/sheet-scaffold";
 import { useActActions, useMayAct } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { useDictation } from "@/lib/dictation/use-dictation";
 import {
-  fieldTypeRole,
   fontFamilyFor,
+  tint,
   typeRole,
   useFrappTheme,
 } from "@/lib/theme";
@@ -280,6 +291,27 @@ export const AskSheet = forwardRef<
   });
 
   const [draft, setDraft] = useState(initialDraft ?? "");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  // Tidied dictation just landed: what the Original chip puts back, until the
+  // member types or sends (#5276).
+  const [original, setOriginal] = useState<{
+    tidied: string;
+    restore: string;
+  } | null>(null);
+  const cleanDictation = useCleanDictation();
+  const dictation = useDictation({
+    clean: cleanDictation,
+    onText: (text, heard) => {
+      const before = draftRef.current;
+      const tidied = joinDraft(before, text);
+      const restore = joinDraft(before, heard);
+      setDraft(tidied);
+      setOriginal(tidied === restore ? null : { tidied, restore });
+    },
+  });
+  const listening = dictation.phase === "listening";
+  const tidying = dictation.phase === "cleaning";
   const leftForSource = useRef(false);
   const scroller = useRef<BottomSheetScrollViewMethods>(null);
   // Whether the member is reading the newest words: only then does the
@@ -325,13 +357,15 @@ export const AskSheet = forwardRef<
     workingRef.current = working;
     askedHereRef.current = askedHere;
   }, [working, askedHere]);
+  const cancelDictation = dictation.cancel;
   const onDismiss = useCallback(() => {
     setShownOpen(false);
+    cancelDictation();
     if (askedHereRef.current) stop();
     const left = leftForSource.current;
     leftForSource.current = false;
     onClosed?.(left);
-  }, [onClosed, stop]);
+  }, [onClosed, stop, cancelDictation]);
 
   const options = useCallback(
     (): AskOptions => ({
@@ -361,6 +395,7 @@ export const AskSheet = forwardRef<
     (text: string) => {
       if (!text.trim() || workingRef.current) return;
       setDraft("");
+      setOriginal(null);
       clearNotice();
       void ask(text, options());
     },
@@ -381,7 +416,7 @@ export const AskSheet = forwardRef<
     [ask, options, clearNotice],
   );
 
-  const canSend = draft.trim().length > 0 && !working;
+  const canSend = draft.trim().length > 0 && !working && !tidying;
 
   return (
     <>
@@ -500,37 +535,98 @@ export const AskSheet = forwardRef<
               {askSavedLine(formatAiAnswerDate(savedUntil))}
             </Text>
           ) : null}
-          <View style={styles.composerRow}>
-            {/* `BottomSheetTextInput`, never a plain `TextInput`
-                (`patterns.md` § Bottom sheets). */}
-            <BottomSheetTextInput
-              value={draft}
-              onChangeText={setDraft}
-              onSubmitEditing={() => submit(draft)}
-              maxLength={ASK_QUESTION_MAX_LENGTH}
-              placeholder={ASK_COPY.placeholder}
-              placeholderTextColor={tokens.color.text.muted}
-              accessibilityLabel={ASK_COPY.placeholder}
-              returnKeyType="send"
-              style={styles.composerField}
+          {listening ? <DictationHeard words={dictation.words} /> : null}
+          {dictation.failure !== null && dictation.phase === "idle" ? (
+            <DictationNotice
+              failure={dictation.failure}
+              onDismiss={dictation.dismiss}
             />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={ASK_COPY.send}
-              accessibilityState={{ disabled: !canSend }}
-              disabled={!canSend}
-              // 40pt drawn against the 44pt minimum.
-              hitSlop={2}
-              onPress={() => submit(draft)}
-              style={({ pressed }) => [
-                styles.send,
-                { backgroundColor: accentPrimary },
-                !canSend ? styles.sendDisabled : null,
-                pressed && canSend ? styles.pressed : null,
+          ) : null}
+          {original !== null && dictation.phase === "idle" ? (
+            <DictationOriginal
+              onPress={() => {
+                setDraft(original.restore);
+                setOriginal(null);
+              }}
+            />
+          ) : null}
+          <View style={styles.composerRow}>
+            <View
+              style={[
+                styles.field,
+                listening
+                  ? { borderColor: accent, backgroundColor: tint(accent) }
+                  : null,
               ]}
             >
-              <AskSendGlyph color={accentOnPrimary} />
-            </Pressable>
+              {listening ? (
+                <DictationListening
+                  levels={dictation.levels}
+                  seconds={dictation.seconds}
+                  onCancel={dictation.cancel}
+                  accent={accent}
+                />
+              ) : tidying ? (
+                <DictationTidying words={dictation.words} />
+              ) : (
+                <>
+                  {/* `BottomSheetTextInput`, never a plain `TextInput`
+                      (`patterns.md` § Bottom sheets). Multiline, so a
+                      dictated paragraph shows whole, up to five lines. */}
+                  <BottomSheetTextInput
+                    value={draft}
+                    onChangeText={(next) => {
+                      setDraft(next);
+                      if (original !== null && next !== original.tidied) {
+                        setOriginal(null);
+                      }
+                    }}
+                    onSubmitEditing={() => submit(draft)}
+                    multiline
+                    submitBehavior="submit"
+                    maxLength={ASK_QUESTION_MAX_LENGTH}
+                    placeholder={ASK_COPY.placeholder}
+                    placeholderTextColor={tokens.color.text.muted}
+                    accessibilityLabel={ASK_COPY.placeholder}
+                    returnKeyType="send"
+                    style={styles.composerField}
+                  />
+                  {dictation.available ? (
+                    <DictationMic
+                      onPress={() => {
+                        setOriginal(null);
+                        dictation.start();
+                      }}
+                    />
+                  ) : null}
+                </>
+              )}
+            </View>
+            {listening ? (
+              <DictationDone
+                onPress={dictation.finish}
+                fill={accentPrimary}
+                color={accentOnPrimary}
+              />
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={ASK_COPY.send}
+                accessibilityState={{ disabled: !canSend }}
+                disabled={!canSend}
+                // 40pt drawn against the 44pt minimum.
+                hitSlop={2}
+                onPress={() => submit(draft)}
+                style={({ pressed }) => [
+                  styles.send,
+                  { backgroundColor: accentPrimary },
+                  !canSend ? styles.sendDisabled : null,
+                  pressed && canSend ? styles.pressed : null,
+                ]}
+              >
+                <AskSendGlyph color={accentOnPrimary} />
+              </Pressable>
+            )}
           </View>
         </View>
       </BottomSheetModal>
@@ -540,7 +636,23 @@ export const AskSheet = forwardRef<
   );
 });
 
+/** The composer's line height: chat's, so a dictated paragraph reads the same. */
+const FIELD_LINE_HEIGHT = 20;
+const FIELD_MAX_LINES = 5;
+const FIELD_BORDER = 1;
+
+/** Typed or tidied words after what is already in the field. */
+function joinDraft(before: string, added: string): string {
+  const head = before.trimEnd();
+  const next = head ? `${head} ${added.trim()}` : added.trim();
+  return next.slice(0, ASK_QUESTION_MAX_LENGTH);
+}
+
 function createStyles(tokens: SignetTokens) {
+  // What is left of the 44pt field once one line and the border are drawn,
+  // split above and below.
+  const fieldPaddingY =
+    (tokens.touch.button - FIELD_LINE_HEIGHT - 2 * FIELD_BORDER) / 2;
   return StyleSheet.create({
     scroll: {
       // Takes the space the header and the composer do
@@ -604,19 +716,44 @@ function createStyles(tokens: SignetTokens) {
     },
     composerRow: {
       flexDirection: "row",
-      alignItems: "center",
+      // A field grown to several lines keeps send at its foot, by the thumb.
+      alignItems: "flex-end",
       gap: tokens.spacing.sm,
+    },
+    field: {
+      flex: 1,
+      flexDirection: "row",
+      alignItems: "flex-end",
+      minHeight: tokens.touch.button,
+      // A capsule at one line, the shape of the bar that opened the sheet; a
+      // rounded box as dictated lines grow it.
+      borderRadius: tokens.touch.button / 2,
+      borderWidth: FIELD_BORDER,
+      borderColor: tokens.color.border.control,
+      backgroundColor: tokens.color.surface.surface1,
+      // Centres the 32pt mic on a one-line field's midline.
+      paddingRight: (tokens.touch.button - 2 * FIELD_BORDER - 32) / 2,
+      paddingBottom: (tokens.touch.button - 2 * FIELD_BORDER - 32) / 2,
     },
     composerField: {
       flex: 1,
-      height: tokens.touch.button,
-      // A capsule, the shape of the bar that opened the sheet.
-      borderRadius: tokens.touch.button / 2,
-      borderWidth: 1,
-      borderColor: tokens.color.border.control,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.lg,
-      ...fieldTypeRole(tokens.typography.role.body),
+      // One line at the field's 44pt, five before it scrolls.
+      maxHeight: FIELD_LINE_HEIGHT * FIELD_MAX_LINES + 2 * fieldPaddingY,
+      // Top and bottom set apart, not `paddingVertical`: iOS gives a multiline
+      // input a default top inset that only an explicit `paddingTop` replaces
+      // (`chat-composer.tsx`, the same field shape). The negative margin
+      // undoes the row's bottom padding, which is the mic's.
+      paddingTop: fieldPaddingY,
+      paddingBottom: fieldPaddingY,
+      marginBottom: -(tokens.touch.button - 2 * FIELD_BORDER - 32) / 2,
+      paddingLeft: tokens.spacing.lg,
+      paddingRight: tokens.spacing.sm,
+      ...typeRole({
+        ...tokens.typography.role.body,
+        lineHeight: FIELD_LINE_HEIGHT,
+      }),
+      includeFontPadding: false,
+      textAlignVertical: "center",
       color: tokens.color.text.foreground,
     },
     send: {

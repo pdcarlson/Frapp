@@ -28,7 +28,7 @@ before you pick up a phone.
 
 Rows marked **iPhone** or **Android** run on that phone only. The rest run on both. A row runs on
 one phone when what it checks is shared JavaScript with nothing native under it; that is what
-keeps the pass short: the section times add to about twenty-one minutes, with both phones side by
+keeps the pass short: the section times add to about twenty-four minutes, with both phones side by
 side.
 
 The [automated flows](#what-the-automated-flows-cover) haven't had their first run yet (they need
@@ -102,6 +102,13 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 | 27 | Android | On the iPhone, open an event that is happening now and show its check-in code. On the Android phone, signed in as a member without host rights, open the same event in Frapp and tap Scan code. Choose Don't allow, tap Allow camera, and allow it this time. Point it at the code | Android asks again after the first no; the viewport comes up, reads the code, and checks you in | #4942 |
 | 28 | Android | Point the Android phone's own camera app at the same code and tap the link it offers | Frapp opens on the check-in and says "You're already checked in" (row 27), not a browser page with Open in Frapp | #4763 |
 | 29 | iPhone | On the Android phone, start a second event that's happening now and show its code. On the iPhone, signed in as a member without host rights, open it, tap Scan code, and choose Don't Allow. Tap Open Settings and turn on Camera for Frapp. iOS restarts Frapp when a permission changes, so open the event again and tap Scan code | After the restart the viewport comes up with no prompt, reads the code, and checks you in | #4942 |
+
+## 9. Dictate to Ask Frapp (3 minutes)
+
+| # | Phone | Do | Expect | From |
+|---|---|---|---|---|
+| 30 | Both | Open Ask Frapp and tap the mic inside the field. Allow the microphone (and Speech Recognition on iPhone). Say "so um can you remind the rush chairs that the uh bid dinner moved to Thursday no Friday at seven", then tap the check | While you talk the field shows a moving waveform in the chapter's colour and a clock, with your words faint above it. After the check they pulse for about a second, then the box reads close to "Can you remind the rush chairs that the bid dinner moved to Friday at 7?", nothing has been sent, and Original puts back what you said | #5276 |
+| 31 | iPhone | Tap the mic, then the X. Then put the phone in airplane mode and dictate a sentence | X leaves the box as it was. Offline the words still land, as heard, and on most iPhones the waveform and words work with no connection | #5276 |
 
 ## What the pass leaves out, and why
 

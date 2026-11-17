@@ -103,10 +103,34 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useCurrentUser: () => ({ data: { id: "me" } }),
   useViewerUserId: () => "me",
   useViewerDisplayName: () => "Marcus Ellison",
+  useCleanDictation: () => dictating.clean,
   useAskStarter: () => ({
     mode: hooks.starter ? "starter" : "greeting",
     starterShown: hooks.starterShown,
   }),
+}));
+
+// Dictation (#5276): the phone's recogniser and the cleanup call, faked.
+const dictating = vi.hoisted(() => ({
+  available: false,
+  granted: true,
+  handlers: null as null | {
+    onWords: (text: string) => void;
+    onLevel: (level: number) => void;
+    onEnd: (text: string) => void;
+    onFailure: (failure: string) => void;
+  },
+  finish: vi.fn(),
+  cancel: vi.fn(),
+  clean: vi.fn(async (text: string): Promise<string | null> => text),
+}));
+vi.mock("@/lib/dictation/speech", () => ({
+  isDictationAvailable: () => dictating.available,
+  requestDictationPermission: async () => dictating.granted,
+  startDictation: (handlers: typeof dictating.handlers) => {
+    dictating.handlers = handlers;
+    return { finish: dictating.finish, cancel: dictating.cancel };
+  },
 }));
 
 const gate = vi.hoisted(() => ({ ensureConsent: vi.fn() }));
@@ -1059,5 +1083,121 @@ describe("sending with the keyboard up (#5426)", () => {
     room = ROOM.keyboardUp;
     layout(tree);
     expect(native().offset).toBe(0);
+  });
+});
+
+describe("dictation (#5276)", () => {
+  beforeEach(() => {
+    dictating.available = true;
+    dictating.granted = true;
+    dictating.handlers = null;
+    dictating.finish.mockReset();
+    dictating.cancel.mockReset();
+    dictating.clean.mockReset();
+    dictating.clean.mockImplementation(async (text: string) =>
+      text.replace(/^so um /, "").replace(/^./, (c) => c.toUpperCase()) + "?",
+    );
+  });
+  afterEach(() => {
+    dictating.available = false;
+  });
+
+  const mic = (tree: ReactTestRenderer) => byLabel(tree, "Dictate");
+
+  async function dictate(tree: ReactTestRenderer, heard: string) {
+    await act(async () => mic(tree)[0]!.props.onPress());
+    act(() => dictating.handlers!.onWords(heard));
+    act(() => byLabel(tree, "Done")[0]!.props.onPress());
+    await act(async () => dictating.handlers!.onEnd(heard));
+  }
+
+  it("draws no mic where the phone can't dictate", () => {
+    dictating.available = false;
+    const tree = render();
+    expect(mic(tree)).toHaveLength(0);
+  });
+
+  it("listens in the field, with cancel and Done in send's place, then lands the tidied words without sending", async () => {
+    const tree = render();
+    expect(mic(tree)).toHaveLength(1);
+
+    await act(async () => mic(tree)[0]!.props.onPress());
+    expect(byLabel(tree, "Listening")).toHaveLength(1);
+    expect(byLabel(tree, "Cancel dictation")).toHaveLength(1);
+    expect(byLabel(tree, ASK_COPY.send)).toHaveLength(0);
+    act(() => dictating.handlers!.onWords("so um can you remind"));
+    expect(screenText(tree)).toContain("so um can you remind");
+
+    act(() => byLabel(tree, "Done")[0]!.props.onPress());
+    expect(dictating.finish).toHaveBeenCalled();
+    await act(async () =>
+      dictating.handlers!.onEnd("so um can you remind the rush chairs"),
+    );
+
+    expect(dictating.clean).toHaveBeenCalledWith(
+      "so um can you remind the rush chairs",
+      expect.anything(),
+    );
+    expect(field(tree).props.value).toBe("Can you remind the rush chairs?");
+    expect(hooks.ask).not.toHaveBeenCalled();
+    expect(byLabel(tree, ASK_COPY.send)[0]!.props.accessibilityState).toEqual({
+      disabled: false,
+    });
+  });
+
+  it("adds dictation after words already typed", async () => {
+    const tree = render();
+    act(() => field(tree).props.onChangeText("Quick one:"));
+    await dictate(tree, "so um who has the keys");
+    expect(field(tree).props.value).toBe("Quick one: Who has the keys?");
+  });
+
+  it("puts back the words as spoken from the Original chip, until the member types", async () => {
+    const tree = render();
+    await dictate(tree, "so um who has the keys");
+    act(() => byLabel(tree, "Original")[0]!.props.onPress());
+    expect(field(tree).props.value).toBe("so um who has the keys");
+    expect(byLabel(tree, "Original")).toHaveLength(0);
+
+    await dictate(tree, "so um and the van");
+    expect(byLabel(tree, "Original")).toHaveLength(1);
+    act(() => field(tree).props.onChangeText(field(tree).props.value + "!"));
+    expect(byLabel(tree, "Original")).toHaveLength(0);
+  });
+
+  it("keeps the words as heard when the cleanup gives nothing back", async () => {
+    dictating.clean.mockResolvedValue(null);
+    const tree = render();
+    await dictate(tree, "move it to friday");
+    expect(field(tree).props.value).toBe("move it to friday");
+    expect(byLabel(tree, "Original")).toHaveLength(0);
+  });
+
+  it("drops what was heard on cancel", async () => {
+    const tree = render();
+    await act(async () => mic(tree)[0]!.props.onPress());
+    act(() => dictating.handlers!.onWords("never mind"));
+    act(() => byLabel(tree, "Cancel dictation")[0]!.props.onPress());
+    expect(dictating.cancel).toHaveBeenCalled();
+    expect(field(tree).props.value).toBe("");
+    expect(byLabel(tree, ASK_COPY.send)).toHaveLength(1);
+  });
+
+  it("says why when the microphone is refused, with a way to Settings", async () => {
+    dictating.granted = false;
+    const tree = render();
+    await act(async () => mic(tree)[0]!.props.onPress());
+    expect(screenText(tree)).toContain(
+      "Frapp can't use the microphone or speech recognition.",
+    );
+    expect(screenText(tree)).toContain("Open Settings");
+  });
+
+  it("stops listening when the sheet closes", async () => {
+    const tree = render();
+    open(tree);
+    await act(async () => mic(tree)[0]!.props.onPress());
+    act(() => sheet(tree).props.onDismiss());
+    expect(dictating.cancel).toHaveBeenCalled();
   });
 });
