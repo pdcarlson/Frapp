@@ -21,9 +21,14 @@ const CONN_B = '0b000000-0000-4000-8000-000000000510';
 const CONN_A_OLD = '0a000000-0000-4000-8000-000000000511';
 const CONN_B_OLD = '0b000000-0000-4000-8000-000000000511';
 
-const connection = (id: string, status: string) => ({
+const connection = (
+  id: string,
+  status: string,
+  folderId: string,
+  createdAt = '2026-11-16T00:00:00.000Z',
+) => ({
   id,
-  folder_id: 'folder-1',
+  folder_id: folderId,
   folder_name: 'Chapter files',
   connected_by: USER_SHARED,
   status,
@@ -34,15 +39,27 @@ const connection = (id: string, status: string) => ({
   synced_count: 0,
   skipped_count: 0,
   folders_left_out: 0,
-  created_at: '2026-11-16T00:00:00.000Z',
+  created_at: createdAt,
 });
 
 const seed = () => ({
   chapter_drive_connections: [
-    inA(connection(CONN_A, 'active')),
-    inB(connection(CONN_B, 'active')),
-    inA(connection(CONN_A_OLD, 'disconnecting')),
-    inB(connection(CONN_B_OLD, 'disconnecting')),
+    inA(connection(CONN_A, 'active', 'folder-a')),
+    inB(connection(CONN_B, 'active', 'folder-b', '2026-11-16T01:00:00.000Z')),
+    inA(connection(CONN_A_OLD, 'disconnecting', 'folder-old-a')),
+    inB(connection(CONN_B_OLD, 'disconnecting', 'folder-old-b')),
+  ],
+  chapter_document_folders: [
+    inA({
+      id: '0a000000-0000-4000-8000-000000000512',
+      name: 'Chapter files / Rush',
+      drive_folder_id: 'sub-a',
+    }),
+    inB({
+      id: '0b000000-0000-4000-8000-000000000512',
+      name: 'Chapter files / Rush',
+      drive_folder_id: 'sub-1',
+    }),
   ],
 });
 
@@ -56,7 +73,10 @@ describe('SupabaseChapterDriveRepository — tenant scope', () => {
     harness = createTenantHarness({
       tables: seed(),
       // Two chapters may share one Drive folder with Frapp.
-      collisionExempt: { chapter_drive_connections: ['folder_id'] },
+      collisionExempt: {
+        chapter_drive_connections: ['folder_id', 'created_at'],
+        chapter_document_folders: ['drive_folder_id'],
+      },
     });
     repo = new SupabaseChapterDriveRepository(harness.client);
   });
@@ -94,6 +114,42 @@ describe('SupabaseChapterDriveRepository — tenant scope', () => {
     expect(done).toBe(true);
     expect(row(CONN_B)?.status).toBe('disconnecting');
     expect(row(CONN_A)?.status).toBe('active');
+  });
+
+  // #5185: answers only whether a folder is taken elsewhere, never rows.
+  it('folderTakenElsewhere sees other chapters’ live and synced folders, not the caller’s or a leaving one', async () => {
+    const taken = (chapter: string, ids: string[]) =>
+      repo.folderTakenElsewhere(chapter, ids);
+    await expect(taken(CHAPTER_A, ['folder-b'])).resolves.toBe(true);
+    await expect(taken(CHAPTER_A, ['x', 'sub-1'])).resolves.toBe(true);
+    await expect(taken(CHAPTER_A, ['folder-a'])).resolves.toBe(false);
+    await expect(taken(CHAPTER_A, ['folder-old-b'])).resolves.toBe(false);
+    await expect(taken(CHAPTER_B, ['sub-1'])).resolves.toBe(false);
+    await expect(taken(CHAPTER_A, ['x'])).resolves.toBe(false);
+    await expect(taken(CHAPTER_A, [])).resolves.toBe(false);
+
+    // B leaving: its synced folders are on their way out.
+    await repo.disconnect(CHAPTER_B, new Date('2026-11-16T02:00:00.000Z'));
+    await expect(taken(CHAPTER_A, ['sub-1'])).resolves.toBe(false);
+    await expect(taken(CHAPTER_A, ['folder-b'])).resolves.toBe(false);
+  });
+
+  it('folderIdsConnectedEarlierElsewhere lists other chapters’ live folders connected first', async () => {
+    const earlier = (chapter: string, at: string) =>
+      repo.folderIdsConnectedEarlierElsewhere(chapter, at);
+    await expect(
+      earlier(CHAPTER_A, '2026-11-16T02:00:00.000Z'),
+    ).resolves.toEqual(new Set(['folder-b']));
+    await expect(
+      earlier(CHAPTER_A, '2026-11-16T00:30:00.000Z'),
+    ).resolves.toEqual(new Set());
+    await expect(
+      earlier(CHAPTER_B, '2026-11-16T02:00:00.000Z'),
+    ).resolves.toEqual(new Set(['folder-a']));
+    await repo.disconnect(CHAPTER_B, new Date('2026-11-16T02:00:00.000Z'));
+    await expect(
+      earlier(CHAPTER_A, '2026-11-16T02:00:00.000Z'),
+    ).resolves.toEqual(new Set());
   });
 
   it('finishSync leaves a disconnecting row disconnecting', async () => {
