@@ -17,7 +17,7 @@ import { EventRowFlat } from "@/components/events/event-rows";
 import { CalendarTaskRow } from "@/components/events/calendar-tasks";
 import { EventsTimeGrid } from "@/components/events/events-time-grid";
 import { Segmented } from "@/components/segmented";
-import { useRequiredOfViewer } from "@repo/hooks";
+import { seriesCadenceOf, useRequiredOfViewer } from "@repo/hooks";
 import { consecutiveDays } from "@repo/hooks/calendar-time-grid";
 import type { CalendarItem } from "@repo/hooks/calendar-tasks";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -26,7 +26,7 @@ import {
   type CalendarRange,
 } from "@/lib/events/events-view";
 import { monthCellSummary } from "@/lib/events/month-cell";
-import { selectSeriesCadence, type EventRow } from "@/lib/events/select";
+import type { EventRow } from "@/lib/events/select";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -399,7 +399,7 @@ export function EventsCalendar({
                   <EventRowFlat
                     key={event.id}
                     event={event}
-                    cadence={selectSeriesCadence(events, event)}
+                    cadence={seriesCadenceOf(events, event)}
                     now={now}
                     isFirst={index === 0}
                     onPress={() => onOpen(event.id)}

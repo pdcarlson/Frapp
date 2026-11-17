@@ -5,6 +5,7 @@ import {
   horizonEnd,
   isSeriesEvent,
   seriesCadenceLabel,
+  seriesCadenceOf,
   ruleTokenLabel,
   seriesHeadOf,
   splitByHorizon,
@@ -229,5 +230,67 @@ describe("seriesCadenceLabel", () => {
     expect(seriesCadenceLabel(null, sunday)).toBeNull();
     expect(seriesCadenceLabel("", sunday)).toBeNull();
     expect(seriesCadenceLabel("WEEKLY", "nope")).toBeNull();
+  });
+});
+
+describe("seriesCadenceOf", () => {
+  // Built from local parts so the day holds in any test zone.
+  const row = (id: string, start: Date, extra: Partial<Row> = {}): Row => ({
+    id,
+    name: "Chapter",
+    start_time: start.toISOString(),
+    recurrence_rule: id === "head" ? "WEEKLY" : null,
+    parent_event_id: id === "head" ? null : "head",
+    ...extra,
+  });
+
+  it("keeps the series' weekday when the head alone is moved", () => {
+    // The head moved to Monday Nov 9 on its own; the rest meet Sundays.
+    const rows = [
+      row("head", new Date(2026, 10, 9, 18)),
+      row("c1", new Date(2026, 10, 15, 18)),
+      row("c2", new Date(2026, 10, 22, 18)),
+    ];
+    expect(rows.map((event) => seriesCadenceOf(rows, event))).toEqual([
+      "Every Sunday",
+      "Every Sunday",
+      "Every Sunday",
+    ]);
+  });
+
+  it("reads a monthly occurrence clamped to the 30th as the 31st", () => {
+    const rows = [
+      row("head", new Date(2027, 2, 31, 18), { recurrence_rule: "MONTHLY" }),
+      row("c1", new Date(2027, 3, 30, 18)),
+      row("c2", new Date(2027, 4, 31, 18)),
+    ];
+    expect(seriesCadenceOf(rows, rows[1]!)).toBe("Every month on the 31st");
+  });
+
+  it("reads the rule off the head itself, even when the head isn't listed", () => {
+    const head = row("head", new Date(2026, 10, 15, 18), {
+      recurrence_rule: "BIWEEKLY",
+    });
+    expect(seriesCadenceOf([], head)).toBe("Every other Sunday");
+  });
+
+  it("says nothing for a one-time event or a series without its head", () => {
+    const solo = row("solo", new Date(2026, 10, 12, 18), {
+      parent_event_id: null,
+    });
+    const orphan = row("orphan", new Date(2026, 10, 15, 18), {
+      parent_event_id: "gone",
+    });
+    const rows = [solo, orphan];
+    expect(seriesCadenceOf(rows, solo)).toBeNull();
+    expect(seriesCadenceOf(rows, orphan)).toBeNull();
+  });
+
+  it("says nothing when the head has lost its rule", () => {
+    const rows = [
+      row("head", new Date(2026, 10, 15, 18), { recurrence_rule: null }),
+      row("c1", new Date(2026, 10, 22, 18)),
+    ];
+    expect(seriesCadenceOf(rows, rows[1]!)).toBeNull();
   });
 });

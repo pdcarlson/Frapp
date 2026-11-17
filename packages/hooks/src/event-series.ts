@@ -278,3 +278,34 @@ export function seriesCadenceLabel(
     }
   }
 }
+
+/**
+ * How often `event`'s series meets ("Every Sunday"), as a series row says it
+ * on web's Events list and on mobile's list, calendar and event page, or
+ * `null` for a one-time event or a series whose head isn't among `events`.
+ *
+ * The rule is the head's (`event`'s own when it is the head; a generated
+ * meeting carries none); the day is the one most of the series' meetings in
+ * `events` share (`seriesCadenceLabel`), never `event`'s own: an occurrence the
+ * API clamped to the 30th, or one an officer moved to a Monday, belongs to a
+ * series that still meets on the 31st or on Sundays.
+ */
+export function seriesCadenceOf(
+  events: readonly SeriesEventLike[],
+  event: SeriesEventLike,
+): string | null {
+  const key = eventSeriesKey(event);
+  if (!key) return null;
+  const rule =
+    key === event.id
+      ? event.recurrence_rule
+      : seriesHeadOf(key, events)?.recurrence_rule;
+  if (!rule) return null;
+  return seriesCadenceLabel(
+    rule,
+    event.start_time,
+    events
+      .filter((row) => eventSeriesKey(row) === key)
+      .map((row) => row.start_time),
+  );
+}

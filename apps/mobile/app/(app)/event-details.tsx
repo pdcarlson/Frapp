@@ -14,6 +14,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   eventSeriesKey,
+  seriesCadenceOf,
   useEvent,
   useEvents,
   useMyAttendance,
@@ -59,7 +60,6 @@ import {
   selectAllEventRows,
   selectEventDetail,
   selectMyAttendance,
-  selectSeriesCadence,
   selectSeriesName,
   selectSeriesOccurrences,
   withoutMeetingLists,
@@ -636,7 +636,7 @@ function SeriesSection({ event, now }: { event: EventDetail; now: Date }) {
       ? rows
       : sortEventsByStart([event, ...rows]);
     return {
-      cadence: selectSeriesCadence(all, event),
+      cadence: seriesCadenceOf(all, event),
       name: (key ? selectSeriesName(all, key) : null) ?? event.name,
     };
   }, [rows, event, key]);

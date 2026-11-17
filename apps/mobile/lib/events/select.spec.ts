@@ -1,3 +1,4 @@
+import { seriesCadenceOf } from "@repo/hooks";
 import { describe, expect, it } from "vitest";
 import {
   selectAllEventRows,
@@ -5,7 +6,6 @@ import {
   withoutMeetingLists,
   selectEventList,
   selectMyAttendance,
-  selectSeriesCadence,
   selectSeriesName,
   selectSeriesOccurrences,
 } from "./select";
@@ -299,7 +299,7 @@ describe("the series as a whole", () => {
       meeting("c2", 22),
     ]);
     for (const row of rows) {
-      expect(selectSeriesCadence(rows, row)).toBe("Every Sunday");
+      expect(seriesCadenceOf(rows, row)).toBe("Every Sunday");
     }
   });
 
@@ -308,10 +308,7 @@ describe("the series as a whole", () => {
       meeting("solo", 12, { parent_event_id: null }),
       meeting("orphan", 15, { parent_event_id: "gone" }),
     ]);
-    expect(rows.map((row) => selectSeriesCadence(rows, row))).toEqual([
-      null,
-      null,
-    ]);
+    expect(rows.map((row) => seriesCadenceOf(rows, row))).toEqual([null, null]);
   });
 
   it("names the series by what most of its meetings are called", () => {
