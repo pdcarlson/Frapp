@@ -48,6 +48,7 @@ import {
   MESSAGE_FLAG_OPTIONS,
   canFlagMessage,
   messageFlagCaption,
+  messageFlagOptions,
   messageFlagView,
   type MessageFlagView,
 } from "@repo/chat-core/flags";
@@ -302,6 +303,12 @@ export interface MessageItemProps {
   /** Gates the Delete affordance on messages that aren't the viewer's own. */
   canManageChannel?: boolean;
   /**
+   * The row is in the chapter's audit log (#3909): Frapp's entries offer no
+   * Delete, and the Flag control only takes a flag off
+   * (`auditLogAllowsChange`, which the API enforces).
+   */
+  inAuditLog?: boolean;
+  /**
    * Opens the report form for this message (#2687). Offered on anyone else's
    * confirmed message (`canReportMessage`), never the viewer's own.
    */
@@ -452,6 +459,7 @@ export function MessageItem({
   onToggleBookmark,
   onRemind,
   canManageChannel,
+  inAuditLog = false,
   onReport,
   onForward,
   onBlock,
@@ -518,7 +526,8 @@ export function MessageItem({
       : null;
   const importantRow = flagView?.important === true;
   const canFlag =
-    !!onFlag && canFlagMessage(message, viewerId, !!canManageChannel);
+    !!onFlag &&
+    canFlagMessage(message, viewerId, !!canManageChannel, inAuditLog);
   // Frapp's own posts (the welcome, the audit bridge, a poll's closing notice,
   // an invite-accept DM) wear the crest, not initials: the sender is the
   // product, not a member (#3347).
@@ -568,7 +577,8 @@ export function MessageItem({
   // plain-text message; Delete is own, or anyone's with `channels:manage`.
   const canEdit = canEditMessage(message, viewerId) && !!onEdit;
   const canDelete =
-    canDeleteMessage(message, viewerId, !!canManageChannel) && !!onDelete;
+    canDeleteMessage(message, viewerId, !!canManageChannel, inAuditLog) &&
+    !!onDelete;
   // Report and Block share mobile's rules too (#2687), and sit behind one
   // More button rather than two more icons on a bar that already wraps.
   const canReport = canReportMessage(message, viewerId) && !!onReport;
@@ -1166,6 +1176,7 @@ export function MessageItem({
         {canFlag ? (
           <MessageFlagMenu
             current={message.flag ?? null}
+            options={messageFlagOptions(inAuditLog)}
             onPick={(flag) => onFlag?.(message.id, flag)}
           />
         ) : null}
@@ -2037,13 +2048,16 @@ function MessageFlagLabel({
 /**
  * The action bar's Flag control (#3921): Important first, then the lighter
  * flags, and Remove flag when the message has one. Tag, not Flag, for its
- * glyph: the More menu's Report message already draws Lucide's flag.
+ * glyph: the More menu's Report message already draws Lucide's flag. In the
+ * audit log `options` is empty and the menu holds only Remove flag.
  */
 function MessageFlagMenu({
   current,
+  options,
   onPick,
 }: {
   current: ChatMessageFlag | null;
+  options: typeof MESSAGE_FLAG_OPTIONS;
   onPick: (flag: ChatMessageFlag | null) => void;
 }) {
   return (
@@ -2059,7 +2073,7 @@ function MessageFlagMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {MESSAGE_FLAG_OPTIONS.map(({ flag, label }) => (
+        {options.map(({ flag, label }) => (
           <DropdownMenuItem
             key={flag}
             className={cn(

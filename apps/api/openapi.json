@@ -3974,6 +3974,7 @@
     },
     "/v1/channels/dm": {
       "post": {
+        "description": "A new DM is only with a member of your chapter (404 otherwise, whether or not the id is anyone), and never with yourself (400). Reopening a DM you already have always works. On the default write limit: opening a DM is how a member reopens one, so a lower ceiling would get in the way of an officer messaging new members one after another.",
         "operationId": "ChatController_getOrCreateDm_v1",
         "parameters": [],
         "requestBody": {
@@ -4014,6 +4015,7 @@
     },
     "/v1/channels/group-dm": {
       "post": {
+        "description": "Everyone in `member_ids` must be a member of your chapter (404 otherwise, naming no one). Each call makes a new conversation in every listed member's list, so it is held to 10 a minute.",
         "operationId": "ChatController_createGroupDm_v1",
         "parameters": [],
         "requestBody": {
@@ -5626,6 +5628,7 @@
     },
     "/v1/chat/reports": {
       "post": {
+        "description": "Limited to 10 a minute per member: each report notifies every officer who reviews them.",
         "operationId": "ChatReportController_fileReport_v1",
         "parameters": [],
         "requestBody": {
@@ -23330,6 +23333,8 @@
         "type": "object",
         "properties": {
           "member_ids": {
+            "maxItems": 9,
+            "description": "The other members of the chapter to add, at most 9: a group DM holds up to 10 people, you included.",
             "type": "array",
             "items": {
               "type": "string"
@@ -23829,7 +23834,8 @@
             "$ref": "#/components/schemas/MessageGifDto"
           },
           "payload": {
-            "type": "object"
+            "type": "object",
+            "description": "A rich card's data. Once checked, at most 16384 characters as JSON, or 65536 for a form."
           },
           "reply_to_id": {
             "type": "string"
@@ -23839,7 +23845,8 @@
             "format": "uuid"
           },
           "metadata": {
-            "type": "object"
+            "type": "object",
+            "description": "Client annotations, at most 16384 characters as JSON."
           },
           "mention_picks": {
             "type": "array",
@@ -24139,10 +24146,12 @@
         "properties": {
           "action_type": {
             "type": "string",
-            "description": "Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full), free-form for card actions."
+            "description": "Action discriminator: `reaction:<emoji>` for an emoji reaction, `vote` for a poll vote (UPSERT), or `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full). Anything else is a 400.",
+            "maxLength": 50
           },
           "payload": {
-            "type": "object"
+            "type": "object",
+            "description": "The vote or claim (`{ option_id }` or `{ slot_ids, note? }`), at most 4096 characters as JSON. A reaction carries none and any sent is not stored."
           }
         },
         "required": [

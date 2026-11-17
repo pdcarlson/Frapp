@@ -282,6 +282,11 @@ A message thread (#3785) opened from the channel shows the same background behin
 - **Group DM:** User selects multiple members (up to 10).
   Creates a GROUP_DM-type channel.
   Chapter-scoped.
+- **Only with members of the chapter** (2026-11-17).
+  A new DM or group DM is refused unless everyone in it is a member of the caller's chapter: one 404 for an id that is no one and for someone in another chapter, naming no one.
+  `POST /v1/channels/group-dm` takes at most 9 others in `member_ids` (10 people with the creator) and is held to 10 a minute, since each call adds a conversation to every listed member's list.
+  A DM with yourself is a 400.
+  Reopening a DM you already have is unchanged, a member who has since left included, and `POST /v1/channels/dm` stays on the default write limit, since it is how a member reopens a conversation.
 - DMs appear in their own section of the channel list ("Direct messages" on web, `DIRECT` on mobile), not mixed with chapter channels, except that a DM the member pins moves up into Pinned beside pinned channels (§ Sidebar arrangement).
   - Changed in [#3774](https://github.com/pdcarlson/Frapp/issues/3774) by Shawn (`shawnatomklein-eng`), 2026-11-12, for web: DMs and group DMs left the channel list for a list of their own, opened by the nav's Direct messages row under Chat, so the channel list holds the chapter's channels only.
     A pinned DM pins within that list.
@@ -1313,8 +1318,9 @@ The two stay separate.
   Anyone who can read the channel may flag a message that has none.
   Once it is flagged, only the message's sender, whoever added the flag, or a member with `channels:manage` (an officer, the permission pins use) may replace or remove it.
   This lets anyone catch a flag the sender forgot ("everyone at the kitchen at 5") without letting anyone undo anyone.
-  One predicate decides it for the API and both clients: `canChangeMessageFlag` in `@repo/validation`.
-  A flag adds no content, so it authorizes as a read, like a reaction: a member may flag in a read-only channel, and so may an alumnus.
+  Two shared predicates decide it for the API and both clients: `canChangeMessageFlag` in `@repo/validation` (who may change a flag), and, in the audit log only, `auditLogAllowsChange` beside it (no new flag on any line there, though one already on a line can come off; § [The audit log is system-write only](#the-audit-log-is-system-write-only)).
+  The clients read both through `canFlagMessage` in `@repo/chat-core/flags`.
+  A flag adds no content, so it authorizes as a `modify` rather than a post (2026-11-17; before then it authorized as a read): whoever can read the channel gets past the channel gate, so a member may flag in a read-only channel, and so may an alumnus.
 - **Who flagged it is shown.**
   When the flagger isn't the sender, the label reads "· flagged by Name".
 - **How it looks.**
@@ -1509,6 +1515,8 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
   It never opens a channel read, a thread, a pin list or the channel row: `assertChannelAccess` and every list surface take no report, and the route returns the resolved report, never the message.
   What an officer knows about the message is the evidence snapshot the report already carried.
   The response does carry the message's `channel_id` — an id, which every channel route still refuses — so the client can blank that one cached timeline instead of refetching every timeline it holds.
+- **Not one of Frapp's entries in the audit log** (2026-11-17): a report on an entry Frapp wrote in `#chapter-audit` can't remove it (403), as no delete can (§ [The audit log is system-write only](#the-audit-log-is-system-write-only)), and web's queue offers no Remove on one; the officer marks it reviewed or dismisses it.
+  A report on a member's post there, from before the channel was read-only, removes it as anywhere else.
 - **In a 1:1 DM the removal can reveal the reporter to the sender** — the one inference § Report accepts.
   The sender sees their message removed, and the DM's other member is the only person who could have reported it.
   Accepted with this option (owner, 2026-09-22) as the cost of the chapter being able to act on a DM at all; the confirmation tells the officer before they remove: "The sender will see this message was removed.
@@ -1517,6 +1525,7 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
   The report names the message; the client never does, so there is no second identifier to point at a sibling message.
   The grant is checked inside the shared predicate — `ChannelAccessService.assertMessageAccess` with an explicit `ReportedMessageGrant`, not a second authorization path — against the message it names, the caller's chapter, the message's channel resolving inside that chapter, and the caller's membership.
   It authorizes a `read`-class action only; a report never authorizes an edit or an upload.
+  _(2026-11-17: the removal now names itself to the predicate as a `delete`, a `modify` of the message, rather than a `read`; the grant takes a `read` or a `delete` and nothing else — never a post, thread reply, vote, close, answer, pin or flag — so what it allows is unchanged.)_
 - **Only an open report in the caller's chapter, and not one about the caller.**
   The report is read scoped to the chapter and without the reports about the caller (§ Report), so another chapter's report and a report about the officer are the same 404 as none.
   A report that is `reviewed` or `dismissed` grants nothing (409); an `actioned` one is answered by the report-level replay below, and never removes anything itself.
@@ -1706,6 +1715,10 @@ Until 2026-11-09 it was gated like any read-only channel, and a member holding `
   a channel an officer or an import makes later with that name stays ordinary), and the push default (`builtInChannelDefault`) and the clients' system-channel glyph and row menu (`isSystemChannel`) still match the name ([#3910](https://github.com/pdcarlson/Frapp/issues/3910)).
 - **No member writes in it, whatever they hold.**
   `canAccessChannel` refuses every `post` and `vote` in a flagged channel ahead of the read-only gate, so `*` and every posting list are refused too (403, a quote reply included), and so are an upload URL and a poll.
+  Frapp's record there can't be altered or erased (2026-11-17), `channels:manage` and the President included: nobody deletes one of the entries Frapp wrote (a `system_audit` row, or anything the system actor sent), even through a report, and nothing in the channel takes a new pin or flag, since either would raise one line over the rest of the record (403 "The audit log is read-only. Only Frapp posts in it, its entries can’t be removed, and nothing in it can be flagged or pinned.").
+  Taking a pin or a flag off is allowed, so one added before the channel became read-only can still go.
+  A member's post from before then is not part of the record: its author, a `channels:manage` holder, or an officer acting on an open report can still delete it, as in any channel.
+  The rule is `auditLogAllowsChange` in `@repo/validation`, which `ChannelAccessService.assertMessageAccess` applies with the message in hand and both clients read to decide what they offer: no Delete on an entry, Flag only to take one off, Pin only to unpin, and no Remove in web's report queue on a report about an entry.
   Reads and reactions are unaffected.
   The audit mirror (`ChatBridgeWorkerService`) inserts its `system_audit` rows through the message repository and never passes this gate, which is what leaves it the only writer.
   The Discord importer, the other server path that inserts history directly, refuses the audit log as a merge target (the mapping save and the import worker both check, and the worker also stops if a channel it creates turns out to be the audit log), and the web wizard never offers or defaults to it.

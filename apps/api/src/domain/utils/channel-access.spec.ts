@@ -283,6 +283,24 @@ describe('canAccessChannel', () => {
       expect(needsAccessHolder(announcements, 'answer')).toBe(false);
     });
 
+    // A delete, flag or pin adds no content: whoever can read may reach the
+    // caller's own rule (the sender, or channels:manage), wherever they post.
+    it('lets any reader through to modify a message, whoever can post', () => {
+      expect(check(announcements, holding(roles.brother), 'modify')).toBe(true);
+      expect(check(announcements, holding(roles.alumni), 'modify')).toBe(true);
+      expect(needsAccessHolder(announcements, 'modify')).toBe(false);
+    });
+
+    it('still refuses a modify to someone who cannot see the channel', () => {
+      const hidden = channel({
+        type: 'ROLE_GATED',
+        who_can_see: [`tier:${EXEC_TIER}`],
+      });
+      expect(check(hidden, holding(roles.brother), 'modify')).toBe(false);
+      const dm = channel({ type: 'DM', member_ids: ['user-2', 'user-3'] });
+      expect(check(dm, holding(roles.president), 'modify')).toBe(false);
+    });
+
     it('still refuses a close to someone who cannot see the channel', () => {
       const hidden = channel({
         type: 'ROLE_GATED',
@@ -315,6 +333,14 @@ describe('canAccessChannel', () => {
         ).toBe(false);
       },
     );
+
+    // Which change to which line decides a modify there, and the predicate
+    // never sees the line: `ChannelAccessService` applies the audit log's
+    // own rule (`auditLogAllowsChange`).
+    it('lets a reader through to modify, for the line rule to decide', () => {
+      expect(check(audit, EMPTY_ACCESS_HOLDER, 'modify')).toBe(true);
+      expect(needsAccessHolder(audit, 'modify')).toBe(false);
+    });
   });
 
   describe('archived channel (#348)', () => {
@@ -336,6 +362,10 @@ describe('canAccessChannel', () => {
         );
       },
     );
+
+    it('still lets a remaining member delete, flag or pin there', () => {
+      expect(check(archived, EMPTY_ACCESS_HOLDER, 'modify')).toBe(true);
+    });
   });
 
   describe('the Alumni rule', () => {

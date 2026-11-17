@@ -270,8 +270,10 @@ export interface MessageActionsTarget {
    * The Flag row (#3921): the message's current flag, read from the cache on
    * every render like `reactedWith`. Absent where the viewer may not flag it
    * (`canFlagMessage` in `@repo/chat-core/flags`), which draws no row.
+   * `removeOnly` in the audit log (#3909), where nothing takes a new flag:
+   * the row holds only the current flag, and tapping it takes it off.
    */
-  flag?: { current: ChatMessageFlag | null };
+  flag?: { current: ChatMessageFlag | null; removeOnly?: boolean };
   /**
    * Pin message / Unpin message (#3723): whether it is pinned now, read from
    * the cache on every render like `reactedWith`. Absent where the viewer
@@ -785,7 +787,12 @@ export const MessageActionsSheet = forwardRef<
             <View style={styles.flagSection}>
               <Text style={styles.caption}>Flag</Text>
               <View style={styles.flags} accessibilityRole="radiogroup">
-                {MESSAGE_FLAG_OPTIONS.map(({ flag, label }) => {
+                {(target.flag.removeOnly
+                  ? MESSAGE_FLAG_OPTIONS.filter(
+                      ({ flag }) => flag === target.flag?.current,
+                    )
+                  : MESSAGE_FLAG_OPTIONS
+                ).map(({ flag, label }) => {
                   const selected = target.flag?.current === flag;
                   const important = flag === "important";
                   return (

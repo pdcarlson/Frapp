@@ -224,11 +224,9 @@ export const POLL_OPTIONS_MIN = 2;
 
 /**
  * A poll's question and each option's label, as `CreatePollDto` bounds them
- * on the REST route (`POST /v1/channels/:id/polls`). Mobile's New poll sheet
- * stops its fields at the same lengths. That is a client-side cap only: a
- * phone poll posts a `kind: 'poll'` card through the chat send route, which
- * bounds `content` (`CHAT_MESSAGE_CONTENT_MAX_LENGTH`) but not the card's
- * option labels, and web's `/poll` applies no length limit.
+ * on the REST route (`POST /v1/channels/:id/polls`). Both New poll forms and
+ * web's `/poll` stop at the same lengths, and the chat send route holds every
+ * `kind: 'poll'` card to them (`normalizePollCard` in the API).
  */
 export const POLL_QUESTION_MAX_LENGTH = 500;
 export const POLL_OPTION_MAX_LENGTH = 200;
@@ -268,9 +266,11 @@ export const HEADCOUNT_SLOTS: readonly {
   { id: HEADCOUNT_NOT_GOING_SLOT_ID, label: "Can’t make it", capacity: null },
 ];
 /**
- * How far ahead a sign-up's end time may be set. The API refuses later ones
- * outright; the forms stop a day short of it, so a draft that passes in the
- * form isn't refused by a clock a little ahead on the server.
+ * How far ahead a chat card's end time may be set: a sign-up's, a form's and
+ * a poll's (`normalizeClosesAt` in the API). The API refuses later ones
+ * outright; the forms and web's `/poll` stop a day short of it, so a draft
+ * that passes in the client isn't refused by a clock a little ahead on the
+ * server.
  */
 export const SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS = 366;
 

@@ -4205,6 +4205,7 @@ export function ChatShell({
                   onToggleBookmark={handleToggleBookmark}
                   onRemind={handleRemind}
                   canManageChannel={canManageChannel}
+                  inAuditLog={activeChannel?.is_audit_log === true}
                   onReport={handleReport}
                   onBlock={handleBlock}
                   onForward={handleForward}

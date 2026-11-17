@@ -26,6 +26,13 @@ import { normalizeSignupCard } from '#domain/utils/signup-card-rules';
 import { isCardClosed } from '#domain/utils/card-closing';
 import { normalizeFormCard } from '#domain/utils/form-card-rules';
 import { normalizeRolePickerCard } from '#domain/utils/role-picker-card-rules';
+import { normalizePollCard } from '#domain/utils/poll-card-rules';
+import { jsonLength } from '#domain/utils/json-length';
+import {
+  CHAT_CARD_PAYLOAD_MAX_CHARS,
+  CHAT_FORM_CARD_PAYLOAD_MAX_CHARS,
+  MAX_GROUP_DM_MEMBERS,
+} from '#domain/constants/chat';
 import {
   CHAT_THREAD_REPOSITORY,
   type IChatThreadRepository,
@@ -67,6 +74,7 @@ import type {
 import {
   ChannelAccessService,
   type ChannelMemberEntry,
+  type MessageOperation,
   type ReportedMessageGrant,
 } from './channel-access.service';
 import { assertModuleEnabled, type EnabledModules } from './module-gate';
@@ -95,7 +103,6 @@ import type { MessageGif } from './gif.service';
 import { NotificationService } from './notification.service';
 
 const MAX_PINNED_MESSAGES = 50;
-const MAX_GROUP_DM_MEMBERS = 10;
 // `required_permissions` and `is_read_only` were how a page from before #3722
 // said who could see and post. A page left open across the deploy may still
 // send them; one that would change access is refused rather than ignored, so
@@ -260,22 +267,13 @@ const MODULE_GATED_KINDS: Readonly<Partial<Record<ChatMessageKind, string>>> = {
 };
 
 /**
- * A poll card's early close (`payload.closed_at` / `closed_by`, #3794) is
- * written only by `PollService.close`, which checks the caller is the poll's
- * creator. A client composes the rest of the card, so the pair is dropped from
- * what it posts: a card can't arrive already closed, or "closed by" someone
- * else.
+ * The member ids a DM or group DM is made of, lowercased. A UUID is the same
+ * id in either case, and Postgres stores it lowercase, so an id compared or
+ * counted as sent (the self-DM check, a group's duplicates) would let
+ * `ABC…` and `abc…` pass as two people.
  */
-function withoutServerPollFields(
-  kind: ChatMessageKind,
-  payload: Record<string, any> | null | undefined,
-): Record<string, any> | null {
-  if (!payload) return null;
-  if (kind !== 'poll') return payload;
-  const card = { ...payload };
-  delete card.closed_at;
-  delete card.closed_by;
-  return card;
+function normalizedMemberIds(memberIds: readonly string[]): string[] {
+  return memberIds.map((id) => id.toLowerCase());
 }
 
 /**
@@ -310,16 +308,50 @@ const CLOSE_COPY: Readonly<
 };
 
 /**
- * The card payload a client's send stores. A poll card drops the fields only
- * `PollService.close` writes. A sign-up or form card (#3926) is checked and rebuilt
- * from its known fields, because `claim_signup_slots` trusts its slots' ids
- * and limits on every claim; a card that can't be read is refused with a 400
- * rather than stored as a card nobody can sign up on.
+ * The card payload a client's send stores. A poll card is checked and rebuilt
+ * from its known fields (`normalizePollCard`), which drops the early close
+ * only `PollService.close` writes (`closed_at` / `closed_by`, #3794), so a
+ * card can't arrive already closed, or "closed by" someone else. A sign-up or
+ * form card (#3926) is checked and rebuilt too, because `claim_signup_slots`
+ * trusts its slots' ids and limits on every claim; a card that can't be read
+ * is refused with a 400 rather than stored as a card nobody can sign up on.
+ *
+ * Then a client's card is held to a length as JSON, since every reader of
+ * the channel downloads it and the kinds stored as sent (an announcement, a
+ * dues card) had no bound but the body limit: a form to
+ * {@link CHAT_FORM_CARD_PAYLOAD_MAX_CHARS}, every other kind to
+ * {@link CHAT_CARD_PAYLOAD_MAX_CHARS}.
  */
 function cardPayloadForSend(
   kind: ChatMessageKind,
   payload: Record<string, any> | null | undefined,
+  fromClient: boolean,
 ): Record<string, any> | null {
+  const card = checkedCardPayload(kind, payload);
+  if (!fromClient) return card;
+  if (kind === 'form') {
+    if (jsonLength(card) > CHAT_FORM_CARD_PAYLOAD_MAX_CHARS) {
+      throw new BadRequestException(
+        'This form is too long to post. Shorten some questions or options and try again.',
+      );
+    }
+  } else if (jsonLength(card) > CHAT_CARD_PAYLOAD_MAX_CHARS) {
+    throw new BadRequestException(
+      'This card is too long to post. Shorten it and try again.',
+    );
+  }
+  return card;
+}
+
+function checkedCardPayload(
+  kind: ChatMessageKind,
+  payload: Record<string, any> | null | undefined,
+): Record<string, any> | null {
+  if (kind === 'poll') {
+    const checked = normalizePollCard(payload);
+    if ('error' in checked) throw new BadRequestException(checked.error);
+    return { ...checked.card };
+  }
   if (kind === 'signup') {
     const checked = normalizeSignupCard(payload);
     if ('error' in checked) throw new BadRequestException(checked.error);
@@ -340,7 +372,7 @@ function cardPayloadForSend(
     if ('error' in checked) throw new BadRequestException(checked.error);
     return { ...checked.card };
   }
-  return withoutServerPollFields(kind, payload);
+  return payload ?? null;
 }
 
 /**
@@ -772,19 +804,26 @@ export class ChatService {
    * `findDm`, but the database holds one DM per pair, so `createDm` hands the
    * slower one the row the faster one inserted. Both callers get the same
    * channel.
+   *
+   * A new DM is only between two members of the chapter
+   * ({@link assertChapterMembers}), so a conversation can't be opened with
+   * someone who isn't there to read it, or used to learn whether an id is a
+   * user. An existing one reopens whoever is in it now: DMs keep a member who
+   * left (§ Direct Messages), and reopening reveals nothing new.
    */
   async getOrCreateDm(
     input: CreateDmInput,
     openedBy?: string,
   ): Promise<ChatChannel> {
-    if (input.member_ids.length !== 2) {
+    const memberIds = normalizedMemberIds(input.member_ids);
+    if (memberIds.length !== 2) {
       throw new BadRequestException('A DM requires exactly 2 members');
     }
+    if (memberIds[0] === memberIds[1]) {
+      throw new BadRequestException("You can't start a DM with yourself");
+    }
 
-    const existing = await this.channelRepo.findDm(
-      input.chapter_id,
-      input.member_ids,
-    );
+    const existing = await this.channelRepo.findDm(input.chapter_id, memberIds);
     if (existing) {
       if (openedBy) {
         // Never at the cost of the open itself: a member messaging someone
@@ -804,19 +843,28 @@ export class ChatService {
       return existing;
     }
 
-    return this.channelRepo.createDm(input.chapter_id, input.member_ids);
+    await this.assertChapterMembers(input.chapter_id, memberIds);
+    return this.channelRepo.createDm(input.chapter_id, memberIds);
   }
 
+  /**
+   * A new group DM. `members` is everyone in it, the creator included, and
+   * every one of them must be a member of the chapter
+   * ({@link assertChapterMembers}). Each id counts once, however it is
+   * spelled ({@link normalizedMemberIds}).
+   */
   async createGroupDm(
     chapterId: string,
-    memberIds: string[],
+    members: string[],
     name?: string,
   ): Promise<ChatChannel> {
+    const memberIds = [...new Set(normalizedMemberIds(members))];
     if (memberIds.length < 2 || memberIds.length > MAX_GROUP_DM_MEMBERS) {
       throw new BadRequestException(
         `Group DMs require 2 to ${MAX_GROUP_DM_MEMBERS} members`,
       );
     }
+    await this.assertChapterMembers(chapterId, memberIds);
 
     return this.channelRepo.create({
       chapter_id: chapterId,
@@ -824,6 +872,29 @@ export class ChatService {
       type: 'GROUP_DM',
       member_ids: memberIds,
     });
+  }
+
+  /**
+   * Refuse a direct conversation with anyone who isn't a member of the
+   * chapter. One 404 for every such id, whether it is no user at all or
+   * someone in another chapter, naming none of them, so the answer says
+   * nothing about who exists. At most {@link MAX_GROUP_DM_MEMBERS} lookups,
+   * run together.
+   */
+  private async assertChapterMembers(
+    chapterId: string,
+    userIds: readonly string[],
+  ): Promise<void> {
+    const members = await Promise.all(
+      userIds.map((userId) =>
+        this.memberRepo.findByUserAndChapter(userId, chapterId),
+      ),
+    );
+    if (members.some((member) => !member)) {
+      throw new NotFoundException(
+        'Only members of your chapter can be in a direct message. Check who you picked and try again.',
+      );
+    }
   }
 
   /**
@@ -1192,8 +1263,22 @@ export class ChatService {
       );
     }
     // Before anything is written (thread follows, the attachment repair), so
-    // a card that can't be stored costs nothing.
-    const payload = cardPayloadForSend(kind, input.payload);
+    // a card that can't be stored costs nothing. A card these checks refuse
+    // may still be one that committed before they were this strict (a poll
+    // checked since 2026-11-17, every card's length bound): an outbox retry
+    // of it is answered as the duplicate, like the refusals above.
+    let payload: Record<string, any> | null;
+    try {
+      payload = cardPayloadForSend(
+        kind,
+        input.payload,
+        input.system_originated !== true,
+      );
+    } catch (refusal) {
+      const replay = await committedReplay();
+      if (replay) return replay;
+      throw refusal;
+    }
 
     // A role picker hands out roles, so it is an officer's post that lists
     // only marked roles. A replay of one that already committed is answered
@@ -1640,7 +1725,7 @@ export class ChatService {
     messageId: string,
     chapterId: string,
     userId: string,
-    operation: 'read' | 'post' | 'thread' = 'read',
+    operation: MessageOperation = 'read',
     grant?: ReportedMessageGrant,
   ): Promise<ChatMessage> {
     return this.channelAccess.assertMessageAccess(
@@ -1833,10 +1918,15 @@ export class ChatService {
     requesterId: string,
     hasManagePermission: boolean,
   ): Promise<ChatMessage> {
+    // A `delete`: read access, and never one of Frapp's entries in the audit
+    // log, which nobody removes, `channels:manage` and the President included
+    // (#3909). A member's own post there, from before it was read-only, can
+    // still go.
     const message = await this.assertMessageAccess(
       messageId,
       chapterId,
       requesterId,
+      'delete',
     );
 
     if (
@@ -1893,11 +1983,13 @@ export class ChatService {
     chapterId: string,
     officerUserId: string,
   ): Promise<ReportedMessageRemoval> {
+    // A `delete` through the grant: the report stands in for channel access,
+    // and the audit log still keeps Frapp's entries (#3909).
     const message = await this.assertMessageAccess(
       grant.messageId,
       chapterId,
       officerUserId,
-      'read',
+      'delete',
       grant,
     );
 
@@ -1998,9 +2090,11 @@ export class ChatService {
    * Anyone who can read the channel may flag a message that has none; once it
    * is flagged, only its sender, whoever added the flag, or a
    * `channels:manage` holder may replace it (`canChangeMessageFlag` in
-   * `@repo/validation`, which the clients share). Authorized as a read, like
-   * a reaction: a flag adds no content, so a read-only channel or an alumnus
-   * may still flag (spec/behavior/chat/README.md § Message flags).
+   * `@repo/validation`, which the clients share). Authorized as a `flag`, a
+   * `modify`: a flag adds no content, so a read-only channel or an alumnus
+   * may still flag (spec/behavior/chat/README.md § Message flags), but the
+   * audit log takes none, since a flag there would raise its Important strip
+   * over the chapter's record (#3909).
    *
    * The write is a compare-and-set on the flag and flagger the check was made
    * against, and on the message still being live, so two members flagging the
@@ -2022,6 +2116,7 @@ export class ChatService {
       messageId,
       chapterId,
       userId,
+      'flag',
     );
     if (message.is_deleted) {
       throw new BadRequestException('Cannot flag a deleted message');
@@ -2044,7 +2139,11 @@ export class ChatService {
     return this.maskOne(updated, chapterId, userId);
   }
 
-  /** Take a message's flag off. Idempotent; same rule as replacing one. */
+  /**
+   * Take a message's flag off. Idempotent; same rule as replacing one. An
+   * `unflag`, which the audit log takes too, so a flag put on one of its
+   * lines before it was read-only can still come off.
+   */
   async clearMessageFlag(
     messageId: string,
     chapterId: string,
@@ -2055,6 +2154,7 @@ export class ChatService {
       messageId,
       chapterId,
       userId,
+      'unflag',
     );
     if (message.flag == null) {
       return this.maskOne(message, chapterId, userId);
@@ -2178,11 +2278,13 @@ export class ChatService {
     userId: string,
   ): Promise<ChatMessage> {
     // Pin/unpin are moderation controls: `channels:manage` in the caller's own
-    // chapter must not reach a message in someone else's.
+    // chapter must not reach a message in someone else's. A `pin`, which the
+    // audit log takes on none of its lines (#3909).
     const message = await this.assertMessageAccess(
       messageId,
       chapterId,
       userId,
+      'pin',
     );
 
     // Nothing to elevate, and pinning a tombstone would make it the
@@ -2215,10 +2317,13 @@ export class ChatService {
     chapterId: string,
     userId: string,
   ): Promise<ChatMessage> {
+    // An `unpin`, which the audit log takes too: a pin from before it was
+    // read-only can still come off.
     const message = await this.assertMessageAccess(
       messageId,
       chapterId,
       userId,
+      'unpin',
     );
 
     if (!message.is_pinned) {
