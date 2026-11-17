@@ -4,7 +4,7 @@ import { db, miss } from "../harness.mjs";
 
 /** The seed migration, run again below over rows a president already set. */
 const SEED_SQL = readFileSync(
-  join(process.cwd(), "supabase/migrations/20261117050803_chapter_ai_settings_seed.sql"),
+  join(process.cwd(), "supabase/migrations/20261117150255_chapter_ai_settings_seed.sql"),
   "utf8",
 );
 

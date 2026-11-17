@@ -1,7 +1,7 @@
 -- Every chapter gets its AI switches row (#5294): new chapters from a
 -- trigger, as event and document types do, and existing chapters a president
 -- never touched from the backfill below. The row takes the column defaults
--- set by 20261117043502_chapter_ai_defaults_on.sql: all on, updated_at null.
+-- set by 20261117150254_chapter_ai_defaults_on.sql: all on, updated_at null.
 --
 -- Rows a president wrote are left as they are (`on conflict do nothing`). A
 -- chapter has no row only if nobody ever changed a switch, which includes a

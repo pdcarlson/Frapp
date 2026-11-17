@@ -1,6 +1,6 @@
-# 20261117043502_chapter_ai_defaults_on.sql
+# 20261117150254_chapter_ai_defaults_on.sql
 
-Turns the chapter's three AI switches on by default: the columns default to true and `updated_at` becomes nullable, so a row nobody changed reads as never changed (#5294). The rows come in [20261117050803_chapter_ai_settings_seed](20261117050803_chapter_ai_settings_seed.md).
+Turns the chapter's three AI switches on by default: the columns default to true and `updated_at` becomes nullable, so a row nobody changed reads as never changed (#5294). The rows come in [20261117150255_chapter_ai_settings_seed](20261117150255_chapter_ai_settings_seed.md).
 
 ## Promotion
 
@@ -10,7 +10,7 @@ Turns the chapter's three AI switches on by default: the columns default to true
 
 ## Rollback
 
-Worth reverting only if the default itself is withdrawn, and only after the seed migration is rolled back ([its page](20261117050803_chapter_ai_settings_seed.md)) and the API that reads a missing row as on is reverted. A forward migration:
+Worth reverting only if the default itself is withdrawn, and only after the seed migration is rolled back ([its page](20261117150255_chapter_ai_settings_seed.md)) and the API that reads a missing row as on is reverted. A forward migration:
 
 ```sql
 update public.chapter_ai_settings set updated_at = now() where updated_at is null;

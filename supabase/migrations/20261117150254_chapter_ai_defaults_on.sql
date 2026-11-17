@@ -15,7 +15,7 @@
 --
 -- This file only changes the columns: its ACCESS EXCLUSIVE lock on
 -- `chapter_ai_settings` is held for milliseconds and released at its commit.
--- The rows come in 20261117050803_chapter_ai_settings_seed.sql, whose
+-- The rows come in 20261117150255_chapter_ai_settings_seed.sql, whose
 -- backfill enrols each chapter's chat for indexing and so runs outside this
 -- lock.
 
@@ -28,4 +28,4 @@ alter table public.chapter_ai_settings
   alter column updated_at drop default;
 
 comment on table public.chapter_ai_settings is
-  'The president''s AI switches, one per feature family. Every chapter has a row from creation, all on with updated_at null until a president changes one (#5294). API only. See 20261112165040_ai_consent.sql, 20261117043502_chapter_ai_defaults_on.sql and 20261117050803_chapter_ai_settings_seed.sql.';
+  'The president''s AI switches, one per feature family. Every chapter has a row from creation, all on with updated_at null until a president changes one (#5294). API only. See 20261112165040_ai_consent.sql, 20261117150254_chapter_ai_defaults_on.sql and 20261117150255_chapter_ai_settings_seed.sql.';
