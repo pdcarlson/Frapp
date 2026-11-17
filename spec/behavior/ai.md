@@ -349,6 +349,12 @@ It is off unless the server has `AI_ENABLED` on and the chapter's president has 
   The rules are one set of functions in `@repo/validation` (`ask-steps.ts`), read by web and the phone.
   A build from before #5427 skips the `step` event and the new keys and shows its one line as before; a build that does not know a kind draws the plain mark.
   A turn the member walked away from (the panel closed, or a new question sent) stops at its next wait: nothing more is read, written or kept for it.
+- **The answer reads as markdown** (#5429; Paul, 2026-11-17: "We should process the raw markdown? Packages exist for this.").
+  Bold, italic, code and short lists are drawn as chat draws a message, through the same renderer on web and the phone (`@repo/chat-core/ask-markdown`), with the markers and named people and channels kept where the server put them; a list reads as lines led by a bullet or its number.
+  The prompts ask for lists as `- ` lines and bold only where it helps the member find something, and still for no headings, tables or emojis; a heading that slips through reads as a line of text.
+  A streamed answer never shows half of a `**`: an unclosed one waits for the chunk that closes it.
+  Copy copies the words as read, without the asterisks.
+  Until #5429 an answer was plain text and the prompts asked for no markdown, which long answers broke, showing `**` as typed.
 - **Sources open.**
   Each cited sentence carries a numbered marker, and each source is a chip under the answer with the same number and its name;
   its kind, place and full date are the chip's tooltip on web and its spoken name on both (changed in #4699 by pdcarlson, 2026-11-13: they were rows that spelled the kind and date out, which made a thread of several answers long).

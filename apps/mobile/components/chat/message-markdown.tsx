@@ -14,7 +14,11 @@ import {
   type StyleProp,
   type TextStyle,
 } from "react-native";
-import Markdown, { defaultUrlTransform, type Components } from "react-markdown";
+import Markdown, {
+  defaultUrlTransform,
+  type Components,
+  type Options,
+} from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { isOpenableHref } from "@repo/chat-core/links";
 import {
@@ -120,7 +124,21 @@ type TextFlowResult = Omit<ParsedMessageMarkdown, "body">;
 
 /** The formatting set plus the mention chip (`MESSAGE_RENDER_ELEMENTS`). */
 const ALLOWED_ELEMENTS = MESSAGE_RENDER_ELEMENTS;
-const ALLOWED: ReadonlySet<string> = new Set(ALLOWED_ELEMENTS);
+
+/**
+ * What a surface that draws something other than a message adds to the
+ * pipeline: Ask's answer (#5429, `@repo/chat-core/ask-markdown`). Its passes
+ * run right after the depth cap, before `remark-breaks`; its elements join
+ * the allowlist and its components the map. It draws its own names, so a body
+ * parsed with extras gets no mention chips, and no bare URL links.
+ */
+type RemarkPlugin = NonNullable<Options["remarkPlugins"]>[number];
+
+export interface MessageMarkdownExtras {
+  remarkPlugins: readonly RemarkPlugin[];
+  allowedElements: readonly string[];
+  components: Components;
+}
 
 /**
  * The rehype pass that shapes the tree for one `Text`: the shared line layout
@@ -130,14 +148,16 @@ const ALLOWED: ReadonlySet<string> = new Set(ALLOWED_ELEMENTS);
 function rehypeTextFlow({
   result,
   source,
+  allowed,
 }: {
   result: TextFlowResult;
   /** The string remark parsed, which the tree's positions index into. */
   source: string;
+  allowed: ReadonlySet<string>;
 }) {
   return (root: HastNode): void => {
     const layout = layOutMessageBody(root.children ?? [], {
-      allowed: ALLOWED,
+      allowed,
       source,
     });
     result.trailingOnOwnLine = layout.endsOnOwnLine;
@@ -159,10 +179,12 @@ function rehypeTextFlow({
 export function parseMessageMarkdown(
   content: string,
   chips?: (token: string) => boolean,
+  extras?: MessageMarkdownExtras,
 ): ParsedMessageMarkdown {
   // Decided from the source, before remark sees it: see
   // `skipsMarkdownParse` (#2209, #2664).
   const flatten = skipsMarkdownParse(content);
+  const allowed = extras?.allowedElements ?? ALLOWED_ELEMENTS;
   const result: TextFlowResult = {
     links: [],
     empty: false,
@@ -171,25 +193,35 @@ export function parseMessageMarkdown(
   };
   const body = Markdown({
     children: flatten ? "" : content,
-    remarkPlugins: [
-      // The depth cap goes first: every pass after it recurses once per level.
-      [remarkDepthCap, { content, flatten }],
-      // Before `remark-breaks`, which leaves the text nodes it splits without
-      // the source positions a bare URL is measured by.
-      [remarkBareUrls, { content }],
-      remarkBreaks,
-      // The RAW body, not the text remark decoded: `&#64;Jane` notifies
-      // nobody, so it must not draw as a mention (`markdown-mentions.ts`).
-      // `chips` keeps a token that pinged nobody from drawing as a mention
-      // (`mentionChipFilter` in `@repo/validation`).
-      [remarkMentionChips, { content, chips }],
-    ],
+    remarkPlugins: extras
+      ? [
+          [remarkDepthCap, { content, flatten }],
+          // Before `remark-breaks`, while every text node has its position.
+          ...extras.remarkPlugins,
+          remarkBreaks,
+        ]
+      : [
+          // The depth cap goes first: every pass after it recurses once per level.
+          [remarkDepthCap, { content, flatten }],
+          // Before `remark-breaks`, which leaves the text nodes it splits without
+          // the source positions a bare URL is measured by.
+          [remarkBareUrls, { content }],
+          remarkBreaks,
+          // The RAW body, not the text remark decoded: `&#64;Jane` notifies
+          // nobody, so it must not draw as a mention (`markdown-mentions.ts`).
+          // `chips` keeps a token that pinged nobody from drawing as a mention
+          // (`mentionChipFilter` in `@repo/validation`).
+          [remarkMentionChips, { content, chips }],
+        ],
     rehypePlugins: [
-      [rehypeTextFlow, { result, source: flatten ? "" : content }],
+      [
+        rehypeTextFlow,
+        { result, source: flatten ? "" : content, allowed: new Set(allowed) },
+      ],
     ],
-    allowedElements: ALLOWED_ELEMENTS,
+    allowedElements: allowed,
     unwrapDisallowed: true,
-    components: COMPONENTS,
+    components: extras ? { ...COMPONENTS, ...extras.components } : COMPONENTS,
   });
   return { body, ...result };
 }

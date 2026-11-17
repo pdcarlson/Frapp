@@ -1022,3 +1022,65 @@ describe("AskTurn", () => {
     });
   });
 });
+
+describe("an answer's markdown (#5429)", () => {
+  const markdown =
+    "Bring three things:\n\n- **Photos.** For the slideshow.\n- Tickets";
+
+  it("draws bold as bold and a list as lines, with the markers where the server put them", () => {
+    const { container } = show(
+      exchange({
+        answer: {
+          ...ANSWER,
+          text: markdown,
+          citations: [{ source: 0, at: markdown.indexOf(" For"), quote: "" }],
+        },
+      }),
+    );
+    expect(container.textContent).not.toContain("**");
+    const bold = container.querySelector("strong");
+    expect(bold?.textContent).toMatch(/^Photos\./);
+    // The marker that ends the bold sits inside it.
+    expect(
+      within(bold as HTMLElement).getByRole("link", {
+        name: /^Source 1: Bylaws/,
+      }),
+    ).toBeInTheDocument();
+    expect(container.textContent).toContain("• Tickets");
+  });
+
+  it("copies the words without the asterisks", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    show(
+      exchange({
+        askId: "a-1",
+        answer: {
+          ...ANSWER,
+          text: "**Photos.** Bring a camera.",
+          citations: [],
+        },
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: ASK_COPY.copy_answer }),
+    );
+    expect(writeText).toHaveBeenCalledWith("Photos. Bring a camera.");
+  });
+
+  it("never shows a half-written bold while it streams", () => {
+    const { container } = show(
+      exchange({
+        phase: "working",
+        step: "searching",
+        preview: "Bring **Pho",
+        answer: null,
+      }),
+    );
+    expect(container.textContent).toContain("Bring Pho");
+    expect(container.textContent).not.toContain("*");
+  });
+});

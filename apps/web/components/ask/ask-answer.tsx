@@ -16,7 +16,6 @@ import {
   ASK_EFFORT_COPY,
   ASK_POST_COPY,
   askAnswerEntities,
-  askAnswerSegments,
   askLeftOutLine,
   askOffersThinkHarder,
   askPostedSourceTitle,
@@ -24,6 +23,7 @@ import {
   askUnavailableLine,
   askUnavailableOffersRetry,
   type AskAnswer,
+  type AskEntity,
   type AskPostedAnswer,
   type AskSource,
 } from "@repo/validation";
@@ -33,10 +33,11 @@ import { IconButton } from "@/components/ui/icon-button";
 import { useCopyToClipboard } from "@/lib/hooks/use-copy-to-clipboard";
 import { cn } from "@/lib/utils";
 import {
-  AskEntityText,
   AskChannelOpens,
   onPlainClick,
 } from "@/components/ask/ask-entity-text";
+import { AskMarkdown, AskPreviewMarkdown } from "@/components/ask/ask-markdown";
+import { askPlainWords, type AskMarker } from "@repo/chat-core/ask-markdown";
 import { AskAnswerCards, AskProposal } from "@/components/ask/ask-proposal";
 import { AskSteps } from "@/components/ask/ask-steps";
 import {
@@ -203,9 +204,9 @@ export function AskReply({
         }
       />
       {exchange.phase === "working" && exchange.preview ? (
-        <p className="whitespace-pre-wrap text-sm text-foreground">
-          {exchange.preview}
-        </p>
+        <div className="whitespace-pre-wrap text-sm text-foreground">
+          <AskPreviewMarkdown text={exchange.preview} />
+        </div>
       ) : null}
       {exchange.phase === "failed" && exchange.failure ? (
         <div className="space-y-2">
@@ -387,7 +388,8 @@ function CopyAnswer({ text }: { text: string }) {
     <IconButton
       label={copied ? ASK_COPY.copied_answer : ASK_COPY.copy_answer}
       className={QUIET_ACTION}
-      onClick={() => void copy(text)}
+      // The words as read, without the markdown's delimiters (#5429).
+      onClick={() => void copy(askPlainWords(text))}
     >
       {copied ? (
         <Check className="h-3.5 w-3.5" aria-hidden="true" />
@@ -548,10 +550,13 @@ export function AskPostedBody({
     date: source.date,
     target: source.target,
   }));
-  const segments = askAnswerSegments({
-    text,
-    citations: posted.citations.map((citation) => ({ ...citation, quote: "" })),
-  });
+  const marker = (placed: AskMarker) => (
+    <CitationMarker
+      number={placed.source + 1}
+      source={sources[placed.source]}
+      quote=""
+    />
+  );
   const notes: string[] = [
     ...(posted.truncated ? [ASK_COPY.truncated] : []),
     ...(posted.sources.some((source) => source.limited)
@@ -560,20 +565,14 @@ export function AskPostedBody({
   ];
   return (
     <div className="space-y-2">
-      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
-        {segments.map((segment, position) =>
-          segment.type === "text" ? (
-            <span key={position}>{segment.text}</span>
-          ) : (
-            <CitationMarker
-              key={position}
-              number={segment.citation.source + 1}
-              source={sources[segment.citation.source]}
-              quote=""
-            />
-          ),
-        )}
-      </p>
+      <div className="whitespace-pre-wrap break-words text-sm leading-6 text-foreground">
+        <AskMarkdown
+          text={text}
+          citations={posted.citations}
+          entities={NO_ENTITIES}
+          marker={marker}
+        />
+      </div>
       {sources.length > 0 ? (
         <ol aria-label={ASK_COPY.sources} className="flex flex-wrap gap-1.5">
           {sources.map((source, index) => (
@@ -591,6 +590,9 @@ export function AskPostedBody({
     </div>
   );
 }
+
+/** A posted answer carries no names to draw. */
+const NO_ENTITIES: readonly AskEntity[] = [];
 
 /** What the member should know before relying on the answer. Each only when true. */
 function AnswerNotes({ answer }: { answer: AskAnswer }) {
@@ -625,29 +627,25 @@ function AnswerText({
   onFollowMessage?: () => void;
 }) {
   const entities = askAnswerEntities(answer);
+  const marker = (placed: AskMarker) => (
+    <CitationMarker
+      number={placed.source + 1}
+      source={answer.sources[placed.source]}
+      quote={answer.citations[placed.index]?.quote ?? ""}
+      onFollowMessage={onFollowMessage}
+    />
+  );
   const draw = (canOpenChannel: (channelId: string) => boolean) => (
-    <p className="whitespace-pre-wrap text-sm leading-6 text-foreground">
-      {askAnswerSegments(answer).map((segment, position) =>
-        segment.type === "text" ? (
-          <span key={position}>
-            <AskEntityText
-              text={segment.text}
-              entities={entities}
-              canOpenChannel={canOpenChannel}
-              onFollow={onFollowMessage}
-            />
-          </span>
-        ) : (
-          <CitationMarker
-            key={position}
-            number={segment.citation.source + 1}
-            source={answer.sources[segment.citation.source]}
-            quote={segment.citation.quote}
-            onFollowMessage={onFollowMessage}
-          />
-        ),
-      )}
-    </p>
+    <div className="whitespace-pre-wrap text-sm leading-6 text-foreground">
+      <AskMarkdown
+        text={answer.text}
+        citations={answer.citations}
+        entities={entities}
+        marker={marker}
+        canOpenChannel={canOpenChannel}
+        onFollow={onFollowMessage}
+      />
+    </div>
   );
   // The reader's channel list is only read for an answer that names one.
   return entities.some((entity) => entity.type === "channel") ? (

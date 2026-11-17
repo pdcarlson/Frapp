@@ -25,7 +25,7 @@ import {
   type AskSource,
 } from "@repo/validation";
 import { FrappThemeProvider } from "@/lib/theme";
-import { screenText } from "@/test/screen-text";
+import { drawnText, screenText } from "@/test/screen-text";
 import { AskTurn } from "./ask-turn";
 
 /**
@@ -455,7 +455,9 @@ describe("AskTurn", () => {
     const painted = tree.root
       .findAll((node) => node.props.style !== undefined)
       .map((node) => ({ node, style: flat(node.props.style) }));
-    const question = tree.root.findAllByProps({ accessibilityRole: "header" })[0]!;
+    const question = tree.root.findAllByProps({
+      accessibilityRole: "header",
+    })[0]!;
     const within = (node: ReactTestInstance) => {
       for (let at: ReactTestInstance | null = question; at; at = at.parent) {
         if (at === node) return true;
@@ -525,10 +527,9 @@ describe("people and channels an answer names (#4904)", () => {
 
   it("leaves a channel the reader cannot open as plain words", () => {
     const tree = render(named(ELSEWHERE), { onOpenChannel: vi.fn() });
-    const [channel] = runs(tree, "#rush-week");
-    expect(channel.props.accessibilityRole).toBeUndefined();
-    expect(channel.props.onPress).toBeUndefined();
-    expect(filled(channel)).toBe(false);
+    // Drawn in the sentence's own run (#5429): no link, no highlight.
+    expect(runs(tree, "#rush-week")).toHaveLength(0);
+    expect(screenText(tree)).toContain("in #rush-week, not");
   });
 
   it("draws an answer with no list as it always was, without reading the channel list", () => {
@@ -536,9 +537,71 @@ describe("people and channels an answer names (#4904)", () => {
     const tree = render(named(undefined), { onOpenChannel: vi.fn() });
     expect(channelList.reads).toBe(0);
     expect(runs(tree, "@Ana Ruiz")).toHaveLength(0);
-    expect(
-      runs(tree, "Ask @Ana Ruiz in #rush-week, not @Nobody."),
-    ).toHaveLength(1);
+    expect(screenText(tree)).toContain(
+      "Ask @Ana Ruiz in #rush-week, not @Nobody.",
+    );
+  });
+});
+
+describe("an answer's markdown (#5429)", () => {
+  const bold = (tree: ReactTestRenderer, words: string) =>
+    tree.root.findAll(
+      (node) =>
+        node.type === Text &&
+        // The marker that ends the bold sits inside it.
+        drawnText(node).startsWith(words) &&
+        (node.props.style as { fontFamily?: string } | undefined)
+          ?.fontFamily === "Figtree_700Bold",
+    );
+
+  it("draws bold as bold and a list as lines, with the markers where the server put them", () => {
+    const text =
+      "Bring three things:\n\n- **Photos.** For the slideshow.\n- Tickets";
+    const tree = render(
+      exchange({
+        answer: answer({
+          text,
+          citations: [{ source: 0, at: text.indexOf(" For"), quote: "" }],
+        }),
+      }),
+    );
+    const screen = screenText(tree);
+    expect(screen).not.toContain("**");
+    expect(bold(tree, "Photos.")).toHaveLength(1);
+    expect(screen).toContain("• ");
+    expect(screen).toContain(" For the slideshow.\n• Tickets");
+    expect(byLabel(tree, "Source 1: Bylaws")).toHaveLength(1);
+  });
+
+  it("copies the words without the asterisks", async () => {
+    const tree = render(
+      exchange({
+        answer: answer({ text: "**Photos.** Bring a camera.", citations: [] }),
+        askId: "ask-1",
+      }),
+    );
+    await act(async () => {
+      byLabel(tree, ASK_COPY.copy_answer)[0]!.props.onPress();
+    });
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
+      "Photos. Bring a camera.",
+    );
+  });
+
+  it("never shows a half-written bold while it streams", () => {
+    const streaming = (preview: string) =>
+      screenText(
+        render(
+          exchange({
+            phase: "working",
+            step: "searching",
+            preview,
+            answer: null,
+          }),
+        ),
+      );
+    expect(streaming("Bring **Pho")).not.toContain("*");
+    expect(streaming("Bring **Pho")).toContain("Bring Pho");
   });
 });
 
@@ -694,9 +757,7 @@ describe("thumbs under an answer (#4904)", () => {
         screenText({ root: node } as never).includes(
           ASK_FEEDBACK_COPY.send.action,
         ) &&
-        !screenText({ root: node } as never).includes(
-          ASK_FEEDBACK_COPY.prompt,
-        ),
+        !screenText({ root: node } as never).includes(ASK_FEEDBACK_COPY.prompt),
     )[0]!;
     act(() => send.props.onPress());
     expect(onSend).toHaveBeenCalledWith("wrong");
