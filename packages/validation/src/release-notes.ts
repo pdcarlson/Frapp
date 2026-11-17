@@ -128,6 +128,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "A connected Google Drive folder now brings in files from folders inside folders, not just the first two levels down.",
       "Nudge cards on Activity no longer need your chapter to have Ask on: they're on unless your president turns them off in Chapter settings, and you still choose for yourself whether Frapp AI is on.",
       "When an event moves to a new time on the same day, you now get its starting-soon reminder for the new time.",
+      "A chapter's AI features now start on, so Ask Frapp, minutes from notes and channel summaries work from day one; the president can turn any of them off in Chapter settings.",
+      "Documents shows a chapter's folders as a tree, so folders inside folders, like a synced Google Drive, read the way they do in Drive.",
     ],
     web: [
       "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
@@ -139,6 +141,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Documents' sort and filters are each a tap away: Type, Uploaded by and Date added are chips that open a list, and the order sits over the list.",
       "The + menu can now record a meeting: tap Record meeting, read the notice to the room, and the minutes open already recording. It also starts new minutes and opens search.",
       "Frapp AI and Nudges on Activity now have their own AI section in Settings, and presidents can turn the chapter's AI features on or off from Chapter settings.",
+      "The bar at the bottom folds into one row while you scroll down a tab, with Ask Frapp beside your current tab, and comes back as you scroll up.",
+      "On iPhone, a message sent just as autocorrect was fixing a word no longer comes back into the box with the fix applied.",
     ],
   },
   {
