@@ -31,6 +31,8 @@
  * `open()` picks up where it left off. That is also what makes React
  * StrictMode's mount, unmount, mount in development harmless.
  */
+import { UploadStalledError } from "./stall";
+
 export type ItemStatus =
   | "queued"
   | "preparing"
@@ -62,7 +64,16 @@ export type QueueSnapshot<P, S> = {
 export type BulkQueueOptions<P, S> = {
   /** Gets the item's id too, so a duplicate check can tell an item from itself. */
   prepare: (file: File, id: string) => Promise<P>;
-  finish: (job: { file: File; prepared: P; submission: S }) => Promise<void>;
+  /**
+   * Gets a signal that aborts when the queue gives up on the upload
+   * (`stallAfterMs`), so a fetch still waiting can be dropped.
+   */
+  finish: (job: {
+    file: File;
+    prepared: P;
+    submission: S;
+    signal: AbortSignal;
+  }) => Promise<void>;
   /** Frees what `prepare` made (a loaded PDF, object URLs) once it's unneeded. */
   release?: (prepared: P) => void;
   /**
@@ -86,6 +97,13 @@ export type BulkQueueOptions<P, S> = {
    */
   maxPreparing?: number;
   maxFinishing?: number;
+  /**
+   * How long one item's `finish` may run before the queue calls it stalled:
+   * the item fails with an `UploadStalledError`, which shows Retry, instead of
+   * reading "Uploading" for as long as the tab is open. Sized per item, since
+   * a large file legitimately takes longer. No limit when unset.
+   */
+  stallAfterMs?: (job: { file: File; prepared: P }) => number;
   /** Whether a failure leaves nothing to save, so it doesn't count as unsaved. */
   isFinal?: (error: unknown, stage: "prepare" | "finish") => boolean;
   /** Turns a thrown value into the line shown on the item. */
@@ -107,6 +125,8 @@ export class BulkUploadQueue<P, S> {
   private closed = false;
   private pumping = false;
   private repump = false;
+  /** The finish attempt each item is on, so a stalled attempt's late answer is told apart. */
+  private attempts = new Map<string, AbortController>();
   private readonly lookahead: number;
   private readonly maxFinishing: number;
   private readonly maxPreparing: number;
@@ -372,14 +392,67 @@ export class BulkUploadQueue<P, S> {
   private runFinish(item: QueueItem<P, S>): void {
     const { prepared, submission } = item;
     if (!prepared || submission === undefined) return;
+    // The attempt's own controller, which is also how its answer is told
+    // apart from a later attempt's.
+    const controller = new AbortController();
+    this.attempts.set(item.id, controller);
+    const current = () => this.attempts.get(item.id) === controller;
+    const limit = this.options.stallAfterMs?.({ file: item.file, prepared });
+    const timer =
+      limit === undefined
+        ? undefined
+        : setTimeout(() => {
+            if (!current()) return;
+            controller.abort();
+            // Discarded while it ran: stopped, and freed when it settles.
+            if (!this.find(item.id)) return;
+            // Given up on: a late failure from this attempt no longer
+            // decides the item, and Retry starts a new one.
+            this.attempts.delete(item.id);
+            this.patch(item.id, {
+              status: "failed",
+              failedStage: "finish",
+              final: false,
+              error: this.describe(new UploadStalledError(), "finish"),
+            });
+          }, limit);
     settle(() =>
-      this.options.finish({ file: item.file, prepared, submission }),
+      this.options.finish({
+        file: item.file,
+        prepared,
+        submission,
+        signal: controller.signal,
+      }),
     ).then(
       () => {
+        clearTimeout(timer);
+        const live = this.find(item.id);
+        if (!current()) {
+          // Got through after it was called stalled. Removed since, whoever
+          // removed it freed it; done since, the attempt that got through
+          // did. Otherwise it is done now, and a Retry still running is
+          // stopped, since it would only find its own copy.
+          if (!live || live.status === "done") return;
+          this.attempts.get(item.id)?.abort();
+        }
+        this.attempts.delete(item.id);
         this.options.release?.(prepared);
-        this.patch(item.id, { status: "done", prepared: undefined });
+        if (live) {
+          this.patch(item.id, {
+            status: "done",
+            prepared: undefined,
+            error: undefined,
+            failedStage: undefined,
+            final: undefined,
+          });
+        }
       },
       (error: unknown) => {
+        clearTimeout(timer);
+        // Called stalled, or overtaken by an earlier attempt that got
+        // through: this answer no longer decides the item.
+        if (!current()) return;
+        this.attempts.delete(item.id);
         // Discarded while it ran: nothing will retry it, so free it now.
         if (!this.find(item.id)) {
           this.options.release?.(prepared);

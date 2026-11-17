@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BulkUploadQueue } from "./queue";
 
 /** A promise the test resolves or rejects by hand. */
@@ -27,10 +27,12 @@ function harness(
     sizeOf?: (prepared: string) => number;
     maxHeldBytes?: number;
     maxPreparing?: number;
+    stallAfterMs?: () => number;
   } = {},
 ) {
   const prepares = new Map<string, ReturnType<typeof deferred<string>>>();
   const finishes = new Map<string, ReturnType<typeof deferred<void>>>();
+  const signals = new Map<string, AbortSignal>();
   const release = vi.fn();
   const queue = new BulkUploadQueue<string, { title: string }>({
     ...opts,
@@ -39,9 +41,10 @@ function harness(
       prepares.set(file.name, d);
       return d.promise;
     },
-    finish: ({ file }) => {
+    finish: ({ file, signal }) => {
       const d = deferred<void>();
       finishes.set(file.name, d);
+      signals.set(file.name, signal);
       return d.promise;
     },
     release,
@@ -50,7 +53,9 @@ function harness(
     queue.getSnapshot().items.find((it) => it.file.name === name)?.status;
   const idOf = (name: string) =>
     queue.getSnapshot().items.find((it) => it.file.name === name)!.id;
-  return { queue, prepares, finishes, release, status, idOf };
+  const itemOf = (name: string) =>
+    queue.getSnapshot().items.find((it) => it.file.name === name)!;
+  return { queue, prepares, finishes, signals, release, status, idOf, itemOf };
 }
 
 describe("BulkUploadQueue", () => {
@@ -379,5 +384,103 @@ describe("BulkUploadQueue", () => {
     h.queue.submit(h.idOf("c.pdf"), { title: "c" });
     await flush();
     expect(h.prepares.has("e.pdf")).toBe(false);
+  });
+
+  describe("an upload that stops answering (stallAfterMs)", () => {
+    async function stalledUpload() {
+      vi.useFakeTimers();
+      const h = harness({ stallAfterMs: () => 60_000 });
+      h.queue.add([pdf("a.pdf")]);
+      h.prepares.get("a.pdf")!.resolve("A");
+      await vi.advanceTimersByTimeAsync(0);
+      h.queue.submit(h.idOf("a.pdf"), { title: "Exam 3 Notes" });
+      expect(h.status("a.pdf")).toBe("finishing");
+      return h;
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("fails with Retry once the limit passes, instead of reading Uploading forever", async () => {
+      const h = await stalledUpload();
+      await vi.advanceTimersByTimeAsync(59_999);
+      expect(h.status("a.pdf")).toBe("finishing");
+      await vi.advanceTimersByTimeAsync(1);
+      const item = h.itemOf("a.pdf");
+      expect(item.status).toBe("failed");
+      expect(item.failedStage).toBe("finish");
+      expect(item.error).toMatch(/stopped responding/);
+      // The attempt's fetches are told to stop, and its document is kept for the retry.
+      expect(h.signals.get("a.pdf")!.aborted).toBe(true);
+      expect(item.prepared).toBe("A");
+      expect(h.release).not.toHaveBeenCalled();
+    });
+
+    it("retries with a fresh attempt that can finish", async () => {
+      const h = await stalledUpload();
+      await vi.advanceTimersByTimeAsync(60_000);
+      const first = h.finishes.get("a.pdf")!;
+      h.queue.retry(h.idOf("a.pdf"));
+      expect(h.status("a.pdf")).toBe("finishing");
+      // The stalled attempt failing late doesn't touch the retry.
+      first.reject(new Error("network"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.status("a.pdf")).toBe("finishing");
+      h.finishes.get("a.pdf")!.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.status("a.pdf")).toBe("done");
+      expect(h.release).toHaveBeenCalledTimes(1);
+    });
+
+    it("counts a stalled attempt that gets through late as done", async () => {
+      const h = await stalledUpload();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(h.status("a.pdf")).toBe("failed");
+      h.finishes.get("a.pdf")!.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      const item = h.itemOf("a.pdf");
+      expect(item.status).toBe("done");
+      expect(item.error).toBeUndefined();
+      expect(h.release).toHaveBeenCalledTimes(1);
+    });
+
+    it("takes a stalled attempt that gets through during a Retry as done, and stops the Retry", async () => {
+      const h = await stalledUpload();
+      await vi.advanceTimersByTimeAsync(60_000);
+      const first = h.finishes.get("a.pdf")!;
+      h.queue.retry(h.idOf("a.pdf"));
+      const second = h.finishes.get("a.pdf")!;
+      const retrySignal = h.signals.get("a.pdf")!;
+      first.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.status("a.pdf")).toBe("done");
+      expect(retrySignal.aborted).toBe(true);
+      // The Retry then finding its own copy (a 409) changes nothing, and
+      // the document is freed once.
+      second.reject(new Error("409"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.status("a.pdf")).toBe("done");
+      expect(h.release).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops an upload whose batch was discarded once the limit passes, and frees it when it settles", async () => {
+      const h = await stalledUpload();
+      h.queue.discard();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(h.signals.get("a.pdf")!.aborted).toBe(true);
+      h.finishes.get("a.pdf")!.reject(new DOMException("aborted", "AbortError"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.release).toHaveBeenCalledTimes(1);
+    });
+
+    it("leaves an upload that answers in time alone", async () => {
+      const h = await stalledUpload();
+      h.finishes.get("a.pdf")!.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.status("a.pdf")).toBe("done");
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(h.status("a.pdf")).toBe("done");
+    });
   });
 });

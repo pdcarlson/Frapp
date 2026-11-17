@@ -47,12 +47,45 @@ export const SIGN_IN_REFRESH_UNREACHABLE_MESSAGE =
 export async function readRequestToken(
   supabase: Pick<SupabaseClient, "auth">,
 ): Promise<string | null> {
-  const { data, error } = await supabase.auth.getSession();
+  const { data, error } = await readSession(supabase);
   const token = data.session?.access_token ?? null;
   if (!token && isAuthRetryableFetchError(error)) {
     throw new TypeError(SIGN_IN_REFRESH_UNREACHABLE_MESSAGE, { cause: error });
   }
   return token;
+}
+
+/**
+ * How long a session read may wait. `getSession()` waits on a sign-in refresh
+ * already in flight, and that refresh's fetch has no time limit of its own,
+ * so one the network never answers held every request behind it with no
+ * error: the API client's own request timeout starts only after the token is
+ * read (staging, 2026-11-17: a backwork upload read "Uploading" for 20
+ * minutes and never reached the API).
+ */
+export const SESSION_READ_TIMEOUT_MS = 15_000;
+
+/**
+ * `supabase.auth.getSession()`, bounded by {@link SESSION_READ_TIMEOUT_MS}. A
+ * read that runs out fails as the dropped connection it almost certainly is,
+ * with the same message as a refresh that could not reach Auth, so it is
+ * retried, worded and reported the same way.
+ */
+export async function readSession(
+  supabase: Pick<SupabaseClient, "auth">,
+): ReturnType<SupabaseClient["auth"]["getSession"]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new TypeError(SIGN_IN_REFRESH_UNREACHABLE_MESSAGE)),
+      SESSION_READ_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([supabase.auth.getSession(), timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
