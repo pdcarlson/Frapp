@@ -1656,7 +1656,7 @@ function GroupTaskCard({
               </button>
             </div>
             <div
-              className="h-1.5 overflow-hidden rounded-full bg-muted"
+              className="h-1.5 overflow-hidden rounded-full bg-border"
               role="progressbar"
               aria-label={`${task.title}: ${TASK_AUDIENCE_COPY.progress(tile.done, tile.total)}`}
               aria-valuemin={0}
