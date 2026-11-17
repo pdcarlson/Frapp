@@ -8,13 +8,13 @@ The order the three ways are built in, and why, is [ADR-28](../architecture/adr/
 
 When an officer starts minutes, by any of the three ways under [Workflow](#workflow), they select a **meeting type**. Standards is in the table because it is a kind of meeting a chapter holds, and it is the one type none of the three ways offers ([Standards meetings](#standards-meetings)).
 
-| Type      | Example                                   |
-| --------- | ----------------------------------------- |
-| Chapter   | Full chapter meeting (most common).       |
-| Exec      | Officer / exec board meeting.             |
-| Committee | Committee or working-group meeting.       |
-| Standards | Standards board / member-conduct hearing. |
-| Other     | Anything else (free-form label optional). |
+| Type        | Example                                          |
+| ----------- | ------------------------------------------------ |
+| Chapter     | Full chapter meeting (most common).              |
+| Exec        | Officer / exec board meeting.                    |
+| Committee   | Committee or working-group meeting.              |
+| Standards   | Standards board / member-conduct hearing.        |
+| Other       | Anything else (free-form label optional).        |
 
 The type is captured as metadata on the meeting and persists through transcription. It is **not** a separate template; rather, the AI summarizer uses it to vary tone and emphasis:
 
@@ -50,11 +50,11 @@ Per-meeting-type template variants are deferred to v2+ pending real usage signal
 
 There are three ways to start, and they end in the same review screen.
 
-| Way in             | What the officer does                                                                                                              | Needs                                                                                                            |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Notes              | Types, pastes or dictates rough notes after the meeting.                                                                           | Nothing new, which is why it is built first.                                                                     |
-| Uploaded recording | Uploads an audio file on web, for example a phone's voice memo. Built 2026-11-12: [Uploading a recording](#uploading-a-recording). | A transcription provider.                                                                                        |
-| In-app recorder    | Records on the phone during the meeting. Built 2026-11-12: [Recording in the app](#recording-in-the-app).                          | A store build at native version 0.12.0 or later, the first with microphone access, and a transcription provider. |
+| Way in | What the officer does | Needs |
+| --- | --- | --- |
+| Notes | Types, pastes or dictates rough notes after the meeting. | Nothing new, which is why it is built first. |
+| Uploaded recording | Uploads an audio file on web, for example a phone's voice memo. Built 2026-11-12: [Uploading a recording](#uploading-a-recording). | A transcription provider. |
+| In-app recorder | Records on the phone during the meeting. Built 2026-11-12: [Recording in the app](#recording-in-the-app). | A store build at native version 0.12.0 or later, the first with microphone access, and a transcription provider. |
 
 1. An officer with the meeting permission starts minutes, selects the meeting type, and links the meeting's event. The event's check-ins fill the Attendees section without any AI. A meeting with no event gets one when minutes are started, with the audience the officer picks, because the event is what says who the minutes are for ([Who can read minutes](#who-can-read-minutes)).
 2. For a recording, the audio is transcribed on the server by a transcription provider behind Frapp's own interface. The vendor is chosen by a bake-off on a real meeting ([#712](https://github.com/pdcarlson/Frapp/issues/712)). Transcription is its own step: a general model is not asked to listen.

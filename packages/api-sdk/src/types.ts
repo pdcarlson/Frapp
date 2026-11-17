@@ -8243,7 +8243,7 @@ export interface components {
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
-            sections: ("attendees" | "summary" | "announcements" | "decisions" | "action_items" | "officer_reports" | "old_business" | "new_business" | "discussion_log")[];
+            sections: ("summary" | "decisions" | "action_items" | "discussion_log" | "attendees" | "announcements" | "officer_reports" | "old_business" | "new_business")[];
         };
         MeetingVoteDto: {
             for: number;
@@ -8306,7 +8306,7 @@ export interface components {
             event_end_time: string | null;
             content: components["schemas"]["MeetingContentDto"];
             /** @description The chapter’s template, in order. */
-            sections: ("attendees" | "summary" | "announcements" | "decisions" | "action_items" | "officer_reports" | "old_business" | "new_business" | "discussion_log")[];
+            sections: ("summary" | "decisions" | "action_items" | "discussion_log" | "attendees" | "announcements" | "officer_reports" | "old_business" | "new_business")[];
             /** @description The event’s check-ins; null when the event is gone. */
             attendees: components["schemas"]["MeetingAttendeesDto"] | null;
             /** Format: uuid */
