@@ -12,15 +12,23 @@
 //    at its next deploy, as it did on Render.
 // 3. Write the whole service with a new, named revision. On an existing
 //    service the traffic stays where it was and the new revision gets the
-//    `candidate` tag, its own URL with no traffic.
-// 4. Poll that URL's `/health/ready` until it reports DEPLOY_SHA
+//    `candidate` tag, with no traffic.
+// 4. Poll `candidate.<API host>/health/ready` until it reports DEPLOY_SHA
 //    (verify-served-commit.mjs). If it never does, stop: the old revision is
 //    still serving.
 // 5. Move all traffic to the new revision, dropping the tag, and check the
-//    service's own URL the same way.
+//    API's own address the same way.
 //
 // A first deploy has nothing to protect, so it sends traffic to the latest
-// revision at once and checks the service URL.
+// revision at once and checks the API's address.
+//
+// ── Why every check goes through the load balancer ──────────────────────────
+// The service takes only the balancer's traffic (ingress
+// INTERNAL_LOAD_BALANCER, #5269), so its `run.app` addresses, the tag's
+// included, refuse a request from anywhere else, this job too. One public
+// path is what lets TRUST_PROXY_HOPS be exact. The balancer sends
+// `candidate.<API host>` to the tagged revision (scripts/gcp/load-balancer.sh)
+// and the API host itself to whatever takes traffic.
 //
 // ── Why the whole service each time ─────────────────────────────────────────
 // The deploy owns the service's shape (instances, CPU, account, port, secrets),
@@ -34,8 +42,8 @@
 //
 // Env inputs (all required): GCP_PROJECT_ID, GCP_REGION, CLOUD_RUN_SERVICE,
 // CLOUD_RUN_RUNTIME, CLOUD_RUN_DEPLOYER, CLOUD_RUN_PROVIDER,
-// CLOUD_RUN_MIN_INSTANCES, CLOUD_RUN_MAX_INSTANCES, CLOUD_RUN_URL (the address
-// environments.mjs derives), IMAGE_REF (a digest reference), DEPLOY_SHA, and
+// CLOUD_RUN_MIN_INSTANCES, CLOUD_RUN_MAX_INSTANCES, API_HEALTHCHECK_URL (the
+// API's public `/health`, from Infisical), IMAGE_REF (a digest reference), DEPLOY_SHA, and
 // ENV_BASELINE (the names recorded before the Infisical injection). Optional: SERVICE_LABEL, GITHUB_OUTPUT (gets `url=`
 // and `revision=`).
 //
@@ -53,6 +61,17 @@ import { verifyServedCommit } from "./verify-served-commit.mjs";
 
 /** The tag a new revision answers on before it takes traffic. */
 export const CANDIDATE_TAG = "candidate";
+
+/**
+ * Where the balancer serves the tagged revision: the API's own `/health` URL
+ * with `candidate.` in front of its host (scripts/gcp/load-balancer.sh).
+ */
+export function candidateHealthUrl(healthUrl) {
+  const url = new URL(healthUrl);
+  if (url.protocol !== "https:") throw new Error(`API_HEALTHCHECK_URL must be https (got ${healthUrl}).`);
+  url.hostname = `${CANDIDATE_TAG}.${url.hostname}`;
+  return url.toString();
+}
 /** The port the API listens on (apps/api/Dockerfile `EXPOSE`). */
 const CONTAINER_PORT = 3001;
 /**
@@ -179,9 +198,11 @@ export function trafficForDeploy(existing, newRevision) {
 /** The service as the deploy owns it. */
 export function buildService({ runtimeAccount, image, revision, sha, minInstances, maxInstances, secrets, traffic }) {
   return {
-    ingress: "INGRESS_TRAFFIC_ALL",
-    // The API does its own auth; this makes it public without an allUsers
-    // binding, which the organization's sharing policy would refuse.
+    // Only the load balancer reaches the service, so the API has one public
+    // path and one X-Forwarded-For chain to trust (#5269).
+    ingress: "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER",
+    // The API does its own auth; this lets the balancer's callers in without
+    // an allUsers binding, which the organization's sharing policy would refuse.
     invokerIamDisabled: true,
     template: {
       revision,
@@ -273,7 +294,7 @@ export async function deployCloudRun({
   maxInstances,
   image,
   sha,
-  expectedUrl,
+  healthUrl,
   infisicalKeys = null,
   label = "Cloud Run",
   env = process.env,
@@ -307,8 +328,8 @@ export async function deployCloudRun({
   if (guarded) {
     const written = await getService({ name, token, fetchImpl });
     const candidate = (written?.trafficStatuses ?? []).find((status) => status.tag === CANDIDATE_TAG);
-    if (!candidate?.uri) throw new Error(`Cloud Run reports no URL for the ${CANDIDATE_TAG} tag on ${revision}.`);
-    const checked = await verify({ healthUrl: `${candidate.uri}/health`, sha, label: `${label} ${CANDIDATE_TAG}`, clock, logger });
+    if (candidate?.revision !== revision) throw new Error(`Cloud Run reports no ${CANDIDATE_TAG} tag on ${revision}.`);
+    const checked = await verify({ healthUrl: candidateHealthUrl(healthUrl), sha, label: `${label} ${CANDIDATE_TAG}`, clock, logger });
     if (checked.status !== "success") {
       throw new Error(`${checked.message} Traffic was not moved: the previous revision still serves.`);
     }
@@ -319,22 +340,10 @@ export async function deployCloudRun({
     await writeService({ name, body: promoted, token, what: `Moving traffic to ${revision}`, fetchImpl, clock, logger });
   }
 
-  const served = await getService({ name, token, fetchImpl });
-  if (!served?.uri) throw new Error(`Cloud Run reports no URL for ${service}.`);
-  // The deploy plan reads this address before a run deploys anything
-  // (environments.mjs derives it), so a service that doesn't answer on it
-  // would leave every plan unable to tell what staging serves.
-  const urls = [served.uri, ...(served.urls ?? [])];
-  if (expectedUrl && !urls.includes(expectedUrl)) {
-    throw new Error(
-      `${service} answers on ${urls.join(", ")}, not ${expectedUrl}, the address scripts/ci/lib/environments.mjs ` +
-        `derives for the deploy plan. Fix the derivation there.`,
-    );
-  }
-  const checked = await verify({ healthUrl: `${served.uri}/health`, sha, label, clock, logger });
+  const checked = await verify({ healthUrl, sha, label, clock, logger });
   if (checked.status !== "success") throw new Error(checked.message);
   logger.log?.(`[${label}] ${checked.message}`);
-  return { url: served.uri, revision };
+  return { url: healthUrl, revision };
 }
 
 // ── CLI entry ───────────────────────────────────────────────────────────────
@@ -358,7 +367,7 @@ async function main() {
     maxInstances: wholeNumber("CLOUD_RUN_MAX_INSTANCES"),
     image,
     sha: requireEnv("DEPLOY_SHA"),
-    expectedUrl: requireEnv("CLOUD_RUN_URL"),
+    healthUrl: requireEnv("API_HEALTHCHECK_URL"),
     infisicalKeys: injectedNames(process.env, readFileSync(requireEnv("ENV_BASELINE"), "utf8")),
     label: process.env.SERVICE_LABEL ?? "Cloud Run",
   });

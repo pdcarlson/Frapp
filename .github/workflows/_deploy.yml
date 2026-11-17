@@ -284,15 +284,7 @@ jobs:
           VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
           VERCEL_TEAM_ID: ${{ steps.ids.outputs.vercel_team_id }}
           VERCEL_STAGING_HOSTS: app.staging.frapp.live staging.frapp.live
-          API_HOST: ${{ steps.ids.outputs.api_host }}
-          CLOUD_RUN_URL: ${{ steps.ids.outputs.cloud_run_url }}
-        # On Cloud Run the plan compares against what the service itself serves,
-        # not the staging host, which can point elsewhere while it moves (#5228).
-        # No service yet reads as "can't tell", and the tip deploys.
-        run: |
-          set -euo pipefail
-          if [ "$API_HOST" = cloud-run ]; then export API_HEALTHCHECK_URL="$CLOUD_RUN_URL/health"; fi
-          node scripts/ci/plan-staging-deploy.mjs
+        run: node scripts/ci/plan-staging-deploy.mjs
 
       # ── Refuse a config this run would fail on after the apply (#3112) ──────
       # Each environment's flags restate the `if:` of the steps they stand in for.
@@ -652,7 +644,9 @@ jobs:
 
       # Staging on Cloud Run (#5228): the image built above, copied to the
       # project's own registry, deployed as a new revision that takes traffic
-      # only once its own URL serves this commit (deploy-cloud-run.mjs). The
+      # only once `candidate.<API host>`, the load balancer's way to it, serves
+      # this commit (deploy-cloud-run.mjs, #5269). API_HEALTHCHECK_URL comes from
+      # Infisical. The
       # job signs in to Google as the project's deployer with GitHub's OIDC
       # token, no key; the access token goes to a file the step deletes. Both
       # scripts run from the trusted copy, so a deploy of a commit from before
@@ -676,7 +670,6 @@ jobs:
           CLOUD_RUN_PROVIDER: ${{ steps.ids.outputs.cloud_run_provider }}
           CLOUD_RUN_MIN_INSTANCES: ${{ steps.ids.outputs.cloud_run_min_instances }}
           CLOUD_RUN_MAX_INSTANCES: ${{ steps.ids.outputs.cloud_run_max_instances }}
-          CLOUD_RUN_URL: ${{ steps.ids.outputs.cloud_run_url }}
           SERVICE_LABEL: frapp-api-staging (Cloud Run)
           # The trusted ref's scripts, like the checks: which tree they run from
           # can't depend on whether the deployed commit predates them.
@@ -724,9 +717,8 @@ jobs:
 
       # Render's `live` can still be the old instance, so poll /health/ready for the
       # commit, whenever anything ships and before any frontend: docs/ops/deployment/ci-cd.md § Deploy verification.
-      # The staging host every client calls, so on Cloud Run this fails until
-      # the host points there, and no web ships against an API it can't reach
-      # (#5228). The Cloud Run step has already checked the service's own URL.
+      # The staging host every client calls, so no web ships against an API it
+      # can't reach.
       - name: Verify staging serves the commit
         if: steps.plan.outputs.verify_sha != ''
         env:

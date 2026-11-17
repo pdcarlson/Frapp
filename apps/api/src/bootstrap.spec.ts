@@ -221,19 +221,20 @@ describe('configureApp', () => {
       };
 
       expect(instance.get('trust proxy')).toBe(TRUST_PROXY_HOPS.local);
-      // Measured per service: staging's chain is three entries (#864),
-      // production's two (#2972). `local` carries staging's figure.
-      expect(TRUST_PROXY_HOPS).toEqual({ production: 2, staging: 3, local: 3 });
+      // Measured per service: staging's chain behind Google's balancer is two
+      // entries (#5269), production's on Render two (#2972). `local` carries
+      // staging's figure.
+      expect(TRUST_PROXY_HOPS).toEqual({ production: 2, staging: 2, local: 2 });
     });
 
     // The whole point of a hop *count*: entries beyond the trusted ones are the
     // client's to forge, and must not be able to move `req.ip`.
     it('ignores a forged prefix and resolves the real client', async () => {
-      // Three trusted hops + loopback socket, so the fourth-from-the-socket
-      // entry is the real client and anything left of it is attacker-supplied.
-      const res = await get(
-        '203.0.113.99, 198.51.100.5, 192.0.2.1, 198.18.0.1',
-      ).expect(200);
+      // Two trusted hops + loopback socket, so the entry left of the last one
+      // is the real client and anything left of it is attacker-supplied.
+      const res = await get('203.0.113.99, 198.51.100.5, 192.0.2.1').expect(
+        200,
+      );
 
       expect(res.body.ip).toBe('198.51.100.5');
       expect(res.body.ip).not.toBe('203.0.113.99');
@@ -241,8 +242,8 @@ describe('configureApp', () => {
 
     it('resolves two different clients to two different addresses', async () => {
       const [a, b] = await Promise.all([
-        get('198.51.100.5, 192.0.2.1, 198.18.0.1').expect(200),
-        get('198.51.100.77, 192.0.2.1, 198.18.0.1').expect(200),
+        get('198.51.100.5, 192.0.2.1').expect(200),
+        get('198.51.100.77, 192.0.2.1').expect(200),
       ]);
 
       expect(a.body.ip).toBe('198.51.100.5');
@@ -252,7 +253,7 @@ describe('configureApp', () => {
 
     // `getTracker` prefers `req.ips[0]`, which is empty until trust proxy is set.
     it('populates req.ips, which the throttler keys on', async () => {
-      const res = await get('198.51.100.5, 192.0.2.1, 198.18.0.1').expect(200);
+      const res = await get('198.51.100.5, 192.0.2.1').expect(200);
 
       expect(res.body.ips.length).toBeGreaterThan(0);
       expect(res.body.ips[0]).toBe('198.51.100.5');
@@ -261,7 +262,7 @@ describe('configureApp', () => {
     // Documents the boundary rather than asserting it is safe: a hop count
     // trusts N entries whether or not N proxies appended them, so where the real
     // chain is shorter than TRUST_PROXY_HOPS — local dev, or any route that
-    // bypasses Render's edge — the leftmost entry wins and a client can set its
+    // bypasses the deployed proxies — the leftmost entry wins and a client can set its
     // own `req.ip`. That is exactly what production ran into under staging's
     // count (#2972). If this ever starts failing, the trust model changed and
     // #864 needs re-reading before the number is touched.
@@ -294,7 +295,7 @@ describe('configureApp', () => {
 
     beforeEach(() => jest.mocked(createProxyChainTripwire).mockClear());
 
-    // Production's proxies append two entries. Under staging's count of three
+    // Production's proxies append two entries. Under Render staging's old three
     // the forged value below was `req.ip`, and each rotation a fresh
     // rate-limit bucket.
     it('resolves the real client behind a forged prefix on production’s two-hop chain', async () => {
@@ -312,7 +313,7 @@ describe('configureApp', () => {
 
     it.each([
       ['production', 2],
-      ['staging', 3],
+      ['staging', 2],
     ] as const)(
       'arms the chain tripwire on %s with its own count',
       async (environment, hops) => {
