@@ -325,7 +325,8 @@ a fixed 28px dot slot below `xl`, so it never resizes the find field), notificat
   Who said what is told by shape, not labels, the way ChatGPT, Claude and Slack's assistant draw a conversation.
   Markers and chips are links to the source; a source this build has no page for is a plain chip.
   While it works, the step line sits under the streaming text, in the place the sources take, so nothing above it moves.
-  The header holds the title, a New conversation button once there is a turn, and the X. The field is two lines high with an arrow send and reads "Ask Frapp anything"; Enter sends and Shift+Enter breaks the line.
+  Before the first turn it opens on the crest in the chapter's colour over a glow of that colour, the day and a greeting ("Good evening, Marcus."), with the suggestions as arrow rows just above the field, and on a member's first open in this browser on the "What can you do?" exchange instead of the greeting (changed in #4904 by pdcarlson, 2026-11-17, the phone's opening, [`ai.md` § What Ask opens with](../../behavior/ai.md#what-ask-opens-with); until then a title and a paragraph about where answers come from, every time; `components/ask/ask-opening.tsx`).
+  The header holds the title (read to a screen reader only, before the first turn), a New conversation button once there is a turn, and the X. The field is two lines high with an arrow send and reads "Ask Frapp anything"; Enter sends and Shift+Enter breaks the line.
   Nothing sits under the field.
   While the beta diagnostics window is on, one caption line above the field says questions and answers are saved and until when; the status is read before the panel opens, so the line is in place when it slides in.
   The consent sheet opens at the first question, not when the panel opens.
@@ -333,9 +334,9 @@ a fixed 28px dot slot below `xl`, so it never resizes the find field), notificat
 - **A proposal card in the thread** (added 2026-11-12, #718, as the Do side of an Ask and Do switch;
   changed in #4699 by pdcarlson, 2026-11-13: the switch is gone, a request is typed in the same field as a question, and its card is a turn in the thread, `components/ask/ask-proposal.tsx`;
   behavior in [`../../behavior/ai.md` § Asking Frapp to do something](../../behavior/ai.md#asking-frapp-to-do-something)).
-  The empty panel tells a member who can ask for at least one action so.
+  The first-open exchange tells a member who can ask for at least one action so (every open did until #4904).
   What it offers to tap is built from the member's own account, not a fixed list ([`ai.md` § What Ask opens with](../../behavior/ai.md#what-ask-opens-with);
-  changed in #4700 by pdcarlson, 2026-11-13): up to three questions and one request, as rows under the opening lines that fade in when they arrive, with nothing below them to move, and no rows at all for a member with nothing to ask about.
+  changed in #4700 by pdcarlson, 2026-11-13): up to three questions and one request, as rows led by an arrow above the field that fade in when they arrive, with nothing below them to move, and no rows at all for a member with nothing to ask about.
   Microsoft 365 Copilot and Gemini in Workspace open the same way, on prompts drawn from the person's own meetings, files and mail, above the field.
   Every card in the thread stays live; none is replaced by the next thing asked.
   The card is on the `card` surface, one step above the panel's turn bubbles, and is a 14px-radius bordered block. Its top line is a small mark and what it makes ("New event", "New task", "Give points") with a ··· menu at the right holding Dismiss and Report this (#5148). Then the headline (for points, the size in words, "Give 5 points to 42 members", with the total under it on a line that keeps its height when empty), each detail as a row led by a small Lucide mark in place of an all-caps label, the members as a list with a remove control on each row (collapsed behind "Show members" above five) and an "Add a member" select, notes on a `surface-1` strip, a caption saying that only the officer can see the card and who is notified, and Edit (secondary) beside one named action (primary: "Create event", "Create task", "Give 5 points") at the bottom right.

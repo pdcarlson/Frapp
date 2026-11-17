@@ -23,6 +23,8 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   aiAvailableFrom: () => true,
   useAiChapterSettings: () => ({ data: { ask: true } }),
   useMyPermissions: () => ({ data: { permissions: ["ai:use"] } }),
+  useViewerUserId: () => null,
+  useViewerDisplayName: () => null,
   useAsk: () => ({
     exchanges: [],
     working: false,
