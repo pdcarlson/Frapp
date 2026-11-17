@@ -39,9 +39,8 @@ const detailKey = taskKeys.detail(CHAPTER, TASK);
 /** A future due date, so nothing derives to OVERDUE unless a test wants it. */
 const FUTURE = "2999-01-01";
 
-// `createTestQueryClient()` leaves `gcTime` at its default. Note the absence of
-// `gcTime: 0`, which some specs in this package use: these
-// tests seed cache entries that no component observes, and a zero gc time
+// `createTestQueryClient()` leaves `gcTime` at its default; don't set it to 0
+// here. These tests seed cache entries that no component observes, and a zero gc time
 // collects an unobserved entry the moment it is written — so the mutation would
 // find an empty cache and correctly decline to write, for the wrong reason.
 function createWrapper(client: unknown, queryClient: QueryClient) {

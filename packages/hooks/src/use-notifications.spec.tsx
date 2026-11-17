@@ -29,9 +29,8 @@ import { createHookWrapper, createTestQueryClient } from "./test-utils";
  * the write, the rollback and the reconciliation all land on the same key.
  */
 
-// `createTestQueryClient()` leaves `gcTime` at its default. Note the absence of
-// `gcTime: 0`, which the other specs in this package use:
-// these tests seed cache entries that no component observes, and a zero gc time
+// `createTestQueryClient()` leaves `gcTime` at its default; don't set it to 0
+// here. These tests seed cache entries that no component observes, and a zero gc time
 // collects an unobserved entry the moment it is written — so the mutation would
 // find an empty cache and correctly decline to write, for the wrong reason.
 function createWrapper(client: unknown, queryClient: QueryClient) {

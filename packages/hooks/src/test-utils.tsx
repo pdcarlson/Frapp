@@ -11,7 +11,8 @@ import { FrappClientProvider } from "./use-frapp-client";
  * A QueryClient that fails on the first error rather than retrying, so a spec
  * asserting an error state settles at once. Mutations already default to no
  * retry in TanStack Query v5; saying so here keeps a later default change out
- * of the specs.
+ * of the specs. `gcTime` stays at its default, so an unobserved query's data
+ * survives between a mutation and the assertion that reads it.
  */
 export function createTestQueryClient(): QueryClient {
   return new QueryClient({
@@ -29,7 +30,9 @@ export function createTestQueryClient(): QueryClient {
  * `chapterId` defaults to `null`, as `FrappClientProvider` does. A
  * chapter-scoped hook gates its queries on the id and invalidates a key that
  * carries it, so a spec for one must pass the chapter it asserts against, or
- * its queries never run. `userId` defaults to `null` the same way; a spec for
+ * its queries never run. A spec that switches chapter while the hook is
+ * mounted passes a function instead, read on every render, so its
+ * `rerender()` reaches the provider. `userId` defaults to `null` the same way; a spec for
  * a hook that scopes by the signed-in user passes one.
  */
 export function createHookWrapper({
@@ -42,14 +45,14 @@ export function createHookWrapper({
   /** The stubbed API client: only the verbs the hook under test calls. */
   client: unknown;
   queryClient?: QueryClient;
-  chapterId?: string | null;
+  chapterId?: string | null | (() => string | null);
   userId?: string | null;
   displayName?: string;
 }) {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <FrappClientProvider
       client={client as ReturnType<typeof createFrappClient>}
-      chapterId={chapterId}
+      chapterId={typeof chapterId === "function" ? chapterId() : chapterId}
       userId={userId}
     >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>

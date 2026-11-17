@@ -1,11 +1,9 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createFrappClient } from "@repo/api-sdk";
 import { useAdjustPoints, type AdjustPointsBody } from "./use-points";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper } from "./test-utils";
 
 /**
  * `useAdjustPoints`' idempotency key (#1906). The server dedupes a replayed
@@ -73,17 +71,13 @@ describe("useAdjustPoints", () => {
   });
 
   function render() {
-    const client = { POST: post } as unknown as ReturnType<
-      typeof createFrappClient
-    >;
-    // Not createHookWrapper: this reads `activeChapter` on every render, so a
-    // test can switch chapters under a mounted hook.
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider client={client} chapterId={activeChapter}>
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "AdjustPointsWrapper";
+    const Wrapper = createHookWrapper({
+      client: { POST: post },
+      queryClient,
+      // Read on every render, so a test can switch chapters under a mounted hook.
+      chapterId: () => activeChapter,
+      displayName: "AdjustPointsWrapper",
+    });
     return renderHook(() => useAdjustPoints(), { wrapper: Wrapper });
   }
 

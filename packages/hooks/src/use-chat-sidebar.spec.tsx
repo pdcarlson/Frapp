@@ -49,7 +49,9 @@ describe("useChatSidebar", () => {
     const { result } = renderHook(() => useChatSidebar(), { wrapper: Wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(GET).toHaveBeenCalledWith("/v1/chat-sidebar", { signal: expect.any(AbortSignal) });
+    expect(GET).toHaveBeenCalledWith("/v1/chat-sidebar", {
+      signal: expect.any(AbortSignal),
+    });
     expect(queryClient.getQueryData(KEY)).toEqual(stored);
   });
 
@@ -435,7 +437,8 @@ describe("sidebar writes", () => {
     const Wrapper = createHookWrapper({
       client: { GET, PUT },
       queryClient,
-      chapterId: chapter,
+      // Read on every render, so the switch below reaches the provider.
+      chapterId: () => chapter,
     });
     const OTHER_KEY = chatSidebarKeys.chapter("chapter-2");
     queryClient.setQueryData(KEY, stored);
