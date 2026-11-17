@@ -162,9 +162,10 @@ That is the model's judgment, given the context, not a ranking rule.
 Three gates stand between Frapp's data and a model.
 Each governs a different thing.
 
-1. **The chapter turned the feature on.**
-   The president switches on each family separately: Ask, meeting notes, and chat as a source.
-   Each is off until then.
+1. **The chapter has the feature on.**
+   The president switches each family separately: Ask, meeting notes, and chat as a source.
+   Each is on from the chapter's creation until the president turns it off (Paul, 2026-11-17, [#5294](https://github.com/pdcarlson/Frapp/issues/5294): "I would like more AI stuff on by default"; until then each was off until the president turned it on).
+   With Ask on from the start, the chapter's records are indexed from the start; nothing a member wrote or asked is sent without their own yes (gate 2).
    This gate governs the chapter's records, which are the chapter's to share: documents, minutes and roster fields, whoever uploaded or posted them.
    An announcement is chat, so it also needs its author's yes ([Chat as a source](#chat-as-a-source)).
 2. **The member turned Frapp AI on, once, on Meet Frapp AI.**
@@ -238,10 +239,9 @@ Only while the server has AI: every place waits for `GET /v1/ai/consent`, which 
 - **In personal Settings**, as one Frapp AI switch, captioned with what it does.
   The companies are not named there (Paul, 2026-11-17, #5292: "that lives in the privacy policy"), and the phone's AI section links the privacy policy.
   Turning it on opens Meet Frapp AI, so the yes is given where the companies are named and the policy is linked; turning it off is immediate.
-- **A president whose chapter never set its switches** (none on, none ever changed) turns the chapter's three switches on with the same Continue, and the screen's line says "for you and your chapter".
-  A chapter whose switches someone already set is left as it is.
-  Paul, 2026-11-13: "why not just get these features going from the start so you don't have to like go in and add stuff".
-  Added 2026-11-13 (#4790, the building session's, Paul's to change).
+- **A president's Continue covers only their own account.**
+  From 2026-11-13 (#4790) a president whose chapter never set its switches turned them on with the same Continue, and the screen's line said "for you and your chapter" (Paul: "why not just get these features going from the start so you don't have to like go in and add stuff").
+  Since #5294 (2026-11-17) the switches start on, so that path and its wording are gone.
 - The words are `FRAPP_AI_COPY` in `@repo/validation`, shared by web and mobile; the companies come from the server.
 
 A No is therefore not a promise that nothing about the member reaches a model.

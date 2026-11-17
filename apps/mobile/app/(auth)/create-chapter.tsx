@@ -228,8 +228,7 @@ export default function CreateChapter() {
   // Whether the new chapter became the active one. The logo and invite
   // routes act on the active chapter, so without it they can't run.
   const [activated, setActivated] = useState(false);
-  // The chapter's switches are the new chapter's only once it is active.
-  const ai = useMeetFrappAiStep({ includeChapter: activated });
+  const ai = useMeetFrappAiStep();
   const [logoBusy, setLogoBusy] = useState(false);
   const [logoNote, setLogoNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -473,8 +472,8 @@ export default function CreateChapter() {
               : step === "ai"
                 ? SETUP_TITLES.ai
                 : step === "primer"
-                ? SETUP_TITLES.primer
-                : SETUP_TITLES.invite;
+                  ? SETUP_TITLES.primer
+                  : SETUP_TITLES.invite;
   const setupIndex = SETUP_STEPS.indexOf(step);
   const mark = resolveChapterMark({
     logoUrl,
@@ -731,11 +730,7 @@ export default function CreateChapter() {
               {/* The same screen a joining member sees on s03. */}
               {step === "ai" ? (
                 <View style={styles.stack}>
-                  <MeetFrappAiBody
-                    providers={ai.providers}
-                    forChapter={ai.forChapter}
-                    error={ai.error}
-                  />
+                  <MeetFrappAiBody providers={ai.providers} error={ai.error} />
                 </View>
               ) : null}
 

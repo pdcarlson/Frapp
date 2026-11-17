@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   consent: undefined as Record<string, unknown> | null | undefined,
-  forChapter: false,
   turnOn: vi.fn(),
   notNow: vi.fn(),
   readError: null as unknown,
@@ -20,7 +19,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
         ? Promise.reject(state.readError)
         : Promise.resolve(state.consent ?? null),
     providers: ["Anthropic", "Google"],
-    forChapter: state.forChapter,
     turnOn: state.turnOn,
     notNow: state.notNow,
     pending: false,
@@ -49,10 +47,7 @@ function Entry({ onResult }: { onResult: (ok: boolean) => void }) {
   const { ensureConsent, consentDialog } = useAiConsentGate();
   return (
     <>
-      <button
-        type="button"
-        onClick={() => void ensureConsent().then(onResult)}
-      >
+      <button type="button" onClick={() => void ensureConsent().then(onResult)}>
         Ask
       </button>
       {consentDialog}
@@ -69,7 +64,6 @@ describe("Meet Frapp AI at an AI entry point", () => {
     state.turnOn.mockReset();
     state.notNow.mockReset();
     state.readError = null;
-    state.forChapter = false;
   });
 
   it("goes straight through for a member who has Frapp AI on", async () => {
@@ -110,17 +104,6 @@ describe("Meet Frapp AI at an AI entry point", () => {
     expect(
       screen.getByRole("link", { name: "Privacy policy" }),
     ).toHaveAttribute("href", expect.stringMatching(/\/privacy$/));
-  });
-
-  it("tells a president whose chapter never set its switches that Continue turns it on for the chapter too", async () => {
-    const user = userEvent.setup();
-    state.consent = consent();
-    state.forChapter = true;
-    render(<Entry onResult={vi.fn()} />);
-    await user.click(screen.getByRole("button", { name: "Ask" }));
-    expect(await screen.findByRole("dialog")).toHaveTextContent(
-      "Continuing turns it on for you and your chapter.",
-    );
   });
 
   it("turns it on with Continue, and lets the feature go ahead", async () => {

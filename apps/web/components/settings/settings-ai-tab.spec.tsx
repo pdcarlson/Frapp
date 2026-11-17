@@ -82,7 +82,7 @@ describe("the chapter's AI switches", () => {
     state.settings = settings();
     render(<SettingsAiTab />);
     expect(
-      screen.getByText(/off until the president turns it on/i),
+      screen.getByText(/on unless the president turns it off/i),
     ).toBeInTheDocument();
     expect(screen.queryByText(/anthropic|google|assemblyai/i)).toBeNull();
   });

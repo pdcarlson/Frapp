@@ -120,6 +120,11 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
       begin;
       insert into chapters (id, name, university) values
         ('${CH}', 'Chat A', 'U'), ('${CH2}', 'Chat B', 'U');
+      -- A new chapter's switches start on (#5294); this tier starts with them
+      -- off, as a president who turned them off, and turns chat on below.
+      update chapter_ai_settings
+         set ask_enabled = false, meeting_notes_enabled = false, chat_source_enabled = false
+       where chapter_id in ('${CH}', '${CH2}');
       insert into users (id, supabase_auth_id, email, display_name) values
         ('${U1}', gen_random_uuid(), 'chat-1@test.local', 'Sam Ortiz'),
         ('${U2}', gen_random_uuid(), 'chat-2@test.local', 'Lee Park');
@@ -150,6 +155,15 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
         ('${GEN2}', '${U1}', 'other chapter talk', '2026-11-09T20:00:00Z');
     `);
 
+    const seeded = await one(
+      `select count(*)::int as n from chapter_ai_settings where chapter_id in ($1, $2) and updated_at is null`,
+      [CH, CH2],
+    );
+    check(
+      "a new chapter gets its AI switches row from creation, never changed (#5294)",
+      seeded.n === 2,
+      { seeded },
+    );
     check(
       "with no chat switch on, messages write no window and no source",
       (await windows(CH)).length === 0 &&
@@ -159,8 +173,8 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
 
     // ── The switch on: history is enrolled ───────────────────────────────
     await db.exec(`
-      insert into chapter_ai_settings (chapter_id, ask_enabled, chat_source_enabled)
-      values ('${CH}', true, true);
+      update chapter_ai_settings set ask_enabled = true, chat_source_enabled = true
+       where chapter_id = '${CH}';
     `);
     const enrolled = await windows(CH);
     check(
@@ -499,8 +513,8 @@ console.log("\n=== Functional: chat in the AI corpus (20261112170000, #4314) ===
 
     // ── The switch off, and channel deletion ─────────────────────────────
     await db.exec(`
-      insert into chapter_ai_settings (chapter_id, ask_enabled, chat_source_enabled)
-      values ('${CH2}', true, true);
+      update chapter_ai_settings set ask_enabled = true, chat_source_enabled = true
+       where chapter_id = '${CH2}';
     `);
     const ch2Windows = (await windows(CH2)).length;
     await index(await chatSource((await windowOf(GEN, "2026-11-09")).id), [U1]);

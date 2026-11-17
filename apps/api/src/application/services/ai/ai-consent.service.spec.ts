@@ -34,18 +34,19 @@ class FakeAiConsentRepository implements IAiConsentRepository {
   saveChapterSettings(
     chapterId: string,
     patch: ChapterAiSettingsPatch,
-    updatedBy: string,
-    now: Date,
+    updatedBy: string | null,
+    now: Date | null,
   ) {
+    // The column defaults: on (#5294).
     const row: ChapterAiSettings = {
       chapter_id: chapterId,
-      ask_enabled: false,
-      meeting_notes_enabled: false,
-      chat_source_enabled: false,
+      ask_enabled: true,
+      meeting_notes_enabled: true,
+      chat_source_enabled: true,
       ...this.settings.get(chapterId),
       ...patch,
       updated_by: updatedBy,
-      updated_at: now.toISOString(),
+      updated_at: now ? now.toISOString() : null,
     };
     this.settings.set(chapterId, row);
     return Promise.resolve(row);
@@ -116,6 +117,14 @@ describe('AiConsentService', () => {
 
   const turnOn = (chapterId: string, patch: ChapterAiSettingsPatch) =>
     repo.saveChapterSettings(chapterId, patch, PRESIDENT, new Date());
+  /** A chapter whose president turned every switch off, then `on` back on. */
+  const onlyOn = (chapterId: string, on: ChapterAiSettingsPatch = {}) =>
+    turnOn(chapterId, {
+      ask_enabled: false,
+      meeting_notes_enabled: false,
+      chat_source_enabled: false,
+      ...on,
+    });
   const sayYes = (userId: string, version = CURRENT) =>
     repo.saveConsent(userId, version, true, new Date());
 
@@ -135,8 +144,9 @@ describe('AiConsentService', () => {
   });
 
   describe('check (the gateway seam)', () => {
-    it('refuses every family while the chapter has no switch on', async () => {
+    it('refuses every family once the president turned every switch off', async () => {
       await sayYes(MEMBER);
+      await onlyOn(CHAPTER);
       for (const family of ['ask', 'meetings', 'corpus'] as const) {
         await expect(service.check(call({ family }))).resolves.toEqual({
           allowed: false,
@@ -179,7 +189,7 @@ describe('AiConsentService', () => {
 
     it('puts each family behind its own switch, and embeddings behind Ask', async () => {
       await sayYes(MEMBER);
-      await turnOn(CHAPTER, { meeting_notes_enabled: true });
+      await onlyOn(CHAPTER, { meeting_notes_enabled: true });
       await expect(
         service.check(call({ family: 'meetings' })),
       ).resolves.toEqual({ allowed: true });
@@ -218,7 +228,7 @@ describe('AiConsentService', () => {
 
     it('indexes nothing while the chapter switch is off, whoever said yes', async () => {
       await sayYes(MEMBER);
-      await turnOn(CHAPTER, { meeting_notes_enabled: true });
+      await onlyOn(CHAPTER, { meeting_notes_enabled: true });
       await expect(
         service.check(call({ family: 'corpus', task: 'corpus.embed' })),
       ).resolves.toEqual({ allowed: false, reason: 'chapter_off' });
@@ -226,6 +236,7 @@ describe('AiConsentService', () => {
 
     it("reads the call's own chapter, not another chapter the member is in", async () => {
       await sayYes(MEMBER);
+      await onlyOn(CHAPTER);
       await turnOn(OTHER_CHAPTER, { ask_enabled: true });
       await expect(service.check(call())).resolves.toEqual({
         allowed: false,
@@ -265,7 +276,7 @@ describe('AiConsentService', () => {
   describe('chatAuthorsWhoSaidYes', () => {
     it('reads nobody while chat as a source is off', async () => {
       await sayYes(MEMBER);
-      await turnOn(CHAPTER, { ask_enabled: true });
+      await onlyOn(CHAPTER, { ask_enabled: true });
       await expect(
         service.chatAuthorsWhoSaidYes(CHAPTER, [MEMBER]),
       ).resolves.toEqual(new Set());
@@ -354,11 +365,11 @@ describe('AiConsentService', () => {
   });
 
   describe('the chapter switches', () => {
-    it('chapterSwitchOn is true only for a switch the president turned on (#4313)', async () => {
+    it('chapterSwitchOn is on until the president turns it off (#4313, #5294)', async () => {
       await expect(
         service.chapterSwitchOn(CHAPTER, 'meeting_notes'),
-      ).resolves.toBe(false);
-      await turnOn(CHAPTER, { ask_enabled: true });
+      ).resolves.toBe(true);
+      await onlyOn(CHAPTER, { ask_enabled: true });
       await expect(
         service.chapterSwitchOn(CHAPTER, 'meeting_notes'),
       ).resolves.toBe(false);
@@ -368,15 +379,41 @@ describe('AiConsentService', () => {
       ).resolves.toBe(true);
     });
 
-    it('are all off for a chapter that never changed one', async () => {
-      await expect(
-        service.getChapterSettings(CHAPTER, ['role-member']),
-      ).resolves.toEqual({
-        ask: false,
-        meeting_notes: false,
-        chat_source: false,
+    it('are all on for a chapter that never changed one (#5294)', async () => {
+      // No row, as before the migration seeds one; and the seeded row.
+      const untouched = {
+        ask: true,
+        meeting_notes: true,
+        chat_source: true,
         updated_at: null,
         can_change: false,
+      };
+      await expect(
+        service.getChapterSettings(CHAPTER, ['role-member']),
+      ).resolves.toEqual(untouched);
+      await repo.saveChapterSettings(CHAPTER, {}, null, null);
+      await expect(
+        service.getChapterSettings(CHAPTER, ['role-member']),
+      ).resolves.toEqual(untouched);
+      await sayYes(MEMBER);
+      await expect(service.check(call())).resolves.toEqual({ allowed: true });
+    });
+
+    it('puts a never-changed chapter back as never changed when the audit fails', async () => {
+      await repo.saveChapterSettings(CHAPTER, {}, null, null);
+      const before = { ...repo.settings.get(CHAPTER) };
+      record.mockRejectedValueOnce(new Error('audit down'));
+      await expect(
+        service.updateChapterSettings(
+          CHAPTER,
+          { userId: PRESIDENT, roleIds: [PRESIDENT_ROLE] },
+          { ask: false },
+        ),
+      ).rejects.toThrow('audit down');
+      expect(repo.settings.get(CHAPTER)).toEqual(before);
+      expect(repo.settings.get(CHAPTER)).toMatchObject({
+        updated_by: null,
+        updated_at: null,
       });
     });
 
@@ -425,6 +462,7 @@ describe('AiConsentService', () => {
     });
 
     it('writes and audits only the switches that change', async () => {
+      await onlyOn(CHAPTER);
       await expect(
         service.updateChapterSettings(
           CHAPTER,
@@ -452,7 +490,7 @@ describe('AiConsentService', () => {
     });
 
     it('puts the switches back when the audit fails, so a retry audits', async () => {
-      await turnOn(CHAPTER, { meeting_notes_enabled: true });
+      await onlyOn(CHAPTER, { meeting_notes_enabled: true });
       const before = { ...repo.settings.get(CHAPTER) };
       record.mockRejectedValueOnce(new Error('audit down'));
       await expect(

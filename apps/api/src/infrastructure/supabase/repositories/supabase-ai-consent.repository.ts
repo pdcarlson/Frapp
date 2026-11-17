@@ -57,16 +57,17 @@ export class SupabaseAiConsentRepository implements IAiConsentRepository {
   async saveChapterSettings(
     chapterId: string,
     patch: ChapterAiSettingsPatch,
-    updatedBy: string,
-    now: Date,
+    updatedBy: string | null,
+    now: Date | null,
   ): Promise<ChapterAiSettings> {
     // `chapter_id` last, so nothing spread from the patch can point the
     // upsert at another chapter's row. A column the patch leaves out keeps
-    // its stored value on update, and its default (off) on the first write.
+    // its stored value on update, and its default (on, #5294) on the first
+    // write.
     const row: TablesInsert<'chapter_ai_settings'> = {
       ...patch,
       updated_by: updatedBy,
-      updated_at: now.toISOString(),
+      updated_at: now ? now.toISOString() : null,
       chapter_id: chapterId,
     };
     const { data, error } = await this.supabase

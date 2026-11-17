@@ -85,14 +85,28 @@ export interface AiConsentState {
   sheet_changed: boolean;
 }
 
+/**
+ * A chapter's switches read as on unless a president turned one off (#5294,
+ * Paul, 2026-11-17: "I would like more AI stuff on by default"). Every
+ * chapter has a row from creation (`20261117043502_chapter_ai_defaults_on`),
+ * all on; a missing row reads the same way, so no reader disagrees with the
+ * column defaults.
+ */
+function switchOn(
+  row: ChapterAiSettings | null,
+  column: keyof ChapterAiSettingsPatch,
+): boolean {
+  return row ? row[column] === true : true;
+}
+
 function settingsView(
   row: ChapterAiSettings | null,
   canChange: boolean,
 ): AiChapterSettingsView {
   return {
-    ask: row?.ask_enabled ?? false,
-    meeting_notes: row?.meeting_notes_enabled ?? false,
-    chat_source: row?.chat_source_enabled ?? false,
+    ask: switchOn(row, 'ask_enabled'),
+    meeting_notes: switchOn(row, 'meeting_notes_enabled'),
+    chat_source: switchOn(row, 'chat_source_enabled'),
     updated_at: row?.updated_at ?? null,
     can_change: canChange,
   };
@@ -143,7 +157,7 @@ export class AiConsentService implements IAiConsentCheck {
       this.consents.findConsent(call.actingUserId, AI_CONSENT_SHEET.version),
     ]);
     const column = SWITCH_COLUMN[AI_FAMILY_SWITCH[call.family]];
-    if (settings?.[column] !== true) {
+    if (!switchOn(settings, column)) {
       return { allowed: false, reason: 'chapter_off' };
     }
     // Indexing the chapter's records serves the chapter, not the member the
@@ -172,7 +186,7 @@ export class AiConsentService implements IAiConsentCheck {
   ): Promise<Set<string>> {
     if (authorIds.length === 0) return new Set();
     const settings = await this.consents.findChapterSettings(chapterId);
-    if (settings?.chat_source_enabled !== true) return new Set();
+    if (!switchOn(settings, 'chat_source_enabled')) return new Set();
     return new Set(
       await this.consents.findAcceptedUserIds(
         authorIds,
@@ -192,7 +206,7 @@ export class AiConsentService implements IAiConsentCheck {
     key: AiChapterSwitch,
   ): Promise<boolean> {
     const settings = await this.consents.findChapterSettings(chapterId);
-    return settings?.[SWITCH_COLUMN[key]] === true;
+    return switchOn(settings, SWITCH_COLUMN[key]);
   }
 
   /**
@@ -276,8 +290,8 @@ export class AiConsentService implements IAiConsentCheck {
       await this.consents.saveChapterSettings(
         chapterId,
         restore,
-        existing?.updated_by ?? actor.userId,
-        existing ? new Date(existing.updated_at) : new Date(),
+        existing ? existing.updated_by : null,
+        existing?.updated_at ? new Date(existing.updated_at) : null,
       );
       throw error;
     }

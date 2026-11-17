@@ -50,11 +50,9 @@ const POINT_GLYPHS: Record<FrappAiPoint["key"], ReactNode> = {
 /** The screen's body: the three lines, and the one that names the companies. */
 function MeetFrappAiBody({
   providers,
-  forChapter,
   error,
 }: {
   providers: readonly string[];
-  forChapter: boolean;
   error?: string | null;
 }) {
   return (
@@ -73,7 +71,7 @@ function MeetFrappAiBody({
         ))}
       </ul>
       <p className="text-caption text-muted-foreground">
-        {FRAPP_AI_COPY.disclosure(joinNames(providers), forChapter)}{" "}
+        {FRAPP_AI_COPY.disclosure(joinNames(providers))}{" "}
         <a
           href={PRIVACY_URL}
           target="_blank"
@@ -140,17 +138,10 @@ export function MeetFrappAiDialog({
         <DialogHeader>
           <DialogTitle>{FRAPP_AI_COPY.title}</DialogTitle>
           <DialogDescription className="sr-only">
-            {FRAPP_AI_COPY.disclosure(
-              joinNames(choice.providers),
-              choice.forChapter,
-            )}
+            {FRAPP_AI_COPY.disclosure(joinNames(choice.providers))}
           </DialogDescription>
         </DialogHeader>
-        <MeetFrappAiBody
-          providers={choice.providers}
-          forChapter={choice.forChapter}
-          error={error}
-        />
+        <MeetFrappAiBody providers={choice.providers} error={error} />
         <DialogFooter className="items-center gap-3 sm:space-x-0">
           <button
             type="button"
