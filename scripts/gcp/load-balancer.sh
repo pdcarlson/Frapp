@@ -44,8 +44,6 @@ set -euo pipefail
 # shellcheck source=scripts/gcp/lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-STAGING_HOST="api-staging.frapp.live"
-PRODUCTION_HOST="api.frapp.live"
 SERVICE="$CLOUD_RUN_SERVICE"
 
 ADDRESS="frapp-api-ip"
@@ -79,22 +77,13 @@ usage() {
 ENVIRONMENT="$1"
 PROJECT_ID="$2"
 case "$ENVIRONMENT" in
-  staging) REGION="$GCP_STAGING_REGION"; HOST="$STAGING_HOST" ;;
-  production) REGION="$GCP_PRODUCTION_REGION"; HOST="$PRODUCTION_HOST" ;;
+  staging) REGION="$GCP_STAGING_REGION"; HOST="$GCP_STAGING_HOST" ;;
+  production) REGION="$GCP_PRODUCTION_REGION"; HOST="$GCP_PRODUCTION_HOST" ;;
   *) usage ;;
 esac
 CANDIDATE_HOST="$CANDIDATE_TAG.$HOST"
 
-exists() { gc "$@" >/dev/null 2>&1; }
-
-step "Checking project $PROJECT_ID"
-PROJECT_NAME="$(gcloud projects describe "$PROJECT_ID" --format='value(name)')"
-require_project_for_environment "$ENVIRONMENT" "$PROJECT_ID" "$PROJECT_NAME"
-if ! exists run services describe "$SERVICE" --region="$REGION"; then
-  echo "There is no Cloud Run service $SERVICE in $REGION yet. Let a deploy create it first, then run this again." >&2
-  exit 1
-fi
-echo "\"$PROJECT_NAME\", service $SERVICE in $REGION, host $HOST"
+require_project_with_service "$ENVIRONMENT" "$REGION" "$HOST"
 
 step "Turning on Compute Engine (load balancing) and Certificate Manager"
 gc services enable compute.googleapis.com certificatemanager.googleapis.com
