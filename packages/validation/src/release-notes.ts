@@ -134,6 +134,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     web: [
       "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
       "Your active threads now sit under their channel in the channel list, so you can open one in a click and see at a glance which have new replies.",
+      "Tasks can repeat every day, week or month, and a new one appears each time the last one comes due.",
     ],
     phone: [
       "Threads you're in now sit under their channel in Chat, as in Discord, instead of in a separate Threads list.",
