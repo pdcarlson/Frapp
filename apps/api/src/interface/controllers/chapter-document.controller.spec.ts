@@ -5,7 +5,10 @@ import { ChapterDocumentController } from './chapter-document.controller';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
 import { ChapterDocumentTypeService } from '../../application/services/chapter-document-type.service';
 import { RequestDocumentUploadUrlDto } from '../dtos/chapter-document.dto';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import {
+  PERMISSIONS_ANY_KEY,
+  PERMISSIONS_KEY,
+} from '../decorators/permissions.decorator';
 import { SystemPermissions } from '#domain/constants/permissions';
 
 describe('ChapterDocumentController', () => {
@@ -123,6 +126,45 @@ describe('ChapterDocumentController', () => {
         ).toEqual([SystemPermissions.CHAPTER_DOCS_UPLOAD]);
       },
     );
+  });
+
+  describe('who can see (#3642 piece 1)', () => {
+    // A file's list is its uploader's to set, so the route adds nothing past
+    // the class floor and the service decides uploader or manager.
+    it('setAccess adds no permission beyond the class floor', () => {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_KEY, controller.setAccess as object),
+      ).toBeUndefined();
+    });
+
+    // A manager without upload sets folder lists, so either permission
+    // reads the choices.
+    it('accessOptions takes chapter_docs:upload or chapter_docs:manage', () => {
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_KEY,
+          controller.accessOptions as object,
+        ),
+      ).toBeUndefined();
+      expect(
+        Reflect.getMetadata(
+          PERMISSIONS_ANY_KEY,
+          controller.accessOptions as object,
+        ),
+      ).toEqual([
+        SystemPermissions.CHAPTER_DOCS_UPLOAD,
+        SystemPermissions.CHAPTER_DOCS_MANAGE,
+      ]);
+    });
+
+    it('passes the caller through to every read, so the list is theirs', async () => {
+      const findByChapter = jest.fn().mockResolvedValue([]);
+      Object.assign(mockChapterDocumentService, { findByChapter });
+      await controller.list('chapter-123', 'user-1', 'Exec');
+      expect(findByChapter).toHaveBeenCalledWith('chapter-123', 'user-1', {
+        folder: 'Exec',
+      });
+    });
   });
 
   describe('document types (#3642)', () => {

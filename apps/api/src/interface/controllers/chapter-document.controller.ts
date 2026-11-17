@@ -30,7 +30,10 @@ import { ChapterDocumentTypeService } from '../../application/services/chapter-d
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { RequirePermissions } from '../decorators/permissions.decorator';
+import {
+  RequireAnyOfPermissions,
+  RequirePermissions,
+} from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
@@ -60,6 +63,8 @@ import {
   DocumentConfirmResultsDto,
   UpdateDocumentTypeDto,
   DocumentTypeDto,
+  DocumentAccessOptionsDto,
+  SetDocumentAccessDto,
 } from '../dtos/chapter-document.dto';
 
 @ApiTags('Documents')
@@ -182,6 +187,7 @@ export class ChapterDocumentController {
         byte_size: doc.byte_size,
         document_type: doc.document_type,
         effective_date: doc.effective_date,
+        who_can_see: doc.who_can_see,
       })),
     );
     return { results };
@@ -214,6 +220,7 @@ export class ChapterDocumentController {
       byte_size: dto.byte_size,
       document_type: dto.document_type,
       effective_date: dto.effective_date,
+      who_can_see: dto.who_can_see,
     });
   }
 
@@ -230,6 +237,7 @@ export class ChapterDocumentController {
   @ApiOkResponse({ type: ChapterDocumentDto, isArray: true })
   async list(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Query('folder') folder?: string,
     @Query('search') search?: string,
   ) {
@@ -242,7 +250,7 @@ export class ChapterDocumentController {
       folderFilter || searchFilter
         ? { ...folderFilter, ...searchFilter }
         : undefined;
-    return this.chapterDocumentService.findByChapter(chapterId, filter);
+    return this.chapterDocumentService.findByChapter(chapterId, userId, filter);
   }
 
   // Type routes, like the folder routes below, are declared before `:id` so
@@ -327,20 +335,45 @@ export class ChapterDocumentController {
   @ApiOkResponse({ type: DocumentPreviewUrlDto, isArray: true })
   async previewUrls(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Query('ids', new ParseArrayPipe({ items: String, separator: ',' }))
     ids: string[],
   ): Promise<DocumentPreviewUrlDto[]> {
     if (ids.some((id) => !isUUID(id))) {
       throw new BadRequestException('ids must be document ids');
     }
-    return this.chapterDocumentService.previewUrls(ids, chapterId);
+    return this.chapterDocumentService.previewUrls(ids, chapterId, userId);
   }
 
   @Get('folders')
   @ApiOperation({ summary: 'List document folders in display order' })
   @ApiOkResponse({ type: DocumentFolderDto, isArray: true })
-  async listFolders(@CurrentChapterId() chapterId: string) {
-    return this.chapterDocumentService.listFolders(chapterId);
+  async listFolders(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chapterDocumentService.listFolders(chapterId, userId);
+  }
+
+  // Who can see (#3642 piece 1): what the picker offers, for anyone who sets
+  // a list: an uploader (a file's list is theirs) or whoever manages
+  // documents (a folder's list, and any file's), who need not hold upload.
+  // Before `:id` like the folder routes, so it isn't read as a document id.
+  @Get('access-options')
+  @RequireAnyOfPermissions(
+    SystemPermissions.CHAPTER_DOCS_UPLOAD,
+    SystemPermissions.CHAPTER_DOCS_MANAGE,
+  )
+  @ApiOperation({
+    summary:
+      "What a who-can-see list may hold, and the tiers the caller's lists always keep",
+  })
+  @ApiOkResponse({ type: DocumentAccessOptionsDto })
+  async accessOptions(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<DocumentAccessOptionsDto> {
+    return this.chapterDocumentService.accessOptions(chapterId, userId);
   }
 
   // Pins are chapter-wide and need `chapter_docs:manage`, the permission that
@@ -364,26 +397,33 @@ export class ChapterDocumentController {
   @ApiOperation({ summary: 'Create a document folder' })
   async createFolder(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: CreateDocumentFolderDto,
   ) {
     return this.chapterDocumentService.createFolder(
       chapterId,
       dto.name,
       dto.sort_order,
+      userId,
+      dto.who_can_see,
     );
   }
 
   @Patch('folders/:id')
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
-  @ApiOperation({ summary: 'Rename or reorder a document folder' })
+  @ApiOperation({
+    summary: 'Rename or reorder a document folder, or set who can see it',
+  })
   async updateFolder(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') id: string,
     @Body() dto: UpdateDocumentFolderDto,
   ) {
-    return this.chapterDocumentService.updateFolder(id, chapterId, {
+    return this.chapterDocumentService.updateFolder(id, chapterId, userId, {
       name: dto.name,
       sort_order: dto.sort_order,
+      who_can_see: dto.who_can_see,
     });
   }
 
@@ -394,9 +434,10 @@ export class ChapterDocumentController {
   })
   async deleteFolder(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id') id: string,
   ) {
-    await this.chapterDocumentService.deleteFolder(id, chapterId);
+    await this.chapterDocumentService.deleteFolder(id, chapterId, userId);
     return { success: true };
   }
 
@@ -406,9 +447,15 @@ export class ChapterDocumentController {
   @ApiOkResponse({ type: DocumentFolderDto })
   async pinFolder(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<DocumentFolderDto> {
-    return this.chapterDocumentService.setFolderPinned(id, chapterId, true);
+    return this.chapterDocumentService.setFolderPinned(
+      id,
+      chapterId,
+      userId,
+      true,
+    );
   }
 
   @Delete('folders/:id/pin')
@@ -417,9 +464,15 @@ export class ChapterDocumentController {
   @ApiOkResponse({ type: DocumentFolderDto })
   async unpinFolder(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<DocumentFolderDto> {
-    return this.chapterDocumentService.setFolderPinned(id, chapterId, false);
+    return this.chapterDocumentService.setFolderPinned(
+      id,
+      chapterId,
+      userId,
+      false,
+    );
   }
 
   @Put('folders/:id/star')
@@ -459,16 +512,44 @@ export class ChapterDocumentController {
   @Get(':id')
   @ApiOperation({ summary: 'Get document with download URL' })
   @FeatureEvent('document-viewed')
-  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    return this.chapterDocumentService.findById(id, chapterId);
+  async getOne(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    return this.chapterDocumentService.findById(id, chapterId, userId);
   }
 
   @Delete(':id')
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
   @ApiOperation({ summary: 'Delete a document' })
-  async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    await this.chapterDocumentService.delete(id, chapterId);
+  async delete(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    await this.chapterDocumentService.delete(id, chapterId, userId);
     return { success: true };
+  }
+
+  // A file's own list is set by its uploader within its folder, or by whoever
+  // manages documents (Paul's pick 5); the service checks which, since the
+  // uploader needs no permission beyond seeing the file.
+  @Put(':id/access')
+  @ApiOperation({ summary: 'Set who can see one document' })
+  @ApiOkResponse({ type: ChapterDocumentDto })
+  async setAccess(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetDocumentAccessDto,
+  ): Promise<ChapterDocumentDto> {
+    return this.chapterDocumentService.setDocumentAccess(
+      id,
+      chapterId,
+      userId,
+      dto.who_can_see ?? null,
+    );
   }
 
   @Put(':id/pin')
@@ -479,9 +560,15 @@ export class ChapterDocumentController {
   @ApiOkResponse({ type: ChapterDocumentDto })
   async pinDocument(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ChapterDocumentDto> {
-    return this.chapterDocumentService.setDocumentPinned(id, chapterId, true);
+    return this.chapterDocumentService.setDocumentPinned(
+      id,
+      chapterId,
+      userId,
+      true,
+    );
   }
 
   @Delete(':id/pin')
@@ -490,9 +577,15 @@ export class ChapterDocumentController {
   @ApiOkResponse({ type: ChapterDocumentDto })
   async unpinDocument(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ChapterDocumentDto> {
-    return this.chapterDocumentService.setDocumentPinned(id, chapterId, false);
+    return this.chapterDocumentService.setDocumentPinned(
+      id,
+      chapterId,
+      userId,
+      false,
+    );
   }
 
   @Put(':id/star')

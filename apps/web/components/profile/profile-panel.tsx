@@ -39,7 +39,7 @@ import { PickRolesSection } from "@/components/roles/pick-roles-section";
 import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
 import { BirthdayFields } from "@/components/profile/birthday-fields";
 import { MemberPledgeClassSection } from "@/components/members/member-pledge-class-section";
-import { anyReadUncached } from "@/components/shared/async-states";
+import { anyReadUncached, pausedRead } from "@/components/shared/async-states";
 import { NestedError, NestedOffline } from "@/components/shared/nested-states";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { getErrorMessage, initials, parseGuardedInt } from "@/lib/utils";
@@ -152,7 +152,7 @@ export function ProfilePanel() {
    * their work and says nothing about it. Same shape as `<Can>`'s branch since
    * #1211, met on a form.
    */
-  const userPaused = userQuery.isPending && userQuery.fetchStatus === "paused";
+  const userPaused = pausedRead(userQuery);
   if (isOffline && anyReadUncached(userQuery)) {
     return (
       <>

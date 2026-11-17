@@ -259,3 +259,69 @@ export function authFallbackCopy(
   if (status === undefined) return errorCopy(error, fallback);
   return fallback;
 }
+
+/**
+ * Shown beside every Continue with Apple button (web's sign-in and sign-up,
+ * the phone's s01), and under the invite field on the phone's s02 invite step
+ * (`spec/ui/design-system/writing.md`, "Mobile s02 invite step"): an invited
+ * member who signs in with Apple's Hide My Email can still redeem an invite
+ * sent to a university address, because redeem binds the signed-in user, not
+ * the invite's email (`spec/behavior/onboarding.md`). The store's App Review
+ * notes rely on this line (`apps/mobile/store/README.md`).
+ */
+export const OAUTH_MEMBERSHIP_HINT =
+  "Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.";
+
+/**
+ * auth-js's `isAuthApiError`, by shape: this package doesn't depend on
+ * supabase-js, so it reads the same marker and name the library checks
+ * (`__isAuthError` and `name === "AuthApiError"`), as the code readers above
+ * read GoTrue's answers by shape.
+ */
+function isAuthApiErrorShape(
+  error: unknown,
+): error is { name: "AuthApiError"; status: unknown } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "__isAuthError" in error &&
+    "name" in error &&
+    error.name === "AuthApiError"
+  );
+}
+
+/**
+ * Whether Supabase Auth's answer to `getUser()` means this session is over,
+ * on web (`apps/web/lib/auth/rejected-session.ts`) and mobile
+ * (`apps/mobile/lib/rejected-session.ts`) alike.
+ *
+ * The API answers 401 when `SupabaseAuthGuard` rejects the token. With a
+ * signed-in tab or device, the usual cause is an account deleted elsewhere:
+ * the access token stays valid until it expires, but its user is gone, so
+ * every read fails and each screen used to render its own failure for it.
+ *
+ * Each client asks Auth before acting on the API's word, so a stray 401 never
+ * signs a member out. Auth must judge the token to count: an outage (a
+ * dropped request, a 5xx, a 429, an unreadable body) is not a verdict. This
+ * is stricter than the guard's `isAuthOutage`
+ * (`apps/api/src/interface/guards/guard-lookup.ts`): here a wrong "over"
+ * signs a member out.
+ */
+export function isSessionOver(result: {
+  data: { user: unknown };
+  error: unknown;
+}): boolean {
+  const { data, error } = result;
+  if (!error) return !data.user;
+  // Only Auth's own 4xx judges the token. Anything else (a dropped request, a
+  // 5xx, a 429, an unreadable body from a proxy in front of Auth, or no local
+  // session left to ask about) is not a verdict, and signing out on it would
+  // sign every member out during an outage.
+  return (
+    isAuthApiErrorShape(error) &&
+    typeof error.status === "number" &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 429
+  );
+}

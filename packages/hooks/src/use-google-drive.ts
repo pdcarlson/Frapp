@@ -68,15 +68,28 @@ function useStatusWriter() {
   };
 }
 
-/** Connect the folder a Drive link names. Refused with a reason to show. */
+/**
+ * Connect the folder a Drive link names, with who sees what it brings in
+ * (#5220; `null` is everyone who can open Documents). Refused with a reason
+ * to show.
+ */
 export function useConnectGoogleDrive() {
   const client = useFrappClient();
   const write = useStatusWriter();
   return useMutation({
     mutationKey: ["google-drive", "connect"],
-    mutationFn: async (folderLink: string): Promise<GoogleDriveStatus> => {
+    mutationFn: async ({
+      folderLink,
+      whoCanSee,
+    }: {
+      folderLink: string;
+      whoCanSee: string[] | null;
+    }): Promise<GoogleDriveStatus> => {
       const result = await client.PUT("/v1/google-drive", {
-        body: { folder_link: folderLink },
+        body: {
+          folder_link: folderLink,
+          ...(whoCanSee !== null ? { who_can_see: whoCanSee } : {}),
+        },
       });
       throwUnlessOk(result);
       return result.data!;
@@ -125,6 +138,27 @@ export function useDisconnectGoogleDrive() {
       setTimeout(() => {
         void queryClient.invalidateQueries({ queryKey: ["documents"] });
       }, 70_000);
+    },
+  });
+}
+
+/**
+ * Move a Drive copy that sync held back (#5220) into the folder Drive put it
+ * in, so everyone who sees that folder sees it.
+ */
+export function useOpenUpDriveCopy() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ["google-drive", "open-up"],
+    mutationFn: async (id: string): Promise<void> => {
+      const result = await client.POST("/v1/google-drive/copies/{id}/open-up", {
+        params: { path: { id } },
+      });
+      throwUnlessOk(result);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["documents"] });
     },
   });
 }

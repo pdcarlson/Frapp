@@ -12,6 +12,7 @@ import {
   useSetDocumentPin,
   useSetDocumentStar,
   withStar,
+  documentAccessChoices,
 } from "./use-documents";
 import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
@@ -509,5 +510,49 @@ describe("document stars and pins (#3934)", () => {
     expect(mockDelete).toHaveBeenCalledWith("/v1/documents/folders/{id}/pin", {
       params: { path: { id: "f1" } },
     });
+  });
+});
+
+describe("documentAccessChoices (#5216)", () => {
+  const data = {
+    options: [{ entry: "tier:exec", kind: "tier", label: "Exec" }],
+    always: ["tier:exec"],
+  };
+
+  it("offers a list once options load, keeping the caller's tiers", () => {
+    const choices = documentAccessChoices({
+      data,
+      isSuccess: true,
+      isError: false,
+    });
+    expect(choices.canLimit).toBe(true);
+    expect(choices.optionsState).toBe("ready");
+    expect(choices.locked).toEqual(["tier:exec"]);
+  });
+
+  it("keeps the field when a background refetch fails over good data", () => {
+    const choices = documentAccessChoices({
+      data,
+      isSuccess: false,
+      isError: true,
+    });
+    expect(choices.canLimit).toBe(true);
+    expect(choices.optionsState).toBe("ready");
+  });
+
+  it("offers no list outside every tier, or before anything loads", () => {
+    expect(
+      documentAccessChoices({
+        data: { options: [], always: null },
+        isSuccess: true,
+        isError: false,
+      }).canLimit,
+    ).toBe(false);
+    const failed = documentAccessChoices({ isSuccess: false, isError: true });
+    expect(failed.canLimit).toBe(false);
+    expect(failed.optionsState).toBe("error");
+    expect(
+      documentAccessChoices({ isSuccess: false, isError: false }).optionsState,
+    ).toBe("loading");
   });
 });

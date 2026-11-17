@@ -29,13 +29,15 @@ export function wedgingModal() {
  * the sheet whether or not it is up (a blur, a channel switch), and that must
  * never reach a closed modal. `sheet(ref)` renders the sheet, theme and all,
  * with `ref` as the ref its host holds; the sheet's only (or first) modal is
- * the one checked.
+ * the one checked. A sheet on `useGuardedSheetHandle` names its handle type:
+ * `expectHostDismissGuarded<GuardedSheetHandle>(...)`.
  */
-export function expectHostDismissGuarded(
-  sheet: (ref: RefObject<BottomSheetModal | null>) => ReactElement,
-) {
+export function expectHostDismissGuarded<
+  Handle extends { present: () => void; dismiss: () => void } =
+    BottomSheetModal,
+>(sheet: (ref: RefObject<Handle | null>) => ReactElement) {
   const modal = wedgingModal();
-  const ref = createRef<BottomSheetModal>();
+  const ref = createRef<Handle>();
   let tree!: ReturnType<typeof create>;
   act(() => {
     tree = create(sheet(ref), {

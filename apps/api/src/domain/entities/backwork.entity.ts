@@ -64,7 +64,27 @@ export interface BackworkDraftFields {
   assignment_number?: number | null;
   document_variant?: DocumentVariant | null;
   tags?: string[] | null;
+  /**
+   * The fields the upload-time AI fill set (#5233) and nobody has edited
+   * since, so the review table can mark them for checking.
+   */
+  ai_filled?: string[];
+  /** How the last AI fill ended, when one ran. */
+  ai_fill?: BackworkAiFillOutcome;
+  /**
+   * Saved with its suggested boxes without anyone looking at its pages (bulk
+   * upload's "Save the rest", #5252). Until the uploader checks them, the AI
+   * fill doesn't read the draft and it can't be published.
+   */
+  pages_unchecked?: true;
 }
+
+/**
+ * - `filled`: at least one field was set.
+ * - `nothing_found`: the file was read and nothing new could be told.
+ * - `unreadable`: the file has too little text to read, likely a scan.
+ */
+export type BackworkAiFillOutcome = 'filled' | 'nothing_found' | 'unreadable';
 
 export interface BackworkResource {
   id: string;

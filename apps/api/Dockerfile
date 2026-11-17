@@ -152,7 +152,4 @@ ENV NODE_ENV=production
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD wget -qO- http://localhost:3001/health || exit 1
-# boot.js reads the config from Infisical when the service holds an Infisical
-# machine identity (an image-backed service), then loads main.js; without one
-# it loads main.js straight away (infisical-boot-secrets.ts).
-CMD ["node", "dist/boot.js"]
+CMD ["node", "dist/main.js"]

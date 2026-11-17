@@ -1,9 +1,10 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import { OAUTH_MEMBERSHIP_HINT } from "@repo/hooks/auth-error-copy";
 import { AppleMark, GoogleMark } from "@/components/auth/oauth-brand-icons";
 import { Button } from "@/components/ui/button";
-import { OAUTH_MEMBERSHIP_HINT, type OAuthProvider } from "@/lib/auth/oauth";
+import type { OAuthProvider } from "@/lib/auth/oauth";
 
 const NAMES: Record<OAuthProvider, string> = {
   apple: "Apple",

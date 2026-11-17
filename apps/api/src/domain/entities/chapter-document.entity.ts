@@ -38,6 +38,19 @@ export interface ChapterDocument {
   drive_modified_at: string | null;
   /** The file's page in Google Drive. */
   drive_url: string | null;
+  /**
+   * Set on a Drive copy that Drive moved into a folder more people may see
+   * (#5220): that folder's id (not its name, which the copy's reader may not
+   * be allowed to see). The copy stays in its folder, at its old list, until
+   * someone who manages documents opens it up.
+   */
+  drive_held_folder_id: string | null;
+  /**
+   * Who can see it (#3642): `null` is the same as its folder; a list of
+   * `tier:`, `role:` and `group:` entries narrows the folder's, since a member
+   * must pass both (`document-access.ts`).
+   */
+  who_can_see: string[] | null;
 }
 
 /**
@@ -56,6 +69,18 @@ export interface ChapterDocumentFolder {
   created_at: string;
   /** When an officer pinned this folder for the whole chapter, or null (#3934). */
   pinned_at: string | null;
+  /**
+   * The Google Drive folder this one mirrors, or null (#5220). Sync matches
+   * folders by it, so a rename in Drive renames this folder and keeps its
+   * list. Its name and place follow Drive's, so it's renamed and deleted in
+   * Drive, not in Frapp.
+   */
+  drive_folder_id: string | null;
+  /**
+   * Who sees the folder and its files (#3642): `null` is everyone who can
+   * open Documents, else a list of `tier:`, `role:` and `group:` entries.
+   */
+  who_can_see: string[] | null;
 }
 
 /**

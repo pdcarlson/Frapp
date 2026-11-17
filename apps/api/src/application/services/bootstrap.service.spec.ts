@@ -230,7 +230,11 @@ describe('BootstrapService', () => {
     expect(m.events.findByChapter).toHaveBeenCalledWith(CHAPTER, USER);
     expect(m.geofences.listGeofences).toHaveBeenCalledWith(CHAPTER);
     // The route's no-filter read: no folder, no search.
-    expect(m.documents.findByChapter).toHaveBeenCalledWith(CHAPTER, undefined);
+    expect(m.documents.findByChapter).toHaveBeenCalledWith(
+      CHAPTER,
+      USER,
+      undefined,
+    );
   });
 
   it('reads only the sections `include` names', async () => {

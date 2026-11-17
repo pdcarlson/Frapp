@@ -276,6 +276,12 @@ export function useConfirmBackworkUpload() {
       is_redacted: boolean;
       /** Save as a draft only the uploader sees, to publish later (#5208). */
       draft?: boolean;
+      /**
+       * `false` for a draft saved with suggested boxes nobody looked at
+       * (#5252): it waits for its uploader's check before the AI fill reads
+       * it or it can be published.
+       */
+      pages_checked?: boolean;
     }) => {
       const result = await client.POST("/v1/backwork", { body });
       // On the status (see `throwUnlessOk`): an empty-bodied failure must not
@@ -301,8 +307,22 @@ export type BackworkDraft = {
   storage_path: string;
   is_redacted: boolean;
   created_at: string;
-  draft_fields: BackworkDraftFields;
+  draft_fields: BackworkDraftFields & {
+    /** Fields an AI fill set that nobody has edited since (#5233). */
+    ai_filled?: string[];
+    /** How the last AI fill ended, when one ran. */
+    ai_fill?: "filled" | "nothing_found" | "unreadable";
+    /**
+     * Saved from a folder with suggested boxes nobody has looked at yet
+     * (#5252): no AI fill and no publish until its uploader checks the pages.
+     */
+    pages_unchecked?: true;
+  };
 };
+
+/** How one AI fill of a draft ended (`POST /v1/backwork/drafts/{id}/fill`). */
+export type BackworkDraftFillStatus =
+  components["schemas"]["BackworkDraftFillResponseDto"]["status"];
 
 /**
  * The caller's own backwork drafts in the active chapter, in upload order
@@ -408,6 +428,113 @@ export function useDeleteBackworkDraft() {
       queryClient.invalidateQueries({
         queryKey: ["backwork", chapterId, "drafts"],
       });
+    },
+  });
+}
+
+/**
+ * Asks the upload AI to fill one draft's empty fields from its redacted text
+ * (#5233). Puts the filled draft in the cached list as soon as it answers.
+ * Throws on 403 (`ai.consent.required`, `ai.chapter_off`) and 404 (AI off on
+ * this server, or the draft is gone), so a caller can stop asking.
+ */
+export function useFillBackworkDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["backwork", "fill-backwork-draft"],
+    mutationFn: async (id: string) => {
+      const result = await client.POST("/v1/backwork/drafts/{id}/fill", {
+        params: { path: { id } },
+      });
+      throwUnlessOk(result);
+      const data = result.data as unknown as {
+        status: BackworkDraftFillStatus;
+        draft?: BackworkDraft;
+      };
+      return { id, status: data.status, draft: data.draft ?? null };
+    },
+    onSuccess: async ({ draft }) => {
+      if (!draft) return;
+      // As in `useCheckBackworkDraft`: an older refetch mustn't land after.
+      await queryClient.cancelQueries({
+        queryKey: ["backwork", chapterId, "drafts"],
+      });
+      queryClient.setQueryData(
+        ["backwork", chapterId, "drafts"],
+        (current: unknown) =>
+          Array.isArray(current)
+            ? current.map((row: BackworkDraft) =>
+                row.id === draft.id ? draft : row,
+              )
+            : current,
+      );
+    },
+  });
+}
+
+/**
+ * A five-minute link to one of the caller's drafts' stored file, for showing
+ * its pages to check (#5252). Fetched on demand rather than cached: it
+ * expires, and the page reads it once.
+ */
+export function useFetchBackworkDraftFileUrl() {
+  const client = useFrappClient();
+  return useCallback(
+    async (id: string, signal?: AbortSignal) => {
+      const result = await client.GET("/v1/backwork/drafts/{id}/file", {
+        params: { path: { id } },
+        signal,
+      });
+      throwUnlessOk(result);
+      return (result.data as { url: string }).url;
+    },
+    [client],
+  );
+}
+
+/**
+ * Marks a draft's pages checked (#5252), so the AI fill may read it and it
+ * can be published. When the uploader added boxes, `replacement` is the file
+ * flattened again and uploaded through `upload-url`, which replaces the
+ * stored one. Puts the checked draft in the cached list at once.
+ */
+export function useCheckBackworkDraft() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationKey: ["backwork", "check-backwork-draft"],
+    mutationFn: async ({
+      id,
+      replacement,
+    }: {
+      id: string;
+      replacement?: { storage_path: string; file_hash: string };
+    }) => {
+      const result = await client.POST("/v1/backwork/drafts/{id}/check", {
+        params: { path: { id } },
+        body: replacement ?? {},
+      });
+      throwUnlessOk(result);
+      return result.data as unknown as BackworkDraft;
+    },
+    onSuccess: async (draft) => {
+      // A list refetch that started before the check (Save all the rest
+      // refetches as each draft lands) would put the unchecked row back.
+      await queryClient.cancelQueries({
+        queryKey: ["backwork", chapterId, "drafts"],
+      });
+      queryClient.setQueryData(
+        ["backwork", chapterId, "drafts"],
+        (current: unknown) =>
+          Array.isArray(current)
+            ? current.map((row: BackworkDraft) =>
+                row.id === draft.id ? draft : row,
+              )
+            : current,
+      );
     },
   });
 }

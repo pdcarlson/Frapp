@@ -357,6 +357,18 @@ describe("env baseline", () => {
     assert.deepEqual([...parseEnvBaseline(text)], ["HOME", "PATH", "SECRET"]);
   });
 
+  // With the deploy job's id-token: write (#5228), these two let any process
+  // ask GitHub for a token Google trades for the deployer's. A CLI step built
+  // from the baseline never gets them.
+  it("leaves out GitHub's OIDC request pair", () => {
+    const text = formatEnvBaseline({
+      PATH: "/usr/bin",
+      ACTIONS_ID_TOKEN_REQUEST_URL: "https://example/token",
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "t",
+    });
+    assert.equal(text, '["PATH"]\n');
+  });
+
   it("refuses text that is not a JSON array of names", () => {
     assert.throws(() => parseEnvBaseline("PATH\nHOME\n"), /not JSON/);
     assert.throws(() => parseEnvBaseline('{"PATH":1}'), /JSON array/);

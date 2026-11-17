@@ -36,6 +36,12 @@ export interface MobileDocument {
    * Drive owns a copy: the row says so and offers no Delete.
    */
   drive_file_id: string | null;
+  /**
+   * The file's own who-can-see list (#5216), left out when it follows its
+   * folder. The API only sends what this member may see, so it is only
+   * ever drawn as a lock.
+   */
+  who_can_see?: string[];
 }
 
 export interface DocumentFolder {
@@ -43,6 +49,16 @@ export interface DocumentFolder {
   name: string;
   /** When an officer pinned it for the whole chapter, or null (#3934). */
   pinned_at?: string | null;
+  /** Who can see it (#5216), left out when everyone can. */
+  who_can_see?: string[];
+}
+
+/** A list on a row, or `undefined` for none (everyone, or Same as folder). */
+function accessList(row: Record<string, unknown>): string[] | undefined {
+  const list = row.who_can_see;
+  return Array.isArray(list)
+    ? list.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
 }
 
 /**
@@ -68,6 +84,7 @@ export function selectDocuments(data: unknown): MobileDocument[] {
         storage_path: str(row, "storage_path"),
         pinned_at: str(row, "pinned_at"),
         drive_file_id: str(row, "drive_file_id"),
+        ...(accessList(row) ? { who_can_see: accessList(row) } : {}),
       };
     })
     .filter((row): row is MobileDocument => !!row);
@@ -113,11 +130,17 @@ export function selectDocumentFolders(data: unknown): DocumentFolder[] {
         name,
         pinned_at: str(row, "pinned_at"),
         sort: num(row, "sort_order") ?? 0,
+        who_can_see: accessList(row),
       };
     })
     .filter((row): row is NonNullable<typeof row> => !!row)
     .sort((a, b) => a.sort - b.sort || a.name.localeCompare(b.name))
-    .map(({ id, name, pinned_at }) => ({ id, name, pinned_at }));
+    .map(({ id, name, pinned_at, who_can_see }) => ({
+      id,
+      name,
+      pinned_at,
+      ...(who_can_see ? { who_can_see } : {}),
+    }));
 }
 
 /**

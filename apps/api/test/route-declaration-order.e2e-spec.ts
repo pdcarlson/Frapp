@@ -84,6 +84,7 @@ describe('Route declaration order — a literal route must not be swallowed by :
 
   const chapterDocumentServiceMock = {
     listFolders: jest.fn().mockResolvedValue([]),
+    accessOptions: jest.fn().mockResolvedValue({ options: [], always: [] }),
     listStars: jest
       .fn()
       .mockResolvedValue({ folder_ids: [], document_ids: [] }),
@@ -326,6 +327,21 @@ describe('Route declaration order — a literal route must not be swallowed by :
 
     expect(chapterDocumentServiceMock.listFolders).toHaveBeenCalledWith(
       CHAPTER_ID,
+      'member-1',
+    );
+    expect(chapterDocumentServiceMock.findById).not.toHaveBeenCalled();
+  });
+
+  it('GET /v1/documents/access-options reaches accessOptions, not getOne', async () => {
+    await request(app.getHttpServer())
+      .get(`${V1}/documents/access-options`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_ID)
+      .expect(200);
+
+    expect(chapterDocumentServiceMock.accessOptions).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      'member-1',
     );
     expect(chapterDocumentServiceMock.findById).not.toHaveBeenCalled();
   });

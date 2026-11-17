@@ -7,9 +7,6 @@ import {
 
 export type OAuthProvider = "apple" | "google";
 
-const APPLE_PRIVATE_RELAY_HOST = "privaterelay.appleid.com";
-const PLACEHOLDER_EMAIL_HOST = "users.invalid";
-
 /**
  * Member-facing copy when GoTrue will not auto-link a new OAuth identity onto
  * an existing email/password or magic-link user.
@@ -24,23 +21,6 @@ export const IDENTITY_COLLISION_COPY =
 
 export const OAUTH_UNAVAILABLE_COPY =
   "This sign-in method isn't available yet. Use your password or a magic link.";
-
-export const OAUTH_MEMBERSHIP_HINT =
-  "Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.";
-
-export function isApplePrivateRelayEmail(
-  email: string | null | undefined,
-): boolean {
-  if (!email) return false;
-  const host = email.split("@")[1]?.toLowerCase();
-  return host === APPLE_PRIVATE_RELAY_HOST;
-}
-
-export function isPlaceholderAuthEmail(email: string | null | undefined): boolean {
-  if (!email) return false;
-  const host = email.split("@")[1]?.toLowerCase();
-  return host === PLACEHOLDER_EMAIL_HOST;
-}
 
 /**
  * A refused Google or Apple start, in the shared auth map's words

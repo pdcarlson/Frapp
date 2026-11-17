@@ -1,5 +1,6 @@
 "use client";
 
+import { pausedRead } from "@/components/shared/async-states";
 import Link from "next/link";
 import { Check } from "lucide-react";
 import { EventsGlyph, LocationGlyph } from "../chat-glyphs";
@@ -144,7 +145,7 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
     ? myCheckInView({
         own: selectOwnAttendance(mine.data),
         justCheckedIn: checkIn.checkedInEventId === payload.event_id,
-        ownLoading: mine.isPending && mine.fetchStatus !== "paused",
+        ownLoading: mine.isPending && !pausedRead(mine),
         start: payload.start_time,
         end: payload.end_time,
         opensMinutes: payload.check_in_opens_minutes,

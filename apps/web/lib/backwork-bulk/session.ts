@@ -54,6 +54,8 @@ export type Submission = {
   fields: BulkFields;
   boxes: BoxesByPage;
   flatten: boolean;
+  /** Saved by "Save the rest", unseen: waits for its page check (#5252). */
+  unchecked?: boolean;
 };
 
 type Mutations = {

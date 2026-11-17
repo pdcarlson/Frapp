@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -35,6 +36,8 @@ import {
   CheckInDto,
   CheckInScreenDto,
   CheckInScreenResultDto,
+  MarkAttendanceByHandDto,
+  MarkAttendanceByHandResultDto,
   MyAttendanceDto,
   UpdateAttendanceDto,
 } from '../dtos/attendance.dto';
@@ -212,6 +215,38 @@ export class AttendanceController {
       chapterId,
       dto.status,
       dto.excuse_reason ?? null,
+      adminId,
+    );
+  }
+
+  @Post('by-hand')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Mark members who were there, after the fact',
+    description:
+      'Fills in attendance for members with no row yet, in one request (the minutes page, for a meeting nobody checked in to). A member who already has a row keeps it; members the event does not invite are left out. Moves no points, like every officer mark.',
+  })
+  @ApiOkResponse({ type: MarkAttendanceByHandResultDto })
+  @FeatureEvent(
+    'attendance-marked-by-hand',
+    ({ body }: FeatureEventInput<MarkAttendanceByHandDto>) => ({
+      status: body.status,
+      count: body.user_ids.length,
+    }),
+  )
+  async markByHand(
+    @Param('eventId') eventId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') adminId: string,
+    @Body() dto: MarkAttendanceByHandDto,
+  ): Promise<MarkAttendanceByHandResultDto> {
+    return this.attendanceService.markByHand(
+      eventId,
+      chapterId,
+      dto.user_ids,
+      dto.status,
       adminId,
     );
   }

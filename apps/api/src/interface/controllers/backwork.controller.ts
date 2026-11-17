@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   InternalServerErrorException,
   Param,
   ParseUUIDPipe,
@@ -55,6 +56,8 @@ import {
   UpdateBackworkDraftsDto,
   PublishBackworkDraftsDto,
   PublishBackworkDraftsResponseDto,
+  CheckBackworkDraftDto,
+  BackworkDraftFileUrlDto,
 } from '../dtos/backwork.dto';
 
 @ApiTags('Backwork')
@@ -218,6 +221,49 @@ export class BackworkController {
     @Body() dto: PublishBackworkDraftsDto,
   ): Promise<PublishBackworkDraftsResponseDto> {
     return this.backworkService.publishDrafts(chapterId, userId, dto.ids);
+  }
+
+  // Checking a draft's pages (#5252). A folder saved without opening each
+  // document leaves its drafts unchecked: the uploader's browser fetches the
+  // stored file to show its pages, then marks the draft checked, swapping in
+  // a file flattened again when they added a box.
+  @Get('drafts/:id/file')
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({
+    summary: "A short-lived link to one of the caller's drafts' file",
+  })
+  @ApiOkResponse({ type: BackworkDraftFileUrlDto })
+  async draftFileUrl(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BackworkDraftFileUrlDto> {
+    return {
+      url: await this.backworkService.draftFileUrl(id, chapterId, userId),
+    };
+  }
+
+  @Post('drafts/:id/check')
+  @HttpCode(200)
+  @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
+  @ApiOperation({
+    summary:
+      "Mark one of the caller's drafts' pages checked, with its file flattened again when a box was added",
+  })
+  async checkDraft(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CheckBackworkDraftDto,
+  ) {
+    return this.backworkService.checkDraft(
+      id,
+      chapterId,
+      userId,
+      dto.storage_path !== undefined && dto.file_hash !== undefined
+        ? { storage_path: dto.storage_path, file_hash: dto.file_hash }
+        : undefined,
+    );
   }
 
   @Delete('drafts/:id')

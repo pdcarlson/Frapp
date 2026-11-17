@@ -429,7 +429,14 @@ describe("deploy-staging.yml: the order", () => {
 
   it("plans, deploys on the plan's say-so, and verifies what the plan named", () => {
     const deploy = step("Deploy the commit to Render (staging)");
-    assert.equal(deploy.if, "steps.plan.outputs.deploy == 'true'");
+    assert.equal(deploy.if, "steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'render'");
+    // Exactly one of the two ships the API, as the environment's apiHost says (#5228).
+    const cloudRun = step("Deploy the API to Cloud Run (staging)");
+    assert.equal(
+      cloudRun.if,
+      "inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'cloud-run'",
+    );
+    assert.equal(cloudRun.env.get("DEPLOY_SHA"), "${{ inputs.sha }}");
     assert.equal(deploy.env.get("RENDER_SERVICE_ID"), "${{ steps.ids.outputs.render_service_id }}");
     assert.equal(deploy.env.get("SERVICE_LABEL"), "frapp-api-staging");
     const verify = step("Verify staging serves the commit");
@@ -532,21 +539,21 @@ describe("deploy-staging.yml: the deploy-outcome alert", () => {
     // Parsed, so a flow-style map or a quoted key reads differently and fails.
     assert.deepEqual(
       Object.fromEntries(sharedJob().keys.get("permissions")),
-      { contents: "read", packages: "write" },
-      "the shared deploy job writes nothing on GitHub but the API image",
+      { contents: "read", packages: "write", "id-token": "write" },
+      "the shared deploy job writes nothing on GitHub but the API image, and asks only for its own OIDC token (#5228)",
     );
     // And any `write` value anywhere else in the file, trailing comment or not.
     assert.equal(
       (sharedUncommented.match(/:\s*["']?write\b/g) ?? []).length,
-      1,
-      "the shared deploy job's packages: write is the file's only write grant",
+      2,
+      "the shared deploy job's packages: write and id-token: write are the file's only write grants",
     );
     // A called job gets no more than its caller grants, so both callers must
     // grant exactly what it asks, or GitHub refuses the run at startup.
     for (const caller of [WORKFLOW, join(WORKFLOW_DIR, "deploy-production.yml")]) {
       assert.deepEqual(
         Object.fromEntries(jobIn(caller, "deploy").keys.get("permissions")),
-        { contents: "read", packages: "write" },
+        { contents: "read", packages: "write", "id-token": "write" },
         `${caller.split("/").pop()}'s deploy job must grant what _deploy.yml's job asks`,
       );
     }

@@ -5,7 +5,7 @@ import { SentryModule } from '@sentry/nestjs/setup';
 import { CustomThrottlerGuard } from './interface/guards/custom-throttler.guard';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-import { SupabaseModule } from './infrastructure/supabase/supabase.module';
+import { SupabaseModule } from './modules/supabase/supabase.module';
 import { HealthModule } from './modules/health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
@@ -61,6 +61,7 @@ import { AskPostModule } from './modules/ask-post/ask-post.module';
 import { AskObserveModule } from './modules/ask-observe/ask-observe.module';
 import { ActModule } from './modules/act/act.module';
 import { ChatCatchUpModule } from './modules/chat-catch-up/chat-catch-up.module';
+import { BackworkFillModule } from './modules/backwork-fill/backwork-fill.module';
 import { AiReportModule } from './modules/ai-report/ai-report.module';
 import { CalendarFeedModule } from './modules/calendar-feed/calendar-feed.module';
 import { GoogleCalendarModule } from './modules/google-calendar/google-calendar.module';
@@ -137,6 +138,7 @@ import { validateEnv } from './config/env.validation';
     AskObserveModule,
     ActModule,
     ChatCatchUpModule,
+    BackworkFillModule,
     MemberNudgeModule,
     AiReportModule,
     CalendarFeedModule,

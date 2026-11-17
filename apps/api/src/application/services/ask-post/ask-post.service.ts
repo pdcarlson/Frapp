@@ -28,6 +28,7 @@ import { ASK_ANSWER_PROMPT_VERSION } from '../ask/ask-prompt';
 import { ChannelAccessService } from '../channel-access.service';
 import { MeetingService } from '../meeting.service';
 import { EventService } from '../event.service';
+import { ChapterDocumentService } from '../chapter-document.service';
 import type { ChapterMemberAccess } from '../rbac.service';
 
 /**
@@ -67,6 +68,7 @@ export class AskPostService {
     private readonly channelAccess: ChannelAccessService,
     private readonly meetings: MeetingService,
     private readonly events: EventService,
+    private readonly documents: ChapterDocumentService,
     @Inject(CHAT_MESSAGE_REPOSITORY)
     private readonly messageRepo: IChatMessageRepository,
   ) {}
@@ -293,9 +295,15 @@ export class AskPostService {
         ),
       ),
     ];
-    const [readableMinutes, openEvents] = await Promise.all([
+    // A document is open when every reader passes its folder's and its own
+    // who can see (#3642 piece 1), the rule `GET /documents/:id` asks. Their
+    // groups are read only when the channel's lists name one, so a file
+    // limited to a group counts as restricted otherwise: a warning too many,
+    // never a file shown.
+    const [readableMinutes, openEvents, openDocuments] = await Promise.all([
       this.meetings.readableByAll(chapterId, idsOf('meeting'), others),
       this.events.visibleToAll(eventIds, chapterId, others),
+      this.documents.visibleToAll(chapterId, idsOf('document'), others),
     ]);
     // Documents, the roster, the standings and the calendar are read through
     // `members:view`, the permission Ask's own reads require.
@@ -307,7 +315,7 @@ export class AskPostService {
     const open = (ref: AskGivenRef): boolean => {
       switch (ref.type) {
         case 'document':
-          return allViewMembers;
+          return allViewMembers && openDocuments.has(ref.id);
         case 'channel':
           // Where the question was asked from, which is only its name:
           // known to everyone who reads that channel and to nobody else.

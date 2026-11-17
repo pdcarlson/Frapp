@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Lock, Trash2, Upload } from "lucide-react";
+import { Lock, ScanSearch, Trash2, Upload } from "lucide-react";
 import {
   useBackworkDrafts,
   useDeleteBackworkDraft,
@@ -48,6 +48,14 @@ import {
   type DraftColumn,
 } from "@/lib/backwork-bulk/drafts";
 import { isUnredactedStudentCopy } from "@repo/validation";
+import { useDraftAutofill, type DraftAutofillStop } from "./use-draft-autofill";
+import { CheckPagesDialog } from "./check-pages-dialog";
+
+/** Why the AI fill stopped, in words for the line above the table. */
+const AUTOFILL_STOPPED: Record<Exclude<DraftAutofillStop, "off">, string> = {
+  consent: "Turn on Frapp AI to have drafts filled in from their pages.",
+  chapter_off: "Frapp AI is off for your chapter, so drafts aren't filled in for you.",
+};
 
 /** A Radix Select item can't hold "", so a cleared choice goes as this. */
 const NONE = "__none";
@@ -73,6 +81,9 @@ export function DraftsReview() {
   const publish = usePublishBackworkDrafts();
   const remove = useDeleteBackworkDraft();
   const drafts = useMemo(() => draftsQuery.data ?? [], [draftsQuery.data]);
+  // The upload AI fills each new draft's empty fields from its redacted
+  // pages (#5233); the member checks them here before publishing.
+  const autofill = useDraftAutofill(drafts, gate.allowed);
 
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [failures, setFailures] = useState<ReadonlyMap<string, string>>(new Map());
@@ -82,6 +93,9 @@ export function DraftsReview() {
   // would be overwritten by the older copy the bulk write is holding.
   const [bulkSaving, setBulkSaving] = useState(false);
   const busy = publishing || bulkSaving;
+  // The draft whose pages are open for checking (#5252), by id so the dialog
+  // follows the cached row.
+  const [checkingId, setCheckingId] = useState<string | null>(null);
 
   // Selection only ever holds drafts that are still here.
   const liveSelected = useMemo(
@@ -184,7 +198,14 @@ export function DraftsReview() {
     }
   }
 
-  const publishTargets = liveSelected.length > 0 ? liveSelected : drafts.map((d) => d.id);
+  // A draft saved without anyone looking at its pages waits for its check
+  // (#5252), so publishing leaves it out rather than sending it to be refused.
+  const unchecked = drafts.filter((draft) => draft.draft_fields?.pages_unchecked);
+  const checkable = new Set(unchecked.map((draft) => draft.id));
+  const publishTargets = (liveSelected.length > 0 ? liveSelected : drafts.map((d) => d.id)).filter(
+    (id) => !checkable.has(id),
+  );
+  const checking = drafts.find((draft) => draft.id === checkingId) ?? null;
 
   return (
     <section aria-labelledby="drafts-review-heading" className="space-y-3">
@@ -197,6 +218,28 @@ export function DraftsReview() {
           {drafts.length === 1 ? "it" : "them"} until you publish.
         </p>
       </div>
+      {autofill.stopped && autofill.stopped !== "off" ? (
+        <p className="text-caption text-muted-foreground" role="status">
+          {AUTOFILL_STOPPED[autofill.stopped]}
+        </p>
+      ) : autofill.running.size > 0 ? (
+        <p className="text-caption text-muted-foreground tabular-nums" role="status">
+          Filling in {autofill.running.size === 1 ? "1 draft" : `${autofill.running.size} drafts`} from{" "}
+          {autofill.running.size === 1 ? "its" : "their"} pages. Check what it fills before you publish.
+        </p>
+      ) : drafts.some((draft) => draft.draft_fields?.ai_filled?.length) ? (
+        <p className="text-caption text-muted-foreground">
+          Fields marked AI were filled in from the file. Check them before you publish.
+        </p>
+      ) : null}
+
+      {unchecked.length > 0 ? (
+        <p className="text-caption text-muted-foreground tabular-nums" role="status">
+          {unchecked.length === 1
+            ? "1 draft was saved without opening it. Check its pages before it's filled in or published."
+            : `${unchecked.length} drafts were saved without opening them. Check their pages before they're filled in or published.`}
+        </p>
+      ) : null}
 
       <div className="flex min-h-11 flex-wrap items-center gap-2" role="toolbar" aria-label="Drafts">
         {liveSelected.length > 0 ? (
@@ -219,12 +262,16 @@ export function DraftsReview() {
           size="toolbar"
           className="ml-auto gap-2"
           onClick={() => publishIds(publishTargets)}
-          {...gate.controlProps(busy)}
+          {...gate.controlProps(busy || publishTargets.length === 0)}
         >
           <Upload className="h-4 w-4" aria-hidden="true" />
-          {liveSelected.length > 0
-            ? `Publish ${liveSelected.length} selected`
-            : `Publish all ${drafts.length}`}
+          {publishTargets.length === 0
+            ? "Publish"
+            : liveSelected.length > 0
+              ? `Publish ${publishTargets.length} selected`
+              : publishTargets.length === drafts.length
+              ? `Publish all ${drafts.length}`
+              : `Publish ${publishTargets.length} checked`}
         </Button>
       </div>
 
@@ -276,9 +323,16 @@ export function DraftsReview() {
                     <DraftCell
                       draft={draft}
                       column={column.key}
+                      aiFilled={draft.draft_fields?.ai_filled?.includes(column.key) ?? false}
                       disabled={!gate.allowed || busy}
                       onSave={(fields) => save([draft.id], fields)}
                     />
+                    {draft.draft_fields?.ai_filled?.includes(column.key) ? (
+                      // The cell's label says so to a screen reader.
+                      <span aria-hidden="true" className="mt-0.5 block text-caption font-semibold text-accent-text">
+                        AI
+                      </span>
+                    ) : null}
                     {column.key === "title" ? (
                       <div className="mt-1 flex items-center gap-1.5 text-caption">
                         {draft.is_redacted ? (
@@ -288,7 +342,25 @@ export function DraftsReview() {
                         ) : (
                           <span className="text-muted-foreground">Uploaded as-is</span>
                         )}
-                        {problem ? (
+                        {autofill.running.has(draft.id) ? (
+                          <span className="text-muted-foreground" role="status">
+                            Reading the file
+                          </span>
+                        ) : draft.draft_fields?.ai_fill === "unreadable" ? (
+                          <span className="text-muted-foreground">Couldn&apos;t read this file. Fill it in by hand.</span>
+                        ) : null}
+                        {draft.draft_fields?.pages_unchecked ? (
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="toolbar"
+                            className="gap-1.5"
+                            onClick={() => setCheckingId(draft.id)}
+                            {...gate.controlProps(busy)}
+                          >
+                            <ScanSearch className="h-4 w-4" aria-hidden="true" /> Check pages
+                          </Button>
+                        ) : problem ? (
                           <span className="text-destructive-text" role="status">
                             {problem}
                           </span>
@@ -311,6 +383,7 @@ export function DraftsReview() {
           })}
         </TableBody>
       </Table>
+      <CheckPagesDialog draft={checking} onClose={() => setCheckingId(null)} />
     </section>
   );
 }
@@ -338,17 +411,20 @@ export function DraftsWaitingNote() {
 function DraftCell({
   draft,
   column,
+  aiFilled,
   disabled,
   onSave,
 }: {
   draft: BackworkDraft;
   column: DraftColumn;
+  /** Set by the AI fill and not edited since: marked for checking. */
+  aiFilled: boolean;
   disabled: boolean;
   onSave: (fields: BackworkDraftFields) => Promise<boolean>;
 }) {
   const spec = columnSpec(column);
   const stored = cellText(draft, column);
-  const label = `${spec.label} for ${draftLabel(draft)}`;
+  const label = `${spec.label} for ${draftLabel(draft)}${aiFilled ? ", filled in by AI" : ""}`;
 
   if (spec.kind === "choice") {
     return (

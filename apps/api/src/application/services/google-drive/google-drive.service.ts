@@ -18,6 +18,7 @@ import {
 } from '#domain/repositories/chapter-drive.repository.interface';
 import type { ChapterDriveConnection } from '#domain/entities/chapter-drive-connection.entity';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
+import { ChapterDocumentService } from '../chapter-document.service';
 import { toReportableError } from '../../../infrastructure/observability/reportable-error';
 
 export interface GoogleDriveStatus {
@@ -32,6 +33,7 @@ export interface GoogleDriveStatus {
     synced_count: number;
     skipped_count: number;
     syncing: boolean;
+    who_can_see: string[] | null;
   } | null;
 }
 
@@ -46,6 +48,7 @@ export class GoogleDriveService {
     @Inject(GOOGLE_DRIVE_API) private readonly drive: IGoogleDriveApi,
     @Inject(CHAPTER_DRIVE_REPOSITORY)
     private readonly connections: IChapterDriveRepository,
+    private readonly documents: ChapterDocumentService,
   ) {}
 
   async status(
@@ -64,12 +67,14 @@ export class GoogleDriveService {
   /**
    * Connects the folder a link (or id) names. Checked with Google first, so
    * a folder not shared with Frapp is refused here with the address to share
-   * it with, not discovered later by the worker.
+   * it with, not discovered later by the worker. `whoCanSee` is the list the
+   * folder's copies start behind (#5220), checked as any folder's is.
    */
   async connect(
     chapterId: string,
     userId: string,
     folderLink: string,
+    whoCanSee: string[] | null = null,
   ): Promise<GoogleDriveStatus> {
     const email = this.requireAvailable();
     const folderId = parseDriveFolderId(folderLink);
@@ -79,6 +84,8 @@ export class GoogleDriveService {
       );
     }
     await this.refuseIfConnected(chapterId);
+    const list =
+      (await this.documents.checkedList(chapterId, userId, whoCanSee)) ?? null;
     let folder;
     try {
       folder = await this.drive.getItem(folderId);
@@ -110,6 +117,7 @@ export class GoogleDriveService {
         folder_id: folder.id,
         folder_name: folder.name || 'Google Drive folder',
         connected_by: userId,
+        who_can_see: list,
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
@@ -178,6 +186,7 @@ function toStatus(
     last_synced_at: live.last_synced_at,
     synced_count: live.synced_count,
     skipped_count: live.skipped_count,
+    who_can_see: live.who_can_see,
     // Due already (just connected, Sync now, or more to copy) or mid-pass.
     syncing:
       live.status === 'active' &&

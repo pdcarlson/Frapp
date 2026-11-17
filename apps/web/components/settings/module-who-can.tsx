@@ -1,29 +1,17 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { Plus, X } from "lucide-react";
-import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import { cn } from "@/lib/utils";
 import { ProfileSection } from "@/components/profile/profile-section";
 import {
   InlineNote,
   inlineNoteActionClassName,
 } from "@/components/shared/inline-note";
-import {
-  Command,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { FOCUS_RING } from "@/components/ui/focus";
 import { modulePermissions } from "@/components/settings/settings-modules";
+import { SearchablePicker } from "@/components/settings/searchable-picker";
 import {
   useRolePermissionToggle,
   useTierPermissionToggle,
@@ -329,28 +317,9 @@ function AddHolder({
   tierWord: string;
   onAdd: (holder: Holder) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const commandRef = useRef<HTMLDivElement>(null);
-  const shown =
-    normalizeWords(query).length === 0
-      ? holders
-      : holders.filter((holder) => matchesWordStarts(holder.name, query));
-  const groups = [
-    { heading: tierHeading, items: shown.filter((h) => h.kind === "tier") },
-    { heading: "Roles", items: shown.filter((h) => h.kind === "role") },
-  ].filter((group) => group.items.length > 0);
-  const close = () => {
-    setOpen(false);
-    setQuery("");
-  };
-
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => (next ? setOpen(true) : close())}
-    >
-      <PopoverTrigger asChild>
+    <SearchablePicker
+      trigger={
         <button
           type="button"
           aria-label={`Add to ${permissionLabel}`}
@@ -362,61 +331,25 @@ function AddHolder({
           <Plus className="h-3 w-3" aria-hidden />
           Add
         </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="end"
-        className="w-max min-w-[14rem] max-w-[min(22rem,calc(100vw-2rem))] p-0"
-        onEscapeKeyDown={(event) => {
-          if (!query) return;
-          event.preventDefault();
-          setQuery("");
-        }}
-      >
-        <Command
-          ref={commandRef}
-          tabIndex={-1}
-          className="outline-none"
-          shouldFilter={false}
-          label={`Who to add to ${permissionLabel}`}
-        >
-          <CommandInput
-            value={query}
-            onValueChange={setQuery}
-            placeholder={`Find a ${tierWord} or role`}
-            className="h-9 py-2 text-sm pointer-coarse:h-11 pointer-coarse:text-base"
-          />
-          <CommandList className="max-h-72 p-1">
-            {shown.length === 0 ? (
-              <p role="status" className="px-2 py-3 text-sm text-muted">
-                Nothing matches “{query.trim()}”.
-              </p>
-            ) : (
-              groups.map((group) => (
-                <CommandGroup key={group.heading} heading={group.heading}>
-                  {group.items.map((holder) => (
-                    <CommandItem
-                      key={`${holder.kind}-${holder.id}`}
-                      value={`${holder.kind}-${holder.id}`}
-                      className="min-h-8 gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base"
-                      onSelect={() => {
-                        onAdd(holder);
-                        close();
-                      }}
-                    >
-                      {holder.kind === "role" ? (
-                        <RoleDot color={holder.color} />
-                      ) : null}
-                      <span className="min-w-0 flex-1 break-words">
-                        {holder.name}
-                      </span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))
-            )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+      }
+      align="end"
+      label={`Who to add to ${permissionLabel}`}
+      placeholder={`Find a ${tierWord} or role`}
+      items={holders}
+      nameOf={(holder) => holder.name}
+      keyOf={(holder) => `${holder.kind}-${holder.id}`}
+      groupsOf={(shown) => [
+        { heading: tierHeading, items: shown.filter((h) => h.kind === "tier") },
+        { heading: "Roles", items: shown.filter((h) => h.kind === "role") },
+      ]}
+      itemClassName="min-h-8 gap-2 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base"
+      renderItem={(holder) => (
+        <>
+          {holder.kind === "role" ? <RoleDot color={holder.color} /> : null}
+          <span className="min-w-0 flex-1 break-words">{holder.name}</span>
+        </>
+      )}
+      onPick={onAdd}
+    />
   );
 }

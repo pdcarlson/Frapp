@@ -2575,6 +2575,26 @@ export interface paths {
         patch: operations["AttendanceController_updateStatus_v1"];
         trace?: never;
     };
+    "/v1/events/{eventId}/attendance/by-hand": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark members who were there, after the fact
+         * @description Fills in attendance for members with no row yet, in one request (the minutes page, for a meeting nobody checked in to). A member who already has a row keeps it; members the event does not invite are left out. Moves no points, like every officer mark.
+         */
+        post: operations["AttendanceController_markByHand_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/{eventId}/attendance/auto-absent": {
         parameters: {
             query?: never;
@@ -2982,6 +3002,40 @@ export interface paths {
         put?: never;
         /** File the caller's drafts; ones that can't be filed stay drafts */
         post: operations["BackworkController_publishDrafts_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/drafts/{id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A short-lived link to one of the caller's drafts' file */
+        get: operations["BackworkController_draftFileUrl_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/backwork/drafts/{id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark one of the caller's drafts' pages checked, with its file flattened again when a box was added */
+        post: operations["BackworkController_checkDraft_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4101,6 +4155,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/documents/access-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a who-can-see list may hold, and the tiers the caller's lists always keep */
+        get: operations["ChapterDocumentController_accessOptions_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/documents/stars": {
         parameters: {
             query?: never;
@@ -4132,7 +4203,7 @@ export interface paths {
         delete: operations["ChapterDocumentController_deleteFolder_v1"];
         options?: never;
         head?: never;
-        /** Rename or reorder a document folder */
+        /** Rename or reorder a document folder, or set who can see it */
         patch: operations["ChapterDocumentController_updateFolder_v1"];
         trace?: never;
     };
@@ -4185,6 +4256,23 @@ export interface paths {
         post?: never;
         /** Delete a document */
         delete: operations["ChapterDocumentController_delete_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/{id}/access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set who can see one document */
+        put: operations["ChapterDocumentController_setAccess_v1"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -5504,6 +5592,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/backwork/drafts/{id}/fill": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose fields for one of the caller's drafts from its redacted text
+         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.
+         */
+        post: operations["BackworkFillController_fill_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/nudges/current": {
         parameters: {
             query?: never;
@@ -5842,6 +5950,23 @@ export interface paths {
         post?: never;
         /** Disconnect the folder. Its copies leave Documents; the files in Drive are untouched. */
         delete: operations["GoogleDriveController_disconnect_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/google-drive/copies/{id}/open-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Move a Drive copy that sync held back into the folder Drive put it in, which more people may see. */
+        post: operations["GoogleDriveController_openUp_v1"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -8291,6 +8416,19 @@ export interface components {
             status: "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
             excuse_reason?: string;
         };
+        MarkAttendanceByHandDto: {
+            user_ids: string[];
+            /** @enum {string} */
+            status: "PRESENT" | "LATE" | "EXCUSED";
+        };
+        MarkAttendanceByHandResultDto: {
+            /** @description The members given a row now. */
+            marked: string[];
+            /** @description Picked members who already had a row (a check-in, an excuse, an earlier mark), kept as they were. */
+            already_marked: number;
+            /** @description Picked members the event doesn't invite (its roles, alumni the event doesn't name, or not in the chapter), left unmarked. */
+            not_invited: number;
+        };
         AutoAbsentResultDto: {
             /** @description Number of members newly recorded ABSENT. 0 when the event is not mandatory and targets no roles, or when everyone required already has an attendance record. */
             marked: number;
@@ -8480,6 +8618,8 @@ export interface components {
             is_redacted: boolean;
             /** @description Save as a draft: the fields are kept as sent, not filed, and only the uploader sees the file until it is published (POST /v1/backwork/drafts/publish). */
             draft?: boolean;
+            /** @description For a draft: false when it was saved without anyone looking at its pages (bulk upload's "Save the rest"). Such a draft is not read by the AI fill and can't be published until POST /v1/backwork/drafts/{id}/check. Left out, the draft counts as checked. */
+            pages_checked?: boolean;
         };
         BackworkFieldsDto: {
             title?: string | null;
@@ -8520,6 +8660,16 @@ export interface components {
             /** @description The filed resources. */
             published: Record<string, never>[];
             failed: components["schemas"]["BackworkDraftFailureDto"][];
+        };
+        BackworkDraftFileUrlDto: {
+            /** @description A link to the draft's stored file, good for five minutes, for the uploader's browser to show its pages. */
+            url: string;
+        };
+        CheckBackworkDraftDto: {
+            /** @description Storage path from upload-url of the file flattened again with the boxes added during the check. Leave out when no box was added. */
+            storage_path?: string;
+            /** @description SHA-256 hash of that file. Required with storage_path. */
+            file_hash?: string;
         };
         BackworkDownloadUrlDto: {
             /** Format: uuid */
@@ -9468,6 +9618,8 @@ export interface components {
             document_type?: string;
             /** @description Date this document took effect (ISO date), distinct from the upload timestamp */
             effective_date?: string;
+            /** @description Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
         };
         ConfirmDocumentUploadsDto: {
             /** @description One to 25 uploads to file, each as the single confirm route takes it */
@@ -9494,6 +9646,10 @@ export interface components {
             drive_modified_at: string | null;
             /** @description The file's page in Google Drive */
             drive_url: string | null;
+            /** @description Set on a Drive copy that Drive moved into a folder more people may see (#5220): that folder's id. The copy stays in its folder until someone who manages documents opens it up (`POST /v1/google-drive/copies/:id/open-up`). */
+            drive_held_folder_id: string | null;
+            /** @description Who can see it (#3642): null for the same as its folder, else its own list, which narrows the folder's */
+            who_can_see: string[] | null;
         };
         DocumentConfirmResultDto: {
             /** @description The storage path this result is for */
@@ -9539,6 +9695,15 @@ export interface components {
             created_at: string;
             /** @description When an officer pinned it for the whole chapter, or null */
             pinned_at: string | null;
+            /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents */
+            who_can_see: string[] | null;
+            /** @description The Google Drive folder it mirrors, or null (#5220). Its name follows Drive, so it is renamed and deleted there, not here. */
+            drive_folder_id: string | null;
+        };
+        DocumentAccessOptionsDto: {
+            options: components["schemas"]["ChannelAccessOptionDto"][];
+            /** @description The tiers every list the caller sets keeps (their own and those above), shown fixed; empty for the President, null when the caller ranks outside the tiers and can't set a list */
+            always: string[] | null;
         };
         DocumentStarsDto: {
             /** @description Ids of the folders the caller starred, oldest star first */
@@ -9551,12 +9716,20 @@ export interface components {
             name: string;
             /** @description Display position. Defaults to the end of the list. */
             sort_order?: number;
+            /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
         };
         UpdateDocumentFolderDto: {
             /** @description New folder name. Renaming re-files every document in the folder. */
             name?: string;
             /** @description New display position */
             sort_order?: number;
+            /** @description Who can see the folder and the files that follow it (#3642): null for everyone who can open Documents, or the tiers, roles and groups named. Not empty. The caller's own tier and every tier above it are always kept. Left out, it stays as it is; null opens it to everyone. */
+            who_can_see?: string[] | null;
+        };
+        SetDocumentAccessDto: {
+            /** @description Who can see the file (#3642): null or left out for the same as its folder, or the tiers, roles and groups named, which narrow the folder's (a member passes both). Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
         };
         CreatePollDto: {
             /** @description Poll question */
@@ -11027,6 +11200,20 @@ export interface components {
             /** @description What the answer drew on that not everyone who can read the channel could open, as of this call. */
             restricted: components["schemas"]["AskPostRestrictedDto"][];
         };
+        BackworkDraftFillResponseDto: {
+            /**
+             * @description `filled`: fields were set. `nothing_found`: the file was read and nothing new could be told. `unreadable`: too little text to read (likely a scan) or too large to open. The rest leave the draft unchanged: `not_redacted` (uploaded as-is, so its file is never read), `not_checked` (saved without its pages being looked at, so it waits for the uploader to check it), `refused` (the provider declined), `unavailable` (a spend cap, `reason` says which), `invalid_output` (try again).
+             * @enum {string}
+             */
+            status: "filled" | "nothing_found" | "unreadable" | "not_redacted" | "not_checked" | "refused" | "unavailable" | "invalid_output";
+            /** @description The fields this fill set. Absent when the draft is unchanged. */
+            filled?: string[];
+            /** @description The draft as it now stands. `draft_fields.ai_filled` lists the fields an AI fill set that nobody has edited since. */
+            draft?: {
+                [key: string]: unknown;
+            };
+            reason?: string;
+        };
         MemberNudgeDto: {
             /** Format: uuid */
             id: string;
@@ -11354,6 +11541,8 @@ export interface components {
             skipped_count: number;
             /** @description Whether a sync is due or running now */
             syncing: boolean;
+            /** @description Who sees what it brings in (#5220): the list its top folder in Documents started with. Null for everyone who can open Documents. The folder's own list counts from then on. */
+            who_can_see: string[] | null;
         };
         GoogleDriveStatusDto: {
             /** @description Whether this server offers Google Drive. False until its service account is set; clients then hide the option. */
@@ -11368,6 +11557,8 @@ export interface components {
              * @example https://drive.google.com/drive/folders/1AbC...
              */
             folder_link: string;
+            /** @description Who sees what the folder brings in (#5220): null or left out for everyone who can open Documents, or the tiers, roles and groups named. Its top folder in Documents starts with this list and each new subfolder with its parent's. Not empty. The caller's own tier and every tier above it are always kept. */
+            who_can_see?: string[] | null;
         };
         MeetingRecordingUploadDto: {
             /** Format: uuid */
@@ -17351,6 +17542,40 @@ export interface operations {
             };
         };
     };
+    AttendanceController_markByHand_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MarkAttendanceByHandDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarkAttendanceByHandResultDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     AttendanceController_markAutoAbsent_v1: {
         parameters: {
             query?: never;
@@ -18252,6 +18477,68 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["PublishBackworkDraftsResponseDto"];
                 };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_draftFileUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkDraftFileUrlDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    BackworkController_checkDraft_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckBackworkDraftDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -20915,6 +21202,34 @@ export interface operations {
             };
         };
     };
+    ChapterDocumentController_accessOptions_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentAccessOptionsDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     ChapterDocumentController_listStars_v1: {
         parameters: {
             query?: never;
@@ -21163,6 +21478,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    ChapterDocumentController_setAccess_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetDocumentAccessDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
             };
             /** @description Error */
             default: {
@@ -24017,6 +24366,50 @@ export interface operations {
             };
         };
     };
+    BackworkFillController_fill_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackworkDraftFillResponseDto"];
+                };
+            };
+            /** @description The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Frapp AI turned off (`ai.chapter_off`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description AI is off on this server (`ai.not_available`), or the draft is not the caller's or is gone. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
     MemberNudgeController_current_v1: {
         parameters: {
             query?: never;
@@ -24857,6 +25250,36 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    GoogleDriveController_openUp_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDocumentDto"];
+                };
             };
             /** @description Error */
             default: {

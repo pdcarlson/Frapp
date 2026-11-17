@@ -8,6 +8,7 @@ import { AiConsentModule } from '../ai-consent/ai-consent.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { EventModule } from '../event/event.module';
+import { ChapterDocumentModule } from '../chapter-document/chapter-document.module';
 import { MeetingModule } from '../meeting/meeting.module';
 
 /**
@@ -26,6 +27,8 @@ import { MeetingModule } from '../meeting/meeting.module';
     ChannelAccessModule,
     MeetingModule,
     EventModule,
+    // Who can see each document the answer was handed (#3642 piece 1).
+    ChapterDocumentModule,
     AnalyticsModule,
   ],
   controllers: [AskPostController],
