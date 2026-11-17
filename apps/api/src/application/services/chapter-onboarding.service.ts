@@ -40,6 +40,7 @@ import {
   DAILY_LIMIT_WINDOW_MS,
 } from '#domain/constants/daily-send-limits';
 import { rollingWindowRoom, waitPhrase } from '#domain/utils/rolling-window';
+import { PG_CHAPTER_START_LIMIT } from '#domain/constants/postgres-error-codes';
 import {
   CHAPTER_DIRECTORY_REPOSITORY,
   type IChapterDirectoryRepository,
@@ -123,7 +124,8 @@ export class ChapterOnboardingService {
   ) {}
 
   async onboard(userId: string, dto: ChapterOnboardingInput): Promise<Chapter> {
-    await this.assertMayStartChapter(userId);
+    const refusal = await this.chapterStartRefusal(userId);
+    if (refusal) throw refusal;
 
     // The same checkbox is also the founding officer's own acceptance (#2302),
     // recorded on their user row before the chapter and their membership
@@ -175,11 +177,24 @@ export class ChapterOnboardingService {
       ...paletteColumns,
     };
 
-    const chapter = await this.chapterService.create(userId, {
-      name: dto.name,
-      university: dto.university,
-      config,
-    });
+    const chapter = await this.chapterService
+      .create(userId, {
+        name: dto.name,
+        university: dto.university,
+        config,
+      })
+      .catch(async (error: unknown) => {
+        // Submits that arrive together all pass the count above; the database
+        // counts again under a lock on the starter and refuses the one past
+        // the ceiling (`20261117172019_daily_limits_counted_under_lock.sql`).
+        if ((error as { code?: unknown })?.code !== PG_CHAPTER_START_LIMIT) {
+          throw error;
+        }
+        throw (
+          (await this.chapterStartRefusal(userId)) ??
+          this.startLimitException(new Date(Date.now() + 60_000), new Date())
+        );
+      });
 
     // Step 1 of the activation funnel (#267). Recorded here rather than in
     // ChapterService.create so it counts *wizard* completions specifically —
@@ -242,13 +257,17 @@ export class ChapterOnboardingService {
   }
 
   /**
-   * The daily ceiling on starting chapters (`daily-send-limits.ts`): refuses
-   * (429) an account that started that many in the last 24 hours, before
-   * anything is written. A chapter is a fresh place to send invite email
-   * from, so the emailed-invite ceilings lean on this one too. Nobody running
-   * one chapter, or helping a second one start, meets it.
+   * The daily ceiling on starting chapters (`daily-send-limits.ts`): the 429
+   * for an account that started that many in the last 24 hours, or null. Read
+   * before anything is written, to say how long to wait; the database's
+   * trigger is what holds when two submits arrive together. A chapter is a
+   * fresh place to send invite email from, so the emailed-invite ceilings
+   * lean on this one too. Nobody running one chapter, or helping a second one
+   * start, meets it.
    */
-  private async assertMayStartChapter(userId: string): Promise<void> {
+  private async chapterStartRefusal(
+    userId: string,
+  ): Promise<HttpException | null> {
     const now = new Date();
     const started = await this.chapterRepo.findStartedAtByUserSince(
       userId,
@@ -261,8 +280,11 @@ export class ChapterOnboardingService {
       now,
       DAILY_LIMIT_WINDOW_MS,
     );
-    if (!roomAt) return;
-    throw new HttpException(
+    return roomAt ? this.startLimitException(roomAt, now) : null;
+  }
+
+  private startLimitException(roomAt: Date, now: Date): HttpException {
+    return new HttpException(
       {
         code: CHAPTER_START_LIMIT_CODE,
         message: `You've started ${CHAPTERS_STARTED_PER_USER_PER_DAY} chapters in the last 24 hours, the most allowed. You can start another in ${waitPhrase(roomAt, now)}.`,

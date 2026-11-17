@@ -491,6 +491,25 @@ export interface Database {
         Args: { p_task_id: string; p_chapter_id: string };
         Returns: Task[];
       };
+      /** `20261117172019` — `p_invites` is `jsonb`; `returns jsonb`. */
+      create_emailed_invites: {
+        Args: {
+          p_chapter_id: string;
+          p_created_by: string;
+          p_invites: {
+            token: string;
+            role: string;
+            expires_at: string;
+            email: string;
+          }[];
+          p_since: string;
+          p_chapter_limit: number;
+          p_inviter_limit: number;
+        };
+        Returns:
+          | { outcome: 'ok'; invites: Invite[] }
+          | { outcome: 'over'; chapter: string[]; inviter: string[] };
+      };
       /**
        * `20261116044044` (#5119) — a repeating task's series and its first
        * copy in one transaction. Returns the first copy.

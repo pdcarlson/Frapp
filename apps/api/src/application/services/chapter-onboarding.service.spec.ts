@@ -241,6 +241,50 @@ describe('ChapterOnboardingService', () => {
       expect(chapterService.create).not.toHaveBeenCalled();
       expect(mockLegalAcceptance.requireOrAccept).not.toHaveBeenCalled();
     });
+
+    it('answers 429 when submits sent together pass the count and the database refuses one', async () => {
+      // Both submits read two started; the other one's chapter landed first,
+      // and the database's trigger, counting under a lock, refused this one.
+      findStartedAtByUserSince
+        .mockResolvedValueOnce([startedAgo(20), startedAgo(5)])
+        .mockResolvedValueOnce([startedAgo(20), startedAgo(5), startedAgo(0)]);
+      chapterService.create.mockRejectedValueOnce(
+        new SupabaseQueryError({
+          code: 'FR429',
+          message: 'chapters_daily_start_ceiling: 3 chapters started',
+        }),
+      );
+      const error = (await service
+        .onboard('user-1', directoryDto)
+        .catch((e: unknown) => e)) as HttpException;
+      expect(error).toBeInstanceOf(HttpException);
+      expect(error.getStatus()).toBe(429);
+      expect(error.getResponse()).toEqual({
+        code: 'chapter.start_daily_limit',
+        message:
+          "You've started 3 chapters in the last 24 hours, the most allowed. You can start another in about 4 hours.",
+      });
+    });
+
+    it('says a minute when the second count finds room after all', async () => {
+      chapterService.create.mockRejectedValueOnce(
+        new SupabaseQueryError({ code: 'FR429', message: 'refused' }),
+      );
+      const error = (await service
+        .onboard('user-1', directoryDto)
+        .catch((e: unknown) => e)) as HttpException;
+      expect(error.getStatus()).toBe(429);
+      expect((error.getResponse() as { message: string }).message).toMatch(
+        /You can start another in about a minute\.$/,
+      );
+    });
+
+    it('passes any other failure of the insert through', async () => {
+      const other = new SupabaseQueryError({ code: '23514', message: 'x' });
+      chapterService.create.mockRejectedValueOnce(other);
+      await expect(service.onboard('user-1', directoryDto)).rejects.toBe(other);
+      expect(findStartedAtByUserSince).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('Signet accent map', () => {

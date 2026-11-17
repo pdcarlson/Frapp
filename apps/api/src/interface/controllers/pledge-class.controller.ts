@@ -119,9 +119,10 @@ export class PledgeClassController {
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async remove(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    await this.pledgeClassService.remove(id, chapterId);
+    await this.pledgeClassService.remove(id, chapterId, userId);
     return { success: true };
   }
 }

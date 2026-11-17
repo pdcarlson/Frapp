@@ -5,7 +5,11 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from '../database.types';
-import { IInviteRepository } from '#domain/repositories/invite.repository.interface';
+import type {
+  EmailedInviteBatch,
+  EmailedInviteOutcome,
+  IInviteRepository,
+} from '#domain/repositories/invite.repository.interface';
 import { Invite } from '#domain/entities/invite.entity';
 import { SupabaseQueryError } from '../supabase-query-error';
 import { escapeLikePattern } from '../supabase.utils';
@@ -78,26 +82,34 @@ export class SupabaseInviteRepository implements IInviteRepository {
     );
   }
 
-  async findEmailedCreatedAtSince(
-    scope: { chapterId: string } | { createdBy: string },
-    since: Date,
-  ): Promise<string[]> {
-    // At most a day's ceiling of rows plus a batch or two, well under
-    // PostgREST's row cap. The per-inviter read is served by
-    // `idx_invites_emailed_by_creator`, the per-chapter one by
-    // `idx_invites_chapter_id`.
-    const base = this.supabase
-      .from('invites')
-      .select('created_at')
-      .not('email', 'is', null)
-      .gte('created_at', since.toISOString());
-    const { data, error } = await (
-      'chapterId' in scope
-        ? base.eq('chapter_id', scope.chapterId)
-        : base.eq('created_by', scope.createdBy)
-    ).order('created_at', { ascending: true });
+  async createEmailed(
+    batch: EmailedInviteBatch,
+  ): Promise<EmailedInviteOutcome> {
+    // Counted and inserted in one transaction, under a lock per chapter and
+    // per sender: `20261117172019_daily_limits_counted_under_lock.sql`.
+    const { data, error } = await this.supabase.rpc('create_emailed_invites', {
+      p_chapter_id: batch.chapterId,
+      p_created_by: batch.createdBy,
+      p_invites: batch.invites,
+      p_since: batch.since.toISOString(),
+      p_chapter_limit: batch.chapterLimit,
+      p_inviter_limit: batch.inviterLimit,
+    });
     if (error) throw new SupabaseQueryError(error);
-    return (data || []).map((row) => row.created_at);
+    return data;
+  }
+
+  async markEmailFailed(chapterId: string, ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const patch: TablesUpdate<'invites'> = {
+      email_failed_at: new Date().toISOString(),
+    };
+    const { error } = await this.supabase
+      .from('invites')
+      .update(patch)
+      .eq('chapter_id', chapterId)
+      .in('id', ids);
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async create(inviteData: TablesInsert<'invites'>): Promise<Invite> {

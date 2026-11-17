@@ -72,9 +72,11 @@ describe('PledgeClassController', () => {
   });
 
   it('remove answers success', async () => {
-    await expect(controller.remove('ch-1', 'class-1')).resolves.toEqual({
+    await expect(
+      controller.remove('ch-1', 'user-1', 'class-1'),
+    ).resolves.toEqual({
       success: true,
     });
-    expect(service.remove).toHaveBeenCalledWith('class-1', 'ch-1');
+    expect(service.remove).toHaveBeenCalledWith('class-1', 'ch-1', 'user-1');
   });
 });

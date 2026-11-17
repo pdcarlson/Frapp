@@ -27,10 +27,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
-import {
-  ThrottleFanOutWrite,
-  ThrottleRareWrite,
-} from '../decorators/throttle-profiles.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import {
   CurrentUser,
@@ -87,7 +84,6 @@ export class ChapterController {
   ) {}
 
   @Post('onboard')
-  @ThrottleRareWrite()
   @UseGuards(SupabaseAuthGuard)
   @UseInterceptors(AuthSyncInterceptor)
   @ApiOperation({

@@ -40,6 +40,32 @@ function pledgeClass(id: string, position: number, name = id): PledgeClass {
   };
 }
 
+const pledge = {
+  id: 'member-pledge',
+  user_id: 'user-pledge',
+  chapter_id: CHAPTER_ID,
+  role_ids: [ROLE.pledge],
+  pledge_class_id: null,
+  order_number: null,
+} as unknown as Member;
+const withClass = (
+  member: Member,
+  pledge_class_id: string | null,
+  order_number: number | null = null,
+) => ({ ...member, pledge_class_id, order_number });
+const classGroup = (classId: string): ChapterGroup => ({
+  id: `group-${classId}`,
+  chapter_id: CHAPTER_ID,
+  kind: 'pledge_class',
+  name: classId,
+  color: null,
+  mentionable: true,
+  pledge_class_id: classId,
+  class_year: null,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+});
+
 describe('PledgeClassService', () => {
   let repo: jest.Mocked<IPledgeClassRepository>;
   let memberRepo: { findByChapter: jest.Mock };
@@ -204,18 +230,99 @@ describe('PledgeClassService', () => {
     it('answers 404 for a class the chapter does not have', async () => {
       repo.findById.mockResolvedValue(null);
 
-      await expect(service.remove('x', CHAPTER)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.remove('x', CHAPTER, USER.president),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(repo.delete).not.toHaveBeenCalled();
     });
 
     it('deletes within the chapter', async () => {
       repo.findById.mockResolvedValue(pledgeClass('a', 1));
 
-      await service.remove('a', CHAPTER);
+      await service.remove('a', CHAPTER, USER.president);
 
       expect(repo.delete).toHaveBeenCalledWith('a', CHAPTER);
+    });
+
+    describe('who may delete a class', () => {
+      let members: Member[];
+
+      beforeEach(() => {
+        repo.findById.mockResolvedValue({
+          ...pledgeClass('class-new', 2),
+          chapter_id: CHAPTER_ID,
+        });
+        members = [
+          ...tieredChapterMembers().map((m) => withClass(m, 'class-old', 3)),
+          withClass(pledge, 'class-new', 1),
+        ];
+        memberRepo.findByChapter.mockImplementation(() =>
+          Promise.resolve(members),
+        );
+        groupRepo.findByChapter.mockResolvedValue([
+          classGroup('class-old'),
+          classGroup('class-new'),
+        ]);
+      });
+
+      it('lets a chair delete a class of members ranked below them that no channel names', async () => {
+        await service.remove('class-new', CHAPTER_ID, USER.riskChair);
+
+        expect(repo.delete).toHaveBeenCalledWith('class-new', CHAPTER_ID);
+        expect(rbac.memberHasAnyPermission).not.toHaveBeenCalled();
+      });
+
+      it('refuses a class that holds a member ranked at or above the officer, and deletes nothing', async () => {
+        members = members.map((m) =>
+          m.id === MEMBER.vicePresident ? withClass(m, 'CLASS-NEW', 2) : m,
+        );
+
+        await expect(
+          service.remove('class-new', CHAPTER_ID, USER.riskChair),
+        ).rejects.toThrow(
+          'You can only set the class of members ranked below you, and your own.',
+        );
+        expect(repo.delete).not.toHaveBeenCalled();
+        // The President reaches everyone.
+        await service.remove('class-new', CHAPTER_ID, USER.president);
+        expect(repo.delete).toHaveBeenCalledTimes(1);
+      });
+
+      it("needs channels:manage when a channel's list names the class", async () => {
+        groupRepo.isNamedOnChannelList.mockImplementation(
+          (_chapterId: string, groupId: string) =>
+            Promise.resolve(groupId === 'group-class-new'),
+        );
+        rbac.memberHasAnyPermission.mockResolvedValue(false);
+
+        await expect(
+          service.remove('class-new', CHAPTER_ID, USER.riskChair),
+        ).rejects.toThrow(/only someone who can manage channels/);
+        expect(groupRepo.isNamedOnChannelList).toHaveBeenCalledWith(
+          CHAPTER_ID,
+          'group-class-new',
+        );
+        expect(rbac.memberHasAnyPermission).toHaveBeenCalledWith(
+          CHAPTER_ID,
+          USER.riskChair,
+          [SystemPermissions.CHANNELS_MANAGE],
+        );
+        expect(repo.delete).not.toHaveBeenCalled();
+      });
+
+      it('asks the channel rule about the deleted class only, even when it has no members', async () => {
+        members = members.filter((m) => m.id !== pledge.id);
+        groupRepo.isNamedOnChannelList.mockImplementation(
+          (_chapterId: string, groupId: string) =>
+            Promise.resolve(groupId === 'group-class-old'),
+        );
+        rbac.memberHasAnyPermission.mockResolvedValue(false);
+
+        await service.remove('class-new', CHAPTER_ID, USER.riskChair);
+
+        expect(rbac.getRankContext).not.toHaveBeenCalled();
+        expect(repo.delete).toHaveBeenCalled();
+      });
     });
   });
 
@@ -297,31 +404,6 @@ describe('PledgeClassService', () => {
     });
 
     describe('who may assign whom', () => {
-      const pledge = {
-        id: 'member-pledge',
-        user_id: 'user-pledge',
-        chapter_id: CHAPTER_ID,
-        role_ids: [ROLE.pledge],
-        pledge_class_id: null,
-        order_number: null,
-      } as unknown as Member;
-      const withClass = (
-        member: Member,
-        pledge_class_id: string | null,
-        order_number: number | null = null,
-      ) => ({ ...member, pledge_class_id, order_number });
-      const classGroup = (classId: string): ChapterGroup => ({
-        id: `group-${classId}`,
-        chapter_id: CHAPTER_ID,
-        kind: 'pledge_class',
-        name: classId,
-        color: null,
-        mentionable: true,
-        pledge_class_id: classId,
-        class_year: null,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-      });
       let members: Member[];
 
       beforeEach(() => {
@@ -363,6 +445,21 @@ describe('PledgeClassService', () => {
               member_id: MEMBER.vicePresident,
               pledge_class_id: null,
               order_number: 3,
+            },
+          ]),
+        ).rejects.toThrow(
+          'You can only set the class of members ranked below you, and your own.',
+        );
+        expect(repo.assignMembers).not.toHaveBeenCalled();
+      });
+
+      it('refuses renumbering a higher-ranked member within their class', async () => {
+        await expect(
+          service.assign(CHAPTER, USER.riskChair, [
+            {
+              member_id: MEMBER.vicePresident,
+              pledge_class_id: 'class-old',
+              order_number: 4,
             },
           ]),
         ).rejects.toThrow(

@@ -304,37 +304,42 @@ describe('RbacService self-assignable roles (#4958)', () => {
       );
     });
 
-    it('refuses joining or leaving an unmarked role, even one the member holds', async () => {
-      // An officer gave it (an event's audience, a committee), or unmarked it
-      // after the member picked it: either way an officer takes it off.
-      brother().role_ids.push(BRAND_NEW);
-      for (const join of [true, false]) {
-        expect(
-          await codeOf(
-            service.setOwnSelfAssignableRole(
-              CHAPTER_ID,
-              USER.brother,
-              BRAND_NEW,
-              join,
-            ),
+    it('refuses joining an unmarked role, but lets a holder leave it', async () => {
+      expect(
+        await codeOf(
+          service.setOwnSelfAssignableRole(
+            CHAPTER_ID,
+            USER.brother,
+            BRAND_NEW,
+            true,
           ),
-        ).toEqual({
-          type: ForbiddenException,
-          code: 'role.not_self_assignable',
-        });
-      }
-      await expect(
-        service.setOwnSelfAssignableRole(
-          CHAPTER_ID,
-          USER.brother,
-          BRAND_NEW,
-          false,
         ),
-      ).rejects.toThrow(
-        'Officers take this role away. Ask one if you need it gone.',
-      );
+      ).toEqual({ type: ForbiddenException, code: 'role.not_self_assignable' });
       expect(memberRepo.setSelfAssignedRole).not.toHaveBeenCalled();
-      expect(brother().role_ids).toContain(BRAND_NEW);
+      // Unmarked since the member picked it, and now carrying a permission:
+      // leaving only takes from the caller, so it stays open.
+      brother().role_ids.push(BRAND_NEW);
+      roleById(BRAND_NEW).permissions = ['events:update'];
+      await service.setOwnSelfAssignableRole(
+        CHAPTER_ID,
+        USER.brother,
+        BRAND_NEW,
+        false,
+      );
+      expect(memberRepo.setSelfAssignedRole).toHaveBeenCalledWith(
+        CHAPTER_ID,
+        'member-brother',
+        BRAND_NEW,
+        false,
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'role_self_left',
+          targetId: BRAND_NEW,
+          diff: { member_id: { from: 'member-brother', to: null } },
+          memberVisible: false,
+        }),
+      );
     });
 
     it('records a join and a leave as exec-only audit rows', async () => {

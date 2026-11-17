@@ -109,7 +109,21 @@ describe('InviteService', () => {
       markRevoked: jest.fn().mockResolvedValue(undefined),
       revokePending: jest.fn().mockResolvedValue(undefined),
       findPendingByEmail: jest.fn().mockResolvedValue([]),
-      findEmailedCreatedAtSince: jest.fn().mockResolvedValue([]),
+      // Emailed invites are inserted through `createEmailed`, which also
+      // counts the daily ceilings. This one finds room and inserts the rows
+      // through `createMany`, so a test reads the rows either path inserted
+      // from the same mock; the ceiling tests answer `over` themselves.
+      createEmailed: jest.fn(async (batch) => ({
+        outcome: 'ok' as const,
+        invites: await mockInviteRepo.createMany(
+          batch.invites.map((invite) => ({
+            ...invite,
+            chapter_id: batch.chapterId,
+            created_by: batch.createdBy,
+          })),
+        ),
+      })),
+      markEmailFailed: jest.fn().mockResolvedValue(undefined),
       markUsedAtomically: jest.fn(),
       releaseClaim: jest.fn().mockResolvedValue(true),
     };
@@ -274,6 +288,7 @@ describe('InviteService', () => {
       created_at: '2024-01-01',
       email: null,
       revoked_at: null,
+      email_failed_at: null,
       ...overrides,
     };
   }
@@ -405,54 +420,63 @@ describe('InviteService', () => {
 
     describe('daily emailed-invite ceilings', () => {
       const HOUR = 60 * 60 * 1000;
-      /** `count` emailed invites made `hoursAgo`, oldest first. */
+      /** `count` emailed invites made `hoursAgo`. */
       const sentAgo = (count: number, hoursAgo: number) =>
         Array.from({ length: count }, () =>
           new Date(Date.now() - hoursAgo * HOUR).toISOString(),
         );
       const emails = (count: number) =>
         Array.from({ length: count }, (_, i) => `m${i}@example.com`);
+      /** The database's answer for a batch that doesn't fit. */
+      const over = (chapter: string[], inviter: string[]) =>
+        mockInviteRepo.createEmailed.mockResolvedValueOnce({
+          outcome: 'over',
+          chapter,
+          inviter,
+        });
+      const refusalOf = async (promise: Promise<unknown>) => {
+        const error = (await promise.catch((e: unknown) => e)) as HttpException;
+        expect(error).toBeInstanceOf(HttpException);
+        expect(error.getStatus()).toBe(429);
+        return error.getResponse() as { code: string; message: string };
+      };
 
       it('lets a new president email a whole 150-member chapter on day one', async () => {
         // Three batches of 50, the most the dialog sends at once.
         for (let batch = 0; batch < 3; batch++) {
-          mockInviteRepo.findEmailedCreatedAtSince.mockResolvedValue(
-            sentAgo(batch * 50, 0),
-          );
           await expect(
             service.createWithEmails('ch-1', 'user-1', 'Member', emails(50)),
           ).resolves.toEqual(expect.objectContaining({ failed: [] }));
         }
         expect(mockEmailProvider.sendInviteEmail).toHaveBeenCalledTimes(150);
+        expect(mockInviteRepo.markEmailFailed).toHaveBeenCalledWith('ch-1', []);
       });
 
-      it('counts the chapter and the sender, the sender across every chapter', async () => {
+      it('asks the database to count the chapter and the sender over 24 hours, at both ceilings', async () => {
         await service.createWithEmails('ch-1', 'user-1', 'Member', emails(2));
-        const since =
-          mockInviteRepo.findEmailedCreatedAtSince.mock.calls[0][1].getTime();
+        const batch = mockInviteRepo.createEmailed.mock.calls[0][0];
+        expect(batch).toEqual(
+          expect.objectContaining({
+            chapterId: 'ch-1',
+            createdBy: 'user-1',
+            chapterLimit: 300,
+            inviterLimit: 300,
+          }),
+        );
+        expect(batch.invites.map((i) => i.email)).toEqual(emails(2));
+        const since = batch.since.getTime();
         expect(Date.now() - since).toBeGreaterThanOrEqual(24 * HOUR - 1000);
         expect(Date.now() - since).toBeLessThanOrEqual(24 * HOUR + 1000);
-        expect(
-          mockInviteRepo.findEmailedCreatedAtSince.mock.calls.map((c) => c[0]),
-        ).toEqual([{ chapterId: 'ch-1' }, { createdBy: 'user-1' }]);
       });
 
-      it("refuses a batch past the chapter's day, before any token or email", async () => {
-        mockInviteRepo.findEmailedCreatedAtSince.mockImplementation(
-          async (scope) =>
-            'chapterId' in scope
-              ? [...sentAgo(10, 19.5), ...sentAgo(280, 1)]
-              : [],
+      it("refuses a batch past the chapter's day, before any email, and says when", async () => {
+        over([...sentAgo(10, 19.5), ...sentAgo(280, 1)], []);
+        const response = await refusalOf(
+          service.createWithEmails('ch-1', 'user-1', 'Member', emails(50)),
         );
-        const refusal = service
-          .createWithEmails('ch-1', 'user-1', 'Member', emails(50))
-          .catch((e: unknown) => e);
-        const error = (await refusal) as HttpException;
-        expect(error).toBeInstanceOf(HttpException);
-        expect(error.getStatus()).toBe(429);
         // 290 sent, 10 left; 40 more must age out, the 10 from 19.5 hours ago
         // and then the batch from an hour ago: 23 hours from now.
-        expect(error.getResponse()).toEqual({
+        expect(response).toEqual({
           code: 'invite.email_daily_limit',
           message:
             'Your chapter can email up to 300 invites in 24 hours and has 10 left. You can send these 50 in about 23 hours, or share an invite link now.',
@@ -462,42 +486,83 @@ describe('InviteService', () => {
       });
 
       it('refuses the sender past their own day, across chapters, and says when', async () => {
-        mockInviteRepo.findEmailedCreatedAtSince.mockImplementation(
-          async (scope) =>
-            'createdBy' in scope
-              ? [...sentAgo(1, 23.75), ...sentAgo(299, 2)]
-              : [],
+        over([], [...sentAgo(1, 23.75), ...sentAgo(299, 2)]);
+        const { message } = await refusalOf(
+          service.createWithEmails('ch-2', 'user-1', 'Member', emails(1)),
         );
-        const error = (await service
-          .createWithEmails('ch-2', 'user-1', 'Member', emails(1))
-          .catch((e: unknown) => e)) as HttpException;
-        expect(error.getStatus()).toBe(429);
-        expect((error.getResponse() as { message: string }).message).toBe(
+        expect(message).toBe(
           'You can email up to 300 invites in 24 hours and have none left. You can send this one in about 15 minutes, or share an invite link now.',
         );
       });
 
-      it('lets a batch through once older invites age out of the 24 hours', async () => {
-        // 300 sent, but 60 of them over a day ago: 240 count, 50 fit.
-        mockInviteRepo.findEmailedCreatedAtSince.mockResolvedValue([
-          ...sentAgo(60, 25),
-          ...sentAgo(240, 2),
+      it('names the ceiling that frees up later when both are full', async () => {
+        // The chapter's oldest leaves in about 3 hours, the sender's in about
+        // 20: the sender waits on their own ceiling.
+        over(
+          [...sentAgo(1, 21), ...sentAgo(299, 1)],
+          [...sentAgo(1, 4), ...sentAgo(299, 1)],
+        );
+        const first = await refusalOf(
+          service.createWithEmails('ch-1', 'user-1', 'Member', emails(1)),
+        );
+        expect(first.message).toBe(
+          'You can email up to 300 invites in 24 hours and have none left. You can send this one in about 20 hours, or share an invite link now.',
+        );
+        // And the other way round.
+        over(
+          [...sentAgo(1, 4), ...sentAgo(299, 1)],
+          [...sentAgo(1, 21), ...sentAgo(299, 1)],
+        );
+        const second = await refusalOf(
+          service.createWithEmails('ch-1', 'user-1', 'Member', emails(1)),
+        );
+        expect(second.message).toMatch(
+          /^Your chapter can email up to 300 invites .* in about 20 hours,/,
+        );
+      });
+
+      it('marks the invites whose email failed, so a resend to them fits', async () => {
+        mockEmailProvider.sendInviteEmail.mockImplementation(({ to }) =>
+          Promise.resolve(to !== 'm1@example.com' && to !== 'm3@example.com'),
+        );
+        const result = await service.createWithEmails(
+          'ch-1',
+          'user-1',
+          'Member',
+          emails(4),
+        );
+        expect(result.failed).toEqual(['m1@example.com', 'm3@example.com']);
+        const stored = (await mockInviteRepo.createMany.mock.results[0]
+          .value) as Invite[];
+        const idOf = (email: string) =>
+          stored.find((invite) => invite.email === email)!.id;
+        expect(mockInviteRepo.markEmailFailed).toHaveBeenCalledWith('ch-1', [
+          idOf('m1@example.com'),
+          idOf('m3@example.com'),
         ]);
-        await expect(
-          service.createWithEmails('ch-1', 'user-1', 'Member', emails(50)),
-        ).resolves.toBeDefined();
+      });
+
+      it('still answers the batch when marking the failures fails', async () => {
+        mockEmailProvider.sendInviteEmail.mockResolvedValue(false);
+        mockInviteRepo.markEmailFailed.mockRejectedValueOnce(new Error('down'));
+        const result = await service.createWithEmails(
+          'ch-1',
+          'user-1',
+          'Member',
+          emails(2),
+        );
+        expect(result.failed).toEqual(emails(2));
+        expect(result.invites).toHaveLength(2);
       });
 
       it('counts each address once, as the batch sends it', async () => {
-        mockInviteRepo.findEmailedCreatedAtSince.mockResolvedValue(
-          sentAgo(299, 1),
-        );
-        await expect(
-          service.createWithEmails('ch-1', 'user-1', 'Member', [
-            'a@example.com',
-            'A@example.com',
-          ]),
-        ).resolves.toBeDefined();
+        await service.createWithEmails('ch-1', 'user-1', 'Member', [
+          'a@example.com',
+          'A@example.com',
+        ]);
+        expect(
+          mockInviteRepo.createEmailed.mock.calls[0][0].invites,
+        ).toHaveLength(1);
       });
     });
 

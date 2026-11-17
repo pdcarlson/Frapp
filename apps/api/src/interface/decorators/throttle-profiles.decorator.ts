@@ -36,7 +36,6 @@ import { Throttle } from '@nestjs/throttler';
  * profile to the HTTP method.
  */
 const MINUTE_MS = 60_000;
-const HOUR_MS = 60 * MINUTE_MS;
 
 /**
  * 5/min — full-chapter aggregation, export rendering, or bulk token minting.
@@ -51,18 +50,6 @@ export const ThrottleExpensiveWrite = () =>
  */
 export const ThrottleFanOutWrite = () =>
   Throttle({ write: { limit: 10, ttl: MINUTE_MS } });
-
-/**
- * 5/hour — something a person does a handful of times a year, whose result
- * reaches people outside Frapp: starting a chapter, which gives the account a
- * new place to send invite email from. Every request counts, refused ones
- * too, so this leaves a president room to fix and resubmit the wizard a few
- * times. What bounds chapters actually made is the daily ceiling in the
- * service (`daily-send-limits.ts`), which counts only those and holds across
- * replicas, where this counter is per process.
- */
-export const ThrottleRareWrite = () =>
-  Throttle({ write: { limit: 5, ttl: HOUR_MS } });
 
 /**
  * 20/min — a read whose database cost is superlinear in the caller's input.

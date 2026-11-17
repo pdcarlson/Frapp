@@ -32,9 +32,9 @@ describe("selectPickableRoles (#4958)", () => {
     ]);
   });
 
-  it("leaves out an unmarked role the viewer holds, which an officer takes off", () => {
-    // The API lets a member leave only a marked role, so a role an officer
-    // gave outside the tiers (an event's audience) isn't offered to leave.
+  it("keeps a held role an officer unmarked, to leave only", () => {
+    // The API lets a member leave any unkeyed role outside the tiers, so a
+    // role unmarked after they picked it never traps them.
     const roles = selectPickableRoles(
       [
         row("r-im", "Intramurals", false),
@@ -44,11 +44,13 @@ describe("selectPickableRoles (#4958)", () => {
       ],
       ["r-im", "r-chair", "r-member"],
     );
-    expect(roles).toEqual([]);
+    expect(roles.map((r) => [r.name, r.held, r.joinable])).toEqual([
+      ["Intramurals", true, false],
+    ]);
   });
 
   it("offers an alum nothing to join, but lets them leave what they hold", () => {
-    // The API refuses an alum's join, not their leave of a marked role.
+    // The API refuses an alum's join, not their leave.
     const alumni = { ...row("r-alum", "Alumni", false), system_key: "ALUMNI" };
     const roles = selectPickableRoles(
       [alumni, row("r-im", "Intramurals", true), row("r-vg", "Games", true)],

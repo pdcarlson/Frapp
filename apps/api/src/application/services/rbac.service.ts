@@ -389,17 +389,15 @@ export class RbacService {
   /**
    * `POST /v1/roles/:id/join` and `/leave` (#4958): the caller adds a
    * self-assignable role to their own roles, or takes it off. The role must be
-   * marked (and so safe) either way, checked here for the refusal's words and
-   * again by `self_assign_role` under the role's lock, which answers for a
-   * role unmarked, changed or deleted in between (409, reload). Leaving needs
-   * the mark too: a role outside the tiers that an officer gave (an event's
-   * audience, a committee) stays until an officer takes it off, since events
-   * that list it count its holders.
+   * marked and safe, checked here for the refusal's words and again by
+   * `self_assign_role` under the role's lock, which answers for a role
+   * unmarked, changed or deleted in between (409, reload).
    *
-   * A join or leave that changes the caller's roles writes an audit row, as
-   * other role changes do. It is exec-only, not mirrored to `#chapter-audit`:
-   * a role picker can draw a join from every member in an afternoon, and the
-   * channel is for officers' changes.
+   * A join or leave that changes the caller's roles writes an exec-only audit
+   * row (`role_self_joined` / `role_self_left`), not mirrored to
+   * `#chapter-audit`: a role picker can draw a join from every member in an
+   * afternoon. An officer's `PATCH /members/:id/roles` writes none; marking
+   * and unmarking the role are in its `role_updated` row.
    */
   async setOwnSelfAssignableRole(
     chapterId: string,
@@ -408,10 +406,12 @@ export class RbacService {
     join: boolean,
   ): Promise<{ role_ids: string[] }> {
     const role = await this.roleInChapter(roleId, chapterId);
-    // Both need the role marked and safe; the database keeps every marked
-    // role safe, so this re-check only words the refusal.
-    const allowed =
-      role.self_assignable === true && !selfAssignableRefusal(role);
+    // Joining needs the role marked and safe. Leaving needs only a role with
+    // no key outside the tiers, so a member who picked it can drop it after
+    // an officer unmarks it or gives it a permission (#4958 review).
+    const allowed = join
+      ? role.self_assignable === true && !selfAssignableRefusal(role)
+      : !role.system_key && !role.tier_id;
     if (!allowed) {
       throw new ForbiddenException({
         code: NOT_SELF_ASSIGNABLE_CODE,

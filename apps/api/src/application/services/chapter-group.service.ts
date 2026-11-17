@@ -25,6 +25,35 @@ import { SystemPermissions } from '#domain/constants/permissions';
 import { ChapterAuditLogService } from './chapter-audit-log.service';
 import { RbacService } from './rbac.service';
 
+/**
+ * The channel rule for a group's members, one copy for every write that
+ * changes who is in a group: when a channel or category list names any of
+ * `groupIds`, the change needs `channels:manage` (see
+ * {@link ChapterGroupService}). `PledgeClassService` keeps it for a class's
+ * group, which follows its members' class; `refusal` names which kind of set
+ * it is.
+ */
+export async function assertMayChangeGroupAccess(
+  groupRepo: Pick<IChapterGroupRepository, 'isNamedOnChannelList'>,
+  rbac: Pick<RbacService, 'memberHasAnyPermission'>,
+  args: {
+    chapterId: string;
+    actorUserId: string;
+    groupIds: readonly string[];
+    refusal: string;
+  },
+): Promise<void> {
+  const { chapterId, actorUserId, groupIds, refusal } = args;
+  const named = await Promise.all(
+    groupIds.map((id) => groupRepo.isNamedOnChannelList(chapterId, id)),
+  );
+  if (!named.some(Boolean)) return;
+  const may = await rbac.memberHasAnyPermission(chapterId, actorUserId, [
+    SystemPermissions.CHANNELS_MANAGE,
+  ]);
+  if (!may) throw new ForbiddenException(refusal);
+}
+
 /** `target_type` of a group's audit rows. */
 const AUDIT_TARGET_TYPE = 'chapter_group';
 
@@ -278,18 +307,17 @@ export class ChapterGroupService {
    * themselves to "Exec" and read the exec channel. A group no list names
    * grants nothing, so `groups:manage` alone is enough for it.
    */
-  private async assertMayChangeAccess(
+  private assertMayChangeAccess(
     chapterId: string,
     actorUserId: string,
     groupId: string,
   ): Promise<void> {
-    if (!(await this.groupRepo.isNamedOnChannelList(chapterId, groupId))) {
-      return;
-    }
-    const may = await this.rbac.memberHasAnyPermission(chapterId, actorUserId, [
-      SystemPermissions.CHANNELS_MANAGE,
-    ]);
-    if (!may) throw new ForbiddenException(GATES_A_CHANNEL);
+    return assertMayChangeGroupAccess(this.groupRepo, this.rbac, {
+      chapterId,
+      actorUserId,
+      groupIds: [groupId],
+      refusal: GATES_A_CHANNEL,
+    });
   }
 
   /**

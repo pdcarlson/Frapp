@@ -18,9 +18,9 @@ import type {
   PledgeClassAssignment,
 } from '#domain/entities/pledge-class.entity';
 import type { Member } from '#domain/entities/member.entity';
-import { SystemPermissions } from '#domain/constants/permissions';
 import { canReach } from '#domain/utils/role-rank';
 import { memberRankIn } from '#domain/utils/rank-context';
+import { assertMayChangeGroupAccess } from './chapter-group.service';
 import { RbacService } from './rbac.service';
 
 /**
@@ -32,12 +32,13 @@ import { RbacService } from './rbac.service';
  * chapter-wide; either can be used without the other, and a chapter that uses
  * neither has no rows.
  *
- * Every route needs `roles:manage` (the controller). Assigning members also
- * keeps two rules other member writes keep: an officer sets the class only of
- * members ranked below them (or their own), as for roles; and a class whose
- * group a channel list names decides who reads that channel, so moving
- * anyone into or out of it needs `channels:manage`, as a manual group's
- * members do (`ChapterGroupService`).
+ * Every route needs `roles:manage` (the controller). Assigning members, and
+ * deleting a class (which takes it off every member in it), also keep two
+ * rules: an officer changes the class only of members ranked below them (or
+ * their own), as for roles; and a class whose group a channel list names
+ * decides who reads that channel, so changing who is in it, or deleting it
+ * (which takes the group off those lists), needs `channels:manage`, as a
+ * manual group does (`assertMayChangeGroupAccess`).
  */
 @Injectable()
 export class PledgeClassService {
@@ -115,10 +116,25 @@ export class PledgeClassService {
     return this.pledgeClassRepo.findByChapter(chapterId);
   }
 
-  /** Its members lose the class and keep their order number. */
-  async remove(id: string, chapterId: string): Promise<void> {
+  /**
+   * Its members lose the class and keep their order number, and its group
+   * leaves every channel list that named it, so both rules of {@link assign}
+   * apply: every member in it must be within the caller's reach, and a class
+   * a channel list names needs `channels:manage`.
+   */
+  async remove(
+    id: string,
+    chapterId: string,
+    actorUserId: string,
+  ): Promise<void> {
     const found = await this.pledgeClassRepo.findById(id, chapterId);
     if (!found) throw new NotFoundException('Class not found');
+    const classId = found.id.toLowerCase();
+    const members = (await this.memberRepo.findByChapter(chapterId)).filter(
+      (m) => m.pledge_class_id?.toLowerCase() === classId,
+    );
+    await this.assertWithinReach(chapterId, actorUserId, members);
+    await this.assertMayChangeClassAccess(chapterId, actorUserId, [classId]);
     await this.pledgeClassRepo.delete(id, chapterId);
   }
 
@@ -187,39 +203,63 @@ export class PledgeClassService {
     });
     if (changes.length === 0) return;
 
-    const context = await this.rbac.getRankContext(chapterId, actorUserId);
-    const outOfReach = (member: Member) =>
-      !context.reach.wildcard &&
-      member.id !== context.reach.memberId &&
-      member.user_id !== actorUserId &&
-      !canReach(context.reach, memberRankIn(context, member));
-    if (changes.some(({ member }) => outOfReach(member))) {
-      throw new ForbiddenException(RANK_REFUSAL);
-    }
-
+    await this.assertWithinReach(
+      chapterId,
+      actorUserId,
+      changes.map(({ member }) => member),
+    );
     const moved = new Set(
       changes
         .filter(({ from, to }) => from !== to)
         .flatMap(({ from, to }) => [from, to])
         .filter((id): id is string => id !== null),
     );
-    if (moved.size === 0) return;
-    const groups = (await this.groupRepo.findByChapter(chapterId)).filter(
-      (group) =>
-        group.kind === 'pledge_class' &&
-        group.pledge_class_id !== null &&
-        moved.has(group.pledge_class_id.toLowerCase()),
-    );
-    const named = await Promise.all(
-      groups.map((group) =>
-        this.groupRepo.isNamedOnChannelList(chapterId, group.id),
-      ),
-    );
-    if (!named.some(Boolean)) return;
-    const may = await this.rbac.memberHasAnyPermission(chapterId, actorUserId, [
-      SystemPermissions.CHANNELS_MANAGE,
-    ]);
-    if (!may) throw new ForbiddenException(GATES_A_CHANNEL);
+    await this.assertMayChangeClassAccess(chapterId, actorUserId, [...moved]);
+  }
+
+  /**
+   * The rank rule: a caller without `*` changes the class of only members
+   * ranked strictly below them, and their own.
+   */
+  private async assertWithinReach(
+    chapterId: string,
+    actorUserId: string,
+    members: readonly Member[],
+  ): Promise<void> {
+    if (members.length === 0) return;
+    const context = await this.rbac.getRankContext(chapterId, actorUserId);
+    const outOfReach = (member: Member) =>
+      !context.reach.wildcard &&
+      member.id !== context.reach.memberId &&
+      member.user_id !== actorUserId &&
+      !canReach(context.reach, memberRankIn(context, member));
+    if (members.some(outOfReach)) {
+      throw new ForbiddenException(RANK_REFUSAL);
+    }
+  }
+
+  /** The channel rule, for the groups of the classes `classIds` (lower-cased). */
+  private async assertMayChangeClassAccess(
+    chapterId: string,
+    actorUserId: string,
+    classIds: readonly string[],
+  ): Promise<void> {
+    if (classIds.length === 0) return;
+    const ids = new Set(classIds);
+    const groupIds = (await this.groupRepo.findByChapter(chapterId))
+      .filter(
+        (group) =>
+          group.kind === 'pledge_class' &&
+          group.pledge_class_id !== null &&
+          ids.has(group.pledge_class_id.toLowerCase()),
+      )
+      .map((group) => group.id);
+    await assertMayChangeGroupAccess(this.groupRepo, this.rbac, {
+      chapterId,
+      actorUserId,
+      groupIds,
+      refusal: GATES_A_CHANNEL,
+    });
   }
 
   private nameTaken(name: string): ConflictException {

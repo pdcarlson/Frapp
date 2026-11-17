@@ -3,7 +3,10 @@
  * emailed invites, and the chapters one account can start. Each is counted
  * from rows the database already keeps (`invites`, `chapters`), so it holds
  * across API replicas and restarts, where the per-minute throttler
- * (`throttle-profiles.decorator.ts`) is per process.
+ * (`throttle-profiles.decorator.ts`) is per process. The database counts and
+ * writes under a lock per chapter, sender or starter
+ * (`20261117172019_daily_limits_counted_under_lock.sql`), so requests sent
+ * at once can't pass a ceiling between them.
  *
  * Product choices, set so normal use never meets them
  * (`spec/behavior/README.md` § Daily limits):
@@ -25,7 +28,11 @@ export const INVITE_EMAILS_PER_CHAPTER_PER_DAY = 300;
 /** Emailed invites one member may send in any 24 hours, across chapters. */
 export const INVITE_EMAILS_PER_INVITER_PER_DAY = 300;
 
-/** Chapters one account may start in any 24 hours. */
+/**
+ * Chapters one account may start in any 24 hours. The `chapters` trigger in
+ * `20261117172019_daily_limits_counted_under_lock.sql` holds the same 3;
+ * change both together.
+ */
 export const CHAPTERS_STARTED_PER_USER_PER_DAY = 3;
 
 /** The window every ceiling above counts over. */

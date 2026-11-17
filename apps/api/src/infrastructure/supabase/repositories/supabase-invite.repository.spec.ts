@@ -111,91 +111,78 @@ describe('SupabaseInviteRepository — tenant scope', () => {
     expect(created.every((i) => i.chapter_id === CHAPTER_B)).toBe(true);
   });
 
-  describe('findEmailedCreatedAtSince (daily emailed-invite ceilings)', () => {
-    const emailed = () => ({
-      invites: [
-        inA({
-          id: '0a000000-0000-4000-8000-000000000020',
-          token: 'ta1',
-          role: 'MEMBER',
-          created_by: USER_SHARED,
-          email: 'x@example.com',
-          created_at: '2026-11-17T10:00:00.000Z',
-        }),
-        inB({
-          id: '0b000000-0000-4000-8000-000000000020',
-          token: 'tb1',
-          role: 'MEMBER',
-          created_by: USER_SHARED,
-          email: 'x@example.com',
-          created_at: '2026-11-17T10:00:00.000Z',
-        }),
-        inA({
-          id: '0a000000-0000-4000-8000-000000000021',
-          token: 'ta2',
-          role: 'MEMBER',
-          created_by: USER_SHARED,
-          email: null,
-          created_at: '2026-11-17T10:00:00.000Z',
-        }),
-        inB({
-          id: '0b000000-0000-4000-8000-000000000021',
-          token: 'tb2',
-          role: 'MEMBER',
-          created_by: USER_SHARED,
-          email: null,
-          created_at: '2026-11-17T10:00:00.000Z',
-        }),
-        inA({
-          id: '0a000000-0000-4000-8000-000000000022',
-          token: 'ta3',
-          role: 'MEMBER',
-          created_by: USER_SHARED,
-          email: 'x@example.com',
-          created_at: '2026-11-15T10:00:00.000Z',
-        }),
-        inB({
-          id: '0b000000-0000-4000-8000-000000000022',
-          token: 'tb3',
-          role: 'MEMBER',
-          created_by: USER_SHARED,
-          email: 'x@example.com',
-          created_at: '2026-11-15T10:00:00.000Z',
-        }),
-      ],
-    });
-    const since = new Date('2026-11-16T12:00:00.000Z');
-
-    it("counts one chapter's emailed invites since the window opened", async () => {
-      const h = createTenantHarness({
-        tables: emailed(),
+  describe('emailed invites under the daily ceilings', () => {
+    it('createEmailed hands the batch, the chapter and the limits to the RPC', async () => {
+      const harness = createTenantHarness({
+        tables: seed(),
         collisionExempt: { invites: ['token'] },
+        rpc: {
+          create_emailed_invites: {
+            data: {
+              outcome: 'ok',
+              invites: [{ id: 'x', chapter_id: CHAPTER_B }],
+            },
+          },
+        },
       });
-      const times = await h.expectTenantScoped(CHAPTER_B, () =>
-        new SupabaseInviteRepository(h.client).findEmailedCreatedAtSince(
-          { chapterId: CHAPTER_B },
-          since,
-        ),
+      const invites = [
+        {
+          token: 'tb-new',
+          role: 'MEMBER',
+          expires_at: '2099-01-01T00:00:00.000Z',
+          email: 'x@example.com',
+        },
+      ];
+      const result = await harness.expectTenantScoped(CHAPTER_B, () =>
+        new SupabaseInviteRepository(harness.client).createEmailed({
+          chapterId: CHAPTER_B,
+          createdBy: USER_SHARED,
+          invites,
+          since: new Date('2026-11-16T12:00:00.000Z'),
+          chapterLimit: 300,
+          inviterLimit: 300,
+        }),
       );
-      // The share-link invite (no address) and the one before the window
-      // are left out.
-      expect(times).toEqual(['2026-11-17T10:00:00.000Z']);
+      expect(result.outcome).toBe('ok');
+      expect(harness.rpcCalls[0]).toEqual({
+        fn: 'create_emailed_invites',
+        args: {
+          p_chapter_id: CHAPTER_B,
+          p_created_by: USER_SHARED,
+          p_invites: invites,
+          p_since: '2026-11-16T12:00:00.000Z',
+          p_chapter_limit: 300,
+          p_inviter_limit: 300,
+        },
+      });
     });
 
-    it("counts one sender's across every chapter, by design", async () => {
-      // The per-inviter ceiling bounds an account, whichever chapter it sends
-      // from, so this read carries no chapter predicate.
-      const h = createTenantHarness({
-        tables: emailed(),
+    it('markEmailFailed marks only the listed invites of the chapter', async () => {
+      const harness = createTenantHarness({
+        tables: seed(),
         collisionExempt: { invites: ['token'] },
       });
-      const times = await new SupabaseInviteRepository(
-        h.client,
-      ).findEmailedCreatedAtSince({ createdBy: USER_SHARED }, since);
-      expect(times).toEqual([
-        '2026-11-17T10:00:00.000Z',
-        '2026-11-17T10:00:00.000Z',
-      ]);
+      const repo = new SupabaseInviteRepository(harness.client);
+      await harness.expectTenantScoped(CHAPTER_B, () =>
+        repo.markEmailFailed(CHAPTER_B, [INVITE_B, INVITE_A]),
+      );
+      const failedAt = (id: string) =>
+        harness.rows('invites').find((r) => r.id === id)?.email_failed_at;
+      expect(failedAt(INVITE_B)).toEqual(expect.any(String));
+      // Listed, but another chapter's: the chapter filter leaves it.
+      expect(failedAt(INVITE_A)).toBeUndefined();
+    });
+
+    it('markEmailFailed writes nothing for an empty list', async () => {
+      const harness = createTenantHarness({
+        tables: seed(),
+        collisionExempt: { invites: ['token'] },
+      });
+      await new SupabaseInviteRepository(harness.client).markEmailFailed(
+        CHAPTER_B,
+        [],
+      );
+      expect(harness.ops).toHaveLength(0);
     });
   });
 
