@@ -22,25 +22,31 @@ export function sameChoice(a: MeetingChoice, b: MeetingChoice): boolean {
  * step of its own: the + has already picked the one on now, or a new one.
  * Change lists the recent meetings and "Chapter meeting, not on the
  * calendar" in place, the way web's New minutes does (#5219), and a pick
- * folds the list away again.
+ * folds the list away again. With nothing picked (the meeting on now has
+ * someone else's minutes) the list is open from the start, under a line
+ * saying why.
  */
 export function MeetingPickField({
   value,
   label,
   options,
+  note = null,
   onChange,
 }: {
-  value: MeetingChoice;
+  /** The meeting picked, or null when the officer has to pick one. */
+  value: MeetingChoice | null;
   /** The chosen meeting's own two lines. */
-  label: { title: string; detail: string };
+  label: { title: string; detail: string } | null;
   options: readonly MeetingOption[];
+  /** A line above the list: why nothing is picked yet. */
+  note?: string | null;
   onChange: (choice: MeetingChoice) => void;
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const [open, setOpen] = useState(false);
 
-  if (!open) {
+  if (!open && value && label) {
     return (
       <ListSection>
         <ListRow
@@ -58,9 +64,10 @@ export function MeetingPickField({
       <Text accessibilityRole="header" style={styles.heading}>
         {MEETING_START_COPY.pickHeading}
       </Text>
+      {note ? <Text style={styles.note}>{note}</Text> : null}
       <ListSection>
         {options.map((option) => {
-          const picked = sameChoice(option.choice, value);
+          const picked = value !== null && sameChoice(option.choice, value);
           return (
             <ListRow
               key={
@@ -91,6 +98,10 @@ function createStyles(tokens: SignetTokens) {
     list: { gap: tokens.spacing.sm },
     heading: {
       ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
+    },
+    note: {
+      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
   });

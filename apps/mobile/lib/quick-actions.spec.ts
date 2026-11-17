@@ -71,10 +71,11 @@ describe("which actions a member can use", () => {
     ).not.toContain("newMinutes");
   });
 
-  it("gives every member Search (#5287)", () => {
-    expect(
-      availableQuickActions({ permissions: [], enabledModules: undefined }),
-    ).toEqual(["search"]);
+  it("offers Search where GET /v1/search would answer (#5287)", () => {
+    const keys = (permissions: string[]) =>
+      availableQuickActions({ permissions, enabledModules: undefined });
+    expect(keys([])).toEqual([]);
+    expect(keys(["members:view"])).toContain("search");
   });
 
   it("gives a member only what needs no officer permission", () => {
@@ -94,8 +95,8 @@ describe("which actions a member can use", () => {
       });
     // New Member and Alumni hold members:view but not service:log.
     expect(keys(["members:view"])).toEqual(["search", "message", "study"]);
-    // No roster, no Directory and no study sessions.
-    expect(keys(["service:log"])).toEqual(["search", "logHours"]);
+    // No roster, no Directory, no search and no study sessions.
+    expect(keys(["service:log"])).toEqual(["logHours"]);
     // `POST /v1/tasks` also needs the controller's members:view (#3865).
     expect(keys(["tasks:manage"])).not.toContain("newTask");
     expect(keys(["tasks:manage", "members:view"])).toContain("newTask");

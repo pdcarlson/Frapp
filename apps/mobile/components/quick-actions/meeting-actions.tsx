@@ -2,7 +2,6 @@ import {
   forwardRef,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -12,6 +11,7 @@ import { useRouter } from "expo-router";
 import { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useEvents,
+  useFrappClient,
   useMeetingRecorderAvailability,
   useMeetings,
   usePermissionList,
@@ -39,12 +39,14 @@ import { useMeetingRecorder } from "@/lib/minutes/recorder/session";
 import { useMeetingsOn } from "@/lib/minutes/meetings-on";
 import {
   MEETING_START_COPY,
+  MinutesStartError,
   choiceLabel,
   meetingChoices,
   recordRowDetail,
   useStartMinutesFor,
   type MeetingChoice,
   type MeetingChoices,
+  type StartedMinutes,
 } from "@/lib/minutes/start-minutes";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
@@ -58,6 +60,15 @@ export type RecordMeetingEntry = {
   onPress: () => void;
 };
 
+type SheetKey = "record" | "minutes";
+
+/**
+ * How long a sheet asked for before the calendar was read may still open
+ * once it is. Later than this, the officer has moved on, and a sheet
+ * appearing by itself would be a surprise.
+ */
+const REQUEST_LIVES_MS = 8000;
+
 /**
  * The +'s meeting actions (#5287; `spec/ui/mobile/navigation.md` § Quick
  * actions): the Record meeting row above the grid, and New minutes in it.
@@ -69,8 +80,13 @@ export type RecordMeetingEntry = {
  * shortest way to record is +, Record meeting, the tick, Start recording:
  * the notice always comes first (`meetings.md` § Recording notice), and the
  * meeting rides on it rather than taking a step. Start recording starts the
- * minutes (or opens the member's own draft on that event), starts the
- * recorder and opens the minutes screen, where the controls are.
+ * minutes, opens them and starts the recorder.
+ *
+ * When the meeting on now already has someone else's minutes, the row says
+ * so and opens the event, where Take notes is (#4935), rather than start a
+ * second meeting beside it. When it is the member's own draft and that
+ * draft already has a recording, the minutes open and the officer records
+ * again from their row, which asks first, as it always has.
  *
  * Record meeting is offered where the minutes screen's own Record is: the
  * member holds `meetings:record`, the module is on, the chapter drafts from
@@ -90,6 +106,7 @@ export function useMeetingQuickActions({
   sheets: ReactNode;
 } {
   const router = useRouter();
+  const client = useFrappClient();
   const on = useMeetingsOn();
   const canRecord = can("meetings:record", usePermissionList());
   const ai = useAiSurfaces();
@@ -104,128 +121,203 @@ export function useMeetingQuickActions({
     availability.data?.available === true &&
     availability.data.blocked !== "chapter_off";
 
-  // The choices are read once the member could use them: for the Record
-  // row's second line, or when New minutes is asked for. Not with the tab
-  // bar for everyone, so a member who never records never reads every event.
+  // The calendar and the minutes are read once the member could use them:
+  // for the Record row's second line, or when New minutes is asked for. Not
+  // with the tab bar for everyone, so a member who never records never reads
+  // every event.
   const [asked, setAsked] = useState(false);
   const wanted = mayStart && (recordable || asked);
   const eventsQuery = useEvents({ enabled: wanted });
   const meetingsQuery = useMeetings({ enabled: wanted });
-  const viewerId = useViewerUserId() ?? null;
-  const ready = eventsQuery.isSuccess && meetingsQuery.isSuccess;
-  const choices = useMemo<MeetingChoices | null>(
-    () =>
-      ready
-        ? meetingChoices(
-            eventsQuery.data,
-            meetingsQuery.data ?? [],
-            viewerId,
-            new Date(),
-          )
-        : null,
-    [ready, eventsQuery.data, meetingsQuery.data, viewerId],
-  );
+  const viewerId = useViewerUserId();
+  const readFailed = eventsQuery.isError || meetingsQuery.isError;
+  // Events the server said already have minutes this member can't read.
+  const [refused, setRefused] = useState<ReadonlySet<string>>(new Set());
+  // Read on every render, not memoised on the data: which meeting is on
+  // depends on the clock, and a list that hasn't changed since 6 PM must
+  // still find the 7 PM meeting at 7:05.
+  const choices: MeetingChoices | null =
+    eventsQuery.isSuccess && meetingsQuery.isSuccess && viewerId
+      ? meetingChoices(
+          eventsQuery.data,
+          meetingsQuery.data ?? [],
+          viewerId,
+          new Date(),
+          refused,
+        )
+      : null;
 
   const { start } = useStartMinutesFor();
   const { ensureConsent, consentSheet } = useAiConsentGate();
   const noticeRef = useRef<BottomSheetModal>(null);
   const minutesRef = useRef<BottomSheetModal>(null);
   // The officer's own pick from Change, or null to follow the +'s. Cleared
-  // on each open, so a sheet opens on the meeting the + picks then, not one
-  // left from the last open.
+  // on each open, so a sheet opens on the meeting the + picks then.
   const [changed, setChanged] = useState<MeetingChoice | null>(null);
   const choice = changed ?? choices?.picked ?? null;
-  // Which sheet was asked for, counted so asking again opens it again.
+  // Which sheet was asked for, and when, counted so asking again opens it
+  // again.
   const [request, setRequest] = useState<{
-    sheet: "record" | "minutes";
+    sheet: SheetKey;
     n: number;
+    at: number;
   } | null>(null);
-  const presented = useRef(0);
+  const handled = useRef(0);
 
   const heldId = recorderMeetingId(state);
   const held = heldId ? recordingBarView(state) : null;
   const maxSeconds =
     availability.data?.max_seconds ?? MAX_MEETING_RECORDING_SECONDS;
+  const ready = choices !== null;
 
-  // A sheet opens once the choices are in hand, after the commit that gives
-  // it its meeting row.
+  // A sheet opens once the calendar is read, after the commit that gives it
+  // its meeting row; a read that fails says so instead, and a sheet asked
+  // for long ago doesn't open by itself.
   useEffect(() => {
-    if (!request || !choices || request.n === presented.current) return;
-    presented.current = request.n;
+    if (!request || request.n === handled.current) return;
+    if (readFailed) {
+      handled.current = request.n;
+      confirm(MEETING_START_COPY.readFailed);
+      return;
+    }
+    if (!ready) return;
+    handled.current = request.n;
+    if (Date.now() - request.at > REQUEST_LIVES_MS) return;
     const ref = request.sheet === "record" ? noticeRef : minutesRef;
     requestAnimationFrame(() => ref.current?.present());
-  }, [request, choices]);
+  }, [request, ready, readFailed, confirm]);
 
-  const present = useCallback((sheet: "record" | "minutes") => {
-    setAsked(true);
-    setChanged(null);
-    setRequest((prev) => ({ sheet, n: (prev?.n ?? 0) + 1 }));
-  }, []);
+  const refetchEvents = eventsQuery.refetch;
+  const refetchMeetings = meetingsQuery.refetch;
+  const present = useCallback(
+    (sheet: SheetKey) => {
+      setAsked(true);
+      setChanged(null);
+      if (readFailed) {
+        void refetchEvents();
+        void refetchMeetings();
+      }
+      setRequest((prev) => ({ sheet, n: (prev?.n ?? 0) + 1, at: Date.now() }));
+    },
+    [readFailed, refetchEvents, refetchMeetings],
+  );
 
   const newMinutes = useCallback(() => present("minutes"), [present]);
+  const takenId = choices?.taken?.id ?? null;
+  const consentNeeded = availability.data?.blocked === "consent_required";
+  const refetchAvailability = availability.refetch;
 
-  const recordPress = useCallback(async () => {
+  async function recordPress() {
     if (heldId) {
       router.push({ pathname: "/minutes-details", params: { id: heldId } });
       return;
     }
+    // The meeting on now has someone else's minutes: its event screen has
+    // Open minutes and Take notes, so the officer joins them.
+    if (takenId) {
+      router.push({ pathname: "/event-details", params: { id: takenId } });
+      return;
+    }
     // The AI question comes before the notice (§ Recording in the app).
-    if (availability.data?.blocked === "consent_required") {
+    if (consentNeeded) {
       try {
         if (!(await ensureConsent())) return;
       } catch {
         return;
       }
-      void availability.refetch();
+      void refetchAvailability();
     }
     present("record");
-  }, [heldId, router, availability, ensureConsent, present]);
+  }
 
   const record: RecordMeetingEntry | null = held
     ? { detail: held.label, held: true, onPress: () => void recordPress() }
     : recordable
       ? {
-          detail: recordRowDetail(choices?.picked ?? { kind: "new" }),
+          detail: choices
+            ? recordRowDetail(choices)
+            : readFailed
+              ? MEETING_START_COPY.readFailed
+              : MEETING_START_COPY.rowFinding,
           held: false,
           onPress: () => void recordPress(),
         }
       : null;
 
-  async function startRecording(picked: MeetingChoice) {
-    if (!recorder || !choices) return;
+  /** Starts or opens the minutes, or the line to show when it can't. */
+  async function startFor(
+    picked: MeetingChoice,
+  ): Promise<StartedMinutes | string> {
     try {
-      const minutes = await start(picked, choices.ownDraftFor);
-      router.push({ pathname: "/minutes-details", params: { id: minutes.id } });
-      await recorder.start(
-        { meetingId: minutes.id, eventName: minutes.eventName, maxSeconds },
-        true,
-      );
+      return await start(picked, choices?.ownDraftFor);
     } catch (error) {
-      confirm(error instanceof Error ? error.message : String(error));
+      if (error instanceof MinutesStartError && error.alreadyStarted) {
+        if (picked.kind === "event") {
+          const id = picked.event.id;
+          setRefused((before) => new Set(before).add(id));
+        }
+        void refetchMeetings();
+      }
+      return error instanceof Error ? error.message : String(error);
     }
   }
 
-  async function startMinutes(picked: MeetingChoice) {
-    if (!choices) return;
-    try {
-      const minutes = await start(picked, choices.ownDraftFor);
-      router.push({ pathname: "/minutes-details", params: { id: minutes.id } });
-    } catch (error) {
-      confirm(error instanceof Error ? error.message : String(error));
+  /**
+   * Whether the member's own draft can be recorded straight away: it has no
+   * recording, or only a failed one. Anything else (one uploading from
+   * another device, transcribing, or ready) is the minutes screen's to
+   * handle, where Record asks before replacing it.
+   */
+  async function freeToRecord(meetingId: string): Promise<boolean> {
+    const { data } = await client.GET("/v1/meetings/{id}/recording", {
+      params: { path: { id: meetingId } },
+    });
+    return !data || data.status === "none" || data.status === "failed";
+  }
+
+  async function startRecording(picked: MeetingChoice) {
+    if (!recorder) return;
+    const minutes = await startFor(picked);
+    if (typeof minutes === "string") {
+      confirm(minutes);
+      return;
     }
+    const open = () =>
+      router.push({ pathname: "/minutes-details", params: { id: minutes.id } });
+    if (minutes.existing && !(await freeToRecord(minutes.id))) {
+      open();
+      confirm(MEETING_START_COPY.hasRecording(minutes.eventName));
+      return;
+    }
+    recorder.clearRefusal();
+    open();
+    await recorder.start(
+      { meetingId: minutes.id, eventName: minutes.eventName, maxSeconds },
+      true,
+    );
+  }
+
+  /** Starts the minutes and opens them; the line to show when it can't. */
+  async function startMinutes(picked: MeetingChoice): Promise<string | null> {
+    const minutes = await startFor(picked);
+    if (typeof minutes === "string") return minutes;
+    router.push({ pathname: "/minutes-details", params: { id: minutes.id } });
+    return null;
   }
 
   const inRoomId =
-    choices?.picked.kind === "event" ? choices.picked.event.id : null;
-  const pick =
-    choices && choice ? (
-      <MeetingPickField
-        value={choice}
-        label={choiceLabel(choice, new Date(), inRoomId)}
-        options={choices.options}
-        onChange={setChanged}
-      />
-    ) : null;
+    choices?.picked?.kind === "event" ? choices.picked.event.id : null;
+  const pick = choices ? (
+    <MeetingPickField
+      value={choice}
+      label={choice ? choiceLabel(choice, new Date(), inRoomId) : null}
+      options={choices.options}
+      note={
+        choices.taken ? MEETING_START_COPY.takenNote(choices.taken.name) : null
+      }
+      onChange={setChanged}
+    />
+  ) : null;
 
   const sheets = (
     <>
@@ -244,9 +336,8 @@ export function useMeetingQuickActions({
         <StartMinutesSheet
           ref={minutesRef}
           pick={pick}
-          onStart={async () => {
-            if (choice) await startMinutes(choice);
-          }}
+          canStart={choice !== null}
+          onStart={async () => (choice ? startMinutes(choice) : null)}
         />
       ) : null}
     </>
@@ -257,21 +348,25 @@ export function useMeetingQuickActions({
 
 /**
  * New minutes from the + (#5287): the meeting, already picked, and Start
- * minutes. No notice and no microphone; the minutes open ready for notes.
+ * minutes. No notice and no microphone; the minutes open ready for notes. A
+ * start that fails says why in the sheet, which stays open to try again.
  */
 const StartMinutesSheet = forwardRef<
   BottomSheetModal,
   {
     pick: ReactNode;
-    onStart: () => Promise<void>;
+    canStart: boolean;
+    /** Resolves to the line to show when the start failed, else null. */
+    onStart: () => Promise<string | null>;
   }
->(function StartMinutesSheet({ pick, onStart }, ref) {
+>(function StartMinutesSheet({ pick, canStart, onStart }, ref) {
   const { tokens } = useFrappTheme();
   const { accent, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
   const backgroundStyle = useSheetBackgroundStyle();
   const closeSheet = useSheetClose(ref);
   const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
 
   return (
     <BottomSheetModal
@@ -281,6 +376,7 @@ const StartMinutesSheet = forwardRef<
       backgroundStyle={backgroundStyle}
       handleComponent={SheetGrabber}
       backdropComponent={SheetScrim}
+      onDismiss={() => setProblem(null)}
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
@@ -291,17 +387,24 @@ const StartMinutesSheet = forwardRef<
           {MEETING_START_COPY.newHeading}
         </Text>
         {pick}
+        {problem ? (
+          <Text accessibilityLiveRegion="polite" style={styles.problem}>
+            {problem}
+          </Text>
+        ) : null}
         <SheetPrimaryButton
           label={MEETING_START_COPY.start}
           busy={busy}
-          disabled={!pick || busy}
+          disabled={!pick || !canStart || busy}
           accent={accent}
           onAccent={accentOnPrimary}
           onPress={async () => {
             setBusy(true);
+            setProblem(null);
             try {
-              await onStart();
-              closeSheet();
+              const failed = await onStart();
+              if (failed) setProblem(failed);
+              else closeSheet();
             } finally {
               setBusy(false);
             }
@@ -322,6 +425,10 @@ function createStyles(tokens: SignetTokens) {
     title: {
       ...typeRole(tokens.typography.role.title),
       color: tokens.color.text.foreground,
+    },
+    problem: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructiveText,
     },
   });
 }

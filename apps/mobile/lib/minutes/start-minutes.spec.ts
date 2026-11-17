@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { MeetingSummary } from "@repo/hooks";
 
 vi.mock("@repo/hooks", () => ({
-  useMeetings: vi.fn(),
   useStartMeeting: vi.fn(),
 }));
 
@@ -70,6 +69,7 @@ describe("meetingChoices", () => {
       kind: "event",
       event: expect.objectContaining({ id: "tonight" }),
     });
+    expect(recordRowDetail(choices)).toBe("Chapter Meeting is on now");
     expect(choices.options.map((option) => option.title)).toEqual([
       "Chapter Meeting",
       "Chapter Meeting",
@@ -89,36 +89,55 @@ describe("meetingChoices", () => {
   it("picks a new meeting when nothing is on now", () => {
     const choices = meetingChoices([lastWeek], [], ME, NOW);
     expect(choices.picked).toEqual({ kind: "new" });
-    expect(recordRowDetail(choices.picked)).toBe(MEETING_START_COPY.rowNew);
+    expect(recordRowDetail(choices)).toBe(MEETING_START_COPY.rowNew);
   });
 
-  it("opens the member's own draft and skips an event with anyone else's minutes", () => {
+  it("reopens the member's own draft on the meeting on now", () => {
     const own = meetingChoices(
       [tonight],
       [minutes("tonight", "draft", ME)],
       ME,
       NOW,
     );
-    expect(own.picked.kind).toBe("event");
+    expect(own.picked?.kind).toBe("event");
     expect(own.ownDraftFor.get("tonight")).toBe("m-tonight");
     expect(own.options[0].detail).toContain(MEETING_START_COPY.yours);
+  });
 
-    const theirs = meetingChoices(
+  it("names the meeting on now as taken when its minutes are someone else's, rather than start a second", () => {
+    for (const held of [
+      minutes("tonight", "draft", "someone-else"),
+      minutes("tonight", "posted", ME),
+    ]) {
+      const choices = meetingChoices([tonight], [held], ME, NOW);
+      expect(choices.picked).toBeNull();
+      expect(choices.taken?.id).toBe("tonight");
+      expect(recordRowDetail(choices)).toBe(
+        MEETING_START_COPY.rowTaken("Chapter Meeting"),
+      );
+      expect(choices.options.map((option) => option.title)).toEqual([
+        MEETING_START_COPY.newTitle,
+      ]);
+    }
+  });
+
+  it("treats an event the server refused as taken, though its minutes can't be read", () => {
+    const choices = meetingChoices(
       [tonight],
-      [minutes("tonight", "draft", "someone-else")],
+      [],
       ME,
       NOW,
+      new Set(["tonight"]),
     );
-    expect(theirs.picked).toEqual({ kind: "new" });
-    expect(theirs.options).toHaveLength(1);
+    expect(choices.taken?.id).toBe("tonight");
+    expect(choices.picked).toBeNull();
+  });
 
-    const posted = meetingChoices(
-      [tonight],
-      [minutes("tonight", "posted", ME)],
-      ME,
-      NOW,
-    );
-    expect(posted.picked).toEqual({ kind: "new" });
+  it("never takes a creatorless draft for the member's own", () => {
+    const orphan = { ...minutes("tonight", "draft", ME), created_by: null };
+    const choices = meetingChoices([tonight], [orphan], ME, NOW);
+    expect(choices.ownDraftFor.size).toBe(0);
+    expect(choices.taken?.id).toBe("tonight");
   });
 
   it("never offers a hearing", () => {

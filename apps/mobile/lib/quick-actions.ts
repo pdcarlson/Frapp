@@ -29,8 +29,10 @@ export type QuickActionKey =
 
 /**
  * The panel holds at most nine, three rows of three (Paul, 2026-11-13: "cap it
- * at 9, and then you could go 3 rows of 3"). Every action fits, so an officer
- * who can use all of them may place all of them.
+ * at 9, and then you could go 3 rows of 3"), and stays nine with New minutes
+ * and Search added (Paul, 2026-11-17, #5287): an officer who can use all ten
+ * places nine and leaves one in the Add row. Record meeting is a row above
+ * the grid and takes no slot.
  */
 export const QUICK_ACTION_LIMIT = 9;
 
@@ -132,9 +134,9 @@ export function availableQuickActions({
     // `POST /v1/meetings` checks `meetings:record` behind the module.
     newMinutes:
       on("meetings") && can("meetings:record", permissions) && meetingNotes,
-    // Search is every member's (#5139): each group it lists is filtered by
-    // the server to what the member may read.
-    search: true,
+    // Members, messages and events come from `GET /v1/search`, which checks
+    // `members:view`, as the Directory behind Message does.
+    search: can("members:view", permissions),
     // The event sheet's own gate: creating reads the roster, which the events
     // controller guards with members:view.
     newEvent: on("events") && canAll(EVENT_CREATE_PERMISSIONS, permissions),

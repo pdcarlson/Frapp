@@ -225,7 +225,7 @@ The tab bar's quick-actions panel (`apps/mobile/components/quick-actions/quick-a
 [`navigation.md` § Quick actions](../mobile/navigation.md#quick-actions)) draws
 each action at 26px on a 58pt glass disc, in `text.foreground`, with the nav
 shape of the place it leads: New minutes `meetings`, Search `search` (Phosphor `magnifying-glass`, added for it, #5287), New event `events`, New task `tasks`, Invite
-`invite` (Phosphor `user-plus`), Message `chat`, Check in `checkIn` (Phosphor `map-pin`, added for it), Host check-in
+`invite` (Phosphor `user-plus`), Message `chat`, Host check-in
 `hostCheckIn`, Log hours `service`, Study `study`, Upload `documents`. The
 Record meeting row above them (#5287) draws `record` (Phosphor `microphone`) at
 20px in `semantic.onSemantic` on a 36pt disc of `semantic.destructive`, the

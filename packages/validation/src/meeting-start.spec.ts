@@ -30,65 +30,83 @@ describe("meetingInTheRoom", () => {
       "2026-11-17T19:00:00",
       "2026-11-17T21:00:00",
     );
-    expect(meetingInTheRoom([chapter], new Set(), NOW)).toBe(chapter);
+    expect(meetingInTheRoom([chapter], NOW)).toBe(chapter);
   });
 
-  it("counts a meeting that started within the hour, end or not", () => {
-    const started = event(
-      "a",
-      "Exec",
-      "2026-11-17T18:30:00",
-      "2026-11-17T19:00:00",
-    );
-    expect(meetingInTheRoom([started], new Set(), NOW)).toBe(started);
-  });
-
-  it("does not guess an older meeting, or one well ahead", () => {
+  it("does not guess a meeting that is over, or one well ahead", () => {
     const yesterday = event(
       "a",
       "Chapter Meeting",
       "2026-11-16T19:00:00",
       "2026-11-16T21:00:00",
     );
-    const tomorrow = event(
+    // Ended 18:30; its grace closed at 18:45.
+    const ended = event(
       "b",
+      "Exec",
+      "2026-11-17T18:00:00",
+      "2026-11-17T18:30:00",
+    );
+    const tomorrow = event(
+      "c",
       "Chapter Meeting",
       "2026-11-18T19:00:00",
       "2026-11-18T21:00:00",
     );
-    expect(meetingInTheRoom([yesterday, tomorrow], new Set(), NOW)).toBeNull();
+    expect(meetingInTheRoom([yesterday, ended, tomorrow], NOW)).toBeNull();
   });
 
-  it("never picks a hearing or an event someone else's minutes hold", () => {
+  it("takes the meeting about to start over the one just ending", () => {
+    const at = Date.parse("2026-11-17T18:55:00");
+    // Both windows are open at 18:55: Exec's grace runs to 19:00.
+    const exec = event(
+      "a",
+      "Exec",
+      "2026-11-17T18:00:00",
+      "2026-11-17T18:45:00",
+    );
+    const chapter = event(
+      "b",
+      "Chapter",
+      "2026-11-17T19:00:00",
+      "2026-11-17T20:00:00",
+    );
+    expect(meetingInTheRoom([exec, chapter], at)).toBe(chapter);
+  });
+
+  it("takes a meeting over an all-day event whose window spans it", () => {
+    const at = Date.parse("2026-11-17T19:05:00");
+    const day = event(
+      "a",
+      "Philanthropy day",
+      "2026-11-17T12:00:00",
+      "2026-11-17T20:00:00",
+    );
+    const chapter = event(
+      "b",
+      "Chapter",
+      "2026-11-17T19:00:00",
+      "2026-11-17T20:00:00",
+    );
+    expect(meetingInTheRoom([day, chapter], at)).toBe(chapter);
+  });
+
+  it("finds a meeting whose check-in opened well before its start", () => {
+    const later = {
+      ...event("a", "Initiation", "2026-11-17T20:30:00", "2026-11-17T22:00:00"),
+      check_in_opens_minutes: 90,
+    };
+    expect(meetingInTheRoom([later], NOW)).toBe(later);
+  });
+
+  it("never picks a hearing", () => {
     const hearing = event(
       "a",
       "Standards hearing",
       "2026-11-17T19:00:00",
       "2026-11-17T21:00:00",
     );
-    const taken = event(
-      "b",
-      "Chapter Meeting",
-      "2026-11-17T19:00:00",
-      "2026-11-17T21:00:00",
-    );
-    expect(meetingInTheRoom([hearing, taken], new Set(["b"]), NOW)).toBeNull();
-  });
-
-  it("takes the one that started first when two are on", () => {
-    const later = event(
-      "a",
-      "Committee",
-      "2026-11-17T19:10:00",
-      "2026-11-17T20:00:00",
-    );
-    const first = event(
-      "b",
-      "Chapter",
-      "2026-11-17T19:00:00",
-      "2026-11-17T21:00:00",
-    );
-    expect(meetingInTheRoom([later, first], new Set(), NOW)).toBe(first);
+    expect(meetingInTheRoom([hearing], NOW)).toBeNull();
   });
 });
 

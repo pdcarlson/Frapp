@@ -205,7 +205,6 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
     this.registry.register(this);
   }
 
-  /** Where the meeting's recording stands, for whoever may edit its minutes. */
   /**
    * What recording would do for this member right now, before any minutes
    * exist (#5287): whether the server can write a recording out, why this
@@ -224,6 +223,7 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
     return { available, blocked, max_bytes, max_seconds };
   }
 
+  /** Where the meeting's recording stands, for whoever may edit its minutes. */
   async state(
     chapterId: string,
     meetingId: string,
