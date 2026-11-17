@@ -239,7 +239,7 @@ it applied.
       the `database:` part specifically for a migration verification
 - [ ] One auth-protected API route succeeds
 - [ ] Stripe staging webhook endpoint (`/v1/webhooks/stripe`) accepts signed event
-- [ ] No migration-related errors in Render logs
+- [ ] No migration-related errors in the API's Cloud Run logs
 
 If the migration failed, the API deploy and the web and landing upload for that
 commit were **also** skipped (they are later steps of the same job), so a red
@@ -294,14 +294,14 @@ The build creates no deployment — `vercel deploy --prebuilt` is a separate ste
 so a dry run still uploads nothing and production keeps serving what it served
 before.
 
-What the dry run still does **not** rehearse: the migration apply, the Render
+What the dry run still does **not** rehearse: the migration apply, the API
 deploy, the health check, and the Vercel upload. Those are withheld by choice —
 each one writes to production or takes production traffic — not because they are
 impossible to rehearse, so do not read the list as a technical limit.
 
 One difference sits _inside_ the build: a real run compiles with
 `SENTRY_AUTH_TOKEN` when Infisical `prod` holds it
-([which environments carry it](../../internal/environment/ENV_REFERENCE.md#appsapi-nestjs--render)),
+([which environments carry it](../../internal/environment/ENV_REFERENCE.md#appsapi-nestjs--cloud-run)),
 and then uploads source maps and creates a Sentry release. A dry run withholds the
 token from the build and strips it from the file `vercel pull` writes, so it mints
 no release (#2275, since #2673). **Corrected 2026-09-28:** before that, the dry run
@@ -353,8 +353,9 @@ the new container until Render marked the deploy `update_failed`.
 
 Before you promote, check what that step can't see:
 
-- [ ] **The Render sync has copied the value.** The step reads Infisical, which is the
-      sync's source. A sync that failed or lags still boots the API on the old value
+- [ ] **The Secret Manager sync has copied the value.** The step reads Infisical, which is the
+      sync's source. A sync that failed or lags still boots the API on the old value, because
+      the deploy pins the latest version Secret Manager holds
       ([`SECRETS_MANAGEMENT.md` § 5](../../internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs)).
 - [ ] **The value is right, not just well-formed.** A secret key from the other Supabase
       project, or a `price_…` from the retired Stripe account, passes `validateEnv`. The

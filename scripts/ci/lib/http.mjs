@@ -34,8 +34,8 @@ export const DEFAULT_TIMEOUT_MS = 15_000;
 /**
  * The timeout for a request that cannot be retried.
  *
- * Aborting a create is not free: `deploy-render-production.mjs` POSTs to start a
- * deploy, and if we abort at 15s a slow-but-successful create still ran — the
+ * Aborting a create is not free: a script that POSTs to start a deploy (as
+ * the retired `deploy-render-production.mjs` did) and aborts at 15s a slow-but-successful create still ran — the
  * deploy proceeds on the provider while the script throws, so CI reports a
  * failure for a deploy that is actually happening. And because the call is not
  * idempotent we cannot re-send it to find out.
@@ -60,10 +60,11 @@ export function isRetriableStatus(status) {
 /**
  * Methods a failed request may be re-sent for.
  *
- * This is the sharpest edge in this module. `deploy-render-production.mjs`
- * POSTs to *create a deployment*, and a create is not idempotent: if the first
- * POST reached the provider and only its response was lost — a gateway 502, or
- * our own timeout firing on a slow but successful call — then retrying it
+ * This is the sharpest edge in this module. A request that *creates a
+ * deployment* is not idempotent: `deploy-cloud-run.mjs`'s PATCH of the service
+ * starts a new revision, as Render's deploy POST did until #5228. If the first
+ * request reached the provider and only its response was lost — a gateway 502,
+ * or our own timeout firing on a slow but successful call — then retrying it
  * starts a SECOND production deploy. A retry helper that made the production
  * path less safe than it found it would defeat the point of adding one.
  *
@@ -71,7 +72,7 @@ export function isRetriableStatus(status) {
  * a deployment by POSTing a `gitSource`. Since #1578 it creates deployments
  * through the Vercel CLI and this module only ever sees its GETs — the lookup
  * and the poll. That removes an instance of the hazard; it does not soften the
- * rule, because Render still has it and any future create would inherit it.
+ * rule, because any future create would inherit it.
  *
  * So retry is scoped to the methods where re-sending cannot duplicate an
  * effect. Everything else still gets the timeout, which is pure benefit: it

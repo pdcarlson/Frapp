@@ -25,8 +25,6 @@ import {
   SIGNET_PRODUCT_NAME,
   checkInfisicalSyncs,
   checkProjectStatus,
-  checkRenderAutoDeploy,
-  checkRenderHealthCheckPath,
   checkSchemaDrift,
   classifyConformance,
   conformanceExitCode,
@@ -45,14 +43,6 @@ import { makeFetchMock, quiet } from "./helpers.mjs";
 
 const ok = (body) => ({ ok: true, status: 200, json: async () => body });
 const httpError = (status) => ({ ok: false, status, json: async () => ({}) });
-
-/** Live GET /v1/services/{id} shape for frapp-api-staging (2026-09-09). */
-const healthyStagingRender = () =>
-  ok({
-    autoDeploy: "no",
-    branch: "main",
-    serviceDetails: { healthCheckPath: "/health" },
-  });
 
 // ── Project status ──────────────────────────────────────────────────────────
 
@@ -823,283 +813,6 @@ test("default staging toRun asserts leaked-password protection against the injec
   assert.equal(noCredential.row.status, SKIPPED);
 });
 
-test("default staging toRun includes health-check-path — the function alone is not enough", () => {
-  const source = readFileSync(
-    new URL("../staging-conformance.mjs", import.meta.url),
-    "utf8",
-  );
-  const toRun = source.slice(source.indexOf("const toRun = checks ??"));
-  assert.match(toRun, /id: "health-check-path"/);
-  assert.match(toRun, /checkRenderHealthCheckPath\(/);
-});
-
-test("default staging toRun includes render-auto-deploy — the function alone is not enough", () => {
-  const source = readFileSync(
-    new URL("../staging-conformance.mjs", import.meta.url),
-    "utf8",
-  );
-  const toRun = source.slice(source.indexOf("const toRun = checks ??"));
-  assert.match(toRun, /id: "render-auto-deploy"/);
-  assert.match(toRun, /checkRenderAutoDeploy\(/);
-  // Since #2505 staging expects auto-deploy OFF, like production: deploy-staging.yml
-  // deploys it by commit. The pre-#2505 expectation must not come back.
-  assert.match(source, /autoDeploy !== "no"/);
-  assert.doesNotMatch(source, /autoDeploy !== "yes"/);
-});
-
-// ── Render healthCheckPath ─────────────────────────────────────────────────
-
-test("healthCheckPath skips rather than fails when the Render credential is absent", async () => {
-  const result = await checkRenderHealthCheckPath({});
-  assert.equal(result.status, SKIPPED);
-  assert.match(result.detail, /RENDER_API_KEY/);
-});
-
-test("healthCheckPath fails on an empty path — TCP-only, not GET /health", async () => {
-  const result = await checkRenderHealthCheckPath({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () => ok({ serviceDetails: { healthCheckPath: "" } }),
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /empty/);
-  assert.match(result.detail, /TCP-only/);
-});
-
-test("healthCheckPath fails on /health/ready — that would cancel a deploy on a degraded dependency", async () => {
-  const result = await checkRenderHealthCheckPath({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () => ok({ serviceDetails: { healthCheckPath: "/health/ready" } }),
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /health\/ready/);
-});
-
-test("healthCheckPath does not treat a top-level decoy as the live Render field", async () => {
-  const result = await checkRenderHealthCheckPath({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () =>
-      ok({ healthCheckPath: "/health", serviceDetails: { autoDeployTrigger: "commit" } }),
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /unreadable/);
-});
-
-test("healthCheckPath passes when the nested field is /health", async () => {
-  const result = await checkRenderHealthCheckPath({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () => ok({ serviceDetails: { healthCheckPath: "/health" } }),
-  });
-  assert.equal(result.status, PASS);
-  assert.match(result.detail, /healthCheckPath=\/health/);
-});
-
-test("a non-200 from the Render API is a failure, not a skip", async () => {
-  const result = await checkRenderHealthCheckPath({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () => httpError(401),
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /HTTP 401/);
-});
-
-test("healthCheckPath queries the service id it was handed, not a baked-in prod id", async () => {
-  const urls = [];
-  await checkRenderHealthCheckPath({
-    apiKey: "rk",
-    serviceId: "srv-d6lqsq75r7bs73c2fdc0",
-    fetchImpl: async (url) => {
-      urls.push(String(url));
-      return ok({ serviceDetails: { healthCheckPath: "/health" } });
-    },
-  });
-  assert.equal(urls.length, 1);
-  assert.ok(urls[0].endsWith("/services/srv-d6lqsq75r7bs73c2fdc0"));
-  assert.ok(!urls[0].includes("srv-d6lqu41aae7s73f62df0"));
-});
-
-// ── Render auto-deploy ──────────────────────────────────────────────────────
-
-test("render-auto-deploy skips rather than fails when the Render credential is absent", async () => {
-  const result = await checkRenderAutoDeploy({});
-  assert.equal(result.status, SKIPPED);
-  assert.match(result.detail, /RENDER_API_KEY/);
-});
-
-test("render-auto-deploy fails when auto-deploy is on — it builds before CI and races Deploy staging", async () => {
-  const result = await checkRenderAutoDeploy({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () => ok({ autoDeploy: "yes", branch: "main" }),
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /autoDeploy='yes' \(expected 'no'\)/);
-  assert.match(result.detail, /before CI and the staging migrations/);
-  assert.match(result.detail, /Auto-Deploy → Off/);
-  assert.doesNotMatch(result.detail, /branch=/);
-});
-
-test("render-auto-deploy fails when the service tracks a branch other than main", async () => {
-  const result = await checkRenderAutoDeploy({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () => ok({ autoDeploy: "no", branch: "staging" }),
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /branch='staging'/);
-});
-
-test("render-auto-deploy names both findings when auto-deploy and branch are wrong", async () => {
-  const result = await checkRenderAutoDeploy({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () => ok({ autoDeploy: "yes", branch: "production" }),
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /autoDeploy='yes'/);
-  assert.match(result.detail, /branch='production'/);
-});
-
-test("render-auto-deploy does not treat a nested decoy as the live Render field", async () => {
-  const result = await checkRenderAutoDeploy({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () =>
-      ok({
-        serviceDetails: { autoDeploy: "no", branch: "main" },
-      }),
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /unreadable/);
-});
-
-test("render-auto-deploy does not unwrap a { service: … } envelope", async () => {
-  const result = await checkRenderAutoDeploy({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () =>
-      ok({ service: { autoDeploy: "no", branch: "main" } }),
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /unreadable/);
-});
-
-test("render-auto-deploy passes when autoDeploy is no and branch is main", async () => {
-  const result = await checkRenderAutoDeploy({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () => healthyStagingRender(),
-  });
-  assert.equal(result.status, PASS);
-  assert.match(result.detail, /autoDeploy=no/);
-  assert.match(result.detail, /branch=main/);
-});
-
-test("a non-200 from the Render API is a failure for auto-deploy, not a skip", async () => {
-  const result = await checkRenderAutoDeploy({
-    apiKey: "rk",
-    serviceId: "srv-test",
-    fetchImpl: async () => httpError(401),
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /HTTP 401/);
-});
-
-test("render-auto-deploy queries the service id it was handed, not a baked-in prod id", async () => {
-  const urls = [];
-  await checkRenderAutoDeploy({
-    apiKey: "rk",
-    serviceId: "srv-d6lqsq75r7bs73c2fdc0",
-    fetchImpl: async (url) => {
-      urls.push(String(url));
-      return healthyStagingRender();
-    },
-  });
-  assert.equal(urls.length, 1);
-  assert.ok(urls[0].endsWith("/services/srv-d6lqsq75r7bs73c2fdc0"));
-  assert.ok(!urls[0].includes("srv-d6lqu41aae7s73f62df0"));
-});
-
-test("staging-conformance.yml wires Render creds to the staging service, never prod", () => {
-  // The function and toRun row can exist while the job still never asserts:
-  // without these env lines the check is permanently SKIPPED.
-  const yaml = readFileSync(
-    new URL("../../../.github/workflows/staging-conformance.yml", import.meta.url),
-    "utf8",
-  );
-  assert.ok(
-    yaml.includes("RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}"),
-    "the job must pass the Render secret or the check is permanently SKIPPED",
-  );
-  // Staging's service id comes from `.github/environments.json` (#2806);
-  // `provider-ids.test.mjs` pins that this job reads staging's entry.
-  const infra = readFileSync(
-    new URL("../../../docs/ci-cd/agent-infra.md", import.meta.url),
-    "utf8",
-  );
-  assert.ok(
-    infra.includes("and `staging-conformance.yml` (`RENDER_API_KEY`)"),
-    "agent-infra.md must list staging-conformance.yml as a RENDER_API_KEY consumer",
-  );
-  // The roster row itself, not any line: production-guardrails' 07:15 row
-  // names the same words for production.
-  const roster = infra.split("\n").find((line) => line.startsWith("| 07:30 | `staging-conformance.yml`"));
-  assert.ok(roster, "the 07:30 roster row for staging-conformance.yml is missing");
-  assert.match(
-    roster,
-    /Render auto-deploy off and tracking `main`/,
-    "the 07:30 roster must name the auto-deploy assertion or a revert sits green",
-  );
-});
-
-test("default toRun health-check-path reads RENDER_* from env and skips without them", async () => {
-  const urls = [];
-  const fetchImpl = async (url) => {
-    urls.push(String(url));
-    if (String(url).includes("render.com")) {
-      return healthyStagingRender();
-    }
-    return { ok: true, status: 200, json: async () => [] };
-  };
-
-  const skipped = await runStagingConformance({
-    token: "t",
-    repo: "o/r",
-    fetchImpl,
-    env: {},
-    writeSummary: () => {},
-    logger: quiet,
-  });
-  const skippedRow = skipped.results.find((r) => r.id === "health-check-path");
-  assert.equal(skippedRow.status, SKIPPED);
-  const skippedAuto = skipped.results.find((r) => r.id === "render-auto-deploy");
-  assert.equal(skippedAuto.status, SKIPPED);
-  assert.ok(!urls.some((u) => u.includes("render.com")));
-
-  urls.length = 0;
-  const passed = await runStagingConformance({
-    token: "t",
-    repo: "o/r",
-    fetchImpl,
-    env: {
-      RENDER_API_KEY: "rk",
-      RENDER_SERVICE_ID: "srv-d6lqsq75r7bs73c2fdc0",
-    },
-    writeSummary: () => {},
-    logger: quiet,
-  });
-  const passedRow = passed.results.find((r) => r.id === "health-check-path");
-  assert.equal(passedRow.status, PASS);
-  const autoDeployRow = passed.results.find((r) => r.id === "render-auto-deploy");
-  assert.equal(autoDeployRow.status, PASS);
-  assert.ok(urls.some((u) => u.endsWith("/services/srv-d6lqsq75r7bs73c2fdc0")));
-  assert.ok(!urls.some((u) => u.includes("srv-d6lqu41aae7s73f62df0")));
-});
-
 // ── Infisical syncs ─────────────────────────────────────────────────────────
 
 const infisicalFetch = (syncPayload, { loginStatus = 200 } = {}) => async (url) => {
@@ -1118,7 +831,7 @@ test("all-succeeded syncs pass", async () => {
     projectId: "p",
     fetchImpl: infisicalFetch({
       secretSyncs: [
-        { name: "render-api-staging", syncStatus: "succeeded" },
+        { name: "gcp-api-staging", syncStatus: "succeeded" },
         { name: "vercel-web-staging", syncStatus: "succeeded" },
       ],
     }),
@@ -1133,7 +846,7 @@ test("a failing sync names the sync — the #834 signature", async () => {
     projectId: "p",
     fetchImpl: infisicalFetch({
       secretSyncs: [
-        { name: "render-api-staging", syncStatus: "succeeded" },
+        { name: "gcp-api-staging", syncStatus: "succeeded" },
         { name: "vercel-landing-staging", syncStatus: "failed" },
       ],
     }),
@@ -1679,7 +1392,7 @@ test("pending / running / never-run syncs are neither a failure nor a pass", asy
     projectId: "p",
     fetchImpl: infisicalFetch({
       secretSyncs: [
-        { name: "render-api-staging", syncStatus: "succeeded" },
+        { name: "gcp-api-staging", syncStatus: "succeeded" },
         { name: "vercel-web-staging", syncStatus: "pending" },
         { name: "brand-new-sync", syncStatus: null },
       ],
@@ -1699,7 +1412,7 @@ test("an unrecognised sync status skips rather than passing", async () => {
     projectId: "p",
     fetchImpl: infisicalFetch({
       secretSyncs: [
-        { name: "render-api-staging", syncStatus: "succeeded" },
+        { name: "gcp-api-staging", syncStatus: "succeeded" },
         { name: "vercel-web-staging", syncStatus: "not_synced" },
       ],
     }),

@@ -31,8 +31,8 @@
  * It is not acceptable anywhere a real member signs in, which is why this must
  * never be set for a hosted build.
  *
- * Nothing ships mobile-web today — `eas.json` builds native only, and neither
- * `render.yaml` nor an `apps/mobile/vercel.json` serves it — so the flag has no
+ * Nothing ships mobile-web today — `eas.json` builds native only, and no
+ * deploy (no `apps/mobile/vercel.json`, nothing on Cloud Run) serves it — so the flag has no
  * deployed surface to be switched on for. Keep it that way: if mobile-web ever
  * does ship, this file needs a real web credential store, not this flag.
  *
