@@ -198,6 +198,12 @@ import { ASK_STARTER_STORE } from "@/lib/ask/starter-seen";
  * asked for again on the next frame, after the new content is mounted, so a
  * streamed line or a card that folds to one line is measured as it now is.
  *
+ * Dragging the thread puts the keyboard away (#5429): the field is not the
+ * keyboard's own accessory view, so it can't follow an interactive drag of
+ * the keyboard. The sheet hears only that the keyboard will show or hide, and
+ * under "interactive" iOS moves the keyboard with the finger first. The sheet
+ * still held the field at the old keyboard top, over an empty band.
+ *
  * The keyboard changes the room, not the content, so `onContentSizeChange`
  * does not see it. The scroller's own layout does: while the member is
  * reading the newest words, a change in the room scrolls to the end again,
@@ -441,6 +447,12 @@ export const AskSheet = forwardRef<
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
+          // A drag on the thread puts the keyboard away at once (#5429).
+          // The library's default, "interactive", lets iOS move the
+          // keyboard under the finger without telling the sheet, which
+          // keeps the field where the keyboard's top was, over an empty
+          // band. ChatGPT's and Claude's apps put it away on the drag too.
+          keyboardDismissMode="on-drag"
           // The keyboard opening or closing changes the room, not the
           // content: the newest words stay above the field (#5426).
           onLayout={follow}

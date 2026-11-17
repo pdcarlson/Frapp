@@ -1030,6 +1030,13 @@ describe("sending with the keyboard up (#5426)", () => {
     expect(atEnd()).toBe(true);
   });
 
+  it("puts the keyboard away when the member drags the thread (#5429)", () => {
+    const { tree } = mount();
+    // Not "interactive": that moves the keyboard under the finger without
+    // telling the sheet, and the field floated over an empty band.
+    expect(host(tree).props.keyboardDismissMode).toBe("on-drag");
+  });
+
   it("leaves a member reading higher up where they are when the keyboard moves", () => {
     hooks.exchanges = [answered()];
     natural = NATURAL.longThread;
