@@ -6,6 +6,10 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider, PermissionPreviewProvider } from "@repo/hooks";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import {
+  readRequestToken,
+  refetchFailedReadsOnTokenRefresh,
+} from "@/lib/auth/request-token";
 import { useAuthUserId } from "@/lib/auth/use-auth-user-id";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import {
@@ -96,11 +100,9 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
     const created = createFrappClient({
         // Bare origin — the generated SDK paths already carry `/v1`.
         baseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001",
-        getAuthToken: async () => {
-          const supabase = createSupabaseBrowserClient();
-          const { data } = await supabase.auth.getSession();
-          return data.session?.access_token ?? null;
-        },
+        // A refresh that can't reach Auth fails the read as a dropped
+        // connection instead of sending it with no token (FRAPP-API-E).
+        getAuthToken: () => readRequestToken(createSupabaseBrowserClient()),
         getChapterId: () => activeChapterId,
         // A 401 means the API no longer accepts this session (an account
         // deleted elsewhere, most often). One sign-out owns that outcome for
@@ -176,6 +178,17 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
       useRolePreviewStore.getState().stop();
     }
   }, [activeChapterId, queryClient]);
+
+  // A read held back while the sign-in refresh couldn't reach Auth comes
+  // back once a refresh lands (FRAPP-API-E, #5360).
+  useEffect(
+    () =>
+      refetchFailedReadsOnTokenRefresh(
+        createSupabaseBrowserClient(),
+        queryClient,
+      ),
+    [queryClient],
+  );
 
   /*
    * Drop every cached query when the auth uid changes.
