@@ -5,7 +5,7 @@ import { Frame, paint } from "@/components/glyph-recipe";
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`
  * § Icon-only actions, `iconography.md` §6.1.5): close or dismiss, edit, mark
- * all read, try again, share, and back. Share also leads a labelled button (setup's
+ * all read, try again, share, back, and List / Grid's two layouts. Share also leads a labelled button (setup's
  * `Share invite`), and the invite link's own mark, `LinkGlyph`, lives here
  * beside it. Control furniture, so they draw only the §1 stroke recipe's
  * detail strokes, with no silhouette fill, from `glyph-recipe.tsx`'s `Frame`
@@ -27,6 +27,35 @@ interface ControlGlyphProps {
 }
 
 const DEFAULT_SIZE = 20;
+
+/**
+ * The List / Grid toggle's two pictures: Lucide's `LayoutGrid` and `List`,
+ * as Google Drive and Files draw their layout switch. The toggle shows the
+ * layout a tap switches to.
+ */
+export function GridGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
+        {...detail}
+      />
+    </Frame>
+  );
+}
+
+export function ListGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"
+        {...detail}
+      />
+    </Frame>
+  );
+}
 
 export function CloseGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });
