@@ -1,25 +1,25 @@
 import { useRef, useState } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useRouter } from "expo-router";
-import { codeOf } from "@repo/api-sdk";
 import {
   useMeetingNoteTaking,
   useMeetings,
   usePermissionList,
-  useStartMeeting,
 } from "@repo/hooks";
-import { errorCopy } from "@repo/hooks/error-copy";
 import {
   MEETING_COPY,
   MEETING_ENTRY_COPY,
   MEETING_NOTE_TAKERS_COPY,
   can,
-  guessMeetingType,
 } from "@repo/validation";
 import { InlineNote } from "@/components/inline-note";
 import { ListRow, ListSection } from "@/components/list-section";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useMeetingsOn } from "@/lib/minutes/meetings-on";
+import {
+  MinutesStartError,
+  useStartMinutesFor,
+} from "@/lib/minutes/start-minutes";
 import { NoteTakerSheet } from "@/components/minutes/note-taker-sheet";
 
 /**
@@ -54,7 +54,7 @@ export function EventMinutesRow({
   const meetingsQuery = useMeetings({ enabled: on && !!eventId, eventId });
   const canRecord = can("meetings:record", usePermissionList());
   const canDraft = useAiSurfaces().meetingNotes;
-  const start = useStartMeeting();
+  const start = useStartMinutesFor();
   const takingQuery = useMeetingNoteTaking({
     enabled: on && !!eventId && canDraft,
     eventId,
@@ -95,19 +95,18 @@ export function EventMinutesRow({
   async function write() {
     setProblem(null);
     try {
-      const meeting = await start.mutateAsync({
-        event_id: eventId,
-        meeting_type: guessMeetingType(eventName),
+      // The same start the +'s New minutes makes (`lib/minutes/start-minutes.ts`).
+      const meeting = await start.start({
+        kind: "event",
+        event: { id: eventId, name: eventName },
       });
       open(meeting.id);
     } catch (error) {
-      if (codeOf(error) === "meeting.already_started") {
+      if (error instanceof MinutesStartError && error.alreadyStarted) {
         void meetingsQuery.refetch();
-        setProblem(MEETING_ENTRY_COPY.alreadyStartedBody);
-        return;
       }
       setProblem(
-        `${MEETING_ENTRY_COPY.startFailed}. ${errorCopy(error, MEETING_COPY.tryAgain)}`,
+        error instanceof Error ? error.message : MEETING_COPY.tryAgain,
       );
     }
   }

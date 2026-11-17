@@ -23,8 +23,7 @@ vi.mock("@/lib/haptics", () => ({ selectionHaptic: vi.fn() }));
 // Activity's tab carries the needs-you count (#4610).
 const activity = vi.hoisted(() => ({
   data: undefined as
-    | { needs_you_count: number; unavailable: string[] }
-    | undefined,
+    { needs_you_count: number; unavailable: string[] } | undefined,
 }));
 const rereadOnTab = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/activity/use-activity-reread", () => ({
@@ -36,7 +35,9 @@ vi.mock("@repo/hooks", () => ({
 
 // The You tab's avatar has its own spec (`you-tab-avatar.spec.tsx`); the bar
 // only reads the picked status to name it.
-const ownStatus = vi.hoisted(() => ({ value: { status: "online" } as { status: string } | null }));
+const ownStatus = vi.hoisted(() => ({
+  value: { status: "online" } as { status: string } | null,
+}));
 vi.mock("@/lib/account/own-status", () => ({
   useOwnStatus: () => ownStatus.value,
 }));
@@ -48,6 +49,7 @@ const quick = vi.hoisted(() => ({
   save: vi.fn(),
   ready: true,
   notice: null as string | null,
+  record: null as null | { detail: string; held: boolean; onPress: () => void },
 }));
 vi.mock("@/components/quick-actions/use-quick-actions", () => ({
   useQuickActions: () => ({
@@ -63,6 +65,7 @@ vi.mock("@/components/quick-actions/quick-actions-host", () => ({
     ask: quick.ask,
     sheets: null,
     notice: quick.notice,
+    record: quick.record,
   }),
 }));
 // Whether this member has Ask is the server's answer (`useAiSurfaces`).
@@ -370,6 +373,35 @@ describe("the +", () => {
     act(() => panel(tree.root).props.onRun("study"));
     expect(quick.run).toHaveBeenCalledWith("study");
     expect(panel(tree.root)).toBeUndefined();
+  });
+
+  it("draws no Record meeting row for a member who can't record", () => {
+    const tree = render();
+    act(() => plus(tree.root)!.props.onPress());
+    expect(panel(tree.root).props.header).toBeNull();
+  });
+
+  it("puts Record meeting above the actions, closing the panel before it runs (#5287)", () => {
+    const entry = {
+      detail: "Chapter Meeting is on now",
+      held: false,
+      onPress: vi.fn(),
+    };
+    quick.record = entry;
+    try {
+      const tree = render();
+      act(() => plus(tree.root)!.props.onPress());
+      const header = panel(tree.root).props.header as React.ReactElement<{
+        entry: typeof entry;
+        onPress: () => void;
+      }>;
+      expect(header.props.entry).toBe(entry);
+      act(() => header.props.onPress());
+      expect(panel(tree.root)).toBeUndefined();
+      expect(entry.onPress).toHaveBeenCalledTimes(1);
+    } finally {
+      quick.record = null;
+    }
   });
 
   it("closes when the member moves to another screen", () => {

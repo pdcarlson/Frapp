@@ -6025,6 +6025,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meeting-recorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether this server can write a recording out, why the caller can’t send one yet, and its limits, before any minutes exist */
+        get: operations["MeetingRecorderController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bootstrap": {
         parameters: {
             query?: never;
@@ -11624,6 +11641,19 @@ export interface components {
              * @description The upload that finished.
              */
             upload_id: string;
+        };
+        MeetingRecorderAvailabilityDto: {
+            /** @description False when this server has no transcription provider set up, so a recording can’t be written out. */
+            available: boolean;
+            /**
+             * @description Why the caller can’t send a recording now: the chapter has meeting notes off, or they have not said yes on the AI sheet.
+             * @enum {string|null}
+             */
+            blocked: "chapter_off" | "consent_required" | null;
+            /** @description The largest file this server takes, in bytes. */
+            max_bytes: number;
+            /** @description The longest recording this server takes, in seconds. */
+            max_seconds: number;
         };
         BootstrapDto: {
             /** @description As `GET /v1/users/me`. */
@@ -25438,6 +25468,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecorderController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecorderAvailabilityDto"];
                 };
             };
             /** @description Error */

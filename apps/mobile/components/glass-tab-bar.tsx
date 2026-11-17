@@ -22,6 +22,7 @@ import { AskBar } from "@/components/ask/ask-bar";
 import { GlassSurface } from "@/components/glass-surface";
 import { QuickActionsPanel } from "@/components/quick-actions/quick-actions-panel";
 import { useQuickActionsHost } from "@/components/quick-actions/quick-actions-host";
+import { RecordMeetingRow } from "@/components/quick-actions/record-meeting-row";
 import { useQuickActions } from "@/components/quick-actions/use-quick-actions";
 import { useActivity } from "@repo/hooks";
 import { useAiSurfaces } from "@/lib/ai/availability";
@@ -96,7 +97,7 @@ export function GlassTabBar({
   const own = useOwnStatus();
   const youStatus =
     own && own.status !== "online" ? MEMBER_STATUS_LABEL[own.status] : null;
-  const { run, ask, sheets, notice } = useQuickActionsHost({
+  const { run, ask, sheets, notice, record } = useQuickActionsHost({
     events: available.includes("hostCheckIn"),
   });
 
@@ -241,6 +242,17 @@ export function GlassTabBar({
             onEditingChange={setEditing}
             onRun={runAction}
             onSave={save}
+            header={
+              record ? (
+                <RecordMeetingRow
+                  entry={record}
+                  onPress={() => {
+                    closePanel();
+                    record.onPress();
+                  }}
+                />
+              ) : null
+            }
           />
         </Animated.View>
       ) : null}
