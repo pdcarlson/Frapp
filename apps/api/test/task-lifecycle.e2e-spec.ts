@@ -12,6 +12,8 @@ import { configureApp } from '../src/bootstrap';
 import { createGuardStubs, AllowAllGuard } from './helpers/guard-stubs.factory';
 
 const V1 = '/v1';
+/** Route ids are checked as uuids before the handler runs. */
+const TASK_ID = '7c4f1f0e-3b2a-4c5d-9e8f-1a2b3c4d5e6f';
 
 const { AuthGuardStub, ChapterGuardStub } = createGuardStubs({
   authUserId: 'auth-user-1',
@@ -28,16 +30,16 @@ describe('Task lifecycle (e2e)', () => {
     findById: jest.fn(),
     create: jest.fn(),
     updateStatus: jest.fn().mockResolvedValue({
-      id: 'task-1',
+      id: TASK_ID,
       status: 'COMPLETED',
     }),
     confirmCompletion: jest.fn().mockResolvedValue({
-      id: 'task-1',
+      id: TASK_ID,
       status: 'COMPLETED',
       points_awarded: true,
     }),
     rejectCompletion: jest.fn().mockResolvedValue({
-      id: 'task-1',
+      id: TASK_ID,
       status: 'IN_PROGRESS',
       points_awarded: false,
     }),
@@ -76,14 +78,14 @@ describe('Task lifecycle (e2e)', () => {
 
   it('updates task status for assignee/admin context', async () => {
     await request(app.getHttpServer())
-      .patch(`${V1}/tasks/task-1/status`)
+      .patch(`${V1}/tasks/${TASK_ID}/status`)
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', 'chapter-1')
       .send({ status: 'COMPLETED' })
       .expect(200);
 
     expect(taskServiceMock.updateStatus).toHaveBeenCalledWith(
-      'task-1',
+      TASK_ID,
       'chapter-1',
       'user-1',
       true,
@@ -99,14 +101,14 @@ describe('Task lifecycle (e2e)', () => {
 
   it('confirms completion and awards points', async () => {
     await request(app.getHttpServer())
-      .post(`${V1}/tasks/task-1/confirm`)
+      .post(`${V1}/tasks/${TASK_ID}/confirm`)
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', 'chapter-1')
       .send({})
       .expect(201);
 
     expect(taskServiceMock.confirmCompletion).toHaveBeenCalledWith(
-      'task-1',
+      TASK_ID,
       'chapter-1',
       // Resolved by @CurrentUser('id') from the mocked appUser, so the service
       // can refuse a self-confirmation (#1056).
@@ -116,19 +118,32 @@ describe('Task lifecycle (e2e)', () => {
 
   it('rejects completion and returns task to in-progress', async () => {
     await request(app.getHttpServer())
-      .post(`${V1}/tasks/task-1/reject`)
+      .post(`${V1}/tasks/${TASK_ID}/reject`)
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', 'chapter-1')
       .send({ comment: 'Missing details' })
       .expect(201);
 
     expect(taskServiceMock.rejectCompletion).toHaveBeenCalledWith(
-      'task-1',
+      TASK_ID,
       'chapter-1',
       'Missing details',
       // No "Ask for a photo next time" (#4635); the caller, whom the
       // send-back push names (#4693).
       { requirePhoto: undefined, actorUserId: 'user-1' },
     );
+  });
+
+  it('refuses a task id that is not a uuid before the handler runs', async () => {
+    taskServiceMock.updateStatus.mockClear();
+
+    await request(app.getHttpServer())
+      .patch(`${V1}/tasks/not-a-uuid/status`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', 'chapter-1')
+      .send({ status: 'COMPLETED' })
+      .expect(400);
+
+    expect(taskServiceMock.updateStatus).not.toHaveBeenCalled();
   });
 });
