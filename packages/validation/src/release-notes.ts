@@ -124,10 +124,18 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
     title: "New in this update",
     changes: [
       "A task due at a time now reminds you about an hour before it's due, saying how long is left, instead of two hours before.",
+      "Ask Frapp now opens on a greeting and a few questions you can tap, and tells you what it can do the first time you open it.",
+      "A connected Google Drive folder now brings in files from folders inside folders, not just the first two levels down.",
+      "Nudge cards on Activity no longer need your chapter to have Ask on: they're on unless your president turns them off in Chapter settings, and you still choose for yourself whether Frapp AI is on.",
+    ],
+    web: [
+      "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
     ],
     phone: [
       "Threads you're in now sit under their channel in Chat, as in Discord, instead of in a separate Threads list.",
       "Your points sit quietly at the top of the You tab, and your service and study hours show on their rows instead of in big cards that mostly read zero.",
+      "Documents' sort and filters are each a tap away: Type, Uploaded by and Date added are chips that open a list, and the order sits over the list.",
+      "The + menu can now record a meeting: tap Record meeting, read the notice to the room, and the minutes open already recording. It also starts new minutes and opens search.",
     ],
   },
   {
