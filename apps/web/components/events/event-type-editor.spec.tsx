@@ -9,8 +9,11 @@ import { markupLines } from "@/tests/stable-markup";
 /*
  * Pins the events "Edit types" popover at the end of the event form's Type
  * row (`spec/behavior/events.md` § Event types): its markup, copy, classes
- * and add / edit / delete behaviour, so moving it onto the shared
- * `TypeListEditor` (#4723) is provably a no-op for the screen.
+ * and add / edit / delete behaviour. It was written against the editor before
+ * it moved onto the shared `TypeListEditor` (#4723) and passed there, with one
+ * exception: "does not submit the form around the picker" pins the move's one
+ * intended fix, and failed against the old editor, whose type form let its
+ * submit bubble into the event form.
  */
 
 const { mockCreate, mockUpdate, mockDelete, mockToast, pending, typesState } =
@@ -120,7 +123,7 @@ describe("EventTypePicker's Edit types", () => {
         "    <p class="text-sm font-semibold">Event types",
         "    <p class="text-caption text-muted-foreground">Picking a type fills in its points and attendance. Events already made keep theirs.",
         "  <ul class="max-h-80 overflow-y-auto py-1">",
-        "    <li class="group flex items-center gap-2 px-3 py-1">",
+        "    <li class="flex items-center gap-2 px-3 py-1">",
         "      <div class="min-w-0 flex-1">",
         "        <p class="truncate text-sm font-semibold">Chapter meeting",
         "        <p class="truncate text-caption text-muted-foreground">10 points, required for everyone",
@@ -128,7 +131,7 @@ describe("EventTypePicker's Edit types", () => {
         "        <svg aria-hidden="true" class="lucide lucide-pencil">",
         "      <button aria-label="Delete Chapter meeting" class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent transition-colors [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 focus-visible:outline-none focus-visible:border-accent-text focus-visible:ring-[3px] focus-visible:ring-ring/25 disabled:border-border disabled:bg-card disabled:text-disabled font-semibold text-muted-foreground hover:bg-card-hover hover:text-foreground disabled:pointer-events-auto disabled:cursor-not-allowed h-9 w-9 pointer-coarse:h-11 pointer-coarse:w-11" title="Delete Chapter meeting">",
         "        <svg aria-hidden="true" class="lucide lucide-trash lucide-trash-2">",
-        "    <li class="group flex items-center gap-2 px-3 py-1">",
+        "    <li class="flex items-center gap-2 px-3 py-1">",
         "      <div class="min-w-0 flex-1">",
         "        <p class="truncate text-sm font-semibold">Social",
         "        <p class="truncate text-caption text-muted-foreground">1 point, optional for everyone",
@@ -406,7 +409,7 @@ describe("EventTypePicker's Edit types", () => {
     const item = within(dialog).getAllByRole("listitem")[0]!;
     expect(markupLines(item)).toMatchInlineSnapshot(`
       [
-        "<li class="group flex items-center gap-2 px-3 py-1">",
+        "<li class="flex items-center gap-2 px-3 py-1">",
         "  <div class="min-w-0 flex-1">",
         "    <p class="truncate text-sm font-semibold">Chapter meeting",
         "    <p class="truncate text-caption text-muted-foreground">Its events keep their points and lose the type.",

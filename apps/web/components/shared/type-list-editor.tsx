@@ -59,8 +59,6 @@ export interface TypeListEditorProps<T extends TypeListItem> {
    * only its name until a delete is being confirmed.
    */
   describe?: (type: T) => string;
-  /** Classes added ahead of each row's own, such as `group`. */
-  rowClassName?: string;
   /** The row's edit button label, from the type's name. */
   editLabel: (name: string) => string;
   /** One delete mutation per row, so only that row shows it pending. */
@@ -79,7 +77,6 @@ export function TypeListEditor<T extends TypeListItem>({
   max,
   deleteConsequence,
   describe,
-  rowClassName,
   editLabel,
   useDeleteType,
   renderForm,
@@ -121,7 +118,6 @@ export function TypeListEditor<T extends TypeListItem>({
                 type={type}
                 deleteConsequence={deleteConsequence}
                 description={describe?.(type)}
-                className={rowClassName}
                 editLabel={editLabel}
                 useDeleteType={useDeleteType}
                 onEdit={() => setEditing(type.id)}
@@ -163,7 +159,6 @@ function TypeListRow({
   type,
   deleteConsequence,
   description,
-  className,
   editLabel,
   useDeleteType,
   onEdit,
@@ -171,7 +166,6 @@ function TypeListRow({
   type: TypeListItem;
   deleteConsequence: string;
   description: string | undefined;
-  className: string | undefined;
   editLabel: (name: string) => string;
   useDeleteType: () => TypeDeleteMutation;
   onEdit: () => void;
@@ -197,7 +191,7 @@ function TypeListRow({
   }
 
   return (
-    <li className={cn(className, "flex items-center gap-2 px-3 py-1")}>
+    <li className="flex items-center gap-2 px-3 py-1">
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-semibold">{type.name}</p>
         {confirming || description !== undefined ? (

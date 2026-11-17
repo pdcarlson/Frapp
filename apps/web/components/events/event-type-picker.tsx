@@ -147,7 +147,6 @@ function EventTypesEditor({
       max={EVENT_TYPES_MAX}
       deleteConsequence="Its events keep their points and lose the type."
       describe={describeEventType}
-      rowClassName="group"
       editLabel={(name) => `Edit ${name}`}
       useDeleteType={useDeleteEventType}
       renderForm={(type, onDone) => <TypeForm type={type} onDone={onDone} />}
