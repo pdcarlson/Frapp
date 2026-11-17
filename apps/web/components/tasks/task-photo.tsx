@@ -13,6 +13,7 @@ import {
 import {
   MAX_UPLOAD_LABEL,
   TASK_COMPLETION_NOTE_MAX,
+  TASK_AUDIENCE_COPY,
   TASK_PHOTOS_MAX,
   TASK_PROOF_KIND_HINTS,
   TASK_PROOF_KIND_LABELS,
@@ -514,6 +515,7 @@ export function TaskPhotoFields({
   onChange,
   disabled,
   problem,
+  withoutPhotos = false,
 }: {
   id: string;
   /** Editing: the task whose stored photos `draft.keptPhotos` are. */
@@ -522,26 +524,38 @@ export function TaskPhotoFields({
   onChange: (patch: Partial<TaskPhotoDraft>) => void;
   disabled?: boolean;
   problem?: string | null;
+  /**
+   * The proof control alone, for a task for everyone (#4295 step 3): one
+   * stored photo belongs to one task, so its copies can't share reference
+   * photos yet, but each can still ask for proof.
+   */
+  withoutPhotos?: boolean;
 }) {
   return (
     <div className="grid gap-3">
-      <div className="grid gap-1">
-        <Label htmlFor={`${id}-photos`}>Photos</Label>
+      {withoutPhotos ? (
         <p className="text-caption text-muted-foreground">
-          What the job looks like (optional, up to {TASK_PHOTOS_MAX}).
+          {TASK_AUDIENCE_COPY.noPhotos}
         </p>
-        <TaskPhotoPicker
-          id={`${id}-photos`}
-          taskId={taskId}
-          kept={draft.keptPhotos}
-          files={draft.photoFiles}
-          onKeptChange={(keptPhotos) => onChange({ keptPhotos })}
-          onFilesChange={(photoFiles) => onChange({ photoFiles })}
-          disabled={disabled}
-          invalid={!!problem}
-        />
-        {problem ? <FieldError>{problem}</FieldError> : null}
-      </div>
+      ) : (
+        <div className="grid gap-1">
+          <Label htmlFor={`${id}-photos`}>Photos</Label>
+          <p className="text-caption text-muted-foreground">
+            What the job looks like (optional, up to {TASK_PHOTOS_MAX}).
+          </p>
+          <TaskPhotoPicker
+            id={`${id}-photos`}
+            taskId={taskId}
+            kept={draft.keptPhotos}
+            files={draft.photoFiles}
+            onKeptChange={(keptPhotos) => onChange({ keptPhotos })}
+            onFilesChange={(photoFiles) => onChange({ photoFiles })}
+            disabled={disabled}
+            invalid={!!problem}
+          />
+          {problem ? <FieldError>{problem}</FieldError> : null}
+        </div>
+      )}
       <div className="grid gap-1">
         <span className="text-label font-medium" id={`${id}-proof-label`}>
           Proof

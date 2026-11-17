@@ -24,10 +24,62 @@ describe('TaskSuggestionKind (#4309)', () => {
       title: 'Book the venue',
       description: 'x'.repeat(TASK_SUGGESTION_DESCRIPTION_MAX_LENGTH),
       assignee_id: null,
+      audience: null,
       due_date: '2026-11-14',
       due_at: '2026-11-14T17:00:00.000Z',
       subtasks: ['Call', 'Pay deposit'],
     });
+  });
+
+  it('keeps a task for everyone, and never a person beside it (#4295)', () => {
+    expect(
+      kind.normalizeProposal({
+        title: 'Fill out the form',
+        audience: 'everyone',
+        assignee_id: MEMBER,
+      }),
+    ).toEqual(
+      expect.objectContaining({ audience: 'everyone', assignee_id: null }),
+    );
+    expect(
+      kind.normalizeProposal({ title: 'A', audience: 'the brothers' }),
+    ).toEqual(expect.objectContaining({ audience: null }));
+  });
+
+  it('holds one answer to Who: a person clears everyone, and back (#4295)', () => {
+    const forEveryone = kind.normalizeProposal({
+      title: 'A',
+      audience: 'everyone',
+    })!;
+    const forOne = kind.applyEdits(forEveryone, { assignee_id: MEMBER });
+    expect(forOne).toEqual(
+      expect.objectContaining({ assignee_id: MEMBER, audience: null }),
+    );
+    expect(kind.applyEdits(forOne, { audience: 'everyone' })).toEqual(
+      expect.objectContaining({ assignee_id: null, audience: 'everyone' }),
+    );
+  });
+
+  it('accepts one for everyone as the group task (#4295)', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 'copy-1' });
+    const groupKind = new TaskSuggestionKind({ create } as never);
+    const payload = groupKind.normalizeProposal({
+      title: 'Fill out the form',
+      audience: 'everyone',
+      due_date: '2026-11-20',
+    })!;
+
+    expect(() => groupKind.assertAcceptable(payload)).not.toThrow();
+    await groupKind.commit({ chapterId: 'ch-1', userId: 'admin-1', payload });
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audience: 'everyone',
+        assignee_id: null,
+        created_by: 'admin-1',
+        point_reward: null,
+      }),
+    );
   });
 
   it('drops a time with no day, and a day that is not a real date', () => {

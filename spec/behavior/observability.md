@@ -624,7 +624,7 @@ Properties are listed without `feature`, which every event carries. "Counts requ
 
 | Event | Recorded when | Properties |
 | --- | --- | --- |
-| `task-created` | An officer creates a task | `assigned_to_self`, `has_due_time`, `has_point_reward`, `has_reference_photo`, `has_subtasks`, `posted_to_chat`, `proof_kind`, `repeats` |
+| `task-created` | An officer creates a task. `audience` is `person` or `everyone`, and `group_size` how many copies it made (1 for one person) | `assigned_to_self`, `audience`, `group_size`, `has_due_time`, `has_point_reward`, `has_reference_photo`, `has_subtasks`, `posted_to_chat`, `proof_kind`, `repeats` |
 | `task-status-changed` | The assignee or an officer moves a task to a new status. `has_proof_photo`, `has_proof_link` and `has_completion_note` are whether proof photos, a proof link or a reply came with it | `status`, `has_proof_photo`, `has_proof_link`, `has_completion_note` |
 | `task-completion-confirmed` | The assigner confirms a completed task | — |
 | `task-completion-rejected` | The assigner sends a completed task back. `asked_for_photo` is whether they raised its proof to Photo | `asked_for_photo` |

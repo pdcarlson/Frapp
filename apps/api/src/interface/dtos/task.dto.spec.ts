@@ -139,3 +139,48 @@ describe('Task DTOs — repeating tasks (#5119)', () => {
     ).rejects.toThrow(BadRequestException);
   });
 });
+
+/** `POST /v1/tasks` for everyone (#4295 step 3): one person or a group. */
+describe('CreateTaskDto audience', () => {
+  const ASSIGNEE = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+  const invalid = async (payload: Record<string, unknown>) =>
+    (
+      await validate(
+        plainToInstance(CreateTaskDto, {
+          title: 'Fill out the form',
+          due_date: '2026-11-20',
+          ...payload,
+        }),
+      )
+    ).map((e) => e.property);
+
+  it('takes a person, or everyone in place of one', async () => {
+    expect(await invalid({ assignee_id: ASSIGNEE })).toEqual([]);
+    expect(await invalid({ audience: 'everyone' })).toEqual([]);
+  });
+
+  it('needs an assignee when no audience is sent', async () => {
+    expect(await invalid({})).toEqual(['assignee_id']);
+  });
+
+  it('still checks the assignee when audience is sent as null', async () => {
+    expect(await invalid({ assignee_id: 'abc', audience: null })).toEqual([
+      'assignee_id',
+    ]);
+  });
+
+  it('refuses an audience it does not know', async () => {
+    expect(await invalid({ audience: 'actives' })).toEqual(['audience']);
+  });
+
+  it('takes the group scope on an edit and a delete', async () => {
+    expect(
+      (await validate(plainToInstance(UpdateTaskDto, { scope: 'group' })))
+        .length,
+    ).toBe(0);
+    expect(
+      (await validate(plainToInstance(DeleteTaskQueryDto, { scope: 'group' })))
+        .length,
+    ).toBe(0);
+  });
+});

@@ -6,6 +6,7 @@ import type {
   TablesUpdate,
 } from '../database.types';
 import type {
+  CreateTaskGroupInput,
   CreateTaskSeriesInput,
   ITaskRepository,
   ReopenCompletionOptions,
@@ -15,6 +16,7 @@ import type {
 import {
   Task,
   TaskStatus,
+  type TaskGroup,
   type TaskPhoto,
   type TaskSeries,
   type TaskSubtask,
@@ -328,6 +330,84 @@ export class SupabaseTaskRepository implements ITaskRepository {
       throw new Error('create_task_series returned no task');
     }
     return task;
+  }
+
+  async createGroup(input: CreateTaskGroupInput): Promise<Task[]> {
+    const { data, error } = await this.supabase.rpc('create_task_group', {
+      p_chapter_id: input.chapter_id,
+      p_created_by: input.created_by,
+      p_audience: input.audience,
+      p_assignee_ids: input.assignee_ids,
+      p_title: input.title,
+      p_description: input.description,
+      p_due_date: input.due_date,
+      p_due_at: input.due_at,
+      p_point_reward: input.point_reward,
+      p_proof_kind: input.proof_kind,
+      p_subtask_titles: input.subtask_titles,
+    });
+    if (error) throw new SupabaseQueryError(error);
+    const copies = data ?? [];
+    if (copies.length === 0) {
+      throw new Error('create_task_group returned no task');
+    }
+    return copies;
+  }
+
+  async findGroups(chapterId: string, ids: string[]): Promise<TaskGroup[]> {
+    if (ids.length === 0) return [];
+    const groups: TaskGroup[] = [];
+    for (let i = 0; i < ids.length; i += SUBTASK_READ_BATCH) {
+      const { data, error } = await this.supabase
+        .from('task_groups')
+        .select('*')
+        .eq('chapter_id', chapterId)
+        .in('id', ids.slice(i, i + SUBTASK_READ_BATCH));
+      if (error) throw new SupabaseQueryError(error);
+      groups.push(...(data ?? []));
+    }
+    return groups;
+  }
+
+  async findGroupCopies(
+    chapterId: string,
+    groupIds: string[],
+  ): Promise<Task[]> {
+    if (groupIds.length === 0) return [];
+    const copies: Task[] = [];
+    for (let i = 0; i < groupIds.length; i += SUBTASK_READ_BATCH) {
+      const batch = groupIds.slice(i, i + SUBTASK_READ_BATCH);
+      // Every row of them: a chapter's group can outgrow one response.
+      copies.push(
+        ...(await fetchAllPages(
+          (from, to) =>
+            this.supabase
+              .from('tasks')
+              .select('*')
+              .eq('chapter_id', chapterId)
+              .in('group_id', batch)
+              .order('id', { ascending: true })
+              .range(from, to),
+          { pageSize: TASK_PAGE_SIZE },
+        )),
+      );
+    }
+    return copies;
+  }
+
+  async deleteGroup(chapterId: string, groupId: string): Promise<void> {
+    const { error: copiesError } = await this.supabase
+      .from('tasks')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('group_id', groupId);
+    if (copiesError) throw new SupabaseQueryError(copiesError);
+    const { error } = await this.supabase
+      .from('task_groups')
+      .delete()
+      .eq('chapter_id', chapterId)
+      .eq('id', groupId);
+    if (error) throw new SupabaseQueryError(error);
   }
 
   async findSeries(chapterId: string, ids: string[]): Promise<TaskSeries[]> {

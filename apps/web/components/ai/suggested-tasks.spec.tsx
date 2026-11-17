@@ -155,9 +155,41 @@ describe("SuggestedTasks (#4313)", () => {
     );
   });
 
+  it("sends Everyone as the audience when picked in Who? (#4295)", async () => {
+    mocks.items.current = [suggestion("1", { assignee_id: null })];
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    fireEvent.click(screen.getByLabelText("Assignee for Task 1"));
+    fireEvent.click(await screen.findByRole("option", { name: "Everyone" }));
+    fireEvent.click(acceptButtons()[0]!);
+
+    await waitFor(() =>
+      expect(mocks.accept).toHaveBeenCalledWith({
+        id: "1",
+        task: { audience: "everyone" },
+      }),
+    );
+  });
+
+  it("reads a suggestion for everyone as ready to accept, sending no changes", async () => {
+    mocks.items.current = [
+      suggestion("1", { assignee_id: null, audience: "everyone" }),
+    ];
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
+    fireEvent.click(acceptButtons()[0]!);
+    await waitFor(() =>
+      expect(mocks.accept).toHaveBeenCalledWith({ id: "1", task: undefined }),
+    );
+  });
+
   it("offers Report this on each suggestion (#4315)", () => {
     mocks.items.current = [suggestion("1")];
-    render(<SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />);
+    render(
+      <SuggestedTasks source={{ type: "meeting", id: "m-1" }} headingId="s" />,
+    );
     expect(screen.getByRole("button", { name: "Report Task 1" })).toBeTruthy();
   });
 

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { TASK_AUDIENCE_COPY } from "@repo/validation";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SubscriptionGate } from "@/components/shared/subscription-gate";
@@ -187,5 +188,42 @@ describe("AddTaskRow's Repeat (#5119)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add task" }));
     await waitFor(() => expect(onCreate).toHaveBeenCalled());
     expect(onCreate.mock.calls[0]![0].recurrence_rule).toBeUndefined();
+  });
+});
+
+describe("AddTaskRow for everyone (#4295 step 3)", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("sends Everyone as the audience, with proof but no repeat or photos", async () => {
+    const onCreate = open();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Fill out the tabling form" },
+    });
+    fireEvent.click(screen.getByLabelText("Assignee"));
+    fireEvent.click(await screen.findByRole("option", { name: "Everyone" }));
+    // One active member in this list.
+    expect(
+      screen.getByText("1 active member gets their own copy."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("add-task-photos-input")).toBeNull();
+    expect(screen.queryByLabelText(/repeat/i)).toBeNull();
+    expect(screen.getByText(TASK_AUDIENCE_COPY.noRepeat)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "Link" }));
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "Dec 31 2099" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    await waitFor(() => expect(onCreate).toHaveBeenCalled());
+    const draft = onCreate.mock.calls[0]![0];
+    expect(draft).toEqual(
+      expect.objectContaining({
+        title: "Fill out the tabling form",
+        audience: "everyone",
+        proof_kind: "link",
+      }),
+    );
+    expect(draft).not.toHaveProperty("assignee_id");
+    expect(draft.recurrence_rule).toBeUndefined();
+    expect(draft.reference_photo_paths).toBeUndefined();
   });
 });

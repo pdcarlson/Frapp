@@ -114,6 +114,7 @@ import type {
   StudyGeofence,
   StudySession,
   Task,
+  TaskGroup,
   TaskPhoto,
   TaskSeries,
   TaskSubtask,
@@ -272,6 +273,7 @@ export interface Database {
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
       study_geofences: TableDefinition<StudyGeofence>;
       study_sessions: TableDefinition<StudySession>;
+      task_groups: TableDefinition<TaskGroup>;
       task_photos: TableDefinition<TaskPhoto>;
       task_series: TableDefinition<TaskSeries>;
       task_subtasks: TableDefinition<TaskSubtask>;
@@ -509,6 +511,27 @@ export interface Database {
         Returns:
           | { outcome: 'ok'; invites: Invite[] }
           | { outcome: 'over'; chapter: string[]; inviter: string[] };
+      };
+      /**
+       * `20261117172708` (#4295 step 3) — a task for everyone: its group, a
+       * copy per member and each copy's checklist in one transaction.
+       * Returns the copies.
+       */
+      create_task_group: {
+        Args: {
+          p_chapter_id: string;
+          p_created_by: string;
+          p_audience: string;
+          p_assignee_ids: string[];
+          p_title: string;
+          p_description: string | null;
+          p_due_date: string;
+          p_due_at: string | null;
+          p_point_reward: number | null;
+          p_proof_kind: string;
+          p_subtask_titles: string[];
+        };
+        Returns: Task[];
       };
       /**
        * `20261116044044` (#5119) — a repeating task's series and its first

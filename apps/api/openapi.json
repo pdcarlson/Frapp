@@ -11514,12 +11514,13 @@
             "name": "scope",
             "required": false,
             "in": "query",
-            "description": "On a copy of a repeating task: `instance` (default) deletes this task only; `series` (\"All upcoming tasks\") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay.",
+            "description": "On a copy of a repeating task: `instance` (default) deletes this task only; `series` (\"All upcoming tasks\") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. On a copy of a group task: `group` deletes every member’s copy and the group (#4295 step 3).",
             "schema": {
               "type": "string",
               "enum": [
                 "instance",
-                "series"
+                "series",
+                "group"
               ]
             }
           }
@@ -11544,7 +11545,7 @@
             "bearer": []
           }
         ],
-        "summary": "Delete a task; with `scope=series`, stop a repeating task (#5119)",
+        "summary": "Delete a task; with `scope=series`, stop a repeating task (#5119); with `scope=group`, delete everyone’s copy (#4295 step 3)",
         "tags": [
           "Tasks"
         ]
@@ -28451,6 +28452,40 @@
           "ended"
         ]
       },
+      "TaskGroupSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ]
+          },
+          "total": {
+            "type": "number",
+            "description": "How many copies the group has."
+          },
+          "done": {
+            "type": "number",
+            "description": "How many copies are marked done, waiting on an officer or confirmed."
+          },
+          "confirmed": {
+            "type": "number",
+            "description": "How many copies are confirmed, or needed no sign-off when marked done."
+          }
+        },
+        "required": [
+          "id",
+          "audience",
+          "total",
+          "done",
+          "confirmed"
+        ]
+      },
       "RequestTaskPhotoUploadUrlDto": {
         "type": "object",
         "properties": {
@@ -28512,7 +28547,14 @@
           },
           "assignee_id": {
             "type": "string",
-            "description": "User ID of the assignee"
+            "description": "User ID of the assignee. Send this or `audience`, exactly one of them."
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ],
+            "description": "A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first."
           },
           "due_date": {
             "type": "string",
@@ -28568,7 +28610,6 @@
         },
         "required": [
           "title",
-          "assignee_id",
           "due_date"
         ]
       },
@@ -28726,6 +28767,12 @@
             "nullable": true,
             "description": "A copy’s day in its series’ pattern; null otherwise."
           },
+          "group_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The group task this is one member’s copy of (#4295 step 3), or null for a task given to one person."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -28740,6 +28787,14 @@
             "items": {
               "$ref": "#/components/schemas/TaskPhotoDto"
             }
+          },
+          "group": {
+            "description": "On a task for everyone: its group, as task reads carry it (#4295 step 3).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskGroupSummaryDto"
+              }
+            ]
           }
         },
         "required": [
@@ -28763,6 +28818,7 @@
           "completion_note",
           "series_id",
           "occurrence_date",
+          "group_id",
           "created_at",
           "photos"
         ]
@@ -28817,9 +28873,10 @@
             "type": "string",
             "enum": [
               "instance",
-              "series"
+              "series",
+              "group"
             ],
-            "description": "On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` (\"All upcoming tasks\") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`)."
+            "description": "On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` (\"All upcoming tasks\") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`). On a copy of a group task (#4295 step 3): `group` (\"Everyone’s copy\") makes the edit to every copy not yet confirmed; `assignee_id` and `reference_photo_paths` change one copy only, so they are a 400 with it."
           },
           "recurrence_rule": {
             "type": "string",
@@ -28982,7 +29039,15 @@
             "type": "string",
             "nullable": true,
             "format": "uuid",
-            "description": "Null when no name or role was said for it: the screen shows \"Who?\"."
+            "description": "Null when no name or role was said for it, or when it is for everyone: the screen shows \"Who?\" or \"Everyone\"."
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ],
+            "nullable": true,
+            "description": "Set when the task is for everyone (#4295 step 3): accepting it gives each active member their own copy."
           },
           "due_date": {
             "type": "string",
@@ -29010,6 +29075,7 @@
           "title",
           "description",
           "assignee_id",
+          "audience",
           "due_date",
           "due_at",
           "subtasks"
@@ -29316,7 +29382,15 @@
             "type": "string",
             "nullable": true,
             "format": "uuid",
-            "description": "Who the task is for. Required to accept when none was suggested."
+            "description": "Who the task is for. Required to accept when none was suggested, unless `audience` is set. Setting it clears `audience`."
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ],
+            "nullable": true,
+            "description": "A task for everyone instead of one person (#4295 step 3): accepting it gives each active member their own copy. Setting it clears `assignee_id`."
           },
           "due_date": {
             "type": "string",
