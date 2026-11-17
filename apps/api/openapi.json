@@ -36032,6 +36032,11 @@
             "nullable": true,
             "description": "The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes."
           },
+          "audio_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted."
+          },
           "speaker_count": {
             "type": "number",
             "nullable": true
@@ -36082,6 +36087,7 @@
           "failure",
           "failure_message",
           "transcript",
+          "audio_url",
           "speaker_count",
           "uploaded_at",
           "available",
