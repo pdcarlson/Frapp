@@ -17,6 +17,7 @@ import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface'
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import type {
   Task,
+  TaskGroupSummary,
   TaskPhoto,
   TaskPhotoKind,
   TaskSeriesSummary,
@@ -39,6 +40,8 @@ import {
   TASK_SUBTASKS_MAX,
   taskNeedsSignOff,
   taskSignedOffAutomatically,
+  TASK_AUDIENCE_COPY,
+  type TaskAudience,
   type TaskProofKind,
 } from '@repo/validation';
 import {
@@ -53,6 +56,7 @@ import {
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 import { ChatService } from './chat.service';
+import { RbacService } from './rbac.service';
 import {
   formatTaskDue,
   joinFacts,
@@ -145,7 +149,13 @@ export interface CreateTaskInput {
   chapter_id: string;
   title: string;
   description?: string | null;
-  assignee_id: string;
+  /** Who the task is for. Exactly one of this and `audience`. */
+  assignee_id?: string | null;
+  /**
+   * A task for a group instead of one person (#4295 step 3): each member gets
+   * their own copy. Exactly one of this and `assignee_id`.
+   */
+  audience?: TaskAudience | null;
   created_by: string;
   due_date: string;
   /** The moment it is due, when it has a time of day. */
@@ -212,7 +222,12 @@ export interface CompletionInput {
 export type CreateTaskResult = Task & {
   photos: TaskPhoto[];
   card_posted?: boolean;
+  /** On a task for everyone: its group, as reads carry it (#4295 step 3). */
+  group?: TaskGroupSummary;
 };
+
+/** Pushes sent at once when a group task is made. */
+const GROUP_NOTIFY_CONCURRENCY = 10;
 
 @Injectable()
 export class TaskService {
@@ -226,6 +241,7 @@ export class TaskService {
     private readonly chatService: ChatService,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
+    private readonly rbac: RbacService,
   ) {}
 
   /**
@@ -439,10 +455,11 @@ export class TaskService {
   ): Promise<TaskView[]> {
     if (tasks.length === 0) return tasks;
     const ids = tasks.map((task) => task.id);
-    const [subtasks, withPhotos, series] = await Promise.all([
+    const [subtasks, withPhotos, series, groups] = await Promise.all([
       this.taskRepo.findSubtasks(chapterId, ids),
       this.withPhotos(chapterId, tasks),
       this.seriesSummaries(chapterId, tasks),
+      this.groupSummaries(chapterId, tasks),
     ]);
     const byTask = new Map<string, TaskSubtask[]>();
     for (const subtask of subtasks) {
@@ -454,7 +471,46 @@ export class TaskService {
       ...task,
       subtasks: byTask.get(task.id) ?? [],
       series: task.series_id ? (series.get(task.series_id) ?? null) : null,
+      group: task.group_id ? (groups.get(task.group_id) ?? null) : null,
     }));
+  }
+
+  /**
+   * How far each task's group is, by group id (#4295 step 3): its copies
+   * counted, done (marked done, confirmed or not) and confirmed.
+   */
+  private async groupSummaries(
+    chapterId: string,
+    tasks: Task[],
+  ): Promise<Map<string, TaskGroupSummary>> {
+    const ids = [
+      ...new Set(
+        tasks.flatMap((task) => (task.group_id ? [task.group_id] : [])),
+      ),
+    ];
+    const summaries = new Map<string, TaskGroupSummary>();
+    if (ids.length === 0) return summaries;
+    const [groups, copies] = await Promise.all([
+      this.taskRepo.findGroups(chapterId, ids),
+      this.taskRepo.findGroupCopies(chapterId, ids),
+    ]);
+    for (const group of groups) {
+      summaries.set(group.id, {
+        id: group.id,
+        audience: group.audience,
+        total: 0,
+        done: 0,
+        confirmed: 0,
+      });
+    }
+    for (const copy of copies) {
+      const summary = copy.group_id ? summaries.get(copy.group_id) : undefined;
+      if (!summary) continue;
+      summary.total += 1;
+      if (copy.status === TaskStatus.COMPLETED) summary.done += 1;
+      if (copy.points_awarded) summary.confirmed += 1;
+    }
+    return summaries;
   }
 
   /** How each task's series repeats, by series id (#5119). */
@@ -658,6 +714,16 @@ export class TaskService {
   }
 
   async create(input: CreateTaskInput): Promise<CreateTaskResult> {
+    if (input.audience && input.assignee_id) {
+      throw new BadRequestException(
+        'Send assignee_id or audience, not both',
+      );
+    }
+    if (input.audience) return this.createForGroup(input, input.audience);
+    if (!input.assignee_id) {
+      throw new BadRequestException('A task needs an assignee');
+    }
+    const assigneeId = input.assignee_id;
     const dueDate = new Date(input.due_date);
     if (Number.isNaN(dueDate.getTime())) {
       throw new BadRequestException('due_date must be a valid date');
@@ -671,7 +737,7 @@ export class TaskService {
     );
 
     const assignee = await this.memberRepo.findByUserAndChapter(
-      input.assignee_id,
+      assigneeId,
       input.chapter_id,
     );
     if (!assignee) {
@@ -685,7 +751,7 @@ export class TaskService {
           created_by: input.created_by,
           title: input.title,
           description: input.description ?? null,
-          assignee_id: input.assignee_id,
+          assignee_id: assigneeId,
           point_reward: input.point_reward ?? null,
           proof_kind: input.proof_kind ?? 'none',
           subtask_titles: subtaskTitles,
@@ -700,7 +766,7 @@ export class TaskService {
           chapter_id: input.chapter_id,
           title: input.title,
           description: input.description ?? null,
-          assignee_id: input.assignee_id,
+          assignee_id: assigneeId,
           created_by: input.created_by,
           due_date: input.due_date,
           due_at: dueAt,
@@ -777,6 +843,175 @@ export class TaskService {
     return cardPosted === undefined
       ? { ...task, photos }
       : { ...task, photos, card_posted: cardPosted };
+  }
+
+  /**
+   * A task for everyone (#4295 step 3; Paul 2026-11-17, "one group task, a
+   * copy each"): a copy per active member, the chapter minus its alumni
+   * (`spec/behavior/alumni.md`), the officer included when they are one. The
+   * group, the copies and their checklists are written in one transaction,
+   * then each member gets the usual assignment push (none to the officer for
+   * their own copy). It can't repeat, carry reference photos (one stored photo
+   * belongs to one task) or post a chat card yet. Returns the officer's own
+   * copy when they have one, otherwise the first, with the group's summary.
+   */
+  private async createForGroup(
+    input: CreateTaskInput,
+    audience: TaskAudience,
+  ): Promise<CreateTaskResult> {
+    if (Number.isNaN(new Date(input.due_date).getTime())) {
+      throw new BadRequestException('due_date must be a valid date');
+    }
+    if (input.recurrence_rule != null) {
+      throw new BadRequestException(TASK_AUDIENCE_COPY.noRepeat);
+    }
+    if ((input.reference_photo_paths ?? []).length > 0) {
+      throw new BadRequestException(TASK_AUDIENCE_COPY.noPhotos);
+    }
+    if (input.channel_id || input.client_message_id) {
+      throw new BadRequestException(
+        "A task for everyone can't be posted to chat yet",
+      );
+    }
+    const dueAt = this.checkedDueAt(input.due_date, input.due_at);
+    const subtaskTitles = this.checkedSubtaskTitles(input.subtasks ?? []);
+    const assigneeIds = await this.audienceMembers(input.chapter_id);
+    if (assigneeIds.length === 0) {
+      throw new BadRequestException('This chapter has no active members yet');
+    }
+
+    const copies = await this.taskRepo.createGroup({
+      chapter_id: input.chapter_id,
+      created_by: input.created_by,
+      audience,
+      assignee_ids: assigneeIds,
+      title: input.title,
+      description: input.description ?? null,
+      due_date: input.due_date,
+      due_at: dueAt,
+      point_reward: input.point_reward ?? null,
+      proof_kind: input.proof_kind ?? 'none',
+      subtask_titles: subtaskTitles,
+    });
+
+    // `notifyAssigned` reports its own failures, so one member's push can't
+    // stop the rest.
+    for (let i = 0; i < copies.length; i += GROUP_NOTIFY_CONCURRENCY) {
+      await Promise.all(
+        copies
+          .slice(i, i + GROUP_NOTIFY_CONCURRENCY)
+          .map((copy) => this.notifyAssigned(copy, input.created_by)),
+      );
+    }
+
+    const own =
+      copies.find((copy) => copy.assignee_id === input.created_by) ??
+      copies[0];
+    return {
+      ...own,
+      photos: [],
+      group: {
+        id: own.group_id ?? '',
+        audience,
+        total: copies.length,
+        done: 0,
+        confirmed: 0,
+      },
+    };
+  }
+
+  /** The user ids a group task goes to: active members, alumni left out. */
+  private async audienceMembers(chapterId: string): Promise<string[]> {
+    const [members, alumniRoleId] = await Promise.all([
+      this.memberRepo.findByChapter(chapterId),
+      this.rbac.getAlumniRoleId(chapterId),
+    ]);
+    return [
+      ...new Set(
+        members
+          .filter(
+            (member) =>
+              !alumniRoleId || !(member.role_ids ?? []).includes(alumniRoleId),
+          )
+          .map((member) => member.user_id),
+      ),
+    ];
+  }
+
+  /**
+   * An officer's edit of everyone's copy of a group task (#4295 step 3): the
+   * same edit as {@link update}, made to each copy not yet confirmed. A
+   * confirmed copy's points were paid on it as it stood, so it stays, as one
+   * task does. Who it is for and its photos change per copy only. Returns
+   * the copy it was asked on.
+   */
+  async updateGroup(
+    id: string,
+    chapterId: string,
+    actorId: string,
+    input: UpdateTaskInput,
+  ): Promise<TaskView> {
+    const task = await this.taskRepo.findById(id, chapterId);
+    if (!task) throw new NotFoundException('Task not found');
+    if (!task.group_id) {
+      throw new BadRequestException('This task isn\'t for a group');
+    }
+    if (input.assignee_id !== undefined) {
+      throw new BadRequestException(
+        'Hand one member\'s copy to someone else on that copy alone',
+      );
+    }
+    if (input.reference_photo_paths !== undefined) {
+      throw new BadRequestException(TASK_AUDIENCE_COPY.noPhotos);
+    }
+    const open = (
+      await this.taskRepo.findGroupCopies(chapterId, [task.group_id])
+    ).filter((copy) => !copy.points_awarded);
+    if (open.length === 0) {
+      throw new BadRequestException(
+        'Every copy is already confirmed, so none can change',
+      );
+    }
+    // Copy by copy, each its own compare-and-set: a confirm that lands on one
+    // mid-edit wins there, and the rest still take the edit.
+    for (const copy of open) {
+      try {
+        await this.update(copy.id, chapterId, actorId, input);
+      } catch (error) {
+        if (
+          copy.id === id ||
+          !(error instanceof BadRequestException) ||
+          !/confirmed/.test(error.message)
+        ) {
+          throw error;
+        }
+      }
+    }
+    return this.findById(id, chapterId);
+  }
+
+  /**
+   * Delete every copy of a group task, and the group (#4295 step 3), as
+   * {@link delete} deletes one task: its photos go after it.
+   */
+  async deleteGroup(id: string, chapterId: string): Promise<void> {
+    const task = await this.taskRepo.findById(id, chapterId);
+    if (!task) throw new NotFoundException('Task not found');
+    if (!task.group_id) {
+      throw new BadRequestException('This task isn\'t for a group');
+    }
+    const copies = await this.taskRepo.findGroupCopies(chapterId, [
+      task.group_id,
+    ]);
+    const photos = await this.taskRepo.findPhotos(
+      chapterId,
+      copies.map((copy) => copy.id),
+    );
+    await this.taskRepo.deleteGroup(chapterId, task.group_id);
+    await this.releasePhotos(
+      chapterId,
+      photos.map((photo) => photo.storage_path),
+    );
   }
 
   /**
@@ -1106,19 +1341,19 @@ export class TaskService {
   ): Promise<void> {
     const users = await this.userRepo.findByIds([
       input.created_by,
-      input.assignee_id,
+      task.assignee_id,
     ]);
     const nameOf = (id: string): string =>
       users.find((u) => u.id === id)?.display_name ?? 'Unknown member';
     const assignerName = nameOf(input.created_by);
-    const assigneeName = nameOf(input.assignee_id);
+    const assigneeName = nameOf(task.assignee_id);
 
     const payload = {
       task_id: task.id,
       title: task.title,
       assigner_user_id: input.created_by,
       assigner_name: assignerName,
-      assignee_user_id: input.assignee_id,
+      assignee_user_id: task.assignee_id,
       assignee_name: assigneeName,
       due_date: task.due_date,
       due_at: task.due_at,

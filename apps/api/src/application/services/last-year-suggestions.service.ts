@@ -386,6 +386,7 @@ export class LastYearSuggestionsService implements AiRunHandler, OnModuleInit {
                     // Nobody: the officer who did it last year has likely
                     // handed the job on.
                     assignee_id: null,
+                    audience: null,
                     due_date: shiftDate(thing.lastYearOn, LAST_YEAR_SHIFT_DAYS),
                     subtasks: [...thing.subtasks],
                     last_year_on: thing.lastYearOn,

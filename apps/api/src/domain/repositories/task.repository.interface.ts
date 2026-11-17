@@ -1,11 +1,12 @@
 import {
   Task,
   TaskPhoto,
+  TaskGroup,
   TaskSeries,
   TaskStatus,
   TaskSubtask,
 } from '../entities/task.entity';
-import type { TaskProofKind } from '@repo/validation';
+import type { TaskAudience, TaskProofKind } from '@repo/validation';
 
 export const TASK_REPOSITORY = 'TASK_REPOSITORY';
 
@@ -134,6 +135,20 @@ export interface ITaskRepository {
    * in one transaction (#5119): a failure leaves neither. Returns the copy.
    */
   createSeries(input: CreateTaskSeriesInput): Promise<Task>;
+  /**
+   * A task for everyone (#4295 step 3): its group, a copy per member and each
+   * copy's checklist, in one transaction. Returns the copies.
+   */
+  createGroup(input: CreateTaskGroupInput): Promise<Task[]>;
+  /** These groups of the chapter, any order. */
+  findGroups(chapterId: string, ids: string[]): Promise<TaskGroup[]>;
+  /** Every copy of these groups, any order. */
+  findGroupCopies(chapterId: string, groupIds: string[]): Promise<Task[]>;
+  /**
+   * Delete a group's copies and then its row (#4295 step 3). Photo and
+   * subtask rows go with their copies (on delete cascade).
+   */
+  deleteGroup(chapterId: string, groupId: string): Promise<void>;
   /** These series of the chapter, any order. */
   findSeries(chapterId: string, ids: string[]): Promise<TaskSeries[]>;
   /** A series' latest copy (the furthest `occurrence_date`), or null. */
@@ -250,4 +265,20 @@ export interface CreateTaskSeriesInput {
   /** When the first copy is due in the rule's zone (end of day if untimed). */
   latest_due_at: string;
   next_due_date: string;
+}
+
+/** What {@link ITaskRepository.createGroup} writes (#4295 step 3). */
+export interface CreateTaskGroupInput {
+  chapter_id: string;
+  created_by: string;
+  audience: TaskAudience;
+  /** Who gets a copy: one per distinct user id. */
+  assignee_ids: string[];
+  title: string;
+  description: string | null;
+  due_date: string;
+  due_at: string | null;
+  point_reward: number | null;
+  proof_kind: TaskProofKind;
+  subtask_titles: string[];
 }

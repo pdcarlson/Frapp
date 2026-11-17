@@ -224,6 +224,8 @@ export * from "./study-zone-shape";
 export * from "./subscription";
 // A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
 export * from "./task-proof";
+// Tasks for everyone: one group task, a copy each (#4295 step 3).
+export * from "./task-audience";
 export * from "./thumbhash";
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export * from "./time-zone";

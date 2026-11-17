@@ -22,17 +22,20 @@ import {
   POINTS_ADJUSTMENT_MAX,
   TASK_COMPLETION_NOTE_MAX,
   TASK_PHOTOS_MAX,
+  TASK_AUDIENCES,
   TASK_PROOF_KINDS,
   TASK_PROOF_LINK_MAX,
   TASK_SEND_BACK_REASON_MAX,
   TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
   TASK_TITLE_MAX_LENGTH,
+  type TaskAudience,
   type TaskProofKind,
 } from '@repo/validation';
 import {
   TaskStatus,
   type Task,
+  type TaskGroupSummary,
   type TaskSeriesSummary,
   type TaskSubtask,
   type TaskPhoto,
@@ -41,8 +44,11 @@ import {
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { IsRepeatRule } from '../decorators/is-repeat-rule.decorator';
 
-/** The scopes of a repeating task's edit and delete (#5119). */
-const TASK_EDIT_SCOPES = ['instance', 'series'] as const;
+/**
+ * The scopes of an edit or delete: a repeating task's series (#5119), or
+ * everyone's copy of a group task (#4295 step 3).
+ */
+const TASK_EDIT_SCOPES = ['instance', 'series', 'group'] as const;
 export type TaskEditScope = (typeof TASK_EDIT_SCOPES)[number];
 
 const TASK_RECURRENCE_RULE_DESCRIPTION =
@@ -110,9 +116,22 @@ export class CreateTaskDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ description: 'User ID of the assignee' })
+  @ApiPropertyOptional({
+    description:
+      'User ID of the assignee. Send this or `audience`, exactly one of them.',
+  })
+  @ValidateIf((dto: CreateTaskDto) => dto.audience === undefined)
   @IsUUID()
-  assignee_id: string;
+  assignee_id?: string;
+
+  @ApiPropertyOptional({
+    enum: TASK_AUDIENCES,
+    description:
+      'A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first.',
+  })
+  @IsOptional()
+  @IsIn(TASK_AUDIENCES)
+  audience?: TaskAudience;
 
   @ApiProperty({ description: 'Due date (YYYY-MM-DD)' })
   @IsDateString()
@@ -194,6 +213,30 @@ export class CreateTaskDto {
   @IsOptional()
   @IsUUID()
   client_message_id?: string;
+}
+
+/** A group task's progress, on task reads (#4295 step 3). */
+export class TaskGroupSummaryDto implements TaskGroupSummary {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ enum: TASK_AUDIENCES })
+  audience: TaskAudience;
+
+  @ApiProperty({ description: 'How many copies the group has.' })
+  total: number;
+
+  @ApiProperty({
+    description:
+      'How many copies are marked done, waiting on an officer or confirmed.',
+  })
+  done: number;
+
+  @ApiProperty({
+    description:
+      'How many copies are confirmed, or needed no sign-off when marked done.',
+  })
+  confirmed: number;
 }
 
 /**
@@ -306,6 +349,15 @@ export class CreateTaskResponseDto implements Task {
   })
   occurrence_date: string | null;
 
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description:
+      'The group task this is one member’s copy of (#4295 step 3), or null for a task given to one person.',
+  })
+  group_id: string | null;
+
   @ApiProperty({ format: 'date-time' })
   created_at: string;
 
@@ -321,6 +373,13 @@ export class CreateTaskResponseDto implements Task {
       'The reference photos added with the task, in order. Task reads and status writes carry `photos` too.',
   })
   photos: TaskPhotoDto[];
+
+  @ApiPropertyOptional({
+    type: () => TaskGroupSummaryDto,
+    description:
+      'On a task for everyone: its group, as task reads carry it (#4295 step 3).',
+  })
+  group?: TaskGroupSummaryDto;
 }
 
 /** How a task repeats, on task reads (#5119). */
@@ -479,7 +538,7 @@ export class UpdateTaskDto {
   @ApiPropertyOptional({
     enum: TASK_EDIT_SCOPES,
     description:
-      'On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`).',
+      'On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`). On a copy of a group task (#4295 step 3): `group` ("Everyone’s copy") makes the edit to every copy not yet confirmed; `assignee_id` and `reference_photo_paths` change one copy only, so they are a 400 with it.',
   })
   @IsOptional()
   @IsIn(TASK_EDIT_SCOPES)
@@ -503,7 +562,7 @@ export class DeleteTaskQueryDto {
   @ApiPropertyOptional({
     enum: TASK_EDIT_SCOPES,
     description:
-      'On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay.',
+      'On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. On a copy of a group task: `group` deletes every member’s copy and the group (#4295 step 3).',
   })
   @IsOptional()
   @IsIn(TASK_EDIT_SCOPES)
@@ -636,5 +695,8 @@ export type CreateTaskResponseDtoMissingFields = AssertNever<
  * @driftguard
  */
 export type CreateTaskResponseDtoExtraFields = AssertNever<
-  Exclude<keyof CreateTaskResponseDto, keyof Task | 'card_posted' | 'photos'>
+  Exclude<
+    keyof CreateTaskResponseDto,
+    keyof Task | 'card_posted' | 'photos' | 'group'
+  >
 >;
