@@ -34,7 +34,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 │    ...  (web and landing only; no EXPO_PUBLIC_* lives here)       │
 │                                                                   │
 │  3 environments: dev, staging, prod                               │
-│  Syncs: Render ×2, until the API moves to Cloud Run — §5          │
+│  Syncs: GCP Secret Manager ×2, one per API project — §5           │
 │  Vercel none (builds inject Infisical) — §5                       │
 │  Web/landing (both envs): built from an Infisical injection — §5  │
 └──────────────────────────────────────────────────────────────────┘
@@ -93,7 +93,7 @@ is set in the EAS dashboard (`development` / `preview` / `production`) or a non-
 entry. **This is not limited to `EXPO_PUBLIC_*`:** `SENTRY_AUTH_TOKEN` is build-time only and never
 bundled, yet a Release build *fails* without it in EAS — see
 [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#appsmobile-expo--eas) § apps/mobile. An Infisical entry for
-that name serves `apps/api` (Render sync) and `apps/web` (injected into the staging and production builds); it never reaches EAS. The live syncs are Render only (next section).
+that name serves `apps/api` (Secret Manager sync) and `apps/web` (injected into the staging and production builds); it never reaches EAS. The live syncs are the API's two Secret Manager syncs only (next section).
 
 ### 5. Configure Secret Syncs
 
@@ -114,17 +114,16 @@ repointing the sync — there is no filter to switch on. See the "Blast radius" 
 
 #### Live syncs (2 total)
 
-**Dashboard state last verified: 2026-09-28.** This table is a convenience copy of live
-dashboard configuration and goes stale silently. Treat a disagreement between this table and the
-Infisical/Vercel dashboards as the table being wrong, and re-stamp the date when you correct it.
-See "Verifying this section against reality" below.
+The two live syncs are the API's, into Google Secret Manager: [§ Cloud Run API](#cloud-run-api-synced-to-secret-manager)
+has the table. No sync targets Vercel.
 
-| Name                        | Infisical env | Path | Destination         | Vercel/Render env |
-| --------------------------- | ------------- | ---- | ------------------- | ----------------- |
-| `render-api-production`     | Production    | `/`  | `frapp-api-prod`    | Service           |
-| `render-api-staging`        | Staging       | `/`  | `frapp-api-staging` | Service           |
-
-Both read **Synced** in the Infisical UI on 2026-09-28. No sync targets Vercel.
+**The two Render syncs are retired (2026-11-17, [#5228](https://github.com/frapplive/Frapp/issues/5228)).**
+`render-api-production` and `render-api-staging` copied path `/` of `prod` and `staging` into
+`frapp-api-prod` and `frapp-api-staging` until the API moved to Cloud Run. Both services are
+suspended (2026-11-17), and nothing in the repo reads Render. The owner deletes the two syncs first,
+then the services, then Infisical's Render App Connection, which holds a Render API key that can
+deploy any service. Until the services are deleted, their env still holds a copy of every `prod` and
+`staging` value, so a rotation in that window also counts them.
 
 **The two production Vercel syncs are deleted too (2026-09-28, #834).** Since #2673 no build reads a
 Vercel env row, so `vercel-web-production` and `vercel-landing-production` only copied the whole
@@ -164,18 +163,17 @@ failure: both staging syncs targeted a branch literally named `preview`, which h
 this repository, and wrote rows no deployment read.
 
 To inspect or edit one: Infisical → Integrations → **Secret Syncs**. To create one from scratch on a
-fresh org, first authenticate the provider under **App Connections** (Vercel, Render), then
-**Add Sync** and pick the source environment, path, and destination scope shown above.
+fresh org, first authenticate the provider under **App Connections**, then **Add Sync** and pick the
+source environment, path, and destination scope shown below.
 
 #### Cloud Run API: synced to Secret Manager
 
 **Decision (owner, 2026-11-16, [#5228](https://github.com/frapplive/Frapp/issues/5228)):** the API
-moves from Render to Cloud Run ([`cloud-run.md`](../../ops/deployment/cloud-run.md)), and each
+moved from Render to Cloud Run ([`cloud-run.md`](../../ops/deployment/cloud-run.md)), and each
 environment's values reach it through a sync: Infisical's GCP Secret Manager sync copies path `/` of
 `staging` into the nonprod Google project and `prod` into the prod project, and the deploy names each
 secret as an environment variable. Infisical stays the one place a value changes. The image holds no
-value, and neither does GitHub. Until the cutover finishes, the two Render syncs above still feed the
-Render services.
+value, and neither does GitHub.
 
 Both run since 2026-11-16, through the App Connections `gcp-nonprod` and `gcp-prod` (Service
 Account Impersonation of the account [`scripts/gcp/bootstrap.sh`](../../../scripts/gcp/bootstrap.sh)
@@ -192,8 +190,7 @@ revision from starting.
 A change in Infisical still reaches the API at its next deploy; how the deploy pins versions, and
 which names it skips, is [`cloud-run.md` § Secrets](../../ops/deployment/cloud-run.md#secrets). Each
 project's Secret Manager holds a copy of every value in its environment, as a Render service's
-environment did. Once no Render service is synced, delete Infisical's Render App Connection too: it
-holds a Render API key that can deploy any service (#5228's last step).
+environment did.
 
 **What was tried first, and why it was dropped.** The owner first asked to detach Render from
 Infisical so fewer places hold the values: the service would hold one read-only Infisical machine
@@ -296,7 +293,7 @@ here depends on Vercel's Git link or branch tracking, both of which are off.
 #### Blast radius
 
 Every sync reads path `/`, so while the Vercel syncs lived, each pushed backend-only secrets toward
-frontend projects that never consumed them; the two Render syncs that remain feed the API, which
+frontend projects that never consumed them; the two syncs that remain feed the API, which
 does. What each frontend app actually reads is `APP_CONFIG_KEYS` in
 [`scripts/ci/lib/vercel-build-env.mjs`](../../../scripts/ci/lib/vercel-build-env.mjs), a list a test
 keeps equal to the source (this section used to carry its own copy, which had fallen five keys per app
@@ -432,7 +429,6 @@ The deploy workflows inject these from Infisical at runtime through [`infisical-
 | `SUPABASE_ACCESS_TOKEN`  | Read-only token, `frapp-staging` only   | Read-only token, `frapp-prod` only |
 | `SUPABASE_FUNCTIONS_DEPLOY_TOKEN` | Edge Functions read-write token, `frapp-staging` only | Edge Functions read-write token, `frapp-prod` only |
 | `SUPABASE_PROJECT_REF`   | Staging project ref                     | Production project ref          |
-| `RENDER_DEPLOY_HOOK_URL` | _(none: unused since #2505, which deploys staging by commit through the Render API; the stored copy is deleted and the hook regenerated by #2679)_ | _(none — production deploys by commit through the Render API, never a hook)_ |
 | `API_HEALTHCHECK_URL`    | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |
 
 #### Troubleshooting: an Infisical injection fails with `401 Invalid credentials`
@@ -478,9 +474,9 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 | Supabase service role key | On suspected compromise | Regenerate in Supabase → update canonical value in Infisical |
 | Stripe secret key         | On suspected compromise | Regenerate in Stripe → update canonical value in Infisical   |
 | Supabase access token     | Every 90 days           | Regenerate in Supabase account → update in Infisical         |
-| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `render-api-staging` sync (§5) also pushes a copy to the Render staging service. The staging Vercel syncs and their `Preview · main` rows were deleted on 2026-09-28 (#834); neither project's Preview env holds a copy (§5). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
+| R2 backup-bucket token    | On suspected compromise | Roll the scoped API token in Cloudflare R2 → update `BACKUP_S3_ACCESS_KEY_ID` + `BACKUP_S3_SECRET_ACCESS_KEY` in Infisical (`staging`). `db-backup.yml` pulls at job time, but the path-`/` `gcp-api-staging` sync (§5) also pushes a copy to the nonprod project's Secret Manager, where the staging API can read it. The staging Vercel syncs and their `Preview · main` rows were deleted on 2026-09-28 (#834); neither project's Preview env holds a copy (§5). Count every copy that applies in a blast-radius assessment ([`ENV_REFERENCE.md`](./ENV_REFERENCE.md) § Offsite Backup Secrets) |
 
-**All rotations happen in one place (Infisical).** Syncs propagate changes to Render automatically, and the API takes them at its next deploy. On Cloud Run that is still true: the sync copies a change to Secret Manager, and the next deploy pins it ([§ Cloud Run API](#cloud-run-api-synced-to-secret-manager)). The web and landing builds read Infisical directly, staging and production alike (#2673), so they pick up a change only when they are next uploaded. For staging that is a re-run of the **Deploy staging** run for `main`'s tip, or the next merge that changes something web or landing is built from; a merge that changes neither uploads nothing (#2865). For production it is a **Deploy production** dispatch. A value a bundle inlines (`NEXT_PUBLIC_*`) stays the old one until then.
+**All rotations happen in one place (Infisical).** The sync copies a change to Secret Manager automatically, and the API takes it at its next deploy, which pins it ([§ Cloud Run API](#cloud-run-api-synced-to-secret-manager)). On staging a re-run doesn't redeploy the API ([`cloud-run.md` § Deploys](../../ops/deployment/cloud-run.md#deploys)). The web and landing builds read Infisical directly, staging and production alike (#2673), so they pick up a change only when they are next uploaded. For staging that is a re-run of the **Deploy staging** run for `main`'s tip, or the next merge that changes something web or landing is built from; a merge that changes neither uploads nothing (#2865). For production it is a **Deploy production** dispatch. A value a bundle inlines (`NEXT_PUBLIC_*`) stays the old one until then.
 
 ## Emergency Procedures
 
@@ -488,12 +484,12 @@ Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 1. **Immediately** rotate the secret in the source provider (Supabase/Stripe/etc.)
 2. Update the canonical value in Infisical (one place)
-3. The Render syncs propagate automatically; web and landing need a redeploy (staging: re-run the **Deploy staging** run for `main`'s tip. A re-run uploads web and landing even when nothing they are built from changed; a first run doesn't (#2865). If the tip's CI failed, it has no deploy run to re-run: re-run that CI if it failed on a flake, then re-run the **Deploy staging** run it starts. Otherwise the next green merge that changes web or landing uploads, and until then the staging frontends keep the old value. Production: dispatch **Deploy production**). Verify all services are healthy
+3. The Secret Manager syncs copy it automatically, and the API takes it at its next deploy (staging's API only on a merge that changes its image: a re-run doesn't redeploy it, [`cloud-run.md` § Deploys](../../ops/deployment/cloud-run.md#deploys)); web and landing need one too (staging: re-run the **Deploy staging** run for `main`'s tip. A re-run uploads web and landing even when nothing they are built from changed; a first run doesn't (#2865). If the tip's CI failed, it has no deploy run to re-run: re-run that CI if it failed on a flake, then re-run the **Deploy staging** run it starts. Otherwise the next green merge that changes web or landing uploads, and until then the staging frontends keep the old value. Production: dispatch **Deploy production**). Verify all services are healthy
 4. If committed to git: notify team, consider force-push to remove
 
 ### Infisical Down
 
-- Existing secrets in Vercel/Render are unaffected (synced copies persist), and so are the running deployments
+- Existing secrets in Secret Manager are unaffected (synced copies persist), and so are the running deployments
 - Deploys that inject at job time fail until it recovers: `deploy-staging.yml` and `deploy-production.yml`
 - New changes must go directly to providers temporarily
 - When Infisical recovers, reconcile and re-sync
@@ -510,13 +506,11 @@ When running infrastructure automation from a laptop or a script, validate provi
 
 - **Vercel token check**
   - `GET https://api.vercel.com/v2/user` should return an authenticated user.
-- **Render token check**
-  - `GET https://api.render.com/v1/services?limit=1` should return JSON data.
 - **Supabase management token check**
   - `GET https://api.supabase.com/v1/projects` should return accessible projects.
 
 Important:
 
-- Keep provider API keys distinct (`VERCEL_API_KEY`, `RENDER_API_KEY`, `SUPABASE_ACCESS_TOKEN`, `INFISICAL_SERVICE_TOKEN`).
-- Hosted agent sessions read Render, Vercel and Supabase through the MCP connectors, not a key. The names a session carries, the retired ones, and their legacy aliases: [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md).
+- Keep provider API keys distinct (`VERCEL_API_KEY`, `SUPABASE_ACCESS_TOKEN`, `INFISICAL_SERVICE_TOKEN`).
+- Hosted agent sessions read Vercel and Supabase through the MCP connectors, not a key. The names a session carries, the retired ones, and their legacy aliases: [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md).
 - Do not reuse one provider's token in another provider variable.

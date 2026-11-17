@@ -3,6 +3,11 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
+import { AI_SETTINGS_COPY, FRAPP_AI_COPY } from "@repo/validation";
+import { SectionHeader } from "@/components/list-section";
+import { PRIVACY_LINK } from "@/lib/more/legal";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   defaultNotificationCategoryState,
@@ -39,6 +44,8 @@ const state = vi.hoisted(() => ({
   permissions: [] as string[],
   pushReason: null as string | null,
   quietHoursEnabled: false,
+  // `null` is a signed-in member whose token names no chapter (#5104).
+  chapterId: "chapter-1" as string | null,
   getPushPermission: (() =>
     new Promise(() => undefined)) as () => Promise<PushStatus | null>,
   isPushChannelBlocked: (async () => false) as () => Promise<boolean>,
@@ -49,6 +56,14 @@ const state = vi.hoisted(() => ({
     answer: "yes" | "no" | null;
     sheet_changed: boolean;
   },
+  // The chapter's AI switches, behind the Chapter AI row.
+  aiChapter: {
+    ask: true,
+    meeting_notes: false,
+    chat_source: true,
+    can_change: true,
+    updated_at: null,
+  } as Record<string, unknown>,
 }));
 
 // The suite's stub has no `Linking`; the push switch's fallback opens the OS
@@ -81,8 +96,6 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useFrappAiChoice: () => ({
     consent: state.aiConsent,
     providers: ["Anthropic", "Google"],
-    forChapter: false,
-    chapterSettled: true,
     notNow: aiNotNow,
     turnOn: vi.fn(),
     pending: false,
@@ -109,6 +122,15 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useDeleteAccount: () => ({ mutateAsync: vi.fn(), isPending: false }),
   usePermissionList: () => state.permissions,
+  useAiChapterSettings: (options: { enabled?: boolean }) => ({
+    data: options.enabled ? state.aiChapter : undefined,
+  }),
+}));
+
+// Linked apps has its own spec (`components/settings/linked-apps-section.spec.tsx`);
+// this one only checks the rest of Settings.
+vi.mock("@/components/settings/linked-apps-section", () => ({
+  LinkedAppsSection: () => null,
 }));
 
 vi.mock("@/lib/auth-session", () => ({
@@ -140,13 +162,14 @@ vi.mock("@/lib/use-notification-preferences-sync", () => ({
     setQuietHoursEnabled: vi.fn(),
     categories: defaultNotificationCategoryState(),
     setCategory: vi.fn(),
+    categoriesEditable: state.chapterId !== null,
     quietHoursWindow: { start: "22:00", end: "07:00", tz: "America/New_York" },
     setQuietHoursWindow: vi.fn(),
     isHydrated: true,
     hydrationRecovered: false,
     persistenceFailed: false,
     isAuthenticated: true,
-    chapterId: "chapter-1",
+    chapterId: state.chapterId,
     quietHoursSync: "synced",
     categorySync: "synced",
   }),
@@ -219,6 +242,7 @@ beforeEach(() => {
   state.permissions = [];
   state.pushReason = null;
   state.quietHoursEnabled = false;
+  state.chapterId = "chapter-1";
   state.getPushPermission = () => new Promise(() => undefined);
   state.isPushChannelBlocked = async () => false;
   state.requestPushPermission.mockReset().mockResolvedValue(true);
@@ -349,6 +373,37 @@ describe("Settings copy", () => {
     expect(text).toContain("Tasks");
   });
 
+  it("holds the category switches, and says so, until a chapter is confirmed (#5104)", () => {
+    const categorySwitches = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          (node.type as unknown) === "Switch" &&
+          NOTIFICATION_CATEGORIES.some(
+            (category) => category.label === node.props.accessibilityLabel,
+          ),
+      );
+
+    const withChapter = render();
+    expect(categorySwitches(withChapter).length).toBeGreaterThan(0);
+    for (const node of categorySwitches(withChapter)) {
+      expect(node.props.disabled).toBe(false);
+    }
+
+    state.chapterId = null;
+    const noChapter = render();
+    expect(categorySwitches(noChapter).length).toBeGreaterThan(0);
+    for (const node of categorySwitches(noChapter)) {
+      expect(node.props.disabled).toBe(true);
+    }
+    const text = screenText(noChapter);
+    expect(text).toContain(
+      "Category switches turn on once your chapter is confirmed.",
+    );
+    // A flip here was only ever kept on this device and then dropped, so
+    // nothing may promise it syncs later.
+    expect(text).not.toContain("sync");
+  });
+
   it("says nothing about sync once the preferences are synced", () => {
     const text = screenText(render());
 
@@ -416,6 +471,13 @@ describe("Settings copy", () => {
       );
     afterEach(() => {
       state.aiConsent = null;
+      state.aiChapter = {
+        ask: true,
+        meeting_notes: false,
+        chat_source: true,
+        can_change: true,
+        updated_at: null,
+      };
     });
 
     it("isn't drawn where the server has no AI", () => {
@@ -433,7 +495,95 @@ describe("Settings copy", () => {
       state.aiConsent = { answer, sheet_changed: false };
       const tree = render();
       expect(aiSwitch(tree)[0].props.value).toBe(on);
-      expect(screenText(tree)).toContain("Works with Anthropic and Google.");
+      // What it does, never who it works with (Paul, 2026-11-17): the
+      // companies are named on Meet Frapp AI, where the yes is given.
+      expect(screenText(tree)).toContain(FRAPP_AI_COPY.settingsCaption);
+      expect(screenText(tree)).not.toMatch(/Anthropic|Google/);
+    });
+
+    it("sits in its own AI section, before Account", () => {
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const tree = render();
+      // The header itself, not a row label that happens to contain "AI".
+      const headers = tree.root
+        .findAll((node) => node.type === SectionHeader)
+        .map((node) => node.props.children);
+      expect(headers).toEqual(["Notifications", "Chat", "AI", "Account"]);
+      const text = screenText(tree);
+      expect(text.indexOf("Nudges on Activity")).toBeGreaterThan(
+        text.indexOf("Chat density"),
+      );
+      expect(text.indexOf("Nudges on Activity")).toBeLessThan(
+        text.indexOf("Appearance"),
+      );
+    });
+
+    it("links the privacy policy under the section, and says so there if it can't open", async () => {
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const open = vi.mocked(WebBrowser.openBrowserAsync);
+      open.mockClear();
+      const tree = render();
+      const link = tree.root.find(
+        (node) =>
+          node.props.accessibilityRole === "link" &&
+          node.props.children === FRAPP_AI_COPY.privacyLink &&
+          typeof node.props.onPress === "function",
+      );
+      open.mockRejectedValueOnce(new Error("already presenting"));
+      await act(async () => {
+        link.props.onPress();
+      });
+      expect(open).toHaveBeenCalledWith(PRIVACY_LINK.url);
+      const text = screenText(tree);
+      const error = text.indexOf("Privacy Policy couldn't be opened");
+      expect(error).toBeGreaterThan(-1);
+      // Under the AI section, not a screen away under Account.
+      expect(error).toBeLessThan(text.indexOf("Appearance"));
+    });
+
+    it("offers Chapter AI only to a member who sees the chapter's AI switches", () => {
+      vi.mocked(useRouter().push).mockClear();
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      const chapterRow = (tree: ReactTestRenderer) =>
+        tree.root.findAll(
+          (node) =>
+            node.props.label === AI_SETTINGS_COPY.chapterRow &&
+            typeof node.props.onPress === "function",
+        );
+      state.permissions = [];
+      expect(chapterRow(render())).toHaveLength(0);
+      // A roles manager opens Chapter settings for Roles, but web's AI tab
+      // is `chapter-config:view`'s, so neither shows them the switches.
+      state.permissions = ["roles:manage"];
+      expect(chapterRow(render())).toHaveLength(0);
+
+      state.permissions = ["chapter-config:view"];
+      const [row] = chapterRow(render());
+      expect(row.props.value).toBe("2 on");
+      act(() => row.props.onPress());
+      expect(vi.mocked(useRouter().push)).toHaveBeenCalledWith(
+        "/chapter-settings",
+      );
+    });
+
+    it("counts only the chapter's AI features that work", () => {
+      state.aiConsent = { answer: "yes", sheet_changed: false };
+      state.permissions = ["chapter-config:view"];
+      // Include channel messages left on under an Ask that is off does
+      // nothing, so it isn't counted.
+      state.aiChapter = {
+        ask: false,
+        meeting_notes: false,
+        chat_source: true,
+        can_change: true,
+        updated_at: null,
+      };
+      const row = render().root.find(
+        (node) =>
+          node.props.label === AI_SETTINGS_COPY.chapterRow &&
+          typeof node.props.onPress === "function",
+      );
+      expect(row.props.value).toBe("0 on");
     });
 
     it("offers the nudge switch only to a member who said yes to AI (#4781)", () => {

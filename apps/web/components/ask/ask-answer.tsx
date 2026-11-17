@@ -53,6 +53,20 @@ import {
 } from "@/components/ask/ask-thumbs";
 
 /**
+ * What the member asked, in a bubble on the right in the chapter's solid
+ * colour, a heading for each turn. Ask's opening draws the starter's "What
+ * can you do?" in the same bubble (`ask-opening.tsx`), since it stands for
+ * the member's words.
+ */
+export function AskQuestionBubble({ children }: { children: string }) {
+  return (
+    <h3 className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] rounded-br-[6px] bg-primary px-3.5 py-2 text-sm font-normal text-primary-foreground">
+      {children}
+    </h3>
+  );
+}
+
+/**
  * One turn of the Ask conversation: what the member typed, then what Frapp
  * came back with. That is an answer with a numbered marker at each cited
  * sentence and the sources those markers open (#451), or the card for
@@ -132,9 +146,7 @@ export function AskTurn({
 }) {
   return (
     <article className="space-y-3">
-      <h3 className="ml-auto w-fit max-w-[85%] whitespace-pre-wrap break-words rounded-[18px] rounded-br-[6px] bg-primary px-3.5 py-2 text-sm font-normal text-primary-foreground">
-        {exchange.question}
-      </h3>
+      <AskQuestionBubble>{exchange.question}</AskQuestionBubble>
       <AskReply
         exchange={exchange}
         busy={busy}

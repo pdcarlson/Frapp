@@ -838,6 +838,42 @@ describe('ChannelAccessService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    // `assertGrantNames`: a report stands in for channel access to read or
+    // remove its one message, and nothing else, before the message is read.
+    it.each([
+      'post',
+      'thread',
+      'vote',
+      'close',
+      'answer',
+      'pin',
+      'unpin',
+      'flag',
+      'unflag',
+    ] as const)('never authorizes a %s', async (operation) => {
+      await expect(
+        service.assertMessageAccess(
+          'msg-reported',
+          'chap-1',
+          OFFICER,
+          operation,
+          grant(),
+        ),
+      ).rejects.toThrow('A report does not grant write access');
+      expect(mockMessageRepo.findById).not.toHaveBeenCalled();
+    });
+
+    it('authorizes the removal itself, a delete', async () => {
+      const message = await service.assertMessageAccess(
+        'msg-reported',
+        'chap-1',
+        OFFICER,
+        'delete',
+        grant(),
+      );
+      expect(message.id).toBe('msg-reported');
+    });
+
     it('refuses a grant from another chapter', async () => {
       await expect(
         service.assertMessageAccess(

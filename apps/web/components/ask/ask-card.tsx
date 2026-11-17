@@ -8,7 +8,10 @@ import {
   useAsk,
   useAskStatus,
   useAskSuggestions,
+  useAskStarter,
   useMyPermissions,
+  useViewerDisplayName,
+  useViewerUserId,
   type AskOptions,
 } from "@repo/hooks";
 import {
@@ -21,6 +24,10 @@ import {
 } from "@repo/validation";
 import { useAiConsentGate } from "@/components/ai/meet-frapp-ai";
 import { AskTurn } from "@/components/ask/ask-answer";
+import {
+  ASK_STARTER_STORE,
+  AskOpening,
+} from "@/components/ask/ask-opening";
 import { useSharedAskCardEdits } from "@/components/ask/ask-in-channel";
 import { FrappCrest } from "@/components/ask/frapp-crest";
 import {
@@ -29,7 +36,6 @@ import {
 } from "@/components/ask/ask-proposal";
 import { Button } from "@/components/ui/button";
 import { DialogOverlay } from "@/components/ui/dialog";
-import { FOCUS_RING } from "@/components/ui/focus";
 import { IconButton } from "@/components/ui/icon-button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -144,6 +150,15 @@ export function AskCard({
   const actions = useActStatus({ enabled: open && mayAct }).data ?? null;
   const canAct = actions !== null && actions.length > 0;
   const { suggestions } = useAskSuggestions({ enabled: open });
+  const displayName = useViewerDisplayName();
+  const viewerId = useViewerUserId();
+  const opening = useAskStarter({
+    userId: viewerId,
+    open,
+    empty: exchanges.length === 0,
+    canAct,
+    store: ASK_STARTER_STORE,
+  });
   // What was changed on waiting cards, kept while the card is closed, and
   // shared with the same card drawn in a channel it was asked from.
   const sharedEdits = useSharedAskCardEdits();
@@ -297,10 +312,20 @@ export function AskCard({
             className="fixed left-1/2 top-[12vh] z-50 flex max-h-[76vh] min-h-[min(22rem,76vh)] w-[min(640px,calc(100vw-24px))] -translate-x-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-[0.98] motion-reduce:animate-none"
           >
             <div className="flex min-h-12 shrink-0 items-center gap-1 py-1.5 pl-4 pr-2">
-              <FrappCrest className="h-[18px] w-[15px] shrink-0 text-primary" />
-              <DialogPrimitive.Title className="ml-1.5 min-w-0 flex-1 text-base font-bold leading-6">
+              {/* Before the first turn the opening's big crest is the mark;
+                  the name is shown again with the conversation (#4904). */}
+              {exchanges.length > 0 ? (
+                <FrappCrest className="h-[18px] w-[15px] shrink-0 text-primary" />
+              ) : null}
+              <DialogPrimitive.Title
+                className={cn(
+                  "ml-1.5 min-w-0 flex-1 text-base font-bold leading-6",
+                  exchanges.length === 0 && "sr-only",
+                )}
+              >
                 {ASK_COPY.name}
               </DialogPrimitive.Title>
+              {exchanges.length === 0 ? <span className="flex-1" /> : null}
               {exchanges.length > 0 ? (
                 <IconButton
                   label={ASK_COPY.new_conversation}
@@ -337,7 +362,10 @@ export function AskCard({
               <AskCardEditsContext.Provider value={cardEdits}>
                 <div
                   ref={thread}
-                  className="flex flex-col gap-6"
+                  className={cn(
+                    "flex flex-col gap-6",
+                    exchanges.length === 0 && "min-h-full",
+                  )}
                   // Whatever a link in the thread opens, it opens under this
                   // dialog. A click that opens a new tab leaves it as it was.
                   onClick={(event) => {
@@ -380,7 +408,10 @@ export function AskCard({
                       />
                     ))
                   ) : (
-                    <AskEmpty
+                    <AskOpening
+                      displayName={displayName}
+                      mode={opening.mode}
+                      onStarterShown={opening.starterShown}
                       canAct={canAct}
                       suggestions={suggestions}
                       onPick={pick}
@@ -439,54 +470,5 @@ export function AskCard({
       </DialogPrimitive.Root>
       {consentDialog}
     </>
-  );
-}
-
-/**
- * Before the first turn: what Frapp answers from, and what this member could
- * ask about their own account right now. A member Frapp can act for is told
- * so. With nothing to suggest, the two lines stand alone.
- */
-function AskEmpty({
-  canAct,
-  suggestions,
-  onPick,
-}: {
-  /** Frapp can take at least one action for this member. */
-  canAct: boolean;
-  suggestions: readonly AskSuggestion[];
-  onPick: (suggestion: AskSuggestion) => void;
-}) {
-  return (
-    <div className="space-y-4">
-      <div className="space-y-1">
-        <p className="text-sm font-semibold text-foreground">
-          {ASK_COPY.empty_title}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          {ASK_COPY.empty_body}
-          {canAct ? ` ${ASK_COPY.empty_body_act}` : ""}
-        </p>
-      </div>
-      {suggestions.length > 0 ? (
-        // Fades in when it arrives. Nothing sits below it, so nothing moves.
-        <ul className="space-y-1.5 animate-in fade-in duration-300 motion-reduce:animate-none">
-          {suggestions.map((suggestion) => (
-            <li key={suggestion.text}>
-              <button
-                type="button"
-                onClick={() => onPick(suggestion)}
-                className={cn(
-                  "w-full rounded-md border border-border px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-card-hover",
-                  FOCUS_RING,
-                )}
-              >
-                {suggestion.text}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
   );
 }

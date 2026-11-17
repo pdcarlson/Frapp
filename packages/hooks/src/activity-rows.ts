@@ -3,6 +3,7 @@ import type { NavGlyphName } from "@repo/theme/nav-glyphs";
 import { signUpLinkKind } from "@repo/validation";
 import { isSentBack, taskStatusLabel } from "./task-card";
 import {
+  closesAtHasPassed,
   formatDueLabel,
   formatMinutesRounded,
   formatRelativeDayTime,
@@ -298,15 +299,15 @@ export function activityLinkKind(
  * Whether a poll is still open at `now`: not closed when the read was taken,
  * and its closing time not passed since. The read's `is_closed` is true as of
  * the read, so a poll whose time runs out while the page is open is closed
- * here without a re-read (#4258).
+ * here without a re-read (#4258). The closing time is read by
+ * `closesAtHasPassed`, the rule chat's poll card uses too (#5242).
  */
 export function activityPollIsOpen(
   poll: Pick<ActivityPoll, "is_closed" | "closes_at">,
   now: Date,
 ): boolean {
   if (poll.is_closed) return false;
-  const closes = poll.closes_at ? parseInstant(poll.closes_at) : null;
-  return closes === null || closes.getTime() > now.getTime();
+  return !closesAtHasPassed(poll.closes_at, now.getTime());
 }
 
 /**
@@ -363,14 +364,14 @@ function pollRow(
 
 /**
  * Whether a sign-up or form card still takes answers at `now`: the read
- * serves only open ones, so this is its end time not passed since.
+ * serves only open ones, so this is its end time not passed since
+ * (`closesAtHasPassed`, as on the chat card, #5242).
  */
 export function activityCardIsOpen(
   card: Pick<ActivityCard, "closes_at">,
   now: Date,
 ): boolean {
-  const closes = card.closes_at ? parseInstant(card.closes_at) : null;
-  return closes === null || closes.getTime() > now.getTime();
+  return !closesAtHasPassed(card.closes_at, now.getTime());
 }
 
 /**

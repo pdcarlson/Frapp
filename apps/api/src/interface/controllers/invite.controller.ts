@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   UseGuards,
   UseInterceptors,
@@ -242,7 +243,7 @@ export class InviteController {
   async revoke(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.inviteService.revoke(id, chapterId, userId);
     return { success: true };

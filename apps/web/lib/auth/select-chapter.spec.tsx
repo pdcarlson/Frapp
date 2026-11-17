@@ -9,9 +9,12 @@ const { activateMutate, refreshSession, setActiveChapterId, calls } = vi.hoisted
       activateMutate: vi.fn(async () => {
         calls.push("activate");
       }),
-      refreshSession: vi.fn(async () => {
-        calls.push("refreshSession");
-      }),
+      refreshSession: vi.fn(
+        async (): Promise<{ error: Error | null }> => {
+          calls.push("refreshSession");
+          return { error: null };
+        },
+      ),
       setActiveChapterId: vi.fn(() => {
         calls.push("setActiveChapterId");
       }),
@@ -96,6 +99,21 @@ describe("useSelectChapter", () => {
 
     expect(switched).toBe(false);
     expect(calls).toEqual(["activate"]);
+    expect(setActiveChapterId).not.toHaveBeenCalled();
+  });
+
+  it("leaves the store alone when the session refresh is refused", async () => {
+    // supabase-js resolves a refusal rather than throwing it (#4439).
+    refreshSession.mockResolvedValueOnce({ error: new Error("refresh_token_not_found") });
+    const { result } = renderHook(() => useSelectChapter());
+
+    let switched: boolean | undefined;
+    await act(async () => {
+      switched = await result.current("chap-2");
+    });
+
+    expect(switched).toBe(false);
+    expect(activateMutate).toHaveBeenCalledWith("chap-2");
     expect(setActiveChapterId).not.toHaveBeenCalled();
   });
 });

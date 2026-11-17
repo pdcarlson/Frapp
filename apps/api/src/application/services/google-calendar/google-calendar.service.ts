@@ -8,7 +8,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, randomBytes } from 'node:crypto';
-import { isProductionSupabaseUrl } from '@repo/validation';
+import {
+  GOOGLE_CALENDAR_SIGN_IN_COPY,
+  isProductionSupabaseUrl,
+} from '@repo/validation';
 import {
   GOOGLE_CALENDAR_API,
   GOOGLE_CALENDAR_SCOPE,
@@ -29,8 +32,23 @@ import { GoogleCalendarSyncService } from './google-calendar-sync.service';
 
 /** Google's redirect back to the API. Registered on the OAuth client. */
 const GOOGLE_CALENDAR_CALLBACK_PATH = '/v1/google-calendar/callback';
-/** Where the web app finishes a sign-in: the Events page holds the menu. */
-const WEB_RETURN_PATH = '/events';
+/**
+ * Where the web app finishes a sign-in: the screen it started on, so the
+ * member lands on the row that now shows Connected (#5407). Events holds the
+ * Subscribe menu; Settings holds Linked apps and Calendar. A fixed list,
+ * never a path from the request.
+ */
+export const GOOGLE_CALENDAR_WEB_RETURNS = {
+  events: '/events',
+  linked_apps: '/preferences?section=apps',
+  calendar: '/preferences?section=calendar',
+} as const;
+export type GoogleCalendarWebReturn = keyof typeof GOOGLE_CALENDAR_WEB_RETURNS;
+/** The values `web_return` accepts: the DTO validates against this list. */
+export const GOOGLE_CALENDAR_WEB_RETURN_KEYS = Object.keys(
+  GOOGLE_CALENDAR_WEB_RETURNS,
+) as GoogleCalendarWebReturn[];
+const WEB_RETURN_PATH = GOOGLE_CALENDAR_WEB_RETURNS.events;
 /** How long a started sign-in stays good. */
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -131,12 +149,13 @@ export class GoogleCalendarService {
     userId: string,
     client: GoogleCalendarClient,
     returnUrl: string | null,
+    webReturn: GoogleCalendarWebReturn = 'events',
   ): Promise<{ authorize_url: string }> {
     this.requireAvailable();
     const returnTo =
       client === 'mobile'
         ? this.appReturnUrl(returnUrl)
-        : `${this.appOrigin}${WEB_RETURN_PATH}`;
+        : `${this.appOrigin}${GOOGLE_CALENDAR_WEB_RETURNS[webReturn] ?? WEB_RETURN_PATH}`;
     const codeVerifier = randomBytes(32).toString('base64url');
     const state = await this.repo.createState({
       chapter_id: chapterId,
@@ -212,9 +231,7 @@ export class GoogleCalendarService {
       ? await this.repo.consumeState(stateId, chapterId, userId, new Date())
       : null;
     if (!state) {
-      throw new BadRequestException(
-        'That Google sign-in expired. Connect Google Calendar again.',
-      );
+      throw new BadRequestException(GOOGLE_CALENDAR_SIGN_IN_COPY.expired);
     }
 
     let grant;
@@ -228,10 +245,9 @@ export class GoogleCalendarService {
       this.logger.warn(
         `Google Calendar sign-in failed: ${toReportableError(error).message}`,
       );
-      throw new BadGatewayException(
-        "Google didn't finish the sign-in. Connect Google Calendar again.",
-        { cause: toReportableError(error) },
-      );
+      throw new BadGatewayException(GOOGLE_CALENDAR_SIGN_IN_COPY.failed, {
+        cause: toReportableError(error),
+      });
     }
 
     if (!grant.scopes.includes(GOOGLE_CALENDAR_SCOPE)) {

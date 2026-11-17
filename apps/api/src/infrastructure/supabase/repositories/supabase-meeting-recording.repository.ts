@@ -130,6 +130,10 @@ export class SupabaseMeetingRecordingRepository implements IMeetingRecordingRepo
       .from('meeting_recordings')
       .select('*')
       .not('storage_path', 'is', null)
+      // A ready recording keeps its file for playback until the minutes are
+      // posted, so it is not the sweep's: leaving it out keeps the batch for
+      // the uploads and transcriptions that need settling.
+      .neq('status', 'ready')
       .order('created_at', { ascending: true })
       .limit(limit);
     if (error) throw new SupabaseQueryError(error);

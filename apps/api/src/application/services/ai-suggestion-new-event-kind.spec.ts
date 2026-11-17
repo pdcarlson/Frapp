@@ -1,3 +1,8 @@
+import {
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NAME_MAX_LENGTH,
+} from '@repo/validation';
 import { NewEventSuggestionKind } from './ai-suggestion-new-event-kind';
 import type { EventService } from './event.service';
 import type { EventTypeService } from './event-type.service';
@@ -69,6 +74,30 @@ describe('NewEventSuggestionKind', () => {
   ])('turns down %j', (raw) => {
     const { kind } = build();
     expect(kind.normalizeProposal(raw)).toBeNull();
+  });
+
+  // Accepting creates the event through `EventService.create`, not the
+  // create route's DTO, so the proposal is cut to the lengths that DTO
+  // allows: the event it makes is one an officer could have typed.
+  it("cuts a proposal's text to the lengths the event form allows", () => {
+    const { kind } = build();
+    const normalized = kind.normalizeProposal(
+      proposal({
+        name: 'n'.repeat(EVENT_NAME_MAX_LENGTH + 10),
+        description: 'd'.repeat(EVENT_DESCRIPTION_MAX_LENGTH + 10),
+        location: 'l'.repeat(EVENT_LOCATION_MAX_LENGTH + 10),
+      }),
+    );
+    expect(normalized).toMatchObject({
+      name: 'n'.repeat(EVENT_NAME_MAX_LENGTH),
+      description: 'd'.repeat(EVENT_DESCRIPTION_MAX_LENGTH),
+      location: 'l'.repeat(EVENT_LOCATION_MAX_LENGTH),
+    });
+
+    const edited = kind.applyEdits(proposal(), {
+      location: 'l'.repeat(EVENT_LOCATION_MAX_LENGTH + 1),
+    });
+    expect(edited.location).toBe('l'.repeat(EVENT_LOCATION_MAX_LENGTH));
   });
 
   it('drops a points value that is not a whole number from 0 up', () => {

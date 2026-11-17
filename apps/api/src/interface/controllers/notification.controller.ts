@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -68,7 +69,7 @@ export class NotificationController {
   @ApiOperation({ summary: 'Remove push token' })
   async removePushToken(
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.notificationService.removePushToken(id, userId);
     return { success: true };
@@ -140,7 +141,7 @@ export class NotificationController {
   @ApiOperation({ summary: 'Mark notification as read' })
   async markRead(
     @CurrentUser('id') userId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
   ) {
     return this.notificationService.markNotificationRead(id, userId, chapterId);

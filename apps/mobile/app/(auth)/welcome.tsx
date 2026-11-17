@@ -21,7 +21,11 @@ import {
   MeetFrappAiBody,
   useMeetFrappAiStep,
 } from "@/components/ai/meet-frapp-ai";
-import { FRAPP_AI_COPY, PICK_ROLES_COPY } from "@repo/validation";
+import {
+  DISPLAY_NAME_MAX_LENGTH,
+  FRAPP_AI_COPY,
+  PICK_ROLES_COPY,
+} from "@repo/validation";
 import { KeyboardAvoidingArea } from "@/lib/keyboard";
 import {
   OnboardingFieldLabel,
@@ -352,11 +356,7 @@ export default function Welcome() {
                 {FRAPP_AI_COPY.title}
               </Text>
               <View style={styles.channels}>
-                <MeetFrappAiBody
-                  providers={ai.providers}
-                  forChapter={ai.forChapter}
-                  error={ai.error}
-                />
+                <MeetFrappAiBody providers={ai.providers} error={ai.error} />
               </View>
             </>
           ) : step === "roles" ? (
@@ -401,6 +401,7 @@ export default function Welcome() {
                     setNameError(null);
                   }}
                   placeholder="First and last name"
+                  maxLength={DISPLAY_NAME_MAX_LENGTH}
                   autoCapitalize="words"
                   autoCorrect={false}
                   autoComplete="name"

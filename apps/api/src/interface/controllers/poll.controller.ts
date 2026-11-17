@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UseGuards,
@@ -50,7 +51,7 @@ export class PollController {
   @RequirePermissions(SystemPermissions.POLLS_CREATE)
   @ApiOperation({ summary: 'Create a poll in a channel' })
   async createPoll(
-    @Param('channelId') channelId: string,
+    @Param('channelId', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: CreatePollDto,
@@ -82,7 +83,7 @@ export class PollController {
     return { surface: 'page', selected_count: selectedCount };
   })
   async vote(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: VoteDto,
@@ -100,7 +101,7 @@ export class PollController {
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Remove vote from a poll' })
   async removeVote(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -121,7 +122,7 @@ export class PollController {
   // (`closePoll` in `@repo/chat-core/chat-client`, #3794).
   @ApiCreatedResponse({ type: ChatMessageDto })
   async close(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -159,7 +160,7 @@ export class PollController {
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Get poll with results' })
   async getPoll(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {

@@ -13,6 +13,7 @@ import {
   type DeploymentEnvironment,
 } from './interface/http/deployment-environment';
 import { createProxyChainTripwire } from './interface/middleware/proxy-chain-tripwire.middleware';
+import { bodyParserErrorMiddleware } from './interface/middleware/body-parser-errors.middleware';
 import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
 import { requestReadsMiddleware } from './interface/middleware/request-reads.middleware';
 import { RequestReadsInterceptor } from './interface/interceptors/request-reads.interceptor';
@@ -60,13 +61,11 @@ import { runsOnCloudRun } from './config/runtime-platform';
  *   Application Load Balancer (the service's ingress is
  *   internal-and-cloud-load-balancing, so `run.app` refuses the internet).
  *   Google documents the balancer's header as `[SUPPLIED_VALUE,] CLIENT_IP,
- *   LOAD_BALANCER_IP`. What agrees so far: the deploy's own `run.app` checks,
- *   which send no chain, logged `xffCount` 1 (Google's front end adds the
- *   caller), and one request of unknown origin through the balancer logged 2
- *   (Sentry FRAPP-API-R, 2026-11-17). That request bounds the count from
- *   above only, since its caller may have sent an entry of its own. The
- *   measurement is the forged-entry probe in `docs/ops/deployment/cloud-run.md`
- *   § Address; #5269's PR records its result. Before the move, on Render
+ *   LOAD_BALANCER_IP`, and the forged-entry probe in
+ *   `docs/ops/deployment/cloud-run.md` § Address measured exactly that on
+ *   2026-11-17: a request with no `X-Forwarded-For` logged `xffCount` 2 and
+ *   one with a single forged entry logged 3, so the balancer appends two
+ *   entries and the forged one stays untrusted. Before the move, on Render
  *   behind Cloudflare, staging was 3 (#864: probes on 2026-08-28 with 0, 1
  *   and 2 forged entries returned 3, 4 and 5).
  * - **Production: 2** (#2972). `frapp-api-prod` on Render logs `xffCount` 2
@@ -75,9 +74,9 @@ import { runsOnCloudRun } from './config/runtime-platform';
  *   staging figure applied to production unobserved, which left one entry of
  *   production's chain client-supplied: a single forged `X-Forwarded-For`
  *   value set `req.ip` and with it the caller's own rate-limit bucket.
- *   Production moves to Cloud Run behind its own balancer of the same shape
- *   (#5228), which documents the same two entries; re-check `xffCount` there
- *   after its cutover.
+ *   Production moved to Cloud Run behind its own balancer of the same shape
+ *   on 2026-11-17 (#5228), which documents the same two entries; the probe in
+ *   `cloud-run.md` § Address re-checks `xffCount` there.
  *
  * Why a count rather than `true`: `true` trusts the entire chain, so any client
  * can prepend a forged address and rotate it to evade the very rate limit this
@@ -90,10 +89,9 @@ import { runsOnCloudRun } from './config/runtime-platform';
  * Each environment must have one public path, or the shorter chain
  * over-trusts. Staging's Cloud Run service has one, the balancer, with both
  * of its hosts (`api-staging.frapp.live` and the deploy's `candidate.` host)
- * the same chain; its old Render service stays up as the rollback until
- * #5228 removes it, and runs its own older build with Render's count.
- * Production's two Render hostnames have not been compared that way; the
- * tripwire below covers a shorter one.
+ * the same chain. Production's balancer is built the same way (#5228). The
+ * Render services each environment used before are suspended and being
+ * deleted; the tripwire below covers any shorter chain that appears.
  *
  * **The limit of a hop count, stated rather than left sharp:** it trusts N
  * entries whether or not N proxies actually appended them. Where the real
@@ -255,6 +253,15 @@ export function configureApp(
   (app as NestExpressApplication).useBodyParser('json', {
     limit: JSON_BODY_LIMIT,
   });
+  // Nest's own form parser, registered here rather than left to `init()`,
+  // which adds it after everything below (it skips a parser by this name that
+  // is already in place). Same options as Nest's default.
+  (app as NestExpressApplication).useBodyParser('urlencoded', {
+    extended: true,
+  });
+  // After every parser: their refusals answer 4xx with a fixed message, not
+  // 500 or the parser's own text (#4404).
+  app.use(bodyParserErrorMiddleware);
 
   app.useGlobalInterceptors(
     new LoggingInterceptor(),

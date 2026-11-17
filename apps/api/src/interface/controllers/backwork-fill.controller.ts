@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiConflictResponse,
   ApiForbiddenResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
@@ -24,6 +25,7 @@ import {
 } from '../decorators/current-user.decorator';
 import { RequireModule } from '../decorators/module.decorator';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import { BackworkDraftFillResponseDto } from '../dtos/backwork.dto';
 import { AiEnabledGuard } from '../guards/ai-enabled.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -51,16 +53,24 @@ export class BackworkFillController {
 
   @Post('drafts/:id/fill')
   @HttpCode(200)
+  // 10/min, the same as `POST /v1/backwork/upload-url`: drafts can't arrive
+  // faster than files can be uploaded, so the review table's fill keeps pace
+  // with a bulk upload, and a backlog from an earlier visit is filled over a
+  // few minutes (the table waits and retries on a 429).
+  @ThrottleFanOutWrite()
   @ApiOperation({
     summary:
       "Propose fields for one of the caller's drafts from its redacted text",
     description:
-      "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.",
+      "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. A file over 25 MB, or a draft already marked `unreadable`, answers `unreadable` without its file being read. One fill at a time per draft: a second while one runs answers 409. 10 requests a minute per member; the AI spend caps bound the model cost.",
   })
   @ApiOkResponse({ type: BackworkDraftFillResponseDto })
   @ApiForbiddenResponse({
     description:
       'The caller has not said yes on the AI sheet (`ai.consent.required`), or the president has Frapp AI turned off (`ai.chapter_off`).',
+  })
+  @ApiConflictResponse({
+    description: 'Another fill of this draft is still running.',
   })
   @ApiNotFoundResponse({
     description:

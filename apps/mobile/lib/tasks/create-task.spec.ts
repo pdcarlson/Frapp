@@ -116,6 +116,15 @@ describe("validateNewTask", () => {
     });
   });
 
+  it("sends a task for everyone as an audience, with no member (#4295 step 3)", () => {
+    expect(validateNewTask({ ...draft, assigneeId: "everyone" })).toEqual({
+      title: "Collect ride-share forms",
+      audience: "everyone",
+      due_date: "2026-08-21",
+      point_reward: 5,
+    });
+  });
+
   it("omits point_reward when no points are offered", () => {
     const body = validateNewTask({ ...draft, pointsInput: "" });
     expect(body).not.toBeNull();
@@ -275,6 +284,7 @@ describe("editing a task (#4296)", () => {
         subtasks: [],
         photos: [photo("a"), { ...photo("b"), kind: "proof" }],
         proof_kind: "link",
+        series: null,
       }),
     ).toEqual({
       id: "t",

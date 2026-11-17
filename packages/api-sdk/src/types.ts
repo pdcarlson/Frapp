@@ -173,7 +173,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter is in context). Lets the client attribute events without ever holding the salt. */
+        /** Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter the caller belongs to is in context). Lets the client attribute events without ever holding the salt. */
         get: operations["AnalyticsController_getIdentity_v1"];
         put?: never;
         post?: never;
@@ -1318,7 +1318,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Get or create a 1-on-1 DM channel */
+        /**
+         * Get or create a 1-on-1 DM channel
+         * @description A new DM is only with a member of your chapter (404 otherwise, whether or not the id is anyone), and never with yourself (400). Reopening a DM you already have always works. On the default write limit: opening a DM is how a member reopens one, so a lower ceiling would get in the way of an officer messaging new members one after another.
+         */
         post: operations["ChatController_getOrCreateDm_v1"];
         delete?: never;
         options?: never;
@@ -1335,7 +1338,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create a group DM channel */
+        /**
+         * Create a group DM channel
+         * @description Everyone in `member_ids` must be a member of your chapter (404 otherwise, naming no one). Each call makes a new conversation in every listed member's list, so it is held to 10 a minute.
+         */
         post: operations["ChatController_createGroupDm_v1"];
         delete?: never;
         options?: never;
@@ -1790,7 +1796,10 @@ export interface paths {
         /** List chat message reports for this chapter */
         get: operations["ChatReportController_listReports_v1"];
         put?: never;
-        /** Report a chat message (idempotent while a report stays open) */
+        /**
+         * Report a chat message (idempotent while a report stays open)
+         * @description Limited to 10 a minute per member: each report notifies every officer who reviews them.
+         */
         post: operations["ChatReportController_fileReport_v1"];
         delete?: never;
         options?: never;
@@ -3392,7 +3401,7 @@ export interface paths {
         get: operations["TaskController_getOne_v1"];
         put?: never;
         post?: never;
-        /** Delete a task; with `scope=series`, stop a repeating task (#5119) */
+        /** Delete a task; with `scope=series`, stop a repeating task (#5119); with `scope=group`, delete everyone’s copy (#4295 step 3) */
         delete: operations["TaskController_delete_v1"];
         options?: never;
         head?: never;
@@ -3624,7 +3633,7 @@ export interface paths {
         };
         /**
          * Get the chapter’s AI switches
-         * @description Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then. `can_change` says whether the caller is the president, who alone may change them.
+         * @description Which AI features are on for the chapter: Ask, meeting notes, chat as a source, and nudges. All on until the president turns one off; `updated_at` is null until then. `can_change` says whether the caller is the president, who alone may change them.
          */
         get: operations["AiChapterSettingsController_getSettings_v1"];
         put?: never;
@@ -5603,7 +5612,7 @@ export interface paths {
         put?: never;
         /**
          * Propose fields for one of the caller's drafts from its redacted text
-         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.
+         * @description Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. A file over 25 MB, or a draft already marked `unreadable`, answers `unreadable` without its file being read. One fill at a time per draft: a second while one runs answers 409. 10 requests a minute per member; the AI spend caps bound the model cost.
          */
         post: operations["BackworkFillController_fill_v1"];
         delete?: never;
@@ -6025,6 +6034,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/meeting-recorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether this server can write a recording out, why the caller can’t send one yet, and its limits, before any minutes exist */
+        get: operations["MeetingRecorderController_get_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/bootstrap": {
         parameters: {
             query?: never;
@@ -6136,12 +6162,16 @@ export interface components {
             seen_version: string;
         };
         UpdateUserDto: {
+            /** @description The member's name as their chapters see it. Trimmed; it may not be blank. */
             display_name?: string;
+            /** @description An empty string clears it. */
             bio?: string;
             graduation_year?: number | null;
             /** @description Free text, like "Mechanical Engineering". An empty string clears it. */
             major?: string;
+            /** @description An empty string clears it. */
             current_city?: string;
+            /** @description An empty string clears it. */
             current_company?: string;
             /**
              * @description The member's own phone number (#3711), stored as typed and trimmed. Members of their chapters see it on their profile. Null or an empty string clears it.
@@ -6183,7 +6213,7 @@ export interface components {
             distinct_id: string | null;
             /** @description Whether analytics is enabled for this caller. */
             enabled: boolean;
-            /** @description Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`), otherwise null. Same helper as analytics events. Clients must not compute this. */
+            /** @description Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`) and the caller is a member of it, otherwise null. Same helper as analytics events. Clients must not compute this. */
             chapter_group_id: string | null;
         };
         TrackEventDto: {
@@ -6223,9 +6253,9 @@ export interface components {
             colors?: components["schemas"]["BrandingColorsDto"];
         };
         ChapterOnboardingDto: {
-            /** @description Chapter display name (org name) */
+            /** @description Chapter display name (org name). Trimmed; at least 3 characters. */
             name: string;
-            /** @description University / institution name */
+            /** @description University / institution name. Trimmed; at least 2 characters. */
             university: string;
             /** @description Org archetype key (ifc, npc, nphc, mgc, …). Defaults to ifc. */
             org_archetype?: string;
@@ -6272,7 +6302,9 @@ export interface components {
             logo_url: string | null;
         };
         UpdateChapterDto: {
+            /** @description The chapter's name. Trimmed; at least 3 characters. Omit it to leave it as stored. */
             name?: string;
+            /** @description The chapter's university. Trimmed; at least 2 characters. Omit it to leave it as stored. */
             university?: string;
             accent_color?: string;
             donation_url?: string;
@@ -7151,6 +7183,7 @@ export interface components {
             member_id: string;
         };
         CreateGroupDmDto: {
+            /** @description The other members of the chapter to add, at most 9: a group DM holds up to 10 people, you included. */
             member_ids: string[];
             name?: string;
         };
@@ -7305,10 +7338,12 @@ export interface components {
             /** @enum {string} */
             kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | "role_picker";
             gif?: components["schemas"]["MessageGifDto"];
+            /** @description A rich card's data. Once checked, at most 16384 characters as JSON, or 65536 for a form. */
             payload?: Record<string, never>;
             reply_to_id?: string;
             /** Format: uuid */
             thread_root_id?: string;
+            /** @description Client annotations, at most 16384 characters as JSON. */
             metadata?: Record<string, never>;
             mention_picks?: components["schemas"]["MentionPickDto"][];
         };
@@ -7409,8 +7444,9 @@ export interface components {
             flag: "important" | "funny" | "interesting" | "question" | "hype" | "fyi";
         };
         ChatMessageActionDto: {
-            /** @description Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full), free-form for card actions. */
+            /** @description Action discriminator: `reaction:<emoji>` for an emoji reaction, `vote` for a poll vote (UPSERT), or `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full). Anything else is a 400. */
             action_type: string;
+            /** @description The vote or claim (`{ option_id }` or `{ slot_ids, note? }`), at most 4096 characters as JSON. A reaction carries none and any sent is not stored. */
             payload?: Record<string, never>;
         };
         ReactionDto: {
@@ -8226,7 +8262,7 @@ export interface components {
         };
         MeetingTemplateDto: {
             /** @description The sections the chapter’s minutes show, in order. */
-            sections: ("attendees" | "summary" | "announcements" | "decisions" | "action_items" | "officer_reports" | "old_business" | "new_business" | "discussion_log")[];
+            sections: ("summary" | "decisions" | "action_items" | "discussion_log" | "attendees" | "announcements" | "officer_reports" | "old_business" | "new_business")[];
         };
         MeetingVoteDto: {
             for: number;
@@ -8289,7 +8325,7 @@ export interface components {
             event_end_time: string | null;
             content: components["schemas"]["MeetingContentDto"];
             /** @description The chapter’s template, in order. */
-            sections: ("attendees" | "summary" | "announcements" | "decisions" | "action_items" | "officer_reports" | "old_business" | "new_business" | "discussion_log")[];
+            sections: ("summary" | "decisions" | "action_items" | "discussion_log" | "attendees" | "announcements" | "officer_reports" | "old_business" | "new_business")[];
             /** @description The event’s check-ins; null when the event is gone. */
             attendees: components["schemas"]["MeetingAttendeesDto"] | null;
             /** Format: uuid */
@@ -8298,6 +8334,8 @@ export interface components {
             posted_by: string | null;
             /** Format: date-time */
             created_at: string;
+            /** @description The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording. */
+            transcript: string | null;
             can_edit: boolean;
             can_delete: boolean;
         };
@@ -8612,7 +8650,7 @@ export interface components {
             tags?: string[] | null;
             /** @description Storage path returned from upload-url */
             storage_path: string;
-            /** @description SHA-256 hash of the uploaded file */
+            /** @description SHA-256 hash of the uploaded file, as 64 lowercase hex characters */
             file_hash: string;
             /** @default false */
             is_redacted: boolean;
@@ -8789,11 +8827,11 @@ export interface components {
             duration_minutes: number;
             /** @description Description of the service performed */
             description: string;
-            /** @description Storage path to proof file (e.g. from upload) */
+            /** @description The `storage_path` from `POST /v1/service-entries/proof-upload-url`, once the file is uploaded. One file belongs to one entry: when an entry in the chapter already holds this path, a create by the same member answers 201 with that entry as saved (a resend after a lost response), and one by any other member is refused with 400. */
             proof_path?: string;
             /** @description When set with `client_message_id`, posts a read-only hours card to this chat channel after the entry is created (the `/hours log` slash command). Omit for dashboard creates. The one-liner cannot attach proof (the Service hours form in the chat composer can) — when `wf_hours_receipt` is on, this route still 400s without `proof_path`. */
             channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry. */
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key for the entry: a replay without `proof_path` creates a duplicate entry (one with it returns the entry already saved, see `proof_path`). The card itself is deduplicated on it. */
             client_message_id?: string;
         };
         CreateServiceEntryResponseDto: {
@@ -8839,6 +8877,18 @@ export interface components {
             /** @description Whether the series has stopped making copies: its rule ran out, an officer ended it, or its assignee left. */
             ended: boolean;
         };
+        TaskGroupSummaryDto: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            audience: "everyone";
+            /** @description How many copies the group has. */
+            total: number;
+            /** @description How many copies are marked done, waiting on an officer or confirmed. */
+            done: number;
+            /** @description How many copies are confirmed, or needed no sign-off when marked done. */
+            confirmed: number;
+        };
         RequestTaskPhotoUploadUrlDto: {
             /** @description Original filename (a JPEG, PNG, GIF or WebP) */
             filename: string;
@@ -8860,8 +8910,13 @@ export interface components {
         CreateTaskDto: {
             title: string;
             description?: string;
-            /** @description User ID of the assignee */
-            assignee_id: string;
+            /** @description User ID of the assignee. Send this or `audience`, exactly one of them. */
+            assignee_id?: string;
+            /**
+             * @description A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first.
+             * @enum {string}
+             */
+            audience?: "everyone";
             /** @description Due date (YYYY-MM-DD) */
             due_date: string;
             /**
@@ -8954,12 +9009,19 @@ export interface components {
              * @description A copy’s day in its series’ pattern; null otherwise.
              */
             occurrence_date: string | null;
+            /**
+             * Format: uuid
+             * @description The group task this is one member’s copy of (#4295 step 3), or null for a task given to one person.
+             */
+            group_id: string | null;
             /** Format: date-time */
             created_at: string;
             /** @description Whether the accompanying chat card was posted. Only an explicit `false` is actionable: the task row committed and the card did not, so no Realtime echo will arrive to reconcile the caller’s optimistic placeholder — drop it and warn, without implying the create failed. Absent means the server reported no outcome (a dashboard create, or a request that did not attempt a card) — leave the placeholder for the echo. Full contract: `spec/behavior/chat/integrations.md` § Slash command dispatch. */
             card_posted?: boolean;
             /** @description The reference photos added with the task, in order. Task reads and status writes carry `photos` too. */
             photos: components["schemas"]["TaskPhotoDto"][];
+            /** @description On a task for everyone: its group, as task reads carry it (#4295 step 3). */
+            group?: components["schemas"]["TaskGroupSummaryDto"];
         };
         UpdateTaskDto: {
             title?: string;
@@ -8982,10 +9044,10 @@ export interface components {
              */
             proof_kind?: "none" | "photo" | "link";
             /**
-             * @description On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`).
+             * @description On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` ("All upcoming tasks") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`). On a copy of a group task (#4295 step 3): `group` ("Everyone’s copy") makes the edit to every copy not yet confirmed; `assignee_id` and `reference_photo_paths` change one copy only, so they are a 400 with it.
              * @enum {string}
              */
-            scope?: "instance" | "series";
+            scope?: "instance" | "series" | "group";
             /** @description With `scope: series` only: a new rule, counted from the open copy, or null to stop repeating after it. Repeat on a schedule (#5119): the event rule format (`packages/validation/src/recurrence.ts`), `FREQ` DAILY, WEEKLY or MONTHLY, `INTERVAL` 1 to 30, `BYDAY` or `BYMONTHDAY`, a required `TZID` (the officer's zone), and `COUNT` (2 to 120), `UNTIL` (YYYYMMDD) or no end. Example: `FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York`. The task is the first copy; the next is made once it is due, on the same time of day in that zone. */
             recurrence_rule?: string | null;
         };
@@ -9041,9 +9103,14 @@ export interface components {
             description: string | null;
             /**
              * Format: uuid
-             * @description Null when no name or role was said for it: the screen shows "Who?".
+             * @description Null when no name or role was said for it, or when it is for everyone: the screen shows "Who?" or "Everyone".
              */
             assignee_id: string | null;
+            /**
+             * @description Set when the task is for everyone (#4295 step 3): accepting it gives each active member their own copy.
+             * @enum {string|null}
+             */
+            audience: "everyone" | null;
             /** Format: date */
             due_date: string | null;
             /** Format: date-time */
@@ -9158,9 +9225,14 @@ export interface components {
             description?: string | null;
             /**
              * Format: uuid
-             * @description Who the task is for. Required to accept when none was suggested.
+             * @description Who the task is for. Required to accept when none was suggested, unless `audience` is set. Setting it clears `audience`.
              */
             assignee_id?: string | null;
+            /**
+             * @description A task for everyone instead of one person (#4295 step 3): accepting it gives each active member their own copy. Setting it clears `assignee_id`.
+             * @enum {string|null}
+             */
+            audience?: "everyone" | null;
             /** @description Due date (YYYY-MM-DD). Required to accept when none was suggested. */
             due_date?: string | null;
             /**
@@ -9320,6 +9392,8 @@ export interface components {
             meeting_notes: boolean;
             /** @description Messages in chapter channels, from members who said yes, are a source. */
             chat_source: boolean;
+            /** @description Nudge cards on members' Activity. On unless the president turned them off; a member still gets one only after their own yes. */
+            nudges: boolean;
             /**
              * Format: date-time
              * @description When a switch last changed. Null when none ever has.
@@ -9332,6 +9406,7 @@ export interface components {
             ask?: boolean;
             meeting_notes?: boolean;
             chat_source?: boolean;
+            nudges?: boolean;
         };
         AiRunDto: {
             /** Format: uuid */
@@ -11508,6 +11583,11 @@ export interface components {
              * @example frapp://google-calendar
              */
             return_url?: string;
+            /**
+             * @description For `web`: the screen the sign-in started on and comes back to. Events (the default), or Settings → Linked apps or Settings → Calendar.
+             * @enum {string}
+             */
+            web_return?: "events" | "linked_apps" | "calendar";
         };
         GoogleCalendarConnectDto: {
             /** @description Google’s consent page for this sign-in. Good for ten minutes. */
@@ -11539,6 +11619,8 @@ export interface components {
             synced_count: number;
             /** @description Files the last sync left out: a type Documents does not take, over 25 MB, or past 500 files */
             skipped_count: number;
+            /** @description The top-most folders the last sync did not read, because they sit more than nine levels below the connected folder or past its first 300 folders. They and any folders inside them, and their files, are not in Documents; folders inside them are not counted. */
+            folders_left_out: number;
             /** @description Whether a sync is due or running now */
             syncing: boolean;
             /** @description Who sees what it brings in (#5220): the list its top folder in Documents started with. Null for everyone who can open Documents. The folder's own list counts from then on. */
@@ -11586,6 +11668,8 @@ export interface components {
             failure_message: string | null;
             /** @description The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes. */
             transcript: string | null;
+            /** @description A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted. */
+            audio_url: string | null;
             speaker_count: number | null;
             /** Format: date-time */
             uploaded_at: string | null;
@@ -11621,6 +11705,19 @@ export interface components {
              * @description The upload that finished.
              */
             upload_id: string;
+        };
+        MeetingRecorderAvailabilityDto: {
+            /** @description False when this server has no transcription provider set up, so a recording can’t be written out. */
+            available: boolean;
+            /**
+             * @description Why the caller can’t send a recording now: the chapter has meeting notes off, or they have not said yes on the AI sheet.
+             * @enum {string|null}
+             */
+            blocked: "chapter_off" | "consent_required" | null;
+            /** @description The largest file this server takes, in bytes. */
+            max_bytes: number;
+            /** @description The longest recording this server takes, in seconds. */
+            max_seconds: number;
         };
         BootstrapDto: {
             /** @description As `GET /v1/users/me`. */
@@ -19044,6 +19141,7 @@ export interface operations {
             };
         };
         responses: {
+            /** @description The entry, as created. A resend by the same member with a `proof_path` their entry already holds answers with that entry as saved, not a second one. */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -19051,6 +19149,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CreateServiceEntryResponseDto"];
                 };
+            };
+            /** @description A field is invalid; the chapter requires proof and none was sent (code `service_entry.receipt_required`); or `proof_path` is outside the chapter's service-proof folder, names no uploaded file, or is already on another member's entry. A client holding a refused `proof_path` drops it and uploads the file again. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Error */
             default: {
@@ -19370,8 +19475,8 @@ export interface operations {
     TaskController_delete_v1: {
         parameters: {
             query?: {
-                /** @description On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. */
-                scope?: "instance" | "series";
+                /** @description On a copy of a repeating task: `instance` (default) deletes this task only; `series` ("All upcoming tasks") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. On a copy of a group task: `group` deletes every member’s copy and the group (#4295 step 3). */
+                scope?: "instance" | "series" | "group";
             };
             header?: never;
             path: {
@@ -24399,6 +24504,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Another fill of this draft is still running. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Error */
             default: {
                 headers: {
@@ -25435,6 +25547,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeetingRecordingDto"];
+                };
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiErrorResponseDto"];
+                };
+            };
+        };
+    };
+    MeetingRecorderController_get_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeetingRecorderAvailabilityDto"];
                 };
             };
             /** @description Error */

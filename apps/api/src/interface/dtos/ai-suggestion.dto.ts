@@ -21,7 +21,9 @@ import {
   POINTS_REASON_MAX_LENGTH,
   TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
+  TASK_AUDIENCES,
   TASK_TITLE_MAX_LENGTH,
+  type TaskAudience,
 } from '@repo/validation';
 import {
   AI_SUGGESTION_KINDS,
@@ -96,11 +98,22 @@ export class TaskSuggestionEditsDto {
     nullable: true,
     format: 'uuid',
     description:
-      'Who the task is for. Required to accept when none was suggested.',
+      'Who the task is for. Required to accept when none was suggested, unless `audience` is set. Setting it clears `audience`.',
   })
   @IsOptional()
   @IsUUID()
   assignee_id?: string | null;
+
+  @ApiPropertyOptional({
+    type: String,
+    enum: TASK_AUDIENCES,
+    nullable: true,
+    description:
+      'A task for everyone instead of one person (#4295 step 3): accepting it gives each active member their own copy. Setting it clears `assignee_id`.',
+  })
+  @IsOptional()
+  @IsIn(TASK_AUDIENCES)
+  audience?: TaskAudience | null;
 
   @ApiPropertyOptional({
     type: String,
@@ -301,9 +314,18 @@ export class TaskSuggestionDto {
     nullable: true,
     format: 'uuid',
     description:
-      'Null when no name or role was said for it: the screen shows "Who?".',
+      'Null when no name or role was said for it, or when it is for everyone: the screen shows "Who?" or "Everyone".',
   })
   assignee_id: string | null;
+
+  @ApiProperty({
+    type: String,
+    enum: TASK_AUDIENCES,
+    nullable: true,
+    description:
+      'Set when the task is for everyone (#4295 step 3): accepting it gives each active member their own copy.',
+  })
+  audience: TaskAudience | null;
 
   @ApiProperty({ type: String, nullable: true, format: 'date' })
   due_date: string | null;

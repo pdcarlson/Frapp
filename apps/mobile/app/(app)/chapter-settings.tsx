@@ -1,17 +1,24 @@
-import { useRef } from "react";
-import { StyleSheet, View } from "react-native";
+import { useRef, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
+  useAiChapterSettings,
+  useAiConsent,
   useChapterChatBackground,
   useCurrentChapter,
   useGeofences,
   usePermissionList,
   useRoles,
+  useUpdateAiChapterSettings,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
+  AI_SETTINGS_COPY,
+  AI_SWITCHES,
+  aiSwitchState,
   canAll,
+  type AiChapterSwitchKey,
   CHAPTER_PROFILE_PERMISSIONS,
   CHAT_BACKGROUND_LABELS,
   isModuleEnabled,
@@ -21,9 +28,10 @@ import { BACK_TO_YOU } from "@/components/back-row";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { AccentSheet } from "@/components/settings/accent-sheet";
 import { ChatBackgroundSheet } from "@/components/settings/chat-background-sheet";
+import { Toggle } from "@/components/toggle";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { chapterSettingsAccess } from "@/lib/more/chapter-settings";
-import { useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * Chapter settings, on the phone (#4074): the chapter's side of settings, as
@@ -35,6 +43,14 @@ import { useFrappTheme } from "@/lib/theme";
  *   member holding `CHAPTER_PROFILE_PERMISSIONS` and read-only, saying who
  *   sets it, for anyone else; and Study zones, read-only, since zones are
  *   drawn on the web dashboard.
+ * - **AI**: the president's three switches (#4789), the same ones and the
+ *   same rules as web's AI tab (`settings-ai-tab.tsx`): every member here can
+ *   read them, only the president changes them, and Include channel messages
+ *   sits nested under Ask Frapp and waits for it to be on before it can be
+ *   turned on (never off), by `aiSwitchState`, which web's tab shares. For
+ *   `chapter-config:view`, as web's tab is.
+ *   Inline switches, as iOS Settings draws a short list of them, rather than
+ *   a page of their own. Drawn only where the server has AI.
  * - **People**: Roles, the chapter's tiers and their roles
  *   (`app/(app)/chapter-roles.tsx`).
  *
@@ -75,6 +91,23 @@ export default function ChapterSettingsScreen() {
   // `GET /v1/roles` declares no response schema, so read through `unknown`.
   const roles = useRoles().data as unknown;
   const roleCount = Array.isArray(roles) ? roles.length : null;
+
+  // The consent read says whether the server has AI at all (null when it
+  // doesn't), as every AI entry on the phone asks before drawing.
+  // Web's AI tab is a Chapter settings page, so it opens for
+  // `chapter-config:view` (`settings-access.ts`); the phone draws its
+  // switches for the same people, not for a roles manager without it.
+  const aiConsent = useAiConsent({ enabled: access.chapter });
+  const aiAvailable = access.chapter && !!aiConsent.data;
+  const aiSettingsQuery = useAiChapterSettings({ enabled: aiAvailable });
+  const aiSettings = aiSettingsQuery.data;
+  const updateAi = useUpdateAiChapterSettings();
+  // The switch whose last save failed. The phone has no toast, so the failure
+  // is that row's second line, and the switch snaps back (navigation.md §
+  // Chapter settings).
+  const [aiFailedKey, setAiFailedKey] = useState<AiChapterSwitchKey | null>(
+    null,
+  );
 
   const readOnlyLine = canEditProfile
     ? null
@@ -145,6 +178,63 @@ export default function ChapterSettingsScreen() {
         </>
       ) : null}
 
+      {aiAvailable && aiSettings ? (
+        <>
+          <SectionHeader>{AI_SETTINGS_COPY.title}</SectionHeader>
+          <ListSection>
+            {AI_SWITCHES.map((entry) => {
+              const { checked, parentOff, waitsOnParent } = aiSwitchState(
+                entry,
+                aiSettings,
+              );
+              const failed = aiFailedKey === entry.key;
+              return (
+                <ListRow
+                  key={entry.key}
+                  label={entry.label}
+                  nested={entry.dependsOn !== undefined}
+                  muted={parentOff}
+                  description={
+                    failed
+                      ? `${AI_SETTINGS_COPY.saveFailed}. Try again.`
+                      : waitsOnParent
+                        ? `${entry.short} ${AI_SETTINGS_COPY.dependsOnAsk}`
+                        : entry.short
+                  }
+                  descriptionTone={failed ? "destructive" : "default"}
+                  trailing={
+                    <Toggle
+                      value={checked}
+                      disabled={
+                        !aiSettings.can_change ||
+                        // One save at a time: each answer replaces the whole
+                        // cached row, so two in flight could draw one wrong.
+                        updateAi.isPending ||
+                        // Waiting on Ask blocks turning it on, never off.
+                        waitsOnParent
+                      }
+                      onValueChange={(next) => {
+                        setAiFailedKey(null);
+                        updateAi.mutate(
+                          { [entry.key]: next },
+                          { onError: () => setAiFailedKey(entry.key) },
+                        );
+                      }}
+                      accessibilityLabel={entry.label}
+                    />
+                  }
+                />
+              );
+            })}
+          </ListSection>
+          <Text style={styles.footnote}>
+            {aiSettings.can_change
+              ? AI_SETTINGS_COPY.phoneFootnote
+              : `${AI_SETTINGS_COPY.presidentOnly} ${AI_SETTINGS_COPY.phoneFootnote}`}
+          </Text>
+        </>
+      ) : null}
+
       {access.roles ? (
         <>
           <SectionHeader>People</SectionHeader>
@@ -171,6 +261,11 @@ export default function ChapterSettingsScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    footnote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      paddingHorizontal: tokens.spacing.xs,
+    },
     swatch: {
       width: tokens.spacing.xl,
       height: tokens.spacing.xl,

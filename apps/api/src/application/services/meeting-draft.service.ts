@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
 import type { LanguageModelUsage } from '#domain/adapters/language-model.interface';
 import {
   BadRequestException,
@@ -42,6 +41,7 @@ import type { IMemberRepository } from '#domain/repositories/member.repository.i
 import type { Meeting, MeetingDraft } from '#domain/entities/meeting.entity';
 import type { AiRunFailureReason } from '#domain/entities/ai-run.entity';
 import { SystemPermissions } from '#domain/constants/permissions';
+import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import { aiCatalogEntry } from '#domain/constants/ai-model-catalog';
 import {
   buildMinutesDraftPrompt,
@@ -51,11 +51,18 @@ import {
   readableSources,
   type MinutesSource,
 } from '#domain/utils/minutes-draft';
+import { mergeParts, partRequests } from '#domain/utils/minutes-draft-parts';
 import {
-  buildSummaryPrompt,
-  mergeParts,
-  partRequests,
-} from '#domain/utils/minutes-draft-parts';
+  MinutesNotesOutputSchema,
+  buildMinutesNotesPrompt,
+  notesOutline,
+} from '#domain/utils/minutes-notes';
+import {
+  ReviewedMinutesSchema,
+  applyReview,
+  buildReviewPrompt,
+  dropProcedure,
+} from '#domain/utils/minutes-draft-review';
 import { MeetingService } from './meeting.service';
 import { MeetingNotesService } from './meeting-notes.service';
 import { RbacService } from './rbac.service';
@@ -73,10 +80,8 @@ import { aiConsentRefusal } from './ai/ai-consent-refusal';
 
 /** The catalog task, and the AI run kind, for a draft from notes. */
 const MINUTES_DRAFT_TASK = 'minutes.draft';
+const MINUTES_NOTES_TASK = 'minutes.notes';
 const MINUTES_DRAFT_RUN_KIND = 'minutes_draft';
-
-/** Notes and drafts older than this are deleted, posted or not. */
-const MEETING_DRAFT_RETENTION_DAYS = 30;
 
 /** What the editor reads about a meeting's draft from notes. */
 export interface MeetingDraftState {
@@ -165,11 +170,13 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
   /** Still an officer who may write minutes when the run runs. */
   readonly runPermissions = [SystemPermissions.MEETINGS_RECORD];
   /**
-   * An officer is waiting on the page: two tries. A long meeting is drafted
-   * in parts side by side and then summarized, so a try gets four minutes.
+   * An officer is waiting on the page: two tries. A try is the draft, the
+   * editor's read and the notes pass on the strongest model, which for a
+   * four-hour meeting writes for several minutes, so a try gets fifteen; the
+   * worker's heartbeat renews the lease (`AI_RUN_LEASE_MS`) while it runs.
    */
   readonly maxAttempts = 2;
-  readonly timeoutMs = 240_000;
+  readonly timeoutMs = 15 * 60 * 1000;
 
   constructor(
     @Inject(MEETING_DRAFT_REPOSITORY)
@@ -469,11 +476,10 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
    * than the limit, everywhere.
    */
   async deleteExpired(now: Date = new Date()): Promise<number> {
-    const cutoff = new Date(
-      now.getTime() - MEETING_DRAFT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
-    );
     const [drafts, notes] = await Promise.all([
-      this.drafts.deleteRequestedBefore(cutoff.toISOString()),
+      this.drafts.deleteRequestedBefore(
+        meetingRetentionCutoff(now).toISOString(),
+      ),
       this.meetingNotes.deleteExpired(now),
     ]);
     return drafts + notes;
@@ -718,10 +724,13 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   /**
-   * The model's draft: one pass, or for a long meeting one pass per part and
-   * a summary over them (`minutes-draft-parts.ts`). A part that can't be
-   * drafted ends the whole draft the way a one-pass failure would, because a
-   * draft missing an hour of the meeting reads as complete when it isn't.
+   * The model's draft: a first pass over the notes, or for a long meeting one
+   * per part (`minutes-draft-parts.ts`), then the editor's read over every
+   * candidate (`minutes-draft-review.ts`). Every draft gets the editor's
+   * read, because a procedural motion reads as a decision in an hour's notes
+   * as much as in four. A part that can't be drafted ends the whole draft the
+   * way a one-pass failure would, because a draft missing an hour of the
+   * meeting reads as complete when it isn't.
    */
   private async drafted(
     request: MinutesDraftRequest,
@@ -738,38 +747,104 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
         },
         context,
       );
-    const parts = partRequests(request);
-    if (!parts) return draftOf(request);
-
-    const results = await Promise.all(parts.map(draftOf));
-    const outputs: MeetingDraftOutput[] = [];
-    const usages: LanguageModelUsage[] = [];
-    for (const result of results) {
-      if (result.status !== 'ok') return result;
-      outputs.push(result.value);
-      usages.push(result.usage);
-    }
-    const merged = mergeParts(outputs);
-    if (request.sections.includes('summary')) {
-      const summary = await this.gateway.generateObject(
-        MINUTES_DRAFT_TASK,
+    // Pass 1: every candidate, from the notes or from each part of a long
+    // transcript side by side. Beside it, the notes pass writes the meeting
+    // up topic by topic from every source read whole (`minutes-notes.ts`).
+    const parts = partRequests(request) ?? [request];
+    // Its own stop, so a draft that ends early never leaves it running (and
+    // billing) with nobody to read it. It never rejects: a notes pass that
+    // fails leaves the draft's own notes.
+    const notesStop = new AbortController();
+    const stopNotes = () => notesStop.abort();
+    signal?.addEventListener('abort', stopNotes, { once: true });
+    const notesRun = this.gateway
+      .generateObject(
+        MINUTES_NOTES_TASK,
         {
-          ...buildSummaryPrompt(
-            request,
-            outputs.map((output) => output.summary),
-          ),
-          promptVersion: MEETING_DRAFT_PROMPT_VERSION,
-          schema: PartsSummarySchema,
-          signal,
+          ...buildMinutesNotesPrompt(request),
+          schema: MinutesNotesOutputSchema,
+          signal: notesStop.signal,
         },
         context,
-      );
-      // Without it the parts' summaries stand, one after another.
-      if (summary.status === 'ok' && summary.value.summary.trim()) {
-        merged.summary = summary.value.summary.trim();
+      )
+      .catch(() => null);
+    try {
+      const results = await Promise.all(parts.map(draftOf));
+      const outputs: MeetingDraftOutput[] = [];
+      const usages: LanguageModelUsage[] = [];
+      for (const result of results) {
+        if (result.status !== 'ok') return result;
+        outputs.push(result.value);
+        usages.push(result.usage);
       }
+
+      // Pass 2: the editor's read over the whole meeting
+      // (`minutes-draft-review.ts`), while the notes pass is still writing.
+      // Several note-takers' conflicts are settled by the first pass and
+      // pass through untouched.
+      const reviewed = await this.gateway
+        .generateObject(
+          MINUTES_DRAFT_TASK,
+          {
+            ...buildReviewPrompt(request, outputs),
+            schema: ReviewedMinutesSchema,
+            signal,
+          },
+          context,
+        )
+        .catch((error: unknown) => {
+          // A cancelled run stays cancelled; any other failure of this pass
+          // (a timeout, a provider error) leaves the first pass standing.
+          if (signal?.aborted) throw error;
+          return null;
+        });
+
+      const noted = await notesRun;
+      signal?.throwIfAborted();
+      const notes = noted?.status === 'ok' ? noted.value : null;
+      if (noted?.status === 'ok') usages.push(noted.usage);
+      /**
+       * The notes pass's summary and notes over the draft's own, when it
+       * wrote them. Without it (a failure, a refusal, the spend cap) the
+       * draft's own stand, so a draft is never lost to it.
+       */
+      const withNotes = (draft: MeetingDraftOutput): MeetingDraftOutput => {
+        if (!notes) return draft;
+        const outline = notesOutline(notes);
+        return {
+          ...draft,
+          summary: notes.summary.trim() || draft.summary,
+          discussion_log: outline || draft.discussion_log,
+        };
+      };
+
+      if (reviewed?.status === 'ok') {
+        usages.push(reviewed.usage);
+        return {
+          status: 'ok',
+          value: withNotes(applyReview(outputs, reviewed.value)),
+          usage: usageOf(usages),
+        };
+      }
+      // The first pass is already paid for and already checked word for
+      // word, so whatever stopped the editor's read (a reply that didn't
+      // parse, a refusal, the spend cap reached on this call, an error)
+      // leaves its draft, with procedure taken out, rather than nothing.
+      const merged = mergeParts(outputs);
+      return {
+        status: 'ok',
+        value: withNotes({
+          ...merged,
+          decisions: dropProcedure(merged.decisions),
+        }),
+        usage: usageOf(usages),
+      };
+    } finally {
+      // Settled by now on every path that read it; on any other (a part
+      // that failed or threw) this stops it.
+      notesStop.abort();
+      signal?.removeEventListener('abort', stopNotes);
     }
-    return { status: 'ok', value: merged, usage: usageOf(usages) };
   }
 
   /** The chapter's switch and the member's answer, for this task. */
@@ -1009,9 +1084,6 @@ function meetingDateOf(meeting: Meeting, fromClient?: string): string {
   const apart = Math.abs(noon.getTime() - Date.parse(meeting.event_start_time));
   return apart <= 36 * 60 * 60 * 1000 ? fromClient : utcDay;
 }
-
-/** What the summary over a long meeting's parts returns. */
-const PartsSummarySchema = z.object({ summary: z.string() });
 
 /** The parts' token counts together, as the one draft they make. */
 function usageOf(usages: readonly LanguageModelUsage[]): LanguageModelUsage {

@@ -273,6 +273,32 @@ describe("ScreenShell over the floating tab bar", () => {
   };
   const lg = getSignetTokens("dark").spacing.lg;
 
+  it("reports its scroll for the bar's fold on a tab, and not on a pushed screen (#4904)", () => {
+    const scrollProps = (tree: ReactTestRenderer) =>
+      tree.root.find((node) => (node.type as unknown) === "ScrollView").props;
+    const onTab = scrollProps(
+      renderInTabs(
+        <ScreenShell title="Events">
+          <Text>Body</Text>
+        </ScreenShell>,
+      ),
+    );
+    expect(typeof onTab.onScroll).toBe("function");
+    expect(onTab.scrollEventThrottle).toBe(16);
+    expect(typeof onTab.onContentSizeChange).toBe("function");
+    expect(typeof onTab.onLayout).toBe("function");
+
+    const pushed = scrollProps(
+      render(
+        <ScreenShell title="Dues">
+          <Text>Body</Text>
+        </ScreenShell>,
+      ),
+    );
+    expect(pushed.onScroll).toBeUndefined();
+    expect(pushed.scrollEventThrottle).toBeUndefined();
+  });
+
   it("ends its scroll clear of the bar", () => {
     const tree = renderInTabs(
       <ScreenShell title="Events">

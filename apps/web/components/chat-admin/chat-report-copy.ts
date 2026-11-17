@@ -107,6 +107,12 @@ export const chatReportCopy = {
    */
   messageGone:
     "This message no longer exists, so there's nothing to remove. Mark actioned to close the report.",
+  /**
+   * An open report on one of Frapp's entries in the audit log (#3909), which
+   * nobody removes (`auditLogAllowsChange`): the row offers no Remove.
+   */
+  auditLogEntry:
+    "This is an entry in the audit log, which can't be removed. Mark reviewed or dismiss the report.",
   offlineWrite: "Reconnect to make changes.",
   /**
    * A report's attachments (#2481). The report keeps them while it is open,

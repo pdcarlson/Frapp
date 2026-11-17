@@ -3,22 +3,16 @@
  * viewer's roles written from the answer so a switch never shows its old
  * state, and the reads that follow, the channel list among them.
  */
-import type { ReactNode } from "react";
 import { act, renderHook } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { createHookWrapper } from "./test-utils";
 import { useSetPickedRole } from "./use-self-assignable-roles";
-
-vi.mock("./use-frapp-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./use-frapp-client")>()),
-  useFrappClient: vi.fn(),
-  useActiveChapterId: vi.fn(),
-}));
 
 describe("useSetPickedRole (#4958)", () => {
   let queryClient: QueryClient;
   let post: ReturnType<typeof vi.fn>;
+  let wrapper: ReturnType<typeof createHookWrapper>;
 
   beforeEach(() => {
     queryClient = new QueryClient();
@@ -26,10 +20,11 @@ describe("useSetPickedRole (#4958)", () => {
       data: { role_ids: ["r-member", "r-im"] },
       error: undefined,
     }));
-    vi.mocked(useFrappClient).mockReturnValue({
-      POST: post,
-    } as unknown as ReturnType<typeof useFrappClient>);
-    vi.mocked(useActiveChapterId).mockReturnValue("ch-1");
+    wrapper = createHookWrapper({
+      client: { POST: post },
+      queryClient,
+      chapterId: "ch-1",
+    });
     queryClient.setQueryData(
       ["chapters", "accessible"],
       [
@@ -38,10 +33,6 @@ describe("useSetPickedRole (#4958)", () => {
       ],
     );
   });
-
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
 
   it("joins through /join and leaves through /leave", async () => {
     const { result } = renderHook(() => useSetPickedRole(), { wrapper });

@@ -23,6 +23,14 @@ export class AuthRejectedException extends UnauthorizedException {
   }
 }
 
+/**
+ * The `message` of every 401 refusing a bearer token that was sent but is not
+ * a live session: the auth guard's, and the throttler's when a rate limit
+ * refuses a request whose token it found invalid (`custom-throttler.guard.ts`).
+ * One string, so a client cannot tell the two apart and recovers the same way.
+ */
+export const INVALID_TOKEN_MESSAGE = 'Invalid or expired token';
+
 /** The refusal detail, when `exception` is the auth guard's 401. */
 export function authFailureDetail(
   exception: unknown,

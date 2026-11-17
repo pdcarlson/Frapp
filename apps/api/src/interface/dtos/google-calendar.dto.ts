@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  GOOGLE_CALENDAR_WEB_RETURN_KEYS,
+  type GoogleCalendarWebReturn,
+} from '../../application/services/google-calendar/google-calendar.service';
 
 /** A member's Google Calendar connection in the active chapter (#3322). */
 export class GoogleCalendarStatusDto {
@@ -57,6 +61,15 @@ export class StartGoogleCalendarConnectDto {
   @IsString()
   @MaxLength(512)
   return_url?: string;
+
+  @ApiPropertyOptional({
+    enum: GOOGLE_CALENDAR_WEB_RETURN_KEYS,
+    description:
+      'For `web`: the screen the sign-in started on and comes back to. Events (the default), or Settings → Linked apps or Settings → Calendar.',
+  })
+  @IsOptional()
+  @IsIn(GOOGLE_CALENDAR_WEB_RETURN_KEYS)
+  web_return?: GoogleCalendarWebReturn;
 }
 
 export class GoogleCalendarConnectDto {

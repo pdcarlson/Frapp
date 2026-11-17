@@ -347,15 +347,23 @@ as a CI artifact.
 no way to grandfather individual clones. The only lever is a repo-wide duplication **percentage**
 that fails when exceeded. So the ratchet is:
 
-- **Current measurement: 4.25%** duplicated lines (1,244 clones, 15,479 duplicated lines, across
-  1,552 files analysed; 15,479 / 363,931 = 4.253%) — measured 2026-09-27 with
-  `npm run check:duplication` on jscpd **5.3.2**. That release changed the unit, not the code:
-  it fixed an off-by-one that counted every clone one line short (`end - start` instead of an
-  inclusive range). The same tree on 5.3.1 measures 14,235 lines, 3.91%, and 15,479 − 14,235 is
-  exactly the 1,244 clones. **Every figure below dated before 2026-09-27 is in 5.3.1's unit** and
-  reads about one line per clone low against a current run.
-- **Threshold: 4.4%.** Re-based from 4.1% on 2026-09-27 for that unit change (#2726), which is
-  not a loosening: 4.1% in the old unit is 14,921 lines on today's tree, which 5.3.2 counts as
+- **Current measurement: 3.19%** duplicated lines (3,047 clones, 35,468 duplicated lines across
+  4,152 files analysed; 35,468 / 1,112,467 = 3.188%), measured 2026-11-17 at `62c3bcf` with
+  `npm run check:duplication` on jscpd **5.4.3**, after the hygiene sweep's consolidations (#5204).
+  The sweep's baseline was 3.39% (36,487 duplicated lines, 3,086 clones, 4,020 files) at
+  `d69a2e874d9d2c3fc601b29566309c8acbbd979c`, recorded on #5204. The datum before that was 4.25%
+  (1,244 clones, 15,479 duplicated lines across 1,552 files; 15,479 / 363,931 = 4.253%),
+  measured 2026-09-27 on jscpd **5.3.2**. That release changed the unit, not
+  the code: it fixed an off-by-one that counted every clone one line short (`end - start` instead
+  of an inclusive range). The same tree on 5.3.1 measures 14,235 lines, 3.91%, and 15,479 − 14,235
+  is exactly the 1,244 clones. **Every figure below dated before 2026-09-27 is in 5.3.1's unit**
+  and reads about one line per clone low against a current run.
+- **Threshold: 3.5%.** Ratcheted from 4.4% on 2026-11-17 against the 3.19% measurement above
+  (#5204), leaving 0.31 points of headroom. That is more than the 2026-09-17 ratchet kept (0.22
+  points, 4.1% over 3.88%) because the measurement once swung 0.35 points in a week (below), and
+  the sweep's figure has not yet been watched across ordinary feature work.
+- **Previously 4.4%.** Re-based from 4.1% on 2026-09-27 for that unit change (#2726), which is
+  not a loosening: 4.1% in the old unit is 14,921 lines on the 2026-09-27 tree, which 5.3.2 counts as
   16,165, or 4.44%, and 4.4% is that figure rounded down. Before that it was ratcheted from 4.3%
   to 4.1% on 2026-09-17 against a 3.88% measurement (1,030 clones, 12,393 lines, 1,428 files,
   old unit) after folding the three inline `chapter_audit_log` writers into
@@ -365,7 +373,7 @@ that fails when exceeded. So the ratchet is:
 - The **2026-09-10 figure** was 4.16% (977 clones, 11,833 duplicated lines, 1,294 files;
   11,833 / 284,707 = 4.156%), measured after combining the identity-query / named-event extract
   with first-party Sentry trace origins and the shared `/task` `/event` `/hours` `card_posted`
-  cases. Kept as the previous datum, not as a baseline to compare a current run against — the
+  cases. Kept as an older datum, not as a baseline to compare a current run against — the
   denominator has grown since.
 - **The threshold only ever moves down.** Lower it as each consolidation lands; never raise it to
   make a red run green. The one exception is a jscpd release that changes how lines are counted,

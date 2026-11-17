@@ -19,7 +19,11 @@ import {
   type CreateAction,
   FloatingCreateButton,
 } from "@/components/floating-create-button";
-import { FLOATING_TAB_BAR, useTabBarClearance } from "@/lib/floating-chrome";
+import {
+  FLOATING_TAB_BAR,
+  useBarScroll,
+  useTabBarClearance,
+} from "@/lib/floating-chrome";
 import {
   ThemedRefreshControl,
   type ScreenRefresh,
@@ -98,6 +102,14 @@ type ScreenShellProps = {
    * only closing the keyboard, as the Directory's list does.
    */
   keyboardShouldPersistTaps?: "handled";
+  /**
+   * Controls pinned under the scroll view, at the bottom of the screen, for a
+   * screen whose main action belongs under the thumb (a meeting's minutes:
+   * the recorder's pause and stop, then Post; Paul, 2026-11-17: "why are the
+   * buttons all up at the top, not pushed down to the bottom?"). Off the tab
+   * screens only.
+   */
+  footer?: ReactNode;
   children: ReactNode;
 };
 
@@ -138,6 +150,7 @@ export function ScreenShell({
   overlay,
   scrollEnabled = true,
   keyboardShouldPersistTaps,
+  footer,
   children,
 }: ScreenShellProps) {
   const { tokens } = useFrappTheme();
@@ -151,6 +164,7 @@ export function ScreenShell({
   // top level (fragments and arrays included) can be pinned. Index 0 is the
   // title block, which scrolls away.
   const body = flattenChildren(children);
+  const barScroll = useBarScroll();
   const stickyHeaderIndices = body.flatMap((child, index) =>
     child.type === StickyHeader ? [index + 1] : [],
   );
@@ -169,6 +183,9 @@ export function ScreenShell({
           <View style={styles.safeArea}>
             {back ? <PinnedBackRow back={back} trailing={backAction} /> : null}
             <ScrollView
+              // Folds the floating bar while the member reads down a tab
+              // screen (#4904); nothing off the tab bar.
+              {...barScroll}
               scrollEnabled={scrollEnabled}
               keyboardShouldPersistTaps={keyboardShouldPersistTaps}
               stickyHeaderIndices={
@@ -199,6 +216,7 @@ export function ScreenShell({
               </View>
               {body}
             </ScrollView>
+            {footer ? <View style={styles.footer}>{footer}</View> : null}
           </View>
         </SafeAreaView>
       </CoveredByOverlay>
@@ -286,6 +304,17 @@ function createStyles(tokens: SignetTokens) {
     },
     safeArea: {
       flex: 1,
+    },
+    footer: {
+      width: "100%",
+      maxWidth: 880,
+      alignSelf: "center",
+      paddingHorizontal: tokens.spacing.lg,
+      paddingTop: tokens.spacing.md,
+      paddingBottom: tokens.spacing.md,
+      gap: tokens.spacing.sm,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: tokens.color.border.hairline,
     },
     content: {
       width: "100%",

@@ -1,4 +1,4 @@
-import { createSign } from 'node:crypto';
+import { createHmac, createSign } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
   googleDriveServiceAccount,
@@ -9,6 +9,7 @@ import {
   type GoogleDriveItem,
   type IGoogleDriveApi,
 } from '#domain/adapters/google-drive.interface';
+import { CROCKFORD } from '#domain/utils/check-in-token';
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
@@ -24,6 +25,10 @@ const LIST_MAX_PAGES = 10;
 /** A token is renewed this long before Google says it expires. */
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 const ITEM_FIELDS = 'id,name,mimeType,modifiedTime,size,webViewLink';
+/** One item read on its own also brings what the connect check reads. */
+const GET_ITEM_FIELDS = `${ITEM_FIELDS},description,parents`;
+/** 8 characters, 40 bits. */
+const CODE_LENGTH = 8;
 const CONFIG_REASONS = new Set(['accessNotConfigured', 'SERVICE_DISABLED']);
 const RATE_LIMIT_REASONS = new Set([
   'rateLimitExceeded',
@@ -59,10 +64,24 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
     return this.account?.clientEmail ?? null;
   }
 
+  proofCode(subject: string): string | null {
+    if (!this.account) return null;
+    const digest = createHmac('sha256', this.account.privateKey)
+      .update(`frapp-drive-connect:${subject}`)
+      .digest();
+    let code = '';
+    for (let i = 0; i < CODE_LENGTH; i += 1) {
+      // Crockford base32 (no I, L, O or U), as check-in codes use, so a
+      // code typed by hand matches through the same substitutions.
+      code += CROCKFORD[digest[i] % CROCKFORD.length];
+    }
+    return `frapp-${code.toLowerCase()}`;
+  }
+
   async getItem(id: string): Promise<GoogleDriveItem> {
     const body = await this.json(
       `/files/${encodeURIComponent(id)}?${new URLSearchParams({
-        fields: ITEM_FIELDS,
+        fields: GET_ITEM_FIELDS,
         supportsAllDrives: 'true',
       }).toString()}`,
     );
@@ -271,6 +290,10 @@ function toItem(raw: unknown): GoogleDriveItem {
       typeof file.modifiedTime === 'string' ? file.modifiedTime : '',
     size: Number.isFinite(size) ? size : null,
     webViewLink: typeof file.webViewLink === 'string' ? file.webViewLink : null,
+    description: typeof file.description === 'string' ? file.description : null,
+    parents: Array.isArray(file.parents)
+      ? file.parents.filter((id): id is string => typeof id === 'string')
+      : [],
   };
 }
 

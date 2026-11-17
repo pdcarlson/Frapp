@@ -352,7 +352,7 @@ export function AttendancePanel({
             className="mt-2 text-caption text-muted-foreground"
           >
             Auto-absent can run once check-in closes (
-            {formatRelativeDayTime(closesAt.toISOString(), new Date(now))}).
+            {formatRelativeDayTime(closesAt, new Date(now))}).
           </p>
         </Can>
       ) : null}

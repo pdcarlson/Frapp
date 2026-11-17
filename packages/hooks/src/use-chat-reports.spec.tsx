@@ -1,7 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import React from "react";
+import { QueryClient } from "@tanstack/react-query";
 import {
   chatReportKeys,
   readsRemovedMessage,
@@ -14,18 +13,9 @@ import {
   type ReportedMessageTimeline,
 } from "./use-chat-reports";
 import { bookmarkKeys } from "./use-chat";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const CHAPTER = "chap-1";
-
-function createTestQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
-}
 
 /**
  * A client that retries every failed mutation twice, with no delay so a retry
@@ -48,20 +38,12 @@ function createWrapper(
   mockClient: unknown,
   chapterId: string | null = CHAPTER,
 ) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      chapterId={chapterId}
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    chapterId,
+    displayName: "Wrapper",
+  });
 }
 
 describe("useChatReportAttachments", () => {

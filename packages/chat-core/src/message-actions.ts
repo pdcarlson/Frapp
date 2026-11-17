@@ -1,4 +1,4 @@
-import { isAskAnswerPostedBy } from "@repo/validation";
+import { auditLogAllowsChange, isAskAnswerPostedBy } from "@repo/validation";
 import { isBlockableSender } from "./blocks";
 import { DELETED_MESSAGE_PLACEHOLDER } from "./reply-preview";
 import type { ChatMessage } from "./types";
@@ -130,18 +130,38 @@ export function isOwnPostedAnswer(
  * permission in the message's own chapter, after channel access is
  * confirmed; the client only decides whether the control is likely to
  * succeed.
+ *
+ * In the audit log (`inAuditLog`, #3909) Frapp's entries are never deleted,
+ * whoever asks (`auditLogAllowsChange` in `@repo/validation`, which the API
+ * enforces); a member's post from before the channel was read-only still is.
  */
 export function canDeleteMessage(
   message: Pick<ChatMessage, "sender_id"> &
     Partial<Pick<ChatMessage, "kind" | "payload">>,
   viewerId: string | null,
   canManageChannel: boolean,
+  inAuditLog = false,
 ): boolean {
+  if (inAuditLog && !auditLogAllowsChange("delete", message)) return false;
   return (
     isOwnMessage(message, viewerId) ||
     isOwnPostedAnswer(message, viewerId) ||
     canManageChannel
   );
+}
+
+/**
+ * Pin message / Unpin message: a `channels:manage` holder's control
+ * (`ChatService.pinMessage`, chapter-wide). In the audit log (#3909) nothing
+ * takes a new pin, so only a pinned line offers it, to take the pin off.
+ */
+export function canChangeMessagePin(
+  message: Pick<ChatMessage, "is_pinned">,
+  canManageChannel: boolean,
+  inAuditLog = false,
+): boolean {
+  if (!canManageChannel) return false;
+  return !inAuditLog || !!message.is_pinned;
 }
 
 /**
@@ -244,6 +264,11 @@ export interface MessageActionsContext {
   canPost: boolean;
   /** The viewer holds `channels:manage`. */
   canManageChannel: boolean;
+  /**
+   * The open channel is the chapter's audit log (#3909), where Frapp's
+   * entries can't be deleted (`canDeleteMessage`).
+   */
+  inAuditLog?: boolean;
 }
 
 /**
@@ -337,7 +362,8 @@ export function canOpenMessageActions(
  * - **Reply** wherever the channel takes replies (`channelAllowsReplies`).
  * - **Edit** on your own plain-text message (`canEditMessage`), where you can
  *   still post.
- * - **Delete** on your own message, or anyone's with `channels:manage`.
+ * - **Delete** on your own message, or anyone's with `channels:manage`,
+ *   never on one of Frapp's entries in the audit log.
  * - **Report and Block never on your own message.** There is nothing to
  *   report or block. On anyone else's, Report always shows: an imported row
  *   names its author in `author_name`, which the API snapshots into the report
@@ -368,7 +394,12 @@ export function messageActionsFor(
     canOpen: true,
     canReply: context.canReply,
     canEdit: context.canPost && canEditMessage(message, viewerId),
-    canDelete: canDeleteMessage(message, viewerId, context.canManageChannel),
+    canDelete: canDeleteMessage(
+      message,
+      viewerId,
+      context.canManageChannel,
+      context.inAuditLog,
+    ),
     canReport: canReportMessage(message, viewerId),
     canBlock: canBlockSender(message, viewerId, context.isMember),
     canForward: canForwardMessage(message),

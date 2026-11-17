@@ -9,7 +9,10 @@ import {
   MAX_UPLOAD_BYTES,
   SERVICE_RECEIPT_REQUIRED_MESSAGE,
 } from '@repo/validation';
-import { ServiceEntryService } from './service-entry.service';
+import {
+  PROOF_PATH_TAKEN_MESSAGE,
+  ServiceEntryService,
+} from './service-entry.service';
 import { SERVICE_ENTRY_REPOSITORY } from '#domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
@@ -90,9 +93,11 @@ describe('ServiceEntryService', () => {
       findByChapterFiltered: jest.fn(),
       leaderboard: jest.fn(),
       create: jest.fn(),
-      update: jest.fn(),
+      findByProofPath: jest.fn().mockResolvedValue(null),
+      countByProofPath: jest.fn().mockResolvedValue(0),
+      rejectIfPending: jest.fn(),
       approveAtomic: jest.fn(),
-      delete: jest.fn(),
+      deleteIfPending: jest.fn(),
     };
 
     mockStorageProvider = {
@@ -410,6 +415,96 @@ describe('ServiceEntryService', () => {
       // Proof satisfies the policy regardless of the toggle, so the lookup
       // is skipped entirely on this path.
       expect(mockChapterWorkflows.getWorkflow).not.toHaveBeenCalled();
+    });
+
+    describe('a proof file already on an entry', () => {
+      const proofPath = 'chapters/ch-1/service/se-1/proof.pdf';
+      const saved: ServiceEntry = { ...baseEntry, proof_path: proofPath };
+      const resend = {
+        chapter_id: 'ch-1',
+        user_id: 'user-1',
+        date: '2026-02-26',
+        duration_minutes: 60,
+        description: 'Community cleanup',
+        proof_path: proofPath,
+      };
+
+      beforeEach(() => {
+        mockStorageProvider.listFiles.mockResolvedValue([proofPath]);
+      });
+
+      // A member on a flaky connection: the create saved, its answer was
+      // lost, and the web retry or the phone's resend sends the same path.
+      it('answers the same member with the entry already saved, not a second one', async () => {
+        mockServiceEntryRepo.findByProofPath.mockResolvedValue(saved);
+
+        await expect(service.create(resend)).resolves.toEqual(saved);
+        expect(mockServiceEntryRepo.findByProofPath).toHaveBeenCalledWith(
+          'ch-1',
+          proofPath,
+        );
+        expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('keeps the saved entry when the resend changed a field', async () => {
+        mockServiceEntryRepo.findByProofPath.mockResolvedValue(saved);
+
+        await expect(
+          service.create({ ...resend, duration_minutes: 90 }),
+        ).resolves.toEqual(saved);
+        expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+      });
+
+      it("asks for a resend's chat card again, which chat dedupes", async () => {
+        mockServiceEntryRepo.findByProofPath.mockResolvedValue(saved);
+
+        const result = await service.create({
+          ...resend,
+          channel_id: 'channel-1',
+          client_message_id: 'cmid-1',
+        });
+
+        expect(result).toEqual({ ...saved, card_posted: true });
+        expect(mockChatService.sendMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            client_message_id: 'cmid-1',
+            payload: expect.objectContaining({ entry_id: 'se-1' }),
+          }),
+        );
+      });
+
+      // 400, not 409: shipped phones drop a held path only on a 400.
+      it("refuses another member's proof file with a 400", async () => {
+        mockServiceEntryRepo.findByProofPath.mockResolvedValue({
+          ...saved,
+          user_id: 'user-2',
+        });
+
+        const attempt = service.create(resend);
+        await expect(attempt).rejects.toThrow(BadRequestException);
+        await expect(attempt).rejects.toThrow(PROOF_PATH_TAKEN_MESSAGE);
+        expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+      });
+
+      // Two creates raced past the lookup; the unique index stopped the
+      // second, and the repository handed back the entry that won.
+      it('answers a lost insert race with the winning entry when it is the same member', async () => {
+        mockServiceEntryRepo.create.mockResolvedValue(saved);
+
+        await expect(service.create(resend)).resolves.toEqual(saved);
+      });
+
+      it("refuses a lost insert race to another member's entry", async () => {
+        mockServiceEntryRepo.create.mockResolvedValue({
+          ...saved,
+          user_id: 'user-2',
+        });
+
+        await expect(service.create(resend)).rejects.toThrow(
+          PROOF_PATH_TAKEN_MESSAGE,
+        );
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
     });
 
     it('should reject whitespace-only proof when wf_hours_receipt is enabled', async () => {
@@ -897,7 +992,7 @@ describe('ServiceEntryService', () => {
         null,
         1,
       );
-      expect(mockServiceEntryRepo.update).not.toHaveBeenCalled();
+      expect(mockServiceEntryRepo.rejectIfPending).not.toHaveBeenCalled();
       expect(result).toEqual(approved);
     });
 
@@ -988,7 +1083,7 @@ describe('ServiceEntryService', () => {
         service.approve('se-1', 'ch-1', 'user-1', null),
       ).rejects.toThrow('Admins cannot approve their own service entries');
       expect(mockServiceEntryRepo.approveAtomic).not.toHaveBeenCalled();
-      expect(mockServiceEntryRepo.update).not.toHaveBeenCalled();
+      expect(mockServiceEntryRepo.rejectIfPending).not.toHaveBeenCalled();
       expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
     });
 
@@ -1304,7 +1399,7 @@ describe('ServiceEntryService', () => {
   describe('reject', () => {
     it('rejects when the member notice fails, and reports it (#4096)', async () => {
       mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
-      mockServiceEntryRepo.update.mockResolvedValue({
+      mockServiceEntryRepo.rejectIfPending.mockResolvedValue({
         ...baseEntry,
         status: 'REJECTED' as const,
       });
@@ -1334,7 +1429,7 @@ describe('ServiceEntryService', () => {
         review_comment: 'Insufficient proof',
       };
       mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
-      mockServiceEntryRepo.update.mockResolvedValue(rejected);
+      mockServiceEntryRepo.rejectIfPending.mockResolvedValue(rejected);
 
       const result = await service.reject(
         'se-1',
@@ -1344,11 +1439,12 @@ describe('ServiceEntryService', () => {
       );
 
       expect(mockServiceEntryRepo.approveAtomic).not.toHaveBeenCalled();
-      expect(mockServiceEntryRepo.update).toHaveBeenCalledWith('se-1', 'ch-1', {
-        status: 'REJECTED',
-        reviewed_by: 'admin-1',
-        review_comment: 'Insufficient proof',
-      });
+      expect(mockServiceEntryRepo.rejectIfPending).toHaveBeenCalledWith(
+        'se-1',
+        'ch-1',
+        'admin-1',
+        'Insufficient proof',
+      );
       expect(result).toEqual(rejected);
     });
 
@@ -1363,52 +1459,116 @@ describe('ServiceEntryService', () => {
         service.reject('se-1', 'ch-1', 'admin-1', null),
       ).rejects.toThrow('Only PENDING entries can be rejected');
     });
+
+    it('refuses when an approval lands between the read and the write', async () => {
+      // The read still sees PENDING; the conditional write finds the entry
+      // already approved and changes nothing.
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.rejectIfPending.mockResolvedValue(null);
+
+      await expect(
+        service.reject('se-1', 'ch-1', 'admin-1', null),
+      ).rejects.toThrow('Only PENDING entries can be rejected');
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+    });
   });
 
   describe('delete', () => {
+    const proofPath = 'chapters/ch-1/service/proof-1/proof.pdf';
+
     it('should allow member to delete own PENDING entry', async () => {
       mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.deleteIfPending.mockResolvedValue(baseEntry);
 
       await service.delete('se-1', 'ch-1', 'user-1', false);
 
-      expect(mockServiceEntryRepo.delete).toHaveBeenCalledWith('se-1', 'ch-1');
+      expect(mockServiceEntryRepo.deleteIfPending).toHaveBeenCalledWith(
+        'se-1',
+        'ch-1',
+      );
       expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
     });
 
-    it('should purge the proof object when deleting an entry with proof', async () => {
-      const proofPath = 'chapters/ch-1/service/proof-1/proof.pdf';
-      mockServiceEntryRepo.findById.mockResolvedValue({
-        ...baseEntry,
-        proof_path: proofPath,
-      });
+    it('should purge the proof object after deleting an entry with proof', async () => {
+      const entry = { ...baseEntry, proof_path: proofPath };
+      mockServiceEntryRepo.findById.mockResolvedValue(entry);
+      mockServiceEntryRepo.deleteIfPending.mockResolvedValue(entry);
 
       await service.delete('se-1', 'ch-1', 'user-1', false);
 
+      expect(mockServiceEntryRepo.countByProofPath).toHaveBeenCalledWith(
+        'ch-1',
+        proofPath,
+      );
       expect(mockStorageProvider.deleteFile).toHaveBeenCalledWith(
         'service',
         proofPath,
       );
-      expect(mockServiceEntryRepo.delete).toHaveBeenCalledWith('se-1', 'ch-1');
+      // The row goes first, so a lost race never costs another entry its file.
+      expect(
+        mockServiceEntryRepo.deleteIfPending.mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        mockStorageProvider.deleteFile.mock.invocationCallOrder[0],
+      );
     });
 
-    it('should not touch storage when deleting an entry with a legacy proof path', async () => {
-      mockServiceEntryRepo.findById.mockResolvedValue({
-        ...baseEntry,
-        proof_path: 'https://example.com/proof.pdf',
-      });
+    it('keeps a proof object another entry still points at', async () => {
+      const entry = { ...baseEntry, proof_path: proofPath };
+      mockServiceEntryRepo.findById.mockResolvedValue(entry);
+      mockServiceEntryRepo.deleteIfPending.mockResolvedValue(entry);
+      mockServiceEntryRepo.countByProofPath.mockResolvedValue(1);
 
       await service.delete('se-1', 'ch-1', 'user-1', false);
 
       expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
-      expect(mockServiceEntryRepo.delete).toHaveBeenCalledWith('se-1', 'ch-1');
+    });
+
+    it('still deletes the entry when storage refuses, and reports it', async () => {
+      const entry = { ...baseEntry, proof_path: proofPath };
+      mockServiceEntryRepo.findById.mockResolvedValue(entry);
+      mockServiceEntryRepo.deleteIfPending.mockResolvedValue(entry);
+      mockStorageProvider.deleteFile.mockRejectedValueOnce(
+        new Error('storage down'),
+      );
+      const reported = jest.spyOn(caughtFailure, 'reportCaughtFailure');
+
+      await expect(
+        service.delete('se-1', 'ch-1', 'user-1', false),
+      ).resolves.toBeUndefined();
+      expect(reported).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ site: 'service-entry-proof-delete' }),
+      );
+      reported.mockRestore();
+    });
+
+    it('should not touch storage when deleting an entry with a legacy proof path', async () => {
+      const entry = {
+        ...baseEntry,
+        proof_path: 'https://example.com/proof.pdf',
+      };
+      mockServiceEntryRepo.findById.mockResolvedValue(entry);
+      mockServiceEntryRepo.deleteIfPending.mockResolvedValue(entry);
+
+      await service.delete('se-1', 'ch-1', 'user-1', false);
+
+      expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
+      expect(mockServiceEntryRepo.deleteIfPending).toHaveBeenCalledWith(
+        'se-1',
+        'ch-1',
+      );
     });
 
     it('should allow admin to delete any PENDING entry', async () => {
       mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.deleteIfPending.mockResolvedValue(baseEntry);
 
       await service.delete('se-1', 'ch-1', 'admin-1', true);
 
-      expect(mockServiceEntryRepo.delete).toHaveBeenCalledWith('se-1', 'ch-1');
+      expect(mockServiceEntryRepo.deleteIfPending).toHaveBeenCalledWith(
+        'se-1',
+        'ch-1',
+      );
     });
 
     it('should throw ForbiddenException when member tries to delete another user entry', async () => {
@@ -1420,7 +1580,7 @@ describe('ServiceEntryService', () => {
       await expect(
         service.delete('se-1', 'ch-1', 'other-user', false),
       ).rejects.toThrow('You can only delete your own service entries');
-      expect(mockServiceEntryRepo.delete).not.toHaveBeenCalled();
+      expect(mockServiceEntryRepo.deleteIfPending).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when entry is not PENDING', async () => {
@@ -1433,7 +1593,20 @@ describe('ServiceEntryService', () => {
       await expect(
         service.delete('se-1', 'ch-1', 'user-1', false),
       ).rejects.toThrow('Only PENDING entries can be deleted');
-      expect(mockServiceEntryRepo.delete).not.toHaveBeenCalled();
+      expect(mockServiceEntryRepo.deleteIfPending).not.toHaveBeenCalled();
+    });
+
+    it('keeps the receipt when an approval lands between the read and the delete', async () => {
+      mockServiceEntryRepo.findById.mockResolvedValue({
+        ...baseEntry,
+        proof_path: proofPath,
+      });
+      mockServiceEntryRepo.deleteIfPending.mockResolvedValue(null);
+
+      await expect(
+        service.delete('se-1', 'ch-1', 'user-1', false),
+      ).rejects.toThrow('Only PENDING entries can be deleted');
+      expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
     });
   });
 
@@ -1469,7 +1642,7 @@ describe('ServiceEntryService', () => {
         review_comment: 'Insufficient proof',
       };
       mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
-      mockServiceEntryRepo.update.mockResolvedValue(rejected);
+      mockServiceEntryRepo.rejectIfPending.mockResolvedValue(rejected);
 
       await service.reject('se-1', 'ch-1', 'admin-1', 'Insufficient proof');
 
@@ -1494,7 +1667,7 @@ describe('ServiceEntryService', () => {
         review_comment: 'Insufficient proof',
       };
       mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
-      mockServiceEntryRepo.update.mockResolvedValue(rejected);
+      mockServiceEntryRepo.rejectIfPending.mockResolvedValue(rejected);
 
       await service.reject('se-1', 'ch-1', 'admin-1', 'Insufficient proof');
 
@@ -1515,7 +1688,7 @@ describe('ServiceEntryService', () => {
         review_comment: null,
       };
       mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
-      mockServiceEntryRepo.update.mockResolvedValue(rejected);
+      mockServiceEntryRepo.rejectIfPending.mockResolvedValue(rejected);
 
       await service.reject('se-1', 'ch-1', 'admin-1', null);
 

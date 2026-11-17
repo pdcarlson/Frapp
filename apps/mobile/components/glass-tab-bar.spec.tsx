@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { act } from "react";
+import { withTiming } from "react-native-reanimated";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
 
 const device = vi.hoisted(() => ({ bottomInset: 0 }));
@@ -23,8 +24,7 @@ vi.mock("@/lib/haptics", () => ({ selectionHaptic: vi.fn() }));
 // Activity's tab carries the needs-you count (#4610).
 const activity = vi.hoisted(() => ({
   data: undefined as
-    | { needs_you_count: number; unavailable: string[] }
-    | undefined,
+    { needs_you_count: number; unavailable: string[] } | undefined,
 }));
 const rereadOnTab = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/activity/use-activity-reread", () => ({
@@ -36,7 +36,9 @@ vi.mock("@repo/hooks", () => ({
 
 // The You tab's avatar has its own spec (`you-tab-avatar.spec.tsx`); the bar
 // only reads the picked status to name it.
-const ownStatus = vi.hoisted(() => ({ value: { status: "online" } as { status: string } | null }));
+const ownStatus = vi.hoisted(() => ({
+  value: { status: "online" } as { status: string } | null,
+}));
 vi.mock("@/lib/account/own-status", () => ({
   useOwnStatus: () => ownStatus.value,
 }));
@@ -81,8 +83,12 @@ vi.mock("@/components/quick-actions/quick-actions-panel", () => ({
 // So has the Ask Frapp bar (`ask/ask-bar.spec.tsx`).
 vi.mock("@/components/ask/ask-bar", () => ({ AskBar: "AskBar" }));
 
-import { BackHandler } from "react-native";
-import { floatingScreenLayout, useAskBarLift } from "@/lib/floating-chrome";
+import { AccessibilityInfo, BackHandler } from "react-native";
+import {
+  floatingScreenLayout,
+  setBarFolded,
+  useAskBarLift,
+} from "@/lib/floating-chrome";
 import { GlassTabBar } from "./glass-tab-bar";
 
 type Node = ReactTestRenderer["root"];
@@ -180,7 +186,7 @@ const flat = (style: unknown): Record<string, unknown> =>
 const pill = (root: Node) =>
   root.findAll(
     (node) =>
-      (node.type as unknown) === "View" &&
+      ["View", "Animated.View"].includes(node.type as unknown as string) &&
       node.props.accessibilityRole === "tablist",
   )[0];
 
@@ -193,7 +199,7 @@ describe("the bar (#3344)", () => {
     expect(style.borderRadius).toBe(31);
     expect(style.left).toBe(14);
     // Leaves room for the 62pt + and the 10pt gap beside it.
-    expect(style.right).toBe(14 + 62 + 10);
+    expect(style.width).toBe(402 - 14 - (14 + 62 + 10));
   });
 
   it("rounds the glass itself, not only its frame", () => {
@@ -425,7 +431,8 @@ describe("the Ask Frapp bar", () => {
       expect(placed(tree.root)).toMatchObject({
         position: "absolute",
         left: 14,
-        right: 14,
+        width: 402 - 14 * 2,
+        height: 48,
         bottom: 12 + 62 + 8,
       });
       act(() => tree.unmount());
@@ -506,5 +513,153 @@ describe("a confirmation", () => {
     expect(texts()).toContain("Assigned to Sam Rivera.");
     act(() => plus(tree.root)!.props.onPress());
     expect(texts()).not.toContain("Assigned to Sam Rivera.");
+  });
+});
+
+/**
+ * The fold (#4904, Paul's direction A, 2026-11-17): reading down a tab
+ * screen folds the tabs to the current one and brings the Ask Frapp bar down
+ * into the row between it and the +, which never moves.
+ */
+describe("the fold", () => {
+  afterEach(() => act(() => setBarFolded(false)));
+
+  /** Rendered, once the screen reader's setting has been read (off). */
+  async function renderSettled(focused = "index") {
+    const tree = render(focused);
+    await act(async () => {});
+    return tree;
+  }
+  const askPlaced = (root: Node) =>
+    flat(
+      root.findAll((node) => (node.type as unknown) === "AskBar")[0].parent!
+        .props.style,
+    );
+  const tabs = (root: Node) =>
+    root.findAll(
+      (node) =>
+        (node.type as unknown) === "Animated.View" &&
+        node.props.pointerEvents !== undefined &&
+        node.props.importantForAccessibility !== undefined,
+    )[0];
+
+  it("folds the tabs to the current one and brings Ask into the row, leaving the + where it was", async () => {
+    quick.hasAsk = true;
+    const tree = await renderSettled("events");
+    const plusBefore = flat(plus(tree.root)!.parent!.props.style);
+    act(() => setBarFolded(true));
+
+    expect(flat(pill(tree.root).props.style).width).toBe(62);
+    expect(askPlaced(tree.root)).toMatchObject({
+      left: 14 + 62 + 10,
+      width: 402 - (14 + 62 + 10) * 2,
+      bottom: 12,
+      height: 62,
+    });
+    // The four tabs are out of reach and out of a screen reader's way.
+    expect(tabs(tree.root).props.pointerEvents).toBe("none");
+    expect(tabs(tree.root).props.accessibilityElementsHidden).toBe(true);
+    expect(flat(plus(tree.root)!.parent!.props.style)).toEqual(plusBefore);
+
+    // The folded round names the tab it stands for, and opens the tabs.
+    const round = tree.root.findByProps({ testID: "tab-folded" });
+    expect(round.props.accessibilityLabel).toBe("Calendar, show all tabs");
+    act(() => round.props.onPress());
+    expect(flat(pill(tree.root).props.style).width).toBe(
+      402 - 14 - (14 + 62 + 10),
+    );
+    expect(askPlaced(tree.root)).toMatchObject({ left: 14, height: 48 });
+  });
+
+  it("keeps Activity's count in sight while folded: the number on its own round, a dot on another", async () => {
+    quick.hasAsk = true;
+    activity.data = { needs_you_count: 3, unavailable: [] };
+    const onActivity = await renderSettled("activity");
+    act(() => setBarFolded(true));
+    expect(
+      onActivity.root.findAllByProps({ testID: "tab-folded-badge" }),
+    ).toHaveLength(1);
+    act(() => onActivity.unmount());
+
+    const onCalendar = await renderSettled("events");
+    act(() => setBarFolded(true));
+    expect(
+      onCalendar.root.findAllByProps({ testID: "tab-folded-dot" }),
+    ).toHaveLength(1);
+    expect(
+      onCalendar.root.findByProps({ testID: "tab-folded" }).props
+        .accessibilityLabel,
+    ).toMatch(/^Calendar, show all tabs, Activity: /);
+  });
+
+  it("gives the tabs back their touches only once they are back in place", async () => {
+    quick.hasAsk = true;
+    const tree = await renderSettled();
+    act(() => setBarFolded(true));
+    vi.useFakeTimers();
+    try {
+      act(() =>
+        tree.root.findByProps({ testID: "tab-folded" }).props.onPress(),
+      );
+      // Opening: a second quick tap lands on nothing.
+      expect(tabs(tree.root).props.pointerEvents).toBe("none");
+      act(() => vi.advanceTimersByTime(320));
+      expect(tabs(tree.root).props.pointerEvents).toBe("auto");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("moves in 320ms, and at once with Reduce Motion on, read live", async () => {
+    quick.hasAsk = true;
+    const timing = vi.mocked(withTiming);
+    timing.mockClear();
+    await renderSettled();
+    act(() => setBarFolded(true));
+    expect(timing.mock.calls.at(-1)?.[1]).toMatchObject({ duration: 320 });
+
+    vi.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValueOnce(
+      true,
+    );
+    act(() => setBarFolded(false));
+    const reduced = await renderSettled();
+    timing.mockClear();
+    act(() => setBarFolded(true));
+    expect(timing.mock.calls.at(-1)?.[1]).toMatchObject({ duration: 0 });
+    act(() => reduced.unmount());
+  });
+
+  it("doesn't fold for a member without Ask: there is nothing to bring down", async () => {
+    const tree = await renderSettled();
+    act(() => setBarFolded(true));
+    expect(flat(pill(tree.root).props.style).width).toBe(
+      402 - 14 - (14 + 62 + 10),
+    );
+  });
+
+  it("doesn't fold while the + panel is open", async () => {
+    quick.hasAsk = true;
+    const tree = await renderSettled();
+    act(() => plus(tree.root)!.props.onPress());
+    act(() => setBarFolded(true));
+    expect(flat(pill(tree.root).props.style).width).toBe(
+      402 - 14 - (14 + 62 + 10),
+    );
+  });
+
+  it("never folds under a screen reader, so every tab stays a labelled control", async () => {
+    quick.hasAsk = true;
+    vi.mocked(AccessibilityInfo.isScreenReaderEnabled).mockResolvedValueOnce(
+      true,
+    );
+    const tree = await renderSettled();
+    act(() => setBarFolded(true));
+    expect(flat(pill(tree.root).props.style).width).toBe(
+      402 - 14 - (14 + 62 + 10),
+    );
+    expect(
+      tree.root.findByProps({ testID: "tab-folded" }).props
+        .accessibilityElementsHidden,
+    ).toBe(true);
   });
 });

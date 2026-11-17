@@ -1,8 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
+  isTaskAudience,
   TASK_SUBTASK_TITLE_MAX_LENGTH,
   TASK_SUBTASKS_MAX,
   TASK_TITLE_MAX_LENGTH,
+  type TaskAudience,
 } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { AiSuggestionPayload } from '#domain/entities/ai-suggestion.entity';
@@ -25,6 +27,11 @@ export interface TaskSuggestionPayload {
   description: string | null;
   /** Set only when a name or a role was said or written for it. */
   assignee_id: string | null;
+  /**
+   * A task for everyone instead of one person (#4295 step 3): accepting it
+   * gives each active member their own copy. Never set with `assignee_id`.
+   */
+  audience: TaskAudience | null;
   /** YYYY-MM-DD, when a day was named. */
   due_date: string | null;
   /** The moment it is due, when a time of day was named. */
@@ -45,6 +52,10 @@ function text(value: unknown, max: number): string | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
   return trimmed.length > max ? trimmed.slice(0, max).trimEnd() : trimmed;
+}
+
+function audienceOrNull(value: unknown): TaskAudience | null {
+  return isTaskAudience(value) ? value : null;
 }
 
 function uuidOrNull(value: unknown): string | null {
@@ -86,11 +97,23 @@ export function readTaskPayload(
     title: typeof payload.title === 'string' ? payload.title : '',
     description:
       typeof payload.description === 'string' ? payload.description : null,
-    assignee_id: uuidOrNull(payload.assignee_id),
+    ...who(payload.assignee_id, payload.audience),
     due_date: dateOrNull(payload.due_date),
     due_at: instantOrNull(payload.due_at),
     subtasks: subtaskList(payload.subtasks),
     ...lastYearOn(payload.last_year_on),
+  };
+}
+
+/** One person or a group, never both: a group wins, as the wider ask. */
+function who(
+  assigneeId: unknown,
+  audience: unknown,
+): Pick<TaskSuggestionPayload, 'assignee_id' | 'audience'> {
+  const group = audienceOrNull(audience);
+  return {
+    assignee_id: group ? null : uuidOrNull(assigneeId),
+    audience: group,
   };
 }
 
@@ -138,7 +161,7 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
         input.description,
         TASK_SUGGESTION_DESCRIPTION_MAX_LENGTH,
       ),
-      assignee_id: uuidOrNull(input.assignee_id),
+      ...who(input.assignee_id, input.audience),
       due_date: dueDate,
       // A time needs its day; the task service checks they agree on accept.
       due_at: dueDate ? instantOrNull(input.due_at) : null,
@@ -166,7 +189,16 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
           ? null
           : text(edits.description, TASK_SUGGESTION_DESCRIPTION_MAX_LENGTH);
     }
-    if (has('assignee_id')) next.assignee_id = uuidOrNull(edits.assignee_id);
+    // Picking a person clears a group and picking a group clears the person,
+    // so "Who?" holds one answer.
+    if (has('assignee_id')) {
+      next.assignee_id = uuidOrNull(edits.assignee_id);
+      if (next.assignee_id) next.audience = null;
+    }
+    if (has('audience')) {
+      next.audience = audienceOrNull(edits.audience);
+      if (next.audience) next.assignee_id = null;
+    }
     if (has('due_date')) {
       next.due_date = dateOrNull(edits.due_date);
       // A new day without a new time drops the old time rather than keep a
@@ -186,7 +218,7 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
         message: 'A task needs a title.',
       });
     }
-    if (!task.assignee_id) {
+    if (!task.assignee_id && !task.audience) {
       throw new BadRequestException({
         code: 'ai.suggestion.incomplete',
         message: 'Pick who this task is for.',
@@ -207,7 +239,7 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
   }): Promise<{ resultId: string }> {
     const task = readTaskPayload(input.payload);
     // `assertAcceptable` ran before the claim; these narrow the types.
-    if (!task.assignee_id || !task.due_date) {
+    if ((!task.assignee_id && !task.audience) || !task.due_date) {
       throw new BadRequestException({
         code: 'ai.suggestion.incomplete',
         message: 'Pick who this task is for and when it is due.',
@@ -217,7 +249,9 @@ export class TaskSuggestionKind implements AiSuggestionKindHandler {
       chapter_id: input.chapterId,
       title: task.title,
       description: task.description,
-      assignee_id: task.assignee_id,
+      // A group suggestion makes the group task: a copy per active member.
+      assignee_id: task.audience ? null : task.assignee_id,
+      audience: task.audience,
       created_by: input.userId,
       due_date: task.due_date,
       due_at: task.due_at,

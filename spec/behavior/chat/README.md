@@ -122,7 +122,7 @@ Paul, 2026-11-10 (#3722, under #4068): each channel answers two questions, and o
     On `operation: 'post'` the predicate additionally denies Alumni-role members outside direct conversations and channels whose posting list names the Alumni role or its tier (`who_can_post`, or `who_can_see` when anyone who can see may post;
     `#alumni` in a default chapter) — reads are unaffected, and `*` bypasses.
     **Editing** authorizes as a `'post'` for the same reason, so the rule cannot be sidestepped by rewriting an older message, and so does **requesting a file-upload URL** (`POST /v1/channels/:id/upload-url`) — a signed URL is a write credential for the channel's storage prefix, and every step of a two-step write authorizes as the write rather than as the read before it (#2186).
-    `operation: 'vote'` is a write that clears the same read-only gate but is _exempt_ from the lifecycle rule, since voting in a poll one can read is participation, not posting; reactions and message actions authorize as reads and are likewise open.
+    `operation: 'vote'` is a write that clears the same read-only gate but is _exempt_ from the lifecycle rule, since voting in a poll one can read is participation, not posting; emoji reactions authorize as reads and are likewise open, and a card's poll vote or sign-up claim authorizes as an `'answer'`: open to every reader, Alumni included, but refused in an archived channel and the audit log (#4695).
     The flag is resolved only when it can change the outcome — an authored post into a channel alumni cannot write in, decided by the same `isAlumniPostableChannel` predicate the gate uses — reusing the membership row already loaded, so reads, votes, and DM posts add no query to the hot path.
     See [alumni.md](../alumni.md).
   - **Service-role (RLS-bypassing) writes to a channel or message, in every chat service (`ChatService`, `ChatReactionService`, `ChatAttachmentService`, `ChatNotificationPreferenceService`, and any added beside them), perform this membership/channel-access pre-check before the insert.**
@@ -282,6 +282,11 @@ A message thread (#3785) opened from the channel shows the same background behin
 - **Group DM:** User selects multiple members (up to 10).
   Creates a GROUP_DM-type channel.
   Chapter-scoped.
+- **Only with members of the chapter** (2026-11-17).
+  A new DM or group DM is refused unless everyone in it is a member of the caller's chapter: one 404 for an id that is no one and for someone in another chapter, naming no one.
+  `POST /v1/channels/group-dm` takes at most 9 others in `member_ids` (10 people with the creator) and is held to 10 a minute, since each call adds a conversation to every listed member's list.
+  A DM with yourself is a 400.
+  Reopening a DM you already have is unchanged, a member who has since left included, and `POST /v1/channels/dm` stays on the default write limit, since it is how a member reopens a conversation.
 - DMs appear in their own section of the channel list ("Direct messages" on web, `DIRECT` on mobile), not mixed with chapter channels, except that a DM the member pins moves up into Pinned beside pinned channels (§ Sidebar arrangement).
   - Changed in [#3774](https://github.com/pdcarlson/Frapp/issues/3774) by Shawn (`shawnatomklein-eng`), 2026-11-12, for web: DMs and group DMs left the channel list for a list of their own, opened by the nav's Direct messages row under Chat, so the channel list holds the chapter's channels only.
     A pinned DM pins within that list.
@@ -432,6 +437,7 @@ The categories themselves stay the chapter's (§ Channels).
 - **Filters,** off by default, either or both on:
   - **Unread only** keeps rows with something unread by the server's counts (§ Read Receipts), an @-mention included.
     A muted channel's plain unread (nothing that addresses the member) doesn't count, since its row reads as read (below).
+    A channel with a thread listed under it that has new replies counts too (§ All threads, [#5277](https://github.com/frapplive/Frapp/issues/5277), [#5300](https://github.com/frapplive/Frapp/issues/5300)), since thread replies never count toward the channel's own unread and its thread rows would otherwise be filtered away; its row keeps reading the server's counts.
   - **Hide muted** drops rows whose effective notification level is `off` ([`../notifications.md`](../notifications.md#chat-notification-preferences)).
     A muted row that addresses the member stays: an unread @-mention, or anything unread in a DM.
     That matches push, where a mention gets past a mute.
@@ -450,6 +456,7 @@ The categories themselves stay the chapter's (§ Channels).
 - **Folds.**
   Any section header, Pinned included, folds its section, and the choice is remembered.
   A folded header shows the unread total of the rows inside it that pass the filters, a muted channel's plain unread left out (above), in the mention red when any of them addresses the member, so folding never hides a mention.
+  A channel whose only news is a thread with new replies adds one to that total (`withUnreadThreadChannels` in `@repo/hooks`), so a folded section over it still reads unread.
   The open channel stays visible under a folded header.
   While the list scrolls, the section in view keeps its header pinned at the top, so it can still be folded from there ([`../../ui/design-system/components.md`](../../ui/design-system/components.md#sidebar-item) § Sidebar item, "Pinned section headings").
 - **Where it lives.**
@@ -700,7 +707,7 @@ The #489 decision above, that a reply lands in the timeline, still holds for Rep
   A thread reply pushes its followers only (`following`; never `muted` or `unfollowed`), never more than the channel's level allows them (`decidePush`'s `skip-thread`), except an @mention, which pushes even through a muted thread, as it does through a muted channel.
   A thread reply is never an announcement push, even under an announcement: any reader may write it, so the channel alone would hand every member an URGENT push.
   The push's target carries `threadRootId`; an app that predates threads opens the channel.
-  Presence in the channel still skips the push, as for any message.
+  Presence in the channel still skips the push, as for any message; under an announcement too, since a reply is not an announcement push (§ Two presence topics).
 - **Unread.**
   A thread reply never counts toward its channel's unread badge or Chat home preview (keeping the 2026-11-07 rule that a busy channel adds nothing).
   A thread reply that @mentions you counts toward the channel's mention tally until you read that thread or the channel, whichever comes later, so a client without thread UI cannot strand a badge (§ Read Receipts).
@@ -756,8 +763,19 @@ The #489 decision above, that a reply lands in the timeline, still holds for Rep
   A message from a member the viewer blocked reads as the tombstone, unnamed.
   `GET /v1/threads` serves it: the API reads which chapter channels hold the member's follows, authorizes them before the limit applies, and masks the parents for blocks.
   On the web it is a Threads button in the chat header, beside Members, with a dot while any thread has new replies; tapping a row switches to the thread's channel and opens the thread there, waiting for the channel list when the channel is new to the tab.
-  On the phone it is the Threads row, the first row of Chat home's channel list and always drawn ([`../../ui/mobile/navigation.md`](../../ui/mobile/navigation.md)), badged in house gold with how many threads have new replies, opening a sheet of the same rows; a row pushes the thread over its channel. (It was a button in Chat home's title row until #5139, 2026-11-16, when Search took that place.)
-  The list is re-read when it opens, once a minute behind the button, and right after the member reads a thread.
+  On the phone the threads sit under their channel instead ([#5277](https://github.com/frapplive/Frapp/issues/5277), asked by Paul, after Discord's channel list): Chat home draws a channel's active threads indented under its row, joined to its `#` by a curved connector, and Messages does the same under a group DM's row.
+  The web rail draws them the same way under each channel, and under a conversation in its Direct messages view, never under a hidden one ([#5300](https://github.com/frapplive/Frapp/issues/5300), asked by Paul, after Discord's desktop sidebar), and keeps the header button as the full list, which reaches threads past the quiet window; the open thread's row reads as the current row, and a click opens the thread in its channel's thread panel as an All threads row does.
+  A thread row is one line, the parent's words as the All threads row's title reads them; it reads unread (bold, the leading pip, no number) while it has new replies and muted while muted, and a tap opens the thread with its channel under it, as a thread push's tap does, so back returns to the channel and its topic carries the live replies.
+  Active is one rule in `sidebarThreadsByChannel` (`@repo/chat-core/threads`), over the newest 50 the list holds: every thread with new replies, uncapped, then read ones with activity in the last three days (Discord's default auto-archive; Frapp archives nothing), newest first, up to five per channel.
+  Because a thread reply never counts toward its channel, the channel list on both surfaces counts a channel with an unread thread as unread for arranging only (`withUnreadThreadChannels`, `@repo/hooks`): Unread only keeps it and a folded section reads unread over it, while the row's own badge stays the server's.
+  The Messages door counts a group DM whose thread has new replies, and Messages draws no thread rows under search results.
+  A failed read says so in one line on Chat home, and the pull re-reads it.
+  A channel with none draws nothing under it, so there is no Threads entry, no empty state and no sheet; a thread that has dropped off is still on its parent's thread card.
+  The list is the same `GET /v1/threads` read, re-read once a minute and right after the member reads a thread.
+  _Changed 2026-11-17 ([#5277](https://github.com/frapplive/Frapp/issues/5277), asked by Paul):_ it was the Threads row, the first row of Chat home's channel list and always drawn, badged in house gold, opening a sheet of the rows above (#5139, 2026-11-16; a title-row button before that, #4960).
+  On the web the list is re-read when it opens, once a minute behind the button, and right after the member reads a thread.
+  _Web, 2026-11-17 (#5277):_ recommended to match the phone, with each channel's active threads under its row in the rail as Discord's desktop sidebar draws them, keeping the header button for the full list; not built here, pending Paul ([#5300](https://github.com/frapplive/Frapp/issues/5300)).
+  _Built 2026-11-17 ([#5300](https://github.com/frapplive/Frapp/issues/5300)), after Paul said go:_ the header button stays.
 - **No auto-archive.**
   A thread stays open as long as its parent exists.
 - **Slices.**
@@ -1023,11 +1041,12 @@ They answer different questions and must not be merged:
 
 | Topic                          | Scope                                  | Read by                                                                                                                                                                                                                     |
 | ------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chat:channel:<channelId>`     | Who has _this channel_ open            | The push worker, via service role, to suppress pushes to members already looking (ADR-10)                                                                                                                                   |
+| `chat:channel:<channelId>`     | Who has _this channel_ open            | The push worker, via service role, to suppress pushes to members already looking (ADR-10), except in an announcements channel                                                                                             |
 | `presence:chapter:<chapterId>` | Who is present in the _chapter_ at all | The web Directory, Chat's member list on both apps, the phone's member profile sheet, and the API's `ChapterPresenceReader` for `@here` (§ Role mentions; one service-role join per read, same config as the push worker's) |
 
 The chat topic's channel config and its `{ userId, ts }` payload are a cross-service contract pinned by `packages/chat-core/src/presence-contract.spec.ts`.
 Re-keying it or widening its payload silently disables push suppression, so a surface needing chapter-wide presence takes the second topic rather than extending the first.
+Any reader of a channel may publish on its topic, and the server does not check the `userId` a client puts in its payload, so presence can't prove who is looking. It still quiets every push except a timeline post in an announcements channel (`isAnnouncementChannel`), whatever the post's kind (`decidePush`, 2026-11-17). Elsewhere a forged entry quiets its target's pushes in that channel only while the forger stays joined, and the readers it spares are the reason presence exists (ADR-04); in an announcements channel it could silence the chapter's URGENT push, and announcements are rare enough that a reader who has the channel open loses little by also getting one. @mentions keep the skip on purpose: `@here`, `@everyone`, role mentions and reply pings would otherwise push everyone already reading the channel.
 
 Both are **private** Realtime channels since 2026-09-06 (#1552, migration `20260906203000`), each behind its own predicate on `realtime.messages`: `presence:chapter:<chapterId>` admits any member of the chapter (`realtime_can_read_chapter_scope`);
 `chat:channel:<channelId>` admits exactly the members who may read that channel (`can_read_chat_channel` — PUBLIC to the chapter, PRIVATE/DM/GROUP_DM to `member_ids`, ROLE_GATED by permission — the same predicate `can_read_chat_message` now delegates to), so who is present in a DM is not visible chapter-wide.
@@ -1299,8 +1318,9 @@ The two stay separate.
   Anyone who can read the channel may flag a message that has none.
   Once it is flagged, only the message's sender, whoever added the flag, or a member with `channels:manage` (an officer, the permission pins use) may replace or remove it.
   This lets anyone catch a flag the sender forgot ("everyone at the kitchen at 5") without letting anyone undo anyone.
-  One predicate decides it for the API and both clients: `canChangeMessageFlag` in `@repo/validation`.
-  A flag adds no content, so it authorizes as a read, like a reaction: a member may flag in a read-only channel, and so may an alumnus.
+  Two shared predicates decide it for the API and both clients: `canChangeMessageFlag` in `@repo/validation` (who may change a flag), and, in the audit log only, `auditLogAllowsChange` beside it (no new flag on any line there, though one already on a line can come off; § [The audit log is system-write only](#the-audit-log-is-system-write-only)).
+  The clients read both through `canFlagMessage` in `@repo/chat-core/flags`.
+  A flag adds no content, so it authorizes as a `modify` rather than a post (2026-11-17; before then it authorized as a read): whoever can read the channel gets past the channel gate, so a member may flag in a read-only channel, and so may an alumnus.
 - **Who flagged it is shown.**
   When the flagger isn't the sender, the label reads "· flagged by Name".
 - **How it looks.**
@@ -1495,6 +1515,8 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
   It never opens a channel read, a thread, a pin list or the channel row: `assertChannelAccess` and every list surface take no report, and the route returns the resolved report, never the message.
   What an officer knows about the message is the evidence snapshot the report already carried.
   The response does carry the message's `channel_id` — an id, which every channel route still refuses — so the client can blank that one cached timeline instead of refetching every timeline it holds.
+- **Not one of Frapp's entries in the audit log** (2026-11-17): a report on an entry Frapp wrote in `#chapter-audit` can't remove it (403), as no delete can (§ [The audit log is system-write only](#the-audit-log-is-system-write-only)), and web's queue offers no Remove on one; the officer marks it reviewed or dismisses it.
+  A report on a member's post there, from before the channel was read-only, removes it as anywhere else.
 - **In a 1:1 DM the removal can reveal the reporter to the sender** — the one inference § Report accepts.
   The sender sees their message removed, and the DM's other member is the only person who could have reported it.
   Accepted with this option (owner, 2026-09-22) as the cost of the chapter being able to act on a DM at all; the confirmation tells the officer before they remove: "The sender will see this message was removed.
@@ -1503,6 +1525,7 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
   The report names the message; the client never does, so there is no second identifier to point at a sibling message.
   The grant is checked inside the shared predicate — `ChannelAccessService.assertMessageAccess` with an explicit `ReportedMessageGrant`, not a second authorization path — against the message it names, the caller's chapter, the message's channel resolving inside that chapter, and the caller's membership.
   It authorizes a `read`-class action only; a report never authorizes an edit or an upload.
+  _(2026-11-17: the removal now names itself to the predicate as a `delete`, a `modify` of the message, rather than a `read`; the grant takes a `read` or a `delete` and nothing else — never a post, thread reply, vote, close, answer, pin or flag — so what it allows is unchanged.)_
 - **Only an open report in the caller's chapter, and not one about the caller.**
   The report is read scoped to the chapter and without the reports about the caller (§ Report), so another chapter's report and a report about the officer are the same 404 as none.
   A report that is `reviewed` or `dismissed` grants nothing (409); an `actioned` one is answered by the report-level replay below, and never removes anything itself.
@@ -1692,6 +1715,10 @@ Until 2026-11-09 it was gated like any read-only channel, and a member holding `
   a channel an officer or an import makes later with that name stays ordinary), and the push default (`builtInChannelDefault`) and the clients' system-channel glyph and row menu (`isSystemChannel`) still match the name ([#3910](https://github.com/pdcarlson/Frapp/issues/3910)).
 - **No member writes in it, whatever they hold.**
   `canAccessChannel` refuses every `post` and `vote` in a flagged channel ahead of the read-only gate, so `*` and every posting list are refused too (403, a quote reply included), and so are an upload URL and a poll.
+  Frapp's record there can't be altered or erased (2026-11-17), `channels:manage` and the President included: nobody deletes one of the entries Frapp wrote (a `system_audit` row, or anything the system actor sent), even through a report, and nothing in the channel takes a new pin or flag, since either would raise one line over the rest of the record (403 "The audit log is read-only. Only Frapp posts in it, its entries can’t be removed, and nothing in it can be flagged or pinned.").
+  Taking a pin or a flag off is allowed, so one added before the channel became read-only can still go.
+  A member's post from before then is not part of the record: its author, a `channels:manage` holder, or an officer acting on an open report can still delete it, as in any channel.
+  The rule is `auditLogAllowsChange` in `@repo/validation`, which `ChannelAccessService.assertMessageAccess` applies with the message in hand and both clients read to decide what they offer: no Delete on an entry, Flag only to take one off, Pin only to unpin, and no Remove in web's report queue on a report about an entry.
   Reads and reactions are unaffected.
   The audit mirror (`ChatBridgeWorkerService`) inserts its `system_audit` rows through the message repository and never passes this gate, which is what leaves it the only writer.
   The Discord importer, the other server path that inserts history directly, refuses the audit log as a merge target (the mapping save and the import worker both check, and the worker also stops if a channel it creates turns out to be the audit log), and the web wizard never offers or defaults to it.
@@ -2374,7 +2401,7 @@ After a chapter moves off Discord, a member's own years of history would otherwi
 A member fixes that by **linking the Discord account they used**, and from then on their imported messages in that chapter are theirs.
 
 - **Only the member links, by signing in to Discord.**
-  Settings → Discord history (`/preferences?section=discord`) sends them through Discord's sign-in with the `identify` scope and nothing else (no bot, no server list), which proves the account is theirs.
+  Settings → Linked apps (`/preferences?section=apps`) sends them through Discord's sign-in with the `identify` scope and nothing else (no bot, no server list), which proves the account is theirs.
   Rejected: _officer mapping_, where an officer matches Discord authors to members.
   It is faster at cutover, but an officer would be putting a member's name on words the member may not have written, and a wrong match publishes a false attribution to the whole chapter and aims blocks and reports at the wrong person.
   Also not built: _officer suggests, member confirms_.

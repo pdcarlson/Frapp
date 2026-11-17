@@ -1,5 +1,4 @@
 import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
-import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   AI_REPORT_NOTE_MAX_LENGTH,
@@ -10,6 +9,7 @@ import {
   type AiReportReason,
   type AiReportSubject,
 } from '@repo/validation';
+import { Trim } from '../decorators/trim.decorator';
 
 /** `POST /v1/ai/reports`: a member reports something the AI made (#4315). */
 export class CreateAiReportDto {
@@ -37,9 +37,7 @@ export class CreateAiReportDto {
     maxLength: AI_REPORT_NOTE_MAX_LENGTH,
     description: 'The member’s own words, if they add any.',
   })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Trim()
   @IsOptional()
   @IsString()
   @MaxLength(AI_REPORT_NOTE_MAX_LENGTH)

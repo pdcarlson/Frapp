@@ -22,7 +22,7 @@ import {
   readBounded,
 } from "@/components/settings/module-rules";
 import { FOCUS_RING } from "@/components/ui/focus";
-import { SearchablePicker } from "@/components/settings/searchable-picker";
+import { SearchablePicker } from "@/components/shared/searchable-picker";
 import { useToast } from "@/lib/hooks/use-toast";
 import { toRoleOptions, type RoleOption } from "@repo/hooks/chapter-roles";
 import { cn } from "@/lib/utils";

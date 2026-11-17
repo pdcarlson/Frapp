@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
 import { MeetingRecordingService } from '../../application/services/meeting-recording.service';
 import { MeetingRecordingSweepService } from '../../application/workers/meeting-recording-sweep.service';
-import { MeetingRecordingController } from '../../interface/controllers/meeting-recording.controller';
+import {
+  MeetingRecorderController,
+  MeetingRecordingController,
+} from '../../interface/controllers/meeting-recording.controller';
 import { AiEnabledGuard } from '../../interface/guards/ai-enabled.guard';
 import { SupabaseMeetingRecordingRepository } from '../../infrastructure/supabase/repositories/supabase-meeting-recording.repository';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
@@ -30,7 +33,7 @@ import { MeetingModule } from './meeting.module';
     // The officer is told at once when the chapter or they have not said yes.
     AiConsentModule,
   ],
-  controllers: [MeetingRecordingController],
+  controllers: [MeetingRecordingController, MeetingRecorderController],
   providers: [
     MeetingRecordingService,
     MeetingRecordingSweepService,

@@ -38,6 +38,7 @@ describe("which actions a member can use", () => {
         enabledModules: undefined,
       }),
     ).toEqual([
+      "search",
       "newEvent",
       "newTask",
       "invite",
@@ -49,13 +50,41 @@ describe("which actions a member can use", () => {
     ]);
   });
 
+  it("offers New minutes first where the chapter drafts minutes (#5287)", () => {
+    const keys = (permissions: string[], meetingNotes: boolean) =>
+      availableQuickActions({
+        permissions,
+        enabledModules: undefined,
+        meetingNotes,
+      });
+    expect(keys(OFFICER, true)[0]).toBe("newMinutes");
+    expect(keys(OFFICER, false)).not.toContain("newMinutes");
+    // `POST /v1/meetings` checks meetings:record.
+    expect(keys(["members:view"], true)).not.toContain("newMinutes");
+    expect(keys(["meetings:record"], true)).toContain("newMinutes");
+    expect(
+      availableQuickActions({
+        permissions: OFFICER,
+        enabledModules: { meetings: false },
+        meetingNotes: true,
+      }),
+    ).not.toContain("newMinutes");
+  });
+
+  it("offers Search where GET /v1/search would answer (#5287)", () => {
+    const keys = (permissions: string[]) =>
+      availableQuickActions({ permissions, enabledModules: undefined });
+    expect(keys([])).toEqual([]);
+    expect(keys(["members:view"])).toContain("search");
+  });
+
   it("gives a member only what needs no officer permission", () => {
     expect(
       availableQuickActions({
         permissions: ["members:view", "service:log"],
         enabledModules: undefined,
       }),
-    ).toEqual(["message", "logHours", "study"]);
+    ).toEqual(["search", "message", "logHours", "study"]);
   });
 
   it("asks each action for the permission its endpoint does", () => {
@@ -65,8 +94,8 @@ describe("which actions a member can use", () => {
         enabledModules: undefined,
       });
     // New Member and Alumni hold members:view but not service:log.
-    expect(keys(["members:view"])).toEqual(["message", "study"]);
-    // No roster, no Directory and no study sessions.
+    expect(keys(["members:view"])).toEqual(["search", "message", "study"]);
+    // No roster, no Directory, no search and no study sessions.
     expect(keys(["service:log"])).toEqual(["logHours"]);
     // `POST /v1/tasks` also needs the controller's members:view (#3865).
     expect(keys(["tasks:manage"])).not.toContain("newTask");
@@ -88,7 +117,7 @@ describe("which actions a member can use", () => {
       enabledModules: { events: false, hours: false, documents: false },
     });
     // Invites have no module switch.
-    expect(keys).toEqual(["newTask", "invite", "message"]);
+    expect(keys).toEqual(["search", "newTask", "invite", "message"]);
     expect(
       availableQuickActions({
         permissions: OFFICER,
@@ -137,21 +166,42 @@ describe("what the panel shows", () => {
 
   it("starts an officer on the first six, Invite among them", () => {
     expect(resolveQuickActions(null, officer)).toEqual([
+      "search",
       "newEvent",
       "newTask",
       "invite",
       "message",
       "hostCheckIn",
-      "logHours",
     ]);
   });
 
-  it("starts a member on the three they can use", () => {
+  it("starts an officer whose chapter drafts minutes on New minutes", () => {
+    expect(
+      resolveQuickActions(
+        null,
+        availableQuickActions({
+          permissions: OFFICER,
+          enabledModules: undefined,
+          meetingNotes: true,
+        }),
+      ),
+    ).toEqual([
+      "newMinutes",
+      "search",
+      "newEvent",
+      "newTask",
+      "invite",
+      "message",
+    ]);
+  });
+
+  it("starts a member on the four they can use", () => {
     const member = availableQuickActions({
       permissions: ["members:view", "service:log"],
       enabledModules: undefined,
     });
     expect(resolveQuickActions(null, member)).toEqual([
+      "search",
       "message",
       "logHours",
       "study",
@@ -180,14 +230,22 @@ describe("what the panel shows", () => {
     expect(resolveQuickActions([], officer)).toEqual([]);
   });
 
-  it("starts on two rows, and keeps every action once a member places them all", () => {
+  it("starts on two rows, and holds at most nine", () => {
     expect(QUICK_ACTION_START).toBe(6);
     expect(QUICK_ACTION_LIMIT).toBe(9);
     expect(resolveQuickActions(null, officer)).toHaveLength(QUICK_ACTION_START);
     expect(resolveQuickActions([...officer], officer)).toEqual(officer);
-    // Eight since Check in left (2026-11-13), all of which fit under the cap.
-    expect(officer).toHaveLength(8);
-    expect(officer.length).toBeLessThanOrEqual(QUICK_ACTION_LIMIT);
+    // Nine without minutes drafting: every one fits.
+    expect(officer).toHaveLength(9);
+    // Ten with it (#5287): the cap stays nine (Paul, 2026-11-17), so one
+    // waits in the Add row. Recording takes no slot: it starts from New minutes.
+    const all = availableQuickActions({
+      permissions: OFFICER,
+      enabledModules: undefined,
+      meetingNotes: true,
+    });
+    expect(all).toHaveLength(10);
+    expect(resolveQuickActions([...all], all)).toHaveLength(QUICK_ACTION_LIMIT);
   });
 });
 

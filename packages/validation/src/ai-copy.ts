@@ -17,19 +17,29 @@
  */
 
 /** The president's switches, as the API names them (`AI_CHAPTER_SWITCHES`). */
-export type AiChapterSwitchKey = "meeting_notes" | "ask" | "chat_source";
+export type AiChapterSwitchKey =
+  | "meeting_notes"
+  | "ask"
+  | "chat_source"
+  | "nudges";
 
 export interface AiSwitchCopy {
   key: AiChapterSwitchKey;
   label: string;
   description: string;
+  /**
+   * The phone's line under the switch: the same promise in a row's width
+   * (Chapter settings, #4789). Web draws `description`.
+   */
+  short: string;
   /** The switch this one only matters under, drawn nested beneath it. */
   dependsOn?: AiChapterSwitchKey;
 }
 
 /**
  * In the order the settings page draws them: the beta feature first, then
- * Ask and the switch that lets Ask and summaries read channel messages.
+ * Ask and the switch that lets Ask and summaries read channel messages, then
+ * nudges, the one that starts on (Paul, 2026-11-17).
  */
 export const AI_SWITCHES: readonly AiSwitchCopy[] = [
   {
@@ -37,6 +47,8 @@ export const AI_SWITCHES: readonly AiSwitchCopy[] = [
     label: "Minutes from notes",
     description:
       "An officer pastes or types the meeting's notes and gets a first draft of the minutes to fix and post, with tasks suggested from it. Never for Standards meetings.",
+    short:
+      "A first draft of the minutes from an officer's notes. Never for Standards.",
   },
   {
     key: "ask",
@@ -45,21 +57,81 @@ export const AI_SWITCHES: readonly AiSwitchCopy[] = [
       // Announcements are chat (#4915): they reach Ask only with "Include
       // channel messages" on, so this switch doesn't name them.
       "Members ask a question and get an answer from the chapter's documents, posted minutes and records, with the sources it used.",
+    short:
+      "Members ask and get answers from the chapter's documents, minutes and records.",
   },
   {
     key: "chat_source",
     label: "Include channel messages",
     description:
       "Ask Frapp also reads messages in chapter channels, and members can ask for a summary of a channel's new messages or of a thread. Only messages from members who have Frapp AI on. Never direct messages.",
+    short:
+      "Ask and channel summaries read chapter channels. Only members with Frapp AI on, never DMs.",
     dependsOn: "ask",
+  },
+  {
+    key: "nudges",
+    label: "Nudges on Activity",
+    description:
+      "Frapp puts a short card on a member's Activity when one of their own tasks is coming due, late or sent back, with a place to start, and says thanks when they finish on time.",
+    short:
+      "A short card on a member's Activity when one of their tasks could use a word.",
   },
 ];
 
+/** The chapter's switches as the API serves them; a missing one reads as off. */
+export type AiChapterSwitchValues = Partial<
+  Record<AiChapterSwitchKey, boolean>
+>;
+
+/**
+ * How one switch draws, the same on web and the phone (#4789): its own
+ * value; whether the switch it depends on is off (`parentOff`, drawn
+ * muted); and whether it waits on that parent (`waitsOnParent`: off, so it
+ * can't be turned on until the parent is, and says so). A switch whose
+ * parent is off but which is still on stays usable, so a president can
+ * clear what it would do.
+ */
+export function aiSwitchState(
+  entry: AiSwitchCopy,
+  settings: AiChapterSwitchValues | null | undefined,
+) {
+  const checked = settings?.[entry.key] === true;
+  const parentOff =
+    entry.dependsOn !== undefined && settings?.[entry.dependsOn] !== true;
+  return { checked, parentOff, waitsOnParent: parentOff && !checked };
+}
+
+/**
+ * How many of the chapter's AI features are working: a switch counts only
+ * when it and the one it depends on are on, since Include channel messages
+ * does nothing with Ask off (the server keeps it either way).
+ */
+export function aiSwitchesInEffect(
+  settings: AiChapterSwitchValues | null | undefined,
+): number {
+  return AI_SWITCHES.filter((entry) => {
+    const { checked, parentOff } = aiSwitchState(entry, settings);
+    return checked && !parentOff;
+  }).length;
+}
+
 export const AI_SETTINGS_COPY = {
   title: "AI",
-  /** `{providers}` is the sheet's providers, joined with {@link joinNames}. */
-  description: (providers: string) =>
-    `These features send chapter information to ${providers}. Each is off until the president turns it on, and each member chooses for themselves whether Frapp AI is on.`,
+  /**
+   * No company names (Paul, 2026-11-17: "we don't need to say it works with
+   * Anthropic, Google, and AssemblyAI ... that lives in the privacy policy").
+   * They stay on Meet Frapp AI, where the member's yes is given.
+   */
+  description:
+    "Each is on unless the president turns it off, and each member chooses for themselves whether Frapp AI is on.",
+  /** The phone's footnote under the switches in Chapter settings. */
+  phoneFootnote:
+    "Each member also chooses for themselves whether Frapp AI is on.",
+  /** The phone's row in a member's own Settings that opens these switches. */
+  chapterRow: "Chapter AI",
+  /** That row's value: how many of the chapter's switches are on. */
+  chapterRowValue: (on: number) => `${on} on`,
   presidentOnly: "Only the chapter president can turn these on or off.",
   dependsOnAsk: "Turn on Ask Frapp first.",
   lastChanged: (date: string) => `Last changed ${date}.`,
@@ -93,14 +165,12 @@ export const FRAPP_AI_COPY = {
   ] as readonly FrappAiPoint[],
   /**
    * The one line that makes Continue an explicit yes (Apple 5.1.2(i)): who
-   * it works with, and that Continue turns it on. `forChapter` is a
-   * president whose chapter has never had its AI switches set: their
-   * Continue turns them on too, and the line says so.
+   * it works with, and that Continue turns it on. It names only the
+   * member's account: the chapter's switches start on (#5294), so it no
+   * longer has a "for you and your chapter" form.
    */
-  disclosure: (providers: string, forChapter: boolean) =>
-    forChapter
-      ? `Frapp AI works with ${providers}. Continuing turns it on for you and your chapter.`
-      : `Frapp AI works with ${providers}. Continuing turns it on for your account.`,
+  disclosure: (providers: string) =>
+    `Frapp AI works with ${providers}. Continuing turns it on for your account.`,
   privacyLink: "Privacy policy",
   continue: "Continue",
   notNow: "Not now",
@@ -111,7 +181,17 @@ export const FRAPP_AI_COPY = {
   /** Settings: the member's own switch. */
   settingsTitle: "Frapp AI",
   settingsSwitch: "Frapp AI",
-  settingsCaption: (providers: string) => `Works with ${providers}.`,
+  /**
+   * What it does, not who it works with: the companies are named on Meet
+   * Frapp AI, which turning the switch on opens, and in the privacy policy
+   * (Paul, 2026-11-17).
+   */
+  settingsCaption:
+    "Ask questions, catch up on channels, draft minutes and get nudges.",
+  /** The phone's Settings section that holds Frapp AI and nudges. */
+  settingsSection: "AI",
+  /** The line under that section; `privacyLink` is the linked words. */
+  settingsFootnote: "What Frapp AI reads and who it works with is in the",
   turnOffFailed: "Couldn't turn off Frapp AI",
   turnedOn: "Frapp AI is on",
   turnedOff: "Frapp AI is off",

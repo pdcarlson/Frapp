@@ -43,7 +43,6 @@ import { Svg, markFillProps, stroke } from "@/components/ui/duotone";
 import type { DuotoneGlyphProps } from "@/components/ui/duotone";
 import { NavGlyph } from "@/components/layout/nav-glyphs";
 
-
 export {
   DocumentsGlyph,
   ReportsGlyph,
@@ -62,9 +61,9 @@ export type ResourcesGlyphProps = DuotoneGlyphProps;
  * one), so it is drawn from the same shared two-tone set
  * (`@repo/theme/nav-glyphs`, Phosphor `folder`) rather than a second recipe.
  *
- * `spec/behavior/chapter-docs.md` specs folders as flat and one level deep, so
- * there is deliberately no open/closed pair to swap between: a folder here is
- * a filter, and `active` recolours the one glyph as the recipe requires.
+ * There is deliberately no open/closed pair to swap between: a folder here is
+ * a filter, and `active` recolours the one glyph as the recipe requires. The
+ * rail's tree (#5337) says open or closed with its chevron, not the glyph.
  */
 export function FolderGlyph(props: ResourcesGlyphProps) {
   return <NavGlyph paths={NAV_GLYPHS.folder} {...props} />;

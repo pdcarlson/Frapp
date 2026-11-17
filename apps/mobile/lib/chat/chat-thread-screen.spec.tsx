@@ -26,18 +26,11 @@ vi.mock("@/components/chat/chat-background", () => ({
   ChatBackground: () => null,
 }));
 
-vi.mock("@/lib/chapter-branding", () => ({
-  useChapterBranding: () => ({
-    accent: "#CB9FFF",
-    accentPrimary: "#8E4EC6",
-    accentOnPrimary: "#FFFFFF",
-    accentSubtle: "#251A33",
-    accentBorder: "#5C3E8A",
-    logoUrl: null,
-    chapterName: null,
-    textMark: null,
-  }),
-}));
+vi.mock("@/lib/chapter-branding", async () => {
+  const { chapterBrandingMock, PURPLE_BRANDING } =
+    await import("@/test/chapter-branding");
+  return chapterBrandingMock(PURPLE_BRANDING);
+});
 import type { ChatMessage } from "@repo/chat-core/types";
 import type { ThreadRow } from "@repo/chat-core/blocks";
 import { ChatComposer } from "@/components/chat/chat-composer";
@@ -3139,7 +3132,10 @@ describe("chat thread flags from the actions sheet", () => {
     const tree = render();
     const sheet = openSheetOn(tree);
 
-    expect(sheet.props.target.flag).toEqual({ current: null });
+    expect(sheet.props.target.flag).toEqual({
+      current: null,
+      removeOnly: false,
+    });
     act(() =>
       (sheet.props.onFlag as (id: string, f: string | null) => void)(
         "m1",
@@ -3164,6 +3160,7 @@ describe("chat thread flags from the actions sheet", () => {
     tree = render();
     expect(openSheetOn(tree).props.target.flag).toEqual({
       current: "important",
+      removeOnly: false,
     });
     act(() => tree.unmount());
   });

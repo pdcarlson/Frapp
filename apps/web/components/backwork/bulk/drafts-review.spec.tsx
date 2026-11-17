@@ -293,6 +293,36 @@ describe("Backwork drafts AI fill (#5233)", () => {
     }
   });
 
+  it("asks again after a pause when another fill of the draft is still running (409)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      state.fill
+        .mockRejectedValueOnce({ statusCode: 409 })
+        .mockResolvedValue({ status: "nothing_found", draft: null });
+      state.drafts = [draft("a", {})];
+      render(<DraftsReview />);
+      await waitFor(() => expect(state.fill).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(state.fill).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(25_000);
+      await waitFor(() => expect(state.fill).toHaveBeenCalledTimes(2));
+      expect(state.fill.mock.calls.map(([id]) => id)).toEqual(["a", "a"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves a draft alone for the visit after any other failure", async () => {
+    state.fill.mockRejectedValueOnce({ statusCode: 500 });
+    state.drafts = [draft("a", {})];
+    const { rerender } = render(<DraftsReview />);
+    await waitFor(() => expect(state.fill).toHaveBeenCalledTimes(1));
+    state.drafts = [draft("a", {})];
+    rerender(<DraftsReview />);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(state.fill).toHaveBeenCalledTimes(1);
+  });
+
   it("says nothing when AI is off on the server", async () => {
     state.fill.mockRejectedValue({ statusCode: 404, code: "ai.not_available" });
     state.drafts = [draft("a", {}), draft("b", {}), draft("c", {})];

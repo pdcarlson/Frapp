@@ -54,8 +54,8 @@ applies it — and then, depending on `scope`:
 
 | `scope`           | What happens                                                                                                                                                                                                | Use it when                                                                                                                           |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `full` (default)  | Builds both Vercel bundles _before_ applying (a build failure then ships nothing), migrates, deploys the Supabase Edge Functions, deploys the same commit to Render, health-checks it, uploads the prebuilt bundles to Vercel, and tags `vX.Y.Z` | Almost always. Migrations and the code that needs them move together                                                                  |
-| `migrations-only` | Migrates, checks that the API it didn't redeploy still serves and answers its clients, and stops. No Edge Functions or Render deploy, no Vercel build, **no tag**                                                                                                                                           | Re-running an apply that failed partway; applying a backlog ahead of the code that needs it; applying on a schedule no deploy matches |
+| `full` (default)  | Builds both Vercel bundles _before_ applying (a build failure then ships nothing), migrates, deploys the Supabase Edge Functions, deploys the same commit's API (Cloud Run since #5228, Render before), health-checks it, uploads the prebuilt bundles to Vercel, and tags `vX.Y.Z` | Almost always. Migrations and the code that needs them move together                                                                  |
+| `migrations-only` | Migrates, checks that the API it didn't redeploy still serves and answers its clients, and stops. No Edge Functions or API deploy, no Vercel build, **no tag**                                                                                                                                           | Re-running an apply that failed partway; applying a backlog ahead of the code that needs it; applying on a schedule no deploy matches |
 
 There is also a **dry-run-only** mode that validates and rehearses, then stops
 without applying anything, under either scope.
@@ -231,7 +231,8 @@ before the apply (its `Run migrations (dry-run)` step always runs first) and wha
 it applied.
 
 - [ ] The migration steps of the **Deploy staging** run for your merge commit are green
-- [ ] `GET /health/ready` answers `200`. It probes fresh on every call, while
+- [ ] `GET /health/ready` answers `200`. Its database and Storage probe is at
+      most 5 s old and its `billing:` check at most 5 minutes old, while
       `/health`'s fields can be up to 60 s old
       ([Health Check](../../../spec/behavior/observability.md#health-check)).
       A `503` names each dependency in `message`, and an unrelated Storage or
@@ -239,7 +240,7 @@ it applied.
       the `database:` part specifically for a migration verification
 - [ ] One auth-protected API route succeeds
 - [ ] Stripe staging webhook endpoint (`/v1/webhooks/stripe`) accepts signed event
-- [ ] No migration-related errors in Render logs
+- [ ] No migration-related errors in the API's Cloud Run logs
 
 If the migration failed, the API deploy and the web and landing upload for that
 commit were **also** skipped (they are later steps of the same job), so a red
@@ -294,14 +295,14 @@ The build creates no deployment — `vercel deploy --prebuilt` is a separate ste
 so a dry run still uploads nothing and production keeps serving what it served
 before.
 
-What the dry run still does **not** rehearse: the migration apply, the Render
+What the dry run still does **not** rehearse: the migration apply, the API
 deploy, the health check, and the Vercel upload. Those are withheld by choice —
 each one writes to production or takes production traffic — not because they are
 impossible to rehearse, so do not read the list as a technical limit.
 
 One difference sits _inside_ the build: a real run compiles with
 `SENTRY_AUTH_TOKEN` when Infisical `prod` holds it
-([which environments carry it](../../internal/environment/ENV_REFERENCE.md#appsapi-nestjs--render)),
+([which environments carry it](../../internal/environment/ENV_REFERENCE.md#appsapi-nestjs--cloud-run)),
 and then uploads source maps and creates a Sentry release. A dry run withholds the
 token from the build and strips it from the file `vercel pull` writes, so it mints
 no release (#2275, since #2673). **Corrected 2026-09-28:** before that, the dry run
@@ -326,7 +327,7 @@ migrations-only`**. It keeps every gate the full path has (SHA validation, the
 provider preflight, the replay, the working-tree fence) and stops after the apply
 and the checks that production still serves and answers its clients
 ([`ci-cd.md` § Deploy verification](../deployment/ci-cd.md#deploy-verification)): no
-Render deploy, no Vercel build, no tag. Production is then running
+API deploy, no Vercel build, no tag. Production is then running
 the previous code against the new schema until you come back with a `full` run,
 so the migration must be forward-compatible with the deployed API.
 
@@ -353,8 +354,9 @@ the new container until Render marked the deploy `update_failed`.
 
 Before you promote, check what that step can't see:
 
-- [ ] **The Render sync has copied the value.** The step reads Infisical, which is the
-      sync's source. A sync that failed or lags still boots the API on the old value
+- [ ] **The Secret Manager sync has copied the value.** The step reads Infisical, which is the
+      sync's source. A sync that failed or lags still boots the API on the old value, because
+      the deploy pins the latest version Secret Manager holds
       ([`SECRETS_MANAGEMENT.md` § 5](../../internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs)).
 - [ ] **The value is right, not just well-formed.** A secret key from the other Supabase
       project, or a `price_…` from the retired Stripe account, passes `validateEnv`. The

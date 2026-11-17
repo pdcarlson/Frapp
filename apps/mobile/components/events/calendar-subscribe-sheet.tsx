@@ -10,21 +10,12 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
-import * as WebBrowser from "expo-web-browser";
 import { BottomSheetModal, BottomSheetView } from "@gorhom/bottom-sheet";
 import {
   calendarAppLinks,
-  errorCopy,
-  GOOGLE_CALENDAR_RETURN_COPY,
-  googleCalendarDisconnectCopy,
   googleCalendarFootnote,
-  readGoogleCalendarReturn,
   useCalendarFeedLink,
-  useConfirmGoogleCalendarConnect,
-  useDisconnectGoogleCalendar,
-  useGoogleCalendarStatus,
   useResetCalendarFeedLink,
-  useStartGoogleCalendarConnect,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
@@ -36,27 +27,21 @@ import {
   useSheetClose,
   SHEET_STACK_BEHAVIOR,
 } from "@/components/sheet-scaffold";
+import {
+  GOOGLE_CALENDAR_WEB,
+  useGoogleCalendarConnection,
+} from "@/lib/events/google-calendar-connect";
 import { selectionHaptic } from "@/lib/haptics";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /** How long "Copied" stands in for "Copy link" before it reads as a row again. */
 const COPIED_HOLD_MS = 1500;
 /**
- * Where Google's sign-in comes back to: the Events tab, which is where the
- * member started, so the router has a real screen to land on when the system
+ * Where Google's sign-in comes back to by default: the Events tab, which is
+ * where the member started, so the router has a real screen to land on when the system
  * also hands the address to the app.
  */
 const GOOGLE_RETURN_PATH = "events";
-const GOOGLE_CALENDAR_WEB = "https://calendar.google.com/calendar/r";
-/**
- * Sign-ins this app has already finished, by return address and by sign-in.
- * Kept for the life of the process, not the sheet: `Linking.useURL` hands
- * every new mount the address that launched the app, so a sheet that mounts
- * again (a chapter switch, signing in again) would post a spent code and say
- * the connection failed. `join.tsx` keeps its launch address the same way.
- */
-const finishedSignIns = new Set<string>();
-
 /**
  * Subscribe (#3322): the Events header's sheet that puts the chapter's events,
  * and the member's own open tasks, on the calendar they already use, through
@@ -88,8 +73,19 @@ const finishedSignIns = new Set<string>();
  */
 export const CalendarSubscribeSheet = forwardRef<
   BottomSheetModal,
-  { open: boolean; onDismiss: () => void }
->(function CalendarSubscribeSheet({ open, onDismiss }, ref) {
+  {
+    open: boolean;
+    onDismiss: () => void;
+    /**
+     * Where Google's sign-in comes back to: the screen that opened the sheet
+     * (Events, or Settings, #5407).
+     */
+    googleReturnPath?: string;
+  }
+>(function CalendarSubscribeSheet(
+  { open, onDismiss, googleReturnPath = GOOGLE_RETURN_PATH },
+  ref,
+) {
   const closeSheet = useSheetClose(ref);
   const backgroundStyle = useSheetBackgroundStyle();
   const { tokens } = useFrappTheme();
@@ -97,12 +93,13 @@ export const CalendarSubscribeSheet = forwardRef<
   const link = useCalendarFeedLink({ enabled: open });
   const reset = useResetCalendarFeedLink();
   const apps = link.data ? calendarAppLinks(link.data) : null;
-  const google = useGoogleCalendarStatus();
-  const startGoogle = useStartGoogleCalendarConnect();
-  const confirmGoogle = useConfirmGoogleCalendarConnect().mutateAsync;
-  const disconnectGoogle = useDisconnectGoogleCalendar();
-  const googleConnect = google.data?.available ? google.data : null;
-  const returnUrl = Linking.useURL();
+  const google = useGoogleCalendarConnection({
+    returnPath: googleReturnPath,
+    beforeOpen: closeSheet,
+  });
+  const googleConnect = google.status.data?.available
+    ? google.status.data
+    : null;
   const [copied, setCopied] = useState(false);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -124,97 +121,9 @@ export const CalendarSubscribeSheet = forwardRef<
     closeSheet();
   }
 
-  /**
-   * Finish a sign-in Google sent back. The same address can arrive twice (the
-   * sign-in sheet's result, and the system handing it to the app), and the
-   * code is single use, so each sign-in is finished once.
-   */
-  function finishGoogle(url: string) {
-    const query = url.includes("?") ? url.slice(url.indexOf("?") + 1) : "";
-    const outcome = readGoogleCalendarReturn(new URLSearchParams(query));
-    if (!outcome || finishedSignIns.has(url)) return;
-    finishedSignIns.add(url);
-    if (outcome.kind !== "confirm") {
-      if (outcome.kind !== "denied") {
-        Alert.alert(
-          "Google Calendar wasn't connected",
-          outcome.kind === "expired"
-            ? GOOGLE_CALENDAR_RETURN_COPY.expired
-            : GOOGLE_CALENDAR_RETURN_COPY.failed,
-        );
-      }
-      return;
-    }
-    if (finishedSignIns.has(outcome.state)) return;
-    finishedSignIns.add(outcome.state);
-    void confirmGoogle({ code: outcome.code, state: outcome.state })
-      .then(() =>
-        Alert.alert(
-          "Google Calendar connected",
-          "Your chapter's events and your tasks show up there within a minute.",
-        ),
-      )
-      .catch((error: unknown) =>
-        Alert.alert(
-          "Google Calendar wasn't connected",
-          errorCopy(error, GOOGLE_CALENDAR_RETURN_COPY.failed, {
-            serverWritesForMembers: true,
-          }),
-        ),
-      );
-  }
-
-  useEffect(() => {
-    if (returnUrl) finishGoogle(returnUrl);
-    // finishGoogle reads only refs and stable mutations.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [returnUrl]);
-
-  async function connectGoogle() {
-    const back = Linking.createURL(GOOGLE_RETURN_PATH);
-    closeSheet();
-    try {
-      const url = await startGoogle.mutateAsync({
-        client: "mobile",
-        returnUrl: back,
-      });
-      const result = await WebBrowser.openAuthSessionAsync(url, back);
-      if (result.type === "success") finishGoogle(result.url);
-    } catch (error) {
-      Alert.alert(
-        "Couldn't open Google",
-        errorCopy(error, "Try again in a moment."),
-      );
-    }
-  }
-
   function openGoogleCalendar() {
     closeSheet();
     void Linking.openURL(GOOGLE_CALENDAR_WEB).catch(() => {});
-  }
-
-  function confirmDisconnectGoogle() {
-    const copy = googleCalendarDisconnectCopy(googleConnect?.google_email);
-    Alert.alert(
-      copy.title,
-      copy.description,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: () =>
-            void disconnectGoogle
-              .mutateAsync()
-              .catch((error: unknown) =>
-                Alert.alert(
-                  "Couldn't disconnect",
-                  errorCopy(error, "Try again in a moment."),
-                ),
-              ),
-        },
-      ],
-    );
   }
 
   function explainGoogle() {
@@ -280,11 +189,13 @@ export const CalendarSubscribeSheet = forwardRef<
           key: "google",
           label: "Google Calendar",
           detail:
-            googleConnect.status === "needs_reconnect" ? "Reconnect" : undefined,
+            googleConnect.status === "needs_reconnect"
+              ? "Reconnect"
+              : undefined,
           detailTone: "destructive",
-          onPress: () => void connectGoogle(),
+          onPress: () => void google.connect(),
           alwaysReady: true,
-          busy: startGoogle.isPending,
+          busy: google.connecting,
         };
   const rows: Row[] = [
     ...(Platform.OS === "ios"
@@ -340,9 +251,7 @@ export const CalendarSubscribeSheet = forwardRef<
                   pressed ? styles.rowPressed : null,
                 ]}
               >
-                <Text
-                  style={[styles.rowLabel, enabled ? null : styles.dimmed]}
-                >
+                <Text style={[styles.rowLabel, enabled ? null : styles.dimmed]}>
                   {row.label}
                 </Text>
                 {row.detail ? (
@@ -364,9 +273,9 @@ export const CalendarSubscribeSheet = forwardRef<
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Disconnect Google Calendar"
-              accessibilityState={{ disabled: disconnectGoogle.isPending }}
-              disabled={disconnectGoogle.isPending}
-              onPress={confirmDisconnectGoogle}
+              accessibilityState={{ disabled: google.disconnecting }}
+              disabled={google.disconnecting}
+              onPress={google.confirmDisconnect}
               style={({ pressed }) => [
                 styles.row,
                 pressed ? styles.rowPressed : null,

@@ -470,7 +470,9 @@ export function useSaveMeetingNotes() {
     },
     onSuccess: (data, { id }) => {
       queryClient.setQueryData(meetingNotesKey(chapterId, id), data);
-      void queryClient.invalidateQueries({ queryKey: noteTakingKey(chapterId) });
+      void queryClient.invalidateQueries({
+        queryKey: noteTakingKey(chapterId),
+      });
     },
   });
 }
@@ -540,10 +542,10 @@ export function useMeetingNoteTaking(options?: {
       ? ([...noteTakingKey(chapterId), "event", eventId] as const)
       : noteTakingKey(chapterId),
     queryFn: async ({ signal }): Promise<MeetingNoteTaking[]> => {
-      const { data, error, response } = await client.GET(
-        "/v1/meeting-notes",
-        { params: { query: eventId ? { event_id: eventId } : {} }, signal },
-      );
+      const { data, error, response } = await client.GET("/v1/meeting-notes", {
+        params: { query: eventId ? { event_id: eventId } : {} },
+        signal,
+      });
       if (response.status === 404 || response.status === 403) return [];
       if (error) throw error;
       return data ?? [];
@@ -633,6 +635,40 @@ export function useMeetingRecording(
       query.state.data?.status === "transcribing"
         ? TRANSCRIBING_POLL_MS
         : false,
+  });
+}
+
+/** What recording would do for the caller, before any minutes exist (#5287). */
+export type MeetingRecorderAvailability =
+  components["schemas"]["MeetingRecorderAvailabilityDto"];
+
+/**
+ * Whether a recording made now could be written out, why this member can't
+ * send one yet, and the server's limits, before any minutes exist (#5287):
+ * the phone's + reads it to decide whether New minutes offers Record the meeting. `null` when
+ * the server has AI off (404) or the member may not record (403), which both
+ * mean "can't be written out".
+ */
+export function useMeetingRecorderAvailability(options?: {
+  enabled?: boolean;
+}) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["meetings", chapterId, "recorder"] as const,
+    queryFn: async ({
+      signal,
+    }): Promise<MeetingRecorderAvailability | null> => {
+      const { data, error, response } = await client.GET(
+        "/v1/meeting-recorder",
+        { signal },
+      );
+      if (response.status === 404 || response.status === 403) return null;
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 5 * 60_000,
+    enabled: (options?.enabled ?? true) && !!chapterId,
   });
 }
 

@@ -1,9 +1,7 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createFrappClient } from "@repo/api-sdk";
 import {
   useBackworkResources,
   useFetchBackworkResource,
@@ -17,8 +15,9 @@ import {
   useMergeDepartments,
   useBackworkCourses,
   useSaveBackworkCourse,
+  useFillBackworkDraft,
 } from "./use-backwork";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 describe("useBackwork hooks", () => {
 const BACKWORK_KEY = ["backwork"];
@@ -39,27 +38,16 @@ const CHAPTER_ID = "chapter-abc";
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
+    queryClient = createTestQueryClient();
   });
 
   const createWrapper = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={mockClient as ReturnType<typeof createFrappClient>}
-        chapterId={CHAPTER_ID}
-      >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </FrappClientProvider>
-    );
-
-    Wrapper.displayName = "BackworkHookWrapper";
-    return Wrapper;
+    return createHookWrapper({
+      client: mockClient,
+      queryClient,
+      chapterId: CHAPTER_ID,
+      displayName: "BackworkHookWrapper",
+    });
   };
 
   describe("useBackworkResources", () => {
@@ -115,14 +103,11 @@ const CHAPTER_ID = "chapter-abc";
       const retrying = new QueryClient({ defaultOptions: { queries: { retry: 3 } } });
       const mockGet = vi.fn().mockResolvedValue({ data: null, error: new Error("Not found") });
       const { result } = renderHook(() => useFetchBackworkResource(), {
-        wrapper: ({ children }: { children: React.ReactNode }) => (
-          <FrappClientProvider
-            client={{ GET: mockGet } as unknown as ReturnType<typeof createFrappClient>}
-            chapterId={CHAPTER_ID}
-          >
-            <QueryClientProvider client={retrying}>{children}</QueryClientProvider>
-          </FrappClientProvider>
-        ),
+        wrapper: createHookWrapper({
+          client: { GET: mockGet },
+          queryClient: retrying,
+          chapterId: CHAPTER_ID,
+        }),
       });
       await expect(result.current("gone")).rejects.toThrow("Not found");
       expect(mockGet).toHaveBeenCalledTimes(1);
@@ -544,6 +529,39 @@ const CHAPTER_ID = "chapter-abc";
       // broad prefix, not a narrower key, is deliberate here.
       expect(invalidateQueriesSpy).toHaveBeenCalledWith({
         queryKey: BACKWORK_KEY,
+      });
+    });
+  });
+
+  describe("useFillBackworkDraft", () => {
+    // The app retries a failure that may be transient (`retryMutation` in
+    // apps/web's query provider); a client set to retry stands in for it.
+    const retryingClient = () =>
+      new QueryClient({ defaultOptions: { mutations: { retry: 3, retryDelay: 0 } } });
+
+    it.each([
+      ["a fill of the draft still running", 409],
+      ["a lost answer from a fill that may have finished", 502],
+    ])("does not retry %s on its own", async (_why, status) => {
+      const post = vi.fn().mockResolvedValue({
+        data: undefined,
+        error: undefined,
+        response: { status, ok: false },
+      });
+      const { result } = renderHook(() => useFillBackworkDraft(), {
+        wrapper: createHookWrapper({
+          client: { POST: post },
+          queryClient: retryingClient(),
+          chapterId: CHAPTER_ID,
+        }),
+      });
+
+      await act(async () => {
+        await expect(result.current.mutateAsync("draft-1")).rejects.toBeTruthy();
+      });
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(post).toHaveBeenCalledWith("/v1/backwork/drafts/{id}/fill", {
+        params: { path: { id: "draft-1" } },
       });
     });
   });

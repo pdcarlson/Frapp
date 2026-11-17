@@ -20,6 +20,7 @@ import {
   signupClaimSlotIds,
 } from '#domain/utils/signup-card-rules';
 import { isCardClosed } from '#domain/utils/card-closing';
+import { isReactionActionType } from '#domain/utils/message-action-types';
 import {
   CHAT_MESSAGE_ACTION_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
@@ -79,6 +80,22 @@ function assertCardPollVoteAllowed(
 
 /** The refusal of a claim on a closed sign-up card (#3926 step 2). */
 const SIGNUPS_CLOSED = 'Sign-ups are closed';
+
+/**
+ * The channel operation a card action is checked as (#4695). A poll vote and
+ * a sign-up claim are `'answer'`, as a form's answers are: refused in an
+ * archived channel and in the audit log, where the card can't be closed
+ * either, but open to every reader, as the cards on web and the phone offer
+ * them. A vote is not `'vote'`, which would also apply who can post and so
+ * refuse a member a poll in `#announcements` that the card lets them tap.
+ * An emoji reaction stays a `'read'`.
+ */
+function cardActionOperation(actionType: string): 'answer' | 'read' {
+  return actionType === CARD_VOTE_ACTION_TYPE ||
+    actionType === SIGNUP_ACTION_TYPE
+    ? 'answer'
+    : 'read';
+}
 
 /**
  * A member's responses to a message: emoji reactions on the legacy
@@ -180,6 +197,7 @@ export class ChatReactionService {
       messageId,
       chapterId,
       userId,
+      cardActionOperation(input.action_type),
     );
 
     // A deleted message takes no reaction, vote or card response, as it takes
@@ -190,7 +208,11 @@ export class ChatReactionService {
       throw new BadRequestException('Cannot act on a deleted message');
     }
 
-    const payload = input.payload ?? {};
+    // A reaction is its emoji and nothing else: no client sends it a payload,
+    // and every reader loads the row, so whatever one carries is not stored.
+    const payload = isReactionActionType(input.action_type)
+      ? {}
+      : (input.payload ?? {});
     const isVote = input.action_type === CARD_VOTE_ACTION_TYPE;
 
     // A claim on a sign-up card (#3926) has its own write: the slot limits are

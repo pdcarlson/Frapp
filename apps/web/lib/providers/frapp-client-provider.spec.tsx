@@ -2,11 +2,16 @@ import { render, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+// The token reader the provider hands the SDK, captured for the wiring test.
+let lastGetAuthToken: (() => Promise<string | null>) | undefined;
 vi.mock("@repo/api-sdk", () => ({
-  createFrappClient: (config: { getChapterId: () => string | null }) => ({
-    use: () => undefined,
-    __chapterId: config.getChapterId,
-  }),
+  createFrappClient: (config: {
+    getChapterId: () => string | null;
+    getAuthToken: () => Promise<string | null>;
+  }) => {
+    lastGetAuthToken = config.getAuthToken;
+    return { use: () => undefined, __chapterId: config.getChapterId };
+  },
 }));
 
 // Capture what the provider hands down, so a test can assert the client in
@@ -41,9 +46,18 @@ vi.mock("@/lib/auth/use-auth-user-id", () => ({
   useAuthUserId: () => authUserId,
 }));
 
+let sessionAnswer: { data: { session: null }; error: unknown } = {
+  data: { session: null },
+  error: null,
+};
 vi.mock("@/lib/supabase/client", () => ({
   createSupabaseBrowserClient: () => ({
-    auth: { getSession: async () => ({ data: { session: null } }) },
+    auth: {
+      getSession: async () => sessionAnswer,
+      onAuthStateChange: () => ({
+        data: { subscription: { unsubscribe: () => undefined } },
+      }),
+    },
   }),
 }));
 
@@ -247,5 +261,22 @@ describe("FrappProvider chapter-change cache drop", () => {
 
     expect(qc.getQueryData(["user", "me"])).toEqual({ id: "bootstrap" });
     expect(endBulkSessions).not.toHaveBeenCalled();
+  });
+});
+
+// FRAPP-API-E, #5360: the SDK must get the reader that holds a read back when
+// the sign-in refresh couldn't reach Auth, not one that sends it tokenless.
+describe("FrappProvider token reader", () => {
+  it("fails the read instead of sending it with no token", async () => {
+    const { AuthRetryableFetchError } = await import("@supabase/supabase-js");
+    sessionAnswer = {
+      data: { session: null },
+      error: new AuthRetryableFetchError("Failed to fetch", 0),
+    };
+    setup(makeClient());
+
+    await expect(lastGetAuthToken!()).rejects.toBeInstanceOf(TypeError);
+    sessionAnswer = { data: { session: null }, error: null };
+    await expect(lastGetAuthToken!()).resolves.toBeNull();
   });
 });

@@ -1,4 +1,8 @@
-import type { TaskProofKind } from '@repo/validation';
+import type {
+  TaskAudience,
+  TaskGroupProgress,
+  TaskProofKind,
+} from '@repo/validation';
 
 export enum TaskStatus {
   TODO = 'TODO',
@@ -57,7 +61,31 @@ export interface Task {
   series_id: string | null;
   /** A copy's day in its series' pattern (`YYYY-MM-DD`); null otherwise. */
   occurrence_date: string | null;
+  /**
+   * The group task this is one member's copy of (#4295 step 3), or null for a
+   * task given to one person. Each copy is an ordinary task with its own
+   * progress, proof and points.
+   */
+  group_id: string | null;
   created_at: string;
+}
+
+/**
+ * A task given to a group (#4295 step 3): one row naming who it went to, and
+ * one ordinary `tasks` row per member (a copy), made together.
+ */
+export interface TaskGroup {
+  id: string;
+  chapter_id: string;
+  created_by: string;
+  audience: TaskAudience;
+  created_at: string;
+}
+
+/** What a task read says about its group (#4295 step 3). */
+export interface TaskGroupSummary extends TaskGroupProgress {
+  id: string;
+  audience: TaskAudience;
 }
 
 /**
@@ -135,6 +163,12 @@ export interface TaskView extends Task {
    * doesn't repeat. Present on the list and detail reads.
    */
   series?: TaskSeriesSummary | null;
+  /**
+   * The group task this is a copy of, with how far the group is (#4295 step
+   * 3); null on a task given to one person. Present on the list and detail
+   * reads.
+   */
+  group?: TaskGroupSummary | null;
 }
 
 /** Which of a task's photos: the officer's reference or the assignee's proof. */

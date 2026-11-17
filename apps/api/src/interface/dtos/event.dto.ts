@@ -32,6 +32,11 @@ import {
   EVENT_ATTACHMENT_TITLE_MAX,
   EVENT_ATTACHMENTS_MAX,
   TASK_PROOF_LINK_MAX,
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NAME_MAX_LENGTH,
+  EVENT_NOTES_MAX_LENGTH,
+  tooLongRefusal,
   type EventAgendaItem,
   type EventAttachment,
 } from '@repo/validation';
@@ -40,6 +45,10 @@ import type { Event } from '#domain/entities/event.entity';
 import type { GeofenceCoordinate } from '#domain/entities/study.entity';
 import { GeofenceCoordinateDto } from './study.dto';
 import type { AssertNever } from './drift-guard';
+import {
+  EVENT_ROLE_ID_MAX_LENGTH,
+  EVENT_ROLE_IDS_MAX,
+} from '#domain/constants/field-limits';
 
 /**
  * Swagger/validation description shared by the create and update zone fields.
@@ -132,19 +141,27 @@ const AGENDA_DESCRIPTION = `This meeting's agenda, in order: at most ${EVENT_AGE
 const ATTACHMENTS_DESCRIPTION = `This meeting's attachments, in order: at most ${EVENT_ATTACHMENTS_MAX} titled links or Chapter Files documents. Sent whole; it replaces the stored list, and \`[]\` clears it. Per meeting, like \`agenda\`. A document must be one of the chapter's files when it is added; one the meeting already holds stays even if the file was deleted since.`;
 
 export class CreateEventDto {
-  @ApiProperty()
+  @ApiProperty({ maxLength: EVENT_NAME_MAX_LENGTH })
   @IsString()
-  @MaxLength(255)
+  @MaxLength(EVENT_NAME_MAX_LENGTH, {
+    message: tooLongRefusal("the event's name", EVENT_NAME_MAX_LENGTH),
+  })
   name: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_DESCRIPTION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_DESCRIPTION_MAX_LENGTH, {
+    message: tooLongRefusal('the description', EVENT_DESCRIPTION_MAX_LENGTH),
+  })
   description?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_LOCATION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_LOCATION_MAX_LENGTH, {
+    message: tooLongRefusal('the location', EVENT_LOCATION_MAX_LENGTH),
+  })
   location?: string;
 
   @ApiProperty()
@@ -193,31 +210,40 @@ export class CreateEventDto {
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles that must attend. See `others_invited` for members holding none of the listed roles.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   required_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description: 'Roles invited but not required.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   optional_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   excluded_role_ids?: string[];
 
   @ApiPropertyOptional({
@@ -228,9 +254,12 @@ export class CreateEventDto {
   @IsStrictBoolean()
   others_invited?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_NOTES_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_NOTES_MAX_LENGTH, {
+    message: tooLongRefusal('the notes', EVENT_NOTES_MAX_LENGTH),
+  })
   notes?: string;
 
   @ApiPropertyOptional({
@@ -476,20 +505,28 @@ const EVENT_SCOPE_DESCRIPTION =
   'Which occurrences this applies to. `instance` (default) affects only this event. `series` affects the whole recurring series from now forward — occurrences that have already started are never modified or deleted, so attendance history is preserved.';
 
 export class UpdateEventDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_NAME_MAX_LENGTH })
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLength(EVENT_NAME_MAX_LENGTH, {
+    message: tooLongRefusal("the event's name", EVENT_NAME_MAX_LENGTH),
+  })
   name?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_DESCRIPTION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_DESCRIPTION_MAX_LENGTH, {
+    message: tooLongRefusal('the description', EVENT_DESCRIPTION_MAX_LENGTH),
+  })
   description?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_LOCATION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_LOCATION_MAX_LENGTH, {
+    message: tooLongRefusal('the location', EVENT_LOCATION_MAX_LENGTH),
+  })
   location?: string;
 
   @ApiPropertyOptional()
@@ -532,31 +569,40 @@ export class UpdateEventDto {
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles that must attend. See `others_invited` for members holding none of the listed roles.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   required_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description: 'Roles invited but not required.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   optional_role_ids?: string[];
 
   @ApiPropertyOptional({
     type: [String],
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.',
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsString({ each: true })
+  @MaxLength(EVENT_ROLE_ID_MAX_LENGTH, { each: true })
   excluded_role_ids?: string[];
 
   @ApiPropertyOptional({
@@ -567,9 +613,12 @@ export class UpdateEventDto {
   @IsStrictBoolean()
   others_invited?: boolean;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: EVENT_NOTES_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(EVENT_NOTES_MAX_LENGTH, {
+    message: tooLongRefusal('the notes', EVENT_NOTES_MAX_LENGTH),
+  })
   notes?: string;
 
   @ApiPropertyOptional({

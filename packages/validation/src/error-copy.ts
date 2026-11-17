@@ -10,6 +10,7 @@
  * status's stands in for it.
  */
 import { askPostRefusalCopy } from "./ask-post";
+import { AUDIT_LOG_READ_ONLY_REFUSAL } from "./chat-audit-log";
 import { moduleRefusalFromServerMessage } from "./module-refusal";
 import { subscriptionRefusalFromServerMessage } from "./subscription";
 import {
@@ -19,6 +20,9 @@ import {
 
 /** The default "what next" when nothing more specific is known. */
 export const TRY_AGAIN = "Try again in a moment.";
+
+/** A member's name sent blank, on their own profile or an officer's fix. */
+export const BLANK_NAME_REFUSAL = "Enter a name.";
 
 export const OFFLINE_COPY =
   "Couldn't reach Frapp. Check your connection and try again.";
@@ -96,7 +100,9 @@ export function copyForErrorCode(code: string | null): string | null {
     return "Turn on Frapp AI in Settings to use this.";
   }
   if (code === "ai.chapter_off") {
-    return "Your chapter's president hasn't turned this on.";
+    // Every switch starts on (#5294), so it is off only by the president's
+    // choice; "has this turned off" holds for a chapter set before that too.
+    return "Your chapter's president has this turned off.";
   }
   if (code === "ai.consent.stale_sheet") {
     return "Frapp AI changed since you opened this. Look again, then answer.";
@@ -115,6 +121,17 @@ export function copyForErrorCode(code: string | null): string | null {
  */
 export const CHECK_IN_NEEDS_CODE_COPY =
   "Point your phone's camera at the code on the officer's screen to check in.";
+
+/**
+ * A Google Calendar sign-in that came back without connecting (#5262): the
+ * API's confirm refusals (`GoogleCalendarService.confirm`) and the clients'
+ * `?gcal=` returns (`GOOGLE_CALENDAR_RETURN_COPY` in `@repo/hooks`) read the
+ * same sentence, so an expired sign-in reads one way whichever path told it.
+ */
+export const GOOGLE_CALENDAR_SIGN_IN_COPY = {
+  expired: "That Google sign-in expired. Connect Google Calendar again.",
+  failed: "Google didn't finish the sign-in. Connect Google Calendar again.",
+} as const;
 
 /**
  * Server sentences that carry a reason the member can act on, keyed by the
@@ -219,9 +236,45 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "Only the person who started this poll, or an officer who manages channels, can close it.",
   "Duplicate attachment": "That file is already attached.",
   "You cannot block yourself": "You can't block yourself.",
+  // The audit log (#3909, `ChannelAccessService`): a post, a vote or a
+  // thread reply there, a new pin or flag on any of its lines, or a delete of
+  // one of Frapp's entries.
+  [AUDIT_LOG_READ_ONLY_REFUSAL]:
+    "The audit log is read-only. Only Frapp posts there, its entries stay, and nothing in it can be flagged or pinned.",
+  // A card over its length bound (`ChatService.sendMessage`). Every app's
+  // builder stays well under it, so this reaches a member only from a card
+  // built some other way.
+  "This card is too long to post. Shorten it and try again.":
+    "This card is too long to post. Shorten it and try again.",
+  "This form is too long to post. Shorten some questions or options and try again.":
+    "This form is too long to post. Shorten some questions or options and try again.",
+  // Starting a DM or a group DM (`ChatService.getOrCreateDm` /
+  // `createGroupDm`).
+  "Only members of your chapter can be in a direct message. Check who you picked and try again.":
+    "Only members of your chapter can be in a direct message. Check who you picked and try again.",
+  "You can't start a DM with yourself": "You can't message yourself.",
+  "A group DM holds up to 10 people, you included":
+    "A group message holds up to 10 people, you included.",
+  // A poll card checked on send (`normalizePollCard`). The New poll forms and
+  // `/poll` check the same before sending, so these reach a member only from
+  // an out-of-date client; the lengths are matched by shape below.
+  "A poll needs a question and at least two options":
+    "Add a question and at least two options.",
+  "A poll needs a question": "Add a question to the poll.",
+  "Each option needs an id and a label": "Give every option some text.",
+  "Each option needs its own id":
+    "This poll couldn't be read. Make it again and post it.",
+  "Unknown poll choice mode":
+    "This poll couldn't be read. Make it again and post it.",
+  "A poll’s end time must be a date and time":
+    "Pick a date and time for the poll to close.",
+  "A poll can end at most a year from now":
+    "A poll can close at most a year from now.",
   "This account cannot be blocked": "This account can't be blocked.",
   "This report is no longer open": "Someone already handled this report.",
   // Roles and members
+  // A blank name on a member's own profile or an officer's fix (#4367).
+  [BLANK_NAME_REFUSAL]: BLANK_NAME_REFUSAL,
   "Role name already exists in this chapter":
     "A role with that name already exists. Pick another name.",
   "A custom field with this key already exists in this chapter":
@@ -249,6 +302,11 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "Only the next officer in line can claim the presidency.",
   "A rollover has already been performed this calendar month":
     "The semester was already rolled over this month.",
+  // Pledge classes (`PledgeClassService.assign`), already in an officer's words.
+  "You can only set the class of members ranked below you, and your own.":
+    "You can only set the class of members ranked below you, and your own.",
+  "A channel uses this class to decide who can see or post in it, so only someone who can manage channels can change who is in it.":
+    "A channel uses this class to decide who can see or post in it, so only someone who can manage channels can change who is in it.",
   // Points and hours
   "Admins cannot adjust their own points":
     "You can't adjust your own points. Ask another officer.",
@@ -293,7 +351,8 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
   "That upload has already been filed": "That file was already added.",
   "A file with the same hash already exists in this chapter":
     "That file is already uploaded.",
-  "This file is already in your drafts.": "That file is already in your drafts.",
+  "This file is already in your drafts.":
+    "That file is already in your drafts.",
   "Someone in your chapter already saved this file as a draft.":
     "Someone in your chapter already uploaded this file and hasn't published it yet.",
   "Invalid content type. Only images are allowed.": "Pick an image file.",
@@ -314,10 +373,31 @@ export const SERVER_MESSAGE_COPY: Readonly<Record<string, string>> = {
     "This invite doesn't work anymore. Ask an officer for a new one.",
 };
 
+/**
+ * The API's refusal of text past its limit (`@MaxLength` on a DTO field), in
+ * a member's words: "Keep the description to 5,000 characters or fewer." The
+ * API words its messages with this and {@link tooShortRefusal}, and the
+ * patterns below read them back, so a refusal and the words a member sees
+ * can't drift apart. `subject` is "your bio", "the chapter's name".
+ */
+export function tooLongRefusal(subject: string, max: number): string {
+  return `Keep ${subject} to ${max.toLocaleString("en-US")} characters or fewer.`;
+}
+
+/** The API's refusal of text under its minimum, trimmed first. */
+export function tooShortRefusal(subject: string, min: number): string {
+  return `Use at least ${min.toLocaleString("en-US")} characters for ${subject}.`;
+}
+
 /** Server sentences with a value in the middle, matched by shape. */
 const SERVER_MESSAGE_PATTERNS: ReadonlyArray<
   readonly [RegExp, (match: RegExpMatchArray) => string]
 > = [
+  // Already in a member's words ({@link tooLongRefusal},
+  // {@link tooShortRefusal}). Matched at the start only, so of two fields
+  // refused at once (Nest joins them with ", ") the first is shown.
+  [/^Keep (?:your|the) [^.]+? to [\d,]+ characters or fewer\./, (m) => m[0]],
+  [/^Use at least [\d,]+ characters for [^.]+\./, (m) => m[0]],
   [
     /^File extension\b.*\bnot allowed/i,
     () => "That file type isn't supported.",
@@ -347,6 +427,28 @@ const SERVER_MESSAGE_PATTERNS: ReadonlyArray<
     /^Poll must have between (\d+) and (\d+) options$/,
     (m) => `A poll needs between ${m[1]} and ${m[2]} options.`,
   ],
+  // A poll card checked on send (`normalizePollCard`); a form card's option
+  // shares the last sentence.
+  [
+    /^A poll needs (\d+) to (\d+) options$/,
+    (m) => `A poll needs between ${m[1]} and ${m[2]} options.`,
+  ],
+  [
+    /^A poll question can be at most (\d+) characters$/,
+    (m) => `A poll question can be at most ${m[1]} characters.`,
+  ],
+  [
+    /^An option can be at most (\d+) characters$/,
+    (m) => `An option can be at most ${m[1]} characters.`,
+  ],
+  // The daily ceilings on emailed invites and on starting chapters (429,
+  // `daily-send-limits.ts` in the API). The API writes them for the member,
+  // with how many are left and how long to wait, so they show as sent.
+  [
+    /^(?:Your chapter can|You can) email up to \d+ invites in 24 hours\b.*\.$/,
+    (m) => m[0],
+  ],
+  [/^You've started \d+ chapters in the last 24 hours\b.*\.$/, (m) => m[0]],
 ];
 
 export function copyForServerMessage(message: string): string | null {

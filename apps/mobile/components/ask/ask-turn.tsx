@@ -109,6 +109,27 @@ export interface AskTurnReport {
   onSend?: (reason: AiReportReason) => void;
 }
 
+/**
+ * What the member asked, in a bubble on the right in the chapter's solid
+ * colour. Ask's opening draws the starter's "What can you do?" in the same
+ * bubble (`ask-opening.tsx`), since it stands for the member's words.
+ */
+export function AskQuestionBubble({ text }: { text: string }) {
+  const { tokens } = useFrappTheme();
+  const { accentPrimary, accentOnPrimary } = useChapterBranding();
+  const styles = createStyles(tokens);
+  return (
+    <View style={[styles.bubble, { backgroundColor: accentPrimary }]}>
+      <Text
+        accessibilityRole="header"
+        style={[styles.answer, { color: accentOnPrimary }]}
+      >
+        {text}
+      </Text>
+    </View>
+  );
+}
+
 export function AskTurn({
   exchange,
   proposal,
@@ -163,19 +184,11 @@ export function AskTurn({
   onOpenChannel?: (channelId: string) => void;
 }) {
   const { tokens } = useFrappTheme();
-  const { accentPrimary, accentOnPrimary } = useChapterBranding();
   const styles = createStyles(tokens);
 
   return (
     <View style={styles.turn}>
-      <View style={[styles.bubble, { backgroundColor: accentPrimary }]}>
-        <Text
-          accessibilityRole="header"
-          style={[styles.answer, { color: accentOnPrimary }]}
-        >
-          {exchange.question}
-        </Text>
-      </View>
+      <AskQuestionBubble text={exchange.question} />
       <AskReply
         exchange={exchange}
         proposal={proposal}

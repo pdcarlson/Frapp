@@ -4,14 +4,13 @@ import {
   type AiChapterSettings,
   errorCopy,
   useAiChapterSettings,
-  useAiConsent,
   useUpdateAiChapterSettings,
 } from "@repo/hooks";
 import {
   AI_SETTINGS_COPY,
   AI_SWITCHES,
+  aiSwitchState,
   formatAiAnswerDate,
-  joinNames,
   type AiSwitchCopy,
 } from "@repo/validation";
 import { RulesList, SwitchRule } from "@/components/settings/module-rules";
@@ -24,8 +23,9 @@ import { useToast } from "@/lib/hooks/use-toast";
 /**
  * Chapter settings → AI (#4308, `spec/behavior/ai.md` § Consent, gate 1):
  * the president's switch for each AI feature family, laid out like a module
- * page (#4073): the title, what the switches share and with whom, then the
- * switches.
+ * page (#4073): the title, a line on who turns them on, then the switches. No
+ * company names (Paul, 2026-11-17): they are on Meet Frapp AI and in the
+ * privacy policy.
  *
  * The rail shows this row only while the server has AI
  * (`useAiConsent` answers `null` otherwise), so with `AI_ENABLED` off Chapter
@@ -45,14 +45,10 @@ import { useToast } from "@/lib/hooks/use-toast";
 export function SettingsAiTab() {
   const { isOffline } = useNetwork();
   const settingsQuery = useAiChapterSettings();
-  const consentQuery = useAiConsent();
   const update = useUpdateAiChapterSettings();
   const { toast } = useToast();
 
   const settings = settingsQuery.data;
-  const providers = joinNames(
-    consentQuery.data?.sheet.providers.map((provider) => provider.name) ?? [],
-  );
 
   async function toggle(entry: AiSwitchCopy, next: boolean) {
     try {
@@ -104,12 +100,8 @@ export function SettingsAiTab() {
     <div className="space-y-10">
       <header className="space-y-1 border-b border-border pb-6">
         <h2 className="text-title text-foreground">{AI_SETTINGS_COPY.title}</h2>
-        {/*
-          Held at its height until the providers arrive (they come from the
-          sheet read), so the line never lands and pushes the switches down.
-        */}
-        <p className="min-h-10 text-sm text-muted-foreground">
-          {providers ? AI_SETTINGS_COPY.description(providers) : null}
+        <p className="text-sm text-muted-foreground">
+          {AI_SETTINGS_COPY.description}
         </p>
       </header>
       <div className="space-y-3">
@@ -131,7 +123,7 @@ export function SettingsAiTab() {
 }
 
 /**
- * The three switches. Before the read lands they draw off and disabled at
+ * The chapter's switches. Before the read lands they draw off and disabled at
  * their full height, so nothing moves when it does; a read can't be in
  * flight long, since this page only shows once the server answered.
  */
@@ -148,9 +140,10 @@ function AiSwitchList({
   return (
     <RulesList>
       {AI_SWITCHES.map((entry) => {
-        const parentOff =
-          entry.dependsOn !== undefined && settings?.[entry.dependsOn] !== true;
-        const checked = settings?.[entry.key] === true;
+        const { checked, parentOff, waitsOnParent } = aiSwitchState(
+          entry,
+          settings,
+        );
         return (
           <SwitchRule
             key={entry.key}
@@ -158,9 +151,7 @@ function AiSwitchList({
             hint={
               <div className="space-y-1">
                 <p>{entry.description}</p>
-                {parentOff && !checked ? (
-                  <p>{AI_SETTINGS_COPY.dependsOnAsk}</p>
-                ) : null}
+                {waitsOnParent ? <p>{AI_SETTINGS_COPY.dependsOnAsk}</p> : null}
               </div>
             }
             checked={checked}
@@ -171,7 +162,7 @@ function AiSwitchList({
               disabled === true ||
               // Waiting on its parent blocks turning it on, never off: a
               // president who turned Ask off can still clear what it reads.
-              (parentOff && !checked)
+              waitsOnParent
             }
             onChange={(next) => onToggle(entry, next)}
           />

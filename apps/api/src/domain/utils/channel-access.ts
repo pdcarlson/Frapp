@@ -75,12 +75,22 @@ export interface ChannelAccessRecord {
  *   creator dropped from a read-only channel's posters must still be able to
  *   end their own poll.
  * - `answer`: fill in something already readable that every reader may
- *   answer (a form card's answers, #3926). Archive and the audit log apply,
+ *   answer (a form card's answers, #3926; a chat card's poll vote and a
+ *   sign-up claim, #4695). Archive and the audit log apply,
  *   as for `close`, but not who can post nor the Alumni rule: a form posted
  *   in an announcement channel is for everyone who can read it.
+ * - `modify`: change a message already in the channel without writing new
+ *   content: delete it, flag or unflag it, pin or unpin it. Who may do it to
+ *   which message is the caller's rule (the sender, or `channels:manage`).
+ *   Neither archive nor the audit log refuses it here, since which change it
+ *   is and to which line decides that: `ChannelAccessService` applies the
+ *   audit log's own rule (`auditLogAllowsChange` in `@repo/validation`) with
+ *   the message in hand. An archived group DM takes it, as it did when these
+ *   authorized as a read, so a member can still delete their own message
+ *   there.
  */
 export type ChannelOperation =
-  'read' | 'post' | 'vote' | 'thread' | 'close' | 'answer';
+  'read' | 'post' | 'vote' | 'thread' | 'close' | 'answer' | 'modify';
 
 /**
  * What a member holds that a list can name, resolved from a TRUSTED read of
@@ -251,6 +261,7 @@ export function needsAccessHolder(
     case 'read':
     case 'close':
     case 'answer':
+    case 'modify':
       return false;
     case 'vote':
       return channel.who_can_post !== null;
@@ -283,8 +294,10 @@ export function channelAllowsThreads(
  *   only `*`.
  * - Unknown channel type: denied (guarded default, never falls open).
  *
- * A write (`post`, `vote`, `thread`) must also pass the read, and is refused
- * in an archived channel and in the audit log whatever the caller holds.
+ * A write (`post`, `vote`, `thread`, `close`, `answer`) must also pass the
+ * read, and is refused in an archived channel and in the audit log whatever
+ * the caller holds. `modify` must pass the read, and nothing else here: in
+ * the audit log, the change and the line decide it (`ChannelAccessService`).
  * Then:
  *
  * - The Alumni rule, for `post` and `thread`: a holder of the Alumni role
@@ -314,14 +327,20 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   if (!canRead) return false;
   if (operation === 'read') return true;
 
-  // An archived channel (#348) is frozen: no further writes from anyone.
-  // There is no "unarchive" flow, so there is no override either.
-  if (channel.archived_at) return false;
+  // Deleting, flagging or pinning adds no content, so nothing below decides
+  // it: who may change which message is the caller's rule, and in the audit
+  // log which change to which line (`auditLogAllowsChange`), which needs the
+  // message this predicate never sees.
+  if (operation === 'modify') return true;
 
   // The audit log (#3909) is system-write only. The audit mirror inserts its
   // rows directly and never comes through here, so refusing every caller,
   // the President's `*` included, leaves exactly the server writing in it.
   if (channel.is_audit_log) return false;
+
+  // An archived channel (#348) is frozen: no further writes from anyone.
+  // There is no "unarchive" flow, so there is no override either.
+  if (channel.archived_at) return false;
 
   if (
     (operation === 'post' || operation === 'thread') &&

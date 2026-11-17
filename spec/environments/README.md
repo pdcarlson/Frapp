@@ -8,7 +8,7 @@
 | ------------ | --------------------------------- | --------------------------------------- | ------------------------------------- |
 | **Landing**  | localhost:3002                    | Vercel preview / staging.frapp.live     | frapp.live                            |
 | **Web App**  | localhost:3000                    | Vercel preview / app.staging.frapp.live | app.frapp.live                        |
-| **API**      | localhost:3001                    | Render (`main` branch service)          | Render (deployed by commit id)        |
+| **API**      | localhost:3001                    | Cloud Run, `api-staging.frapp.live`     | Cloud Run, `api.frapp.live`           |
 | **Mobile**   | Expo Go (local network)           | EAS internal distribution               | App Store / Google Play               |
 | **Database** | Supabase local (`supabase start`) | Supabase staging project                | Supabase production project           |
 | **Auth**     | Supabase Auth (local)             | Supabase Auth (staging project)         | Supabase Auth (production project)    |
@@ -22,7 +22,7 @@ Each Supabase project (local, staging, production) is fully isolated: separate d
 
 | Branch      | Purpose                              | Deployment behavior                                    |
 | ----------- | ------------------------------------ | ------------------------------------------------------ |
-| `main`      | Pre-production / staging integration | Green CI on `main` triggers the staging deploy (`deploy-staging.yml`): migrations, the Render API and the Vercel web and landing deploys, in that order (#2803). Push-triggered Vercel Previews were retired with the Git unlink (ADR-21) — see §6 |
+| `main`      | Pre-production / staging integration | Green CI on `main` triggers the staging deploy (`deploy-staging.yml`): migrations, the API on Cloud Run and the Vercel web and landing deploys, in that order (#2803). Push-triggered Vercel Previews were retired with the Git unlink (ADR-21) — see §6 |
 | `feature/*` | Short-lived feature work             | No automatic Vercel deployments; merged into `main`    |
 
 Production is **not** mapped to a branch. It is deployed by running the **Deploy
@@ -66,7 +66,7 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
 - **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
 - **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`). Both projects are unlinked from Git (ADR-21), so no push produces a preview; `deploy-staging.yml` builds them after CI succeeds on `main`, uploads them once the staging API is verified, then aliases both hostnames (#1578, #2803). It uploads only when something web or landing is built from changed since what the hostnames serve, so after a docs, API or mobile merge they stay on an older commit; the job keeps the newest few staging deployments and deletes the rest (#2865). A run for a commit `main` has moved past uploads only over hostnames serving older commits — see §6 **Web and Landing (Vercel)**.
-- **API:** Render staging service (`frapp-api-staging`), pointing at Supabase staging. After CI and the staging migration, `deploy-staging.yml` deploys the `main` commit by commit through the Render API whenever anything the API image is built from changed since the commit staging serves; Render auto-deploy must be off (#2505), and it read off on 2026-09-29; the rest of #2679 retires the staging deploy hook.
+- **API:** Cloud Run service `frapp-api` in the staging project, behind its own load balancer at `api-staging.frapp.live` ([`cloud-run.md`](../../docs/ops/deployment/cloud-run.md), #5228), pointing at Supabase staging. After CI and the staging migration, `deploy-staging.yml` deploys the `main` commit whenever anything the API image is built from changed since the commit staging serves.
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
 - **Data:** May contain seed data. Never production user data.
@@ -86,14 +86,15 @@ After changing an API endpoint, regenerate and commit both contract artifacts. C
   #1579, and #1578 replaced the `gitSource` call the retired integration used to serve. See §6
   **Web and Landing (Vercel)**.
 - **Landing:** `frapp.live` (Vercel, same).
-- **API:** Render production service (`frapp-api-prod`), deployed by commit id through
-  the Render API, pointing at Supabase production + Stripe live keys. Render-side
-  auto-deploy must stay **off** — `scripts/ci/production-guardrails.mjs` asserts it.
+- **API:** Cloud Run service `frapp-api` in the prod project, deployed by **Deploy production**
+  behind its own load balancer ([`cloud-run.md`](../../docs/ops/deployment/cloud-run.md), #5228),
+  pointing at Supabase production + Stripe live keys. It replaced the Render service
+  `frapp-api-prod` on 2026-11-17.
 - **Mobile:** App Store and Google Play via EAS Submit, uploaded to TestFlight and the Play internal track and never released by a machine. **Deploy production** builds and uploads the commit it just shipped when its `mobile_build` input asks; a maintainer can still do it by hand (see **Store submission** under [Mobile (EAS)](#mobile-eas)).
 - **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
 - **Monitoring:** Error tracking (Sentry or equivalent), structured logging, uptime checks.
 
-> **Full setup walkthrough:** See [`docs/ops/deployment/`](../../docs/ops/deployment/) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
+> **Full setup walkthrough:** See [`docs/ops/deployment/`](../../docs/ops/deployment/) for step-by-step instructions covering Vercel, Cloud Run, Supabase, EAS, DNS, and environment variables.
 
 ---
 
@@ -142,14 +143,14 @@ mismatch before any `link` or `push`**. Before that existed, `--env` was validat
 dropped — `--env staging` and `--env production` were the same program, so a mis-scoped Infisical folder
 would have applied migrations to production while every log line said staging.
 
-The same file holds each environment's Render service id (`renderServiceId`) and the Vercel team and
-project ids (its `vercel` block), since [#2806](https://github.com/pdcarlson/Frapp/issues/2806). Every
-workflow reads them through `scripts/ci/provider-ids.mjs`, and a test fails on a literal id anywhere under
-`.github/workflows` or `.github/actions`. They are not secrets either: each grants nothing without
-`RENDER_API_KEY` or `VERCEL_API_KEY`. Each environment's `renderDeploySource` says how its service takes a
-deploy, `commit` (Render builds it) or `image` (it pulls the image the deploy job built and pushed to the
-top-level `apiImage`, [#2506](https://github.com/pdcarlson/Frapp/issues/2506)); it moves with
-`renderServiceId`, because a service is one or the other. Only staging may be `image` so far.
+The same file holds each environment's Google Cloud project, project number, region and instance counts
+(its `cloudRun` block, #5228) and the Vercel team and project ids (its `vercel` block), since
+[#2806](https://github.com/pdcarlson/Frapp/issues/2806). Every workflow reads them through
+`scripts/ci/provider-ids.mjs`, which also derives the service, image, deployer and sign-in provider names
+the setup script (`scripts/gcp/bootstrap.sh`) gives every project, and a test fails on a literal id anywhere
+under `.github/workflows` or `.github/actions`. They are not secrets either: the Google ids grant nothing
+without the deploy's keyless sign-in, which only this repository's workflows can make, and the Vercel ids
+nothing without `VERCEL_API_KEY`.
 
 Three consequences worth holding together:
 
@@ -157,8 +158,8 @@ Three consequences worth holding together:
   [`db-rollback-playbook.md` § Backup reality](../../docs/ops/db-rollback-playbook.md#backup-reality).
   Missing the file blocks every production migration and fails `migration-order` on every
   migration-bearing PR.
-- **Recreating a Render service or a Vercel project means changing its id in this file.** The deploy,
-  `production-guardrails.yml` and `production-release-pin.yml` all read it from here, and the format
+- **Moving the API to another Google Cloud project, or recreating a Vercel project, means changing its id
+  in this file.** The deploy, `production-guardrails.yml` and `production-release-pin.yml` all read it from here, and the format
   check can't tell an old id from a new one, so a stale id deploys to, or asserts against, the object
   that was replaced.
 - **`check-migration-drift.yml` deliberately still reads its refs from Infisical.** Pointing it at the
@@ -190,7 +191,7 @@ defects now. `link-check` still resolves its links and anchors, and `env-slugs` 
 ### Key Design Decisions
 
 - **The frontend build gate is production-shaped, not preview-shaped.** `web-production-build` builds `apps/web` and `apps/landing` under `npm ci --omit=dev`, matching Vercel's production install, because nothing in CI ran `next build` before #1374 and that gap took production down twice (#1331, #1372). Staging and production frontends are both built on the runner by `_deploy.yml` (`vercel build`, Preview target for staging, `--prod` for production) and uploaded with `vercel deploy --prebuilt`; the build-shape difference ADR-20 decision 3 records was between that production build and the Git-integration previews staging used to get. *Corrected 2026-10-07 (#3214): this entry said no Vercel build of either frontend happens on merge. That was true from the Git unlink (ADR-21) until #1578 (2026-09-04), when CI started building and uploading staging web and landing.* See §6 **Web and Landing (Vercel)**.
-- **No placeholder secrets.** CI reads no runtime secret. Where a job needs a value only to exist, it sets a deliberately fake stand-in that lets the program run and ships nowhere: `web-production-build`'s `NEXT_PUBLIC_*` and `api-docker-build`'s boot values in `ci.yml`. What ships gets real values from Infisical: web and landing at build time, injected by `_deploy.yml`; the API at runtime, through Infisical's Render sync (§7). *Corrected 2026-10-07 (#3214): this entry said CI never sets dummy values and that env-dependent builds happen in the provider; neither is true.*
+- **No placeholder secrets.** CI reads no runtime secret. Where a job needs a value only to exist, it sets a deliberately fake stand-in that lets the program run and ships nowhere: `web-production-build`'s `NEXT_PUBLIC_*` and `api-docker-build`'s boot values in `ci.yml`. What ships gets real values from Infisical: web and landing at build time, injected by `_deploy.yml`; the API at runtime, through Infisical's sync to Google Secret Manager (§7). *Corrected 2026-10-07 (#3214): this entry said CI never sets dummy values and that env-dependent builds happen in the provider; neither is true.*
 - **The API contract check regenerates; it is not a git-diff heuristic.** `npm run check:api-contract` (`scripts/check-api-contract-drift.mjs`) builds the shared packages, rebuilds `apps/api/openapi.json` and `packages/api-sdk/src/types.ts`, and fails on any difference from the committed copies — the git-diff heuristic it replaced false-positived on contract-neutral controller edits. The Swagger export does bootstrap NestJS, but only to build the document, so placeholder credentials suffice and no Supabase/Stripe secrets are needed in CI. Details: [`../architecture/README.md`](../architecture/README.md) § 10 API Contract Strategy.
 - **Mobile CI stops short of a native build** (`mobile-validate` in `ci.yml` runs, among other steps, `npm run check:expo-sdk-line`, which fails an Expo package installed off the SDK line or missing from Dependabot's ignore list; `npm run lint`, `check-types`, `test` for `apps/mobile`; an iOS production Metro bundle (`expo export`) on a tree with no prebuilt packages; `npm run check:mobile-native-declarations`, which checks the purpose strings, Android permissions and required-reason declarations the config plugins resolve, and fails a linked iOS pod that declares a Swift package while pods link statically (the 0.78 Stripe break, which `pod install` would otherwise first hit on EAS); `npm run check:mobile-native-version`, which fails a PR that changes native inputs under an `expo.version` with a recorded store build (**Native changes**, below); and `expo prebuild --no-install`, which generates the native projects without compiling them). EAS builds are expensive and slow; they run on-demand, not per-PR.
 
@@ -206,12 +207,12 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 > repairs that took: **#1579** (2026-09-02) inverted the production-guardrails Vercel assertion to
 > require the *absence* of a Git link and removed `verify-deployments.yml`'s two Vercel verify jobs;
 > **#1578** (2026-09-04) built the replacement deploys — `vercel build` on the runner, then
-> `vercel deploy --prebuilt`, for both staging and production. Render **staging** (the
+> `vercel deploy --prebuilt`, for both staging and production. The **staging** API (the
 > `deploy-api.yml` push path, now `deploy-staging.yml`) and EAS were unaffected throughout. **ADR-21** in
 > [`../architecture/adr/adr-21.md`](../architecture/adr/adr-21.md) is the canonical record of the unlink,
 > the freeze points and the repairs.
 
-Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-staging.yml` calls one shared job (`_deploy.yml`, #2804) that deploys the database, API, web and landing, with the frontends uploaded only after the API is verified. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the Render deploy and both Vercel production deployments itself, for one commit, named before a human approves the run: the one the dispatch pasted, or, when it leaves `sha` empty, the one the workflow picks (#3114; the rule is in [`promotion.md` § Production: one path, two scopes](../../docs/ops/database/promotion.md#production-one-path-two-scopes)).
+Staging deploy steps are gated by CI: after CI succeeds on `main`, `deploy-staging.yml` calls one shared job (`_deploy.yml`, #2804) that deploys the database, API, web and landing, with the frontends uploaded only after the API is verified. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated). Nothing about production is push-triggered — `deploy-production.yml` creates the API deploy (Cloud Run since #5228) and both Vercel production deployments itself, for one commit, named before a human approves the run: the one the dispatch pasted, or, when it leaves `sha` empty, the one the workflow picks (#3114; the rule is in [`promotion.md` § Production: one path, two scopes](../../docs/ops/database/promotion.md#production-one-path-two-scopes)).
 
 ### Deploy Pipeline (on merge)
 
@@ -269,14 +270,14 @@ secrets.
 - Vercel detects the monorepo structure from each project's Root Directory, which
   `vercel pull` fetches into `.vercel/` before the build.
 
-### API (Render)
+### API (Cloud Run)
 
 - API deploys are gated behind CI success using `workflow_run` triggers.
-- Production: a human dispatches **Deploy production** → the workflow calls the Render API with the commit it validated as the `commitId` (no deploy hook, and no push involved).
-- Push to `main` (after CI) → `deploy-staging.yml` first plans from the commit staging serves, then builds web and landing when they will ship and runs the staging migration: when anything the API image is built from changed since the served commit, it calls the Render API with that push's `commitId` and waits until `/health/ready` reports it; otherwise, when anything ships, it verifies the served commit. A run `main` has moved past deploys only forward (its commit newer than the served one), never an older commit; its migrations still run. No deploy hook, and Render auto-deploy must be off (#2505, #2679).
-- The image is built from `apps/api/Dockerfile`, and Render performs a zero-downtime swap. For a git-backed service (`renderDeploySource: commit`) Render builds it from the `commitId`. Staging's deploy also builds it on GitHub and pushes it to `apiImage` tagged with the commit; an image-backed service (`image`) is sent that image by digest instead of a commit (#2506). No environment uses one: the API moves to Cloud Run instead ([`cloud-run.md`](../../docs/ops/deployment/cloud-run.md), #5228).
+- Both environments deploy the API to Cloud Run since #5228 ([`cloud-run.md` § Deploys](../../docs/ops/deployment/cloud-run.md#deploys)): the deploy job builds the commit's image from `apps/api/Dockerfile`, deploys it as a revision tagged `candidate`, checks it through the load balancer, then moves traffic. Before 2026-11-17 the API ran on Render, deployed by calling the Render API with the commit.
+- Production: a human dispatches **Deploy production** → the workflow deploys the commit it validated (no deploy hook, and no push involved).
+- Push to `main` (after CI) → `deploy-staging.yml` first plans from the commit staging serves, then builds web and landing when they will ship and runs the staging migration: when anything the API image is built from changed since the served commit, it deploys that push's commit and waits until `/health/ready` reports it; otherwise, when anything ships, it verifies the served commit. A run `main` has moved past deploys only forward (its commit newer than the served one), never an older commit; its migrations still run. No deploy hook (#2679).
 - Database migrations run automatically before deploy (see Section 8).
-- See `render.yaml` for the infrastructure-as-code definition.
+- The Google side (projects, load balancers, secrets) is set up by `scripts/gcp/bootstrap.sh` and `scripts/gcp/load-balancer.sh`, recorded in [`cloud-run.md`](../../docs/ops/deployment/cloud-run.md).
 
 ### Mobile (EAS)
 
@@ -293,7 +294,7 @@ secrets.
 
 ### Deploy Ordering
 
-**Default:** the frontends ship after the API. On staging, one job (`_deploy.yml`, called by `deploy-staging.yml`) runs the migrations, deploys and verifies the Render API, and only then uploads the Vercel frontends it built at the start (#2803); production uses the same order. Database migrations always run before the API deploy. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated).
+**Default:** the frontends ship after the API. On staging, one job (`_deploy.yml`, called by `deploy-staging.yml`) runs the migrations, deploys and verifies the API, and only then uploads the Vercel frontends it built at the start (#2803); production uses the same order. Database migrations always run before the API deploy. The step order is [`ci-cd.md` § How Deployments Are Gated](../../docs/ops/deployment/ci-cd.md#how-deployments-are-gated).
 
 > **Corrected 2026-09-28 (#2803):** this default used to read "Vercel (frontends) and Render (API)
 > deployments run in parallel after merge", as two workflows both gated on CI success
@@ -329,7 +330,7 @@ open ([#3015](https://github.com/pdcarlson/Frapp/issues/3015)).
 
 The **Deploy production** dispatch also accepts an explicit `bump` input that overrides
 the scan, except for a commit that already carries the newest release: that run reuses
-its tag and warns that the bump was ignored (#3126). The tag is created *after* Render and Vercel report healthy, so a `v*` tag
+its tag and warns that the bump was ignored (#3126). The tag is created *after* the API and Vercel report healthy, so a `v*` tag
 names a commit that is live.
 
 ---

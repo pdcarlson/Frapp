@@ -1,5 +1,12 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Alert, StyleSheet, Text, View } from "react-native";
+import {
+  AccessibilityInfo,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
@@ -27,12 +34,18 @@ import {
   limitedDocumentCheck,
   markedItems,
   NO_MARK_FILTER,
-  tierByMarks,
   tierRows,
   type DocumentMarkFilter,
   type DocumentSort,
   type FileKind,
 } from "@repo/hooks/document-library";
+import {
+  buildFolderTree,
+  folderLevel,
+  folderPlace,
+  liftMarkedFolders,
+  type FolderTreeNode,
+} from "@repo/hooks/document-folder-tree";
 import { describeLoadFailure, errorCopy } from "@repo/hooks/error-copy";
 import { SignetTokens } from "@repo/theme/signet";
 import { can } from "@repo/validation";
@@ -43,7 +56,13 @@ import {
   UploadDocumentSheet,
   type PendingDocumentUpload,
 } from "@/components/documents/upload-document-sheet";
-import { Chip, FilterChips, SearchField } from "@/components/filter-chips";
+import {
+  Chip,
+  ChipRow,
+  FilterChips,
+  SearchField,
+  type FilterChip,
+} from "@/components/filter-chips";
 import {
   DocumentActionsSheet,
   type DocumentActionsTarget,
@@ -56,6 +75,12 @@ import {
 import { MarkedCards } from "@/components/documents/marked-cards";
 import { DocumentTiles } from "@/components/documents/document-tiles";
 import { ListLayoutToggle } from "@/components/list-layout-toggle";
+import {
+  BackGlyph,
+  DisclosureGlyph,
+  ForwardGlyph,
+} from "@/components/control-glyphs";
+import { OptionSheet } from "@/components/option-sheet";
 import { useListLayout } from "@/lib/list-layout";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
@@ -129,10 +154,19 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * Slides, Spreadsheet, Image, Other) reads each file's declared type or its
  * stored extension, and search finds those words too. Pinned and Starred
  * toggles (#4290) keep marked files, either when both are on. All of it is local, so a keystroke or
- * a chip re-ranks what is in hand, offline too. The filters and the order sit
- * behind one "Sort & filter" chip that opens a panel of chip rows under it,
- * as Directory's alumni Filters do. Web's custom date range is not offered: a
- * phone date picker is a native module that waits for a store build.
+ * a chip re-ranks what is in hand, offline too. Web's custom date range is
+ * not offered: a phone date picker is a native module that waits for a store
+ * build.
+ *
+ * Each filter is its own chip in one row under the folders (#5278, Paul
+ * 2026-11-17: "sort and filter on mobile, it just sucks"), as Google Drive's
+ * Type, People and Modified chips are on a phone: Type, Uploaded by and Date
+ * added each open their choices in a sheet (`OptionSheet`) and name the pick
+ * once set; Starred and Pinned toggle in place; Clear leads the row while
+ * anything is set. The order is across from the count over the list ("Name
+ * A–Z ⌄"), as Files, Drive and Dropbox put theirs, and opens its own sheet.
+ * Until then all of it sat behind a "Sort & filter" chip at the far end of the
+ * folder row, opening a panel of five chip rows.
  *
  * ## Delete, for whoever may
  *
@@ -218,7 +252,12 @@ export default function DocumentsScreen() {
   // A file starred or pinned from the sheet while one of them is on stays in
   // the list until the filter changes, rather than vanishing (#4290).
   const { held, hold } = useMarkFilterHold(markFilter);
-  const [panelOpen, setPanelOpen] = useState(false);
+  // The filter and sort sheets (#5278): one tap on a chip or the sort
+  // control, one pick in the sheet.
+  const typeSheetRef = useRef<BottomSheetModal>(null);
+  const uploaderSheetRef = useRef<BottomSheetModal>(null);
+  const dateSheetRef = useRef<BottomSheetModal>(null);
+  const sortSheetRef = useRef<BottomSheetModal>(null);
   const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -332,14 +371,127 @@ export default function DocumentsScreen() {
       }),
     [documents, folders, visible, starredFolders, starredDocuments],
   );
-  const chipFolders = useMemo(() => {
-    const tiers = tierByMarks(
-      folders,
+  /*
+    The folders as a tree (#5337, Shawn's pick of option C), the way web's
+    rail draws them (`document-folder-tree.ts`): a folder named by its path
+    sits under its parent and reads its own name. A sideways chip row can't
+    indent, so the chips show one level at a time and step in and out, as the
+    Files app and Google Drive's phone app walk a tree. The top level runs
+    pinned, then starred, then the rest (#3934), each marked folder bringing
+    what is under it.
+  */
+  const folderForest = useMemo(() => {
+    const tiers = liftMarkedFolders(
+      buildFolderTree(folders),
       (entry) => !!entry.pinned_at,
       (entry) => starredFolders.has(entry.id),
     );
     return [...tiers.pinned, ...tiers.starred, ...tiers.rest];
   }, [folders, starredFolders]);
+  const folderNames = useMemo(
+    () => new Set(folders.map((entry) => entry.name)),
+    [folders],
+  );
+  const chipLevel = useMemo(
+    () => folderLevel(folderForest, folder),
+    [folderForest, folder],
+  );
+  /*
+    A folder chip: its own name, its marks before it, and a chevron after it
+    when it holds folders, so a tap that steps in is expected. A long press
+    opens the folder's Star and Pin sheet (#3934); a folder both pinned and
+    starred wears both marks.
+  */
+  function folderChip(
+    node: FolderTreeNode<(typeof folders)[number]>,
+    back = false,
+  ): FilterChip {
+    const entry = node.folder;
+    const on = folder === entry.name;
+    const holdsFolders =
+      !back && node.children.length > 0 && node !== chipLevel.level;
+    /*
+      A pinned or starred folder lifted to the top row, away from the folder
+      it sits in, says which folder that is ("Flyers · 2024"), so two
+      "Flyers" read apart, as web's rail and both apps' cards do (#5337).
+    */
+    const where =
+      !back && chipLevel.level === null && node.parentName
+        ? node.parentName
+        : null;
+    const label = where
+      ? `${node.label} · ${folderPlace(where, folderNames).label}`
+      : node.label;
+    const marked =
+      !!entry.pinned_at || starredFolders.has(entry.id) || !!entry.who_can_see;
+    const mark = back ? (
+      <BackGlyph color={tokens.color.text.mutedForeground} size={14} />
+    ) : marked ? (
+      <View style={styles.marks}>
+        {entry.who_can_see ? (
+          <LimitedMark
+            color={on ? accentOnPrimary : tokens.color.text.mutedForeground}
+          />
+        ) : null}
+        {entry.pinned_at ? (
+          <PinGlyph color={on ? accentOnPrimary : accent} on size={14} />
+        ) : null}
+        {starredFolders.has(entry.id) ? (
+          <StarGlyph color={on ? accentOnPrimary : accent} on size={14} />
+        ) : null}
+      </View>
+    ) : undefined;
+    return {
+      value: entry.name,
+      label,
+      mark,
+      trailing: holdsFolders ? (
+        <ForwardGlyph
+          color={on ? accentOnPrimary : tokens.color.text.mutedForeground}
+          size={14}
+        />
+      ) : undefined,
+      accessibilityLabel: back
+        ? `Back to ${node.label}`
+        : [
+            node.label,
+            where ? `in ${where}` : null,
+            holdsFolders ? "holds folders" : null,
+          ]
+            .filter(Boolean)
+            .join(", ") || undefined,
+      onLongPress: () => openActions(folderTarget(entry)),
+      longPressLabel: canManage ? "Star or pin" : "Star or unstar",
+    };
+  }
+  /*
+    At the top: All, then the top-level folders. Inside a folder that holds
+    others: a chip back to the level above (All at the top), the folder
+    itself, then its folders, so its own files stay one tap away.
+  */
+  const folderChips: FilterChip[] = chipLevel.level
+    ? [
+        chipLevel.up
+          ? folderChip(chipLevel.up, true)
+          : {
+              value: null,
+              label: "All",
+              mark: (
+                <BackGlyph
+                  color={tokens.color.text.mutedForeground}
+                  size={14}
+                />
+              ),
+              accessibilityLabel: "Back to All",
+            },
+        folderChip(chipLevel.level),
+        ...chipLevel.items.map((node) => folderChip(node)),
+      ]
+    : [
+        { value: null, label: "All" },
+        ...chipLevel.items.map((node) => folderChip(node)),
+      ];
+
   const markFailed =
     markFailure && markFailure.chapterId === (chapterId ?? null)
       ? markFailure.message
@@ -442,15 +594,20 @@ export default function DocumentsScreen() {
     (dateActive ? 1 : 0) +
     (kind !== null ? 1 : 0) +
     (markFilter.pinned ? 1 : 0) +
-    (markFilter.starred ? 1 : 0) +
-    (sort !== "name" ? 1 : 0);
+    (markFilter.starred ? 1 : 0);
   const deleteFailed =
     deleteFailure && deleteFailure.chapterId === (chapterId ?? null)
       ? deleteFailure.message
       : null;
 
+  // The empty state's way out (web's Clear filters): the search too.
   function clearFilters() {
     setSearch("");
+    clearFilterChips();
+  }
+
+  // The chip row's Clear (#5278): the filters it holds, not what was typed.
+  function clearFilterChips() {
     setPickedUploader(null);
     setDatePreset(null);
     setKind(null);
@@ -718,21 +875,91 @@ export default function DocumentsScreen() {
     );
   }
 
-  const filtersChip = (
-    <Chip
-      accessibilityRole="button"
-      accessibilityState={{ expanded: panelOpen }}
-      accessibilityLabel={
-        filterCount > 0
-          ? `Sort and filter, ${filterCount} set`
-          : "Sort and filter"
-      }
-      label={
-        filterCount > 0 ? `Sort & filter · ${filterCount}` : "Sort & filter"
-      }
-      on={panelOpen}
-      onPress={() => setPanelOpen((open) => !open)}
-    />
+  const kindLabel = kinds.find((option) => option.value === kind)?.label;
+  const uploaderLabel = uploaders.find(
+    (option) => option.value === uploader,
+  )?.label;
+  const dateOptions = [
+    { value: null, label: "Any time" },
+    // Offered once the archives have loaded, as on web.
+    ...(semesterKnown ? [{ value: "semester", label: "This semester" }] : []),
+    { value: "30d", label: "Last 30 days" },
+  ];
+  const dateLabel = dateActive
+    ? dateOptions.find((option) => option.value === datePreset)?.label
+    : undefined;
+  const sortLabel =
+    SORT_OPTIONS.find((option) => option.value === sort)?.label ?? "Name A–Z";
+  const anyFilter = filterCount > 0;
+
+  /*
+    The filters, each a chip that names what it holds (#5278), as Google
+    Drive's Type, People and Modified chips do on a phone: a tap opens the
+    choices in a sheet, a pick applies and closes. Starred and Pinned stay
+    toggles (#4290). Lit while set; Clear leads the row once anything is.
+  */
+  const filterRow = (
+    <ChipRow scroll>
+      {anyFilter ? (
+        <Chip
+          accessibilityRole="button"
+          accessibilityState={{}}
+          accessibilityLabel="Clear filters"
+          label="Clear"
+          on={false}
+          onPress={clearFilterChips}
+        />
+      ) : null}
+      {kinds.length > 0 ? (
+        <MenuChip
+          name="Type"
+          value={kindLabel}
+          hint="Opens the file types."
+          onPress={() => typeSheetRef.current?.present()}
+        />
+      ) : null}
+      {uploaders.length > 0 ? (
+        <MenuChip
+          name="Uploaded by"
+          value={uploaderLabel}
+          hint="Opens who uploaded files."
+          onPress={() => uploaderSheetRef.current?.present()}
+        />
+      ) : null}
+      <MenuChip
+        name="Date added"
+        value={dateLabel}
+        hint="Opens date ranges."
+        onPress={() => dateSheetRef.current?.present()}
+      />
+      {(
+        [
+          ["starred", "Starred", StarGlyph],
+          ["pinned", "Pinned", PinGlyph],
+        ] as const
+      ).map(([key, label, Glyph]) => {
+        const on = markFilter[key];
+        return (
+          <Chip
+            key={key}
+            accessibilityRole="togglebutton"
+            accessibilityState={{ checked: on }}
+            label={label}
+            on={on}
+            onPress={() =>
+              setMarkFilter((prev) => ({ ...prev, [key]: !prev[key] }))
+            }
+            mark={
+              <Glyph
+                color={on ? accentOnPrimary : tokens.color.text.muted}
+                on={on}
+                size={14}
+              />
+            }
+          />
+        );
+      })}
+    </ChipRow>
   );
 
   return (
@@ -761,150 +988,17 @@ export default function DocumentsScreen() {
 
       {folders.length > 0 ? (
         <FilterChips
+          // A new row for each level, so it starts at its back chip rather
+          // than keeping the scroll the last level was at (#5337).
+          key={chipLevel.level?.folder.name ?? "top"}
           accessibilityLabel="Filter by folder"
           scroll
           selected={folder}
           onSelect={setFolder}
-          chips={[
-            { value: null, label: "All" },
-            // Pinned, then starred, then the rest (#3934); a long press
-            // opens the folder's Star and Pin sheet.
-            // A folder both pinned and starred wears both marks.
-            ...chipFolders.map((entry) => ({
-              value: entry.name,
-              label: entry.name,
-              mark:
-                entry.pinned_at ||
-                starredFolders.has(entry.id) ||
-                entry.who_can_see ? (
-                  <View style={styles.marks}>
-                    {entry.who_can_see ? (
-                      <LimitedMark
-                        color={
-                          folder === entry.name
-                            ? accentOnPrimary
-                            : tokens.color.text.mutedForeground
-                        }
-                      />
-                    ) : null}
-                    {entry.pinned_at ? (
-                      <PinGlyph
-                        color={folder === entry.name ? accentOnPrimary : accent}
-                        on
-                        size={14}
-                      />
-                    ) : null}
-                    {starredFolders.has(entry.id) ? (
-                      <StarGlyph
-                        color={folder === entry.name ? accentOnPrimary : accent}
-                        on
-                        size={14}
-                      />
-                    ) : null}
-                  </View>
-                ) : undefined,
-              onLongPress: () => openActions(folderTarget(entry)),
-              longPressLabel: canManage ? "Star or pin" : "Star or unstar",
-            })),
-          ]}
-          trailing={filtersChip}
+          chips={folderChips}
         />
-      ) : (
-        <View style={styles.chipAlone}>{filtersChip}</View>
-      )}
-
-      {panelOpen ? (
-        <View style={styles.panel}>
-          <Text style={styles.panelLabel}>Sort</Text>
-          <FilterChips
-            accessibilityLabel="Sort documents"
-            scroll
-            selected={sort}
-            onSelect={(value) =>
-              setSort((value as DocumentSort | null) ?? "name")
-            }
-            chips={SORT_OPTIONS.map((option) => ({
-              value: option.value,
-              label: option.label,
-            }))}
-          />
-          {uploaders.length > 0 ? (
-            <>
-              <Text style={styles.panelLabel}>Uploaded by</Text>
-              <FilterChips
-                accessibilityLabel="Filter by uploader"
-                scroll
-                selected={uploader}
-                onSelect={setPickedUploader}
-                chips={[{ value: null, label: "Anyone" }, ...uploaders]}
-              />
-            </>
-          ) : null}
-          <Text style={styles.panelLabel}>Date added</Text>
-          <FilterChips
-            accessibilityLabel="Filter by date added"
-            scroll
-            selected={datePreset}
-            onSelect={(value) =>
-              setDatePreset(value as "semester" | "30d" | null)
-            }
-            chips={[
-              { value: null, label: "Any time" },
-              // Offered once the archives have loaded, as on web.
-              ...(semesterKnown
-                ? [{ value: "semester", label: "This semester" }]
-                : []),
-              { value: "30d", label: "Last 30 days" },
-            ]}
-          />
-          {/*
-            Two toggles, not a pick-one row (#4290): Pinned, Starred, or both
-            for either, as web's toolbar has them.
-          */}
-          <Text style={styles.panelLabel}>Pinned and starred</Text>
-          <View style={styles.markToggles}>
-            {(
-              [
-                ["pinned", "Pinned", PinGlyph],
-                ["starred", "Starred", StarGlyph],
-              ] as const
-            ).map(([key, label, Glyph]) => {
-              const on = markFilter[key];
-              return (
-                <Chip
-                  key={key}
-                  accessibilityRole="togglebutton"
-                  accessibilityState={{ checked: on }}
-                  label={label}
-                  on={on}
-                  onPress={() =>
-                    setMarkFilter((prev) => ({ ...prev, [key]: !prev[key] }))
-                  }
-                  mark={
-                    <Glyph
-                      color={on ? accentOnPrimary : tokens.color.text.muted}
-                      on={on}
-                      size={14}
-                    />
-                  }
-                />
-              );
-            })}
-          </View>
-          {kinds.length > 0 ? (
-            <>
-              <Text style={styles.panelLabel}>File type</Text>
-              <FilterChips
-                accessibilityLabel="Filter by file type"
-                scroll
-                selected={kind}
-                onSelect={(value) => setKind(value as FileKind | null)}
-                chips={[{ value: null, label: "Any type" }, ...kinds]}
-              />
-            </>
-          ) : null}
-        </View>
       ) : null}
+      {filterRow}
 
       {openFailed ? (
         <Text style={styles.errorNote}>
@@ -937,6 +1031,7 @@ export default function DocumentsScreen() {
         <MarkedCards
           pinned={cards.pinned}
           starred={cards.starred}
+          folderNames={folderNames}
           isStarred={(item) =>
             item.kind === "folder"
               ? starredFolders.has(item.folder.id)
@@ -962,12 +1057,63 @@ export default function DocumentsScreen() {
         />
       ) : null}
 
-      <SectionHeader>
-        {documentsQuery.isSuccess
-          ? `${visible.length} ${visible.length === 1 ? "document" : "documents"}`
-          : "Documents"}
-      </SectionHeader>
+      {/* The count and, across from it, the order (#5278), as Files, Drive
+          and Dropbox put "Name ↑" over their lists: one tap opens the sort. */}
+      <View style={styles.listHeader}>
+        <SectionHeader>
+          {documentsQuery.isSuccess
+            ? `${visible.length} ${visible.length === 1 ? "document" : "documents"}`
+            : "Documents"}
+        </SectionHeader>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Sort: ${sortLabel}`}
+          accessibilityHint="Opens the sort orders."
+          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+          onPress={() => sortSheetRef.current?.present()}
+          style={({ pressed }) => [
+            styles.sortControl,
+            pressed ? styles.pressed : null,
+          ]}
+        >
+          <Text style={styles.sortLabel}>{sortLabel}</Text>
+          <DisclosureGlyph
+            color={tokens.color.text.mutedForeground}
+            size={14}
+            direction="down"
+          />
+        </Pressable>
+      </View>
       {renderList()}
+
+      <OptionSheet
+        ref={sortSheetRef}
+        title="Sort by"
+        options={SORT_OPTIONS}
+        selected={sort}
+        onSelect={(value) => setSort((value as DocumentSort | null) ?? "name")}
+      />
+      <OptionSheet
+        ref={typeSheetRef}
+        title="File type"
+        options={[{ value: null, label: "Any type" }, ...kinds]}
+        selected={kind}
+        onSelect={(value) => setKind(value as FileKind | null)}
+      />
+      <OptionSheet
+        ref={uploaderSheetRef}
+        title="Uploaded by"
+        options={[{ value: null, label: "Anyone" }, ...uploaders]}
+        selected={uploader}
+        onSelect={setPickedUploader}
+      />
+      <OptionSheet
+        ref={dateSheetRef}
+        title="Date added"
+        options={dateOptions}
+        selected={dateActive ? datePreset : null}
+        onSelect={(value) => setDatePreset(value as "semester" | "30d" | null)}
+      />
 
       <DocumentActionsSheet
         ref={actionsSheetRef}
@@ -998,26 +1144,69 @@ export default function DocumentsScreen() {
   );
 }
 
+/**
+ * A filter chip that opens its choices in a sheet (#5278): its name at rest,
+ * the pick once set, lit while set, with a down chevron, as Google Drive's
+ * Type, People and Modified chips read on a phone.
+ */
+function MenuChip({
+  name,
+  value,
+  hint,
+  onPress,
+}: {
+  name: string;
+  value: string | undefined;
+  hint: string;
+  onPress: () => void;
+}) {
+  const { tokens } = useFrappTheme();
+  const { accentOnPrimary } = useChapterBranding();
+  const set = value !== undefined;
+  return (
+    <Chip
+      accessibilityRole="button"
+      accessibilityState={{ selected: set }}
+      accessibilityLabel={set ? `${name}: ${value}` : name}
+      accessibilityHint={hint}
+      label={value ?? name}
+      on={set}
+      trailing={
+        <DisclosureGlyph
+          color={set ? accentOnPrimary : tokens.color.text.muted}
+          size={14}
+          direction="down"
+        />
+      }
+      onPress={onPress}
+    />
+  );
+}
+
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    chipAlone: {
+    // On the count's baseline: the caption carries a top margin, which
+    // centring would split.
+    listHeader: {
       flexDirection: "row",
+      alignItems: "baseline",
+      justifyContent: "space-between",
+    },
+    sortControl: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.xs,
+    },
+    sortLabel: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
+    },
+    pressed: {
+      opacity: 0.7,
     },
     marks: {
       flexDirection: "row",
       gap: tokens.spacing.xs,
-    },
-    panel: {
-      gap: tokens.spacing.xs,
-    },
-    markToggles: {
-      flexDirection: "row",
-      gap: tokens.spacing.sm,
-    },
-    panelLabel: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.text.muted,
-      paddingHorizontal: tokens.spacing.xs,
     },
     errorNote: {
       ...typeRole(tokens.typography.role.caption),

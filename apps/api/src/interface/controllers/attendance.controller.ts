@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Put,
@@ -84,7 +85,7 @@ export class AttendanceController {
     }),
   )
   async checkIn(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
     @Body() dto: CheckInDto,
@@ -111,7 +112,7 @@ export class AttendanceController {
   })
   @ApiOkResponse({ type: CheckInScreenResultDto })
   async reportCheckInScreen(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
     @Body() dto: CheckInScreenDto,
@@ -145,7 +146,7 @@ export class AttendanceController {
       'Returns the current 30-second token, its QR payload, and the short manual code. Officer-only: the code is what admits members to the attendance record. Returns 503 when the environment has no signing secret configured.',
   })
   async mintCheckInToken(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentChapterId() chapterId: string,
   ) {
     return this.attendanceService.mintCheckInToken(eventId, chapterId);
@@ -167,7 +168,7 @@ export class AttendanceController {
   })
   @ApiOkResponse({ type: MyAttendanceDto })
   async mine(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
   ): Promise<MyAttendanceDto> {
@@ -185,7 +186,7 @@ export class AttendanceController {
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'List attendance for an event' })
   async list(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentChapterId() chapterId: string,
   ) {
     return this.attendanceService.getAttendance(eventId, chapterId);
@@ -203,8 +204,8 @@ export class AttendanceController {
     }),
   )
   async updateStatus(
-    @Param('eventId') eventId: string,
-    @Param('userId') userId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') adminId: string,
     @Body() dto: UpdateAttendanceDto,
@@ -237,7 +238,7 @@ export class AttendanceController {
     }),
   )
   async markByHand(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') adminId: string,
     @Body() dto: MarkAttendanceByHandDto,
@@ -257,7 +258,7 @@ export class AttendanceController {
   @ApiOperation({ summary: 'Trigger auto-absent marking for an event' })
   @ApiCreatedResponse({ type: AutoAbsentResultDto })
   async markAutoAbsent(
-    @Param('eventId') eventId: string,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
     @CurrentChapterId() chapterId: string,
   ): Promise<AutoAbsentResultDto> {
     return this.attendanceService.markAutoAbsent(eventId, chapterId);

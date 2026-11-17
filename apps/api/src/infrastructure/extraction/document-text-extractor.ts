@@ -1,14 +1,14 @@
-import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import { Injectable } from '@nestjs/common';
 import { extractRawText } from 'mammoth';
-import type {
-  ExtractedDocumentText,
-  IDocumentTextExtractor,
+import {
+  DOCUMENT_TEXT_EXTRACT_MAX_BYTES,
+  type ExtractedDocumentText,
+  type IDocumentTextExtractor,
 } from '#domain/adapters/document-text-extractor.interface';
 import type { CorpusSection } from '#domain/utils/corpus-chunker';
 
 /** The upload limit for a document; nothing larger is opened. */
-export const EXTRACT_MAX_BYTES = MAX_UPLOAD_BYTES;
+export const EXTRACT_MAX_BYTES = DOCUMENT_TEXT_EXTRACT_MAX_BYTES;
 /** A PDF with more pages than this is skipped, not half read. */
 export const EXTRACT_MAX_PAGES = 500;
 /** About 375,000 tokens: more text than this from one file is skipped. */

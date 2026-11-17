@@ -44,6 +44,7 @@ function task(overrides: Partial<Task> = {}): Task {
     completion_note: null,
     series_id: null,
     occurrence_date: null,
+    group_id: null,
     created_at: ago(5 * DAY),
     ...overrides,
   };
@@ -430,6 +431,32 @@ describe('buildNudgeFacts', () => {
     });
     expect(late.daysOverdue).toBe(5);
     expect(late.sentBackReason).toBeNull();
+  });
+
+  it("leaves out the officer's note and the description when others' words may not go (2026-11-17)", () => {
+    const sentBack = {
+      kind: 'task_sent_back' as const,
+      task: task({
+        sent_back_reason: 'Photo is blurry',
+        description: 'Assigner wrote this',
+      }),
+    };
+    const base = {
+      candidate: sentBack,
+      firstName: '',
+      subtasks: [],
+      history: NO_HISTORY,
+      timeZone: 'UTC',
+      now: NOW,
+    };
+    expect(buildNudgeFacts(base)).toMatchObject({
+      sentBackReason: 'Photo is blurry',
+      taskDescription: 'Assigner wrote this',
+    });
+    expect(buildNudgeFacts({ ...base, othersWords: false })).toMatchObject({
+      sentBackReason: null,
+      taskDescription: null,
+    });
   });
 
   it('lists steps in order with what is done', () => {

@@ -6,7 +6,16 @@ import { useMembers } from "@repo/hooks";
 import { dueEntryFields } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
-import { TASK_PHOTOS_MAX, TASK_TITLE_MAX_LENGTH } from "@repo/validation";
+import {
+  TASK_AUDIENCE_COPY,
+  TASK_AUDIENCE_EVERYONE,
+  TASK_PHOTOS_MAX,
+  TASK_TITLE_MAX_LENGTH,
+  taskRepeatRuleOf,
+  taskRepeatSummary,
+} from "@repo/validation";
+import { RepeatOptions } from "@/components/shared/repeat-options";
+import { firstDueOf } from "@/components/tasks/task-repeat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,6 +61,8 @@ export { taskDraftFrom, type TaskDraft } from "./task-draft";
 import { taskDraftFrom, type TaskDraft } from "./task-draft";
 
 type Missing = {
+  /** Why the Repeat pick can't be saved (#5119). */
+  repeat?: string;
   title?: boolean;
   titleTooLong?: boolean;
   assignee?: boolean;
@@ -71,6 +82,17 @@ export interface TaskFormProps {
    * with the draft; anything else is done, and the host reports a warning.
    */
   onPost: (input: TaskInput) => Promise<DispatchResult>;
+  /**
+   * Runs once the form is valid, before any photo is uploaded, with the
+   * write as it stands minus photo paths and whether new photos are on it:
+   * a step that can still back out (the scope prompt on a repeating task,
+   * #5119). `true` goes on; `false` stays open and says nothing; a string
+   * stays open and says it.
+   */
+  beforeSave?: (
+    input: TaskInput,
+    hasNewPhotos: boolean,
+  ) => Promise<boolean | string>;
   onDone: () => void;
   onDiscard: () => void;
   /**
@@ -84,6 +106,17 @@ export interface TaskFormProps {
     assigneeNote: (assigneeId: string) => React.ReactNode;
     /** The task whose stored reference photos the draft keeps (#4635). */
     taskId?: string;
+    /**
+     * The task is a copy of a live repeating series (#5119), so its Repeat
+     * can change. A task that doesn't repeat has no Repeat on an edit: a
+     * series starts with a new task.
+     */
+    repeats?: boolean;
+    /**
+     * Editing everyone's copy of a task for everyone (#4295 step 3): who
+     * stays Everyone, and photos, which belong to one copy, aren't offered.
+     */
+    group?: boolean;
   };
   /**
    * Opened on a suggested task (#4313) to change it before accepting: Accept
@@ -92,23 +125,32 @@ export interface TaskFormProps {
    * adds them on the task afterwards.
    */
   suggestion?: boolean;
+  /**
+   * Offer Everyone at the top of Assignee (#4295 step 3): the field then
+   * holds `everyone` in place of a user id, and the caller sends it as
+   * `audience` (`taskWhoFields`). Only where a task for everyone can be
+   * made: never the chat + card (no card is posted for one) or an edit.
+   */
+  offerEveryone?: boolean;
 }
 
 /**
  * The chat composer's Task form (#3865, #3773 step 3), inside the + card
  * (#3983): Title, Assignee and Due date, the fields `CreateTaskDto` requires,
- * with Points and Description behind More options. A missing field is
- * outlined, named under it and focused on submit, never while typing. Repeat
- * and role assignees are #3661, which will give both apps one task form.
+ * with Points, Repeat (#5119) and Description behind More options. A missing
+ * field is outlined, named under it and focused on submit, never while
+ * typing. Role assignees are #4295 step 3.
  */
 export function TaskForm({
   initialDraft,
   onDraftChange,
   onPost,
+  beforeSave,
   onDone,
   onDiscard,
   editing,
   suggestion = false,
+  offerEveryone = false,
 }: TaskFormProps) {
   const layout = "card";
   const field = fieldClass(layout);
@@ -136,6 +178,10 @@ export function TaskForm({
   }, []);
   const edit = (patch: Partial<TaskDraft>) =>
     setDraft((previous) => ({ ...previous, ...patch }));
+  // A task for everyone (#4295 step 3) can't repeat or carry photos yet, so
+  // the form hides both and sends neither.
+  const forEveryone = draft.assigneeId === TASK_AUDIENCE_EVERYONE;
+  const offersPhotos = !suggestion && !forEveryone;
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -160,21 +206,77 @@ export function TaskForm({
     }
     if (nextMissing.assignee) return assigneeRef.current?.focus();
     if (nextMissing.due || nextMissing.passed) return dueRef.current?.focus();
-    const photoProblem = taskPhotosProblem(
-      draft.photoFiles,
-      TASK_PHOTOS_MAX - draft.keptPhotos.length,
-    );
+    // The Repeat pick (#5119), read against the first due it repeats from.
+    const showRepeat =
+      !suggestion && !forEveryone && (!editing || editing.repeats);
+    const firstDue = firstDueOf(draft.dueDate, draft.repeat.timeZone);
+    const repeat =
+      showRepeat && firstDue ? taskRepeatRuleOf(draft.repeat, firstDue) : null;
+    if (repeat && !repeat.ok) {
+      setMissing((prev) => ({ ...prev, repeat: repeat.error }));
+      edit({ showMore: true });
+      return;
+    }
+    const photoProblem = offersPhotos
+      ? taskPhotosProblem(
+          draft.photoFiles,
+          TASK_PHOTOS_MAX - draft.keptPhotos.length,
+        )
+      : null;
     if (photoProblem) {
       setMissing((prev) => ({ ...prev, photo: photoProblem }));
       edit({ showMore: true });
       return;
     }
+    // The write as it stands, photos aside, for `beforeSave` and `onPost`.
+    const base: TaskInput = {
+      title: trimmed,
+      description: draft.description.trim() || undefined,
+      assignee_id: draft.assigneeId,
+      // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003).
+      ...dueEntryFields(draft.dueDate),
+      subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
+      point_reward: suggestion ? undefined : parseGuardedInt(draft.points),
+      ...(suggestion ? {} : { proof_kind: draft.proofKind }),
+      // A new task sends a rule only when it repeats; an edit sends the
+      // rule as it should stand, null for "Doesn't repeat" (#5119).
+      ...(repeat?.ok
+        ? editing
+          ? { recurrence_rule: repeat.rule }
+          : repeat.rule
+            ? { recurrence_rule: repeat.rule }
+            : {}
+        : {}),
+    };
     setPosting(true);
     try {
+      if (beforeSave) {
+        const go = await beforeSave(
+          !offersPhotos
+            ? base
+            : {
+                ...base,
+                reference_photo_paths: draft.keptPhotos.map(
+                  (photo) => photo.storage_path,
+                ),
+              },
+          offersPhotos && draft.photoFiles.length > 0,
+        );
+        if (go !== true) {
+          if (typeof go === "string") {
+            toast({
+              title: "Couldn't save the task",
+              description: go,
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+      }
       // The photos go up first; the write carries their paths (#4635). An
       // edit sends the set as it should stand: the kept ones, then the new.
       let uploaded: string[] = [];
-      if (draft.photoFiles.length > 0) {
+      if (offersPhotos && draft.photoFiles.length > 0) {
         try {
           uploaded = await uploadPhotos(draft.photoFiles);
         } catch (error) {
@@ -191,19 +293,8 @@ export function TaskForm({
         ...uploaded,
       ];
       const result = await onPost({
-        title: trimmed,
-        description: draft.description.trim() || undefined,
-        assignee_id: draft.assigneeId,
-        // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003).
-        ...dueEntryFields(draft.dueDate),
-        subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
-        point_reward: suggestion ? undefined : parseGuardedInt(draft.points),
-        ...(suggestion
-          ? {}
-          : {
-              reference_photo_paths: referencePhotoPaths,
-              proof_kind: draft.proofKind,
-            }),
+        ...base,
+        ...(offersPhotos ? { reference_photo_paths: referencePhotoPaths } : {}),
       });
       if (!result.ok) {
         toast({
@@ -225,15 +316,22 @@ export function TaskForm({
     }
   }
 
+  const showRepeat =
+    !suggestion && !forEveryone && (!editing || editing.repeats);
+  const firstDue = firstDueOf(draft.dueDate, draft.repeat.timeZone);
   const moreSummary = [
     ...(suggestion
       ? []
       : [pointsLabel(parseGuardedInt(draft.points) ?? 0) ?? "No points"]),
+    // How it repeats, right after the points: "5 points · Every Monday".
+    showRepeat && draft.repeat.preset !== "NONE" && firstDue
+      ? taskRepeatSummary(draft.repeat, firstDue)
+      : null,
     draft.description.trim() ? "Description" : "No description",
     ...(suggestion
       ? []
       : [
-          draft.photoFiles.length + draft.keptPhotos.length > 0
+          offersPhotos && draft.photoFiles.length + draft.keptPhotos.length > 0
             ? "Photos"
             : null,
           draft.proofKind === "photo"
@@ -242,7 +340,9 @@ export function TaskForm({
               ? "Link required"
               : null,
         ].filter(Boolean)),
-  ].join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <form
@@ -291,7 +391,7 @@ export function TaskForm({
               edit({ assigneeId: value });
               setMissing((prev) => ({ ...prev, assignee: false }));
             }}
-            disabled={gate.controlProps().disabled}
+            disabled={gate.controlProps().disabled || editing?.group}
           >
             <SelectTrigger
               ref={assigneeRef}
@@ -302,6 +402,11 @@ export function TaskForm({
               <SelectValue placeholder="Pick a member" />
             </SelectTrigger>
             <SelectContent>
+              {offerEveryone || editing?.group ? (
+                <SelectItem value={TASK_AUDIENCE_EVERYONE}>
+                  {TASK_AUDIENCE_COPY.everyone}
+                </SelectItem>
+              ) : null}
               {members
                 .filter((member) => member.user_id)
                 .map((member) => (
@@ -316,6 +421,10 @@ export function TaskForm({
           </Select>
           {missing.assignee ? (
             <FieldError>Pick an assignee.</FieldError>
+          ) : draft.assigneeId === TASK_AUDIENCE_EVERYONE ? (
+            <p className="text-caption text-muted-foreground">
+              {TASK_AUDIENCE_COPY.everyoneHint(null)}
+            </p>
           ) : (
             editing?.assigneeNote(draft.assigneeId)
           )}
@@ -379,6 +488,30 @@ export function TaskForm({
               />
             </div>
           )}
+          {forEveryone && !suggestion && !editing?.group ? (
+            <p className="text-caption text-muted-foreground">
+              {TASK_AUDIENCE_COPY.noRepeat}
+            </p>
+          ) : null}
+          {showRepeat ? (
+            <div className="grid gap-1">
+              <RepeatOptions
+                forTasks
+                idPrefix={`${ids}-repeat`}
+                draft={draft.repeat}
+                start={firstDue}
+                showLength
+                disabled={posting || gate.controlProps().disabled}
+                onChange={(repeat) => {
+                  edit({ repeat });
+                  setMissing((prev) => ({ ...prev, repeat: undefined }));
+                }}
+              />
+              {missing.repeat ? (
+                <FieldError>{missing.repeat}</FieldError>
+              ) : null}
+            </div>
+          ) : null}
           <div className="grid gap-1">
             <Label htmlFor={`${ids}-description`}>Description</Label>
             <Textarea
@@ -392,6 +525,7 @@ export function TaskForm({
           {suggestion ? null : (
             <TaskPhotoFields
               id={ids}
+              withoutPhotos={forEveryone}
               draft={draft}
               taskId={editing?.taskId}
               disabled={posting || gate.controlProps().disabled}

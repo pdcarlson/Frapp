@@ -295,6 +295,17 @@ export const RLS_SMOKE = [
       !/from users/i.test(String(rows[0].using_expr)),
   },
   {
+    name: "chat_notification_preferences carries no policy: default-deny to clients, the API reads it as service_role (#4839)",
+    // Its only policy, `_select_own`, found the caller through a `users`
+    // subselect, which sees no rows under RLS, so it never matched. No client
+    // reads the table, so it was dropped rather than rewritten. A new policy
+    // here needs a client that reads the table (authorization-model.md).
+    sql: `select count(*)::int as n
+            from pg_policy p join pg_class c on c.oid = p.polrelid
+           where c.relname = 'chat_notification_preferences'`,
+    ok: (rows) => rows.length === 1 && rows[0].n === 0,
+  },
+  {
     name: "chapter_audit_log denies UPDATE via RLS policy (qual = false)",
     sql: `select pg_get_expr(polqual, polrelid) as expr
             from pg_policy p

@@ -5,3 +5,10 @@
  * its own screen there and Ask went back to `ASK_COPY.placeholder`.
  */
 export const ASK_FIND_PLACEHOLDER = "Search or ask Frapp";
+
+/**
+ * Beside "Ask Frapp" on the Find dialog's Ask row before anything is typed.
+ * It was `ASK_COPY.empty_title`, the title Ask's empty state opened with
+ * until #4904 (2026-11-17) took that title away.
+ */
+export const ASK_FIND_ROW_HINT = "Ask about your chapter";

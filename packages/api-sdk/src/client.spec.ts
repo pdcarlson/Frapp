@@ -233,6 +233,21 @@ describe("createFrappClient onUnauthorized", () => {
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
+  // Web's reader throws when the sign-in refresh couldn't reach Auth, so the
+  // read is never sent tokenless (FRAPP-API-E, #5360).
+  it("sends nothing when the token reader throws, and rejects with its error", async () => {
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const held = new TypeError("Failed to fetch (sign-in refresh)");
+    const client = createFrappClient({
+      baseUrl: "http://api.test",
+      getAuthToken: () => Promise.reject(held),
+    });
+
+    await expect(client.GET("/v1/client-policy")).rejects.toBe(held);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("does not report a 403, which is a refusal, not a dead session", async () => {
     stubStatus(403);
     const onUnauthorized = vi.fn();

@@ -249,7 +249,7 @@ landed-route assertion fails the screen rather than saving a mislabelled image.
 That flag must never be set for a hosted build: `localStorage` is readable by
 any script on the origin, so it is a demo-stack affordance and not a web
 credential store. Nothing ships mobile-web today — [`apps/mobile/eas.json`](../../apps/mobile/eas.json)
-builds native only, [`render.yaml`](../../render.yaml) serves just the API, and
+builds native only, the Cloud Run deploy serves just the API, and
 `apps/mobile` has no Vercel project — so it has no deployed surface to be
 switched on for.
 

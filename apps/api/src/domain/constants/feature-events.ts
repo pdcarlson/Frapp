@@ -91,6 +91,9 @@ export const FEATURE_EVENTS = {
     feature: 'tasks',
     properties: [
       'assigned_to_self',
+      // `person` or `everyone` (#4295 step 3), and how many copies it made.
+      'audience',
+      'group_size',
       'has_due_time',
       'has_point_reward',
       'has_reference_photo',

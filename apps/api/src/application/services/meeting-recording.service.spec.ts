@@ -45,6 +45,7 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
   posted_at: null,
   created_at: AT,
   updated_at: AT,
+  transcript: null,
   ...overrides,
 });
 
@@ -528,7 +529,7 @@ describe('MeetingRecordingService', () => {
   });
 
   describe('the run', () => {
-    it('writes the transcript with numbered speakers and deletes the audio', async () => {
+    it('writes the transcript with numbered speakers and keeps the audio for playback', async () => {
       const harness = setup();
       const target = await transcribing(harness);
       const result = await harness.service.run(
@@ -544,10 +545,11 @@ describe('MeetingRecordingService', () => {
         transcript:
           'Speaker 1: Call to order.\nSpeaker 2: Treasurer report.\nSpeaker 1: Thank you.',
         speaker_count: 2,
-        storage_path: null,
+        storage_path: target.path,
         provider_job_id: null,
       });
-      expect(harness.files.size).toBe(0);
+      // Kept until the minutes are posted (Paul, 2026-11-17).
+      expect([...harness.files]).toEqual([target.path]);
 
       const [task, input, call] =
         harness.transcription.transcribe.mock.calls[0];
@@ -573,6 +575,7 @@ describe('MeetingRecordingService', () => {
         status: 'ready',
         duration_seconds: 4318,
         transcript: expect.stringContaining('Speaker 2: Treasurer report.'),
+        audio_url: 'http://storage.test/secret-link',
       });
     });
 
@@ -810,6 +813,33 @@ describe('MeetingRecordingService', () => {
       expect(harness.files.size).toBe(0);
     });
 
+    it('keeps the audio when another try of the same upload finished first', async () => {
+      const harness = setup();
+      const target = await transcribing(harness);
+      // Two tries after a lost lease: the other one writes the transcript
+      // and keeps the audio for playback while this one is still waiting.
+      harness.transcription.transcribe.mockImplementationOnce(async () => {
+        harness.recordings.row = {
+          ...harness.recordings.row!,
+          status: 'ready',
+          transcript: 'Speaker 1: Hi.',
+        };
+        return {
+          status: 'ok',
+          durationSeconds: 60,
+          utterances: [{ speaker: 'A', text: 'Hi.', startMs: 0, endMs: 1 }],
+        };
+      });
+      await expect(
+        harness.service.run(harness.context(target.upload_id)),
+      ).resolves.toBeUndefined();
+      expect(harness.recordings.row).toMatchObject({
+        status: 'ready',
+        storage_path: target.path,
+      });
+      expect([...harness.files]).toEqual([target.path]);
+    });
+
     it('never puts the file name, the link or the transcript in an error', async () => {
       const harness = setup();
       const target = await transcribing(harness);
@@ -854,6 +884,31 @@ describe('MeetingRecordingService', () => {
     });
   });
 
+  describe('availability before any minutes exist (#5287)', () => {
+    it('reports the provider and the limits without reading a meeting', async () => {
+      const { service, meetings } = setup({
+        limits: { maxDurationSeconds: 3600, maxBytes: 100 * 1024 ** 2 },
+      });
+      await expect(service.availability(CHAPTER, SECRETARY)).resolves.toEqual({
+        available: true,
+        blocked: null,
+        max_bytes: 100 * 1024 ** 2,
+        max_seconds: 3600,
+      });
+      expect(meetings.editableBy).not.toHaveBeenCalled();
+    });
+
+    it('says when nothing can be written out, and why the member is held', async () => {
+      const { service } = setup({
+        available: false,
+        consent: { allowed: false, reason: 'chapter_off' },
+      });
+      await expect(
+        service.availability(CHAPTER, SECRETARY),
+      ).resolves.toMatchObject({ available: false, blocked: 'chapter_off' });
+    });
+  });
+
   describe('the sweeps', () => {
     it('fails an upload nobody finished, and leaves a fresh one alone', async () => {
       const harness = setup();
@@ -886,19 +941,36 @@ describe('MeetingRecordingService', () => {
       expect(harness.files.size).toBe(0);
     });
 
-    it('deletes a file a failed delete left behind an ended recording', async () => {
+    it('deletes a file a failed delete left behind a failed recording', async () => {
       const harness = setup();
       const target = await transcribing(harness);
-      // The transcript was written, and deleting the audio failed.
+      // The transcription failed, and deleting the audio failed too.
       Object.assign(harness.recordings.row!, {
-        status: 'ready',
-        transcript: 'Speaker 1: Call to order.',
+        status: 'failed',
+        failure_code: 'failed',
       });
       expect(harness.files.has(target.path)).toBe(true);
       await harness.service.sweepAudio();
       expect(harness.files.size).toBe(0);
       expect(harness.recordings.row!.storage_path).toBeNull();
-      expect(harness.recordings.row!.status).toBe('ready');
+      expect(harness.recordings.row!.status).toBe('failed');
+    });
+
+    it("keeps a ready recording's audio for playback until posting drops the row", async () => {
+      const harness = setup();
+      const target = await transcribing(harness);
+      Object.assign(harness.recordings.row!, {
+        status: 'ready',
+        transcript: 'Speaker 1: Call to order.',
+      });
+      await harness.service.sweepAudio();
+      expect(harness.files.has(target.path)).toBe(true);
+      expect(harness.recordings.row!.storage_path).toBe(target.path);
+
+      // Posting the minutes drops the row; the next sweep takes the file.
+      harness.recordings.row = null;
+      await harness.service.sweepAudio();
+      expect(harness.files.size).toBe(0);
     });
 
     it('deletes audio no recording names any more, and only that', async () => {

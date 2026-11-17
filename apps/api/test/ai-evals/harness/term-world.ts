@@ -397,6 +397,7 @@ export function createTermWorld(
       completion_note: null,
       series_id: null,
       occurrence_date: null,
+      group_id: null,
       created_at: stamp,
     };
   };
@@ -1180,6 +1181,7 @@ export function createTermWorld(
         posted_at: held,
         created_at: held,
         updated_at: held,
+        transcript: null,
       };
       return { meeting, content };
     });

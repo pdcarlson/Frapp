@@ -5,7 +5,7 @@ import { Frame, paint } from "@/components/glyph-recipe";
 /**
  * The verbs an icon-only control draws (`spec/ui/design-system/components.md`
  * § Icon-only actions, `iconography.md` §6.1.5): close or dismiss, edit, mark
- * all read, try again, share, and back. Share also leads a labelled button (setup's
+ * all read, try again, share, back, and List / Grid's two layouts. Share also leads a labelled button (setup's
  * `Share invite`), and the invite link's own mark, `LinkGlyph`, lives here
  * beside it. Control furniture, so they draw only the §1 stroke recipe's
  * detail strokes, with no silhouette fill, from `glyph-recipe.tsx`'s `Frame`
@@ -29,19 +29,30 @@ interface ControlGlyphProps {
 const DEFAULT_SIZE = 20;
 
 /**
- * All threads (#4960), Chat home's door to the member's threads: web's
- * `StartThreadGlyph` (a bubble with a reply branching off it), so the two
- * apps draw the same picture for threads.
+ * The List / Grid toggle's two pictures: Lucide's `LayoutGrid` and `List`,
+ * as Google Drive and Files draw their layout switch. The toggle shows the
+ * layout a tap switches to.
  */
-export function ThreadsGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+export function GridGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
   const { detail } = paint({ color });
   return (
     <Frame size={size}>
       <Path
-        d="M6.5 3.5h9A2.5 2.5 0 0118 6v3.5a2.5 2.5 0 01-2.5 2.5H10l-3.5 2.6V12A2.5 2.5 0 014 9.5V6a2.5 2.5 0 012.5-2.5z"
+        d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
         {...detail}
       />
-      <Path d="M13.5 12v3a3 3 0 003 3h3.5M18 15.8l2.2 2.2-2.2 2.2" {...detail} />
+    </Frame>
+  );
+}
+
+export function ListGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"
+        {...detail}
+      />
     </Frame>
   );
 }
@@ -442,6 +453,65 @@ export function DragHandleGlyph({
   return (
     <Frame size={size}>
       <Path d="M5 8h14M5 12h14M5 16h14" {...detail} />
+    </Frame>
+  );
+}
+
+/**
+ * The recorder's three controls on a meeting's minutes (#5381 follow-up,
+ * Paul 2026-11-17: "maybe instead of using words to describe actions, maybe
+ * you use icons, like a pause button and a play button"), drawn solid as
+ * Voice Memos and Otter draw them: two bars to pause, a triangle to carry on,
+ * a rounded square to stop.
+ */
+export function PauseGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M7 5h3v14H7zM14 5h3v14h-3z"
+        fill={color}
+        stroke={color}
+        strokeWidth={1}
+        strokeLinejoin="round"
+      />
+    </Frame>
+  );
+}
+
+export function PlayGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M8 5.5v13l10.5-6.5z"
+        fill={color}
+        stroke={color}
+        strokeWidth={1.5}
+        strokeLinejoin="round"
+      />
+    </Frame>
+  );
+}
+
+export function StopGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  return (
+    <Frame size={size}>
+      <Path
+        d="M8 6h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"
+        fill={color}
+      />
+    </Frame>
+  );
+}
+
+/** A microphone, leading Record. */
+export function MicGlyph({ color, size = DEFAULT_SIZE }: ControlGlyphProps) {
+  const { detail } = paint({ color });
+  return (
+    <Frame size={size}>
+      <Path
+        d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM19 11a7 7 0 0 1-14 0M12 18v3"
+        {...detail}
+      />
     </Frame>
   );
 }

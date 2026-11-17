@@ -1,6 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import {
+  TASK_AUDIENCE_COPY,
+  TASK_AUDIENCE_EVERYONE,
+  noTaskRepeatDraft,
+  taskWhoFields,
+  taskWhoValue,
+} from "@repo/validation";
 import { useMemo, useState } from "react";
 import { Pencil, X } from "lucide-react";
 import {
@@ -101,7 +108,8 @@ function dueEntryOf(task: SuggestedTask): string {
 /** Who and when as the row stands: the officer's pick over the suggestion. */
 function rowValues(item: WaitingSuggestion, edits: RowEdits | undefined) {
   return {
-    assigneeId: edits?.assigneeId ?? item.task.assignee_id ?? "",
+    // A member's id, or "everyone" for a task for everyone (#4295 step 3).
+    assigneeId: edits?.assigneeId ?? taskWhoValue(item.task),
     due: edits?.due ?? dueEntryOf(item.task),
   };
 }
@@ -112,8 +120,8 @@ function editsFor(
   values: { assigneeId: string; due: string },
 ): TaskSuggestionEdits | undefined {
   const edits: TaskSuggestionEdits = {};
-  if (values.assigneeId !== (item.task.assignee_id ?? "")) {
-    edits.assignee_id = values.assigneeId;
+  if (values.assigneeId !== taskWhoValue(item.task)) {
+    Object.assign(edits, taskWhoFields(values.assigneeId));
   }
   if (values.due !== dueEntryOf(item.task)) {
     const fields = dueEntryFields(values.due);
@@ -417,6 +425,8 @@ function SuggestedTaskRow({
       points: "",
       description: task.description ?? "",
       subtasks: task.subtasks,
+      // A suggestion's form has no Repeat (#5119).
+      repeat: noTaskRepeatDraft(),
       photoFiles: [],
       keptPhotos: [],
       proofKind: "none",
@@ -426,6 +436,7 @@ function SuggestedTaskRow({
       <li className="rounded-[14px] border border-border p-3">
         <TaskForm
           suggestion
+          offerEveryone
           initialDraft={initialDraft}
           onDiscard={onCloseForm}
           onDone={onCloseForm}
@@ -436,7 +447,7 @@ function SuggestedTaskRow({
               await acceptWith({
                 title: input.title,
                 description: input.description ?? null,
-                assignee_id: input.assignee_id,
+                ...taskWhoFields(input.assignee_id),
                 due_date: input.due_date,
                 due_at: input.due_at ?? null,
                 subtasks: input.subtasks ?? [],
@@ -476,6 +487,9 @@ function SuggestedTaskRow({
               <SelectValue placeholder={AI_SUGGESTION_COPY.who} />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={TASK_AUDIENCE_EVERYONE}>
+                {TASK_AUDIENCE_COPY.everyone}
+              </SelectItem>
               {members.map((member) => (
                 <SelectItem
                   key={String(member.user_id)}

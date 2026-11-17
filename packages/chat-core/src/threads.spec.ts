@@ -11,9 +11,13 @@ import {
   outgoingGifOf,
   sendThreadReply,
   threadCardLabel,
+  sidebarThreadRowLabel,
   threadChipLabel,
   threadPreviewParts,
   memberThreadPreview,
+  SIDEBAR_THREAD_QUIET_MS,
+  SIDEBAR_THREADS_PER_CHANNEL,
+  sidebarThreadsByChannel,
   threadVersion,
 } from "./threads";
 import { emptyCache } from "./cache";
@@ -646,7 +650,11 @@ describe("memberThreadPreview (#4960)", () => {
       raw({
         content: "",
         metadata: {
-          gif: { url: "https://static.klipy.com/gif/x.gif", width: 100, height: 100 },
+          gif: {
+            url: "https://static.klipy.com/gif/x.gif",
+            width: 100,
+            height: 100,
+          },
         },
         thread_last_reply: {
           id: "r1",
@@ -689,5 +697,86 @@ describe("memberThreadPreview (#4960)", () => {
     expect(
       memberThreadPreview(raw({ thread_last_reply: null }), null, names).reply,
     ).toBeNull();
+  });
+});
+
+describe("sidebarThreadsByChannel (#5277)", () => {
+  const NOW = Date.parse("2026-11-17T12:00:00.000Z");
+  const HOUR = 60 * 60 * 1000;
+  const thread = (
+    id: string,
+    channel: string,
+    hoursAgo: number,
+    unread = 0,
+  ) => ({
+    thread_root_id: id,
+    channel_id: channel,
+    unread_count: unread,
+    last_reply_at: new Date(NOW - hoursAgo * HOUR).toISOString(),
+    root: { created_at: new Date(NOW - (hoursAgo + 1) * HOUR).toISOString() },
+  });
+
+  test("groups by channel, newest activity first", () => {
+    const map = sidebarThreadsByChannel(
+      [thread("a", "c1", 5), thread("b", "c2", 1), thread("c", "c1", 2)],
+      NOW,
+    );
+    expect(map.get("c1")?.map((t) => t.thread_root_id)).toEqual(["c", "a"]);
+    expect(map.get("c2")?.map((t) => t.thread_root_id)).toEqual(["b"]);
+  });
+
+  test("drops a read thread quiet past the window, keeps an unread one", () => {
+    const quiet = SIDEBAR_THREAD_QUIET_MS / HOUR + 1;
+    const map = sidebarThreadsByChannel(
+      [thread("old", "c1", quiet), thread("old-unread", "c1", quiet, 2)],
+      NOW,
+    );
+    expect(map.get("c1")?.map((t) => t.thread_root_id)).toEqual(["old-unread"]);
+  });
+
+  test("reads a thread with no replies by its parent's time", () => {
+    const fresh = { ...thread("p", "c1", 0), last_reply_at: null };
+    expect(sidebarThreadsByChannel([fresh], NOW).get("c1")).toHaveLength(1);
+  });
+
+  test("caps each channel and leaves a channel with none out", () => {
+    const many = Array.from(
+      { length: SIDEBAR_THREADS_PER_CHANNEL + 2 },
+      (_, i) => thread(`t${i}`, "c1", i),
+    );
+    const map = sidebarThreadsByChannel(many, NOW);
+    expect(map.get("c1")).toHaveLength(SIDEBAR_THREADS_PER_CHANNEL);
+    expect(map.has("c2")).toBe(false);
+  });
+
+  test("never cuts a thread with new replies at the cap", () => {
+    const read = Array.from({ length: SIDEBAR_THREADS_PER_CHANNEL }, (_, i) =>
+      thread(`t${i}`, "c1", i),
+    );
+    const unread = thread("old-unread", "c1", 50, 1);
+    const map = sidebarThreadsByChannel([...read, unread], NOW);
+    expect(map.get("c1")?.map((t) => t.thread_root_id)).toContain("old-unread");
+    expect(sidebarThreadsByChannel(undefined, NOW).size).toBe(0);
+  });
+});
+
+describe("sidebarThreadRowLabel (#5300)", () => {
+  test("names the thread and its channel, then muted and what's new", () => {
+    expect(
+      sidebarThreadRowLabel({
+        rootText: "grill is in my garage",
+        channelLabel: "#general",
+        muted: false,
+        unreadCount: 2,
+      }),
+    ).toBe("Thread: grill is in my garage, in #general, 2 new");
+    expect(
+      sidebarThreadRowLabel({
+        rootText: "dues",
+        channelLabel: "#exec",
+        muted: true,
+        unreadCount: 0,
+      }),
+    ).toBe("Thread: dues, in #exec, muted");
   });
 });

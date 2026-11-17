@@ -515,7 +515,7 @@ const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
     {
       creates: 1,
       status: 'no-foreign-content',
-      why: "Select-own only: the caller's own preferences.",
+      why: "Dropped by 20261117174649 (#4839): its `users` subselect never matched, and no client reads the table, so it is default-deny and only the API reads it, as service_role. When it existed it was select-own only: the caller's own preferences.",
     },
   'realtime.messages realtime_messages_scoped_select': {
     creates: 2,
@@ -741,7 +741,11 @@ const NOTIFY_EMITTERS: Record<string, { calls: number; entries: Entry[] }> = {
     calls: 2,
     entries: [MEMBER_TEXT],
   },
-  'application/services/task.service.ts': { calls: 8, entries: [MEMBER_TEXT] },
+  'application/services/task.service.ts': {
+    // +1 for a task for everyone (#4295 step 3): each copy's assignment push.
+    calls: 9,
+    entries: [MEMBER_TEXT],
+  },
   'application/workers/scheduled-jobs.service.ts': {
     // +3 for repeating tasks (#5119): each new copy's assignment push and the
     // "stopped repeating" notice, both titled with the task as task pushes are.

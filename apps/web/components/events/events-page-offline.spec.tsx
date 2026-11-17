@@ -44,49 +44,14 @@ vi.mock("@/components/ai/suggested-events", () => ({
   useRecordPlannedEvent: () => async () => undefined,
 }));
 
-vi.mock("@repo/hooks", async () => ({
-  // The Subscribe menu reads the real shared Google Calendar copy (#4676);
-  // the hooks below override what this spec stubs.
-  ...(await import("@repo/hooks/use-google-calendar")),
-  // A viewer with no roles: the event's default decides (#4132). The rule
-  // itself is the hook's own spec.
-  useRequiredOfViewer: () => (fields: { is_mandatory?: boolean | null }) =>
-    fields.is_mandatory === true,
-  // The toolbar's Subscribe menu (#3322) asks for nothing until it opens.
-  useCalendarFeedLink: () => ({ data: undefined, isError: false }),
-  useResetCalendarFeedLink: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  calendarAppLinks: () => null,
-  useGoogleCalendarStatus: () => ({ data: undefined }),
-  useStartGoogleCalendarConnect: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  useConfirmGoogleCalendarConnect: () => ({ mutateAsync: vi.fn() }),
-  useDisconnectGoogleCalendar: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
-  }),
-  readGoogleCalendarReturn: () => null,
-  GOOGLE_CALENDAR_RETURN_PARAMS: [],
-  useCalendarTasks: () => ({ items: [], hasMine: false, hasAssigned: false }),
-  useCalendarBirthdays: () => [],
-  useChapterRoster: () => ({ data: [] }),
-  useCurrentChapter: () => mockCurrentChapter(),
-  useCreateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useEvent: () => ({ data: undefined, isPending: false, isError: false }),
-  useUpdateEvent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
-  useActiveChapterId: () => "chap-1",
-  useAttendance: () => ({ data: [], isPending: false, isError: false }),
-  useMembers: () => ({ data: [], isPending: false, isError: false }),
-  useUpdateAttendanceStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useMyPermissions: () => ({
-    data: { permissions: ["events:update", "events:create", "members:view"] },
-  }),
-  useEvents: () => eventsQuery,
-  useNow: () => Date.parse("2026-09-01T12:00:00Z"),
-}));
+vi.mock("@repo/hooks", async () => {
+  const { eventsPageHooks } = await import("@/tests/events-page");
+  return eventsPageHooks({
+    useCurrentChapter: () => mockCurrentChapter(),
+    useEvents: () => eventsQuery,
+    useNow: () => Date.parse("2026-09-01T12:00:00Z"),
+  });
+});
 
 // The viewer whose last view (List or Calendar) the page reads; no stored
 // choice unless a test writes one.

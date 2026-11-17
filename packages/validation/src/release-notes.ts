@@ -120,6 +120,44 @@ export function releaseNoteLineCount(note: ReleaseNote): number {
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
   {
+    date: "2026-11-17",
+    title: "New in this update",
+    changes: [
+      "A task due at a time now reminds you about an hour before it's due, saying how long is left, instead of two hours before.",
+      "Ask Frapp now opens on a greeting and a few questions you can tap, and tells you what it can do the first time you open it.",
+      "A connected Google Drive folder now brings in files from folders inside folders, not just the first two levels down.",
+      "Nudge cards on Activity no longer need your chapter to have Ask on: they're on unless your president turns them off in Chapter settings, and you still choose for yourself whether Frapp AI is on.",
+      "When an event moves to a new time on the same day, you now get its starting-soon reminder for the new time.",
+      "A chapter's AI features now start on, so Ask Frapp, minutes from notes and channel summaries work from day one; the president can turn any of them off in Chapter settings.",
+      "Documents shows a chapter's folders as a tree, so folders inside folders, like a synced Google Drive, read the way they do in Drive.",
+      "Officers can give a task to everyone: each active member gets their own copy, with their own progress, proof and points.",
+      "Drafted minutes now list what the meeting actually decided, with the amounts and conditions, and leave out procedural votes like moving on to new business.",
+      "Frapp's entries in the audit log can no longer be deleted, and nothing there can be newly pinned or flagged.",
+      "Settings has a Linked apps page: Google Calendar, Discord and the ways you sign in each show a green check when connected, and red when they need reconnecting.",
+      "Drafted minutes now come with full notes, topic by topic with every point and detail, and posted minutes keep the meeting's transcript for members to read and for Frapp AI to answer from.",
+    ],
+    web: [
+      "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
+      "Your active threads now sit under their channel in the channel list, so you can open one in a click and see at a glance which have new replies.",
+      "Tasks can repeat every day, week or month, and a new one appears each time the last one comes due.",
+      "The task board shows a task for everyone as one tile, with how many are done and who is left.",
+      "A backwork upload that stops responding now says so and offers Try again, instead of spinning forever.",
+      "Minutes now put decisions and action items right under the summary, tag the action items that are yours, and show the discussion one topic per line.",
+    ],
+    phone: [
+      "Threads you're in now sit under their channel in Chat, as in Discord, instead of in a separate Threads list.",
+      "Your points sit quietly at the top of the You tab, and your service and study hours show on their rows instead of in big cards that mostly read zero.",
+      "Documents' sort and filters are each a tap away: Type, Uploaded by and Date added are chips that open a list, and the order sits over the list.",
+      "The + menu can now record a meeting: tap Record meeting, read the notice to the room, and the minutes open already recording. It also starts new minutes and opens search.",
+      "Frapp AI and Nudges on Activity now have their own AI section in Settings, and presidents can turn the chapter's AI features on or off from Chapter settings.",
+      "The bar at the bottom folds into one row while you scroll down a tab, with Ask Frapp beside your current tab, and comes back as you scroll up.",
+      "On iPhone, a message sent just as autocorrect was fixing a word no longer comes back into the box with the fix applied.",
+      "Documents, the Directory and Tasks switch between list and grid with one button in the top corner.",
+      "The + menu has one New minutes option again: it starts the minutes, or records the meeting from the same sheet.",
+      "Recording a meeting is now one screen: tap Record, pause and stop with two buttons at the bottom, watch it upload and transcribe, then read the draft, your notes and the transcript in place, and play the recording back until the minutes are posted.",
+    ],
+  },
+  {
     date: "2026-11-16",
     title: "New in this update",
     changes: [

@@ -16,9 +16,10 @@ export const GOOGLE_DRIVE_SYNC_BATCH = 6;
 /** Folders synced at once within a tick. */
 const CONCURRENCY = 2;
 /**
- * How long a claimed folder is this replica's. Longer than a pass can take
- * (20 copies of up to 25 MB, each capped at 90 seconds, is the pathological
- * case), so two replicas never copy one folder at once.
+ * How long a claimed folder is this replica's. Longer than a pass can take, so
+ * two replicas never copy one folder at once: a pass stops listing folders at
+ * 10 minutes (`DRIVE_LIST_TIME_MS`) and starts no copy after 25
+ * (`DRIVE_COPY_TIME_MS`), and one copy is capped at 90 seconds.
  */
 const LEASE_SECONDS = 45 * 60;
 

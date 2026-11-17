@@ -37,12 +37,13 @@ import {
   MEETING_TYPES,
   MEETING_VOTE_MAX,
   STANDARDS_MEETING_TYPE,
+  EVENT_NAME_MAX_LENGTH,
+  tooLongRefusal,
 } from '@repo/validation';
+import { EVENT_ROLE_IDS_MAX } from '#domain/constants/field-limits';
 
 /** What a request may name as a type: the four, plus Standards to refuse it. */
 const REQUESTABLE_TYPES = [...MEETING_TYPES, STANDARDS_MEETING_TYPE];
-const EVENT_NAME_MAX_LENGTH = 200;
-const ROLE_IDS_MAX = 200;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export class MeetingVoteDto {
@@ -191,7 +192,9 @@ export class NewMeetingEventDto {
   @ApiProperty({ maxLength: EVENT_NAME_MAX_LENGTH })
   @IsString()
   @MinLength(1)
-  @MaxLength(EVENT_NAME_MAX_LENGTH)
+  @MaxLength(EVENT_NAME_MAX_LENGTH, {
+    message: tooLongRefusal("the event's name", EVENT_NAME_MAX_LENGTH),
+  })
   name: string;
 
   @ApiProperty({ format: 'date-time' })
@@ -204,13 +207,13 @@ export class NewMeetingEventDto {
 
   @ApiPropertyOptional({
     type: [String],
-    maxItems: ROLE_IDS_MAX,
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Only members holding one of these roles are invited, and so read the minutes. Empty or omitted: everyone.',
   })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(ROLE_IDS_MAX)
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsUUID('all', { each: true })
   role_ids?: string[];
 }
@@ -383,6 +386,13 @@ export class MeetingDto extends MeetingSummaryDto {
   @ApiProperty({ type: String, format: 'uuid', nullable: true })
   posted_by: string | null;
   @ApiProperty({ format: 'date-time' }) created_at: string;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording.',
+  })
+  transcript: string | null;
   @ApiProperty() can_edit: boolean;
   @ApiProperty() can_delete: boolean;
 }
@@ -740,6 +750,13 @@ export class MeetingRecordingDto {
       'The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes.',
   })
   transcript: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description:
+      'A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted.',
+  })
+  audio_url: string | null;
   @ApiProperty({ type: Number, nullable: true })
   speaker_count: number | null;
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
@@ -768,4 +785,29 @@ export class MeetingRecordingDto {
     description: 'Only in the answer to starting an upload.',
   })
   upload: MeetingRecordingUploadDto | null;
+}
+
+/**
+ * What recording would do for the caller before any minutes exist (#5287):
+ * the phone's + reads it to decide whether New minutes offers Record the meeting.
+ */
+export class MeetingRecorderAvailabilityDto {
+  @ApiProperty({
+    description:
+      'False when this server has no transcription provider set up, so a recording can’t be written out.',
+  })
+  available: boolean;
+  @ApiProperty({
+    enum: ['chapter_off', 'consent_required'],
+    nullable: true,
+    description:
+      'Why the caller can’t send a recording now: the chapter has meeting notes off, or they have not said yes on the AI sheet.',
+  })
+  blocked: 'chapter_off' | 'consent_required' | null;
+  @ApiProperty({ description: 'The largest file this server takes, in bytes.' })
+  max_bytes: number;
+  @ApiProperty({
+    description: 'The longest recording this server takes, in seconds.',
+  })
+  max_seconds: number;
 }

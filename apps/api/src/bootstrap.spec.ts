@@ -166,7 +166,7 @@ describe('configureApp', () => {
       const other = await request(app.getHttpServer())
         .post('/v1/channels/c1/members')
         .send(big);
-      expect(other.status).toBeGreaterThanOrEqual(400);
+      expect(other.status).toBe(413);
     });
 
     // The larger ceiling is only for those prefixes: every other route, the ones a
@@ -179,25 +179,58 @@ describe('configureApp', () => {
       const tooLarge = await request(app.getHttpServer())
         .post('/v1/echo')
         .send({ text: 'x'.repeat(160_000) });
-      expect(tooLarge.status).toBeGreaterThanOrEqual(400);
+      expect(tooLarge.status).toBe(413);
       expect(tooLarge.body.requestId).toMatch(/^req_/);
     });
 
-    // The global filter answers both as 500 today, where 413 and 400 are
-    // meant (#4404); what this guards is that the answer names its request.
-    it('names the request when it refuses a body over the limit, or one that is not JSON', async () => {
+    // Before #4404 an oversized body answered 500, and a malformed one 400
+    // quoting the body's own text (Nest passed on V8's parse message). Both
+    // now answer as the client's mistake, with an id and nothing of the body.
+    it('answers 413 for a body over the limit and 400 for one that is not JSON', async () => {
       const tooLarge = await request(app.getHttpServer())
         .post('/v1/meetings')
         .send({ text: 'x'.repeat(1_100_000) });
-      expect(tooLarge.status).toBeGreaterThanOrEqual(400);
-      expect(tooLarge.body.requestId).toMatch(/^req_/);
+      expect(tooLarge.status).toBe(413);
+      expect(tooLarge.body).toEqual({
+        statusCode: 413,
+        error: 'PAYLOAD_TOO_LARGE',
+        message: 'Request body is too large',
+        requestId: expect.stringMatching(/^req_/),
+      });
 
+      // An unexpected token: V8's own message would quote this text.
       const malformed = await request(app.getHttpServer())
         .post('/v1/echo')
         .set('content-type', 'application/json')
-        .send('{"text":');
-      expect(malformed.status).toBeGreaterThanOrEqual(400);
-      expect(malformed.body.requestId).toMatch(/^req_/);
+        .send('password=secret-body-text');
+      expect(malformed.status).toBe(400);
+      expect(malformed.body).toEqual({
+        statusCode: 400,
+        error: 'BAD_REQUEST',
+        message: 'Request body is not valid JSON',
+        requestId: expect.stringMatching(/^req_/),
+      });
+      expect(JSON.stringify(malformed.body)).not.toContain('secret-body-text');
+    });
+
+    // Nest adds its form parser at init, after anything registered here, so
+    // `configureApp` registers it itself, ahead of the error mapping.
+    it('answers 413 for a form body over the limit', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .type('form')
+        .send(`text=${'x'.repeat(160_000)}`);
+      expect(res.status).toBe(413);
+      expect(res.body.requestId).toMatch(/^req_/);
+    });
+
+    it('answers 415 for a JSON body in a charset the parser does not read', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/v1/echo')
+        .set('content-type', 'application/json; charset=latin1')
+        .send('{"text":"x"}');
+      expect(res.status).toBe(415);
+      expect(res.body.requestId).toMatch(/^req_/);
     });
   });
 

@@ -164,6 +164,32 @@ describe('SupabaseStorageService', () => {
       },
     );
 
+    it('carries the stored size when storage reports one, and leaves it out otherwise', async () => {
+      // The backwork AI fill refuses a file past the extractor's cap from this
+      // size, so a missing or odd value must read as unknown, never as 0.
+      list
+        .mockResolvedValueOnce({
+          data: [
+            { id: 'id-1', name: 'a.pdf', metadata: { size: 1234 } },
+            { id: 'id-2', name: 'b.pdf', metadata: {} },
+            { id: 'id-3', name: 'c.pdf', metadata: { size: '99' } },
+            { id: 'id-4', name: 'd.pdf', metadata: null },
+          ],
+          error: null,
+        })
+        .mockResolvedValueOnce({ data: [], error: null });
+
+      const objects = await service.listObjects('backwork', 'p');
+
+      expect(objects.map((object) => object.sizeBytes)).toEqual([
+        1234,
+        undefined,
+        undefined,
+        undefined,
+      ]);
+      expect('sizeBytes' in objects[1]).toBe(false);
+    });
+
     it('treats a missing bucket as an empty folder', async () => {
       list.mockResolvedValueOnce({
         data: null,

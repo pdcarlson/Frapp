@@ -30,13 +30,27 @@ import {
   useUploadTaskPhotos,
   type TaskPhotoDraft,
 } from "@/components/tasks/task-photo";
-import type { TaskProofKind } from "@repo/validation";
+import {
+  TASK_AUDIENCE_COPY,
+  TASK_AUDIENCE_EVERYONE,
+  everyoneCount,
+  noTaskRepeatDraft,
+  taskRepeatRuleOf,
+  type TaskAudience,
+  type RepeatDraft,
+  type TaskProofKind,
+} from "@repo/validation";
+import { RepeatOptions } from "@/components/shared/repeat-options";
+import { firstDueOf } from "@/components/tasks/task-repeat";
 
 /** What `POST /v1/tasks` takes from the board. */
 export type TaskDraft = {
   title: string;
   description?: string;
-  assignee_id: string;
+  /** Who it is for; absent on a task for everyone. */
+  assignee_id?: string;
+  /** A task for everyone (#4295 step 3): a copy per active member. */
+  audience?: TaskAudience;
   due_date: string;
   /** Present only when the task has a time of day (#4003). */
   due_at?: string;
@@ -47,9 +61,15 @@ export type TaskDraft = {
   reference_photo_paths?: string[];
   /** What Mark done needs (#4635). */
   proof_kind?: TaskProofKind;
+  /** Repeat on this rule (#5119); the task is the series' first copy. */
+  recurrence_rule?: string;
 };
 
-type Member = { user_id?: string | null; display_name?: string | null };
+type Member = {
+  user_id?: string | null;
+  display_name?: string | null;
+  is_alumni?: boolean | null;
+};
 
 const EMPTY = {
   title: "",
@@ -58,10 +78,13 @@ const EMPTY = {
   due_date: "",
   point_reward: "",
   subtasks: [] as string[],
+  repeat: noTaskRepeatDraft() as RepeatDraft,
   ...EMPTY_TASK_PHOTO_DRAFT,
 };
 
 type Missing = {
+  /** Why the Repeat pick can't be saved (#5119). */
+  repeat?: string;
   assignee?: boolean;
   due?: boolean;
   passed?: boolean;
@@ -134,8 +157,20 @@ export function AddTaskRow({
       dueRef.current?.focus();
       return;
     }
+    // A task for everyone can't repeat or carry photos yet (#4295 step 3):
+    // the row hides both, and nothing hidden is sent.
+    const forEveryone = draft.assignee_id === TASK_AUDIENCE_EVERYONE;
+    const firstDue = firstDueOf(draft.due_date, draft.repeat.timeZone);
+    const repeat =
+      firstDue && !forEveryone
+        ? taskRepeatRuleOf(draft.repeat, firstDue)
+        : null;
+    if (repeat && !repeat.ok) {
+      setMissing((prev) => ({ ...prev, repeat: repeat.error }));
+      return;
+    }
     let referencePhotoPaths: string[] | undefined;
-    if (draft.photoFiles.length > 0) {
+    if (draft.photoFiles.length > 0 && !forEveryone) {
       const problem = taskPhotosProblem(draft.photoFiles);
       if (problem) {
         setMissing((prev) => ({ ...prev, photo: problem }));
@@ -157,18 +192,23 @@ export function AddTaskRow({
     const created = await onCreate({
       title,
       description: draft.description.trim() || undefined,
-      assignee_id: draft.assignee_id,
+      ...(forEveryone
+        ? { audience: TASK_AUDIENCE_EVERYONE }
+        : { assignee_id: draft.assignee_id }),
       ...dueEntryFields(draft.due_date),
       point_reward: parseGuardedInt(draft.point_reward),
       subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
       reference_photo_paths: referencePhotoPaths,
       proof_kind: draft.proofKind === "none" ? undefined : draft.proofKind,
+      recurrence_rule: repeat?.ok ? (repeat.rule ?? undefined) : undefined,
     });
     if (!created) return;
     setDraft(EMPTY);
     setMissing({});
     titleRef.current?.focus();
   }
+
+  const forEveryone = draft.assignee_id === TASK_AUDIENCE_EVERYONE;
 
   if (!open) {
     const controls = gate.controlProps();
@@ -239,6 +279,9 @@ export function AddTaskRow({
               <SelectValue placeholder="Assignee" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value={TASK_AUDIENCE_EVERYONE}>
+                {TASK_AUDIENCE_COPY.everyone}
+              </SelectItem>
               {members.map((member) => (
                 <SelectItem
                   key={member.user_id ?? "unknown"}
@@ -255,6 +298,10 @@ export function AddTaskRow({
               className="mt-1 text-caption text-destructive-text"
             >
               Pick an assignee.
+            </p>
+          ) : forEveryone ? (
+            <p className="mt-1 text-caption text-muted-foreground">
+              {TASK_AUDIENCE_COPY.everyoneHint(everyoneCount(members))}
             </p>
           ) : null}
         </div>
@@ -289,6 +336,27 @@ export function AddTaskRow({
           setDraft((prev) => ({ ...prev, point_reward: next }));
         }}
       />
+      {forEveryone ? (
+        <p className="text-caption text-muted-foreground">
+          {TASK_AUDIENCE_COPY.noRepeat}
+        </p>
+      ) : (
+        <RepeatOptions
+          forTasks
+          idPrefix="add-task-repeat"
+          draft={draft.repeat}
+          start={firstDueOf(draft.due_date, draft.repeat.timeZone)}
+          showLength
+          disabled={busy}
+          onChange={(repeat) => {
+            setDraft((prev) => ({ ...prev, repeat }));
+            setMissing((prev) => ({ ...prev, repeat: undefined }));
+          }}
+        />
+      )}
+      {missing.repeat && !forEveryone ? (
+        <p className="text-caption text-destructive-text">{missing.repeat}</p>
+      ) : null}
       <SubtaskListEditor
         items={draft.subtasks}
         disabled={pending}
@@ -305,6 +373,7 @@ export function AddTaskRow({
       />
       <TaskPhotoFields
         id="add-task"
+        withoutPhotos={forEveryone}
         draft={draft}
         disabled={busy}
         problem={missing.photo}

@@ -36,6 +36,7 @@ import {
 } from '../decorators/current-user.decorator';
 import {
   ConfirmMeetingRecordingDto,
+  MeetingRecorderAvailabilityDto,
   MeetingRecordingDto,
   StartMeetingRecordingDto,
 } from '../dtos/meeting.dto';
@@ -121,5 +122,36 @@ export class MeetingRecordingController {
     uploadId?: string,
   ): Promise<void> {
     await this.recordings.remove(chapterId, id, userId, uploadId);
+  }
+}
+
+/**
+ * What recording would do for the caller before any minutes exist (#5287).
+ * The phone's + asks it once, so New minutes can say what will happen to
+ * the audio before the notice is read. Same guards as a meeting's recording:
+ * off with 404 `ai.not_available` unless `AI_ENABLED`, and only for
+ * `meetings:record` with the module on. Its own path, not under
+ * `meetings/`, so it never meets `meetings/:id`'s UUID pipe.
+ */
+@ApiTags('Meetings')
+@ApiBearerAuth()
+@UseGuards(AiEnabledGuard, SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEETINGS_RECORD)
+@RequireModule('meetings')
+@Controller('meeting-recorder')
+export class MeetingRecorderController {
+  constructor(private readonly recordings: MeetingRecordingService) {}
+
+  @Get()
+  @ApiOperation({
+    summary:
+      'Whether this server can write a recording out, why the caller can’t send one yet, and its limits, before any minutes exist',
+  })
+  @ApiOkResponse({ type: MeetingRecorderAvailabilityDto })
+  async get(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<MeetingRecorderAvailabilityDto> {
+    return this.recordings.availability(chapterId, userId);
   }
 }

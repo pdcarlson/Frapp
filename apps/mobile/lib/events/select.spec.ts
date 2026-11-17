@@ -5,7 +5,6 @@ import {
   withoutMeetingLists,
   selectEventList,
   selectMyAttendance,
-  selectSeriesCadence,
   selectSeriesName,
   selectSeriesOccurrences,
 } from "./select";
@@ -289,29 +288,6 @@ describe("the series as a whole", () => {
     recurrence_rule: id === "head" ? "WEEKLY" : null,
     parent_event_id: id === "head" ? null : "head",
     ...extra,
-  });
-
-  it("keeps the series' weekday when the head alone is moved", () => {
-    // The head moved to Monday Nov 9 with "This event only"; the rest are Sundays.
-    const rows = selectAllEventRows([
-      meeting("head", 9),
-      meeting("c1", 15),
-      meeting("c2", 22),
-    ]);
-    for (const row of rows) {
-      expect(selectSeriesCadence(rows, row)).toBe("Every Sunday");
-    }
-  });
-
-  it("says no cadence for a one-time event or a series without its head", () => {
-    const rows = selectAllEventRows([
-      meeting("solo", 12, { parent_event_id: null }),
-      meeting("orphan", 15, { parent_event_id: "gone" }),
-    ]);
-    expect(rows.map((row) => selectSeriesCadence(rows, row))).toEqual([
-      null,
-      null,
-    ]);
   });
 
   it("names the series by what most of its meetings are called", () => {

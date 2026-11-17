@@ -30,3 +30,18 @@ export function parseInstant(value: unknown): Date | null {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
+
+/**
+ * {@link parseInstant}, plus a valid `Date` as the instant it is. What the
+ * display formatters (`display.ts`) and the chat clocks (`formatTimeOfDay`,
+ * `formatTimeOfDayShort`) read, so a caller holding a time it just computed
+ * passes it as is rather than `.toISOString()` (#4976). An `Invalid Date` is a
+ * non-value, like an unreadable string. `parseInstant` itself still refuses a
+ * `Date`: its widest callers read unnarrowed JSON, where one means a bug.
+ */
+export function readInstant(value: unknown): Date | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  return parseInstant(value);
+}

@@ -42,8 +42,8 @@
 // .github/environments.json.
 //
 // ── Why plain REST rather than gcloud ───────────────────────────────────────
-// No CLI to install or pin, the same fetch helpers as the Render and Vercel
-// deploys, and every decision here is a pure function the tests drive.
+// No CLI to install or pin, the same fetch helpers as the Vercel
+// deploy, and every decision here is a pure function the tests drive.
 //
 // Env inputs (all required): GCP_PROJECT_ID, GCP_REGION, CLOUD_RUN_SERVICE,
 // CLOUD_RUN_RUNTIME, CLOUD_RUN_DEPLOYER, CLOUD_RUN_PROVIDER,
@@ -81,8 +81,8 @@ export function candidateHealthUrl(healthUrl) {
 /** The port the API listens on (apps/api/Dockerfile `EXPOSE`). */
 const CONTAINER_PORT = 3001;
 /**
- * Names Cloud Run sets itself and refuses as variables. Infisical holds PORT
- * for Render, which reads it; Cloud Run sets it to the declared port.
+ * Names Cloud Run sets itself and refuses as variables. Infisical still holds
+ * PORT from when the API ran on Render; Cloud Run sets it to the declared port.
  */
 const RESERVED_ENV_NAMES = new Set(["PORT", "K_SERVICE", "K_REVISION", "K_CONFIGURATION"]);
 const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -223,7 +223,16 @@ export function buildService({ runtimeAccount, image, revision, sha, minInstance
           // cpuIdle false is instance-based billing: the CPU stays on between
           // requests, which the sweeps and chat workers need (cloud-run.md).
           resources: { limits: { cpu: "1", memory: "1Gi" }, cpuIdle: false, startupCpuBoost: true },
-          env: secrets.map(({ id, version }) => ({ name: id, valueSource: { secretKeyRef: { secret: id, version } } })),
+          env: [
+            // /health's `commit`, which every deploy check reads. Images built
+            // since #5203 carry it too, but an older commit's image doesn't,
+            // and Render used to set it at runtime, so a rollback that far
+            // back would otherwise never verify.
+            { name: "RENDER_GIT_COMMIT", value: sha.toLowerCase() },
+            ...secrets
+              .filter(({ id }) => id !== "RENDER_GIT_COMMIT")
+              .map(({ id, version }) => ({ name: id, valueSource: { secretKeyRef: { secret: id, version } } })),
+          ],
         },
       ],
     },

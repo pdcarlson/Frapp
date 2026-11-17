@@ -1,4 +1,4 @@
-import { parseInstant } from "@repo/formatting";
+import { closesAtHasPassed } from "@repo/formatting";
 import { SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS } from "@repo/validation";
 import { canActOnMessage, isOwnMessage } from "./message-actions";
 import type { ChatMessage } from "./types";
@@ -23,12 +23,12 @@ export interface ClosableCard {
  * Whether the card takes no more answers: closed early (`closed_at`), or its
  * end time has come. The boundary is inclusive, as on the server: a card
  * ending exactly now is closed. A card with no end time, or one that doesn't
- * parse, never closes on its own.
+ * parse, never closes on its own. The deadline half is `closesAtHasPassed`
+ * in `@repo/formatting`, shared with Activity's rows (#5242).
  */
 export function isCardClosed(card: ClosableCard, now: number): boolean {
   if (card.closed_at) return true;
-  const deadline = parseInstant(card.closes_at);
-  return deadline ? deadline.getTime() <= now : false;
+  return closesAtHasPassed(card.closes_at, now);
 }
 
 /**

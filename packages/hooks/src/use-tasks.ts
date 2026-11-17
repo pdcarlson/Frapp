@@ -3,7 +3,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
-import { taskNeedsSignOff, type TaskProofKind } from "@repo/validation";
+import {
+  taskNeedsSignOff,
+  type TaskAudience,
+  type TaskProofKind,
+} from "@repo/validation";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 import { useChapterScope } from "./chapter-scope";
 import { invalidatePointReads } from "./use-points";
@@ -56,6 +60,12 @@ interface CachedTask {
   sent_back_at?: string | null;
   sent_back_reason?: string | null;
   subtasks?: TaskSubtask[];
+  /** The repeating series this task is a copy of (#5119). */
+  series_id?: string | null;
+  series?: TaskSeriesSummary | null;
+  /** The group task this is one member's copy of (#4295 step 3). */
+  group_id?: string | null;
+  group?: TaskGroupSummary | null;
 }
 
 /** One line of a task's checklist (#4003), as the task reads carry it. */
@@ -452,7 +462,13 @@ export function useCreateTask() {
     mutationFn: async (body: {
       title: string;
       description?: string;
-      assignee_id: string;
+      /** Who it is for. Send this or `audience`. */
+      assignee_id?: string;
+      /**
+       * A task for everyone instead (#4295 step 3): each active member gets
+       * their own copy. It can't repeat or carry photos yet.
+       */
+      audience?: TaskAudience;
       due_date: string;
       /** The moment it is due, when it has a time of day (#4003). */
       due_at?: string;
@@ -463,6 +479,8 @@ export function useCreateTask() {
       reference_photo_paths?: string[];
       /** What Mark done needs (#4635). */
       proof_kind?: TaskProofKind;
+      /** Repeat on this rule (#5119); the task is the series' first copy. */
+      recurrence_rule?: string;
     }) => {
       const { data, error } = await client.POST("/v1/tasks", { body });
       if (error) throw error;
@@ -476,6 +494,21 @@ export function useCreateTask() {
 
 /** The fields an officer can change on a task after it is made (#4296). */
 export type TaskEdit = components["schemas"]["UpdateTaskDto"];
+
+/**
+ * "This task only" (`instance`) or "All upcoming tasks" (`series`) on a copy
+ * of a repeating task (#5119).
+ */
+export type TaskEditScope = NonNullable<TaskEdit["scope"]>;
+
+/** How a task read says it repeats (#5119); null on a task that doesn't. */
+export type TaskSeriesSummary = components["schemas"]["TaskSeriesSummaryDto"];
+
+/**
+ * How far a group task is (#4295 step 3), on each of its copies; null on a
+ * task given to one person.
+ */
+export type TaskGroupSummary = components["schemas"]["TaskGroupSummaryDto"];
 
 /**
  * An officer edits a task (#4296). Send only the fields that changed; `null`
@@ -498,10 +531,15 @@ export function useUpdateTask() {
     },
     // Returned, so a form awaiting the save closes onto the saved values
     // rather than the old ones for a refetch's length.
-    onSettled: (_data, _error, { id }) =>
+    onSettled: (_data, _error, { id, body }) =>
       Promise.all([
         queryClient.invalidateQueries({
-          queryKey: taskKeys.detail(chapterId, id),
+          // An edit for everyone (#4295 step 3) changes every copy, so every
+          // task's detail is read again, not just the one it went through.
+          queryKey:
+            body.scope === "group"
+              ? (["tasks", chapterId, "detail"] as const)
+              : taskKeys.detail(chapterId, id),
         }),
         queryClient.invalidateQueries({ queryKey: taskKeys.lists(chapterId) }),
         // Activity draws a task's card from its own read, not the task's: an
@@ -805,16 +843,23 @@ export function useRejectTask() {
 
 /**
  * Delete a task. **Not optimistic**, per `spec/ui/resilience/`: creating and
- * updating are optimistic, deleting and paying are pessimistic.
+ * updating are optimistic, deleting and paying are pessimistic. On a copy of
+ * a repeating task, `scope: "series"` is "All upcoming tasks" (#5119): it
+ * stops the repeat, and the server deletes the open copy only if no one has
+ * started it.
  */
 export function useDeleteTask() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
     mutationKey: ["tasks", "delete-task"],
-    mutationFn: async (id: string) => {
+    mutationFn: async (
+      target: string | { id: string; scope?: TaskEditScope },
+    ) => {
+      const { id, scope } =
+        typeof target === "string" ? { id: target, scope: undefined } : target;
       const { data, error } = await client.DELETE("/v1/tasks/{id}", {
-        params: { path: { id } },
+        params: { path: { id }, ...(scope ? { query: { scope } } : {}) },
       });
       if (error) throw error;
       return data;

@@ -1,28 +1,23 @@
 #!/usr/bin/env node
 
-// Assert the provider settings that make deploy-off-`main` safe (and that
-// keep a production deploy HTTP-gated), and keep asserting them.
+// Assert the provider settings that make deploy-off-`main` safe, and keep
+// asserting them.
 //
-// Retiring the `production` branch moves production deploys behind a manual
-// `workflow_dispatch`. That is only true while two dashboard settings stay put,
-// and BOTH of them fail open — if either drifts, ordinary merges to `main` start
-// shipping to production with no CI gate, no migration gate, and no approval,
-// and nothing anywhere goes red.
+// Retiring the `production` branch moved production deploys behind a manual
+// `workflow_dispatch`. That is only true while the Vercel projects stay
+// unlinked from Git, a dashboard setting that fails open: if it drifts,
+// ordinary merges to `main` start shipping to production with no CI gate, no
+// migration gate, and no approval, and nothing anywhere goes red.
 //
-//   1. Render `frapp-api-prod` must have `autoDeploy: "no"`. Its live setting
-//      before the cutover was `autoDeploy: "yes"` with
-//      `autoDeployTrigger: "commit"` — a push deployed it without waiting for
-//      CI. Combined with the branch change to `main` (also asserted here) that
-//      is the single most destructive configuration available to this repo.
-//   2. Vercel `frapp-web` and `frapp-landing` must NOT be linked to Git.
-//   3. Render `frapp-api-prod` `serviceDetails.healthCheckPath` must be `/health`.
-//      Empty is a TCP socket check on the open port (documented 2026-09-06): a
-//      new instance that opened a port but never answered HTTP would pass the
-//      deploy gate. Pointing it at `/health/ready` would cancel a deploy when a
-//      dependency is degraded. Same fail-open dashboard class as (1): the
-//      blueprint is not applied to the already-created service.
+//   Vercel `frapp-web` and `frapp-landing` must NOT be linked to Git.
 //
-// Assertion 2 was INVERTED on 2026-09-02 (#1579). It used to read "Production
+// Until #5228 this also asserted Render `frapp-api-prod`'s settings
+// (auto-deploy off, tracking `main`, healthCheckPath `/health`). The API moved
+// to Cloud Run and Render was removed. Cloud Run has no setting that deploys
+// on push unless someone adds a build trigger in the console, which nothing
+// here checks yet: the deploy job is meant to be the only way in.
+//
+// The assertion was INVERTED on 2026-09-02 (#1579). It used to read "Production
 // Branch must not be `main`", with an ABSENT value failing because Vercel fell
 // back to the repository default branch. ADR-21 then retired the Git
 // integration outright: both projects are unlinked, `link` is null, and a
@@ -56,8 +51,8 @@
 //
 // ── Two modes ───────────────────────────────────────────────────────────────
 //   --migrations-only  with --preflight: assert everything that bears on a
-//                  database write — Render's auto-deploy AND frapp-web's Vercel
-//                  Production Branch — skipping only frapp-landing. See main().
+//                  database write — frapp-web's Vercel Git link — skipping
+//                  only frapp-landing. See main().
 //   --preflight  exit non-zero on any violation, file nothing. Used by
 //                deploy-production.yml before it touches anything.
 //   (default)    raise/resolve a tracking issue, for the schedule. Exits 1 on
@@ -79,13 +74,7 @@ import {
 import { requireEnv } from "./lib/env.mjs";
 import { resilientFetch } from "./lib/http.mjs";
 import { fetchJson } from "./lib/providers.mjs";
-import {
-  EXPECTED_HEALTH_CHECK_PATH,
-  readHealthCheckPath,
-} from "./lib/render-health-check-path.mjs";
 import { isInvokedDirectly } from "./lib/invoked-directly.mjs";
-
-export { EXPECTED_HEALTH_CHECK_PATH, readHealthCheckPath };
 
 // Deliberately NOT renamed when assertion 2 was inverted (#1579), even though
 // "production branch" now under-describes it. This string is the issue LOOKUP
@@ -105,60 +94,10 @@ export const ALERT = defineAlert({
 // watchdog keep asserting against a service the deploy no longer targets — the
 // one failure mode a guardrail must not have.
 
-const RENDER_SERVICE_URL = (serviceId) => `https://api.render.com/v1/services/${serviceId}`;
 const VERCEL_PROJECT_URL = (projectId, teamId) =>
   `https://api.vercel.com/v9/projects/${projectId}${teamId ? `?teamId=${teamId}` : ""}`;
 
 // ── Pure assertions ─────────────────────────────────────────────────────────
-
-/**
- * Render must not auto-deploy production, must track `main` now that
- * `production` is gone, and must HTTP-probe `/health` rather than a TCP
- * socket or `/health/ready`.
- */
-export function assertRenderService(service) {
-  const findings = [];
-  const autoDeploy = service?.autoDeploy;
-  const branch = service?.branch;
-
-  if (autoDeploy !== "no") {
-    findings.push(
-      `Render frapp-api-prod has autoDeploy='${autoDeploy ?? "unreadable"}' (expected 'no'). ` +
-        `With autoDeploy on, every push to its tracked branch deploys production without CI, ` +
-        `without the migration gate, and without an approval.`,
-    );
-  }
-  if (branch !== "main") {
-    findings.push(
-      `Render frapp-api-prod tracks branch '${branch ?? "unreadable"}' (expected 'main'). ` +
-        `A service pointed at a deleted branch cannot resolve the commits this repo deploys.`,
-    );
-  }
-
-  const healthCheckPath = readHealthCheckPath(service);
-  if (healthCheckPath !== EXPECTED_HEALTH_CHECK_PATH) {
-    if (healthCheckPath === "") {
-      findings.push(
-        `Render frapp-api-prod has healthCheckPath='' (expected '${EXPECTED_HEALTH_CHECK_PATH}'). ` +
-          `An empty path is a TCP socket check on the open port, not GET /health — a new ` +
-          `instance that opened a port but never answered HTTP would pass the deploy gate.`,
-      );
-    } else if (typeof healthCheckPath === "string") {
-      findings.push(
-        `Render frapp-api-prod has healthCheckPath='${healthCheckPath}' (expected '${EXPECTED_HEALTH_CHECK_PATH}'). ` +
-          `/health is the liveness probe that always 2xxes; any other path (including ` +
-          `/health/ready) would cancel a deploy when a dependency is degraded.`,
-      );
-    } else {
-      findings.push(
-        `Render frapp-api-prod healthCheckPath is unreadable (expected '${EXPECTED_HEALTH_CHECK_PATH}' on ` +
-          `serviceDetails). Unreadable is not a pass — an absent path in an unrecognised ` +
-          `response shape is exactly what a silent TCP-only regression would look like.`,
-      );
-    }
-  }
-  return findings;
-}
 
 /**
  * Does this response body actually look like a Vercel project?
@@ -220,27 +159,19 @@ export function assertVercelNoGitLink(project, label) {
  * The pass/fail line.
  *
  * `checked` names what this run actually read. It is not decoration: with
- * `--render-only` the Vercel projects are never fetched, and a success line that
+ * `--migrations-only` frapp-landing is never fetched, and a success line that
  * still said "neither Vercel project is linked to Git" would be an
- * affirmative written assurance about a setting nothing looked at — on the only
- * path to production, in the step whose whole job is asserting the two settings
- * that fail open. That is the "reports success having verified nothing" failure
- * this file's own header rejects, and an earlier `ℹ️ --render-only` notice does
- * not undo a later `✅` that names the unchecked setting.
+ * affirmative written assurance about a setting nothing looked at, on the only
+ * path to production. That is the "reports success having verified nothing"
+ * failure this file's own header rejects.
  */
-export function buildSummary(findings, { checked = ["render", "vercel"] } = {}) {
+export function buildSummary(findings, { checked = ["vercel"] } = {}) {
   if (findings.length === 0) {
-    const full = checked.includes("vercel");
-    const parts = [
-      "Render auto-deploy is off, tracking main, and healthCheckPath is /health",
-    ];
-    if (full) parts.push("neither Vercel project is linked to Git");
-    else if (checked.includes("vercel-web")) parts.push("frapp-web is not linked to Git");
-    return full
-      ? `All production deploy guardrails hold: ${parts.join("; ")}.`
-      : `The production deploy guardrails THIS RUN CHECKED hold: ${parts.join("; ")}. ` +
-          `frapp-landing's Git link was NOT read (--migrations-only); it has no Supabase ` +
-          `client, so it cannot be coupled to a schema change.`;
+    return checked.includes("vercel")
+      ? "All production deploy guardrails hold: neither Vercel project is linked to Git."
+      : "The production deploy guardrails THIS RUN CHECKED hold: frapp-web is not linked to Git. " +
+          "frapp-landing's Git link was NOT read (--migrations-only); it has no Supabase " +
+          "client, so it cannot be coupled to a schema change.";
   }
   return [`${findings.length} production guardrail violation(s):`, ...findings.map((f) => `- ${f}`)].join("\n");
 }
@@ -248,30 +179,16 @@ export function buildSummary(findings, { checked = ["render", "vercel"] } = {}) 
 // ── Provider reads ──────────────────────────────────────────────────────────
 
 /**
- * Every violation across both providers. A provider that cannot be READ yields
- * a violation of its own rather than being skipped.
+ * Every violation across the Vercel projects. A project that cannot be READ
+ * yields a violation of its own rather than being skipped.
  */
 export async function collectFindings({
-  renderApiKey,
   vercelApiKey,
   teamId,
-  renderServiceId,
   vercelProjects,
   fetchImpl = resilientFetch,
 }) {
   const findings = [];
-
-  try {
-    const service = await fetchJson({
-      url: RENDER_SERVICE_URL(renderServiceId),
-      headers: { Authorization: `Bearer ${renderApiKey}` },
-      what: `Render service ${renderServiceId}`,
-      fetchImpl,
-    });
-    findings.push(...assertRenderService(service));
-  } catch (error) {
-    findings.push(`Could not read Render service ${renderServiceId}: ${error.message}. Unreadable is not a pass.`);
-  }
 
   for (const project of vercelProjects) {
     try {
@@ -296,10 +213,8 @@ function buildAlertIssueBody({ findings, runUrl }) {
   return [
     "A production provider setting the guardrails assert has drifted.",
     "",
-    "If auto-deploy is on or a Vercel project is re-linked, a merge to `main` may deploy",
-    "to production with no CI gate, no migration gate, and no approval. If",
-    "`healthCheckPath` is empty, a later Render deploy gates on TCP rather than GET /health;",
-    "if it is `/health/ready`, a deploy cancels when a dependency is degraded.",
+    "If a Vercel project is re-linked to Git, a merge to `main` may deploy to production",
+    "with no CI gate, no migration gate, and no approval.",
     "",
     ...findings.map((f) => `- ${f}`),
     "",
@@ -395,17 +310,15 @@ async function main() {
   }
   if (migrationsOnly) {
     console.log(
-      "ℹ️  --migrations-only: asserting Render auto-deploy, healthCheckPath /health, and " +
-        "frapp-web's Vercel Git link. frapp-landing is NOT checked — it has no Supabase " +
+      "ℹ️  --migrations-only: asserting frapp-web's Vercel Git link. " +
+        "frapp-landing is NOT checked — it has no Supabase " +
         "client, so it cannot be coupled to the schema this run changes.",
     );
   }
 
   const findings = await collectFindings({
-    renderApiKey: requireEnv("RENDER_API_KEY"),
     vercelApiKey: requireEnv("VERCEL_API_KEY"),
     teamId: process.env.VERCEL_TEAM_ID,
-    renderServiceId: requireEnv("RENDER_SERVICE_ID"),
     vercelProjects: [
       { projectId: requireEnv("VERCEL_WEB_PROJECT_ID"), label: "frapp-web" },
       ...(migrationsOnly
@@ -415,7 +328,7 @@ async function main() {
   });
 
   const summary = buildSummary(findings, {
-    checked: migrationsOnly ? ["render", "vercel-web"] : ["render", "vercel"],
+    checked: migrationsOnly ? ["vercel-web"] : ["vercel"],
   });
   if (findings.length === 0) console.log(`✅ ${summary}`);
   else console.error(`::error::${summary}`);

@@ -9,6 +9,7 @@ import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import {
   ListNotificationPreferencesQueryDto,
   ListNotificationsQueryDto,
+  RegisterPushTokenDto,
   UpdateUserSettingsDto,
 } from './notification.dto';
 
@@ -309,5 +310,29 @@ describe('UpdateUserSettingsDto — member status (#3845)', () => {
         await failingProps({ custom_status: `At practice${sep}till 6` }),
       ).toContain('custom_status');
     }
+  });
+});
+
+describe('RegisterPushTokenDto', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const transform = (body: Record<string, unknown>) =>
+    pipe.transform(body, { type: 'body', metatype: RegisterPushTokenDto });
+
+  it.each([
+    ['an ExponentPushToken', 'ExponentPushToken[abcDEF123_-xyz]'],
+    ['an ExpoPushToken', 'ExpoPushToken[abcDEF123_-xyz]'],
+    ['a bare UUID', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'],
+  ])('accepts %s', async (_label, token) => {
+    await expect(transform({ token })).resolves.toMatchObject({ token });
+  });
+
+  it.each([
+    ['an arbitrary string', 'not-a-push-token'],
+    ['an empty string', ''],
+    ['a token over 255 characters', `ExponentPushToken[${'a'.repeat(240)}]`],
+  ])('refuses %s', async (_label, token) => {
+    await expect(transform({ token })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 });

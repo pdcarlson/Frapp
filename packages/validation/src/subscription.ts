@@ -23,11 +23,12 @@
  */
 
 /**
- * Same four values as `CurrentChapterResponseDto["subscription_status"]` in
- * the API contract (`@repo/api-sdk`), stated here so this package does not
- * depend on the generated SDK.
+ * The one list of chapter subscription states, in contract order. The API's
+ * chapter response DTOs build their `subscription_status` Swagger enum from
+ * this array, so the order here is the order in `apps/api/openapi.json`;
+ * reordering it changes the published contract.
  */
-const SUBSCRIPTION_STATUSES = [
+export const SUBSCRIPTION_STATUSES = [
   "incomplete",
   "active",
   "past_due",

@@ -1,7 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import React from "react";
 import {
   PROFILE_QUERY_FILTERS,
   useConfirmAvatar,
@@ -11,36 +10,24 @@ import {
   useRequestAvatarUploadUrl,
   useUpdateUser,
 } from "./use-user";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const createWrapper = (
   queryClient: QueryClient,
   mockClient: unknown,
   chapterId: string | null = "test-chapter",
-) => {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId={chapterId}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
-};
+) =>
+  createHookWrapper({
+    queryClient,
+    client: mockClient,
+    chapterId,
+  });
 
 describe("useMyPermissions", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   it("returns the permission set when the request succeeds", async () => {
@@ -97,9 +84,7 @@ describe("profile mutations (#732, #3387)", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
   });
 
   it("mints the upload URL with the body it was given", async () => {

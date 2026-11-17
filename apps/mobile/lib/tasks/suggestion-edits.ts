@@ -10,7 +10,10 @@ export function suggestionEdits(
 ): TaskSuggestionEdits | undefined {
   const edits: TaskSuggestionEdits = {};
   if (form.title !== task.title) edits.title = form.title;
-  if (form.assignee_id !== task.assignee_id) {
+  // One answer to Who?: a member, or Everyone (#4295 step 3).
+  if (form.audience) {
+    if (form.audience !== task.audience) edits.audience = form.audience;
+  } else if (form.assignee_id && form.assignee_id !== task.assignee_id) {
     edits.assignee_id = form.assignee_id;
   }
   const dueAt = form.due_at ?? null;

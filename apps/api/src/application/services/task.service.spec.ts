@@ -22,6 +22,7 @@ import type { Member } from '#domain/entities/member.entity';
 import type { User } from '#domain/entities/user.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
+import { RbacService } from './rbac.service';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
@@ -41,6 +42,7 @@ describe('TaskService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
   let mockChatService: jest.Mocked<Pick<ChatService, 'sendMessage'>>;
+  let mockRbac: jest.Mocked<Pick<RbacService, 'getAlumniRoleId'>>;
   let mockStorage: jest.Mocked<
     Pick<
       IStorageProvider,
@@ -72,6 +74,7 @@ describe('TaskService', () => {
     completion_note: null,
     series_id: null,
     occurrence_date: null,
+    group_id: null,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
@@ -116,6 +119,13 @@ describe('TaskService', () => {
       findLatestSeriesCopy: jest.fn(),
       updateSeriesIfNext: jest.fn(),
       hasCheckedSubtask: jest.fn().mockResolvedValue(false),
+      createGroup: jest.fn(),
+      findGroups: jest.fn().mockResolvedValue([]),
+      findGroupCopies: jest.fn().mockResolvedValue([]),
+      deleteGroup: jest.fn().mockResolvedValue(undefined),
+    };
+    mockRbac = {
+      getAlumniRoleId: jest.fn().mockResolvedValue(null),
     };
 
     mockMemberRepo = {
@@ -165,10 +175,304 @@ describe('TaskService', () => {
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: ChatService, useValue: mockChatService },
         { provide: STORAGE_PROVIDER, useValue: mockStorage },
+        { provide: RbacService, useValue: mockRbac },
       ],
     }).compile();
 
     service = module.get(TaskService);
+  });
+
+  describe('tasks for everyone (#4295 step 3)', () => {
+    const member = (userId: string, roleIds: string[] = ['role-1']) =>
+      memberFixture({ ...baseMember, user_id: userId, role_ids: roleIds });
+    const copyOf = (assigneeId: string, over: Partial<Task> = {}): Task => ({
+      ...baseTask,
+      id: `copy-${assigneeId}`,
+      assignee_id: assigneeId,
+      group_id: 'group-1',
+      ...over,
+    });
+    const createForEveryone = (extra: Partial<CreateTaskInput> = {}) =>
+      service.create({
+        chapter_id: 'ch-1',
+        title: 'Fill out the form',
+        audience: 'everyone',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+        subtasks: ['Open it'],
+        point_reward: 5,
+        ...extra,
+      });
+
+    beforeEach(() => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('admin-1'),
+        member('user-1'),
+        member('user-2'),
+        member('alum-1', ['role-alumni']),
+      ]);
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+      mockTaskRepo.createGroup.mockResolvedValue([
+        copyOf('user-1'),
+        copyOf('admin-1'),
+        copyOf('user-2'),
+      ]);
+    });
+
+    it('gives each active member a copy, alumni left out, in one write', async () => {
+      const result = await createForEveryone();
+
+      expect(mockTaskRepo.createGroup).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        created_by: 'admin-1',
+        audience: 'everyone',
+        assignee_ids: ['admin-1', 'user-1', 'user-2'],
+        title: 'Fill out the form',
+        description: null,
+        due_date: '2099-03-15',
+        due_at: null,
+        point_reward: 5,
+        proof_kind: 'none',
+        subtask_titles: ['Open it'],
+      });
+      expect(mockTaskRepo.create).not.toHaveBeenCalled();
+      expect(mockTaskRepo.createSubtasks).not.toHaveBeenCalled();
+      // The officer's own copy comes back, with the group's count.
+      expect(result.id).toBe('copy-admin-1');
+      expect(result.group).toEqual({
+        id: 'group-1',
+        audience: 'everyone',
+        total: 3,
+        done: 0,
+        confirmed: 0,
+      });
+    });
+
+    it('pushes every member but the officer who made it', async () => {
+      await createForEveryone();
+
+      const pushed = mockNotificationService.notifyUser.mock.calls.map(
+        (call) => call[0],
+      );
+      expect(pushed.sort()).toEqual(['user-1', 'user-2']);
+    });
+
+    it.each([
+      [
+        'repeats',
+        { recurrence_rule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=UTC' },
+      ],
+      [
+        'carries photos',
+        { reference_photo_paths: ['chapters/ch-1/tasks/p/a.jpg'] },
+      ],
+      ['posts to chat', { channel_id: 'c-1', client_message_id: 'm-1' }],
+      ['also names an assignee', { assignee_id: 'user-1' }],
+    ])('refuses one that %s, writing nothing', async (_label, extra) => {
+      await expect(createForEveryone(extra)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockTaskRepo.createGroup).not.toHaveBeenCalled();
+    });
+
+    it('refuses a chapter with nobody active', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('alum-1', ['role-alumni']),
+      ]);
+
+      await expect(createForEveryone()).rejects.toThrow(
+        'This chapter has no active members yet',
+      );
+      expect(mockTaskRepo.createGroup).not.toHaveBeenCalled();
+    });
+
+    it('refuses a task with neither an assignee nor an audience', async () => {
+      await expect(createForEveryone({ audience: null })).rejects.toThrow(
+        'A task needs an assignee',
+      );
+    });
+
+    it('reads a copy with how far its group is', async () => {
+      mockTaskRepo.findById.mockResolvedValue(copyOf('user-1'));
+      mockTaskRepo.findGroups.mockResolvedValue([
+        {
+          id: 'group-1',
+          chapter_id: 'ch-1',
+          created_by: 'admin-1',
+          audience: 'everyone',
+          created_at: '2026-11-17T00:00:00.000Z',
+        },
+      ]);
+      mockTaskRepo.findGroupCopies.mockResolvedValue([
+        copyOf('user-1'),
+        copyOf('user-2', { status: TaskStatus.COMPLETED }),
+        copyOf('admin-1', {
+          status: TaskStatus.COMPLETED,
+          points_awarded: true,
+        }),
+      ]);
+
+      const view = await service.findById('copy-user-1', 'ch-1');
+
+      expect(view.group).toEqual({
+        id: 'group-1',
+        audience: 'everyone',
+        total: 3,
+        done: 2,
+        confirmed: 1,
+      });
+      expect(mockTaskRepo.findGroupCopies).toHaveBeenCalledWith('ch-1', [
+        'group-1',
+      ]);
+    });
+
+    describe("editing everyone's copy", () => {
+      beforeEach(() => {
+        const copies = [
+          copyOf('user-1'),
+          copyOf('user-2'),
+          copyOf('admin-1', {
+            status: TaskStatus.COMPLETED,
+            points_awarded: true,
+          }),
+        ];
+        mockTaskRepo.findById.mockImplementation(
+          async (id: string) => copies.find((copy) => copy.id === id) ?? null,
+        );
+        mockTaskRepo.findGroupCopies.mockResolvedValue(copies);
+        mockTaskRepo.updateUnconfirmed.mockImplementation(
+          async (id: string, _chapterId: string, patch: Partial<Task>) => ({
+            ...copies.find((copy) => copy.id === id)!,
+            ...patch,
+          }),
+        );
+      });
+
+      it('edits every copy not yet confirmed and leaves the confirmed one', async () => {
+        await service.updateGroup('copy-user-1', 'ch-1', 'admin-1', {
+          title: 'Fill out the new form',
+          due_date: '2099-03-20',
+        });
+
+        const edited = mockTaskRepo.updateUnconfirmed.mock.calls.map(
+          (call) => call[0],
+        );
+        expect(edited.sort()).toEqual(['copy-user-1', 'copy-user-2']);
+        expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+          'copy-user-2',
+          'ch-1',
+          { title: 'Fill out the new form', due_date: '2099-03-20' },
+        );
+        // A new due re-arms each copy's reminders.
+        expect(mockTaskRepo.releaseReminderClaims).toHaveBeenCalledTimes(2);
+      });
+
+      it.each([
+        ['a new assignee', { assignee_id: 'user-2' }],
+        ['photos', { reference_photo_paths: [] }],
+      ])('refuses %s for everyone at once', async (_label, input) => {
+        await expect(
+          service.updateGroup('copy-user-1', 'ch-1', 'admin-1', input),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockTaskRepo.updateUnconfirmed).not.toHaveBeenCalled();
+      });
+
+      it('keeps going when another copy is confirmed mid-edit', async () => {
+        mockTaskRepo.updateUnconfirmed.mockImplementation(
+          async (id: string, _chapterId: string, patch: Partial<Task>) =>
+            id === 'copy-user-2' ? null : { ...copyOf('user-1'), ...patch },
+        );
+
+        const view = await service.updateGroup(
+          'copy-user-1',
+          'ch-1',
+          'admin-1',
+          { title: 'Renamed' },
+        );
+
+        expect(view.id).toBe('copy-user-1');
+        expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledTimes(2);
+      });
+
+      it('refuses the edit when the copy it was asked on is confirmed mid-edit', async () => {
+        mockTaskRepo.updateUnconfirmed.mockImplementation(
+          async (id: string, _chapterId: string, patch: Partial<Task>) =>
+            id === 'copy-user-1' ? null : { ...copyOf('user-2'), ...patch },
+        );
+
+        await expect(
+          service.updateGroup('copy-user-1', 'ch-1', 'admin-1', {
+            title: 'Renamed',
+          }),
+        ).rejects.toThrow('confirmed while you were editing');
+        // The other copy still took it.
+        expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+          'copy-user-2',
+          'ch-1',
+          { title: 'Renamed' },
+        );
+      });
+
+      it('edits the other copies when one fails, then says it failed', async () => {
+        const down = new Error('connection reset');
+        mockTaskRepo.updateUnconfirmed.mockImplementation(
+          async (id: string, _chapterId: string, patch: Partial<Task>) => {
+            if (id === 'copy-user-1') throw down;
+            return { ...copyOf('user-2'), ...patch };
+          },
+        );
+
+        await expect(
+          service.updateGroup('copy-user-1', 'ch-1', 'admin-1', {
+            title: 'Renamed',
+          }),
+        ).rejects.toBe(down);
+        expect(mockTaskRepo.updateUnconfirmed).toHaveBeenCalledWith(
+          'copy-user-2',
+          'ch-1',
+          { title: 'Renamed' },
+        );
+      });
+
+      it('refuses a task that is not for a group', async () => {
+        mockTaskRepo.findById.mockResolvedValue(baseTask);
+
+        await expect(
+          service.updateGroup('task-1', 'ch-1', 'admin-1', { title: 'X' }),
+        ).rejects.toThrow("This task isn't for a group");
+      });
+    });
+
+    it("deletes everyone's copy and the group, then their photos", async () => {
+      mockTaskRepo.findById.mockResolvedValue(copyOf('user-1'));
+      mockTaskRepo.findGroupCopies.mockResolvedValue([
+        copyOf('user-1'),
+        copyOf('user-2'),
+      ]);
+      mockTaskRepo.findPhotos.mockResolvedValue([
+        {
+          id: 'photo-1',
+          task_id: 'copy-user-2',
+          chapter_id: 'ch-1',
+          kind: 'proof',
+          storage_path: 'chapters/ch-1/tasks/p1/a.jpg',
+          position: 0,
+          created_by: 'user-2',
+          created_at: '2026-11-17T00:00:00.000Z',
+        },
+      ]);
+
+      await service.deleteGroup('copy-user-1', 'ch-1');
+
+      expect(mockTaskRepo.findPhotos).toHaveBeenCalledWith('ch-1', [
+        'copy-user-1',
+        'copy-user-2',
+      ]);
+      expect(mockTaskRepo.deleteGroup).toHaveBeenCalledWith('ch-1', 'group-1');
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('tasks', [
+        'chapters/ch-1/tasks/p1/a.jpg',
+      ]);
+    });
   });
 
   describe('repeating tasks (#5119)', () => {
@@ -1235,6 +1539,7 @@ describe('TaskService', () => {
         photos: [],
         subtasks: [],
         series: null,
+        group: null,
       });
     });
 
@@ -1252,6 +1557,7 @@ describe('TaskService', () => {
         photos: [],
         subtasks: [],
         series: null,
+        group: null,
       });
     });
 
@@ -1414,6 +1720,7 @@ describe('TaskService', () => {
         photos: [],
         subtasks: [],
         series: null,
+        group: null,
       });
     });
 

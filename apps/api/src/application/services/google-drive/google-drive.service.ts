@@ -10,6 +10,7 @@ import {
   GOOGLE_DRIVE_API,
   GOOGLE_DRIVE_FOLDER_MIME,
   GoogleDriveApiError,
+  type GoogleDriveItem,
   type IGoogleDriveApi,
 } from '#domain/adapters/google-drive.interface';
 import {
@@ -18,8 +19,15 @@ import {
 } from '#domain/repositories/chapter-drive.repository.interface';
 import type { ChapterDriveConnection } from '#domain/entities/chapter-drive-connection.entity';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
+import { normalizeManualCode } from '#domain/utils/check-in-token';
 import { ChapterDocumentService } from '../chapter-document.service';
 import { toReportableError } from '../../../infrastructure/observability/reportable-error';
+
+/**
+ * Folders read up the tree from the one being connected: Drive's own nesting
+ * limit, so the walk ends where Frapp can no longer see a parent, not sooner.
+ */
+const MAX_ANCESTORS = 100;
 
 export interface GoogleDriveStatus {
   available: boolean;
@@ -32,6 +40,7 @@ export interface GoogleDriveStatus {
     last_synced_at: string | null;
     synced_count: number;
     skipped_count: number;
+    folders_left_out: number;
     syncing: boolean;
     who_can_see: string[] | null;
   } | null;
@@ -86,31 +95,18 @@ export class GoogleDriveService {
     await this.refuseIfConnected(chapterId);
     const list =
       (await this.documents.checkedList(chapterId, userId, whoCanSee)) ?? null;
-    let folder;
-    try {
-      folder = await this.drive.getItem(folderId);
-    } catch (error) {
-      if (
-        error instanceof GoogleDriveApiError &&
-        (error.kind === 'not_found' || error.kind === 'forbidden')
-      ) {
-        throw new BadRequestException(
-          `Frapp can’t see that folder yet. In Google Drive, share it with ${email} as a Viewer, then connect again.`,
-        );
-      }
-      // A key Google refuses, the Drive API switched off (mapped to `failed`
-      // by the client), or an outage: the officer can only retry, so the
-      // reason goes to the logs.
-      throw new ServiceUnavailableException(
-        'Couldn’t reach Google Drive. Try again in a moment.',
-        { cause: toReportableError(error) },
-      );
-    }
+    const folder = await this.fromDrive(() => this.drive.getItem(folderId), {
+      unseen: `Frapp can’t see that folder yet. In Google Drive, share it with ${email} as a Viewer, then connect again.`,
+    });
     if (folder.mimeType !== GOOGLE_DRIVE_FOLDER_MIME) {
       throw new BadRequestException(
         'That link is to a file, not a folder. Connect the folder that holds it.',
       );
     }
+    // Taken first, so an editor of another chapter's folder is refused
+    // before being asked to rename it (which that chapter would then see).
+    await this.refuseIfTaken(chapterId, folder);
+    await this.requireProof(chapterId, folder);
     try {
       await this.connections.create({
         chapter_id: chapterId,
@@ -129,6 +125,103 @@ export class GoogleDriveService {
       throw error;
     }
     return this.status(chapterId);
+  }
+
+  /**
+   * The service account sees every folder any chapter shares with it, so
+   * seeing a folder doesn't make it this chapter's (#5185). The officer
+   * proves it is by putting a code only this server makes, for this chapter
+   * and this folder, in the folder: its name, its Description, or the name
+   * of a file or folder directly inside it. Only someone who can edit the
+   * folder can do that. Checked once, at connect; the code can go after.
+   */
+  private async requireProof(
+    chapterId: string,
+    folder: GoogleDriveItem,
+  ): Promise<void> {
+    const code = this.drive.proofCode(`${chapterId}:${folder.id}`);
+    if (!code) {
+      throw new ServiceUnavailableException(
+        'Google Drive isn’t available on this server yet.',
+      );
+    }
+    // Case, spaces, dashes and the Crockford look-alikes (I or L for 1, O
+    // for 0) don't matter, as with a check-in code typed by hand.
+    const wanted = normalizeManualCode(code);
+    const holds = (text: string | null | undefined) =>
+      !!text && normalizeManualCode(text).includes(wanted);
+    if (holds(folder.name) || holds(folder.description)) return;
+    const children = await this.fromDrive(
+      () => this.drive.listChildren(folder.id),
+      { unseen: null },
+    );
+    if (children?.some((child) => holds(child.name))) return;
+    throw new BadRequestException(
+      `To show this folder is your chapter’s, add ${code} to its name in Google Drive, then connect again. Once it’s connected you can rename it back.`,
+    );
+  }
+
+  /**
+   * A folder feeds one chapter. Besides the folder itself (the unique index),
+   * refused when it sits inside another chapter's connected folder: as one of
+   * that folder's synced subfolders, or with a connected folder among the
+   * folders above it, as far as Frapp can see up the tree.
+   */
+  private async refuseIfTaken(
+    chapterId: string,
+    folder: GoogleDriveItem,
+  ): Promise<void> {
+    const ids = [folder.id];
+    let parent = folder.parents?.[0];
+    for (let level = 0; parent && level < MAX_ANCESTORS; level += 1) {
+      ids.push(parent);
+      const above = await this.fromDrive(() => this.drive.getItem(parent!), {
+        unseen: null,
+      });
+      parent = above?.parents?.[0];
+    }
+    if (await this.connections.folderTakenElsewhere(chapterId, ids)) {
+      throw new ConflictException(
+        'That folder, or a folder it sits in, is already connected to another chapter in Frapp.',
+      );
+    }
+  }
+
+  /**
+   * One Drive call for connecting. A folder Frapp can't see answers `unseen`
+   * as a 400, or null when `unseen` is null (a parent the service account
+   * wasn't shared, which ends a walk up the tree).
+   */
+  private async fromDrive<T>(
+    call: () => Promise<T>,
+    options: { unseen: string },
+  ): Promise<T>;
+  private async fromDrive<T>(
+    call: () => Promise<T>,
+    options: { unseen: null },
+  ): Promise<T | null>;
+  private async fromDrive<T>(
+    call: () => Promise<T>,
+    options: { unseen: string | null },
+  ): Promise<T | null> {
+    try {
+      return await call();
+    } catch (error) {
+      if (
+        error instanceof GoogleDriveApiError &&
+        (error.kind === 'not_found' || error.kind === 'forbidden')
+      ) {
+        if (options.unseen === null) return null;
+        throw new BadRequestException(options.unseen);
+      }
+      // A key Google refuses, the Drive API switched off (mapped to `failed`
+      // by the client), or an outage: the officer can only retry, so the
+      // reason goes to the logs.
+      throw new ServiceUnavailableException(
+        'Couldn’t reach Google Drive. Try again in a moment.',
+        { cause: toReportableError(error) },
+      );
+    }
   }
 
   /** One folder per chapter, and none while the last one is still leaving. */
@@ -186,6 +279,7 @@ function toStatus(
     last_synced_at: live.last_synced_at,
     synced_count: live.synced_count,
     skipped_count: live.skipped_count,
+    folders_left_out: live.folders_left_out,
     who_can_see: live.who_can_see,
     // Due already (just connected, Sync now, or more to copy) or mid-pass.
     syncing:

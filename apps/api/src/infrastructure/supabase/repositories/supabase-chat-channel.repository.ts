@@ -116,11 +116,12 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .eq('type', 'DM')
       .contains('member_ids', sorted);
     if (error) throw new SupabaseQueryError(error);
+    // Both sides lowercased, as `dmPair` does the ids asked for.
     const match = (data as ChatChannel[])?.find(
       (ch) =>
         ch.member_ids &&
         ch.member_ids.length === sorted.length &&
-        [...ch.member_ids].sort().every((id, i) => id === sorted[i]),
+        dmPair(ch.member_ids).every((id, i) => id === sorted[i]),
     );
     return match ?? null;
   }

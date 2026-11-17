@@ -33,6 +33,11 @@ export interface ChapterDriveConnection {
   synced_count: number;
   /** Files the last finished sync left out (type, size, or the limit). */
   skipped_count: number;
+  /**
+   * Folders the last finished sync didn't read (#5331): past the depth cap
+   * or the folder cap, so the files in them aren't in Documents.
+   */
+  folders_left_out: number;
   created_at: string;
   /**
    * The list the connection's top folder starts with (#5220): `null` is

@@ -2,6 +2,7 @@
 
 import { useMeetingTemplate, useSetMeetingTemplate } from "@repo/hooks";
 import {
+  ALWAYS_MEETING_SECTIONS,
   MEETING_SECTIONS,
   normalizeMeetingSections,
   type MeetingSectionKey,
@@ -25,7 +26,8 @@ const SECTION_HINTS: Readonly<Record<MeetingSectionKey, string>> = {
   officer_reports: "Each officer's report.",
   old_business: "Items carried over from earlier meetings.",
   new_business: "Items raised for the first time.",
-  discussion_log: "A longer record of who said what.",
+  discussion_log:
+    "Every topic the meeting covered, with what was said about it. Always on.",
 };
 
 /**
@@ -78,7 +80,11 @@ export function MeetingSectionsRules({ canManage }: { canManage: boolean }) {
             label={section.label}
             hint={SECTION_HINTS[section.key]}
             checked={on.has(section.key)}
-            disabled={!canManage || setTemplate.isPending}
+            disabled={
+              !canManage ||
+              setTemplate.isPending ||
+              ALWAYS_MEETING_SECTIONS.includes(section.key)
+            }
             onChange={(next) => void toggle(section.key, next)}
           />
         ))}

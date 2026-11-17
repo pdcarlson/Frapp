@@ -54,6 +54,7 @@ import {
   cardVoteSelection,
   type CardPollPayload,
 } from '#domain/utils/poll-vote-rules';
+import { isReactionActionType } from '#domain/utils/message-action-types';
 import {
   CreateChannelDto,
   SetChannelDisplayLockDto,
@@ -102,9 +103,6 @@ type SentMessage = Awaited<ReturnType<ChatService['sendMessage']>>;
 type RecordedMessageAction = Awaited<
   ReturnType<ChatReactionService['recordMessageAction']>
 >;
-
-/** The prefix every emoji reaction's `action_type` carries (`reaction:<emoji>`). */
-const REACTION_ACTION_PREFIX = 'reaction:';
 
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -317,7 +315,7 @@ export class ChatController {
   @ApiOperation({ summary: 'Get channel by ID' })
   async getChannel(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
   ) {
     return this.chatService.getChannel(id, chapterId, userId);
@@ -365,7 +363,7 @@ export class ChatController {
   })
   async updateChannel(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateChannelDto,
   ) {
     return this.chatService.updateChannel(id, chapterId, dto);
@@ -378,7 +376,7 @@ export class ChatController {
   })
   async setChannelDisplayLock(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
     @Body() dto: SetChannelDisplayLockDto,
   ) {
@@ -409,14 +407,18 @@ export class ChatController {
   })
   async deleteChannel(
     @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     await this.chatService.deleteChannel(id, chapterId);
     return { success: true };
   }
 
   @Post('dm')
-  @ApiOperation({ summary: 'Get or create a 1-on-1 DM channel' })
+  @ApiOperation({
+    summary: 'Get or create a 1-on-1 DM channel',
+    description:
+      'A new DM is only with a member of your chapter (404 otherwise, whether or not the id is anyone), and never with yourself (400). Reopening a DM you already have always works. On the default write limit: opening a DM is how a member reopens one, so a lower ceiling would get in the way of an officer messaging new members one after another.',
+  })
   // Get-or-create, and the result does not say which: reopening an existing
   // DM counts the same as starting one.
   @FeatureEvent('dm-opened')
@@ -432,14 +434,24 @@ export class ChatController {
   }
 
   @Post('group-dm')
-  @ApiOperation({ summary: 'Create a group DM channel' })
+  @ApiOperation({
+    summary: 'Create a group DM channel',
+    description:
+      "Everyone in `member_ids` must be a member of your chapter (404 otherwise, naming no one). Each call makes a new conversation in every listed member's list, so it is held to 10 a minute.",
+  })
+  // Not idempotent: every call adds a conversation to each member's list.
+  @ThrottleFanOutWrite()
   async createGroupDm(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: CreateGroupDmDto,
   ) {
-    const memberIds = Array.from(new Set([userId, ...dto.member_ids]));
-    return this.chatService.createGroupDm(chapterId, memberIds, dto.name);
+    // The service counts each person once, however their id is spelled.
+    return this.chatService.createGroupDm(
+      chapterId,
+      [userId, ...dto.member_ids],
+      dto.name,
+    );
   }
 
   /**
@@ -458,7 +470,7 @@ export class ChatController {
     summary: 'Leave a Group DM, or hide a 1-on-1 DM from your own list',
   })
   async leaveGroupDm(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -553,7 +565,7 @@ export class ChatController {
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Update a channel category' })
   async updateCategory(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
     @Body() dto: UpdateCategoryDto,
   ) {
@@ -564,7 +576,7 @@ export class ChatController {
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Delete a channel category' })
   async deleteCategory(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @CurrentChapterId() chapterId: string,
   ) {
     await this.categories.deleteCategory(id, chapterId);
@@ -587,7 +599,7 @@ export class ChatController {
   })
   @ApiOkResponse({ type: ChatMessageDto, isArray: true })
   async getMessages(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Query() query: GetChannelMessagesQueryDto,
@@ -642,7 +654,7 @@ export class ChatController {
       result.deduplicated || result.message.kind !== 'announcement' ? null : {},
   )
   async sendMessage(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
@@ -691,8 +703,8 @@ export class ChatController {
     summary: 'Attachments on a message, with signed download URLs',
   })
   async listMessageAttachments(
-    @Param('id') channelId: string,
-    @Param('messageId') messageId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -720,7 +732,7 @@ export class ChatController {
     summary: "Signed download URLs for a set of messages' author avatars",
   })
   async resolveAuthorAvatars(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @Body() dto: ResolveAuthorAvatarsDto,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -736,7 +748,7 @@ export class ChatController {
   @Patch('messages/:messageId')
   @ApiOperation({ summary: 'Edit a message (own only)' })
   async editMessage(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: EditMessageDto,
@@ -756,7 +768,7 @@ export class ChatController {
       'Delete a message (soft delete; own message, or any in an accessible channel with channels:manage)',
   })
   async deleteMessage(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -840,7 +852,7 @@ export class ChatController {
   // The closed row, so a client can draw the close before its Realtime echo.
   @ApiCreatedResponse({ type: ChatMessageDto })
   async closeCard(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -864,7 +876,7 @@ export class ChatController {
   // indefinitely, and a client cannot honour `sender_blocked` it cannot see.
   @ApiOkResponse({ type: ChatMessageDto, isArray: true })
   async getPinnedMessages(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -875,7 +887,7 @@ export class ChatController {
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Pin a message' })
   async pinMessage(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -886,7 +898,7 @@ export class ChatController {
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Unpin a message' })
   async unpinMessage(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -913,7 +925,7 @@ export class ChatController {
     }),
   )
   async setMessageFlag(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: SetMessageFlagDto,
@@ -939,7 +951,7 @@ export class ChatController {
   })
   @ApiOkResponse({ type: ChatMessageDto })
   async clearMessageFlag(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -974,7 +986,7 @@ export class ChatController {
       result,
     }: FeatureEventInput<ChatMessageActionDto, RecordedMessageAction>) =>
       typeof body.action_type === 'string' &&
-      body.action_type.startsWith(REACTION_ACTION_PREFIX) &&
+      isReactionActionType(body.action_type) &&
       !result.deduplicated
         ? {}
         : null,
@@ -1003,7 +1015,7 @@ export class ChatController {
     },
   )
   async recordMessageAction(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @CurrentEnabledModules() enabledModules: Record<string, boolean> | null,
@@ -1023,7 +1035,7 @@ export class ChatController {
   @Post('messages/:messageId/reactions')
   @ApiOperation({ summary: 'Toggle reaction (add/remove)' })
   async toggleReaction(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: ReactionDto,
@@ -1040,7 +1052,7 @@ export class ChatController {
   @VerifySessionLocally()
   @ApiOperation({ summary: 'Get reactions for a message' })
   async getReactions(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -1056,7 +1068,7 @@ export class ChatController {
   })
   @ApiCreatedResponse({ type: ChatUploadUrlResponseDto })
   async requestUploadUrl(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: RequestChatUploadUrlDto,
@@ -1099,7 +1111,7 @@ export class ChatController {
   @Post(':id/read')
   @ApiOperation({ summary: 'Mark channel as read' })
   async markRead(
-    @Param('id') channelId: string,
+    @Param('id', ParseUUIDPipe) channelId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
@@ -1116,7 +1128,7 @@ export class ChatController {
       'Mark a message unread: move the caller’s read cursor to just before it',
   })
   async markMessageUnread(
-    @Param('messageId') messageId: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {

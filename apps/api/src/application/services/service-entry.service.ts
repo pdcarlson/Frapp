@@ -43,6 +43,14 @@ import { reportCaughtFailure } from '../../infrastructure/observability/report-c
 const SERVICE_BUCKET = 'service';
 
 /**
+ * The create's answer when the proof path is already on another member's
+ * entry. Not "add it again": this member's own resend never sees it (it gets
+ * its saved entry back), so the way on is a file of their own.
+ */
+export const PROOF_PATH_TAKEN_MESSAGE =
+  "This proof file is on another member's service entry. Attach your own photo or file.";
+
+/**
  * Folder holding one chapter's service-proof uploads (trailing slash
  * included). chapterId is lowercased because storage prefix math is exact-
  * case while the guard's uuid authorization is not: a non-canonical
@@ -132,6 +140,7 @@ export class ServiceEntryService {
    * Proof paths are client-echoed from the upload-url flow, so re-validate
    * server-side before persisting (`assertUploadedPathUnder`): inside the
    * active chapter's service-proof prefix, and naming an uploaded object.
+   * Whether another entry already holds the path is `create`'s question.
    */
   private async assertValidProofPath(
     chapterId: string,
@@ -149,6 +158,26 @@ export class ServiceEntryService {
         missing: 'proof_path does not reference an uploaded proof file',
       },
     );
+  }
+
+  /**
+   * An entry the caller is about to be handed because it already holds the
+   * proof path they sent: theirs is a resend of a create that saved, so it
+   * comes back as saved; another member's is refused.
+   *
+   * The refusal is a 400 on purpose. Shipped phone builds drop a held proof
+   * path on any 400 but the receipt policy's (`proofPathRefusedOf` in
+   * `apps/mobile/lib/more/service-proof.ts`) and upload the photo afresh on
+   * the next Submit, which is the only way forward; on a 409 they would keep
+   * resending the same path.
+   */
+  private assertOwnProofHolder(
+    holder: ServiceEntry,
+    input: CreateServiceEntryInput,
+  ): void {
+    if (holder.user_id !== input.user_id) {
+      throw new BadRequestException(PROOF_PATH_TAKEN_MESSAGE);
+    }
   }
 
   async getProofDownloadUrl(
@@ -336,21 +365,41 @@ export class ServiceEntryService {
       await this.assertValidProofPath(input.chapter_id, proofPath);
     }
 
-    const entry = await this.serviceEntryRepo.create({
-      chapter_id: input.chapter_id,
-      user_id: input.user_id,
-      date: input.date,
-      duration_minutes,
-      description: description.trim(),
-      proof_path: proofPath,
-      status: 'PENDING',
-      reviewed_by: null,
-      review_comment: null,
-      points_awarded: false,
-      // `awarded_points` is left out on purpose: the column is null until
-      // approval, and naming it here would fail every create against a
-      // database that hasn't applied 20261112153700 yet (#3868).
-    });
+    // Each upload mints its own path, so an entry that already holds this one
+    // is almost always this member's own create, sent again because its
+    // response never arrived: the web create retries a failed request, and
+    // the phone's sheet resends with the path it kept. Answering with the
+    // saved entry keeps one receipt to one entry (which is what lets deleting
+    // an entry delete its file) without telling a member on a flaky
+    // connection that the entry they just logged failed. It is matched on the
+    // member and the path alone, not the other fields: a resend carries what
+    // was saved, and if the member changed a field on the phone's sheet before
+    // resending, the entry already saved stands, as it would have had its
+    // answer arrived (entries can't be edited; they delete it and log it
+    // again). Two creates racing past this read meet the
+    // unique index, and the repository hands the loser this same entry.
+    const existing = proofPath
+      ? await this.serviceEntryRepo.findByProofPath(input.chapter_id, proofPath)
+      : null;
+
+    const entry =
+      existing ??
+      (await this.serviceEntryRepo.create({
+        chapter_id: input.chapter_id,
+        user_id: input.user_id,
+        date: input.date,
+        duration_minutes,
+        description: description.trim(),
+        proof_path: proofPath,
+        status: 'PENDING',
+        reviewed_by: null,
+        review_comment: null,
+        points_awarded: false,
+        // `awarded_points` is left out on purpose: the column is null until
+        // approval, and naming it here would fail every create against a
+        // database that hasn't applied 20261112153700 yet (#3868).
+      }));
+    if (proofPath) this.assertOwnProofHolder(entry, input);
 
     // The `/hours log` slash command asks us to surface a read-only hours
     // card in chat. The card is server-originated (a client cannot forge
@@ -370,6 +419,11 @@ export class ServiceEntryService {
     // The one-liner cannot attach proof (the chat composer's Service hours
     // form can). The receipt-policy 400 above still fires for a slash create:
     // that is the correct UX, not a bypass of `wf_hours_receipt`.
+    //
+    // A resend answered with its saved entry asks for the card again:
+    // `sendMessage` dedupes on `client_message_id`, so a card that posted the
+    // first time is found rather than posted twice, and one that failed gets
+    // its second try.
     const cardPosted = await this.tryPostHoursCard(input, entry);
 
     return cardPosted === undefined
@@ -567,11 +621,17 @@ export class ServiceEntryService {
       throw new BadRequestException('Only PENDING entries can be rejected');
     }
 
-    const updated = await this.serviceEntryRepo.update(id, chapterId, {
-      status: 'REJECTED',
-      reviewed_by: reviewerId,
-      review_comment: reviewComment ?? null,
-    });
+    // Conditional on PENDING in the write itself, like approval: an approval
+    // that landed after the read above keeps its entry and its points.
+    const updated = await this.serviceEntryRepo.rejectIfPending(
+      id,
+      chapterId,
+      reviewerId,
+      reviewComment ?? null,
+    );
+    if (!updated) {
+      throw new BadRequestException('Only PENDING entries can be rejected');
+    }
 
     try {
       await this.notificationService.notifyUser(entry.user_id, chapterId, {
@@ -615,14 +675,35 @@ export class ServiceEntryService {
       );
     }
 
-    // Purge the proof object with the row (file-first, matching Backwork and
-    // chapter documents) so deleted entries don't orphan personal photos in
-    // the private bucket. Legacy free-text paths never reference an object
-    // this chapter owns, so only prefix-valid paths are deleted.
-    if (entry.proof_path?.startsWith(serviceProofPrefix(chapterId))) {
-      await this.storageProvider.deleteFile(SERVICE_BUCKET, entry.proof_path);
+    // The row first, and only while it is still PENDING: an approval that
+    // landed after the read above keeps its entry and its receipt.
+    const deleted = await this.serviceEntryRepo.deleteIfPending(id, chapterId);
+    if (!deleted) {
+      throw new BadRequestException('Only PENDING entries can be deleted');
     }
 
-    await this.serviceEntryRepo.delete(id, chapterId);
+    // Then the proof object, so deleted entries don't orphan personal photos
+    // in the private bucket. Legacy free-text paths never reference an object
+    // this chapter owns, so only prefix-valid paths are deleted, and a file
+    // another entry still points at (rows from before a proof path was one
+    // entry's only) is kept. A failed delete is logged rather than thrown:
+    // the entry is already gone, and the member asked for exactly that.
+    const proofPath = deleted.proof_path;
+    if (!proofPath?.startsWith(serviceProofPrefix(chapterId))) return;
+    try {
+      if (
+        (await this.serviceEntryRepo.countByProofPath(chapterId, proofPath)) > 0
+      ) {
+        return;
+      }
+      await this.storageProvider.deleteFile(SERVICE_BUCKET, proofPath);
+    } catch (error) {
+      reportCaughtFailure(this.logger, {
+        level: 'warning',
+        site: 'service-entry-proof-delete',
+        message: `Could not delete proof file for deleted service entry ${id}`,
+        error,
+      });
+    }
   }
 }

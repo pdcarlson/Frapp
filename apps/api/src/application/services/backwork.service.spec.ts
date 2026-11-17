@@ -7,7 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { MAX_BACKWORK_UPLOAD_BYTES, MAX_UPLOAD_BYTES } from '@repo/validation';
-import { BackworkService } from './backwork.service';
+import { AI_FILL_CLAIM_STALE_MS, BackworkService } from './backwork.service';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
   BACKWORK_DEPARTMENT_REPOSITORY,
@@ -29,6 +29,16 @@ import type {
   BackworkProfessor,
   BackworkCourse,
 } from '#domain/entities/backwork.entity';
+
+/** The file names the confirms and checks below upload. */
+const UPLOADED_NAMES = [
+  'a.pdf',
+  'file.pdf',
+  'midterm1.pdf',
+  'same.pdf',
+  'leak.pdf',
+  'logo.png',
+];
 
 describe('BackworkService', () => {
   let service: BackworkService;
@@ -105,6 +115,8 @@ describe('BackworkService', () => {
       countByStoragePath: jest.fn().mockResolvedValue(0),
       publishDraft: jest.fn(),
       deleteDraft: jest.fn(),
+      claimAiFill: jest.fn(),
+      releaseAiFill: jest.fn(),
     };
 
     mockDepartmentRepo = {
@@ -142,7 +154,11 @@ describe('BackworkService', () => {
       uploadFile: jest.fn(),
       downloadFile: jest.fn(),
       deleteFile: jest.fn(),
-      listFiles: jest.fn(),
+      // Every folder holds a file of each name these tests use, so a confirm
+      // or check finds its upload unless a test says otherwise.
+      listFiles: jest.fn(async (_bucket: string, folder: string) =>
+        UPLOADED_NAMES.map((name) => `${folder}/${name}`),
+      ),
       listObjects: jest.fn().mockResolvedValue([]),
       listFolders: jest.fn().mockResolvedValue([]),
       deleteFiles: jest.fn(),
@@ -298,6 +314,29 @@ describe('BackworkService', () => {
   });
 
   describe('confirmUpload', () => {
+    it('refuses a path that names no uploaded file, and files nothing', async () => {
+      mockStorageProvider.listFiles.mockResolvedValueOnce([]);
+
+      const attempt = service.confirmUpload({
+        chapter_id: 'ch-1',
+        uploader_id: 'user-1',
+        storage_path: 'chapters/ch-1/backwork/res-9/never-sent.pdf',
+        file_hash: 'h',
+        draft: true,
+      });
+
+      await expect(attempt).rejects.toThrow(BadRequestException);
+      await expect(attempt).rejects.toThrow(
+        "We couldn't find the uploaded file.",
+      );
+      expect(mockStorageProvider.listFiles).toHaveBeenCalledWith(
+        'backwork',
+        'chapters/ch-1/backwork/res-9',
+      );
+      expect(mockResourceRepo.findByFileHash).not.toHaveBeenCalled();
+      expect(mockResourceRepo.create).not.toHaveBeenCalled();
+    });
+
     it('should create a resource with full metadata', async () => {
       mockResourceRepo.findByFileHash.mockResolvedValue(null);
       mockDepartmentRepo.findByCode.mockResolvedValue(baseDepartment);
@@ -1512,9 +1551,18 @@ describe('BackworkService', () => {
 
     it("downloads a redacted draft's own stored file, and refuses one uploaded as-is", async () => {
       const bytes = new Uint8Array([1]);
-      mockStorageProvider.downloadFile.mockResolvedValueOnce(bytes);
       const redacted = draftRow({ id: 'a', is_redacted: true });
-      await expect(service.redactedDraftFile(redacted)).resolves.toBe(bytes);
+      mockStorageProvider.listObjects.mockResolvedValueOnce([
+        { path: redacted.storage_path, createdAt: null, sizeBytes: 1 },
+      ]);
+      mockStorageProvider.downloadFile.mockResolvedValueOnce(bytes);
+      await expect(service.redactedDraftFile(redacted, 10)).resolves.toEqual({
+        bytes,
+      });
+      expect(mockStorageProvider.listObjects).toHaveBeenCalledWith(
+        'backwork',
+        redacted.storage_path.slice(0, redacted.storage_path.lastIndexOf('/')),
+      );
       expect(mockStorageProvider.downloadFile).toHaveBeenCalledWith(
         'backwork',
         redacted.storage_path,
@@ -1522,9 +1570,80 @@ describe('BackworkService', () => {
 
       mockStorageProvider.downloadFile.mockClear();
       await expect(
-        service.redactedDraftFile(draftRow({ id: 'b', is_redacted: false })),
+        service.redactedDraftFile(
+          draftRow({ id: 'b', is_redacted: false }),
+          10,
+        ),
       ).rejects.toThrow('uploaded as-is');
       expect(mockStorageProvider.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('answers too_large from the stored size, without downloading the file', async () => {
+      const redacted = draftRow({ id: 'a', is_redacted: true });
+      mockStorageProvider.listObjects.mockResolvedValueOnce([
+        { path: redacted.storage_path, createdAt: null, sizeBytes: 11 },
+      ]);
+
+      await expect(service.redactedDraftFile(redacted, 10)).resolves.toBe(
+        'too_large',
+      );
+      expect(mockStorageProvider.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('answers null when the stored file is gone, without downloading', async () => {
+      mockStorageProvider.listObjects.mockResolvedValueOnce([]);
+
+      await expect(
+        service.redactedDraftFile(draftRow({ id: 'a', is_redacted: true }), 10),
+      ).resolves.toBeNull();
+      expect(mockStorageProvider.downloadFile).not.toHaveBeenCalled();
+    });
+
+    it('still downloads when storage reports no size, leaving the cap to the extractor', async () => {
+      const bytes = new Uint8Array([1]);
+      const redacted = draftRow({ id: 'a', is_redacted: true });
+      mockStorageProvider.listObjects.mockResolvedValueOnce([
+        { path: redacted.storage_path, createdAt: null },
+      ]);
+      mockStorageProvider.downloadFile.mockResolvedValueOnce(bytes);
+
+      await expect(service.redactedDraftFile(redacted, 10)).resolves.toEqual({
+        bytes,
+      });
+    });
+
+    it('claims a draft for one AI fill and hands back its release', async () => {
+      const now = new Date('2026-11-17T12:00:00.000Z');
+      mockResourceRepo.claimAiFill.mockResolvedValueOnce(now.toISOString());
+
+      const release = await service.claimAiFill('a', 'ch-1', 'user-1', now);
+
+      expect(mockResourceRepo.claimAiFill).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        'user-1',
+        now,
+        new Date(now.getTime() - AI_FILL_CLAIM_STALE_MS),
+      );
+      expect(release).toEqual(expect.any(Function));
+      await release!();
+      expect(mockResourceRepo.releaseAiFill).toHaveBeenCalledWith(
+        'a',
+        'ch-1',
+        now.toISOString(),
+      );
+    });
+
+    it('answers null while another fill holds the draft, and a failed release only logs', async () => {
+      mockResourceRepo.claimAiFill.mockResolvedValueOnce(null);
+      await expect(
+        service.claimAiFill('a', 'ch-1', 'user-1'),
+      ).resolves.toBeNull();
+
+      mockResourceRepo.claimAiFill.mockResolvedValueOnce('claim');
+      mockResourceRepo.releaseAiFill.mockRejectedValueOnce(new Error('down'));
+      const release = await service.claimAiFill('a', 'ch-1', 'user-1');
+      await expect(release!()).resolves.toBeUndefined();
     });
 
     it("finds only the caller's own draft", async () => {

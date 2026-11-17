@@ -1,6 +1,6 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   CHANNEL_LATEST_MESSAGES_KEY,
   CHANNEL_LIST_KEY,
@@ -23,39 +23,17 @@ import {
   useUpdateChannel,
   useDeleteChannel,
 } from "./use-chat";
-import { FrappClientProvider } from "./use-frapp-client";
-import React from "react";
-
-function createTestQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: false,
-      },
-      mutations: {
-        retry: false,
-      },
-    },
-  });
-}
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 function createWrapper(queryClient: QueryClient, mockClient: unknown) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      // A member in a chapter: the channel reads wait for one (#4094,
-      // `chapter-scope.spec.tsx` covers the no-chapter path).
-      chapterId="chapter-1"
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    // A member in a chapter: the channel reads wait for one (#4094,
+    // `chapter-scope.spec.tsx` covers the no-chapter path).
+    chapterId: "chapter-1",
+    displayName: "Wrapper",
+  });
 }
 
 describe("useChannelUnreadCounts", () => {

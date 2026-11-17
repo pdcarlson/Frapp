@@ -22,6 +22,8 @@ import { SignetTokens } from "@repo/theme/signet";
 import {
   AI_REPORT_COPY,
   AI_SUGGESTION_COPY,
+  TASK_AUDIENCE_COPY,
+  taskWhoValue,
   LAST_YEAR_COPY,
   aiSuggestionRefusalLine,
   lastYearEventLine,
@@ -229,7 +231,7 @@ function SuggestedTasks() {
 
   async function acceptRow(item: Waiting) {
     // A task needs who and when; the form is where the officer says them.
-    if (!item.task.assignee_id || !item.task.due_date) {
+    if (!taskWhoValue(item.task) || !item.task.due_date) {
       setFormFor(item);
       return;
     }
@@ -299,7 +301,8 @@ function SuggestedTasks() {
   const seed: TaskSuggestionSeed | undefined = formFor
     ? {
         title: formFor.task.title,
-        assigneeId: formFor.task.assignee_id,
+        // A member's id, or Everyone (#4295 step 3).
+        assigneeId: taskWhoValue(formFor.task) || null,
         dueDay: formFor.task.due_date,
         dueAt: formFor.task.due_at,
         subtasks: formFor.task.subtasks,
@@ -317,12 +320,14 @@ function SuggestedTasks() {
       key={item.id}
       item={item}
       who={
-        item.task.assignee_id
-          ? memberLabel(
-              names.nameFor(item.task.assignee_id),
-              item.task.assignee_id,
-            )
-          : null
+        item.task.audience
+          ? TASK_AUDIENCE_COPY.everyone
+          : item.task.assignee_id
+            ? memberLabel(
+                names.nameFor(item.task.assignee_id),
+                item.task.assignee_id,
+              )
+            : null
       }
       busy={busy?.id === item.id ? busy.doing : null}
       disabled={busy !== null}
@@ -367,7 +372,10 @@ function SuggestedTasks() {
             const first = group[0]!;
             const fromMeeting = first.source.type === "meeting";
             return (
-              <View key={`${first.source.type}:${first.source.id}`} style={styles.group}>
+              <View
+                key={`${first.source.type}:${first.source.id}`}
+                style={styles.group}
+              >
                 {fromMeeting ? (
                   <InlineNote
                     action={{
@@ -421,6 +429,7 @@ function SuggestedTasks() {
           key={formFor.id}
           ref={formRef}
           suggestion={seed}
+          offerEveryone
           onClosed={() => setFormFor(null)}
         />
       ) : null}
@@ -639,7 +648,10 @@ function SuggestionRow({
         accessibilityHint={AI_SUGGESTION_COPY.change}
         disabled={disabled}
         onPress={onOpen}
-        style={({ pressed }) => [styles.cardText, pressed ? styles.pressed : null]}
+        style={({ pressed }) => [
+          styles.cardText,
+          pressed ? styles.pressed : null,
+        ]}
       >
         <Text style={styles.title}>{task.title}</Text>
         {/* The line of the minutes, when the title had to be cut from it. */}
@@ -719,7 +731,11 @@ function LastYearEventRow({
   const line = lastYearEventLine(lastYearDay(event.last_year_at), event.times);
   return (
     <View style={styles.card}>
-      <View accessible accessibilityLabel={`${event.name}. ${line}`} style={styles.cardText}>
+      <View
+        accessible
+        accessibilityLabel={`${event.name}. ${line}`}
+        style={styles.cardText}
+      >
         <Text style={styles.title}>{event.name}</Text>
         <Text style={styles.meta}>{line}</Text>
       </View>
@@ -730,7 +746,11 @@ function LastYearEventRow({
         report={report}
         primary={
           canAdd
-            ? { label: LAST_YEAR_COPY.addEvent, doing: "accept", onPress: onAdd }
+            ? {
+                label: LAST_YEAR_COPY.addEvent,
+                doing: "accept",
+                onPress: onAdd,
+              }
             : null
         }
         secondary={{

@@ -72,6 +72,18 @@ export type AiTokenCatalogEntry =
 
 export type AiCatalogEntry = AiTokenCatalogEntry | TranscriptionCatalogEntry;
 
+/**
+ * The strongest model, for work where a weaker answer costs the chapter
+ * more than the tokens do: the minutes (Paul, 2026-11-17: "I would rather
+ * do a good job first and figure out how to optimize tokens later").
+ */
+const CLAUDE_OPUS = {
+  provider: 'anthropic',
+  model: 'claude-opus-5-5',
+  inputUsdPerMillionTokens: 4,
+  outputUsdPerMillionTokens: 20,
+} as const;
+
 const CLAUDE_SONNET = {
   provider: 'anthropic',
   model: 'claude-sonnet-5-5',
@@ -82,11 +94,24 @@ const CLAUDE_SONNET = {
 export const AI_MODEL_CATALOG = {
   /** An officer's notes in, minutes in the chapter's template out (#4312). */
   'minutes.draft': {
-    ...CLAUDE_SONNET,
+    ...CLAUDE_OPUS,
     family: 'meetings',
     kind: 'structured',
-    maxOutputTokens: 16_000,
-    effort: 'medium',
+    maxOutputTokens: 32_000,
+    effort: 'high',
+  },
+  /**
+   * The meeting written up as notes, topic by topic, from every source read
+   * whole (#5410, `minutes-notes.ts`). Its own pass, beside the draft's
+   * extraction, so the notes are written by something whose only job is
+   * the notes.
+   */
+  'minutes.notes': {
+    ...CLAUDE_OPUS,
+    family: 'meetings',
+    kind: 'structured',
+    maxOutputTokens: 32_000,
+    effort: 'high',
   },
   /**
    * Tasks proposed from a minutes draft, each with the line it came from.
@@ -175,13 +200,14 @@ export const AI_MODEL_CATALOG = {
   /**
    * Member nudges (#4781): a short list of facts about one of a member's
    * tasks in, a card's title, line and starting point out, which the caller
-   * checks against the facts. In the `ask` family: the card is the AI
-   * reading the member's own tasks for them, as Ask's "your tasks" does, so
-   * it stands behind the Ask switch and the member's yes.
+   * checks against the facts. Its own `nudges` family, behind its own
+   * chapter switch that starts on (Paul, 2026-11-17), and always behind the
+   * member's own yes. Until then it sat in the `ask` family, so a chapter
+   * without Ask switched on got no cards.
    */
   'nudges.write': {
     ...CLAUDE_SONNET,
-    family: 'ask',
+    family: 'nudges',
     kind: 'structured',
     maxOutputTokens: 400,
     effort: 'low',

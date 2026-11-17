@@ -1,6 +1,6 @@
 # Chat Integrations — Slash Commands, Renderers, and System Channel
 
-Chat is the spine; an ops module with a message-shaped action is a **chat integration** (see [README.md](./README.md) → *Chat is the spine*; which modules have none, by design: [`../integrations.md` § Integration Pattern](../integrations.md#integration-pattern)).
+Chat is the spine; an ops module with a message-shaped action is a **chat integration** (see [README.md](./README.md) → _Chat is the spine_; which modules have none, by design: [`../integrations.md` § Integration Pattern](../integrations.md#integration-pattern)).
 This file specifies the slash-command catalog, the dispatch path, the rich-message renderer registry, and the `#chapter-audit` system-channel bridge.
 Push-notification rules for chat live in [../notifications.md](../notifications.md).
 
@@ -11,16 +11,16 @@ The catalog is filtered by the chapter's `enabled_modules` so disabling a paid m
 Commands marked `implemented: true` post a rich message; `implemented: false` commands surface a "coming soon" toast as modules ship.
 **Server-side authorization is independent of the client gate** — the server re-checks permission for every send; the client gate is UX only, the server is the trust boundary.
 
-| Command | Implemented | Required module | Server gate | Posted to |
-| --- | --- | --- | --- | --- |
-| `/poll "Q?" Opt1 Opt2 [closes=<mins>]` | yes | `polls` | chapter member; `ChatService.sendMessage` refuses `kind: "poll"` with `403 chapter.module.disabled` while `polls` is off, and so does a card vote ([`../../product/modules.md` § Module disabling behavior](../../product/modules.md#module-disabling-behavior)) | current channel |
-| `/announce <message>` | yes | always-on | an entry on `#announcements`' who-can-post list (or `*`) via `canAccessChannel({ operation:'post' })` | `#announcements` |
-| `/points grant\|deduct @member <amount> for <reason>` | yes | `points` | `points:adjust` and `members:view`, re-checked on `POST /v1/points/adjust` (no self-adjust, target must be a chapter member, plus the rate limit in [`points.md`](../points.md) § Anti-Fraud) | current channel |
-| `/task "<title>" @assignee <due date> [points]` | yes | `tasks` | `tasks:manage` and `members:view`, re-checked on `POST /v1/tasks` (assignee must be a chapter member) | current channel |
-| `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points=<n>]` | yes | `events` | `events:create` and `members:view` (`EVENT_CREATE_PERMISSIONS`), re-checked on `POST /v1/events` | current channel |
-| `/hours log <duration> <description>` | yes | `hours` | `service:log`, re-checked on `POST /v1/service-entries` (receipt policy `wf_hours_receipt` still applies — the one-liner cannot attach proof; the + menu's Service hours form can) | current channel |
-| `/<vocab> add @candidate` · `vote <id>` · `bid @candidate` | yes | `rush` | `members:view` (any chapter member), re-checked on `POST /v1/rush/candidates`. Canonical command name is `rush`; the palette shows the chapter's recruitment vocabulary (`/rush`, `/recruitment`, `/intake`, `/induction`). There is no `rush:*` permission. | current channel |
-| `/dues` | no | per-module | n/a | n/a (palette stub) |
+| Command                                                                | Implemented | Required module | Server gate                                                                                                                                                                                                                                                      | Posted to          |
+| ---------------------------------------------------------------------- | ----------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `/poll "Q?" Opt1 Opt2 [closes=<mins>]`                                 | yes         | `polls`         | chapter member; `ChatService.sendMessage` refuses `kind: "poll"` with `403 chapter.module.disabled` while `polls` is off, and so does a card vote ([`../../product/modules.md` § Module disabling behavior](../../product/modules.md#module-disabling-behavior)) | current channel    |
+| `/announce <message>`                                                  | yes         | always-on       | an entry on `#announcements`' who-can-post list (or `*`) via `canAccessChannel({ operation:'post' })`                                                                                                                                                            | `#announcements`   |
+| `/points grant\|deduct @member <amount> for <reason>`                  | yes         | `points`        | `points:adjust` and `members:view`, re-checked on `POST /v1/points/adjust` (no self-adjust, target must be a chapter member, plus the rate limit in [`points.md`](../points.md) § Anti-Fraud)                                                                    | current channel    |
+| `/task "<title>" @assignee <due date> [points]`                        | yes         | `tasks`         | `tasks:manage` and `members:view`, re-checked on `POST /v1/tasks` (assignee must be a chapter member)                                                                                                                                                            | current channel    |
+| `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points=<n>]` | yes         | `events`        | `events:create` and `members:view` (`EVENT_CREATE_PERMISSIONS`), re-checked on `POST /v1/events`                                                                                                                                                                 | current channel    |
+| `/hours log <duration> <description>`                                  | yes         | `hours`         | `service:log`, re-checked on `POST /v1/service-entries` (receipt policy `wf_hours_receipt` still applies — the one-liner cannot attach proof; the + menu's Service hours form can)                                                                               | current channel    |
+| `/<vocab> add @candidate` · `vote <id>` · `bid @candidate`             | yes         | `rush`          | `members:view` (any chapter member), re-checked on `POST /v1/rush/candidates`. Canonical command name is `rush`; the palette shows the chapter's recruitment vocabulary (`/rush`, `/recruitment`, `/intake`, `/induction`). There is no `rush:*` permission.     | current channel    |
+| `/dues`                                                                | no          | per-module      | n/a                                                                                                                                                                                                                                                              | n/a (palette stub) |
 
 Parsing rules live in `packages/chat-core/src/integrations/parsers.ts` (`parsePollArgs`, `parseAnnounceArgs`, `parsePointsArgs`, `parseTaskArgs`, `parseEventArgs`, `parseHoursArgs`, `parseRushArgs`) so web and any future heavy-command RPC share one source of truth.
 Mobile is not a consumer and is not planned as one: slash commands are not a mobile surface.
@@ -60,7 +60,7 @@ Each form posts its card into the channel it was opened in through the same chat
 A lost card gets the typed command's notice, titled for what was made rather than the command ("Task not confirmed", not "/task not confirmed"; [#3913](https://github.com/pdcarlson/Frapp/issues/3913)).
 Poll is `poll-form.tsx`.
 Event (`apps/web/components/chat/event-quick-form.tsx`) holds the four fields every event needs, name, date, start and end, starting at the next whole hour for an hour, and creates it as the one-liner does (10 points unless typed, not required, everyone invited; a member without `events:update` gets 0 points whatever is typed, #3709); More options opens the full editor with the draft carried over.
-Task (`apps/web/components/tasks/task-form.tsx`) is Title, Assignee and Due date, with Points and Description behind More options (Repeat and role assignees are [#3661](https://github.com/pdcarlson/Frapp/issues/3661)).
+Task (`apps/web/components/tasks/task-form.tsx`) is Title, Assignee and Due date, with Points, Repeat and Description behind More options (Repeat: [tasks.md § Repeating tasks](../tasks.md#repeating-tasks), #5119; a repeating task posts a card for its first copy only). Role assignees are #4295 step 3.
 Service hours and Points are the bodies the Service page's Log service hours dialog and the Points page's Adjust points dialog also host (`apps/web/components/service/log-hours-form.tsx`, `apps/web/components/points/points-adjustment-form.tsx`), so the two never drift;
 Service hours, unlike `/hours log`, can attach proof, and Points lists members by name (a shared name gets its email, never a user id), picks nobody until asked, and leaves out the officer's own row, which the API refuses.
 Every form names a missing or invalid field under it, outlined, and focuses it on submit; only a write the server refuses toasts.
@@ -106,12 +106,12 @@ A lost answer, or a write whose card didn't post, closes the sheet and says so i
   One round-trip.
 - **Heavy commands** (`/points grant`, `/task`, `/event`, `/hours log`) render a `kind="loading"` placeholder card optimistically (cache-only, with a `client_message_id`), then call a NestJS RPC; the server performs the side effect and posts the rich card itself carrying the **same `client_message_id`**, so the Realtime echo reconciles the placeholder in place via `mergeServerRow`.
   `/points` calls `POST /v1/points/adjust` with the active `channel_id` + `client_message_id`; on a committed ledger row the service posts the `kind="points"` card.
-  `/task` calls `POST /v1/tasks` the same way; on a committed task row `TaskService.create` posts the `kind="task"` card (see *Server-originated kinds* below).
+  `/task` calls `POST /v1/tasks` the same way; on a committed task row `TaskService.create` posts the `kind="task"` card (see _Server-originated kinds_ below).
   `/event` calls `POST /v1/events` the same way; on a committed event row `EventService.create` posts the `kind="event"` card (through `EventAnnouncementService`).
   `/hours log` calls `POST /v1/service-entries` the same way; on a committed service-entry row `ServiceEntryService.create` posts the `kind="hours"` card.
   The committed row is the source of truth — a failed card post is logged, never rolled back.
   `/task`, `/event` and `/hours` drop the placeholder on any HTTP error.
-  **`/points` no longer does, and it is the only one of the four that may not**: it drops the placeholder on a *definitive* refusal — a 409 on any attempt, or, on a first attempt only, a 4xx the **origin** produced, meaning the request was validated and rejected and nothing was written.
+  **`/points` no longer does, and it is the only one of the four that may not**: it drops the placeholder on a _definitive_ refusal — a 409 on any attempt, or, on a first attempt only, a 4xx the **origin** produced, meaning the request was validated and rejected and nothing was written.
   Everything else leaves the row in place as `unconfirmed`: a 5xx, a transport failure, any refusal of a retry, and the 4xx statuses an intermediary emits after the origin may already have committed (`408`, nginx `499`, ALB `460`)
   — those look like refusals and are really lost responses, carrying the original `client_message_id`, with a Retry that replays that same request rather than minting a new one ([#1733](https://github.com/pdcarlson/Frapp/issues/1733)).
   The `unconfirmed` row and its replay handle persist on the dispatching browser, in the store `recorded` rows use (`packages/chat-core/src/heavy-command-notices.ts`), so a reconnect's refetch, a reload or a cache eviction restores them.
@@ -132,10 +132,10 @@ A lost answer, or a write whose card didn't post, closes the sheet and says so i
   Only an explicit `false` counts.
   The field is **absent** when the server reported no outcome — a dashboard adjustment (no card is due), or a replay of a row with no stored origin channel (legacy chat adjustments from before `channel_id` was recorded, and any dashboard-keyed row).
   A replay whose stored origin is set reports `card_posted` like a first attempt: `true` when the heal (or the idempotent re-send) lands, `false` when it still fails.
-  **What an absent field means to the client depends on whether the client is replaying, and it must branch on that**: on a *first* attempt it leaves the placeholder for the echo, exactly as before;
-  on a *replay* it removes the row and reports the points as recorded with the card's fate unknown
+  **What an absent field means to the client depends on whether the client is replaying, and it must branch on that**: on a _first_ attempt it leaves the placeholder for the echo, exactly as before;
+  on a _replay_ it removes the row and reports the points as recorded with the card's fate unknown
   — the replay proves the ledger row exists while proving nothing about a card that this request did not attempt, and leaving the placeholder up would strand it on its loading copy forever.
-  The copy says *unknown*, never *failed*.
+  The copy says _unknown_, never _failed_.
   The client needs no help from the server to tell these apart, since it knows which of its own requests carries a reused key.
   `POST /v1/tasks`, `POST /v1/events` and `POST /v1/service-entries` report the same flag under the same three-way contract (present only when `channel_id` + `client_message_id` were supplied; only an explicit `false` is actionable).
   On `false`, `/task`, `/event` and `/hours` keep the placeholder as the same `recorded` row and return `{ ok: true, warning }` — never `ok: false`, which would toast destructively and invite a duplicating retry.
@@ -146,7 +146,7 @@ A lost answer, or a write whose card didn't post, closes the sheet and says so i
   - **Only `/points` is retry-safe on the server.**
     The four heavy commands share a dispatch shape but no longer share a retry contract: `POST /v1/points/adjust` dedupes on `client_message_id` against a partial unique index ([`points.md`](../points.md) § Anti-Fraud), while `POST /v1/tasks`, `POST /v1/events` and `POST /v1/service-entries` have **no** server-side dedupe at all, so a replay there creates a duplicate task, event, or service entry.
     Do not add retry — or an outbox path — to the shared dispatcher on the strength of the paragraph above; `/task`, `/event` and `/hours` need their own idempotency first.
-    Note that `/points` now *does* reuse its id on an explicit retry (#1733), so its dedupe path is live in the product and must not be treated as dead code; `/task`, `/event` and `/hours` still mint a fresh id per dispatch, which is the only thing making their lack of dedupe safe.
+    Note that `/points` now _does_ reuse its id on an explicit retry (#1733), so its dedupe path is live in the product and must not be treated as dead code; `/task`, `/event` and `/hours` still mint a fresh id per dispatch, which is the only thing making their lack of dedupe safe.
 - A plain text message (no leading slash) goes through the same `POST /v1/channels/:id/messages` as `kind="text"`.
 - **`/<vocab> add`** is a fifth heavy command with the same `card_posted` three-way contract as `/hours` (`POST /v1/rush/candidates`, no server-side dedupe, drop the placeholder on any HTTP error), except that every HTTP error reads as a failure, as `/event`'s do.
   **`vote` and `bid` are not heavy** — they POST with no placeholder; the existing candidate card live-updates via GET.
@@ -161,14 +161,14 @@ A client therefore **cannot** post these kinds directly: `chat.service.sendMessa
 `ServiceEntryService.create` is the only writer of `hours` cards; `RushService.create` is the only writer of `rush` cards;
 `system_audit` has four server-side writers — the `#chapter-audit` bridge worker, plus `PollService` (expiry notices, into the poll's own channel), `InviteService` (acceptance notices, into the DM between the inviter and the new member) and `ChapterOnboardingService` (the one-time welcome message, whose channel [`onboarding.md` § First-Officer Onboarding Wizard](../onboarding.md#first-officer-onboarding-wizard) owns).
 **None of the four goes through `sendMessage`** — each writes on the service-role path instead (`PollService` and `InviteService` say why in comments).
-So `SERVER_ONLY_KINDS` is what stops a *client* posting the kind; it is not what gates these four.
+So `SERVER_ONLY_KINDS` is what stops a _client_ posting the kind; it is not what gates these four.
 `ask_answer` (#4713) has one writer, `AskPostService`, which inserts on the service-role path keyed `client_message_id = 'ask:<ask id>'`, from an answer the server sealed for the member posting it ([`../ai.md` § Posting an answer to the channel](../ai.md#posting-an-answer-to-the-channel)).
 The optimistic `loading` placeholder stays client-postable — it carries no assertion until the server's real card replaces it.
 
 ## Announcement gating
 
 `/announce` is for the members on `#announcements`' who-can-post list (in a new chapter, the Exec board and Officers and chairs tiers) and posts to the current chapter's `#announcements`.
-The gate is the `operation: 'read' | 'post'` parameter on the shared `canAccessChannel` predicate (default `'read'`): for `operation:'post'`, after the read check passes, the predicate denies when the channel has a who-can-post list and the caller holds no entry on it and not `*` (#3722) (and denies everyone in the audit log, [README § The audit log is system-write only](README.md#the-audit-log-is-system-write-only)).
+The gate is the `operation` parameter on the shared `canAccessChannel` predicate (default `'read'`; the full set is `'read' | 'post' | 'vote' | 'thread' | 'close' | 'answer' | 'modify'`, [`spec/architecture/README.md`](../../architecture/README.md)): for `operation:'post'`, after the read check passes, the predicate denies when the channel has a who-can-post list and the caller holds no entry on it and not `*` (#3722) (and in the audit log denies everyone every operation but `read` and `modify`, the audit log's own line rule deciding a `modify`, [README § The audit log is system-write only](README.md#the-audit-log-is-system-write-only)).
 Enforced server-side in `ChatService.sendMessage`, which asserts channel access on every send.
 The `system_audit` writers listed above, and the Discord importer, write on the service-role path instead and never reach it.
 The client hides the disallowed command for UX, but the server is the trust boundary.
@@ -187,8 +187,10 @@ Mobile has no slash commands and no other path that sends an announcement.
 
 Poll votes are written to `chat_message_actions` via `POST /v1/channels/messages/:messageId/actions` (`ChatReactionService.recordMessageAction`).
 Every user has **at most one** row with `action_type='vote'` per poll message (the dedupe unique index `(message_id, user_id, action_type)` is retained).
+A vote here is checked as the channel operation `'answer'` (#4695): refused in an archived channel and in the audit log, where the card can't be closed either, but open to every reader, whoever may post, as the card offers it. `POST /v1/polls/:id/vote` checks `'vote'`, which also applies who can post; settling that difference is #5384.
 Switching options is an upsert in effect, not in SQL: the insert raises the dedupe unique violation, which `recordMessageAction` catches and turns into an update of `payload.option_id` (and `created_at`) in place and returns a distinct response shape (`updated: true`) so the optimistic client can replay the tally.
 Emoji reactions (`action_type='reaction:<emoji>'`) keep the unique-violation → dedup path unchanged (one reaction per user per emoji, toggle to remove).
+The route takes only the three action types the apps send, `reaction:<emoji>`, `vote` and `signup` (400 otherwise), a `payload` of at most 4,096 characters as JSON (`MESSAGE_ACTION_PAYLOAD_MAX_CHARS`; the largest the apps send is a full sign-up claim, about 900), and stores no payload on a reaction.
 
 ## Sign-up sheet cards
 
@@ -201,7 +203,7 @@ It is the first of a series on the issue: headcount, closing and an end time (st
   Anyone who can post in the channel may post one: no permission and no module (Shawn's chat, 2026-11-12).
   Access follows the channel, as for every card.
 - **Checked on send.**
-  Unlike a poll card, whose payload is stored as sent, `ChatService.sendMessage` checks a sign-up card and stores it rebuilt from its known fields (`normalizeSignupCard` in `apps/api/src/domain/utils/signup-card-rules.ts`): a title, unique slot ids, named slots, limits in range.
+  As for a poll card (`normalizePollCard`, since 2026-11-17), `ChatService.sendMessage` checks a sign-up card and stores it rebuilt from its known fields (`normalizeSignupCard` in `apps/api/src/domain/utils/signup-card-rules.ts`): a title, unique slot ids, named slots, limits in range.
   Anything else is a 400 before anything is written.
   It must be, because the claim below trusts the stored slots.
 - **A claim.**
@@ -214,6 +216,7 @@ It is the first of a series on the issue: headcount, closing and an end time (st
   The card doesn't hear about the refusal, so it leaves a slot it now draws full of other members out of the member's next tap (`castSignupClaim`); otherwise the refused slot would ride along on every tap for ten seconds and have each refused in turn.
   A slot the member already holds is never full to them.
   A `signup` action on any other kind of message is a 400.
+  A claim is checked as the channel operation `'answer'`, as a form's answers are (#4695): any member who reads the card may claim, whoever may post, and none may in an archived group DM or the audit log, where Close sign-ups is refused too (403).
   Changing the row is a Realtime INSERT or UPDATE, which every open card already takes for votes.
   Unlike a vote change, it keeps the row's `created_at`, so it records when the member first signed up on the card.
 - **What the card shows** (`apps/web/components/chat/renderers/signup-card.tsx`, `apps/mobile/components/chat/signup-card.tsx`, both drawing from `@repo/chat-core/signups`): an eyebrow ("Sign-up · 3 of 4 spots taken", "Sign-up · Full", or plain "Sign-up" when a slot has no limit), the title and details, then each slot as one row a tap takes or gives up, drawn as a poll option is: Secondary, or Primary for the viewer's own as a voted option is, its label (wrapping onto more lines when long) and count at the ends ("1/2", or "3" with no limit), and **Full** in the count's place, greyed and untappable, once a slot the viewer doesn't hold is at its limit.
@@ -273,6 +276,9 @@ Comparable apps: Google Forms, Microsoft Forms, Typeform and Slack Workflow form
   The payload is the title, an optional description, and an ordered list of questions, each with an `id`, a `type`, its `title`, `required`, and for a choice question its `options` (`id`, `label`).
   The types are `short_answer`, `paragraph`, `multiple_choice` (pick one), `checkboxes` (pick any), `dropdown` (pick one) and `yes_no`; the limits are `FORM_*` in `@repo/validation`.
   `ChatService.sendMessage` checks the card and stores it rebuilt from its known fields (`normalizeFormCard` in `apps/api/src/domain/utils/form-card-rules.ts`), as it does a sign-up card, because answers are checked against the stored questions.
+  The rebuilt card as a whole is bounded too (2026-11-17), as every card is, since each reader of the channel downloads it: a form at 65,536 characters as JSON (`CHAT_FORM_CARD_PAYLOAD_MAX_CHARS`), every other card at 16,384 (`CHAT_CARD_PAYLOAD_MAX_CHARS`), both in `apps/api/src/domain/constants/chat.ts`.
+  A long rush interest form is about 13,000; a card over its bound is a 400 ("This form is too long to post. Shorten some questions or options and try again.").
+  An outbox retry of a card that committed before these checks is answered as the duplicate, not refused.
   Anyone who can post in the channel can post one; there is no module and no permission.
   The card is answered on a full page it opens, not on the card, so a long questionnaire doesn't crowd the timeline.
   The card shows the title, the question count and the viewer's state: Fill out, or Done with Edit your answers (`formCardAction` in `@repo/chat-core/forms`).
@@ -379,7 +385,7 @@ Card action buttons (Vote, RSVP, Pay, Confirm, Submit) fire through the chat hot
 — idempotent (ADR-07's UPSERT semantics for a vote-change), but **not optimistic**: unlike `react`/`unreact`, which patch the cache before the request and roll back on failure, `actOnCard` only patches the cache after a successful response, and neither it nor a card that calls it (the poll card, on either surface) drops a second tap while the first request is still in flight (#1499 tracks adding both).
 The mobile event, task and rush cards write through the attendance, task and rush REST hooks rather than `actOnCard`, and each drops a second tap with a ref set before its first await (#3185, #3383); web's event, task and rush cards still rely on the mutation's `isPending`, which reaches the button a render late.
 
-See [README.md](./README.md) → *Message Kinds and Actions* for the canonical `kind` table.
+See [README.md](./README.md) → _Message Kinds and Actions_ for the canonical `kind` table.
 
 ## `#chapter-audit` system-channel bridge
 
@@ -393,7 +399,7 @@ This is a server-originated insert that bypasses the client send path and goes d
 - Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge logs and continues.
   The audit row itself is always the source of truth.
 
-The same `system_audit` message pattern is reused, targeted to a DM, for the invite-accept notification (see [README.md](./README.md) → *Direct Messages*).
+The same `system_audit` message pattern is reused, targeted to a DM, for the invite-accept notification (see [README.md](./README.md) → _Direct Messages_).
 
 ## The team's Dev log channel
 

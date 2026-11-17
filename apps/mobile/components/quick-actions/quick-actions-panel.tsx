@@ -32,6 +32,8 @@ import { eyebrowStyle } from "@/components/eyebrow";
 
 /** Each action's glyph: the nav-set shape of the place it leads. */
 const GLYPHS: Record<QuickActionKey, DuotoneGlyphPaths> = {
+  newMinutes: NAV_GLYPHS.meetings,
+  search: NAV_GLYPHS.search,
   newEvent: NAV_GLYPHS.events,
   newTask: NAV_GLYPHS.tasks,
   invite: NAV_GLYPHS.invite,

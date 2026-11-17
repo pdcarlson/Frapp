@@ -104,6 +104,7 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
   posted_at: null,
   created_at: '2026-11-10T02:00:00.000Z',
   updated_at: '2026-11-10T02:00:00.000Z',
+  transcript: null,
   ...overrides,
 });
 
@@ -937,11 +938,12 @@ describe('MeetingService', () => {
   describe('template', () => {
     it('reads the default sections when the chapter saved none', async () => {
       await expect(service.getTemplate(CHAPTER)).resolves.toEqual([
-        'attendees',
         'summary',
-        'announcements',
         'decisions',
         'action_items',
+        'discussion_log',
+        'attendees',
+        'announcements',
       ]);
     });
 

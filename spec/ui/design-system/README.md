@@ -54,6 +54,9 @@ Signet must not read as another generic Google/Material utility, and must not be
 | Light-on-dark QR codes | QR codes are always dark-on-white, even inside the dark UI | Every surface |
 | Background location | Never. Location is foreground-only | Every surface |
 | NativeWind classes on sheet chrome | See mobile sheet pattern in [`../mobile/patterns.md`](../mobile/patterns.md) | Mobile |
+| A segmented switcher between views of the same things (List \| Grid, List \| Calendar, Month \| 3 days \| Day) | One surface that holds the views itself: a list that scrolls, a strip that pulls down into a month, a section that opens. A filter, where one is needed, sits in a menu, not a bar | Every surface |
+
+**Paul, 2026-11-17, on the phone's Calendar:** "I don't like these like toggle list to grid ... all of those toggle things are not my favorite." The bars "up top" are what made the Calendar tab "clunky". This binds new work from today. The switchers already shipped (the Calendar's two, #5310; `ListLayoutToggle` on the Directory, Documents and Tasks, web and phone, and web Events' List \| Calendar, #5313) are filed to come out, not drift to work around. This supersedes [`components.md`](components.md) § Segmented control's List / Grid paragraph. A segmented control that picks a value in a form (a sheet's audience, a poll's kind) isn't a view switcher and stays.
 
 ---
 

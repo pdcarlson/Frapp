@@ -42,8 +42,30 @@ describe('drafting a long meeting in parts', () => {
     expect(parts.join('\n')).toBe(text);
   });
 
-  it('keeps a line longer than a part whole', () => {
-    expect(splitIntoParts('x'.repeat(30), 10)).toEqual(['x'.repeat(30)]);
+  it('cuts a transcript that is one long line at sentence ends', () => {
+    const line = Array.from(
+      { length: 40 },
+      (_, i) => `Point ${i} was raised.`,
+    ).join(' ');
+    const parts = splitIntoParts(`Formal Chapter\n\n${line}`, 200);
+    expect(parts.length).toBeGreaterThan(3);
+    for (const part of parts) {
+      expect(part.length).toBeLessThanOrEqual(200);
+      // Every part is a stretch of the notes, ending on a whole sentence.
+      expect(`Formal Chapter\n\n${line}`).toContain(part);
+      expect(part).toMatch(/\.$/);
+    }
+    expect(parts.join(' ').replace(/\s+/g, ' ')).toBe(
+      `Formal Chapter ${line}`.replace(/\s+/g, ' '),
+    );
+  });
+
+  it('cuts between words when a stretch has no sentence end', () => {
+    const parts = splitIntoParts('word '.repeat(100).trim(), 50);
+    expect(
+      parts.every((part) => !part.startsWith(' ') && part.length <= 50),
+    ).toBe(true);
+    expect(parts.every((part) => /^(word ?)+$/.test(part))).toBe(true);
   });
 
   it('leaves short notes, and several note-takers, to one pass', () => {
@@ -103,7 +125,7 @@ describe('drafting a long meeting in parts', () => {
       },
     ]);
     expect(merged.summary).toBe('First hour. Second hour.');
-    expect(merged.discussion_log).toBe('Rush.\nFormal.');
+    expect(merged.discussion_log).toBe('Rush.\n\nFormal.');
     expect(merged.decisions.map((d) => d.text)).toEqual([
       'Approved the DJ.',
       'Raised dues.',

@@ -51,7 +51,9 @@ which read `.env.local` (see
 bringup: [`AGENTS.md`](../../../AGENTS.md) § "Starting the dev environment". Check the API with
 `curl http://localhost:3001/health`, which reports `"status":"ok"` when the database and storage
 are connected. It reuses one probe for up to 60 s, so to confirm a fix on a running API use
-`/health/ready`, which probes fresh.
+`/health/ready`, whose database and Storage probe is at most 5 s old (its Stripe `billing:` check
+is reused for up to 5 minutes;
+[Health Check](../../../spec/behavior/observability.md#health-check)).
 
 ## CI parity checklist
 

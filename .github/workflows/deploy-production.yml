@@ -47,7 +47,7 @@ run-name: "${{ inputs.dry_run_only == true && 'DRY RUN · ' || '' }}${{ inputs.s
 # workflow's green-CI gate governed only its own deploy hook. What shipped was
 # whatever happened to be at a branch tip.
 #
-# Here the artifact is an input. The same SHA is migrated, deployed to Render,
+# Here the artifact is an input. The same SHA is migrated, deployed to Cloud Run,
 # built for Vercel production, and tagged.
 #
 # ── An empty `sha` (#3114) ──────────────────────────────────────────────────
@@ -169,7 +169,7 @@ on:
       scope:
         description: >-
           'full' migrates and deploys the commit. 'migrations-only' applies the
-          migrations and stops — no Render deploy, no Vercel build, no tag.
+          migrations and stops — no API deploy, no Vercel build, no tag.
         required: false
         default: full
         type: choice
@@ -346,20 +346,18 @@ jobs:
   # that calls a workflow can't) and no secret of its own.
   #
   # A caller's `env:` does not reach a called workflow, which is why this file
-  # has none: `_deploy.yml` reads the Render and Vercel ids from
+  # has none: `_deploy.yml` reads the Google Cloud and Vercel ids from
   # `.github/environments.json` itself (#2806).
   deploy:
     name: Migrate, then ship Render + Vercel
     needs: validate
     uses: ./.github/workflows/_deploy.yml
-    # `_deploy.yml`'s job asks for `packages: write` to push the API image
-    # (#2506), and a called job may not ask for more than its caller grants.
-    # Production builds no image yet, so it goes unused here until it does.
-    # Likewise `id-token: write`, which signs the job in to Google Cloud for a
-    # Cloud Run deploy (#5228): production still deploys to Render.
+    # `id-token: write` signs the job in to Google Cloud for the Cloud Run
+    # deploy (#5228), and a called job may not ask for more than its caller
+    # grants. The job keeps its Render-era name because the deploy alert and
+    # the development log find its runs by it.
     permissions:
       contents: read
-      packages: write
       id-token: write
     secrets: inherit
     with:
@@ -371,7 +369,7 @@ jobs:
   # Tagging is a separate job only because `workflow_call` cannot be a step. It
   # carries no `environment:`, so it costs no second approval click.
   #
-  # The tag is created AFTER Render and Vercel report healthy, on the exact SHA
+  # The tag is created AFTER the API and Vercel report healthy, on the exact SHA
   # that was deployed — so `vX.Y.Z` now means "this is live", where it used to
   # mean "this was merged and we hoped it would ship".
   release:
@@ -614,7 +612,7 @@ jobs:
         env:
           DEPLOY_RESULT: ${{ needs.deploy.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
-          RENDER_DEPLOY_ID: ${{ needs.deploy.outputs.render-deploy-id }}
+          CLOUD_RUN_REVISION: ${{ needs.deploy.outputs.cloud-run-revision }}
           REPLAY_OUTCOME: ${{ needs.deploy.outputs.replay-outcome }}
           APPLIED: ${{ needs.deploy.outputs.applied }}
           DRY_RUN: ${{ inputs.dry_run_only }}
@@ -630,8 +628,8 @@ jobs:
           {
             # The heading, not just a row: this summary gets linked and
             # screenshotted as evidence that a SHA shipped, and a dry run's table
-            # otherwise reads `Migrate + deploy: success` with `Render deploy id:
-            # none` as the only tell. Same ambiguity `run-name` was changed to
+            # otherwise reads `Migrate + deploy: success` with `Cloud Run revision:
+            # not reported` as the only tell. Same ambiguity `run-name` was changed to
             # remove, one level down — and a dry run now looks even more like a
             # ship, because it builds.
             if [ "$DRY_RUN" = "true" ]; then
@@ -664,7 +662,7 @@ jobs:
             # workflow's outputs, which a failed call may not carry back.
             echo "| Migrations applied | \`${APPLIED:-not reported}\` |"
             echo "| Migration rehearsal | \`${REPLAY_OUTCOME:-not reported}\` |"
-            echo "| Render deploy id | \`${RENDER_DEPLOY_ID:-not reported}\` |"
+            echo "| Cloud Run revision | \`${CLOUD_RUN_REVISION:-not reported}\` |"
             echo "| Release tag | \`${RELEASE_RESULT:-skipped}\` |"
             echo ""
             if [ "$REPLAY_OUTCOME" = "nothing-pending" ]; then
@@ -673,7 +671,7 @@ jobs:
               echo ""
             fi
             if [ "$SCOPE" = "migrations-only" ] && [ "$DRY_RUN" != "true" ]; then
-              echo "> **Migrations only.** The database moved; Render, Vercel and the version tag"
+              echo "> **Migrations only.** The database moved; the API, Vercel and the version tag"
               echo "> did not. Production is now running the PREVIOUS code against the NEW schema,"
               echo "> so the migrations had better be forward-compatible with it. Finish with a"
               echo "> \`full\` run against the same SHA when the code is meant to follow."

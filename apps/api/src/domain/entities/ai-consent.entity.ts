@@ -1,14 +1,19 @@
 /**
  * The president's AI switches for one chapter (`chapter_ai_settings`,
- * #4308). A chapter with no row has every switch off.
+ * #4308). Every chapter has a row from creation, all on, with `updated_at`
+ * null until a president changes a switch; a missing row reads the same
+ * (`AI_SWITCHES_ON_BY_DEFAULT`, #5294).
  */
 export interface ChapterAiSettings {
   chapter_id: string;
   ask_enabled: boolean;
   meeting_notes_enabled: boolean;
   chat_source_enabled: boolean;
+  /** Nudge cards on Activity (Paul, 2026-11-17: on by default). */
+  nudges_enabled: boolean;
   updated_by: string | null;
-  updated_at: string;
+  /** Null until a president changes a switch (#5294). */
+  updated_at: string | null;
 }
 
 /**

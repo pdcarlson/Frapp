@@ -27,8 +27,8 @@ and `service_role` bypasses RLS entirely. Isolation rests on `ChapterGuard` → 
 an explicit `.eq('chapter_id', …)` in every query. There is no database safety net under a query that
 forgets to scope itself.
 
-> A handful of permissive policies do exist — `chat_message_actions_{select,insert,delete}`,
-> `chat_notification_preferences_select_own`, `member_custom_field_values_service_role`,
+> A handful of permissive policies do exist — `chat_message_actions_{select,delete}`,
+> `chat_messages_select`, `member_custom_field_values_service_role`,
 > `auth_admin_can_read_{users,members}`. These serve the chat hot path's direct-from-client access
 > and Supabase's auth admin, not the API. They do not constrain `service_role`, so they change
 > nothing about the paragraph above.

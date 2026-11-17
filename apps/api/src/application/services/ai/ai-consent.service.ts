@@ -16,6 +16,7 @@ import {
   AI_CHAPTER_SWITCHES,
   AI_CONSENT_SHEET,
   AI_FAMILY_SWITCH,
+  AI_SWITCHES_ON_BY_DEFAULT,
   type AiChapterSwitch,
 } from '#domain/constants/ai-consent-sheet';
 import { SystemRoleKeys } from '#domain/constants/permissions';
@@ -38,7 +39,20 @@ const SWITCH_COLUMN: Readonly<
   ask: 'ask_enabled',
   meeting_notes: 'meeting_notes_enabled',
   chat_source: 'chat_source_enabled',
+  nudges: 'nudges_enabled',
 };
+
+/**
+ * Whether a switch is on in the stored row, or, for a chapter with no row,
+ * whether it starts on (`AI_SWITCHES_ON_BY_DEFAULT`).
+ */
+function switchOn(
+  row: ChapterAiSettings | null,
+  key: AiChapterSwitch,
+): boolean {
+  if (!row) return AI_SWITCHES_ON_BY_DEFAULT.has(key);
+  return row[SWITCH_COLUMN[key]] === true;
+}
 
 /**
  * Families that read the chapter's records for the chapter, so they need the
@@ -59,6 +73,8 @@ export interface AiChapterSettingsView {
   ask: boolean;
   meeting_notes: boolean;
   chat_source: boolean;
+  /** Nudge cards on Activity. On unless the president turned them off. */
+  nudges: boolean;
   /** When a switch last changed, or null when none ever has. */
   updated_at: string | null;
   /**
@@ -90,9 +106,10 @@ function settingsView(
   canChange: boolean,
 ): AiChapterSettingsView {
   return {
-    ask: row?.ask_enabled ?? false,
-    meeting_notes: row?.meeting_notes_enabled ?? false,
-    chat_source: row?.chat_source_enabled ?? false,
+    ask: switchOn(row, 'ask'),
+    meeting_notes: switchOn(row, 'meeting_notes'),
+    chat_source: switchOn(row, 'chat_source'),
+    nudges: switchOn(row, 'nudges'),
     updated_at: row?.updated_at ?? null,
     can_change: canChange,
   };
@@ -142,8 +159,7 @@ export class AiConsentService implements IAiConsentCheck {
       this.consents.findChapterSettings(call.chapterId),
       this.consents.findConsent(call.actingUserId, AI_CONSENT_SHEET.version),
     ]);
-    const column = SWITCH_COLUMN[AI_FAMILY_SWITCH[call.family]];
-    if (settings?.[column] !== true) {
+    if (!switchOn(settings, AI_FAMILY_SWITCH[call.family])) {
       return { allowed: false, reason: 'chapter_off' };
     }
     // Indexing the chapter's records serves the chapter, not the member the
@@ -172,7 +188,7 @@ export class AiConsentService implements IAiConsentCheck {
   ): Promise<Set<string>> {
     if (authorIds.length === 0) return new Set();
     const settings = await this.consents.findChapterSettings(chapterId);
-    if (settings?.chat_source_enabled !== true) return new Set();
+    if (!switchOn(settings, 'chat_source')) return new Set();
     return new Set(
       await this.consents.findAcceptedUserIds(
         authorIds,
@@ -192,14 +208,19 @@ export class AiConsentService implements IAiConsentCheck {
     key: AiChapterSwitch,
   ): Promise<boolean> {
     const settings = await this.consents.findChapterSettings(chapterId);
-    return settings?.[SWITCH_COLUMN[key]] === true;
+    return switchOn(settings, key);
   }
 
   /**
    * Every chapter whose president has one feature family switched on, for a
-   * scheduled feature that visits each of them (#3930).
+   * scheduled feature that visits each of them (#3930). Reads stored rows
+   * only, so a switch that starts on (`AI_SWITCHES_ON_BY_DEFAULT`) would miss
+   * chapters with no row: it is refused for those.
    */
   chaptersWithSwitchOn(key: AiChapterSwitch): Promise<string[]> {
+    if (AI_SWITCHES_ON_BY_DEFAULT.has(key)) {
+      throw new Error(`chaptersWithSwitchOn cannot list "${key}"`);
+    }
     return this.consents.listChapterIdsWithSwitchOn(SWITCH_COLUMN[key]);
   }
 
@@ -276,8 +297,9 @@ export class AiConsentService implements IAiConsentCheck {
       await this.consents.saveChapterSettings(
         chapterId,
         restore,
-        existing?.updated_by ?? actor.userId,
-        existing ? new Date(existing.updated_at) : new Date(),
+        // A row nobody had changed goes back as never changed (#5294).
+        existing ? existing.updated_by : null,
+        existing?.updated_at ? new Date(existing.updated_at) : null,
       );
       throw error;
     }

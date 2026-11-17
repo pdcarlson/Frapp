@@ -3,13 +3,11 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EVENT_NAME_MAX_LENGTH } from '@repo/validation';
 import { SystemPermissions } from '#domain/constants/permissions';
 import type { AiSuggestionPayload } from '#domain/entities/ai-suggestion.entity';
 import type { AiSuggestionKindHandler } from './ai-suggestion-kinds';
 import { EventService } from './event.service';
-
-/** An event name longer than this is cut, not refused. */
-const EVENT_SUGGESTION_NAME_MAX_LENGTH = 200;
 
 /** How long a suggested event waits for an officer (spec: ai.md § Suggestions). */
 const EVENT_SUGGESTION_EXPIRY_DAYS = 14;
@@ -106,7 +104,8 @@ export class EventSuggestionKind implements AiSuggestionKindHandler {
     const input = raw as Record<string, unknown>;
     const name =
       typeof input.name === 'string'
-        ? input.name.trim().slice(0, EVENT_SUGGESTION_NAME_MAX_LENGTH).trimEnd()
+        ? // Cut, not refused: the name an event may have.
+          input.name.trim().slice(0, EVENT_NAME_MAX_LENGTH).trimEnd()
         : '';
     if (!name) return null;
     const read = readEventPayload(input);

@@ -33,8 +33,7 @@ const state = vi.hoisted(() => ({
   canCreateEvents: true,
   readEvent: vi.fn(),
   eventForm: undefined as
-    | { template?: unknown; onCreated?: (outcome: unknown) => void }
-    | undefined,
+    { template?: unknown; onCreated?: (outcome: unknown) => void } | undefined,
 }));
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
@@ -49,7 +48,9 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   useAiSuggestions: (options?: unknown) => {
     state.source = options;
     return {
-      data: state.isPending ? undefined : { items: state.items, has_more: false },
+      data: state.isPending
+        ? undefined
+        : { items: state.items, has_more: false },
       isPending: state.isPending,
       isError: state.isError,
       isFetching: false,
@@ -157,7 +158,11 @@ const FORMAL = {
   quote: null,
   source: { type: "event", id: "e-last" },
   task: null,
-  event: { name: "Spring formal", last_year_at: "2025-04-13T12:00:00Z", times: 1 },
+  event: {
+    name: "Spring formal",
+    last_year_at: "2025-04-13T12:00:00Z",
+    times: 1,
+  },
 };
 /** A task finished around now last year. */
 const LAST_YEAR_TASK = {
@@ -230,7 +235,10 @@ describe("Suggested tasks", () => {
   it("accepts a complete suggestion as it stands", async () => {
     const tree = render();
     await act(async () =>
-      byLabel(tree, `${AI_SUGGESTION_COPY.accept}: Book the hall`).props.onPress(),
+      byLabel(
+        tree,
+        `${AI_SUGGESTION_COPY.accept}: Book the hall`,
+      ).props.onPress(),
     );
     expect(state.accept).toHaveBeenCalledWith({ id: "s1" });
     expect(state.seed).toBeUndefined();
@@ -239,7 +247,10 @@ describe("Suggested tasks", () => {
   it("opens the task form, not a task, for one missing who or when", async () => {
     const tree = render();
     await act(async () =>
-      byLabel(tree, `${AI_SUGGESTION_COPY.accept}: Order shirts`).props.onPress(),
+      byLabel(
+        tree,
+        `${AI_SUGGESTION_COPY.accept}: Order shirts`,
+      ).props.onPress(),
     );
     expect(state.accept).not.toHaveBeenCalled();
     const seed = state.seed as {
@@ -266,7 +277,10 @@ describe("Suggested tasks", () => {
   it("dismisses one", async () => {
     const tree = render();
     await act(async () =>
-      byLabel(tree, `${AI_SUGGESTION_COPY.dismiss}: Book the hall`).props.onPress(),
+      byLabel(
+        tree,
+        `${AI_SUGGESTION_COPY.dismiss}: Book the hall`,
+      ).props.onPress(),
     );
     expect(state.dismiss).toHaveBeenCalledWith({ id: "s1", reason: undefined });
   });
@@ -302,16 +316,21 @@ describe("Suggested tasks", () => {
     state.accept.mockRejectedValue({ code: "ai.suggestion.decided" });
     const tree = render();
     await act(async () =>
-      byLabel(tree, `${AI_SUGGESTION_COPY.accept}: Book the hall`).props.onPress(),
+      byLabel(
+        tree,
+        `${AI_SUGGESTION_COPY.accept}: Book the hall`,
+      ).props.onPress(),
     );
     // The list reads again and drops the row, as the server no longer
     // lists it; the reason must still be on screen.
     state.items = [UNFINISHED];
-    act(() => tree.update(
-      <FrappThemeProvider>
-        <SuggestedTasksScreen />
-      </FrappThemeProvider>,
-    ));
+    act(() =>
+      tree.update(
+        <FrappThemeProvider>
+          <SuggestedTasksScreen />
+        </FrappThemeProvider>,
+      ),
+    );
     expect(screenText(tree)).toContain(
       `“Book the hall”: ${aiSuggestionRefusalLine("ai.suggestion.decided")}`,
     );
@@ -348,7 +367,10 @@ describe("This time last year", () => {
   it("opens the event form on last year's event, and adds nothing until it is created", async () => {
     const tree = render();
     await act(async () =>
-      byLabel(tree, `${LAST_YEAR_COPY.addEvent}: Spring formal`).props.onPress(),
+      byLabel(
+        tree,
+        `${LAST_YEAR_COPY.addEvent}: Spring formal`,
+      ).props.onPress(),
     );
     expect(state.readEvent).toHaveBeenCalledWith([
       "events",
@@ -370,7 +392,10 @@ describe("This time last year", () => {
     state.readEvent.mockRejectedValue(new Error("gone"));
     const tree = render();
     await act(async () =>
-      byLabel(tree, `${LAST_YEAR_COPY.addEvent}: Spring formal`).props.onPress(),
+      byLabel(
+        tree,
+        `${LAST_YEAR_COPY.addEvent}: Spring formal`,
+      ).props.onPress(),
     );
     expect(state.eventForm).toBeUndefined();
     expect(screenText(tree)).toContain(LAST_YEAR_COPY.openFailed);
@@ -453,6 +478,25 @@ describe("suggestionEdits", () => {
 
   it("sends nothing when the officer changed nothing", () => {
     expect(suggestionEdits(task as never, form())).toBeUndefined();
+  });
+
+  it("sends Everyone as the audience, and a member picked over Everyone as the member (#4295 step 3)", () => {
+    expect(
+      suggestionEdits(
+        task as never,
+        form({ assignee_id: undefined, audience: "everyone" }),
+      ),
+    ).toEqual({ audience: "everyone" });
+    const group = { ...task, assignee_id: null, audience: "everyone" };
+    expect(
+      suggestionEdits(
+        group as never,
+        form({ assignee_id: undefined, audience: "everyone" }),
+      ),
+    ).toBeUndefined();
+    expect(
+      suggestionEdits(group as never, form({ assignee_id: "u2" })),
+    ).toEqual({ assignee_id: "u2" });
   });
 
   it("sends only the fields that changed", () => {

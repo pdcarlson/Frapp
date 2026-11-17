@@ -2,16 +2,16 @@
 
 **One** long-lived branch maps to an environment. Production maps to a *commit*.
 
-| Branch      | Environment   | Vercel                            | Render              | Supabase        |
+| Branch      | Environment   | Vercel                            | API (Cloud Run)     | Supabase        |
 | ----------- | ------------- | --------------------------------- | ------------------- | --------------- |
-| `main`      | **Staging**   | CI deploys Preview → staging domains | `frapp-api-staging` | Staging project |
+| `main`      | **Staging**   | CI deploys Preview → staging domains | `frapp-api` in the staging project | Staging project |
 | `feature/*` | **Ephemeral** | No Vercel deploys                    | —                   | —               |
 
 > ⚠️ **2026-09-04:** "Preview deploys" in this section no longer means a *push-triggered* Vercel
 > build — both projects are unlinked from Git (ADR-21), so no push to `main` produces anything on
 > Vercel. Merging to `main` still deploys staging web and landing, but through
 > `deploy-vercel-staging.yml` (since #2803, `deploy-staging.yml`) after CI passes (#1578), which
-> creates a Preview-target deployment itself. Render's `frapp-api-staging` is unchanged. See [§ 4 Vercel Setup](vercel.md).
+> creates a Preview-target deployment itself. The staging API was unaffected. See [§ 4 Vercel Setup](vercel.md).
 
 **How it flows:**
 

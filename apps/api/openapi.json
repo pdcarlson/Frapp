@@ -515,7 +515,7 @@
             "bearer": []
           }
         ],
-        "summary": "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter is in context). Lets the client attribute events without ever holding the salt.",
+        "summary": "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter the caller belongs to is in context). Lets the client attribute events without ever holding the salt.",
         "tags": [
           "Analytics"
         ]
@@ -3974,6 +3974,7 @@
     },
     "/v1/channels/dm": {
       "post": {
+        "description": "A new DM is only with a member of your chapter (404 otherwise, whether or not the id is anyone), and never with yourself (400). Reopening a DM you already have always works. On the default write limit: opening a DM is how a member reopens one, so a lower ceiling would get in the way of an officer messaging new members one after another.",
         "operationId": "ChatController_getOrCreateDm_v1",
         "parameters": [],
         "requestBody": {
@@ -4014,6 +4015,7 @@
     },
     "/v1/channels/group-dm": {
       "post": {
+        "description": "Everyone in `member_ids` must be a member of your chapter (404 otherwise, naming no one). Each call makes a new conversation in every listed member's list, so it is held to 10 a minute.",
         "operationId": "ChatController_createGroupDm_v1",
         "parameters": [],
         "requestBody": {
@@ -5626,6 +5628,7 @@
     },
     "/v1/chat/reports": {
       "post": {
+        "description": "Limited to 10 a minute per member: each report notifies every officer who reviews them.",
         "operationId": "ChatReportController_fileReport_v1",
         "parameters": [],
         "requestBody": {
@@ -10954,7 +10957,7 @@
         },
         "responses": {
           "201": {
-            "description": "",
+            "description": "The entry, as created. A resend by the same member with a `proof_path` their entry already holds answers with that entry as saved, not a second one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10962,6 +10965,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A field is invalid; the chapter requires proof and none was sent (code `service_entry.receipt_required`); or `proof_path` is outside the chapter's service-proof folder, names no uploaded file, or is already on another member's entry. A client holding a refused `proof_path` drops it and uploads the file again."
           },
           "default": {
             "description": "Error",
@@ -11511,12 +11517,13 @@
             "name": "scope",
             "required": false,
             "in": "query",
-            "description": "On a copy of a repeating task: `instance` (default) deletes this task only; `series` (\"All upcoming tasks\") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay.",
+            "description": "On a copy of a repeating task: `instance` (default) deletes this task only; `series` (\"All upcoming tasks\") stops the repeat and deletes the open copy if it is still to come and no one has started it. Done and overdue copies stay. On a copy of a group task: `group` deletes every member’s copy and the group (#4295 step 3).",
             "schema": {
               "type": "string",
               "enum": [
                 "instance",
-                "series"
+                "series",
+                "group"
               ]
             }
           }
@@ -11541,7 +11548,7 @@
             "bearer": []
           }
         ],
-        "summary": "Delete a task; with `scope=series`, stop a repeating task (#5119)",
+        "summary": "Delete a task; with `scope=series`, stop a repeating task (#5119); with `scope=group`, delete everyone’s copy (#4295 step 3)",
         "tags": [
           "Tasks"
         ]
@@ -12268,7 +12275,7 @@
     },
     "/v1/ai/settings": {
       "get": {
-        "description": "Which AI features the president has turned on: Ask, meeting notes, and chat as a source. All off until then. `can_change` says whether the caller is the president, who alone may change them.",
+        "description": "Which AI features are on for the chapter: Ask, meeting notes, chat as a source, and nudges. All on until the president turns one off; `updated_at` is null until then. `can_change` says whether the caller is the president, who alone may change them.",
         "operationId": "AiChapterSettingsController_getSettings_v1",
         "parameters": [],
         "responses": {
@@ -18720,7 +18727,7 @@
     },
     "/v1/backwork/drafts/{id}/fill": {
       "post": {
-        "description": "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.",
+        "description": "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. A file over 25 MB, or a draft already marked `unreadable`, answers `unreadable` without its file being read. One fill at a time per draft: a second while one runs answers 409. 10 requests a minute per member; the AI spend caps bound the model cost.",
         "operationId": "BackworkFillController_fill_v1",
         "parameters": [
           {
@@ -18748,6 +18755,9 @@
           },
           "404": {
             "description": "AI is off on this server (`ai.not_available`), or the draft is not the caller's or is gone."
+          },
+          "409": {
+            "description": "Another fill of this draft is still running."
           },
           "default": {
             "description": "Error",
@@ -20250,6 +20260,43 @@
         ]
       }
     },
+    "/v1/meeting-recorder": {
+      "get": {
+        "operationId": "MeetingRecorderController_get_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingRecorderAvailabilityDto"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiErrorResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Whether this server can write a recording out, why the caller can’t send one yet, and its limits, before any minutes exist",
+        "tags": [
+          "Meetings"
+        ]
+      }
+    },
     "/v1/bootstrap": {
       "get": {
         "description": "The reads a client's first screen makes (the user, chapters, current chapter, permissions, settings, legal acceptance, What's new, channels and their unread counts, categories, notification levels, mention roles, sidebar, blocks, default background, GIF availability, bookmarks, roles, events, geofences, documents, roster and the first inbox page), in one request (#4709). Each section is exactly the body of the route it names, `null` when that read failed, and absent when `include` left it out; read such a section from its own route.",
@@ -20503,10 +20550,14 @@
         "type": "object",
         "properties": {
           "display_name": {
-            "type": "string"
+            "type": "string",
+            "description": "The member's name as their chapters see it. Trimmed; it may not be blank.",
+            "maxLength": 100
           },
           "bio": {
-            "type": "string"
+            "type": "string",
+            "description": "An empty string clears it.",
+            "maxLength": 2000
           },
           "graduation_year": {
             "type": "number",
@@ -20518,10 +20569,14 @@
             "maxLength": 100
           },
           "current_city": {
-            "type": "string"
+            "type": "string",
+            "description": "An empty string clears it.",
+            "maxLength": 200
           },
           "current_company": {
-            "type": "string"
+            "type": "string",
+            "description": "An empty string clears it.",
+            "maxLength": 200
           },
           "phone": {
             "type": "string",
@@ -20626,7 +20681,7 @@
           "chapter_group_id": {
             "type": "string",
             "nullable": true,
-            "description": "Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`), otherwise null. Same helper as analytics events. Clients must not compute this."
+            "description": "Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`) and the caller is a member of it, otherwise null. Same helper as analytics events. Clients must not compute this."
           }
         },
         "required": [
@@ -20734,11 +20789,13 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Chapter display name (org name)"
+            "description": "Chapter display name (org name). Trimmed; at least 3 characters.",
+            "maxLength": 200
           },
           "university": {
             "type": "string",
-            "description": "University / institution name"
+            "description": "University / institution name. Trimmed; at least 2 characters.",
+            "maxLength": 200
           },
           "org_archetype": {
             "type": "string",
@@ -20860,10 +20917,14 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "The chapter's name. Trimmed; at least 3 characters. Omit it to leave it as stored.",
+            "maxLength": 200
           },
           "university": {
-            "type": "string"
+            "type": "string",
+            "description": "The chapter's university. Trimmed; at least 2 characters. Omit it to leave it as stored.",
+            "maxLength": 200
           },
           "accent_color": {
             "type": "string"
@@ -22414,7 +22475,8 @@
         "properties": {
           "token": {
             "type": "string",
-            "description": "Expo push token"
+            "description": "Expo push token",
+            "maxLength": 255
           },
           "device_name": {
             "type": "string",
@@ -23271,6 +23333,8 @@
         "type": "object",
         "properties": {
           "member_ids": {
+            "maxItems": 9,
+            "description": "The other members of the chapter to add, at most 9: a group DM holds up to 10 people, you included.",
             "type": "array",
             "items": {
               "type": "string"
@@ -23770,7 +23834,8 @@
             "$ref": "#/components/schemas/MessageGifDto"
           },
           "payload": {
-            "type": "object"
+            "type": "object",
+            "description": "A rich card's data. Once checked, at most 16384 characters as JSON, or 65536 for a form."
           },
           "reply_to_id": {
             "type": "string"
@@ -23780,7 +23845,8 @@
             "format": "uuid"
           },
           "metadata": {
-            "type": "object"
+            "type": "object",
+            "description": "Client annotations, at most 16384 characters as JSON."
           },
           "mention_picks": {
             "type": "array",
@@ -24080,10 +24146,12 @@
         "properties": {
           "action_type": {
             "type": "string",
-            "description": "Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full), free-form for card actions."
+            "description": "Action discriminator: `reaction:<emoji>` for an emoji reaction, `vote` for a poll vote (UPSERT), or `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full). Anything else is a 400.",
+            "maxLength": 50
           },
           "payload": {
-            "type": "object"
+            "type": "object",
+            "description": "The vote or claim (`{ option_id }` or `{ slot_ids, note? }`), at most 4096 characters as JSON. A reaction carries none and any sent is not stored."
           }
         },
         "required": [
@@ -25950,13 +26018,16 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 255
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 5000
           },
           "location": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
           },
           "start_time": {
             "type": "string"
@@ -25980,6 +26051,7 @@
             "maxLength": 200
           },
           "required_role_ids": {
+            "maxItems": 200,
             "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
             "type": "array",
             "items": {
@@ -25987,6 +26059,7 @@
             }
           },
           "optional_role_ids": {
+            "maxItems": 200,
             "description": "Roles invited but not required.",
             "type": "array",
             "items": {
@@ -25994,6 +26067,7 @@
             }
           },
           "excluded_role_ids": {
+            "maxItems": 200,
             "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
             "type": "array",
             "items": {
@@ -26005,7 +26079,8 @@
             "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older \"only these roles\" meaning, for a caller that predates this field. Omitted on update, it is left as stored."
           },
           "notes": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20000
           },
           "agenda": {
             "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
@@ -26218,13 +26293,16 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 255
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 5000
           },
           "location": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
           },
           "start_time": {
             "type": "string"
@@ -26244,6 +26322,7 @@
             "maxLength": 200
           },
           "required_role_ids": {
+            "maxItems": 200,
             "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
             "type": "array",
             "items": {
@@ -26251,6 +26330,7 @@
             }
           },
           "optional_role_ids": {
+            "maxItems": 200,
             "description": "Roles invited but not required.",
             "type": "array",
             "items": {
@@ -26258,6 +26338,7 @@
             }
           },
           "excluded_role_ids": {
+            "maxItems": 200,
             "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
             "type": "array",
             "items": {
@@ -26269,7 +26350,8 @@
             "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older \"only these roles\" meaning."
           },
           "notes": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20000
           },
           "agenda": {
             "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
@@ -26482,15 +26564,15 @@
             "items": {
               "type": "string",
               "enum": [
-                "attendees",
                 "summary",
-                "announcements",
                 "decisions",
                 "action_items",
+                "discussion_log",
+                "attendees",
+                "announcements",
                 "officer_reports",
                 "old_business",
-                "new_business",
-                "discussion_log"
+                "new_business"
               ]
             }
           }
@@ -26713,15 +26795,15 @@
             "items": {
               "type": "string",
               "enum": [
-                "attendees",
                 "summary",
-                "announcements",
                 "decisions",
                 "action_items",
+                "discussion_log",
+                "attendees",
+                "announcements",
                 "officer_reports",
                 "old_business",
-                "new_business",
-                "discussion_log"
+                "new_business"
               ]
             }
           },
@@ -26749,6 +26831,11 @@
             "type": "string",
             "format": "date-time"
           },
+          "transcript": {
+            "type": "string",
+            "nullable": true,
+            "description": "The recording’s transcript, kept with posted minutes (#5410). Null without a recording, and on a draft, whose transcript comes with its recording."
+          },
           "can_edit": {
             "type": "boolean"
           },
@@ -26774,6 +26861,7 @@
           "updated_by",
           "posted_by",
           "created_at",
+          "transcript",
           "can_edit",
           "can_delete"
         ]
@@ -26783,7 +26871,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 200
+            "maxLength": 255
           },
           "start_time": {
             "type": "string",
@@ -27710,7 +27798,8 @@
           },
           "file_hash": {
             "type": "string",
-            "description": "SHA-256 hash of the uploaded file"
+            "description": "SHA-256 hash of the uploaded file, as 64 lowercase hex characters",
+            "pattern": "^[0-9a-f]{64}$"
           },
           "is_redacted": {
             "type": "boolean",
@@ -28239,7 +28328,7 @@
           },
           "proof_path": {
             "type": "string",
-            "description": "Storage path to proof file (e.g. from upload)"
+            "description": "The `storage_path` from `POST /v1/service-entries/proof-upload-url`, once the file is uploaded. One file belongs to one entry: when an entry in the chapter already holds this path, a create by the same member answers 201 with that entry as saved (a resend after a lost response), and one by any other member is refused with 400."
           },
           "channel_id": {
             "type": "string",
@@ -28247,7 +28336,7 @@
           },
           "client_message_id": {
             "type": "string",
-            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry."
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key for the entry: a replay without `proof_path` creates a duplicate entry (one with it returns the entry already saved, see `proof_path`). The card itself is deduplicated on it."
           }
         },
         "required": [
@@ -28378,6 +28467,40 @@
           "ended"
         ]
       },
+      "TaskGroupSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ]
+          },
+          "total": {
+            "type": "number",
+            "description": "How many copies the group has."
+          },
+          "done": {
+            "type": "number",
+            "description": "How many copies are marked done, waiting on an officer or confirmed."
+          },
+          "confirmed": {
+            "type": "number",
+            "description": "How many copies are confirmed, or needed no sign-off when marked done."
+          }
+        },
+        "required": [
+          "id",
+          "audience",
+          "total",
+          "done",
+          "confirmed"
+        ]
+      },
       "RequestTaskPhotoUploadUrlDto": {
         "type": "object",
         "properties": {
@@ -28439,7 +28562,14 @@
           },
           "assignee_id": {
             "type": "string",
-            "description": "User ID of the assignee"
+            "description": "User ID of the assignee. Send this or `audience`, exactly one of them."
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ],
+            "description": "A task for a group instead of one person (#4295 step 3), in place of `assignee_id`. `everyone`: each active member (the chapter minus its alumni) gets their own copy with its own progress, proof and points, and reads carry `group` with how many are done. Such a task can’t repeat, carry `reference_photo_paths` or post a chat card yet. The response is the creator’s own copy when they have one, otherwise the first."
           },
           "due_date": {
             "type": "string",
@@ -28495,7 +28625,6 @@
         },
         "required": [
           "title",
-          "assignee_id",
           "due_date"
         ]
       },
@@ -28653,6 +28782,12 @@
             "nullable": true,
             "description": "A copy’s day in its series’ pattern; null otherwise."
           },
+          "group_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "The group task this is one member’s copy of (#4295 step 3), or null for a task given to one person."
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"
@@ -28667,6 +28802,14 @@
             "items": {
               "$ref": "#/components/schemas/TaskPhotoDto"
             }
+          },
+          "group": {
+            "description": "On a task for everyone: its group, as task reads carry it (#4295 step 3).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskGroupSummaryDto"
+              }
+            ]
           }
         },
         "required": [
@@ -28690,6 +28833,7 @@
           "completion_note",
           "series_id",
           "occurrence_date",
+          "group_id",
           "created_at",
           "photos"
         ]
@@ -28744,9 +28888,10 @@
             "type": "string",
             "enum": [
               "instance",
-              "series"
+              "series",
+              "group"
             ],
-            "description": "On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` (\"All upcoming tasks\") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`)."
+            "description": "On a copy of a repeating task (#5119): `instance` (default) edits this task only; `series` (\"All upcoming tasks\") edits what the next copies are made from and the series’ open copy, while it is still to come and not marked done. Done and overdue copies never change, and a copy keeps its day: a `due_date` other than its own is a 400 (move one copy with `instance`). On a copy of a group task (#4295 step 3): `group` (\"Everyone’s copy\") makes the edit to every copy not yet confirmed; `assignee_id` and `reference_photo_paths` change one copy only, so they are a 400 with it."
           },
           "recurrence_rule": {
             "type": "string",
@@ -28909,7 +29054,15 @@
             "type": "string",
             "nullable": true,
             "format": "uuid",
-            "description": "Null when no name or role was said for it: the screen shows \"Who?\"."
+            "description": "Null when no name or role was said for it, or when it is for everyone: the screen shows \"Who?\" or \"Everyone\"."
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ],
+            "nullable": true,
+            "description": "Set when the task is for everyone (#4295 step 3): accepting it gives each active member their own copy."
           },
           "due_date": {
             "type": "string",
@@ -28937,6 +29090,7 @@
           "title",
           "description",
           "assignee_id",
+          "audience",
           "due_date",
           "due_at",
           "subtasks"
@@ -29243,7 +29397,15 @@
             "type": "string",
             "nullable": true,
             "format": "uuid",
-            "description": "Who the task is for. Required to accept when none was suggested."
+            "description": "Who the task is for. Required to accept when none was suggested, unless `audience` is set. Setting it clears `audience`."
+          },
+          "audience": {
+            "type": "string",
+            "enum": [
+              "everyone"
+            ],
+            "nullable": true,
+            "description": "A task for everyone instead of one person (#4295 step 3): accepting it gives each active member their own copy. Setting it clears `assignee_id`."
           },
           "due_date": {
             "type": "string",
@@ -29686,6 +29848,10 @@
             "type": "boolean",
             "description": "Messages in chapter channels, from members who said yes, are a source."
           },
+          "nudges": {
+            "type": "boolean",
+            "description": "Nudge cards on members' Activity. On unless the president turned them off; a member still gets one only after their own yes."
+          },
           "updated_at": {
             "type": "string",
             "format": "date-time",
@@ -29701,6 +29867,7 @@
           "ask",
           "meeting_notes",
           "chat_source",
+          "nudges",
           "updated_at",
           "can_change"
         ]
@@ -29715,6 +29882,9 @@
             "type": "boolean"
           },
           "chat_source": {
+            "type": "boolean"
+          },
+          "nudges": {
             "type": "boolean"
           }
         }
@@ -35632,6 +35802,15 @@
             "type": "string",
             "description": "For `mobile`: the app address Google sends the member back to, in the app’s own `frapp://` scheme.",
             "example": "frapp://google-calendar"
+          },
+          "web_return": {
+            "type": "string",
+            "enum": [
+              "events",
+              "linked_apps",
+              "calendar"
+            ],
+            "description": "For `web`: the screen the sign-in started on and comes back to. Events (the default), or Settings → Linked apps or Settings → Calendar."
           }
         },
         "required": [
@@ -35703,6 +35882,10 @@
             "type": "number",
             "description": "Files the last sync left out: a type Documents does not take, over 25 MB, or past 500 files"
           },
+          "folders_left_out": {
+            "type": "number",
+            "description": "The top-most folders the last sync did not read, because they sit more than nine levels below the connected folder or past its first 300 folders. They and any folders inside them, and their files, are not in Documents; folders inside them are not counted."
+          },
           "syncing": {
             "type": "boolean",
             "description": "Whether a sync is due or running now"
@@ -35724,6 +35907,7 @@
           "last_synced_at",
           "synced_count",
           "skipped_count",
+          "folders_left_out",
           "syncing",
           "who_can_see"
         ]
@@ -35866,6 +36050,11 @@
             "nullable": true,
             "description": "The transcript, one line per speaker turn, only while `ready`. The officer puts it into their notes."
           },
+          "audio_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "A link to play the recording back for about an hour, only while `ready`. The audio is kept until the minutes are posted."
+          },
           "speaker_count": {
             "type": "number",
             "nullable": true
@@ -35916,6 +36105,7 @@
           "failure",
           "failure_message",
           "transcript",
+          "audio_url",
           "speaker_count",
           "uploaded_at",
           "available",
@@ -35970,6 +36160,38 @@
         },
         "required": [
           "upload_id"
+        ]
+      },
+      "MeetingRecorderAvailabilityDto": {
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "False when this server has no transcription provider set up, so a recording can’t be written out."
+          },
+          "blocked": {
+            "type": "string",
+            "enum": [
+              "chapter_off",
+              "consent_required"
+            ],
+            "nullable": true,
+            "description": "Why the caller can’t send a recording now: the chapter has meeting notes off, or they have not said yes on the AI sheet."
+          },
+          "max_bytes": {
+            "type": "number",
+            "description": "The largest file this server takes, in bytes."
+          },
+          "max_seconds": {
+            "type": "number",
+            "description": "The longest recording this server takes, in seconds."
+          }
+        },
+        "required": [
+          "available",
+          "blocked",
+          "max_bytes",
+          "max_seconds"
         ]
       },
       "BootstrapDto": {

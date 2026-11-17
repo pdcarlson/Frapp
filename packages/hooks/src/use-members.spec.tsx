@@ -1,5 +1,4 @@
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -14,48 +13,34 @@ import {
   useUpdateMemberRoles,
 } from "./use-members";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
-import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 import { memberAvatarTint, memberHashHue } from "./member-avatar-color";
 
 const MEMBERS_ENDPOINT = "/v1/members";
 const CHAPTER_ID = "chapter-abc";
 
-// The member hooks read two exports of this module — `useFrappClient` for the
-// transport and `useActiveChapterId` for the per-chapter query key and the
-// `enabled` gate. Spread the real module rather than listing exports: a bare
-// factory replaces the module wholesale, so the day a hook reaches for a third
-// export every test here fails with a stack pointing at use-members.ts instead
-// of at this mock. That is exactly how these specs broke when
-// `useActiveChapterId` was introduced.
-vi.mock("./use-frapp-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./use-frapp-client")>()),
-  useFrappClient: vi.fn(),
-  useActiveChapterId: vi.fn(),
-}));
+// What the next `createWrapper` hands the real `FrappClientProvider`: the
+// stubbed transport and the active chapter (the per-chapter query key and the
+// `enabled` gate). Each test sets both before it renders.
+let stubClient: unknown;
+let activeChapterId: string | null;
 
 function createWrapper(queryClient: QueryClient) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
-  Wrapper.displayName = "UseMembersTestWrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: stubClient,
+    queryClient,
+    chapterId: activeChapterId,
+    displayName: "UseMembersTestWrapper",
+  });
 }
 
 describe("useMembers", () => {
   let queryClient: QueryClient;
-  const mockUseFrappClient = vi.mocked(useFrappClient);
-  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
-    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+    activeChapterId = CHAPTER_ID;
   });
 
   it("returns members when the API request succeeds", async () => {
@@ -65,9 +50,9 @@ describe("useMembers", () => {
     ];
     const mockGet = vi.fn().mockResolvedValue({ data: members, error: null });
 
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMembers(), {
       wrapper: createWrapper(queryClient),
@@ -100,9 +85,9 @@ describe("useMembers", () => {
     const mockError = new Error("Failed to fetch members");
     const mockGet = vi.fn().mockResolvedValue({ data: null, error: mockError });
 
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMembers(), {
       wrapper: createWrapper(queryClient),
@@ -124,11 +109,11 @@ describe("useMembers", () => {
   // unscoped/403 request cached under ["members", null] on every hard reload.
   it("does not fetch before a chapter is active", async () => {
     const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
-    mockUseActiveChapterId.mockReturnValue(null);
+    activeChapterId = null;
 
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMembers(), {
       wrapper: createWrapper(queryClient),
@@ -145,19 +130,11 @@ describe("useMembers", () => {
 
 describe("useMemberSearch", () => {
   let queryClient: QueryClient;
-  const mockUseFrappClient = vi.mocked(useFrappClient);
-  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
-    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+    activeChapterId = CHAPTER_ID;
   });
 
   it("returns members matching the query when the API request succeeds", async () => {
@@ -165,9 +142,9 @@ describe("useMemberSearch", () => {
     const members = [{ id: "member-1", name: "Test User 1" }];
     const mockGet = vi.fn().mockResolvedValue({ data: members, error: null });
 
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMemberSearch(query), {
       wrapper: createWrapper(queryClient),
@@ -189,9 +166,9 @@ describe("useMemberSearch", () => {
     const query = "";
     const mockGet = vi.fn();
 
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMemberSearch(query), {
       wrapper: createWrapper(queryClient),
@@ -209,8 +186,6 @@ describe("useMemberSearch", () => {
 describe("useChapterRoster / useMemberDisplayNames", () => {
   const ROSTER_ENDPOINT = "/v1/members/roster";
   let queryClient: QueryClient;
-  const mockUseFrappClient = vi.mocked(useFrappClient);
-  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
 
   const roster = [
     { user_id: "user-1", display_name: "Marcus Reid", avatar_url: null },
@@ -218,18 +193,16 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
   ];
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
-    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+    activeChapterId = CHAPTER_ID;
   });
 
   it("reads the narrow roster endpoint, not the member list", async () => {
     const mockGet = vi.fn().mockResolvedValue({ data: roster, error: null });
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useChapterRoster(), {
       wrapper: createWrapper(queryClient),
@@ -249,10 +222,10 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
 
   it("does not fetch before a chapter is active", async () => {
     const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
-    mockUseActiveChapterId.mockReturnValue(null);
-    mockUseFrappClient.mockReturnValue({
+    activeChapterId = null;
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useChapterRoster(), {
       wrapper: createWrapper(queryClient),
@@ -270,10 +243,10 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
     // that never resolves — pinned here because it is a framework behaviour a
     // consumer's own mock would otherwise be free to contradict.
     const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
-    mockUseActiveChapterId.mockReturnValue(null);
-    mockUseFrappClient.mockReturnValue({
+    activeChapterId = null;
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMemberDisplayNames(), {
       wrapper: createWrapper(queryClient),
@@ -297,9 +270,9 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
       ],
       error: null,
     });
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMemberDisplayNames(), {
       wrapper: createWrapper(queryClient),
@@ -337,9 +310,9 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
       ],
       error: null,
     });
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMemberDisplayNames(), {
       wrapper: createWrapper(queryClient),
@@ -367,9 +340,9 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
 
   it("re-runs the roster read through refetch", async () => {
     const mockGet = vi.fn().mockResolvedValue({ data: roster, error: null });
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMemberDisplayNames(), {
       wrapper: createWrapper(queryClient),
@@ -385,9 +358,9 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
 
   it("resolves ids to names and treats an empty name as unresolved", async () => {
     const mockGet = vi.fn().mockResolvedValue({ data: roster, error: null });
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMemberDisplayNames(), {
       wrapper: createWrapper(queryClient),
@@ -405,9 +378,9 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
   it("surfaces an API error and resolves nothing", async () => {
     const mockError = { message: "boom" };
     const mockGet = vi.fn().mockResolvedValue({ data: null, error: mockError });
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useMemberDisplayNames(), {
       wrapper: createWrapper(queryClient),
@@ -420,19 +393,14 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
 });
 
 describe("typistLabelFor (#4493)", () => {
-  const mockUseFrappClient = vi.mocked(useFrappClient);
-  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
-
   it("names, falls back for a nameless member, and holds back an unknown id", async () => {
-    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+    activeChapterId = CHAPTER_ID;
     let settle: (value: unknown) => void = () => {};
     const get = vi.fn(() => new Promise((resolve) => (settle = resolve)));
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: get,
-    } as unknown as ReturnType<typeof useFrappClient>);
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    };
+    const queryClient = createTestQueryClient();
     const { result } = renderHook(() => useMemberDisplayNames(), {
       wrapper: createWrapper(queryClient),
     });
@@ -458,8 +426,6 @@ describe("typistLabelFor (#4493)", () => {
 // typing line (2026-11-12).
 describe("useRosterCatchUp", () => {
   let queryClient: QueryClient;
-  const mockUseFrappClient = vi.mocked(useFrappClient);
-  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
   const first = [
     { user_id: "user-1", display_name: "Marcus Reid", avatar_url: null },
   ];
@@ -469,18 +435,16 @@ describe("useRosterCatchUp", () => {
   ];
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
-    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+    activeChapterId = CHAPTER_ID;
     resetRosterCatchUpForTests();
   });
 
   function mountWith(get: ReturnType<typeof vi.fn>, ids: string[]) {
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       GET: get,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
     return renderHook(
       ({ wanted }: { wanted: string[] }) => {
         useRosterCatchUp(
@@ -560,12 +524,9 @@ describe("useRosterCatchUp", () => {
 // tab is `GET /v1/alumni`. A write that can move a member between them has to
 // refetch both, or the member sits on neither tab until the alumni cache ages.
 describe("membership writes refetch the alumni list", () => {
-  const mockUseFrappClient = vi.mocked(useFrappClient);
-  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
-
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+    activeChapterId = CHAPTER_ID;
   });
 
   function invalidatedKeys(queryClient: QueryClient) {
@@ -576,9 +537,9 @@ describe("membership writes refetch the alumni list", () => {
   it("useUpdateMemberRoles invalidates members and alumni", async () => {
     const queryClient = new QueryClient();
     const keys = invalidatedKeys(queryClient);
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       PATCH: vi.fn().mockResolvedValue({ data: {}, error: null }),
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useUpdateMemberRoles(), {
       wrapper: createWrapper(queryClient),
@@ -599,9 +560,9 @@ describe("membership writes refetch the alumni list", () => {
     const queryClient = new QueryClient();
     const keys = invalidatedKeys(queryClient);
     const PATCH = vi.fn();
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       PATCH,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
     const { result } = renderHook(() => useUpdateMemberRoles(), {
       wrapper: createWrapper(queryClient),
     });
@@ -636,9 +597,9 @@ describe("membership writes refetch the alumni list", () => {
     const queryClient = new QueryClient();
     const keys = invalidatedKeys(queryClient);
     const PATCH = vi.fn().mockResolvedValue({ data: {}, error: null });
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       PATCH,
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useCorrectMemberProfile(), {
       wrapper: createWrapper(queryClient),
@@ -658,9 +619,9 @@ describe("membership writes refetch the alumni list", () => {
   it("useRemoveMember invalidates members, alumni and the leaderboard", async () => {
     const queryClient = new QueryClient();
     const keys = invalidatedKeys(queryClient);
-    mockUseFrappClient.mockReturnValue({
+    stubClient = {
       DELETE: vi.fn().mockResolvedValue({ data: {}, error: null }),
-    } as unknown as ReturnType<typeof useFrappClient>);
+    };
 
     const { result } = renderHook(() => useRemoveMember(), {
       wrapper: createWrapper(queryClient),

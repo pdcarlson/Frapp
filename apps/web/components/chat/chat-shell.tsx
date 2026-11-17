@@ -50,6 +50,7 @@ import {
   useCategories,
   useChapterRoster,
   useMemberDisplayNames,
+  useMemberThreads,
   useRosterCatchUp,
   useMentionRoles,
   useMyPermissions,
@@ -80,6 +81,7 @@ import {
   useGifAvailability,
   useSetMessageReminder,
 } from "@repo/hooks";
+import { sidebarThreadsByChannel } from "@repo/chat-core/threads";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
 import { attachmentRequestBody } from "@repo/chat-core/adapters";
@@ -2759,6 +2761,40 @@ export function ChatShell({
     },
     [activeChannelId, refetchChannels],
   );
+  // Threads under their channel in the rail (#5300, Paul 2026-11-17), as the
+  // phone draws them since #5277: the same list the header's All threads
+  // reads (one query), cut to each channel's active ones by the shared rule.
+  // The quiet window runs from when the list was read, which its
+  // minute-by-minute re-read keeps current.
+  const memberThreadsQuery = useMemberThreads();
+  const threadsByChannel = useMemo(
+    () =>
+      sidebarThreadsByChannel(
+        memberThreadsQuery.data,
+        memberThreadsQuery.dataUpdatedAt,
+      ),
+    [memberThreadsQuery.data, memberThreadsQuery.dataUpdatedAt],
+  );
+  // A thread row is in the channels column, so below `lg` its tap has to
+  // navigate as a channel row's does: the thread pane gets its history entry,
+  // so Back returns to the list (#3824), and a stale jump notice goes.
+  const openRailThread = useCallback(
+    (channelId: string, rootId: string) => {
+      openThreadInChannel(channelId, rootId);
+      openThreadPane();
+      setUnreachableTarget(null);
+    },
+    [openThreadInChannel, openThreadPane],
+  );
+  const railThreads = useMemo(
+    () => ({
+      byChannel: threadsByChannel,
+      activeRootId: threadRootId,
+      nameFor,
+      onOpen: openRailThread,
+    }),
+    [threadsByChannel, threadRootId, nameFor, openRailThread],
+  );
 
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it, and only on a channel a
@@ -3330,6 +3366,7 @@ export function ChatShell({
               channels={railChannels}
               categories={categories}
               unreadByChannelId={unreadByChannelId}
+              threads={railThreads}
               activeChannelId={activeChannelId}
               onHide={hideFromRail}
               rowActions={rowActions}
@@ -4168,6 +4205,7 @@ export function ChatShell({
                   onToggleBookmark={handleToggleBookmark}
                   onRemind={handleRemind}
                   canManageChannel={canManageChannel}
+                  inAuditLog={activeChannel?.is_audit_log === true}
                   onReport={handleReport}
                   onBlock={handleBlock}
                   onForward={handleForward}

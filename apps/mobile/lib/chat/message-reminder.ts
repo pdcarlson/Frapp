@@ -14,9 +14,8 @@ const REMINDER_FAILED_TITLE = "Couldn't set the reminder";
  * toast says (`formatActedLabel`, which both read), so the clients agree.
  */
 export function reminderAtLabel(at: Date, now: Date = new Date()): string {
-  // `formatActedLabel` reads an ISO string, not a `Date`.
-  const said = formatActedLabel("", at.toISOString(), now);
-  return said ? said.trim() : formatTimeOfDay(at.toISOString());
+  const said = formatActedLabel("", at, now);
+  return said ? said.trim() : formatTimeOfDay(at);
 }
 
 /**
@@ -24,7 +23,7 @@ export function reminderAtLabel(at: Date, now: Date = new Date()): string {
  * clock for today, the short weekday and clock for any later day.
  */
 export function reminderPresetValue(at: Date, now: Date): string {
-  const time = formatTimeOfDay(at.toISOString());
+  const time = formatTimeOfDay(at);
   const sameDay =
     at.getFullYear() === now.getFullYear() &&
     at.getMonth() === now.getMonth() &&

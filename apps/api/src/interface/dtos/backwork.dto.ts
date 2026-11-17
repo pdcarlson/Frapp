@@ -170,8 +170,13 @@ export class ConfirmBackworkUploadDto extends BackworkFieldsDto {
   @IsString()
   storage_path: string;
 
-  @ApiProperty({ description: 'SHA-256 hash of the uploaded file' })
+  @ApiProperty({
+    description:
+      'SHA-256 hash of the uploaded file, as 64 lowercase hex characters',
+    pattern: '^[0-9a-f]{64}$',
+  })
   @IsString()
+  @Matches(/^[0-9a-f]{64}$/)
   file_hash: string;
 
   @ApiPropertyOptional({ default: false })

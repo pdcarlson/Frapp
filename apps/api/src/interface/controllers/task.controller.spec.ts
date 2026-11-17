@@ -226,6 +226,7 @@ describe('TaskController', () => {
         title: dto.title,
         description: dto.description,
         assignee_id: dto.assignee_id,
+        audience: null,
         created_by: userId,
         due_date: dto.due_date,
         due_at: null,
@@ -251,11 +252,47 @@ describe('TaskController', () => {
         title: dto.title,
         description: null,
         assignee_id: dto.assignee_id,
+        audience: null,
         created_by: userId,
         due_date: dto.due_date,
         due_at: null,
         point_reward: null,
       });
+    });
+  });
+
+  describe("everyone's copy (#4295 step 3)", () => {
+    it('sends a group edit to the group path', async () => {
+      taskService.updateGroup = jest.fn().mockResolvedValue({ id: 't' });
+
+      await controller.update('chapter-1', 'admin-1', 't', {
+        scope: 'group',
+        title: 'Renamed',
+      });
+
+      expect(taskService.updateGroup).toHaveBeenCalledWith(
+        't',
+        'chapter-1',
+        'admin-1',
+        { title: 'Renamed' },
+      );
+    });
+
+    it('refuses a repeat rule on a group edit', async () => {
+      await expect(
+        controller.update('chapter-1', 'admin-1', 't', {
+          scope: 'group',
+          recurrence_rule: null,
+        }),
+      ).rejects.toThrow('A repeat rule changes only with scope "series"');
+    });
+
+    it('sends a group delete to the group path', async () => {
+      taskService.deleteGroup = jest.fn().mockResolvedValue(undefined);
+
+      await controller.delete('chapter-1', 't', { scope: 'group' });
+
+      expect(taskService.deleteGroup).toHaveBeenCalledWith('t', 'chapter-1');
     });
   });
 

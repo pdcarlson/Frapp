@@ -30,9 +30,11 @@ import type { AiConsentService } from './ai/ai-consent.service';
 import { AiRunFailure, AiRunRegistry } from './ai-run-registry';
 import type { AiRunService, AiRunView } from './ai-run.service';
 import { MeetingDraftService } from './meeting-draft.service';
+import { scriptedReview } from '../../infrastructure/ai/scripted-minutes-draft';
 import type { MeetingService } from './meeting.service';
 import type { MeetingNotesService } from './meeting-notes.service';
 import type { MinutesSource } from '#domain/utils/minutes-draft';
+import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import type { RbacService } from './rbac.service';
 
 const CHAPTER = 'ch-1';
@@ -64,6 +66,7 @@ const meeting = (overrides: Partial<Meeting> = {}): Meeting => ({
   posted_at: null,
   created_at: V1,
   updated_at: V1,
+  transcript: null,
   ...overrides,
 });
 
@@ -230,16 +233,33 @@ interface Setup {
   stored?: Meeting;
   /** What the caller holds, for "Report this" (default: may record minutes). */
   permissions?: string[];
+  /** The notes pass's answer (default: none scripted, so it fails). */
+  notes?: ScriptedReply;
 }
 
 function setup(options: Setup = {}) {
   const drafts = new FakeDrafts();
   const notes = new FakeNotes();
   const seen: LanguageModelRequest[] = [];
+  const seenNotes: LanguageModelRequest[] = [];
   const model = new ScriptedLanguageModel({
+    ...(options.notes
+      ? {
+          'minutes.notes': (request: LanguageModelRequest) => {
+            seenNotes.push(request);
+            return options.notes!;
+          },
+        }
+      : {}),
     'minutes.draft': (request) => {
       seen.push(request);
       if (typeof options.reply === 'function') return options.reply(request);
+      // The review pass, unless a test scripts it: keeps every candidate.
+      const prompt = String(request.messages.at(-1)?.content ?? '');
+      if (prompt.includes('Candidates (D = decision')) {
+        const reviewed = scriptedReview(prompt);
+        return { text: JSON.stringify(reviewed), object: reviewed };
+      }
       return (
         options.reply ?? { text: JSON.stringify(DRAFTED), object: DRAFTED }
       );
@@ -336,6 +356,7 @@ function setup(options: Setup = {}) {
     registry,
     consent,
     seen,
+    seenNotes,
     ask,
     work,
   };
@@ -480,7 +501,8 @@ describe('MeetingDraftService', () => {
       await ask();
       const result = await work();
 
-      expect(seen).toHaveLength(1);
+      // The first pass over the notes, then the editor's read over it.
+      expect(seen).toHaveLength(2);
       expect(seen[0].messages[0].content).toContain(
         'Priya Natarajan (Treasurer) *',
       );
@@ -511,6 +533,7 @@ describe('MeetingDraftService', () => {
             due_date: null,
           },
         ],
+        discussion_log: '',
       });
       expect(drafts.row?.status).toBe('applied');
       expect(result).toEqual({
@@ -522,49 +545,201 @@ describe('MeetingDraftService', () => {
       });
     });
 
-    it('drafts a long meeting in parts, keeps every part, and writes one summary over them', async () => {
-      const filler = Array.from(
-        { length: 1500 },
-        (_, i) => `Talked about the house, point ${i}.`,
-      ).join('\n');
-      const whole = { summary: 'The whole meeting, start to end.' };
+    it('reads a one-line 4-hour transcript in parts, then merges each topic into its outcome', async () => {
+      // Paul's recording was one line from start to end (2026-11-17).
+      const talk = Array.from(
+        { length: 1300 },
+        (_, i) => `We talked about the house for a while, point ${i}.`,
+      ).join(' ');
+      const moveOn = 'All in favor moving on to new business? Any opposed?';
+      const partDraft: MeetingDraftOutput = {
+        ...DRAFTED,
+        decisions: [
+          ...DRAFTED.decisions,
+          {
+            text: 'The chapter voted to move on to new business.',
+            vote: null,
+            quote: moveOn,
+          },
+        ],
+      };
+      const reviewed = {
+        decisions: [
+          {
+            from: ['D1', 'D4'],
+            text: 'Approved up to $1,200 for a DJ at formal.',
+            vote: { for: 22, against: 5, abstain: 0 },
+          },
+          // Names no candidate: it has no words in the notes to stand on.
+          { from: ['D99'], text: 'Bought a boat.', vote: null },
+        ],
+        action_items: [
+          {
+            from: ['A1', 'A3'],
+            text: 'Email the six members who have not paid.',
+            owner: 'Priya Natarajan',
+            due_date: '2026-11-11',
+          },
+        ],
+        summary: 'The chapter approved a DJ for formal and planned dues.',
+        announcements: '',
+        officer_reports: '',
+        old_business: '',
+        new_business: '',
+        discussion_log: 'Formal DJ: approved up to $1,200 after a vote.',
+        open_questions: [],
+      };
       const { ask, work, meetings, seen } = setup({
         reply: (request) =>
-          request.system?.includes('from summaries of its parts')
-            ? { text: JSON.stringify(whole), object: whole }
-            : { text: JSON.stringify(DRAFTED), object: DRAFTED },
+          String(request.messages[0].content).includes('Candidates (D =')
+            ? { text: JSON.stringify(reviewed), object: reviewed }
+            : { text: JSON.stringify(partDraft), object: partDraft },
       });
-      await ask(`${NOTES}\n${filler}\n${NOTES}`);
+      await ask(`${NOTES}\n${moveOn}\n${talk}`);
       await work();
 
-      // Two parts side by side, then the summary over them.
-      expect(seen).toHaveLength(3);
-      expect(seen[0].messages[0].content).toContain('This is part 1 of 2');
-      expect(seen[1].messages[0].content).toContain('This is part 2 of 2');
-      expect(seen[2].messages[0].content).toContain(
-        'Part 1: The chapter approved a DJ for formal.',
+      const parts = seen.length - 1;
+      expect(parts).toBeGreaterThan(1);
+      expect(seen[0].messages[0].content).toContain(
+        `This is part 1 of ${parts}`,
       );
+      // The editor's read sees every part's candidates, never the notes.
+      const review = String(seen[parts].messages[0].content);
+      expect(review).toContain('D1 (part 1) Approved up to $1,200');
+      expect(review).toContain(`(part ${parts})`);
+      expect(review).not.toContain('point 7.');
+
       const [, , , save] = meetings.update.mock.calls[0];
-      expect(save.content.summary).toBe('The whole meeting, start to end.');
-      // Both parts drafted the same items: they are kept once.
-      expect(save.content.decisions).toHaveLength(1);
-      expect(save.content.action_items).toHaveLength(2);
+      expect(save.content.summary).toBe(
+        'The chapter approved a DJ for formal and planned dues.',
+      );
+      expect(save.content.decisions).toEqual([
+        {
+          text: 'Approved up to $1,200 for a DJ at formal.',
+          vote: { for: 22, against: 5, abstain: 0 },
+        },
+      ]);
+      expect(save.content.action_items).toHaveLength(1);
     });
 
+    it.each([
+      [
+        'comes back unreadable',
+        () => ({ text: 'not json', object: undefined }),
+      ],
+      [
+        'fails outright',
+        () => {
+          throw new Error('provider timed out');
+        },
+      ],
+    ])(
+      'keeps the first pass, procedure taken out, when the editor’s read %s',
+      async (_why, editor) => {
+        const moveOn = 'All in favor moving on to new business? Any opposed?';
+        const partDraft: MeetingDraftOutput = {
+          ...DRAFTED,
+          decisions: [
+            ...DRAFTED.decisions,
+            {
+              text: 'The chapter voted to move on to new business.',
+              vote: null,
+              quote: moveOn,
+            },
+          ],
+        };
+        const { ask, work, meetings } = setup({
+          reply: (request) =>
+            String(request.messages[0].content).includes('Candidates (D =')
+              ? editor()
+              : { text: JSON.stringify(partDraft), object: partDraft },
+        });
+        await ask(`${NOTES}\n${moveOn}`);
+        await work();
+        const [, , , save] = meetings.update.mock.calls[0];
+        expect(
+          save.content.decisions.map((d: { text: string }) => d.text),
+        ).toEqual(['Approved up to $1,200 for a DJ at formal.']);
+      },
+    );
+
     it('ends a long draft as a whole when one part fails', async () => {
-      const filler = Array.from(
-        { length: 1500 },
-        (_, i) => `Talked about the house, point ${i}.`,
-      ).join('\n');
+      const talk = Array.from(
+        { length: 1300 },
+        (_, i) => `We talked about the house for a while, point ${i}.`,
+      ).join(' ');
       const { ask, work, meetings } = setup({
         reply: (request) =>
-          request.messages[0].content.includes('This is part 2 of 2')
+          String(request.messages[0].content).includes('This is part 2 of')
             ? { text: 'not json', object: undefined }
             : { text: JSON.stringify(DRAFTED), object: DRAFTED },
       });
-      await ask(`${NOTES}\n${filler}`);
+      await ask(`${NOTES}\n${talk}`);
       await expect(work()).rejects.toBeInstanceOf(AiRunFailure);
       expect(meetings.update).not.toHaveBeenCalled();
+    });
+
+    it('writes the summary and the Notes from the notes pass, topic by topic (#5410)', async () => {
+      const written = {
+        summary: 'The chapter met about formal and dues.',
+        topics: [
+          {
+            title: 'Formal',
+            points: [
+              {
+                text: 'Approved up to $1,200 for a DJ.',
+                details: ['Vote was 22 to 5.'],
+              },
+            ],
+          },
+          {
+            title: 'Dues',
+            points: [{ text: 'Six members still owe.', details: [] }],
+          },
+        ],
+      };
+      const { ask, work, meetings, seenNotes } = setup({
+        notes: { text: JSON.stringify(written), object: written },
+      });
+      await ask();
+      await work();
+      expect(seenNotes).toHaveLength(1);
+      const [, , , save] = meetings.update.mock.calls[0];
+      expect(save.content.summary).toBe(written.summary);
+      expect(save.content.discussion_log).toBe(
+        'Formal\n- Approved up to $1,200 for a DJ.\n  - Vote was 22 to 5.\n\nDues\n- Six members still owe.',
+      );
+      // Decisions still come from the checked draft.
+      expect(save.content.decisions).toHaveLength(1);
+    });
+
+    it('keeps the draft’s own summary when the notes pass fails', async () => {
+      const { ask, work, meetings } = setup({
+        notes: { text: 'not json', object: undefined },
+      });
+      await ask();
+      await work();
+      const [, , , save] = meetings.update.mock.calls[0];
+      expect(save.content.summary).toBe(
+        'The chapter approved a DJ for formal.',
+      );
+    });
+
+    it('stops the notes pass when a part of the draft fails', async () => {
+      const talk = Array.from(
+        { length: 1300 },
+        (_, i) => `We talked about the house for a while, point ${i}.`,
+      ).join(' ');
+      const { ask, work, seenNotes } = setup({
+        notes: { text: '{}', object: { summary: '', topics: [] } },
+        reply: (request) =>
+          String(request.messages[0].content).includes('This is part 2 of')
+            ? { text: 'not json', object: undefined }
+            : { text: JSON.stringify(DRAFTED), object: DRAFTED },
+      });
+      await ask(`${NOTES}\n${talk}`);
+      await expect(work()).rejects.toBeInstanceOf(AiRunFailure);
+      expect(seenNotes[0]?.signal?.aborted).toBe(true);
     });
 
     it('tells the editor what to check the draft against', async () => {
@@ -597,7 +772,7 @@ describe('MeetingDraftService', () => {
       const state = await service.state(CHAPTER, MEETING, SECRETARY);
       expect(state.status).toBe('ready');
       expect(state.content?.decisions).toHaveLength(1);
-      expect(state.content).not.toHaveProperty('discussion_log');
+      expect(state.content).not.toHaveProperty('officer_reports');
     });
 
     it('writes nothing for a request the officer replaced or cleared', async () => {
@@ -839,6 +1014,10 @@ describe('MeetingDraftService', () => {
     expect(deleted).toBe(3);
     expect(drafts.deleteRequestedBefore).toHaveBeenCalledWith(
       '2026-11-12T00:00:00.000Z',
+    );
+    // The same window as the notes and recording sweeps, not a copy of it (#5200).
+    expect(drafts.deleteRequestedBefore).toHaveBeenCalledWith(
+      meetingRetentionCutoff(now).toISOString(),
     );
     expect(notes.deleteExpired).toHaveBeenCalledWith(now);
   });

@@ -22,7 +22,9 @@ const {
   uploadLogoMutate: vi.fn(),
   // What the directory search answers; empty unless a test fills it.
   directoryRows: { current: [] as unknown[] },
-  refreshSession: vi.fn(),
+  // supabase-js resolves `{ error }`; a bare `vi.fn()` resolved `undefined`,
+  // which `useSelectChapter` now reads as a failed switch (#4439).
+  refreshSession: vi.fn(async () => ({ error: null })),
   routerPush: vi.fn(),
   // Hoisted like `routerPush` so the wizard's finish destination is
   // assertable. It was a throwaway `vi.fn()` inline in the mock factory, which

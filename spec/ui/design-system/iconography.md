@@ -224,8 +224,8 @@ cluster replaces its own as it rebuilds; there is no separate icon migration.
 The tab bar's quick-actions panel (`apps/mobile/components/quick-actions/quick-actions-panel.tsx`,
 [`navigation.md` § Quick actions](../mobile/navigation.md#quick-actions)) draws
 each action at 26px on a 58pt glass disc, in `text.foreground`, with the nav
-shape of the place it leads: New event `events`, New task `tasks`, Invite
-`invite` (Phosphor `user-plus`), Message `chat`, Check in `checkIn` (Phosphor `map-pin`, added for it), Host check-in
+shape of the place it leads: New minutes `meetings`, Search `search` (Phosphor `magnifying-glass`, added for it, #5287), New event `events`, New task `tasks`, Invite
+`invite` (Phosphor `user-plus`), Message `chat`, Host check-in
 `hostCheckIn`, Log hours `service`, Study `study`, Upload `documents`. The
 active tab in the pill sits on a soft capsule (white at 8%) under its accent
 glyph and bold label, as iOS 26's own bars draw it, since 2026-11-06.
@@ -317,6 +317,7 @@ the chapter accent in a back-row slot (2026-11-05).
 | Invite link | `LinkGlyph` (two joined links) | chapter setup's invite step: its link card, in `gold.askText` on the ask tile, and each shared row (16px); Invite members (`(app)/invite.tsx`) draws the same card in the chapter accent on its subtle tile | Lucide `Link` |
 | Opens something (a row's end mark, not a control) | `ForwardGlyph` (a right chevron, `BackGlyph` mirrored at the same stroke), at 16 in `text.mutedForeground`, the tone of web's row `ChevronRight` (`text.muted` until 2026-11-13, #4138) | every `ListRow` that opens a screen or a sheet, the Activity rows, Up next, the event and channel forms' option rows (which drew `DisclosureGlyph` at the lighter stroke), and at 20 the sign-in `ChoiceRow` and the study zone picker (2026-11-12, #3628; each of the others was a typed `›`) | Lucide `ChevronRight` |
 | Back | `BackGlyph` (a left chevron, stroke 2.2, heavier than the recipe), in the chapter accent or the house gold | the chat thread header at 20 (2026-11-06; it was a typed `‹`), every back-row capsule at 18 | Lucide `ChevronLeft` |
+| Show as grid / Show as list | `GridGlyph` (four squares), `ListGlyph` (three lines with dots), the layout a tap switches to, in the chapter accent | the List / Grid round on Documents, Directory and Tasks (2026-11-17) | None: web keeps a worded List / Grid segmented control |
 | Important (a status mark, not a control) | `AlertGlyph` (a circled !) | an Important message's flag caption in chat, at 14 in `destructiveText` ([components.md § A flagged row](components.md#a-flagged-row)) | Lucide `CircleAlert` |
 
 ### 6.2 Web Dashboard shell (Signet duotone)

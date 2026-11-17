@@ -57,6 +57,7 @@ import {
   type MeetingSectionKey,
   type MeetingTextSection,
   type MeetingType,
+  parseMinutesNotes,
 } from "@repo/validation";
 import { ErrorState } from "@/components/shared/async-states";
 import { useConfirmDialog } from "@/components/shared/confirm-dialog";
@@ -64,6 +65,7 @@ import {
   InlineNote,
   inlineNoteActionClassName,
 } from "@/components/shared/inline-note";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -574,7 +576,7 @@ function Minutes({
             <h2 className="truncate text-xl font-bold leading-tight">
               {meeting.event_name}
             </h2>
-            <p className="truncate text-caption text-muted-foreground">
+            <p className="break-words text-caption text-muted-foreground">
               {typeLabel} meeting, {when}
               {posting
                 ? ", posting"
@@ -755,6 +757,7 @@ function Minutes({
                 <ActionItemsView
                   items={view.content.action_items}
                   nameFor={names.nameFor}
+                  viewerId={viewer?.id ?? null}
                 />
               )
             ) : editing ? (
@@ -771,13 +774,31 @@ function Minutes({
                   } as Partial<MeetingContent>)
                 }
               />
-            ) : (
+            ) : key === "summary" ? (
               <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-                {view.content[key as MeetingTextSection]}
+                {view.content.summary}
               </p>
+            ) : (
+              <LinesView
+                text={view.content[key as MeetingTextSection]}
+                outline={key === "discussion_log"}
+              />
             )}
           </section>
         ))}
+
+        {!editing && meeting.transcript?.trim() ? (
+          // The whole recording, kept with posted minutes (#5410): the
+          // record of what was said, for reading through or asking Frapp AI.
+          <details className="group space-y-2 border-t border-border pt-4">
+            <summary className="cursor-pointer text-sm font-semibold">
+              Transcript
+            </summary>
+            <p className="mt-2 max-h-[32rem] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
+              {meeting.transcript}
+            </p>
+          </details>
+        ) : null}
 
         {editing ? (
           <section aria-labelledby={`${ids}-type`} className="space-y-2">
@@ -911,24 +932,43 @@ function DecisionsView({ decisions }: { decisions: MeetingDecision[] }) {
     <ul role="list" className="list-disc space-y-2 pl-5 text-sm">
       {decisions.map((decision, index) => (
         <li key={index}>
-          <p className="whitespace-pre-wrap break-words">{decision.text}</p>
-          {decision.vote ? (
-            <p className="text-caption text-muted-foreground">
-              {voteLine(decision.vote)}
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p className="min-w-0 whitespace-pre-wrap break-words">
+              {decision.text}
             </p>
-          ) : null}
+            {decision.vote ? (
+              <Badge
+                variant="outline"
+                title={voteLine(decision.vote)}
+                aria-label={voteLine(decision.vote)}
+                className="tabular-nums"
+              >
+                {voteTally(decision.vote)}
+              </Badge>
+            ) : null}
+          </div>
         </li>
       ))}
     </ul>
   );
 }
 
+/** "22–5", with abstentions only when there were some: "22–5–1". */
+function voteTally(vote: NonNullable<MeetingDecision["vote"]>): string {
+  const counts = [vote.for, vote.against];
+  if (vote.abstain > 0) counts.push(vote.abstain);
+  return counts.join("–");
+}
+
 function ActionItemsView({
   items,
   nameFor,
+  viewerId,
 }: {
   items: MeetingActionItem[];
   nameFor: (userId: string) => string | null;
+  /** The reader, whose own items say so (a chair finds theirs at a glance). */
+  viewerId: string | null;
 }) {
   return (
     <ul role="list" className="list-disc space-y-2 pl-5 text-sm">
@@ -936,17 +976,74 @@ function ActionItemsView({
         const meta = [
           item.owner_user_id
             ? memberLabel(nameFor(item.owner_user_id), item.owner_user_id)
-            : null,
+            : "Nobody named yet",
           item.due_date ? `Due ${meetingDueLabel(item.due_date)}` : null,
         ].filter(Boolean);
+        const yours = !!viewerId && item.owner_user_id === viewerId;
         return (
           <li key={index}>
-            <p className="whitespace-pre-wrap break-words">{item.text}</p>
-            {meta.length > 0 ? (
-              <p className="text-caption text-muted-foreground">
-                {meta.join(" · ")}
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <p className="min-w-0 whitespace-pre-wrap break-words">
+                {item.text}
               </p>
-            ) : null}
+              {yours ? <Badge>Yours</Badge> : null}
+            </div>
+            <p className="text-caption text-muted-foreground">
+              {meta.join(" · ")}
+            </p>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * A section written one item per line (the notes, reports, announcements,
+ * business). The notes come as an outline, a topic over its "- " points,
+ * and draw as one: the topic in bold, its points as a list under it, the
+ * way Granola lays out meeting notes. A plain line that opens with its
+ * topic ("Treasurer: ...") shows the topic in bold, so it can be skimmed.
+ */
+function LinesView({ text, outline }: { text: string; outline: boolean }) {
+  const lines = parseMinutesNotes(text, { outline });
+  return (
+    <ul role="list" className="space-y-1.5 text-sm leading-relaxed">
+      {lines.map((line, index) => {
+        if (line.kind === "topic") {
+          return (
+            <li
+              key={index}
+              className="break-words pt-3 font-semibold first:pt-0"
+            >
+              {line.text}
+            </li>
+          );
+        }
+        if (line.kind === "point") {
+          return (
+            <li
+              key={index}
+              className={`flex gap-2 break-words ${line.depth ? "pl-5" : ""}`}
+            >
+              <span aria-hidden className="select-none text-muted-foreground">
+                {line.depth ? "◦" : "•"}
+              </span>
+              <span className="min-w-0">{line.text}</span>
+            </li>
+          );
+        }
+        return (
+          <li key={index} className="break-words">
+            {line.head ? (
+              <>
+                <span className="font-semibold">{line.head}</span>
+                {": "}
+                {line.text}
+              </>
+            ) : (
+              line.text
+            )}
           </li>
         );
       })}
@@ -1012,7 +1109,7 @@ function DecisionsEditor({
       {decisions.map((decision, index) => (
         <div
           key={index}
-          className="space-y-2 rounded-lg border border-border p-3"
+          className="space-y-2 border-b border-border pb-3 last:border-b-0"
         >
           <div className="flex items-start gap-2">
             <GrowingTextarea
@@ -1131,7 +1228,7 @@ function ActionItemsEditor({
       {items.map((item, index) => (
         <div
           key={index}
-          className="space-y-2 rounded-lg border border-border p-3"
+          className="space-y-2 border-b border-border pb-3 last:border-b-0"
         >
           <div className="flex items-start gap-2">
             <GrowingTextarea
@@ -1180,7 +1277,7 @@ function ActionItemsEditor({
               <Label htmlFor={`${ids}-${index}-due`}>Due</Label>
               <DueDateField
                 id={`${ids}-${index}-due`}
-                placeholder="Friday"
+                placeholder="No date"
                 // An action item is due by a day: it stores no time.
                 withoutTime
                 value={item.due_date ?? ""}

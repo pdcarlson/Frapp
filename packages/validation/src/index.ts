@@ -33,6 +33,8 @@ export * from "./ask-entities";
 export * from "./ask-feedback";
 // An Ask Frapp answer posted to a channel (#4713).
 export * from "./ask-find";
+// What Ask opens on: the day, a greeting, the first-open starter (#4904).
+export * from "./ask-greeting";
 export * from "./ask-post";
 export * from "./ask-source-chip";
 export * from "./backwork";
@@ -47,6 +49,8 @@ export * from "./chapter-config";
 export * from "./chapter-goals";
 // ── Chapter mark (logo → short name → Greek letters → initials) ─────────────
 export * from "./chapter-mark";
+// The audit log (#3909): what may change on a line already in it.
+export * from "./chat-audit-log";
 export * from "./chat-backgrounds";
 // Catch me up (#3946): a channel's new messages or a thread, summarized.
 export * from "./chat-catch-up";
@@ -71,6 +75,8 @@ export * from "./discord-export";
 // Which Discord imports may be cleared off the list, shared so the web never
 // offers a Clear the API refuses. See ./discord-import.
 export * from "./discord-import";
+// The " / " a Drive-synced folder's path is joined with (#5337).
+export * from "./document-folders";
 export * from "./error-copy";
 // An event's agenda and attachments (#4934): their limits and shapes, which
 // the API enforces and both editors read.
@@ -116,6 +122,8 @@ export * from "./meeting-copy";
 // states and the words each failure shows.
 export * from "./meeting-draft";
 export * from "./meeting-recording";
+// Which meeting new minutes start on: web's New minutes and the phone's + (#5287).
+export * from "./meeting-start";
 // ── Meeting minutes (#4312) ──────────────────────────────────────────────────
 export * from "./meetings";
 // Member nudges (#4781): the one card on Activity the AI writes for a member.
@@ -216,6 +224,8 @@ export * from "./study-zone-shape";
 // Client-side subscription write gate. Moved out of `apps/web/lib/subscription.ts`
 // so it sits next to `can` and `isModuleEnabled` as the third shared client gate.
 export * from "./subscription";
+// Tasks for everyone: one group task, a copy each (#4295 step 3).
+export * from "./task-audience";
 // A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
 export * from "./task-proof";
 export * from "./thumbhash";

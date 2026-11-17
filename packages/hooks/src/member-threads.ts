@@ -4,13 +4,12 @@
  * The server decides membership (a follow or a mute; an unfollow drops out)
  * and counts what's new, so nothing here re-derives either.
  *
- * One query backs both the header button's unread mark and the list, so the
- * two never disagree. It re-reads once a minute behind the button (how a
- * thread read on another device clears here), right after a thread is read in
- * this app (`use-message-thread.ts` invalidates `memberThreadKeys.all`), and
- * when the list opens: the phone's sheet mounts a fresh observer, which
- * `refetchOnMount` makes fetch; web's popover keeps its observer mounted, so
- * it calls `refetch` on opening.
+ * One query backs web's header button's unread mark and its list, and the
+ * phone's thread rows under each channel (#5277), so they never disagree. It
+ * re-reads once a minute (how a thread read on another device clears here),
+ * right after a thread is read in this app (`use-message-thread.ts`
+ * invalidates `memberThreadKeys.all`), on the phone's pull to refresh, and
+ * when web's popover opens (it calls `refetch`; its observer stays mounted).
  */
 import { useQuery } from "@tanstack/react-query";
 import type { components } from "@repo/api-sdk";
@@ -21,10 +20,10 @@ export type MemberThread = components["schemas"]["MemberThreadDto"];
 
 export const memberThreadKeys = createChapterQueryKeys("member-threads");
 
-/** How often the button re-reads while nothing else does. */
+/** How often the list re-reads while nothing else does. */
 const MEMBER_THREADS_SETTLE_MS = 60_000;
 
-export function useMemberThreads(options: { refetchOnMount?: boolean } = {}) {
+export function useMemberThreads() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
@@ -36,7 +35,6 @@ export function useMemberThreads(options: { refetchOnMount?: boolean } = {}) {
     },
     enabled: !!chapterId,
     refetchInterval: MEMBER_THREADS_SETTLE_MS,
-    refetchOnMount: options.refetchOnMount ? "always" : true,
   });
 }
 
@@ -47,7 +45,7 @@ export function unreadThreadCount(
   return (threads ?? []).filter((thread) => thread.unread_count > 0).length;
 }
 
-/** The copy both apps show around the list. */
+/** The copy web's All threads popover shows around the list. */
 export const ALL_THREADS_TITLE = "Threads";
 export const ALL_THREADS_EMPTY =
   "No threads yet. Threads you start, reply in or are mentioned in show up here.";

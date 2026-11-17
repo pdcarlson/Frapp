@@ -1,4 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  SUBSCRIPTION_STATUSES,
+  type SubscriptionStatus,
+} from '@repo/validation';
 import type { ChapterMemberViewField } from '../../application/services/chapter-member-view';
 import type { AssertNever } from './drift-guard';
 
@@ -27,11 +31,11 @@ export class CurrentChapterResponseDto {
   university: string;
 
   @ApiProperty({
-    enum: ['incomplete', 'active', 'past_due', 'canceled'],
+    enum: SUBSCRIPTION_STATUSES,
     description:
       'Read by the client subscription gate. Load-bearing — see `chapter-member-view.ts`.',
   })
-  subscription_status: 'incomplete' | 'active' | 'past_due' | 'canceled';
+  subscription_status: SubscriptionStatus;
 
   @ApiProperty({
     type: String,
@@ -135,11 +139,11 @@ export class UpdateChapterResponseDto {
   university: string;
 
   @ApiProperty({
-    enum: ['incomplete', 'active', 'past_due', 'canceled'],
+    enum: SUBSCRIPTION_STATUSES,
     description:
       'Read by the client subscription gate. Load-bearing — see `chapter-member-view.ts`.',
   })
-  subscription_status: 'incomplete' | 'active' | 'past_due' | 'canceled';
+  subscription_status: SubscriptionStatus;
 
   @ApiProperty({
     type: String,

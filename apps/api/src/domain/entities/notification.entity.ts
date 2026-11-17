@@ -21,6 +21,12 @@ export interface PushToken {
   token: string;
   device_name: string | null;
   created_at: string;
+  /**
+   * Set on insert and stamped again each time the same member re-registers
+   * the token (a phone does on every launch). The per-member cap drops the
+   * tokens with the oldest value.
+   */
+  last_registered_at: string;
 }
 
 export interface NotificationPreference {

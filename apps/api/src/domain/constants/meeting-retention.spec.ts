@@ -4,7 +4,7 @@ import {
 } from './meeting-retention';
 
 describe('meeting retention', () => {
-  it('keeps notes and recordings for 30 days (spec/behavior/meetings.md § Retention)', () => {
+  it('keeps notes, draft requests and recordings for 30 days (spec/behavior/meetings.md § Retention)', () => {
     expect(MEETING_NOTES_RETENTION_DAYS).toBe(30);
   });
 

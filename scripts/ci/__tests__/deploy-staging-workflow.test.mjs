@@ -164,7 +164,7 @@ describe("deploy-staging.yml: the call into _deploy.yml", () => {
   it("keeps no deploy step in the caller", () => {
     // A step here would run outside the shared job's order and lock.
     assert.equal(workflowSteps(WORKFLOW).filter((s) => s.jobId === "deploy").length, 0);
-    assert.doesNotMatch(uncommented, /run-migration\.mjs|deploy-vercel\.mjs|deploy-render-production\.mjs/);
+    assert.doesNotMatch(uncommented, /run-migration\.mjs|deploy-vercel\.mjs|deploy-cloud-run\.mjs/);
   });
 });
 
@@ -209,7 +209,7 @@ describe("_deploy.yml: the shared job's interface", () => {
 
   // Run the step's own bash, not a regex over it: a refusal that prints an
   // error and carries on would pass any text match (#2804 review).
-  it("fails the job on every refusal, and prints the proof line only when all four secrets arrived", () => {
+  it("fails the job on every refusal, and prints the proof line only when all three secrets arrived", () => {
     const guard = deploySteps()[0];
     const script = guard.body
       .split("\n")
@@ -225,7 +225,6 @@ describe("_deploy.yml: the shared job's interface", () => {
       SCOPE: "full",
       HAS_INFISICAL_MACHINE_IDENTITY_ID: "true",
       HAS_INFISICAL_CLIENT_SECRET: "true",
-      HAS_RENDER_API_KEY: "true",
       HAS_VERCEL_API_KEY: "true",
     };
     const run = (overrides) =>
@@ -258,7 +257,7 @@ describe("_deploy.yml: the shared job's interface", () => {
       ["a production scope it doesn't know", { TARGET_ENVIRONMENT: "production", SCOPE: "api-only" }],
       ["an empty production scope", { TARGET_ENVIRONMENT: "production", SCOPE: "" }],
       ["a production dry_run that isn't a boolean", { TARGET_ENVIRONMENT: "production", DRY_RUN: "yes" }],
-      ["no Render key", { HAS_RENDER_API_KEY: "false" }],
+      ["no Vercel key", { HAS_VERCEL_API_KEY: "false" }],
       ["no Infisical id", { HAS_INFISICAL_MACHINE_IDENTITY_ID: "false" }],
       ["production without its Vercel key", { TARGET_ENVIRONMENT: "production", HAS_VERCEL_API_KEY: "false" }],
     ]) {
@@ -272,7 +271,7 @@ describe("_deploy.yml: the shared job's interface", () => {
 
   it("checks that the environment's secrets reached it, by name and never by value", () => {
     const guard = deploySteps()[0];
-    for (const name of ["INFISICAL_MACHINE_IDENTITY_ID", "INFISICAL_CLIENT_SECRET", "RENDER_API_KEY", "VERCEL_API_KEY"]) {
+    for (const name of ["INFISICAL_MACHINE_IDENTITY_ID", "INFISICAL_CLIENT_SECRET", "VERCEL_API_KEY"]) {
       assert.equal(guard.env.get(`HAS_${name}`), `\${{ secrets.${name} != '' }}`, name);
       assert.match(guard.body, new RegExp(`missing\\+=\\(${name}\\)`), name);
     }
@@ -308,7 +307,7 @@ describe("_deploy.yml: the deploy job", () => {
     // commit from its input only; the event is the caller's business.
     assert.doesNotMatch(sharedUncommented, /^\s*GITHUB_SHA:/m, "use DEPLOY_SHA");
     assert.doesNotMatch(sharedUncommented, /github\.event\./, "the shared job reads its inputs, not the caller's event");
-    for (const name of ["Build the Vercel preview bundles (web + landing)", "Plan the deploy", "Deploy the commit to Render (staging)", "Upload web + landing to staging"]) {
+    for (const name of ["Build the Vercel preview bundles (web + landing)", "Plan the deploy", "Build the API image", "Deploy the API to Cloud Run", "Upload web + landing to staging"]) {
       assert.equal(step(name).env.get("DEPLOY_SHA"), INPUT_SHA, `${name} must name the caller's commit`);
     }
   });
@@ -354,14 +353,14 @@ describe("deploy-staging.yml: the order", () => {
     migrateDry: indexOf((s) => /run-migration\.mjs --env "\$TARGET_ENVIRONMENT" --dry-run/.test(s.body), "dry-runs the migrations"),
     migrate: indexOf((s) => /run-migration\.mjs --env "\$TARGET_ENVIRONMENT"\s*$/m.test(s.body), "applies the migrations"),
     plan: indexOf((s) => s.body.includes("scripts/ci/plan-staging-deploy.mjs"), "plans the deploy"),
-    render: indexOf((s) => s.name === "Deploy the commit to Render (staging)", "deploys staging's API to Render"),
+    api: indexOf((s) => s.name === "Deploy the API to Cloud Run", "deploys staging's API to Cloud Run"),
     verify: indexOf((s) => s.name === "Verify staging serves the commit", "verifies the served commit"),
     clients: indexOf((s) => s.name === "Check the API answers its clients (staging)", "checks the API's clients"),
     upload: indexOf((s) => runsVercel("upload")(s) && s.env.get("DEPLOY_TARGET") === "preview", "uploads web + landing (DEPLOY_PHASE upload)"),
     alias: indexOf((s) => s.body.includes("scripts/ci/ensure-vercel-staging-alias.mjs"), "aliases the staging hosts"),
   });
 
-  it("runs install → trusted ref → baseline → inject → deployed commit → plan → build → migrate → Render → verify → client checks → upload → alias", () => {
+  it("runs install → trusted ref → baseline → inject → deployed commit → plan → build → migrate → API → verify → client checks → upload → alias", () => {
     // The plan is read-only and comes first so a run with nothing to upload
     // builds nothing; every step that changes anything keeps #2803's order.
     // The migration dry run lists what is pending ahead of the build, as
@@ -369,7 +368,7 @@ describe("deploy-staging.yml: the order", () => {
     // sit between the verify and the upload, so a dashboard ships only behind
     // an API that admits it.
     const o = order();
-    const sequence = ["npmCi", "cli", "trusted", "supabase", "baseline", "inject", "detach", "plan", "migrateDry", "build", "migrate", "render", "verify", "clients", "upload", "alias"];
+    const sequence = ["npmCi", "cli", "trusted", "supabase", "baseline", "inject", "detach", "plan", "migrateDry", "build", "migrate", "api", "verify", "clients", "upload", "alias"];
     for (let i = 1; i < sequence.length; i += 1) {
       assert.ok(
         o[sequence[i - 1]] < o[sequence[i]],
@@ -428,17 +427,14 @@ describe("deploy-staging.yml: the order", () => {
   });
 
   it("plans, deploys on the plan's say-so, and verifies what the plan named", () => {
-    const deploy = step("Deploy the commit to Render (staging)");
-    assert.equal(deploy.if, "steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'render'");
-    // Exactly one of the two ships the API, as the environment's apiHost says (#5228).
-    const cloudRun = step("Deploy the API to Cloud Run (staging)");
+    // The API ships to Cloud Run (#5228): staging on the plan's say-so.
+    const cloudRun = step("Deploy the API to Cloud Run");
     assert.equal(
       cloudRun.if,
-      "inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'cloud-run'",
+      "(inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true') || (inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only')",
     );
     assert.equal(cloudRun.env.get("DEPLOY_SHA"), "${{ inputs.sha }}");
-    assert.equal(deploy.env.get("RENDER_SERVICE_ID"), "${{ steps.ids.outputs.render_service_id }}");
-    assert.equal(deploy.env.get("SERVICE_LABEL"), "frapp-api-staging");
+    assert.equal(step("Build the API image").if, "(inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true') || (inputs.environment == 'production' && inputs.scope != 'migrations-only')");
     const verify = step("Verify staging serves the commit");
     // `verify_sha` is set whenever anything ships (a current plan, or a stale
     // one that uploads), and empty only when nothing does.
@@ -525,9 +521,9 @@ describe("deploy-staging.yml: the deploy-outcome alert", () => {
   });
 
   it("grants issues: write to the alert job only", () => {
-    // The deploy job handles every staging credential; it writes nothing on
-    // GitHub but the API image (#2506). That write adds nothing a compromised
-    // job couldn't already ship: it holds RENDER_API_KEY, which deploys anything.
+    // The deploy job handles every staging credential and writes nothing on
+    // GitHub. The API image goes to the environment's Artifact Registry, signed
+    // in with the job's own OIDC token (#5228).
     assert.equal(workflowKeys(WORKFLOW).get("permissions").get("contents"), "read");
     assert.equal((uncommented.match(/issues: write/g) ?? []).length, 1, "exactly one job may hold issues: write");
     assert.equal(workflowKeys(SHARED).get("permissions").get("contents"), "read");
@@ -539,21 +535,21 @@ describe("deploy-staging.yml: the deploy-outcome alert", () => {
     // Parsed, so a flow-style map or a quoted key reads differently and fails.
     assert.deepEqual(
       Object.fromEntries(sharedJob().keys.get("permissions")),
-      { contents: "read", packages: "write", "id-token": "write" },
-      "the shared deploy job writes nothing on GitHub but the API image, and asks only for its own OIDC token (#5228)",
+      { contents: "read", "id-token": "write" },
+      "the shared deploy job writes nothing on GitHub, and asks only for its own OIDC token (#5228)",
     );
     // And any `write` value anywhere else in the file, trailing comment or not.
     assert.equal(
       (sharedUncommented.match(/:\s*["']?write\b/g) ?? []).length,
-      2,
-      "the shared deploy job's packages: write and id-token: write are the file's only write grants",
+      1,
+      "the shared deploy job's id-token: write is the file's only write grant",
     );
     // A called job gets no more than its caller grants, so both callers must
     // grant exactly what it asks, or GitHub refuses the run at startup.
     for (const caller of [WORKFLOW, join(WORKFLOW_DIR, "deploy-production.yml")]) {
       assert.deepEqual(
         Object.fromEntries(jobIn(caller, "deploy").keys.get("permissions")),
-        { contents: "read", packages: "write", "id-token": "write" },
+        { contents: "read", "id-token": "write" },
         `${caller.split("/").pop()}'s deploy job must grant what _deploy.yml's job asks`,
       );
     }
@@ -615,8 +611,7 @@ describe("deploy-staging.yml: the source-map check (#2489)", () => {
     for (const later of [
       "Build the Vercel preview bundles (web + landing)",
       "Build the Vercel production bundles (web + landing)",
-      "Deploy the commit to Render (staging)",
-      "Deploy the commit to Render (production)",
+      "Build the API image",
     ]) {
       assert.ok(start < names.indexOf(later), `${later} comes after the note`);
     }

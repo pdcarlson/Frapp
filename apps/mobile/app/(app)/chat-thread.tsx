@@ -165,6 +165,7 @@ import {
   useBlockActions,
 } from "@/lib/chat/block-actions";
 import {
+  canChangeMessagePin,
   copyableText,
   messageActionsFor,
   departedIn,
@@ -1382,6 +1383,8 @@ function ChannelThreadScreen() {
         canReply: canReplyHere,
         canPost: channelCanPost,
         canManageChannel,
+        // The audit log (#3909) keeps Frapp's entries: no Delete on one.
+        inAuditLog: postCapability.isAuditLog,
       });
       if (!actions.canOpen) return;
       // A sender the roster cannot vouch for most likely joined after it was
@@ -1439,12 +1442,28 @@ function ChannelThreadScreen() {
         senderInDirectory:
           message.sender_id !== null && isMember(message.sender_id) === true,
         // Read live in `sheetTarget`; here only whether to offer it (#3921).
-        flag: canFlagMessage(message, viewerId, canManageChannel)
-          ? { current: message.flag ?? null }
+        // In the audit log (#3909) a flag can only come off.
+        flag: canFlagMessage(
+          message,
+          viewerId,
+          canManageChannel,
+          postCapability.isAuditLog,
+        )
+          ? {
+              current: message.flag ?? null,
+              removeOnly: postCapability.isAuditLog,
+            }
           : undefined,
         // Read live in `sheetTarget`; here only whether to offer them (#3723).
-        // Pin is the server's `channels:manage` gate, chapter-wide.
-        pin: canManageChannel ? { pinned: !!message.is_pinned } : undefined,
+        // Pin is the server's `channels:manage` gate, chapter-wide; in the
+        // audit log (#3909) only a pinned line offers it, to unpin.
+        pin: canChangeMessagePin(
+          message,
+          canManageChannel,
+          postCapability.isAuditLog,
+        )
+          ? { pinned: !!message.is_pinned }
+          : undefined,
       });
       actionsSheetRef.current?.present();
     },
@@ -1457,6 +1476,7 @@ function ChannelThreadScreen() {
       channelCanPost,
       isMember,
       nameFor,
+      postCapability.isAuditLog,
       refetchRoster,
       staging.isEditing,
       viewerId,
@@ -1478,7 +1498,7 @@ function ChannelThreadScreen() {
         .filter((group) => group.mine)
         .map((group) => group.emoji),
       messageEmojis: groups.map((group) => group.emoji),
-      flag: actionTarget.flag ? { current: current?.flag ?? null } : undefined,
+      flag: sheetFlag(actionTarget.flag, current?.flag ?? null),
       pin: actionTarget.pin ? { pinned: !!current?.is_pinned } : undefined,
       save: { saved: savedIds.has(actionTarget.messageId) },
     };
@@ -2369,4 +2389,18 @@ function createStyles(tokens: SignetTokens) {
       textAlign: "center",
     },
   });
+}
+
+/**
+ * The sheet's Flag row with the message's flag read live. A remove-only row
+ * (the audit log, #3909) whose flag has since come off has nothing left to
+ * offer, so it draws no row.
+ */
+function sheetFlag(
+  offered: MessageActionsTarget["flag"],
+  current: ChatMessageFlag | null,
+): MessageActionsTarget["flag"] {
+  if (!offered) return undefined;
+  if (offered.removeOnly && current === null) return undefined;
+  return { ...offered, current };
 }

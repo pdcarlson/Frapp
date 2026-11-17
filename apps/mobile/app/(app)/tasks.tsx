@@ -783,6 +783,7 @@ export default function TasksScreen() {
           <NewTaskSheet
             ref={createRef}
             now={now}
+            offerEveryone
             // Kept past this screen (#4593): going back and coming here again
             // opens New task on the draft left in it.
             keptDraft="tasks-create"
