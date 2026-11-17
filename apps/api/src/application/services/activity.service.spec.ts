@@ -1255,6 +1255,8 @@ describe('ActivityService', () => {
       expect(eventService.checkInNeedsCode).toHaveBeenCalledTimes(1);
       expect(eventService.checkInNeedsCode).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'now', chapter_id: CHAPTER }),
+        // Per viewer: the host whose screen is up needs no code (2026-11-17).
+        expect.any(String),
         expect.any(Date),
       );
     });
