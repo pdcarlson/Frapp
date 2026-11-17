@@ -151,6 +151,23 @@ describe('GoogleCalendarService', () => {
   });
 
   describe('connect', () => {
+    it.each([
+      ['linked_apps', 'https://app.frapp.live/preferences?section=apps'],
+      ['calendar', 'https://app.frapp.live/preferences?section=calendar'],
+      ['events', 'https://app.frapp.live/events'],
+    ] as const)(
+      'on web, returns to the screen it started on (%s)',
+      async (webReturn, expected) => {
+        const { service, repo } = setup();
+
+        await service.connect(CHAPTER, USER, 'web', null, webReturn);
+
+        expect(repo.createState).toHaveBeenCalledWith(
+          expect.objectContaining({ return_to: expected }),
+        );
+      },
+    );
+
     it('on web, returns to the Events page and redirects Google to the API', async () => {
       const { service, repo, google } = setup();
 

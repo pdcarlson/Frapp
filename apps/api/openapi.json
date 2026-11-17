@@ -35796,6 +35796,15 @@
             "type": "string",
             "description": "For `mobile`: the app address Google sends the member back to, in the app’s own `frapp://` scheme.",
             "example": "frapp://google-calendar"
+          },
+          "web_return": {
+            "type": "string",
+            "enum": [
+              "events",
+              "linked_apps",
+              "calendar"
+            ],
+            "description": "For `web`: the screen the sign-in started on and comes back to. Events (the default), or Settings → Linked apps or Settings → Calendar."
           }
         },
         "required": [

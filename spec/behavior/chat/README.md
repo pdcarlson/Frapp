@@ -2401,7 +2401,7 @@ After a chapter moves off Discord, a member's own years of history would otherwi
 A member fixes that by **linking the Discord account they used**, and from then on their imported messages in that chapter are theirs.
 
 - **Only the member links, by signing in to Discord.**
-  Settings → Discord history (`/preferences?section=discord`) sends them through Discord's sign-in with the `identify` scope and nothing else (no bot, no server list), which proves the account is theirs.
+  Settings → Linked apps (`/preferences?section=apps`) sends them through Discord's sign-in with the `identify` scope and nothing else (no bot, no server list), which proves the account is theirs.
   Rejected: _officer mapping_, where an officer matches Discord authors to members.
   It is faster at cutover, but an officer would be putting a member's name on words the member may not have written, and a wrong match publishes a false attribution to the whole chapter and aims blocks and reports at the wrong person.
   Also not built: _officer suggests, member confirms_.

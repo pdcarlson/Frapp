@@ -11581,6 +11581,11 @@ export interface components {
              * @example frapp://google-calendar
              */
             return_url?: string;
+            /**
+             * @description For `web`: the screen the sign-in started on and comes back to. Events (the default), or Settings → Linked apps or Settings → Calendar.
+             * @enum {string}
+             */
+            web_return?: "events" | "linked_apps" | "calendar";
         };
         GoogleCalendarConnectDto: {
             /** @description Google’s consent page for this sign-in. Good for ten minutes. */

@@ -30,6 +30,7 @@ export * from "./hide-conversation";
 export * from "./join-errors";
 export * from "./landing-channel";
 export * from "./legal-acceptance";
+export * from "./linked-apps";
 export * from "./member-avatar-color";
 export * from "./member-threads";
 export * from "./open-chat-transport";

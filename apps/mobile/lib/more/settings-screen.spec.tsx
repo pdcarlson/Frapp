@@ -127,6 +127,12 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
 }));
 
+// Linked apps has its own spec (`components/settings/linked-apps-section.spec.tsx`);
+// this one only checks the rest of Settings.
+vi.mock("@/components/settings/linked-apps-section", () => ({
+  LinkedAppsSection: () => null,
+}));
+
 vi.mock("@/lib/auth-session", () => ({
   useAuthSession: () => ({ signOut: vi.fn() }),
 }));
