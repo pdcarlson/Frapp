@@ -111,7 +111,7 @@ the owner.
 
 Egress only proves the socket works. Staging web and landing have two more gates. First, Vercel
 Authentication sits in front of the hostname. Second, the app's own Supabase auth runs inside it.
-`api-staging.frapp.live` is on Render, so the Vercel gate doesn't apply to it.
+`api-staging.frapp.live` is on Cloud Run behind a Google load balancer, so the Vercel gate doesn't apply to it.
 
 ### Vercel Authentication
 
@@ -244,7 +244,7 @@ session.
   delivery needs service-account credentials and a real device token, so don't report FCM as
   network-blocked. End-to-end push stays under the "Runtime checks BLOCKED" protocol in
   [`agent-infra.md`](../../../docs/ci-cd/agent-infra.md).
-- **Provider APIs (Render, Vercel, Sentry, PostHog, Supabase's Management API).** Direct `fetch` is
+- **Provider APIs (Vercel, Sentry, PostHog, Supabase's Management API).** Direct `fetch` is
   blocked. Reach them through MCP, which bypasses the allowlist, per
   [`infrastructure-research`](../infrastructure-research/SKILL.md).
   - Infisical is the exception. It has no MCP connector, so reach it by direct `fetch` to

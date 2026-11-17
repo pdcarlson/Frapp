@@ -2,7 +2,7 @@ name: Production uptime
 
 # Between-deploy probe of live production readiness. Deploy smoke already hits
 # `/health/ready` after a ship; nothing watched it in the quiet hours. `/health`
-# is Render's `healthCheckPath` and always 2xxes while the process is up, so
+# is the liveness check and always 2xxes while the process is up, so
 # this workflow GETs `/health/ready` and treats anything other than HTTP 200
 # with JSON `status: "ok"` as an outage.
 #

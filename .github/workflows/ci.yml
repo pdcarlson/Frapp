@@ -372,7 +372,7 @@ jobs:
       - name: Type check
         run: npm run check-types
 
-      - name: API production build (nest build / Render parity)
+      - name: API production build (nest build, as the API image runs it)
         run: npm run build -w apps/api
 
       - name: Lint
@@ -592,7 +592,7 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run test -w packages/chat-core
 
-  # ── API Docker image (same path as Render native Dockerfile builds) ─────
+  # ── API Docker image (the Dockerfile the deploy job builds for Cloud Run) ─
   api-docker-build:
     needs: changes
     if: ${{ needs.changes.outputs.skip_suite != 'true' }}
@@ -605,8 +605,8 @@ jobs:
       # BuildKit pulls docker.io images through Google's Docker Hub mirror first, falling back
       # to Docker Hub itself. Anonymous pulls from shared runner IPs hit Docker Hub's rate
       # limit: on 2026-10-09 every build here died resolving node:24-alpine with
-      # "429 Too Many Requests" before any repo step ran. CI only: Render builds the same
-      # Dockerfile with its own puller, and the image content is the same either way.
+      # "429 Too Many Requests" before any repo step ran. The deploy job pulls its base
+      # from the same mirror before it builds the same Dockerfile (_deploy.yml).
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:

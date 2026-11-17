@@ -1,7 +1,8 @@
 /**
- * The deployed git SHA, `RENDER_GIT_COMMIT`: Render injects it on every deploy
- * of a git-backed service, and the deploy job's image build stamps it into the
- * image (`apps/api/Dockerfile`'s runner stage) for an image-backed one (#2506).
+ * The deployed git SHA, `RENDER_GIT_COMMIT`: the deploy job's image build
+ * stamps it into the image (`apps/api/Dockerfile`'s runner stage, #2506), and
+ * the Cloud Run deploy sets it on each revision too (#5228). The name is
+ * Render's, which injected it until the API left Render.
  *
  * This is a platform env, not an Infisical secret — do not add a `GIT_SHA`
  * slug to invent a second home. Local and CI leave it unset, so `/health`

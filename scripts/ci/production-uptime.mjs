@@ -3,7 +3,7 @@
 // Scheduled probe of live production readiness.
 //
 // Deploy smoke already hits `/health/ready` after a ship. Nothing watched it
-// between deploys. `/health` is Render's `healthCheckPath` and is specified to
+// between deploys. `/health` is the liveness check and is specified to
 // always 2xx while the process is up, so an HTTP-status monitor on it only
 // ever catches a dead process — not a degraded database or Storage. This
 // script GETs `/health/ready` and treats anything other than HTTP 200 with
@@ -146,7 +146,7 @@ function buildAlertIssueBody({ result, url, runUrl }) {
     "",
     `\`${url}\` returned **${result.reason}**.`,
     "",
-    "Watch `/health/ready`, not `/health`. `/health` is Render's `healthCheckPath` and is specified to always 2xx while the process is up, so a 200 there does not clear a degraded dependency.",
+    "Watch `/health/ready`, not `/health`. `/health` is the liveness check and is specified to always 2xx while the process is up, so a 200 there does not clear a degraded dependency.",
     "",
     "See `docs/ops/incident-response.md` § API down.",
     "",
