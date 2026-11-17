@@ -59,6 +59,7 @@ import {
   isModuleSettingsTab,
   shownModuleSettings,
 } from "@/components/settings/settings-modules";
+import { chapterProfileSaveBody } from "@/components/settings/chapter-profile-save-body";
 import { ModuleSettingsPage } from "@/components/settings/module-settings-page";
 import {
   SettingsToolBody,
@@ -435,12 +436,13 @@ function SettingsPageContent() {
     university: string;
     donation_url: string;
   }) {
+    // Only what the officer changed, so a name stored before the API's rule
+    // never refuses an edit of the donation link.
+    const body = chapterProfileSaveBody(profile, next);
     try {
-      await updateChapter.mutateAsync({
-        name: next.name || undefined,
-        university: next.university || undefined,
-        donation_url: next.donation_url || undefined,
-      });
+      if (Object.keys(body).length > 0) {
+        await updateChapter.mutateAsync(body);
+      }
       toast({
         title: "Chapter profile saved",
         description: "Everyone sees the changes on their next refresh.",

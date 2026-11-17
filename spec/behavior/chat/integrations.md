@@ -187,6 +187,7 @@ Mobile has no slash commands and no other path that sends an announcement.
 
 Poll votes are written to `chat_message_actions` via `POST /v1/channels/messages/:messageId/actions` (`ChatReactionService.recordMessageAction`).
 Every user has **at most one** row with `action_type='vote'` per poll message (the dedupe unique index `(message_id, user_id, action_type)` is retained).
+A vote here is checked as the channel operation `'answer'` (#4695): refused in an archived channel and in the audit log, where the card can't be closed either, but open to every reader, whoever may post, as the card offers it. `POST /v1/polls/:id/vote` checks `'vote'`, which also applies who can post; settling that difference is #5384.
 Switching options is an upsert in effect, not in SQL: the insert raises the dedupe unique violation, which `recordMessageAction` catches and turns into an update of `payload.option_id` (and `created_at`) in place and returns a distinct response shape (`updated: true`) so the optimistic client can replay the tally.
 Emoji reactions (`action_type='reaction:<emoji>'`) keep the unique-violation → dedup path unchanged (one reaction per user per emoji, toggle to remove).
 The route takes only the three action types the apps send, `reaction:<emoji>`, `vote` and `signup` (400 otherwise), a `payload` of at most 4,096 characters as JSON (`MESSAGE_ACTION_PAYLOAD_MAX_CHARS`; the largest the apps send is a full sign-up claim, about 900), and stores no payload on a reaction.
@@ -215,6 +216,7 @@ It is the first of a series on the issue: headcount, closing and an end time (st
   The card doesn't hear about the refusal, so it leaves a slot it now draws full of other members out of the member's next tap (`castSignupClaim`); otherwise the refused slot would ride along on every tap for ten seconds and have each refused in turn.
   A slot the member already holds is never full to them.
   A `signup` action on any other kind of message is a 400.
+  A claim is checked as the channel operation `'answer'`, as a form's answers are (#4695): any member who reads the card may claim, whoever may post, and none may in an archived group DM or the audit log, where Close sign-ups is refused too (403).
   Changing the row is a Realtime INSERT or UPDATE, which every open card already takes for votes.
   Unlike a vote change, it keeps the row's `created_at`, so it records when the member first signed up on the card.
 - **What the card shows** (`apps/web/components/chat/renderers/signup-card.tsx`, `apps/mobile/components/chat/signup-card.tsx`, both drawing from `@repo/chat-core/signups`): an eyebrow ("Sign-up · 3 of 4 spots taken", "Sign-up · Full", or plain "Sign-up" when a slot has no limit), the title and details, then each slot as one row a tap takes or gives up, drawn as a poll option is: Secondary, or Primary for the viewer's own as a voted option is, its label (wrapping onto more lines when long) and count at the ends ("1/2", or "3" with no limit), and **Full** in the count's place, greyed and untappable, once a slot the viewer doesn't hold is at its limit.

@@ -65,6 +65,7 @@ jest.mock('@sentry/nestjs', () => ({
 import * as Sentry from '@sentry/nestjs';
 
 import { Test, TestingModule } from '@nestjs/testing';
+import { HttpException } from '@nestjs/common';
 import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import {
   ChapterOnboardingService,
@@ -79,6 +80,7 @@ import {
 } from '#domain/repositories/chat.repository.interface';
 import { CUSTOM_FIELD_REPOSITORY } from '#domain/repositories/custom-field.repository.interface';
 import { CHAPTER_DIRECTORY_REPOSITORY } from '#domain/repositories/chapter-directory.repository.interface';
+import { CHAPTER_REPOSITORY } from '#domain/repositories/chapter.repository.interface';
 import { SupabaseQueryError } from '../../infrastructure/supabase/supabase-query-error';
 import type { Chapter } from '#domain/entities/chapter.entity';
 import type { ChapterOnboardingInput } from './chapter-onboarding.service';
@@ -112,8 +114,10 @@ describe('ChapterOnboardingService', () => {
   let messageInsert: jest.Mock;
   let requestInsert: jest.Mock;
   let fieldsUpsert: jest.Mock;
+  let findStartedAtByUserSince: jest.Mock;
 
   beforeEach(async () => {
+    findStartedAtByUserSince = jest.fn().mockResolvedValue([]);
     chapterService = { create: jest.fn().mockResolvedValue(makeChapter()) };
     mockActivation = { record: jest.fn().mockResolvedValue(true) };
     mockLegalAcceptance = {
@@ -147,6 +151,10 @@ describe('ChapterOnboardingService', () => {
         },
         { provide: ActivationService, useValue: mockActivation },
         { provide: LegalAcceptanceService, useValue: mockLegalAcceptance },
+        {
+          provide: CHAPTER_REPOSITORY,
+          useValue: { findStartedAtByUserSince },
+        },
       ],
     }).compile();
 
@@ -190,6 +198,93 @@ describe('ChapterOnboardingService', () => {
     });
     // A derived theme palette is persisted when colors are supplied.
     expect(payload.config.theme_palette).toBeDefined();
+  });
+
+  describe('daily ceiling on starting chapters', () => {
+    const HOUR = 60 * 60 * 1000;
+    const startedAgo = (hours: number) =>
+      new Date(Date.now() - hours * HOUR).toISOString();
+
+    it('lets someone start a chapter with two already started today', async () => {
+      findStartedAtByUserSince.mockResolvedValue([
+        startedAgo(3),
+        startedAgo(1),
+      ]);
+      await service.onboard('user-1', directoryDto);
+      expect(chapterService.create).toHaveBeenCalledTimes(1);
+      const [userId, since] = findStartedAtByUserSince.mock.calls[0] as [
+        string,
+        Date,
+      ];
+      expect(userId).toBe('user-1');
+      expect(Date.now() - since.getTime()).toBeGreaterThanOrEqual(
+        24 * HOUR - 1000,
+      );
+    });
+
+    it('refuses a fourth in 24 hours before writing anything, and says when', async () => {
+      findStartedAtByUserSince.mockResolvedValue([
+        startedAgo(20),
+        startedAgo(5),
+        startedAgo(1),
+      ]);
+      const error = (await service
+        .onboard('user-1', directoryDto)
+        .catch((e: unknown) => e)) as HttpException;
+      expect(error).toBeInstanceOf(HttpException);
+      expect(error.getStatus()).toBe(429);
+      expect(error.getResponse()).toEqual({
+        code: 'chapter.start_daily_limit',
+        message:
+          "You've started 3 chapters in the last 24 hours, the most allowed. You can start another in about 4 hours.",
+      });
+      expect(chapterService.create).not.toHaveBeenCalled();
+      expect(mockLegalAcceptance.requireOrAccept).not.toHaveBeenCalled();
+    });
+
+    it('answers 429 when submits sent together pass the count and the database refuses one', async () => {
+      // Both submits read two started; the other one's chapter landed first,
+      // and the database's trigger, counting under a lock, refused this one.
+      findStartedAtByUserSince
+        .mockResolvedValueOnce([startedAgo(20), startedAgo(5)])
+        .mockResolvedValueOnce([startedAgo(20), startedAgo(5), startedAgo(0)]);
+      chapterService.create.mockRejectedValueOnce(
+        new SupabaseQueryError({
+          code: 'FR429',
+          message: 'chapters_daily_start_ceiling: 3 chapters started',
+        }),
+      );
+      const error = (await service
+        .onboard('user-1', directoryDto)
+        .catch((e: unknown) => e)) as HttpException;
+      expect(error).toBeInstanceOf(HttpException);
+      expect(error.getStatus()).toBe(429);
+      expect(error.getResponse()).toEqual({
+        code: 'chapter.start_daily_limit',
+        message:
+          "You've started 3 chapters in the last 24 hours, the most allowed. You can start another in about 4 hours.",
+      });
+    });
+
+    it('says a minute when the second count finds room after all', async () => {
+      chapterService.create.mockRejectedValueOnce(
+        new SupabaseQueryError({ code: 'FR429', message: 'refused' }),
+      );
+      const error = (await service
+        .onboard('user-1', directoryDto)
+        .catch((e: unknown) => e)) as HttpException;
+      expect(error.getStatus()).toBe(429);
+      expect((error.getResponse() as { message: string }).message).toMatch(
+        /You can start another in about a minute\.$/,
+      );
+    });
+
+    it('passes any other failure of the insert through', async () => {
+      const other = new SupabaseQueryError({ code: '23514', message: 'x' });
+      chapterService.create.mockRejectedValueOnce(other);
+      await expect(service.onboard('user-1', directoryDto)).rejects.toBe(other);
+      expect(findStartedAtByUserSince).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('Signet accent map', () => {

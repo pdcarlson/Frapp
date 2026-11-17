@@ -131,10 +131,11 @@ export function receiptRequiredOf(error: unknown): boolean {
  *
  * Any 400 but the receipt policy's. The sheet's own checks keep the other
  * fields inside what the API accepts, so a 400 to a create carrying proof is
- * `ServiceEntryService.assertValidProofPath` turning the path down: minted
- * under another chapter, or naming no object in the bucket. Retrying with the
- * same path can never win, so the sheet drops it and the next Submit uploads
- * the photo again. Read by status, not by the API's sentences, which carry no
+ * the API turning the path down: minted under another chapter, naming no
+ * object in the bucket, or already on another member's entry. (A resend of
+ * this member's own saved entry isn't refused: it answers with that entry.)
+ * Retrying with the same path can never win, so the sheet drops it and the
+ * next Submit uploads the photo again. Read by status, not by the API's sentences, which carry no
  * code and may be reworded; at worst a 400 for some other reason costs one
  * extra upload.
  */

@@ -515,7 +515,7 @@
             "bearer": []
           }
         ],
-        "summary": "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter is in context). Lets the client attribute events without ever holding the salt.",
+        "summary": "Get the caller's pseudonymous analytics ids (HMAC of user id, and of chapter id when a chapter the caller belongs to is in context). Lets the client attribute events without ever holding the salt.",
         "tags": [
           "Analytics"
         ]
@@ -10957,7 +10957,7 @@
         },
         "responses": {
           "201": {
-            "description": "",
+            "description": "The entry, as created. A resend by the same member with a `proof_path` their entry already holds answers with that entry as saved, not a second one.",
             "content": {
               "application/json": {
                 "schema": {
@@ -10965,6 +10965,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "A field is invalid; the chapter requires proof and none was sent (code `service_entry.receipt_required`); or `proof_path` is outside the chapter's service-proof folder, names no uploaded file, or is already on another member's entry. A client holding a refused `proof_path` drops it and uploads the file again."
           },
           "default": {
             "description": "Error",
@@ -18723,7 +18726,7 @@
     },
     "/v1/backwork/drafts/{id}/fill": {
       "post": {
-        "description": "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. No route-level limit beyond the default: the AI spend caps bound the cost.",
+        "description": "Reads only a redacted draft's stored file, the flattened copy whose text layer holds only the words outside its redaction boxes, and never its file name. A draft uploaded as-is answers `not_redacted`, and one saved with suggested boxes its uploader has not checked yet answers `not_checked`; neither is read. Sets only fields the draft does not have yet; the uploader checks every value before publishing. A file over 25 MB, or a draft already marked `unreadable`, answers `unreadable` without its file being read. One fill at a time per draft: a second while one runs answers 409. 10 requests a minute per member; the AI spend caps bound the model cost.",
         "operationId": "BackworkFillController_fill_v1",
         "parameters": [
           {
@@ -18751,6 +18754,9 @@
           },
           "404": {
             "description": "AI is off on this server (`ai.not_available`), or the draft is not the caller's or is gone."
+          },
+          "409": {
+            "description": "Another fill of this draft is still running."
           },
           "default": {
             "description": "Error",
@@ -20543,10 +20549,14 @@
         "type": "object",
         "properties": {
           "display_name": {
-            "type": "string"
+            "type": "string",
+            "description": "The member's name as their chapters see it. Trimmed; it may not be blank.",
+            "maxLength": 100
           },
           "bio": {
-            "type": "string"
+            "type": "string",
+            "description": "An empty string clears it.",
+            "maxLength": 2000
           },
           "graduation_year": {
             "type": "number",
@@ -20558,10 +20568,14 @@
             "maxLength": 100
           },
           "current_city": {
-            "type": "string"
+            "type": "string",
+            "description": "An empty string clears it.",
+            "maxLength": 200
           },
           "current_company": {
-            "type": "string"
+            "type": "string",
+            "description": "An empty string clears it.",
+            "maxLength": 200
           },
           "phone": {
             "type": "string",
@@ -20666,7 +20680,7 @@
           "chapter_group_id": {
             "type": "string",
             "nullable": true,
-            "description": "Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`), otherwise null. Same helper as analytics events. Clients must not compute this."
+            "description": "Pseudonymous PostHog chapter group: 64 lowercase hex HMAC of the chapter id when a chapter is in context (JWT `active_chapter_id` or `x-chapter-id`) and the caller is a member of it, otherwise null. Same helper as analytics events. Clients must not compute this."
           }
         },
         "required": [
@@ -20774,11 +20788,13 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Chapter display name (org name)"
+            "description": "Chapter display name (org name). Trimmed; at least 3 characters.",
+            "maxLength": 200
           },
           "university": {
             "type": "string",
-            "description": "University / institution name"
+            "description": "University / institution name. Trimmed; at least 2 characters.",
+            "maxLength": 200
           },
           "org_archetype": {
             "type": "string",
@@ -20900,10 +20916,14 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "The chapter's name. Trimmed; at least 3 characters. Omit it to leave it as stored.",
+            "maxLength": 200
           },
           "university": {
-            "type": "string"
+            "type": "string",
+            "description": "The chapter's university. Trimmed; at least 2 characters. Omit it to leave it as stored.",
+            "maxLength": 200
           },
           "accent_color": {
             "type": "string"
@@ -22454,7 +22474,8 @@
         "properties": {
           "token": {
             "type": "string",
-            "description": "Expo push token"
+            "description": "Expo push token",
+            "maxLength": 255
           },
           "device_name": {
             "type": "string",
@@ -25996,13 +26017,16 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 255
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 5000
           },
           "location": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
           },
           "start_time": {
             "type": "string"
@@ -26026,6 +26050,7 @@
             "maxLength": 200
           },
           "required_role_ids": {
+            "maxItems": 200,
             "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
             "type": "array",
             "items": {
@@ -26033,6 +26058,7 @@
             }
           },
           "optional_role_ids": {
+            "maxItems": 200,
             "description": "Roles invited but not required.",
             "type": "array",
             "items": {
@@ -26040,6 +26066,7 @@
             }
           },
           "excluded_role_ids": {
+            "maxItems": 200,
             "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
             "type": "array",
             "items": {
@@ -26051,7 +26078,8 @@
             "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted on create, it is stored as null, which reads as true unless `required_role_ids` is non-empty: the older \"only these roles\" meaning, for a caller that predates this field. Omitted on update, it is left as stored."
           },
           "notes": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20000
           },
           "agenda": {
             "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
@@ -26264,13 +26292,16 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 255
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 5000
           },
           "location": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
           },
           "start_time": {
             "type": "string"
@@ -26290,6 +26321,7 @@
             "maxLength": 200
           },
           "required_role_ids": {
+            "maxItems": 200,
             "description": "Roles that must attend. See `others_invited` for members holding none of the listed roles.",
             "type": "array",
             "items": {
@@ -26297,6 +26329,7 @@
             }
           },
           "optional_role_ids": {
+            "maxItems": 200,
             "description": "Roles invited but not required.",
             "type": "array",
             "items": {
@@ -26304,6 +26337,7 @@
             }
           },
           "excluded_role_ids": {
+            "maxItems": 200,
             "description": "Roles not invited: their holders do not see the event and cannot check in, unless another role of theirs is listed as required or optional.",
             "type": "array",
             "items": {
@@ -26315,7 +26349,8 @@
             "description": "Whether a member holding none of the listed roles is invited (then `is_mandatory` says whether they must attend). Omitted, it is left as stored. A stored null reads as true unless `required_role_ids` is non-empty, the older \"only these roles\" meaning."
           },
           "notes": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 20000
           },
           "agenda": {
             "description": "This meeting's agenda, in order: at most 30 short items. Sent whole; it replaces the stored list, and `[]` clears it (null is refused). Belongs to this one meeting: with `scope: 'series'` it is still written to the addressed occurrence only (the response is the series head, as for any series save, so read the occurrence again), and a new occurrence starts with none.",
@@ -26829,7 +26864,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "maxLength": 200
+            "maxLength": 255
           },
           "start_time": {
             "type": "string",
@@ -27756,7 +27791,8 @@
           },
           "file_hash": {
             "type": "string",
-            "description": "SHA-256 hash of the uploaded file"
+            "description": "SHA-256 hash of the uploaded file, as 64 lowercase hex characters",
+            "pattern": "^[0-9a-f]{64}$"
           },
           "is_redacted": {
             "type": "boolean",
@@ -28285,7 +28321,7 @@
           },
           "proof_path": {
             "type": "string",
-            "description": "Storage path to proof file (e.g. from upload)"
+            "description": "The `storage_path` from `POST /v1/service-entries/proof-upload-url`, once the file is uploaded. One file belongs to one entry: when an entry in the chapter already holds this path, a create by the same member answers 201 with that entry as saved (a resend after a lost response), and one by any other member is refused with 400."
           },
           "channel_id": {
             "type": "string",
@@ -28293,7 +28329,7 @@
           },
           "client_message_id": {
             "type": "string",
-            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key — a replay creates a duplicate entry."
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. Not a server-side dedupe key for the entry: a replay without `proof_path` creates a duplicate entry (one with it returns the entry already saved, see `proof_path`). The card itself is deduplicated on it."
           }
         },
         "required": [

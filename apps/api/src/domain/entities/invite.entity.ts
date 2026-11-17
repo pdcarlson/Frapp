@@ -18,4 +18,10 @@ export interface Invite {
    * what tells a revoked invite from a redeemed one.
    */
   revoked_at: string | null;
+  /**
+   * When the email provider refused this invite's email. Such an invite
+   * doesn't count toward the daily emailed-invite ceilings; its token still
+   * works when shared by hand.
+   */
+  email_failed_at: string | null;
 }

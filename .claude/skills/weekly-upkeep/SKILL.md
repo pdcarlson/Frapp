@@ -68,7 +68,7 @@ merges it without being asked, so don't phrase it as an ask. A **Needs you** ite
 report goes right under it. With neither, the first line is "Nothing needs you this run."
 
 **Connectors.** The session holds every connector the owner has, write tools included. Use Sentry,
-Supabase, Vercel, Render and PostHog for reads only, and never call Stripe, Gmail, Resend or any
+Supabase, Vercel and PostHog for reads only, and never call Stripe, Gmail, Resend or any
 messaging connector.
 
 ## How the run ends

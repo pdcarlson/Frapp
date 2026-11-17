@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   AUDIT_LOG_READ_ONLY_REFUSAL,
+  BLANK_NAME_REFUSAL,
+  DISPLAY_NAME_MAX_LENGTH,
+  EVENT_DESCRIPTION_MAX_LENGTH,
   OFFLINE_COPY,
+  REQUEST_VALIDATION_FAILED_CODE,
   SERVER_MESSAGE_COPY,
   STATUS_ERROR_COPY,
+  tooLongRefusal,
+  tooShortRefusal,
 } from "@repo/validation";
 import {
   canTryAgain,
@@ -140,6 +146,51 @@ describe("errorCopy", () => {
     expect(errorCopy(nest(status, sentence), FALLBACK)).toBe(copy);
   });
 
+  // The length and blank-name refusals on a member's profile, an event and a
+  // chapter's name (`@MaxLength` and friends on the DTOs). The API words them
+  // with the same writers, so a member reads them as sent, not "Try again".
+  it("shows a field's length or blank-name refusal as the API words it", () => {
+    const validation = (message: string | string[]) =>
+      nest(400, message, REQUEST_VALIDATION_FAILED_CODE);
+    expect(
+      errorCopy(
+        validation([tooLongRefusal("your name", DISPLAY_NAME_MAX_LENGTH)]),
+        FALLBACK,
+      ),
+    ).toBe("Keep your name to 100 characters or fewer.");
+    expect(
+      errorCopy(
+        validation([
+          tooLongRefusal("the description", EVENT_DESCRIPTION_MAX_LENGTH),
+        ]),
+        FALLBACK,
+      ),
+    ).toBe("Keep the description to 5,000 characters or fewer.");
+    expect(
+      errorCopy(
+        validation([tooShortRefusal("the chapter's name", 3)]),
+        FALLBACK,
+      ),
+    ).toBe("Use at least 3 characters for the chapter's name.");
+    expect(errorCopy(validation([BLANK_NAME_REFUSAL]), FALLBACK)).toBe(
+      "Enter a name.",
+    );
+    // Two fields refused at once: the first, never the two run together.
+    expect(
+      errorCopy(
+        validation([
+          tooLongRefusal("your bio", 2_000),
+          tooLongRefusal("your city", 200),
+        ]),
+        FALLBACK,
+      ),
+    ).toBe("Keep your bio to 2,000 characters or fewer.");
+    // A developer's sentence of the same opening is still not shown.
+    expect(
+      errorCopy(validation(["Keep-alive header must be shorter"]), FALLBACK),
+    ).toBe(FALLBACK);
+  });
+
   it("says what the status means where it means the same everywhere", () => {
     expect(errorCopy(nest(403, "Forbidden resource"), FALLBACK)).toBe(
       "Your role can't do this. Ask an officer if you need it.",
@@ -224,6 +275,30 @@ describe("errorCopy", () => {
         opt,
       ),
     ).not.toMatch(/discord:import/);
+  });
+
+  it("shows a daily limit's own words, which say how long to wait", () => {
+    const invites = nest(
+      429,
+      "Your chapter can email up to 300 invites in 24 hours and has 12 left. You can send these 50 in about 5 hours, or share an invite link now.",
+      "invite.email_daily_limit",
+    );
+    const own = nest(
+      429,
+      "You can email up to 300 invites in 24 hours and have none left. You can send this one in about 20 minutes, or share an invite link now.",
+    );
+    const chapters = nest(
+      429,
+      "You've started 3 chapters in the last 24 hours, the most allowed. You can start another in about an hour.",
+      "chapter.start_daily_limit",
+    );
+    for (const e of [invites, own, chapters]) {
+      expect(errorCopy(e, FALLBACK)).toBe(e.message);
+    }
+    // The throttler's own 429 keeps the shared line.
+    expect(
+      errorCopy(nest(429, "ThrottlerException: Too Many Requests"), FALLBACK),
+    ).toMatch(/Wait a minute/);
   });
 
   it("writes every mapped line as a sentence", () => {

@@ -439,7 +439,9 @@ export class ChannelAccessService {
    * channel the caller cannot see (or in another chapter) is rejected.
    *
    * `operation` defaults to `'read'`, which is right for actions that don't
-   * author channel content (react, bookmark). Pass `'post'` for anything that
+   * write into the channel (react, bookmark). A card response (a vote, a
+   * sign-up claim, a form's answers) passes `'answer'`, so an archived channel
+   * and the audit log refuse it (#4695). Pass `'post'` for anything that
    * writes member-authored content into the channel — otherwise the post-side
    * gates (read-only channels, the Alumni lifecycle rule) are bypassed by
    * editing an existing message instead of sending a new one. A change to the

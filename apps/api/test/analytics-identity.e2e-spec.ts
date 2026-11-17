@@ -12,6 +12,7 @@ import {
 } from '#domain/utils/analytics-keying';
 import { AppModule } from '../src/app.module';
 import { AuthService } from '../src/application/services/auth.service';
+import { MEMBER_REPOSITORY } from '../src/domain/repositories/member.repository.interface';
 import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
 import { configureApp } from '../src/bootstrap';
@@ -20,6 +21,9 @@ const SALT = 'e2e-identity-salt';
 const USER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const CHAPTER_A = '11111111-1111-4111-8111-111111111111';
 const CHAPTER_B = '22222222-2222-4222-8222-222222222222';
+const CHAPTER_OTHER = '33333333-3333-4333-8333-333333333333';
+/** The chapters USER_ID belongs to; the identity route hands out a group id only for these. */
+const MEMBER_OF = new Set([CHAPTER_A, CHAPTER_B]);
 
 describe('Analytics identity (e2e)', () => {
   let app: INestApplication;
@@ -48,6 +52,16 @@ describe('Analytics identity (e2e)', () => {
       .overrideProvider(AuthService)
       .useValue({
         syncUser: jest.fn().mockResolvedValue({ id: USER_ID }),
+      })
+      .overrideProvider(MEMBER_REPOSITORY)
+      .useValue({
+        findByUserAndChapter: jest.fn((userId: string, chapterId: string) =>
+          Promise.resolve(
+            userId === USER_ID && MEMBER_OF.has(chapterId)
+              ? { id: 'member-1', user_id: userId, chapter_id: chapterId }
+              : null,
+          ),
+        ),
       })
       .overrideGuard(SupabaseAuthGuard)
       .useValue(authGuard)
@@ -131,6 +145,19 @@ describe('Analytics identity (e2e)', () => {
 
     expect(response.body.chapter_group_id).toBeNull();
     expect(JSON.stringify(response.body)).not.toContain('not-a-uuid');
+  });
+
+  it('omits the chapter group for a chapter the caller does not belong to', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/v1/analytics/identity')
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', CHAPTER_OTHER)
+      .expect(200);
+
+    expect(response.body.distinct_id).toBe(
+      hashUserIdForAnalytics(SALT, USER_ID),
+    );
+    expect(response.body.chapter_group_id).toBeNull();
   });
 
   it('prefers the JWT active_chapter_id claim over the header', async () => {

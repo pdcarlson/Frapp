@@ -3,9 +3,19 @@ import {
   BadRequestException,
   ValidationPipe,
 } from '@nestjs/common';
-import { MAX_CHECK_IN_OPENS_MINUTES } from '@repo/validation';
+import {
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NAME_MAX_LENGTH,
+  EVENT_NOTES_MAX_LENGTH,
+  MAX_CHECK_IN_OPENS_MINUTES,
+} from '@repo/validation';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import { CreateEventDto, UpdateEventDto } from './event.dto';
+import {
+  EVENT_ROLE_ID_MAX_LENGTH,
+  EVENT_ROLE_IDS_MAX,
+} from '#domain/constants/field-limits';
 
 /**
  * `check_in_opens_minutes` (#3703) through the real global pipe, built from
@@ -116,4 +126,124 @@ describe('Event DTOs — recurrence_rule', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     }
   });
+});
+
+/**
+ * The free-text fields and role lists (`spec/behavior/events.md` § Event
+ * Creation, length limits). A repeating event copies its description and notes
+ * onto every meeting, so each is bounded at the request.
+ */
+describe('Event DTOs — text lengths and role lists', () => {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  const transform = (
+    metatype: ArgumentMetadata['metatype'],
+    payload: unknown,
+  ) => pipe.transform(payload, { type: 'body', metatype });
+
+  const create = {
+    name: 'Chapter',
+    start_time: '2026-11-07T20:00:00.000Z',
+    end_time: '2026-11-07T21:00:00.000Z',
+  };
+  const roleId = '7d0f5a52-4c1f-4a4e-9a51-0e6a3c1f2b11';
+  const roleFields = [
+    'required_role_ids',
+    'optional_role_ids',
+    'excluded_role_ids',
+  ] as const;
+
+  const cases = [
+    ['create', CreateEventDto, create],
+    ['update', UpdateEventDto, {}],
+  ] as const;
+
+  it.each(cases)(
+    '%s takes each text field at its limit',
+    async (_, dto, base) => {
+      const body = {
+        ...base,
+        name: 'c'.repeat(EVENT_NAME_MAX_LENGTH),
+        description: 'd'.repeat(EVENT_DESCRIPTION_MAX_LENGTH),
+        location: 'l'.repeat(EVENT_LOCATION_MAX_LENGTH),
+        notes: 'n'.repeat(EVENT_NOTES_MAX_LENGTH),
+      };
+      await expect(transform(dto, body)).resolves.toEqual(
+        expect.objectContaining({
+          name: body.name,
+          description: body.description,
+          location: body.location,
+          notes: body.notes,
+        }),
+      );
+    },
+  );
+
+  it.each(cases)(
+    '%s refuses each text field one past its limit, saying the limit',
+    async (_, dto, base) => {
+      for (const [field, max, subject] of [
+        ['name', EVENT_NAME_MAX_LENGTH, "the event's name"],
+        ['description', EVENT_DESCRIPTION_MAX_LENGTH, 'the description'],
+        ['location', EVENT_LOCATION_MAX_LENGTH, 'the location'],
+        ['notes', EVENT_NOTES_MAX_LENGTH, 'the notes'],
+      ] as const) {
+        const error: unknown = await transform(dto, {
+          ...base,
+          [field]: 'x'.repeat(max + 1),
+        }).catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect(
+          JSON.stringify((error as BadRequestException).getResponse()),
+        ).toContain(
+          `Keep ${subject} to ${max.toLocaleString('en-US')} characters or fewer.`,
+        );
+      }
+    },
+  );
+
+  it.each(cases)('%s takes role ids up to the cap', async (_, dto, base) => {
+    const ids = Array.from({ length: EVENT_ROLE_IDS_MAX }, () => roleId);
+    for (const field of roleFields) {
+      await expect(transform(dto, { ...base, [field]: ids })).resolves.toEqual(
+        expect.objectContaining({ [field]: ids }),
+      );
+    }
+  });
+
+  // The columns are `text[]` and an officer's edit sends back the ids the
+  // event already holds, so an id stored in another shape must not refuse
+  // their unrelated edit: entries are bounded by length, not read as UUIDs.
+  it.each(cases)(
+    '%s takes back a stored role id that is not a UUID',
+    async (_, dto, base) => {
+      for (const field of roleFields) {
+        await expect(
+          transform(dto, { ...base, [field]: ['officers', roleId] }),
+        ).resolves.toEqual(
+          expect.objectContaining({ [field]: ['officers', roleId] }),
+        );
+      }
+    },
+  );
+
+  it.each(cases)(
+    '%s refuses a role list past the cap, an entry past its length, and a non-string',
+    async (_, dto, base) => {
+      const tooMany = Array.from(
+        { length: EVENT_ROLE_IDS_MAX + 1 },
+        () => roleId,
+      );
+      for (const field of roleFields) {
+        for (const value of [
+          tooMany,
+          ['r'.repeat(EVENT_ROLE_ID_MAX_LENGTH + 1)],
+          [42],
+        ]) {
+          await expect(
+            transform(dto, { ...base, [field]: value }),
+          ).rejects.toBeInstanceOf(BadRequestException);
+        }
+      }
+    },
+  );
 });

@@ -109,12 +109,59 @@ export const MAJOR_MAX_LENGTH = 100;
 export const PHONE_MAX_LENGTH = 32;
 
 /**
- * A member's name as an officer corrects it (`PATCH /v1/members/{id}/profile`,
- * #4367): the API's cap and both correction forms' `maxLength`. The member's
- * own `PATCH /v1/users/me` has no cap yet, so an officer fixing a longer name
- * must shorten it.
+ * A member's name, as they set it themselves (`PATCH /v1/users/me`) or an
+ * officer corrects it (`PATCH /v1/members/{id}/profile`, #4367): the API's cap
+ * on both routes, and the `maxLength` of every field that edits it (web
+ * `/profile`, the phone's Edit profile sheet and welcome name step, and both
+ * correction forms). A name copied from a sign-in provider is cut to it
+ * (`AuthService.syncUser`).
  */
 export const DISPLAY_NAME_MAX_LENGTH = 100;
+
+/**
+ * A member's own profile text (`PATCH /v1/users/me`): the bio, and where they
+ * live and work after graduating. A bio is a short paragraph, a city or
+ * company a line, so the bounds sit far above real use. The API refuses past
+ * them; web `/profile` and the phone's Edit profile sheet stop at them. An
+ * empty value still clears each.
+ */
+export const USER_BIO_MAX_LENGTH = 2_000;
+export const USER_CITY_MAX_LENGTH = 200;
+export const USER_COMPANY_MAX_LENGTH = 200;
+
+/**
+ * An event's name, on every route that writes one: `CreateEventDto`,
+ * `UpdateEventDto`, a meeting recorded off the calendar (`NewMeetingEventDto`)
+ * and the AI's proposed events, which are cut to it. Both apps' event forms
+ * stop at it.
+ */
+export const EVENT_NAME_MAX_LENGTH = 255;
+
+/**
+ * Free text on an event (`events.description`, `events.location`,
+ * `events.notes`), on create and edit, and on an AI-proposed event, which is
+ * cut to them. Each sits far above what an officer types: a description is a
+ * paragraph or two, a location a room or an address, and the notes a set of
+ * meeting minutes. They matter because a repeating event copies its
+ * description and notes onto every meeting of the series
+ * (`EventSeriesService`), and every event read returns them. Both apps' event
+ * forms stop at them.
+ */
+export const EVENT_DESCRIPTION_MAX_LENGTH = 5_000;
+export const EVENT_LOCATION_MAX_LENGTH = 500;
+export const EVENT_NOTES_MAX_LENGTH = 20_000;
+
+/**
+ * A chapter's name and university, on onboarding's create and the web
+ * Settings page's save alike, each trimmed first. The minimums are the
+ * onboarding wizard's since it shipped; the longest university in the chapter
+ * directory (`supabase/seed/chapter_directory.csv`) is 82 characters, and a
+ * name is an organization's, often with its chapter's.
+ */
+export const CHAPTER_NAME_MIN_LENGTH = 3;
+export const CHAPTER_NAME_MAX_LENGTH = 200;
+export const CHAPTER_UNIVERSITY_MIN_LENGTH = 2;
+export const CHAPTER_UNIVERSITY_MAX_LENGTH = 200;
 
 /**
  * A chapter document's title (`chapter_documents.title`), set by whoever

@@ -1,6 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
-import type { FrappSupabaseClient, TablesInsert } from '../database.types';
+import type {
+  FrappSupabaseClient,
+  TablesInsert,
+  TablesUpdate,
+} from '../database.types';
 import type { IPushTokenRepository } from '#domain/repositories/notification.repository.interface';
 import type { PushToken } from '#domain/entities/notification.entity';
 import { chunkIds } from '#domain/utils/chunk-ids';
@@ -90,17 +94,20 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
     return data;
   }
 
-  async updateDeviceName(
+  async markRegistered(
     id: string,
     userId: string,
-    deviceName: string,
+    now: string,
+    deviceName?: string,
   ): Promise<PushToken | null> {
+    const patch: TablesUpdate<'push_tokens'> = { last_registered_at: now };
+    if (deviceName) patch.device_name = deviceName;
     // `maybeSingle`: the row can be deleted between the caller's read and
     // this write (a sign-out, a DeviceNotRegistered prune, another account
     // taking the token over), and that is not a server error.
     const { data, error } = await this.supabase
       .from('push_tokens')
-      .update({ device_name: deviceName })
+      .update(patch)
       .eq('id', id)
       .eq('user_id', userId)
       .select()

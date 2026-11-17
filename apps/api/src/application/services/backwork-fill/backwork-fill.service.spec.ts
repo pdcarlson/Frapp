@@ -1,10 +1,24 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
-import type { IDocumentTextExtractor } from '#domain/adapters/document-text-extractor.interface';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  DOCUMENT_TEXT_EXTRACT_MAX_BYTES,
+  type IDocumentTextExtractor,
+} from '#domain/adapters/document-text-extractor.interface';
 import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { AiConsentService } from '../ai/ai-consent.service';
 import type { AiGatewayService } from '../ai/ai-gateway.service';
-import type { BackworkService } from '../backwork.service';
-import { BackworkFillService } from './backwork-fill.service';
+import {
+  AI_FILL_CLAIM_STALE_MS,
+  type BackworkService,
+} from '../backwork.service';
+import {
+  AI_FILL_TIME_LIMIT_MS,
+  BackworkFillService,
+  boundedFillSignal,
+} from './backwork-fill.service';
 
 const CHAPTER = 'chapter-1';
 const USER = 'user-1';
@@ -38,8 +52,13 @@ function setup(
     isRedacted?: boolean;
     generated?: unknown;
     stored?: Record<string, unknown>;
+    /** What the size-checked read answers; the stored bytes by default. */
+    file?: { bytes: Uint8Array } | 'too_large' | null;
+    /** False when another fill already holds the draft. */
+    claimed?: boolean;
   } = {},
 ) {
+  const release = jest.fn(async () => undefined);
   const stored = options.stored ?? {};
   const backwork = {
     findOwnDraft: jest.fn(async () =>
@@ -47,7 +66,12 @@ function setup(
         ? null
         : draft(stored, options.isRedacted ?? true),
     ),
-    redactedDraftFile: jest.fn(async () => STORED_BYTES),
+    redactedDraftFile: jest.fn(async () =>
+      options.file === undefined ? { bytes: STORED_BYTES } : options.file,
+    ),
+    claimAiFill: jest.fn(async () =>
+      options.claimed === false ? null : release,
+    ),
     getDepartments: jest.fn(async () => [
       { id: 'd1', code: 'CHEM', name: 'Chemistry' },
     ]),
@@ -116,7 +140,7 @@ function setup(
       draftId: DRAFT,
       now: NOW,
     });
-  return { service, backwork, gateway, consent, extractor, run };
+  return { service, backwork, gateway, consent, extractor, run, release };
 }
 
 describe('BackworkFillService', () => {
@@ -154,6 +178,7 @@ describe('BackworkFillService', () => {
     await run();
     expect(backwork.redactedDraftFile).toHaveBeenCalledWith(
       expect.objectContaining({ id: DRAFT, is_redacted: true }),
+      DOCUMENT_TEXT_EXTRACT_MAX_BYTES,
     );
     expect(extractor.extract).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -213,6 +238,147 @@ describe('BackworkFillService', () => {
     expect(backwork.applyAiFill.mock.calls[0][3]).toEqual({
       fields: {},
       outcome: 'unreadable',
+    });
+  });
+
+  it('marks a file over the extractor cap unreadable from its stored size, without opening it', async () => {
+    const { run, gateway, extractor, backwork, release } = setup({
+      file: 'too_large',
+    });
+    const result = await run();
+    expect(result.status).toBe('unreadable');
+    expect(extractor.extract).not.toHaveBeenCalled();
+    expect(gateway.generateObject).not.toHaveBeenCalled();
+    expect(backwork.applyAiFill.mock.calls[0][3]).toEqual({
+      fields: {},
+      outcome: 'unreadable',
+    });
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers a draft already marked unreadable as it stands, without claiming or reading it', async () => {
+    const { run, gateway, backwork } = setup({
+      stored: { ai_fill: 'unreadable' },
+    });
+    await expect(run()).resolves.toMatchObject({
+      status: 'unreadable',
+      filled: [],
+      draft: expect.objectContaining({ id: DRAFT }),
+    });
+    expect(backwork.claimAiFill).not.toHaveBeenCalled();
+    expect(backwork.redactedDraftFile).not.toHaveBeenCalled();
+    expect(backwork.applyAiFill).not.toHaveBeenCalled();
+    expect(gateway.generateObject).not.toHaveBeenCalled();
+  });
+
+  it('refuses a second fill of a draft while one is running', async () => {
+    const { run, backwork, gateway } = setup({ claimed: false });
+    await expect(run()).rejects.toBeInstanceOf(ConflictException);
+    expect(backwork.claimAiFill).toHaveBeenCalledWith(
+      DRAFT,
+      CHAPTER,
+      USER,
+      NOW,
+    );
+    expect(backwork.redactedDraftFile).not.toHaveBeenCalled();
+    expect(gateway.generateObject).not.toHaveBeenCalled();
+  });
+
+  it('releases its claim when the fill ends, and when it fails', async () => {
+    const done = setup();
+    await done.run();
+    expect(done.release).toHaveBeenCalledTimes(1);
+
+    const failed = setup({ file: null });
+    await expect(failed.run()).rejects.toBeInstanceOf(NotFoundException);
+    expect(failed.release).toHaveBeenCalledTimes(1);
+  });
+
+  describe('the time limit on a claimed fill', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    /** Stands in for `AbortSignal.timeout`, so a spec can make it fire. */
+    function controlDeadline() {
+      const deadline = new AbortController();
+      const timeout = jest
+        .spyOn(AbortSignal, 'timeout')
+        .mockReturnValue(deadline.signal);
+      return { deadline, timeout };
+    }
+
+    function signalOf(gateway: { generateObject: jest.Mock }): AbortSignal {
+      const prompt = gateway.generateObject.mock.calls[0][1] as {
+        signal: AbortSignal;
+      };
+      return prompt.signal;
+    }
+
+    it('ends a minute inside the claim, so a takeover never runs beside a live fill', () => {
+      expect(AI_FILL_TIME_LIMIT_MS).toBeLessThanOrEqual(
+        AI_FILL_CLAIM_STALE_MS - 60_000,
+      );
+    });
+
+    it('runs the model call under the time limit, starting once the claim is held', async () => {
+      const { timeout } = controlDeadline();
+      const { run, gateway } = setup();
+      await run();
+      expect(timeout).toHaveBeenCalledWith(AI_FILL_TIME_LIMIT_MS);
+      expect(signalOf(gateway).aborted).toBe(false);
+    });
+
+    it('stops a model call still running at the limit, and lets the claim go', async () => {
+      const { deadline } = controlDeadline();
+      const { run, gateway, backwork, release } = setup();
+      gateway.generateObject.mockImplementation(
+        (..._args: unknown[]) =>
+          new Promise((_resolve, reject) => {
+            const { signal } = _args[1] as { signal: AbortSignal };
+            signal.addEventListener('abort', () => reject(signal.reason));
+            deadline.abort(new DOMException('limit', 'TimeoutError'));
+          }),
+      );
+      await expect(run()).rejects.toMatchObject({ name: 'TimeoutError' });
+      expect(backwork.applyAiFill).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes nothing when the limit passed while the model answered', async () => {
+      const { deadline } = controlDeadline();
+      const { run, gateway, backwork, release } = setup();
+      const answer = await gateway.generateObject();
+      gateway.generateObject.mockImplementation(async () => {
+        deadline.abort(new DOMException('limit', 'TimeoutError'));
+        return answer;
+      });
+      await expect(run()).rejects.toMatchObject({ name: 'TimeoutError' });
+      expect(backwork.applyAiFill).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    it('still stops when the member leaves the page', async () => {
+      const left = new AbortController();
+      const { service, gateway } = setup();
+      await service.fill({
+        chapterId: CHAPTER,
+        userId: USER,
+        draftId: DRAFT,
+        now: NOW,
+        signal: left.signal,
+      });
+      const signal = signalOf(gateway);
+      expect(signal.aborted).toBe(false);
+      left.abort();
+      expect(signal.aborted).toBe(true);
+    });
+
+    it('fires on its own once the limit passes', async () => {
+      const signal = boundedFillSignal(undefined, 5);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(signal.aborted).toBe(true);
+      expect((signal.reason as Error).name).toBe('TimeoutError');
     });
   });
 

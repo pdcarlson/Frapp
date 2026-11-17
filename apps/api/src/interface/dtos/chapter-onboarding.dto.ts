@@ -3,13 +3,22 @@ import {
   IsOptional,
   IsString,
   IsUUID,
-  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import {
+  CHAPTER_NAME_MAX_LENGTH,
+  CHAPTER_NAME_MIN_LENGTH,
+  CHAPTER_UNIVERSITY_MAX_LENGTH,
+  CHAPTER_UNIVERSITY_MIN_LENGTH,
+} from '@repo/validation';
 import { BrandingDto } from './chapter-config.dto';
+import {
+  ChapterNameRules,
+  ChapterUniversityRules,
+} from '../decorators/chapter-identity.decorator';
 
 /**
  * Payload for the onboarding wizard (Chunk 03). The wizard collects chapter
@@ -19,14 +28,20 @@ import { BrandingDto } from './chapter-config.dto';
  * arbitrary module map. Actor identity comes from the session, not this DTO.
  */
 export class ChapterOnboardingDto {
-  @ApiProperty({ description: 'Chapter display name (org name)' })
-  @IsString()
-  @MinLength(3)
+  // The Settings save's rule too (`UpdateChapterDto`). Both wizards trim
+  // before sending already.
+  @ApiProperty({
+    description: `Chapter display name (org name). Trimmed; at least ${CHAPTER_NAME_MIN_LENGTH} characters.`,
+    maxLength: CHAPTER_NAME_MAX_LENGTH,
+  })
+  @ChapterNameRules()
   name: string;
 
-  @ApiProperty({ description: 'University / institution name' })
-  @IsString()
-  @MinLength(2)
+  @ApiProperty({
+    description: `University / institution name. Trimmed; at least ${CHAPTER_UNIVERSITY_MIN_LENGTH} characters.`,
+    maxLength: CHAPTER_UNIVERSITY_MAX_LENGTH,
+  })
+  @ChapterUniversityRules()
   university: string;
 
   @ApiPropertyOptional({

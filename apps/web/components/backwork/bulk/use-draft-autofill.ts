@@ -26,10 +26,13 @@ export type DraftAutofillStop = "consent" | "chapter_off" | "off";
  *
  * A draft uploaded as-is is never sent: its stored file is the original, and
  * the API refuses it too. Nor is one whose pages wait for its uploader's check
- * (#5252); it is filled once they have checked them. A draft is asked about once per visit: a refusal or
- * a bad answer leaves it as it was, for the member to fill by hand. A 429
- * puts it back in line and pauses the fill for a moment. A 403 or a 404 for AI stops
- * every fill, since the next answer would be the same.
+ * (#5252); it is filled once they have checked them. A draft is asked about
+ * once per visit: a refusal or a bad answer leaves it as it was, for the
+ * member to fill by hand. A 429 (too many fills this minute) or a 409 (a fill
+ * of that draft is still running, from another tab or a request whose answer
+ * was lost) puts it back in line and pauses the fill for a moment, so the
+ * draft is asked about again rather than left unfilled for the visit. A 403
+ * or a 404 for AI stops every fill, since the next answer would be the same.
  */
 export function useDraftAutofill(drafts: readonly BackworkDraft[], enabled: boolean) {
   const fill = useFillBackworkDraft();
@@ -72,7 +75,9 @@ export function useDraftAutofill(drafts: readonly BackworkDraft[], enabled: bool
           else if (code === "ai.chapter_off") setStopped("chapter_off");
           else if (code === "ai.not_available") {
             setStopped("off");
-          } else if (statusOf(error) === 429) {
+          } else if (statusOf(error) === 429 || statusOf(error) === 409) {
+            // Too many fills this minute, or this draft's fill still running:
+            // ask again after the pause.
             tried.current.delete(draft.id);
             setCoolingDown(true);
           }

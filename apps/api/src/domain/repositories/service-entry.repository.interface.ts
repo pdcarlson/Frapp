@@ -28,12 +28,40 @@ export interface IServiceEntryRepository {
     chapterId: string,
     range: { startDate?: string; endDate?: string },
   ): Promise<ServiceLeaderboardRow[]>;
+  /**
+   * Inserts the entry. When the insert meets
+   * `service_entries_chapter_proof_path_key` (another entry in the chapter
+   * already holds this `proof_path`), returns that entry instead, which may
+   * be another member's: whether the caller may have it is the service's
+   * call (`ServiceEntryService.create`).
+   */
   create(data: Partial<ServiceEntry>): Promise<ServiceEntry>;
-  update(
+  /**
+   * The entry in the chapter whose proof is the file at this path, or null.
+   * The oldest one if entries from before a proof path was one entry's alone
+   * still share it.
+   */
+  findByProofPath(
+    chapterId: string,
+    proofPath: string,
+  ): Promise<ServiceEntry | null>;
+  /**
+   * Entries in the chapter whose proof is the file at this path: a proof
+   * file belongs to one entry, and is deleted only once none points at it.
+   */
+  countByProofPath(chapterId: string, proofPath: string): Promise<number>;
+  /**
+   * Rejects a PENDING entry in one conditional update, so it can't land on
+   * an entry a concurrent approval already took (the counterpart of
+   * `approveAtomic`'s compare-and-set). Returns the rejected entry, or null
+   * when it is missing or no longer PENDING.
+   */
+  rejectIfPending(
     id: string,
     chapterId: string,
-    data: Partial<ServiceEntry>,
-  ): Promise<ServiceEntry>;
+    reviewerId: string,
+    reviewComment: string | null,
+  ): Promise<ServiceEntry | null>;
   /**
    * Atomically approve a PENDING service entry and award its SERVICE points in a
    * single DB transaction (compare-and-set on `status`/`points_awarded`).
@@ -49,5 +77,10 @@ export interface IServiceEntryRepository {
     reviewComment: string | null,
     points: number,
   ): Promise<ServiceEntry | null>;
-  delete(id: string, chapterId: string): Promise<void>;
+  /**
+   * Deletes the entry only while it is PENDING, in one conditional delete, so
+   * an approval that landed first keeps its entry. Returns the deleted entry,
+   * or null when it is missing or no longer PENDING.
+   */
+  deleteIfPending(id: string, chapterId: string): Promise<ServiceEntry | null>;
 }

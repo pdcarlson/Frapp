@@ -4,6 +4,8 @@ import {
   ConflictException,
   ForbiddenException,
   GoneException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -32,6 +34,16 @@ import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
 import type { RankContext } from '#domain/utils/rank-context';
 import { inviteRefusal, memberRoleOf } from '#domain/utils/invite-reach';
+import {
+  DAILY_LIMIT_WINDOW_MS,
+  INVITE_EMAILS_PER_CHAPTER_PER_DAY,
+  INVITE_EMAILS_PER_INVITER_PER_DAY,
+} from '#domain/constants/daily-send-limits';
+import {
+  rollingWindowRoom,
+  waitPhrase,
+  type RollingWindowRoom,
+} from '#domain/utils/rolling-window';
 import { ActivationService } from './activation.service';
 import { ChatService } from './chat.service';
 import { LegalAcceptanceService } from './legal-acceptance.service';
@@ -188,6 +200,33 @@ async function mapWithConcurrency<T, R>(
     Array.from({ length: Math.min(limit, items.length) }, worker),
   );
   return results;
+}
+
+/** The emailed-invite ceiling's refusal (429), on top of its sentence. */
+export const INVITE_EMAIL_LIMIT_CODE = 'invite.email_daily_limit';
+
+/**
+ * What the sender reads at the emailed-invite ceiling: which ceiling, how many
+ * are left, when this batch would fit, and that a share link works now. The
+ * clients show it as written (`SERVER_MESSAGE_PATTERNS` in
+ * `@repo/validation`), so it is in the sender's words.
+ */
+export function emailInviteLimitMessage(
+  ceiling: RollingWindowRoom & {
+    who: 'chapter' | 'inviter';
+    limit: number;
+    roomAt: Date;
+  },
+  needed: number,
+  now: Date,
+): string {
+  const left = ceiling.remaining === 0 ? 'none' : String(ceiling.remaining);
+  const first =
+    ceiling.who === 'chapter'
+      ? `Your chapter can email up to ${ceiling.limit} invites in 24 hours and has ${left} left.`
+      : `You can email up to ${ceiling.limit} invites in 24 hours and have ${left} left.`;
+  const these = needed === 1 ? 'this one' : `these ${needed}`;
+  return `${first} You can send ${these} in ${waitPhrase(ceiling.roomAt, now)}, or share an invite link now.`;
 }
 
 /** The seeded Everyone role's name before #4191, which older builds send. */
@@ -426,7 +465,9 @@ export class InviteService {
    * Email delivery is best-effort per address: a send failure never rolls
    * back the invite token (the token is still valid and can be shared
    * manually), it is only reported back in `failed` so the caller can retry
-   * or fall back to the share link for those addresses.
+   * or fall back to the share link for those addresses. A failed send is
+   * marked on its invite, so it doesn't count toward the daily ceilings
+   * ({@link insertWithinDailyCeilings}).
    */
   async createWithEmails(
     chapterId: string,
@@ -448,11 +489,11 @@ export class InviteService {
     );
     const origin = resolveAppOrigin(this.config);
     // Refuse a public http: APP_URL before inserting tokens. mintJoinUrl
-    // would otherwise throw inside the send loop, after createMany, and
+    // would otherwise throw inside the send loop, after the insert, and
     // bypass the per-address `.catch` on sendInviteEmail.
     assertHttpsJoinOrigin(new URL(origin));
     const [invites, chapter, inviter] = await Promise.all([
-      this.inviteRepo.createMany(inviteData),
+      this.insertWithinDailyCeilings(chapterId, createdBy, inviteData),
       // The email names the chapter and who sent it, so the recipient knows
       // what they are joining before they open the link. Read alongside the
       // insert; a missing row, or a failed read, only drops that line from the
@@ -463,7 +504,7 @@ export class InviteService {
 
     // Correlate by token rather than by array position: each token was
     // generated here, before the insert, so it is a stable key regardless of
-    // what order the repository happens to return rows in — `createMany`'s
+    // what order the repository happens to return rows in — `createEmailed`'s
     // interface makes no ordering guarantee, and a positional zip would
     // silently mis-attribute which address gets which join link if that ever
     // changed.
@@ -489,10 +530,25 @@ export class InviteService {
             inviterName: inviter?.display_name ?? null,
           })
           .catch(() => false);
-        return { to, sent };
+        return { id: invite.id, to, sent };
       },
     );
     const failed = deliveries.filter((d) => !d.sent).map((d) => d.to);
+    await this.inviteRepo
+      .markEmailFailed(
+        chapterId,
+        deliveries.filter((d) => !d.sent).map((d) => d.id),
+      )
+      .catch((error: unknown) =>
+        // The invites keep counting toward the daily ceilings, which errs on
+        // the side of sending less.
+        logThrowable(
+          this.logger,
+          'warn',
+          'Failed to mark invites whose email was not sent',
+          error,
+        ),
+      );
     await this.replaceOlderInvites(
       chapterId,
       visibilityIn(context),
@@ -509,6 +565,71 @@ export class InviteService {
       invites: invites.map((invite) => toListItem(invite, now)),
       failed,
     };
+  }
+
+  /**
+   * Inserts the batch only when it fits under the daily emailed-invite
+   * ceilings (`daily-send-limits.ts`): the chapter's, and the sender's across
+   * all their chapters, each counting the emailed invites of the last 24
+   * hours whose send didn't fail. The repository counts and inserts in one
+   * step, one batch per chapter and sender at a time, so batches sent
+   * together can't pass a ceiling between them. A batch that doesn't fit is
+   * refused (429) whole, before any token is made or email sent, saying how
+   * many are left and when this batch would fit; share links send no email
+   * and stay open meanwhile.
+   */
+  private async insertWithinDailyCeilings(
+    chapterId: string,
+    createdBy: string,
+    inviteData: Partial<Invite>[],
+  ): Promise<Invite[]> {
+    const now = new Date();
+    const result = await this.inviteRepo.createEmailed({
+      chapterId,
+      createdBy,
+      invites: inviteData.map((data) => ({
+        token: data.token as string,
+        role: data.role as string,
+        expires_at: data.expires_at as string,
+        email: data.email as string,
+      })),
+      since: new Date(now.getTime() - DAILY_LIMIT_WINDOW_MS),
+      chapterLimit: INVITE_EMAILS_PER_CHAPTER_PER_DAY,
+      inviterLimit: INVITE_EMAILS_PER_INVITER_PER_DAY,
+    });
+    if (result.outcome === 'ok') return result.invites;
+
+    const needed = inviteData.length;
+    const room = (times: string[], limit: number) =>
+      rollingWindowRoom(times, limit, needed, now, DAILY_LIMIT_WINDOW_MS);
+    const ceilings = [
+      {
+        who: 'chapter' as const,
+        limit: INVITE_EMAILS_PER_CHAPTER_PER_DAY,
+        ...room(result.chapter, INVITE_EMAILS_PER_CHAPTER_PER_DAY),
+      },
+      {
+        who: 'inviter' as const,
+        limit: INVITE_EMAILS_PER_INVITER_PER_DAY,
+        ...room(result.inviter, INVITE_EMAILS_PER_INVITER_PER_DAY),
+      },
+    ];
+    // The ceiling that frees up last is the one the sender waits on. Neither
+    // is over by this clock only when the database's count landed a moment
+    // apart from it; a minute is then the honest wait.
+    const binding = ceilings
+      .filter((c): c is typeof c & { roomAt: Date } => c.roomAt !== null)
+      .sort((a, b) => b.roomAt.getTime() - a.roomAt.getTime())[0] ?? {
+      ...ceilings[0],
+      roomAt: new Date(now.getTime() + 60_000),
+    };
+    throw new HttpException(
+      {
+        code: INVITE_EMAIL_LIMIT_CODE,
+        message: emailInviteLimitMessage(binding, needed, now),
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   /**

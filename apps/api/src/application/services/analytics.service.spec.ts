@@ -555,6 +555,54 @@ describe('AnalyticsService', () => {
     });
   });
 
+  // GET /v1/analytics/identity can take its chapter from the unverified
+  // x-chapter-id header, so the chapter pseudonym needs a membership check.
+  describe('getMemberChapterGroupId', () => {
+    it('returns the group id for a chapter the caller belongs to', async () => {
+      const members = makeMemberRepo();
+      members.findByUserAndChapter.mockResolvedValue(makeMember(CHAPTER_ID));
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        chapters,
+        provider,
+        members,
+      });
+
+      await expect(
+        service.getMemberChapterGroupId(USER_ID, CHAPTER_ID),
+      ).resolves.toBe(hashChapterIdForAnalytics(SALT, CHAPTER_ID));
+      expect(members.findByUserAndChapter).toHaveBeenCalledWith(
+        USER_ID,
+        CHAPTER_ID,
+      );
+    });
+
+    it('returns null for another chapter, a failed lookup, or no chapter', async () => {
+      const members = makeMemberRepo();
+      members.findByUserAndChapter.mockResolvedValueOnce(null);
+      members.findByUserAndChapter.mockRejectedValueOnce(new Error('db down'));
+      const { repo: chapters } = makeChapterRepo({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        chapters,
+        provider,
+        members,
+      });
+
+      await expect(
+        service.getMemberChapterGroupId(USER_ID, OTHER_CHAPTER_ID),
+      ).resolves.toBeNull();
+      await expect(
+        service.getMemberChapterGroupId(USER_ID, OTHER_CHAPTER_ID),
+      ).resolves.toBeNull();
+      await expect(
+        service.getMemberChapterGroupId(USER_ID, undefined),
+      ).resolves.toBeNull();
+      expect(members.findByUserAndChapter).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe('trackFromClient (HTTP boundary: membership + opt-out)', () => {
     it('rejects an event for a chapter the caller does not belong to (403)', async () => {
       const members = makeMemberRepo();

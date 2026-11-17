@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { userFixture } from '#test/helpers/entity-fixtures';
+import { DISPLAY_NAME_MAX_LENGTH } from '@repo/validation';
 
 const AUTH_ID_UNIQUE_VIOLATION = {
   code: '23505',
@@ -301,5 +302,72 @@ describe('AuthService', () => {
       full_name: 'Ada Lovelace',
     });
     expect(mockRepo.update).not.toHaveBeenCalled();
+  });
+
+  // A provider's name is whatever the account holder typed there. Stored
+  // whole, a long one would make the member's own profile save refuse a name
+  // they never typed, so sign-in cuts it to the length they may give it.
+  describe('a sign-in name longer than a member may set', () => {
+    const long = `${'Alexandria '.repeat(12)}Ocasio`;
+
+    it('is cut to the limit on create, with no space left at the cut', async () => {
+      mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
+      mockRepo.create.mockResolvedValue(userFixture({ id: 'user-20' }));
+
+      await service.syncUser('auth-long', 'a@example.com', {
+        full_name: long,
+      });
+
+      const stored = mockRepo.create.mock.calls[0][0].display_name!;
+      expect(stored.length).toBeLessThanOrEqual(DISPLAY_NAME_MAX_LENGTH);
+      expect(stored).toBe(long.slice(0, DISPLAY_NAME_MAX_LENGTH).trimEnd());
+    });
+
+    it('is cut when it fills an empty name later', async () => {
+      mockRepo.findBySupabaseAuthId.mockResolvedValue(
+        userFixture({
+          id: 'user-21',
+          supabase_auth_id: 'auth-long-2',
+          email: 'a@example.com',
+          display_name: '',
+        }),
+      );
+
+      await service.syncUser('auth-long-2', 'a@example.com', {
+        given_name: 'N'.repeat(80),
+        family_name: 'F'.repeat(80),
+      });
+
+      expect(mockRepo.update).toHaveBeenCalledWith('user-21', {
+        display_name: `${'N'.repeat(80)} ${'F'.repeat(19)}`,
+      });
+    });
+
+    it('never splits a character at the cut', async () => {
+      mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
+      mockRepo.create.mockResolvedValue(userFixture({ id: 'user-22' }));
+      // 99 letters, then an emoji that is two UTF-16 units, then more.
+      const name = `${'a'.repeat(DISPLAY_NAME_MAX_LENGTH - 1)}😀😀`;
+
+      await service.syncUser('auth-emoji', 'b@example.com', {
+        full_name: name,
+      });
+
+      expect(mockRepo.create.mock.calls[0][0].display_name).toBe(
+        `${'a'.repeat(DISPLAY_NAME_MAX_LENGTH - 1)}😀`,
+      );
+    });
+
+    it('keeps a name at the limit as it is', async () => {
+      mockRepo.findBySupabaseAuthId.mockResolvedValue(null);
+      mockRepo.create.mockResolvedValue(userFixture({ id: 'user-23' }));
+      const name = 'N'.repeat(DISPLAY_NAME_MAX_LENGTH);
+
+      await service.syncUser('auth-exact', 'c@example.com', {
+        full_name: name,
+      });
+
+      expect(mockRepo.create.mock.calls[0][0].display_name).toBe(name);
+    });
   });
 });

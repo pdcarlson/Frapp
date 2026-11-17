@@ -33,6 +33,14 @@ export const PG_NO_DATA_FOUND = 'P0002';
 export const PG_INVALID_PARAMETER_VALUE = '22023';
 
 /**
+ * Frapp's own SQLSTATE for the daily chapter-start ceiling: the `chapters`
+ * trigger raises it for an account past the ceiling, counted under a lock
+ * (`20261117172019_daily_limits_counted_under_lock.sql`). The API answers it
+ * 429.
+ */
+export const PG_CHAPTER_START_LIMIT = 'FR429';
+
+/**
  * Whether an unknown throwable is a Postgres unique violation.
  *
  * Use this where the caught value is untyped — a rejected repository promise,

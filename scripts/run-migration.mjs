@@ -374,7 +374,7 @@ export function runMigrationCli({
 //
 // A guard that is falsely false here is the worst available failure: this file
 // runs nothing and exits 0, the workflow step records `success`, the run
-// summary says the migrations applied, and Render then deploys new code against
+// summary says the migrations applied, and the API deploy then ships new code against
 // the old schema — the precise "reports migrations applied having applied zero"
 // outcome the production deploy's working-tree fence (`_deploy.yml`) exists to prevent,
 // arriving by a different door. The documented laptop recovery would no-op the

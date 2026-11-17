@@ -18,6 +18,7 @@ import {
   type ValidatorConstraintInterface,
 } from 'class-validator';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
+import { IsExpoPushToken } from '../decorators/is-expo-push-token.decorator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
@@ -81,8 +82,10 @@ class SupportedTimeZoneConstraint implements ValidatorConstraintInterface {
 }
 
 export class RegisterPushTokenDto {
-  @ApiProperty({ description: 'Expo push token' })
+  @ApiProperty({ description: 'Expo push token', maxLength: 255 })
   @IsString()
+  @MaxLength(255)
+  @IsExpoPushToken()
   token: string;
 
   @ApiPropertyOptional({

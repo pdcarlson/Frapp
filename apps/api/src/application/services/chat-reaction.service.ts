@@ -82,6 +82,22 @@ function assertCardPollVoteAllowed(
 const SIGNUPS_CLOSED = 'Sign-ups are closed';
 
 /**
+ * The channel operation a card action is checked as (#4695). A poll vote and
+ * a sign-up claim are `'answer'`, as a form's answers are: refused in an
+ * archived channel and in the audit log, where the card can't be closed
+ * either, but open to every reader, as the cards on web and the phone offer
+ * them. A vote is not `'vote'`, which would also apply who can post and so
+ * refuse a member a poll in `#announcements` that the card lets them tap.
+ * An emoji reaction stays a `'read'`.
+ */
+function cardActionOperation(actionType: string): 'answer' | 'read' {
+  return actionType === CARD_VOTE_ACTION_TYPE ||
+    actionType === SIGNUP_ACTION_TYPE
+    ? 'answer'
+    : 'read';
+}
+
+/**
  * A member's responses to a message: emoji reactions on the legacy
  * `message_reactions` table, and the `chat_message_actions` hot path that
  * carries reactions, card-poll votes and RSVPs.
@@ -181,6 +197,7 @@ export class ChatReactionService {
       messageId,
       chapterId,
       userId,
+      cardActionOperation(input.action_type),
     );
 
     // A deleted message takes no reaction, vote or card response, as it takes

@@ -38,6 +38,10 @@ import {
   withEveryone,
   describeAttendance,
   emptyAttendanceDraft,
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+  EVENT_NAME_MAX_LENGTH,
+  EVENT_NOTES_MAX_LENGTH,
   eventLimitsAudience,
   eventRequiresAnyone,
   eventEditPatch,
@@ -1276,6 +1280,7 @@ export function EventEditorDialog({
               <Label htmlFor="event-name">Event name</Label>
               <Input
                 id="event-name"
+                maxLength={EVENT_NAME_MAX_LENGTH}
                 value={name}
                 onChange={(eventValue) => setName(eventValue.target.value)}
                 placeholder="Chapter meeting"
@@ -1305,6 +1310,7 @@ export function EventEditorDialog({
               <Label htmlFor="event-location">Location</Label>
               <Input
                 id="event-location"
+                maxLength={EVENT_LOCATION_MAX_LENGTH}
                 value={location}
                 onChange={(eventValue) => setLocation(eventValue.target.value)}
                 placeholder="Chapter house"
@@ -1396,6 +1402,7 @@ export function EventEditorDialog({
                   <Label htmlFor="event-description">Description</Label>
                   <Textarea
                     id="event-description"
+                    maxLength={EVENT_DESCRIPTION_MAX_LENGTH}
                     value={description}
                     onChange={(eventValue) =>
                       setDescription(eventValue.target.value)
@@ -1561,6 +1568,7 @@ export function EventEditorDialog({
                     </Label>
                     <Textarea
                       id="event-meeting-minutes"
+                      maxLength={EVENT_NOTES_MAX_LENGTH}
                       value={notes}
                       onChange={(eventValue) =>
                         setNotes(eventValue.target.value)

@@ -1,7 +1,15 @@
+import { MAX_UPLOAD_BYTES } from '@repo/validation';
 import type { CorpusSkipReason } from '../entities/corpus.entity';
 import type { CorpusSection } from '../utils/corpus-chunker';
 
 export const DOCUMENT_TEXT_EXTRACTOR = 'DOCUMENT_TEXT_EXTRACTOR';
+
+/**
+ * The largest file an extractor opens: a document's upload limit. A larger
+ * one comes back `too_large`, so a caller that knows a stored file's size can
+ * skip reading it into memory at all.
+ */
+export const DOCUMENT_TEXT_EXTRACT_MAX_BYTES = MAX_UPLOAD_BYTES;
 
 export type ExtractedDocumentText =
   | { status: 'ok'; sections: CorpusSection[] }

@@ -436,7 +436,8 @@ export function useDeleteBackworkDraft() {
  * Asks the upload AI to fill one draft's empty fields from its redacted text
  * (#5233). Puts the filled draft in the cached list as soon as it answers.
  * Throws on 403 (`ai.consent.required`, `ai.chapter_off`) and 404 (AI off on
- * this server, or the draft is gone), so a caller can stop asking.
+ * this server, or the draft is gone), so a caller can stop asking, and on 409
+ * while another fill of the draft is still running.
  */
 export function useFillBackworkDraft() {
   const client = useFrappClient();
@@ -444,6 +445,14 @@ export function useFillBackworkDraft() {
   const chapterId = useActiveChapterId();
   return useMutation({
     mutationKey: ["backwork", "fill-backwork-draft"],
+    // No retry. The web client retries a failure that may be transient, a
+    // lost response or a 5xx included (`retryMutation` in
+    // `apps/web/lib/providers/query-provider.tsx`), and a fill holds its
+    // draft for as long as it runs: a retry sent while the first attempt is
+    // still reading the file is refused with 409, and one sent after it ended
+    // would pay for a second model call on a draft already filled. The caller
+    // decides instead (`use-draft-autofill.ts` asks again after a pause).
+    retry: false,
     mutationFn: async (id: string) => {
       const result = await client.POST("/v1/backwork/drafts/{id}/fill", {
         params: { path: { id } },

@@ -22,7 +22,7 @@ import { TaskModule } from '../task/task.module';
  * comes from the database rather than from the deployment topology: the
  * `scheduled_notification_dispatches` claim for the reminder sweeps, and a
  * compare-and-set write for the stale-palette sweep — see
- * `docs/ops/deployment/render.md` §5.6.
+ * `docs/ops/deployment/api-process.md` § In-process scheduled jobs.
  *
  * Imports `AttendanceModule` to reuse `markAutoAbsent` rather than restate its
  * eligibility rules, `NotificationModule` for the preference- and

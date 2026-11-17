@@ -989,7 +989,7 @@ date — is welcome; inventing a date to turn the gate green is not.
 
 ### 20260930020000_chat_push_dispatches.sql
 
-- **Purpose**: Adds `public.chat_push_dispatches`: one row per chat message the push worker fans out, `message_id` the primary key (FK to `chat_messages`, `on delete cascade`), plus `dispatched_at` and its index. RLS is enabled with no policies (service role only). Every API instance receives every `chat_messages` INSERT from Realtime; the primary key lets exactly one of them send. The worker purges rows older than a day hourly. The mechanism is in [`render.md` § 5.5](../deployment/render.md#55-in-process-chat-workers-chunk-05).
+- **Purpose**: Adds `public.chat_push_dispatches`: one row per chat message the push worker fans out, `message_id` the primary key (FK to `chat_messages`, `on delete cascade`), plus `dispatched_at` and its index. RLS is enabled with no policies (service role only). Every API instance receives every `chat_messages` INSERT from Realtime; the primary key lets exactly one of them send. The worker purges rows older than a day hourly. The mechanism is in [`api-process.md` § In-process chat workers](../deployment/api-process.md#in-process-chat-workers).
 - **Checks**: After `db push`,
   `select relrowsecurity from pg_class where relname = 'chat_push_dispatches';` returns `t`, and
   `select count(*) from pg_policies where tablename = 'chat_push_dispatches';` returns `0`.

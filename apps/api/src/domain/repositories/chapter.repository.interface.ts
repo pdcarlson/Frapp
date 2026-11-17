@@ -53,6 +53,13 @@ export interface IChapterRepository {
    */
   findByIds(ids: string[]): Promise<Chapter[]>;
   /**
+   * When each chapter `userId` started since `since` was created, for the
+   * daily ceiling on starting chapters (`daily-send-limits.ts`). The starter
+   * is `legal_accepted_by`: onboarding stamps it with the account that
+   * submitted the wizard, and nothing else writes it.
+   */
+  findStartedAtByUserSince(userId: string, since: Date): Promise<string[]>;
+  /**
    * Every chapter that picked a birthday post channel (#4959), with that
    * channel and its billing state: the birthday sweep's work list, across
    * chapters by design, read in pages so none is cut off at PostgREST's row

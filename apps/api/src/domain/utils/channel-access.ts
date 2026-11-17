@@ -75,7 +75,8 @@ export interface ChannelAccessRecord {
  *   creator dropped from a read-only channel's posters must still be able to
  *   end their own poll.
  * - `answer`: fill in something already readable that every reader may
- *   answer (a form card's answers, #3926). Archive and the audit log apply,
+ *   answer (a form card's answers, #3926; a chat card's poll vote and a
+ *   sign-up claim, #4695). Archive and the audit log apply,
  *   as for `close`, but not who can post nor the Alumni rule: a form posted
  *   in an announcement channel is for everyone who can read it.
  * - `modify`: change a message already in the channel without writing new
