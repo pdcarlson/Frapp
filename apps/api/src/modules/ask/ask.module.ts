@@ -16,6 +16,7 @@ import { AskConversationService } from '../../application/services/ask/ask-conve
 import { AskSuggestionsService } from '../../application/services/ask/ask-suggestions.service';
 import { AskFromService } from '../../application/services/ask/agent/ask-from.service';
 import { AskService } from '../../application/services/ask/ask.service';
+import { AskDictationService } from '../../application/services/ask/ask-dictation.service';
 import { ChapterAuditLogService } from '../../application/services/chapter-audit-log.service';
 import { AskDiagnosticsSweepService } from '../../application/workers/ask-diagnostics-sweep.service';
 import {
@@ -95,6 +96,8 @@ import { TaskModule } from '../task/task.module';
     AskSuggestionsService,
     AskDiagnosticsService,
     AskDiagnosticsSweepService,
+    // Dictation's cleanup (#5276): the gateway alone, nothing stored.
+    AskDictationService,
     AiEnabledGuard,
     ...ASK_TOOL_CLASSES,
     {

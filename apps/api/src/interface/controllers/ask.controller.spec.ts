@@ -105,12 +105,16 @@ function build(
     ]),
   };
   const analytics = { track: jest.fn(async () => undefined) };
+  const dictation = {
+    clean: jest.fn(async () => 'When is the chapter meeting Friday?'),
+  };
   const controller = new AskController(
     askService as never,
     conversation as never,
     diagnostics as never,
     suggestions as never,
     analytics as never,
+    dictation as never,
   );
   const response = new FakeResponse();
   const ask = (
@@ -136,6 +140,7 @@ function build(
     diagnostics,
     suggestions,
     analytics,
+    dictation,
     response,
     ask,
   };
@@ -479,6 +484,38 @@ describe('AskController', () => {
       userId: 'user-1',
       roleIds: ['role-president'],
     });
+  });
+});
+
+describe('POST /ai/ask/dictation (#5276)', () => {
+  it('hands the words to the cleanup as the caller, in their chapter, and answers with what comes back', async () => {
+    const { controller, dictation, analytics } = build(async function* () {
+      yield done;
+    });
+    await expect(
+      controller.cleanDictation('chapter-a', 'user-1', {
+        text: 'um when is the chapter meeting thursday no friday',
+      }),
+    ).resolves.toEqual({ text: 'When is the chapter meeting Friday?' });
+    expect(dictation.clean).toHaveBeenCalledWith({
+      chapterId: 'chapter-a',
+      userId: 'user-1',
+      text: 'um when is the chapter meeting thursday no friday',
+    });
+    // Not a question: nothing is counted.
+    expect(analytics.track).not.toHaveBeenCalled();
+  });
+
+  it('lets a consent refusal through as the ordinary error', async () => {
+    const { controller, dictation } = build(async function* () {
+      yield done;
+    });
+    dictation.clean.mockRejectedValueOnce(
+      new ForbiddenException({ code: 'ai.consent.required' }),
+    );
+    await expect(
+      controller.cleanDictation('chapter-a', 'user-1', { text: 'hi' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });
 

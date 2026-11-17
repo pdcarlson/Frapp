@@ -1228,6 +1228,12 @@ describe('CustomThrottlerGuard', () => {
       route('POST /events', EventController, EV.create, 10),
       route('PATCH /events/:id', EventController, EV.update, 10),
       route('POST /ai/ask', AskController, AskController.prototype.ask, 10),
+      route(
+        'POST /ai/ask/dictation',
+        AskController,
+        AskController.prototype.cleanDictation,
+        10,
+      ),
       route('POST /ai/act', ActController, ActController.prototype.act, 10),
       route(
         'POST /ai/act/event-audience',

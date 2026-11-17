@@ -33,9 +33,14 @@ import {
   DICTATION_LEVEL_SAMPLES,
   DICTATION_MAX_SECONDS,
   useDictation,
+  type UseDictationOptions,
 } from "./use-dictation";
 
-function setup(clean = vi.fn(async (text: string) => `Tidy: ${text}`)) {
+function setup(
+  clean = vi.fn<UseDictationOptions["clean"]>(
+    async (text: string) => `Tidy: ${text}`,
+  ),
+) {
   const onText = vi.fn();
   const view = renderHook(() => useDictation({ clean, onText }));
   return { ...view, clean, onText };
@@ -100,8 +105,8 @@ describe("useDictation", () => {
 
   it("keeps the words as heard when the cleanup gives nothing back or throws", async () => {
     for (const clean of [
-      vi.fn(async () => null),
-      vi.fn(async () => {
+      vi.fn<UseDictationOptions["clean"]>(async () => null),
+      vi.fn<UseDictationOptions["clean"]>(async () => {
         throw new Error("offline");
       }),
     ]) {
@@ -162,7 +167,7 @@ describe("useDictation", () => {
 
   it("drops everything on cancel, including a cleanup still running", async () => {
     let signal: AbortSignal | undefined;
-    const clean = vi.fn(
+    const clean = vi.fn<UseDictationOptions["clean"]>(
       (_text: string, options: { signal: AbortSignal }) =>
         new Promise<string | null>((resolve) => {
           signal = options.signal;

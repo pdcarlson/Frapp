@@ -162,6 +162,21 @@ export const AI_MODEL_CATALOG = {
     more: { effort: 'high', maxOutputTokens: 8_000 },
   },
   /**
+   * Dictation in Ask's field (#5276): the words the phone's own recogniser
+   * heard in, the same words tidied out (fillers and false starts gone,
+   * punctuation in), never answered. Paul picked on-device speech and then
+   * this cleanup on 2026-11-17. In the `ask` family, so it stands behind the
+   * Ask switch and the member's yes. Small and latency-bound: the ceiling
+   * fits 1,000 characters back; a cheaper model is the bake-off's call.
+   */
+  'ask.dictation': {
+    ...CLAUDE_SONNET,
+    family: 'ask',
+    kind: 'structured',
+    maxOutputTokens: 600,
+    effort: 'low',
+  },
+  /**
    * An officer's request, read into one action and its details (#718). It is
    * shown the request and the actions that officer may take, and nothing
    * else. Small; a cheaper model is the bake-off's call.

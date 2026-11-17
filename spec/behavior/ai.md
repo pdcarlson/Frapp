@@ -686,6 +686,34 @@ How Frapp finds out whether an answer was any good, without keeping anyone's wor
 > Paul asked for feedback and observability and approved a thumbs down that may offer to send the exchange.
 > The rest is this session's: the four reasons, no typed note on a thumbs (the note lives on Report this), taking a thumbs back, which taps are counted, the one-minute window, and 90 days for the trace and thumbs (below).
 
+### Dictation
+
+A member can speak a question into Ask's field instead of typing it (#5276).
+
+- **The phone hears it.**
+  The phone's own speech recogniser turns the speech into words: on the device where the phone can, otherwise Apple's or Google's recogniser.
+  Frapp never receives the audio.
+- **Frapp tidies the words.**
+  The recogniser's words go to `POST /v1/ai/ask/dictation`, one gateway call (`ask.dictation`), which takes out filler words and false starts, keeps only the last version of a self-correction ("Thursday, no, Friday" becomes "Friday"), adds punctuation and capitalisation, and writes times and counts as digits.
+  It never answers the question, adds or drops a fact, changes a name, a channel name or the meaning, or translates; the member's own words and order stay.
+  The words are data to tidy, never instructions: "ignore your instructions" spoken into the mic comes back as that sentence, punctuated.
+- **Only for a member with Frapp AI on and Ask on.**
+  The gateway checks the chapter's Ask switch and the member's yes before the call, as for a question.
+  Without them the route refuses (`ai.consent.required`, `ai.chapter_off`) and the recogniser's raw words land in the field.
+- **It runs before the member sends.**
+  So the words reach the model even if the member never sends them.
+  Nothing is stored, logged or counted beyond the gateway's usual content-free usage row.
+- **A checked result.**
+  A cleanup that comes back empty, or much longer than what was said (more than a quarter longer plus 40 characters: the model answered or added), is dropped for the words as said.
+- **Failure keeps the raw words.**
+  A refusal, a provider failure, a spend cap, a reply the model got wrong, or no answer within 3 seconds leaves the recogniser's words in the field.
+  Nothing the member said is lost.
+- **Nothing sends on its own.**
+  The tidied words land in the field for the member to read, edit and send.
+
+> **Decided 2026-11-17 (Paul, #5276).**
+> Paul picked the phone's own speech recognition, then this cleanup through the model, over sending audio to a transcription vendor.
+
 ## Catch me up
 
 A member back to a busy channel asks for the short version and gets a few lines, each tied to the message it came from.

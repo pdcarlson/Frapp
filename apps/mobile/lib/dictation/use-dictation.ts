@@ -76,7 +76,9 @@ export function useDictation({ clean, onText }: UseDictationOptions): Dictation 
   // dropped rather than landing in the field after the member moved on.
   const attempt = useRef(0);
   const latest = useRef({ clean, onText });
-  latest.current = { clean, onText };
+  useEffect(() => {
+    latest.current = { clean, onText };
+  }, [clean, onText]);
 
   const enter = useCallback((next: DictationPhase) => {
     phaseRef.current = next;

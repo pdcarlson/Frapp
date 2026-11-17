@@ -292,7 +292,9 @@ export const AskSheet = forwardRef<
 
   const [draft, setDraft] = useState(initialDraft ?? "");
   const draftRef = useRef(draft);
-  draftRef.current = draft;
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   // Tidied dictation just landed: what the Original chip puts back, until the
   // member types or sends (#5276).
   const [original, setOriginal] = useState<{

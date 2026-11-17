@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ASK_COPY,
+  ASK_DICTATION_MAX_LENGTH,
   ASK_STEPS,
   ASK_STREAM_KEEPALIVE,
   ASK_STREAM_VERSION,
@@ -9,6 +10,7 @@ import {
   ASK_HISTORY_MAX_TURNS,
   ASK_QUESTION_MAX_LENGTH,
   ASK_SUGGESTION_NAME_MAX,
+  AskDictationRequestSchema,
   AskRequestSchema,
   AskSuggestionSchema,
   askAnswerSegments,
@@ -534,5 +536,32 @@ describe("a thread reply that names @Frapp (#4713)", () => {
     expect(
       replyAskRefusal("@Jordan Frapp you in?", ["Jordan Frapp"], "yes"),
     ).toBeNull();
+  });
+});
+
+describe("AskDictationRequestSchema", () => {
+  it("trims the words and takes as many as a question", () => {
+    expect(
+      AskDictationRequestSchema.parse({ text: "  um so when is chapter  " }),
+    ).toEqual({
+      text: "um so when is chapter",
+    });
+    expect(ASK_DICTATION_MAX_LENGTH).toBe(ASK_QUESTION_MAX_LENGTH);
+    expect(
+      AskDictationRequestSchema.safeParse({
+        text: "a".repeat(ASK_DICTATION_MAX_LENGTH),
+      }).success,
+    ).toBe(true);
+  });
+
+  it("refuses nothing said, and more than a question holds", () => {
+    expect(AskDictationRequestSchema.safeParse({ text: "   " }).success).toBe(
+      false,
+    );
+    expect(
+      AskDictationRequestSchema.safeParse({
+        text: "a".repeat(ASK_DICTATION_MAX_LENGTH + 1),
+      }).success,
+    ).toBe(false);
   });
 });
