@@ -156,7 +156,7 @@ gcloud logging read 'resource.type="cloud_run_revision" AND "xff-probe"' --proje
 
 Each request's entry prints its path and its count more than once, and `gcloud` lists the newest entry first, so a second run inside the ten minutes shows up as extra pairs. Read each path with the count that follows it.
 
-Both request logs, the balancer's and Cloud Run's, record the full URL with its query string and the caller's IP. That includes calendar feed tokens and OAuth callback codes, which [#5268](https://github.com/frapplive/Frapp/issues/5268) puts to Paul. Cloud Armor in front of the balancer is [#5270](https://github.com/frapplive/Frapp/issues/5270).
+Both request logs, the balancer's and Cloud Run's, record the full URL with its query string and the caller's IP. Three routes carry a credential in the query string: the calendar feed (`/v1/calendar-feed/feed.ics`, whose token works until the member resets the link) and the Discord and Google Calendar OAuth callbacks (`code` and `state`). `scripts/gcp/bootstrap.sh` adds an exclusion, `frapp-capability-urls`, to the project's `_Default` log sink that drops those three routes' rows from both logs ([#5268](https://github.com/frapplive/Frapp/issues/5268)); the API's own request log still records them, path only. It takes effect when the bootstrap is run again in each project. To check it: `gcloud logging sinks describe _Default --project=<project-id> --format='value(exclusions[].name)'` lists it. Cloud Armor in front of the balancer is [#5270](https://github.com/frapplive/Frapp/issues/5270).
 
 ## Not built yet
 

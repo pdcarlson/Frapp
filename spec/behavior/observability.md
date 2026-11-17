@@ -97,7 +97,7 @@ Unset DSN still means `Sentry.init` is never called.
 
 Internal Render/stdout logs and PostHog logs are **independent transforms** of the same facts, not a pipe from one into the other.
 
-- **Render stdout, and Cloud Logging on Cloud Run** (Nest console): the structured request log, `security_event`, and `push_delivery` records below. Raw `userId` / `chapterId` are allowed here because the stream is Frapp-internal. Email, IP, tokens, bodies, and query strings are not.
+- **Render stdout, and Cloud Logging on Cloud Run** (Nest console): the structured request log, `security_event`, and `push_delivery` records below. Raw `userId` / `chapterId` are allowed here because the stream is Frapp-internal. Email, IP, tokens, bodies, and query strings are not. Google's own request logs beside it (the load balancer's and Cloud Run's) record each request's full URL and the caller's IP, which the API doesn't control; the routes whose query string carries a credential (the calendar feed and the OAuth callbacks) are excluded from them by `scripts/gcp/bootstrap.sh` ([`cloud-run.md`](../../docs/ops/deployment/cloud-run.md), #5268).
 - **PostHog logs** (when enabled): the same operational facts after the external-reporting scrubber — pseudonyms instead of raw ids, `originHash` instead of addresses, path-only URLs, no tokens or bodies. Do not tail Render logs into PostHog.
 
 ## Sampling

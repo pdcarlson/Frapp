@@ -33,7 +33,10 @@
 #     ids, which survive a rename) and only from a job in this environment's
 #     GitHub environment (`staging` or `production`);
 #   - with --infisical-org-id, `infisical-<org id prefix>`, the identity
-#     Infisical Cloud's sync acts as (Infisical requires that name suffix).
+#     Infisical Cloud's sync acts as (Infisical requires that name suffix);
+#   - an exclusion on the project's _Default log sink that keeps request URLs
+#     carrying a credential (calendar feed tokens, OAuth callback codes) out
+#     of Google's request logs (#5268).
 #
 # Production deploys copy the image staging already ran from the staging
 # project's registry into their own, digest unchanged, so --staging-project
@@ -267,6 +270,24 @@ if [[ -n "$INFISICAL_SA_NAME" ]]; then
     echo "see docs/ops/deployment/cloud-run.md, then run this script again." >&2
     exit 1
   fi
+fi
+
+# Google's request logs (the load balancer's and Cloud Run's) record the full
+# URL. Three routes carry a credential in their query string: a calendar
+# subscription link's token, which keeps working until the member resets it,
+# and the two OAuth callbacks' code and state (#5268). Their rows are left
+# out of the project's _Default log bucket. The API's own request log still
+# records those requests, by path only, so status and latency stay visible.
+# An org-level sink that copies logs elsewhere would need the same exclusion.
+CAPABILITY_LOG_EXCLUSION="frapp-capability-urls"
+CAPABILITY_LOG_FILTER='(resource.type="http_load_balancer" OR log_id("run.googleapis.com/requests")) AND (httpRequest.requestUrl:"/v1/calendar-feed/feed.ics" OR httpRequest.requestUrl:"/v1/discord/connect/callback" OR httpRequest.requestUrl:"/v1/google-calendar/callback")'
+step "Keeping calendar feed tokens and OAuth callback codes out of Google's request logs"
+if gc logging sinks describe _Default --format='value(exclusions[].name)' | tr ';' '\n' | grep -qx "$CAPABILITY_LOG_EXCLUSION"; then
+  gc logging sinks update _Default \
+    --update-exclusion="name=$CAPABILITY_LOG_EXCLUSION,filter=$CAPABILITY_LOG_FILTER" >/dev/null
+else
+  gc logging sinks update _Default \
+    --add-exclusion="name=$CAPABILITY_LOG_EXCLUSION,description=Request URLs that carry a credential (#5268),filter=$CAPABILITY_LOG_FILTER" >/dev/null
 fi
 
 step "Done. Paste this block back into the chat (none of it is secret):"
