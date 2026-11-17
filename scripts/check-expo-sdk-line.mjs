@@ -67,13 +67,17 @@ const DEPENDABOT_CONFIG = ".github/dependabot.yml";
 
 /**
  * `expo-*` / `@expo/*` dependencies the SDK's bundled map has no entry for,
- * each with the reason it may still ship. Empty today: every one apps/mobile
- * declares is an Expo SDK package. A third-party package that merely shares the
- * prefix would go here rather than failing the gate forever; an Expo package
- * missing from the map means the installed `expo` and the manifest disagree
- * about which SDK this is, which is exactly what the gate is for.
+ * each with the reason it may still ship. A third-party package that merely
+ * shares the prefix goes here rather than failing the gate forever; an Expo
+ * package missing from the map means the installed `expo` and the manifest
+ * disagree about which SDK this is, which is exactly what the gate is for.
  */
-export const UNBUNDLED_EXPO_PACKAGES = new Map();
+export const UNBUNDLED_EXPO_PACKAGES = new Map([
+  [
+    "expo-speech-recognition",
+    "third-party (jamsch/expo-speech-recognition), Ask's dictation (#5276). Its major follows the Expo SDK by hand (57.x for SDK 57, per its README), so it is held in Dependabot's ignore list and moved with each SDK upgrade",
+  ],
+]);
 
 /** Whether a dependency name is an Expo SDK package this gate checks. */
 export function isExpoPackage(name) {

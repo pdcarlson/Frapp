@@ -35,9 +35,9 @@ export default [
         "error",
         {
           selector:
-            "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller|expo-notifications|expo-apple-authentication|expo-audio|@react-native-google-signin\\/google-signin)($|\\/)/]",
+            "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller|expo-notifications|expo-apple-authentication|expo-audio|expo-speech-recognition|@react-native-google-signin\\/google-signin)($|\\/)/]",
           message:
-            "Dynamic import() of a non-Expo-Go native module is still an import. Go through the isolation module (@/lib/payments/stripe, @/lib/keyboard, @/lib/notifications/push, @/lib/apple-auth, @/lib/google-auth, @/lib/minutes/recorder/device).",
+            "Dynamic import() of a non-Expo-Go native module is still an import. Go through the isolation module (@/lib/payments/stripe, @/lib/keyboard, @/lib/notifications/push, @/lib/apple-auth, @/lib/google-auth, @/lib/minutes/recorder/device, @/lib/dictation/speech).",
         },
       ],
       "no-restricted-imports": [
@@ -90,6 +90,14 @@ export default [
               group: ["expo-audio", "expo-audio/*"],
               message:
                 "Import via @/lib/minutes/recorder/device. The recorder needs the store build's background-recording service and microphone string, so it is absent in Expo Go and on web.",
+            },
+            {
+              group: [
+                "expo-speech-recognition",
+                "expo-speech-recognition/*",
+              ],
+              message:
+                "Import via @/lib/dictation/speech. The package reads its native module at import, which crashes Expo Go and kills expo export --platform web.",
             },
             {
               group: [

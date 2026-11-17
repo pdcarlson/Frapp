@@ -53,6 +53,9 @@
 //   Meeting audio kept until the minutes are posted (2026-11-17, #5381) is the
 //   owner's material change, picked on his decision card: Privacy keeps
 //   November 2026 and the constant takes the next suffix, 2026-11.2.
+//   Naming the microphone and speech recognition for Ask's dictation in the
+//   permissions clause (2026-11-17, #5276) moved only the Privacy pin on the
+//   recorder's microphone precedent, pending the owner's ruling in its PR.
 //
 // SCOPE. Reads source files, never the module, so the API specs' mocks of
 // `#domain/constants/legal` (`'test-version'`, `'current-version'`) can't
@@ -91,7 +94,7 @@ export const PINNED_PAGES = {
   privacy: {
     path: "apps/landing/app/privacy/page.tsx",
     lastUpdated: "November 2026",
-    fingerprint: "a22a946133c6b0d9",
+    fingerprint: "42f353ca9de4e776",
   },
   ferpa: {
     path: "apps/landing/app/ferpa/page.tsx",
