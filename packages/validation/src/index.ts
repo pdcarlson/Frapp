@@ -222,10 +222,10 @@ export * from "./study-zone-shape";
 // Client-side subscription write gate. Moved out of `apps/web/lib/subscription.ts`
 // so it sits next to `can` and `isModuleEnabled` as the third shared client gate.
 export * from "./subscription";
-// A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
-export * from "./task-proof";
 // Tasks for everyone: one group task, a copy each (#4295 step 3).
 export * from "./task-audience";
+// A task's proof kind, its refusal codes and sign-off rules (#4565, #4635).
+export * from "./task-proof";
 export * from "./thumbhash";
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export * from "./time-zone";
