@@ -64,8 +64,8 @@ const REMOVE = { "tools:node": "remove" };
 const RECORDER =
   "requestRecordingPermissionsAsync( requestNotificationPermissionsAsync( setAudioModeAsync( allowsBackgroundRecording";
 
-/** The calls every requester but location's makes: the scanner, the picker and the recorder. */
-const NOT_LOCATION = `useCameraPermissions( requestMediaLibraryPermissionsAsync( ${RECORDER}`;
+/** The calls every requester but location's makes: the scanner, the picker, the recorder and dictation. */
+const NOT_LOCATION = `useCameraPermissions( requestMediaLibraryPermissionsAsync( requestPermissionsAsync( ${RECORDER}`;
 
 /** The app manifest `expo config --type introspect` returned when this gate landed. */
 function currentManifest() {
@@ -220,7 +220,7 @@ test("a /* or // inside a string, a line comment, or JSX text can't swallow a li
 });
 
 test("a deleted requester file fails", () => {
-  const problems = requesterProblems((file) => (file.endsWith("location.ts") ? null : "useCameraPermissions( requestMediaLibraryPermissionsAsync("));
+  const problems = requesterProblems((file) => (file.endsWith("location.ts") ? null : NOT_LOCATION));
   assert.ok(problems.some((p) => p === "NSLocationWhenInUseUsageDescription: its requester apps/mobile/lib/location.ts no longer exists"), problems.join("\n"));
 });
 
@@ -748,6 +748,7 @@ function fixture({
   put("apps/mobile/components/check-in/check-in-scanner.tsx", "useCameraPermissions();");
   put("apps/mobile/lib/location.ts", location);
   put("apps/mobile/lib/minutes/recorder/device.ts", RECORDER);
+  put("apps/mobile/lib/dictation/speech.ts", "requestPermissionsAsync();");
   put("apps/mobile/lib/chat/attachment-upload.ts", "requestMediaLibraryPermissionsAsync();");
   const podDirs = {};
   podDirs["expo-location"] = join(root, "node_modules/expo-location/ios");

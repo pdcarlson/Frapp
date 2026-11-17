@@ -27,6 +27,9 @@
 #   - an Artifact Registry repository `frapp` for the API image;
 #   - `frapp-api-runtime`, the identity the API runs as, which reads this
 #     project's Secret Manager values;
+#   - `frapp-docs`, the Google Drive account chapters share folders and files
+#     with (#5434), which `frapp-api-runtime` may act as, so Drive needs no
+#     key file;
 #   - `frapp-deployer`, the identity a GitHub Actions deploy acts as;
 #   - a workload identity pool that lets GitHub sign in as `frapp-deployer`
 #     with no stored key, only from frapplive/Frapp (matched by its numeric
@@ -53,6 +56,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 REPOSITORY="frapp"
 RUNTIME_SA_NAME="frapp-api-runtime"
+DRIVE_SA_NAME="frapp-docs"
 DEPLOYER_SA_NAME="frapp-deployer"
 POOL_ID="github"
 PROVIDER_ID="frapplive-frapp"
@@ -154,7 +158,8 @@ gc services enable \
   cloudresourcemanager.googleapis.com \
   serviceusage.googleapis.com \
   logging.googleapis.com \
-  aiplatform.googleapis.com
+  aiplatform.googleapis.com \
+  drive.googleapis.com
 
 step "Artifact Registry repository $REPOSITORY in $REGION"
 if ! gc artifacts repositories describe "$REPOSITORY" --location="$REGION" >/dev/null 2>&1; then
@@ -190,16 +195,28 @@ project_role() {
 
 RUNTIME_SA="$RUNTIME_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
 DEPLOYER_SA="$DEPLOYER_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
+DRIVE_SA="$DRIVE_SA_NAME@$PROJECT_ID.iam.gserviceaccount.com"
 
 step "Service accounts"
 ensure_sa "$RUNTIME_SA_NAME" "Frapp API (runs on Cloud Run)"
 ensure_sa "$DEPLOYER_SA_NAME" "GitHub Actions deploys"
+ensure_sa "$DRIVE_SA_NAME" "Frapp Documents (Google Drive)"
 
 step "What the API may do: read this project's secrets, and call Vertex AI in it"
 project_role "serviceAccount:$RUNTIME_SA" roles/secretmanager.secretAccessor
 # Vertex AI bills to this project and the API signs in as this account, so no
 # key file is needed on Cloud Run (GOOGLE_VERTEX_CREDENTIALS_JSON, ai-config.ts).
 project_role "serviceAccount:$RUNTIME_SA" roles/aiplatform.user
+
+step "Google Drive: the API acts as $DRIVE_SA_NAME, with no key file"
+# Chapters share Drive folders and files with frapp-docs, never with the
+# runtime identity itself, so what Drive grants stays on an account that can
+# do nothing else. The runtime may mint tokens for that one account only
+# (GOOGLE_DRIVE_SERVICE_ACCOUNT, config/google-drive-config.ts); frapp-docs
+# itself holds no project role. Drive calls count against this project,
+# which is why drive.googleapis.com is on above.
+retry gc iam service-accounts add-iam-policy-binding "$DRIVE_SA" \
+  --member="serviceAccount:$RUNTIME_SA" --role=roles/iam.serviceAccountTokenCreator >/dev/null
 
 step "What a deploy may do: manage Cloud Run, push images, list secrets, run the API as its identity"
 # run.admin for now: a deploy also turns off Cloud Run's invoker check so the
@@ -301,6 +318,7 @@ gcpProjectNumber:   $PROJECT_NUMBER
 region:             $REGION
 registry:           $REGION-docker.pkg.dev/$PROJECT_ID/$REPOSITORY
 runtimeAccount:     $RUNTIME_SA
+driveAccount:       $DRIVE_SA
 deployerAccount:    $DEPLOYER_SA
 infisicalAccount:   ${INFISICAL_SA:-not set up (pass --infisical-org-id)}
 identityProvider:   projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/$POOL_ID/providers/$PROVIDER_ID
