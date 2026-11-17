@@ -13,7 +13,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { Transform, Type } from 'class-transformer';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ASK_DOORS,
@@ -26,16 +26,14 @@ import {
   type AskEffort,
 } from '@repo/validation';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
-
-const trimmed = ({ value }: { value: unknown }) =>
-  typeof value === 'string' ? value.trim() : value;
+import { Trim } from '../decorators/trim.decorator';
 
 export class AskHistoryTurnDto {
   @ApiProperty({
     description: 'What the member typed in that turn.',
     maxLength: ASK_QUESTION_MAX_LENGTH,
   })
-  @Transform(trimmed)
+  @Trim()
   @IsString()
   @IsNotEmpty()
   @MaxLength(ASK_QUESTION_MAX_LENGTH)
@@ -103,7 +101,7 @@ export class AskRequestDto {
     example: 'What do the bylaws say about quorum?',
     maxLength: ASK_QUESTION_MAX_LENGTH,
   })
-  @Transform(trimmed)
+  @Trim()
   @IsString()
   @IsNotEmpty()
   @MaxLength(ASK_QUESTION_MAX_LENGTH)

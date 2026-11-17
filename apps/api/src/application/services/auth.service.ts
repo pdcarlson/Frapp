@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { DISPLAY_NAME_MAX_LENGTH } from '@repo/validation';
 import { USER_REPOSITORY } from '#domain/repositories/user.repository.interface';
 import type { IUserRepository } from '#domain/repositories/user.repository.interface';
 import { isUniqueViolation } from '#domain/constants/postgres-error-codes';
@@ -64,7 +65,22 @@ function displayNameFromMetadata(
 /** The name stored when sign-in carried none and the email gives none away. */
 const PLACEHOLDER_DISPLAY_NAME = 'Member';
 
+/**
+ * The name sign-in stores, cut to the length a member may give their own
+ * (`DISPLAY_NAME_MAX_LENGTH`). The provider's metadata is whatever the
+ * account holder typed there, so without the cut a long one would be stored,
+ * shown everywhere the member is named, and make the member's own profile
+ * save refuse a name they never typed. Cut by character, so an emoji or an
+ * accented letter at the edge is kept whole or dropped, never split.
+ */
 function displayNameForSync(
+  email: string,
+  metadata?: Record<string, unknown> | null,
+): string {
+  return clampDisplayName(unclampedDisplayName(email, metadata));
+}
+
+function unclampedDisplayName(
   email: string,
   metadata?: Record<string, unknown> | null,
 ): string {
@@ -75,6 +91,12 @@ function displayNameForSync(
   }
   const local = email.split('@')[0] ?? '';
   return local.length > 0 ? local : PLACEHOLDER_DISPLAY_NAME;
+}
+
+function clampDisplayName(name: string): string {
+  const characters = Array.from(name.trim());
+  if (characters.length <= DISPLAY_NAME_MAX_LENGTH) return name.trim();
+  return characters.slice(0, DISPLAY_NAME_MAX_LENGTH).join('').trimEnd();
 }
 
 /**

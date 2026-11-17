@@ -9,7 +9,6 @@ import {
   Min,
   NotEquals,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ACT_REQUEST_MAX_LENGTH,
@@ -19,6 +18,7 @@ import {
 import type { ActOutcome } from '../../application/services/act/act-tool';
 import { IsStrictBoolean } from '../decorators/is-strict-boolean.decorator';
 import { AiSuggestionDto } from './ai-suggestion.dto';
+import { Trim } from '../decorators/trim.decorator';
 
 export class ActRequestDto {
   @ApiProperty({
@@ -26,9 +26,7 @@ export class ActRequestDto {
     example: 'Give 5 points to everyone who came to chapter tonight',
     maxLength: ACT_REQUEST_MAX_LENGTH,
   })
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim() : value,
-  )
+  @Trim()
   @IsString()
   @IsNotEmpty()
   @MaxLength(ACT_REQUEST_MAX_LENGTH)

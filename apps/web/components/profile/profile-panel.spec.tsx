@@ -292,8 +292,8 @@ describe("ProfilePanel — graduation year guard (#2206)", () => {
   });
 
   it("saves a cleared year as null, so the stored one is removed", async () => {
+    mocks.userQuery.data = { ...mocks.userQuery.data, graduation_year: 2027 };
     render(<ProfilePanel />);
-    fireEvent.change(yearInput(), { target: { value: "2027" } });
     fireEvent.change(yearInput(), { target: { value: "" } });
     await userEvent.click(
       screen.getByRole("button", { name: /save profile/i }),
@@ -365,6 +365,32 @@ describe("ProfilePanel — profile details (2026-11-06 form fixes)", () => {
       birthday_year: 2004,
       birthday_visibility: "chapter",
     });
+  });
+
+  // A name stored before the 100-character limit (one copied from a sign-in
+  // provider) must not refuse an unrelated edit: only the change is sent.
+  it("sends only the fields the member changed", async () => {
+    mocks.userQuery.data = {
+      ...mocks.userQuery.data,
+      display_name: "N".repeat(140),
+      bio: "Rush chair.",
+    };
+    render(<ProfilePanel />);
+
+    await userEvent.type(screen.getByLabelText("Major"), "Economics");
+    await userEvent.click(screen.getByRole("button", { name: "Save profile" }));
+
+    await waitFor(() => {
+      expect(mocks.updateUser.mutateAsync).toHaveBeenCalled();
+    });
+    expect(mocks.updateUser.mutateAsync.mock.calls[0]![0]).toEqual({
+      major: "Economics",
+    });
+  });
+
+  it("stops the name at the length the API takes", () => {
+    render(<ProfilePanel />);
+    expect(screen.getByLabelText("Name")).toHaveAttribute("maxlength", "100");
   });
 
   it("refuses a birth year with no month and day (#4959)", async () => {

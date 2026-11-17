@@ -37,12 +37,13 @@ import {
   MEETING_TYPES,
   MEETING_VOTE_MAX,
   STANDARDS_MEETING_TYPE,
+  EVENT_NAME_MAX_LENGTH,
+  tooLongRefusal,
 } from '@repo/validation';
+import { EVENT_ROLE_IDS_MAX } from '#domain/constants/field-limits';
 
 /** What a request may name as a type: the four, plus Standards to refuse it. */
 const REQUESTABLE_TYPES = [...MEETING_TYPES, STANDARDS_MEETING_TYPE];
-const EVENT_NAME_MAX_LENGTH = 200;
-const ROLE_IDS_MAX = 200;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export class MeetingVoteDto {
@@ -191,7 +192,9 @@ export class NewMeetingEventDto {
   @ApiProperty({ maxLength: EVENT_NAME_MAX_LENGTH })
   @IsString()
   @MinLength(1)
-  @MaxLength(EVENT_NAME_MAX_LENGTH)
+  @MaxLength(EVENT_NAME_MAX_LENGTH, {
+    message: tooLongRefusal("the event's name", EVENT_NAME_MAX_LENGTH),
+  })
   name: string;
 
   @ApiProperty({ format: 'date-time' })
@@ -204,13 +207,13 @@ export class NewMeetingEventDto {
 
   @ApiPropertyOptional({
     type: [String],
-    maxItems: ROLE_IDS_MAX,
+    maxItems: EVENT_ROLE_IDS_MAX,
     description:
       'Only members holding one of these roles are invited, and so read the minutes. Empty or omitted: everyone.',
   })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(ROLE_IDS_MAX)
+  @ArrayMaxSize(EVENT_ROLE_IDS_MAX)
   @IsUUID('all', { each: true })
   role_ids?: string[];
 }

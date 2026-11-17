@@ -1,4 +1,8 @@
 import { NotFoundException } from '@nestjs/common';
+import {
+  EVENT_DESCRIPTION_MAX_LENGTH,
+  EVENT_LOCATION_MAX_LENGTH,
+} from '@repo/validation';
 import type { Event } from '#domain/entities/event.entity';
 import type { AttendanceService } from '../attendance.service';
 import type { EventService } from '../event.service';
@@ -468,6 +472,28 @@ describe('CreateEventActTool', () => {
         recurrence_rule: null,
       },
       notes: [],
+    });
+  });
+
+  // Drafted here and created through `EventService.create`, never the
+  // create route's DTO, so the draft is cut to the lengths that DTO allows.
+  it('cuts the details and location to the lengths an event holds', async () => {
+    const draft = await tool.draft(
+      plan({
+        title: 'Formal',
+        date: '2026-11-17',
+        start_time: '19:00',
+        details: 'd'.repeat(EVENT_DESCRIPTION_MAX_LENGTH + 50),
+        location: 'l'.repeat(EVENT_LOCATION_MAX_LENGTH + 50),
+      }),
+      context,
+    );
+    expect(draft).toMatchObject({
+      status: 'draft',
+      payload: {
+        description: 'd'.repeat(EVENT_DESCRIPTION_MAX_LENGTH),
+        location: 'l'.repeat(EVENT_LOCATION_MAX_LENGTH),
+      },
     });
   });
 

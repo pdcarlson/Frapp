@@ -18,6 +18,7 @@ import {
   birthdayDraftProblem,
   type BirthdayVisibility,
   can,
+  DISPLAY_NAME_MAX_LENGTH,
   GRADUATION_YEAR_MAX,
   GRADUATION_YEAR_MIN,
   isPhoneNumber,
@@ -27,6 +28,9 @@ import {
   PROFILE_ALUMNI_SECTION,
   PROFILE_FIELD_COPY,
   showsAfterGraduation,
+  USER_BIO_MAX_LENGTH,
+  USER_CITY_MAX_LENGTH,
+  USER_COMPANY_MAX_LENGTH,
 } from "@repo/validation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -35,6 +39,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/lib/hooks/use-toast";
 import { ProfileSection } from "@/components/profile/profile-section";
+import { profileSaveBody } from "@/components/profile/profile-save-body";
 import { PickRolesSection } from "@/components/roles/pick-roles-section";
 import { ProfilePhotoControl } from "@/components/profile/profile-photo-control";
 import { BirthdayFields } from "@/components/profile/birthday-fields";
@@ -183,39 +188,30 @@ export function ProfilePanel() {
 
   async function handleProfileSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const phone = profileDraft.phone?.trim() ?? "";
-    if (phone.length > 0 && !isPhoneNumber(phone)) {
+    // Only what the member changed (`profileSaveBody`), so a value stored
+    // before a limit never refuses an unrelated edit.
+    const saved = (userQuery.data ?? {}) as CurrentUser;
+    const body = profileSaveBody(saved, profileDraft);
+    if (body.phone && !isPhoneNumber(body.phone)) {
       setPhoneError(true);
       return;
     }
     // Month and day go together; the year rides with them (#4959).
-    const month = profileDraft.birthday_month ?? null;
-    const day = profileDraft.birthday_day ?? null;
-    const year = profileDraft.birthday_year ?? null;
-    const birthdayProblem = birthdayDraftProblem(month, day, year);
-    if (birthdayProblem) {
-      setBirthdayError(birthdayProblem);
-      return;
+    if (body.birthday_visibility !== undefined) {
+      const birthdayProblem = birthdayDraftProblem(
+        profileDraft.birthday_month ?? null,
+        profileDraft.birthday_day ?? null,
+        profileDraft.birthday_year ?? null,
+      );
+      if (birthdayProblem) {
+        setBirthdayError(birthdayProblem);
+        return;
+      }
     }
     try {
-      await updateUser.mutateAsync({
-        birthday_month: month,
-        birthday_day: day,
-        birthday_year: month === null ? null : year,
-        birthday_visibility:
-          profileDraft.birthday_visibility ?? BIRTHDAY_VISIBILITY_DEFAULT,
-        display_name: profileDraft.display_name ?? undefined,
-        // Blank clears it; the API trims and stores null.
-        phone: profileDraft.phone === undefined ? undefined : phone,
-        bio: profileDraft.bio ?? undefined,
-        major: profileDraft.major ?? undefined,
-        graduation_year:
-          profileDraft.graduation_year === null
-            ? null
-            : (profileDraft.graduation_year ?? undefined),
-        current_city: profileDraft.current_city ?? undefined,
-        current_company: profileDraft.current_company ?? undefined,
-      });
+      if (Object.keys(body).length > 0) {
+        await updateUser.mutateAsync(body);
+      }
       toast({
         title: "Profile saved",
         description: "Your chapter directory entry is up to date.",
@@ -392,6 +388,7 @@ export function ProfilePanel() {
               </Label>
               <Input
                 id="display-name"
+                maxLength={DISPLAY_NAME_MAX_LENGTH}
                 value={profile.display_name ?? ""}
                 onChange={(event) =>
                   setProfileDraft((prev) => ({
@@ -508,6 +505,7 @@ export function ProfilePanel() {
               <Label htmlFor="bio">{PROFILE_FIELD_COPY.bio.label}</Label>
               <Textarea
                 id="bio"
+                maxLength={USER_BIO_MAX_LENGTH}
                 value={profile.bio ?? ""}
                 onChange={(event) =>
                   setProfileDraft((prev) => ({
@@ -536,6 +534,7 @@ export function ProfilePanel() {
                     </Label>
                     <Input
                       id="current-city"
+                      maxLength={USER_CITY_MAX_LENGTH}
                       value={profile.current_city ?? ""}
                       onChange={(event) =>
                         setProfileDraft((prev) => ({
@@ -552,6 +551,7 @@ export function ProfilePanel() {
                     </Label>
                     <Input
                       id="current-company"
+                      maxLength={USER_COMPANY_MAX_LENGTH}
                       value={profile.current_company ?? ""}
                       onChange={(event) =>
                         setProfileDraft((prev) => ({
