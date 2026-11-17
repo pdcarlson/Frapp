@@ -15,8 +15,13 @@ import type {
 import type { ChapterDriveConnection } from '#domain/entities/chapter-drive-connection.entity';
 import {
   DRIVE_COPY_BUDGET,
+  DRIVE_COPY_TIME_MS,
+  DRIVE_LIST_TIME_MS,
+  DRIVE_MAX_DEPTH,
   DRIVE_MAX_FILES,
+  DRIVE_MAX_FOLDERS,
   GoogleDriveSyncService,
+  folderPath,
   planFile,
 } from './google-drive-sync.service';
 
@@ -51,6 +56,7 @@ const connection = (
   last_error: null,
   synced_count: 0,
   skipped_count: 0,
+  folders_left_out: 0,
   created_at: NOW.toISOString(),
   who_can_see: null,
   ...over,
@@ -277,24 +283,174 @@ describe('GoogleDriveSyncService', () => {
     ]);
   });
 
-  it('leaves out folders past three levels, unsupported types and oversized files', async () => {
+  it('leaves out unsupported types and oversized files', async () => {
     tree[ROOT] = [
-      folder('a', 'A'),
       item({ id: 'form', mimeType: 'application/vnd.google-apps.form' }),
       item({ id: 'zip', name: 'x.zip', mimeType: 'application/zip' }),
       item({ id: 'big', size: 26 * 1024 * 1024 }),
     ];
-    tree.a = [folder('b', 'B')];
-    tree.b = [folder('c', 'C')];
-    tree.c = [item({ id: 'too-deep' })];
 
     await service.process(connection(), NOW);
 
-    expect(drive.listChildren).not.toHaveBeenCalledWith('c');
     expect(documents.create).not.toHaveBeenCalled();
     expect(connections.finishSync).toHaveBeenCalledWith(
       'conn-1',
-      expect.objectContaining({ synced_count: 0, skipped_count: 3 }),
+      expect.objectContaining({
+        synced_count: 0,
+        skipped_count: 3,
+        folders_left_out: 0,
+      }),
+    );
+  });
+
+  it('brings in a file five folders down, in a folder named by its path (#5331)', async () => {
+    // Shawn's chapter drive: folders inside folders inside folders.
+    tree[ROOT] = [folder('a', 'Rush')];
+    tree.a = [folder('b', '2025')];
+    tree.b = [folder('c', 'Events')];
+    tree.c = [folder('d', 'Flyers')];
+    tree.d = [item({ id: 'deep-file', name: 'Bid day.pdf' })];
+
+    await expect(service.process(connection(), NOW)).resolves.toBe('synced');
+
+    expect(documents.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Bid day',
+        folder: 'Chapter files / Rush / 2025 / Events / Flyers',
+      }),
+    );
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ synced_count: 1, folders_left_out: 0 }),
+    );
+  });
+
+  it('counts folders past the depth cap instead of dropping them without a word', async () => {
+    // A chain of folders one deeper than the cap reads.
+    let parent = ROOT;
+    for (let level = 1; level <= DRIVE_MAX_DEPTH; level += 1) {
+      tree[parent] = [folder(`level-${level}`, `L${level}`)];
+      parent = `level-${level}`;
+    }
+    tree[parent] = [item({ id: 'too-deep' })];
+
+    await service.process(connection(), NOW);
+
+    expect(drive.listChildren).toHaveBeenCalledWith(
+      `level-${DRIVE_MAX_DEPTH - 1}`,
+    );
+    expect(drive.listChildren).not.toHaveBeenCalledWith(
+      `level-${DRIVE_MAX_DEPTH}`,
+    );
+    expect(documents.create).not.toHaveBeenCalled();
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ folders_left_out: 1 }),
+    );
+  });
+
+  it('reads the ten levels and 300 folders the spec and the panel name', () => {
+    expect(DRIVE_MAX_DEPTH).toBe(10);
+    expect(DRIVE_MAX_FOLDERS).toBe(300);
+  });
+
+  it('leaves the folders past the folder cap out of Documents, the same each pass, and still removes what left Drive', async () => {
+    tree[ROOT] = Array.from({ length: DRIVE_MAX_FOLDERS + 4 }, (_, i) =>
+      folder(`sub-${String(i).padStart(3, '0')}`, `Sub ${i}`),
+    );
+    const last = `sub-${DRIVE_MAX_FOLDERS + 3}`;
+    // A synced folder past the cap, with a copy filed in it, and a copy of a
+    // file deleted from a folder that was read.
+    folderRows = [
+      frappFolder({
+        id: 'past',
+        name: 'Chapter files / Sub 303',
+        drive_folder_id: last,
+      }),
+    ];
+    documents.findDriveCopies.mockResolvedValue([
+      copy({
+        id: 'in-unread',
+        drive_file_id: 'unread-file',
+        folder: 'Chapter files / Sub 303',
+      }),
+      copy({
+        id: 'deleted',
+        drive_file_id: 'deleted-file',
+        folder: 'Chapter files',
+      }),
+    ]);
+
+    await service.process(connection(), NOW);
+
+    // The connected folder and the first 299 below it are read; five aren't.
+    expect(drive.listChildren).toHaveBeenCalledTimes(DRIVE_MAX_FOLDERS);
+    expect(documents.delete).toHaveBeenCalledWith('deleted', 'ch-1');
+    expect(documents.delete).toHaveBeenCalledWith('in-unread', 'ch-1');
+    expect(folders.deleteMovingDocuments).toHaveBeenCalledWith('past', 'ch-1');
+    // No empty folder is made for one that wasn't read.
+    expect(folderRows.some((row) => row.drive_folder_id === 'sub-299')).toBe(
+      false,
+    );
+    expect(folderRows.some((row) => row.drive_folder_id === 'sub-298')).toBe(
+      true,
+    );
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ folders_left_out: 5 }),
+    );
+  });
+
+  it('stops listing at its time limit as a read in part, keeping what it did not reach', async () => {
+    let now = 0;
+    (service as unknown as { clock: () => number }).clock = () => now;
+    tree[ROOT] = [folder('a', 'A'), folder('b', 'B')];
+    drive.listChildren.mockImplementation((id: string) => {
+      // Reading A takes the rest of the listing time.
+      if (id === 'a') now += DRIVE_LIST_TIME_MS;
+      return Promise.resolve(tree[id] ?? []);
+    });
+    folderRows = [
+      frappFolder({
+        id: 'old-b',
+        name: 'Chapter files / B',
+        drive_folder_id: 'b',
+      }),
+    ];
+    documents.findDriveCopies.mockResolvedValue([
+      copy({
+        id: 'in-b',
+        drive_file_id: 'b-file',
+        folder: 'Chapter files / B',
+      }),
+    ]);
+
+    await service.process(connection(), NOW);
+
+    expect(drive.listChildren).not.toHaveBeenCalledWith('b');
+    expect(documents.delete).not.toHaveBeenCalled();
+    expect(folders.deleteMovingDocuments).not.toHaveBeenCalled();
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ folders_left_out: 0 }),
+    );
+  });
+
+  it('starts no copy past its copy time, leaving the rest for a pass due at once', async () => {
+    let now = 0;
+    (service as unknown as { clock: () => number }).clock = () => now;
+    tree[ROOT] = [item({ id: 'one' }), item({ id: 'two', name: 'Two.pdf' })];
+    drive.download.mockImplementation(() => {
+      now += DRIVE_COPY_TIME_MS;
+      return Promise.resolve(new Uint8Array([1]));
+    });
+
+    await expect(service.process(connection(), NOW)).resolves.toBe('more');
+
+    expect(drive.download).toHaveBeenCalledTimes(1);
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ sync_due_at: NOW.toISOString() }),
     );
   });
 
@@ -802,6 +958,62 @@ describe('GoogleDriveSyncService', () => {
     drive.getItem.mockResolvedValue(item({ id: ROOT }));
 
     await expect(service.process(connection(), NOW)).resolves.toBe('no_access');
+  });
+});
+
+describe('folderPath', () => {
+  it('joins its parent and its own name when that fits', () => {
+    expect(
+      folderPath('Chapter files / Rush', ['Chapter files', 'Rush', 'Flyers']),
+    ).toBe('Chapter files / Rush / Flyers');
+    expect(folderPath(null, ['Chapter files'])).toBe('Chapter files');
+    // A parent numbered for a clash keeps its number below it.
+    expect(folderPath('Rush (2)', ['Rush', 'Flyers'])).toBe(
+      'Rush (2) / Flyers',
+    );
+  });
+
+  it('keeps the first folder and the last ones that fit when a path is too long', () => {
+    const path = [
+      'Town chapter files',
+      'Recruitment and new member education',
+      'Fall 2025 rush week planning',
+      'Day three',
+      'Flyers and posters',
+    ];
+    const name = folderPath(path.slice(0, 4).join(' / '), path);
+
+    expect(name.length).toBeLessThanOrEqual(95);
+    expect(name).toBe(
+      'Town chapter files / … / Fall 2025 rush week planning / Day three / Flyers and posters',
+    );
+    // A child of a shortened folder shortens the same way, with one "…".
+    const child = folderPath(name, [...path, 'Final versions for print']);
+    expect(child.length).toBeLessThanOrEqual(95);
+    expect(child.startsWith('Town chapter files / … / ')).toBe(true);
+    expect(child.endsWith(' / Final versions for print')).toBe(true);
+    expect(child.match(/…/g)).toHaveLength(1);
+  });
+
+  it('shortens a long first folder rather than drop it, and never doubles the "…"', () => {
+    const root = 'A'.repeat(150).slice(0, 100);
+    expect(folderPath(null, [root])).toBe(root);
+    const child = folderPath(root, [root, 'B'.repeat(30)]);
+    expect(child).toBe(`${'A'.repeat(40)} / ${'B'.repeat(30)}`);
+    const grandchild = folderPath(child, [
+      root,
+      'B'.repeat(30),
+      'C'.repeat(40),
+    ]);
+    expect(grandchild.startsWith('A'.repeat(40))).toBe(true);
+    expect(grandchild.endsWith('C'.repeat(40))).toBe(true);
+    expect((grandchild.match(/…/g) ?? []).length).toBeLessThanOrEqual(1);
+  });
+
+  it('never splits a Drive name that holds " / "', () => {
+    const path = ['Chapter files', 'X'.repeat(80), 'Fall / Spring rush'];
+    const name = folderPath(`Chapter files / ${'X'.repeat(80)}`, path);
+    expect(name).toBe('Chapter files / … / Fall / Spring rush');
   });
 });
 

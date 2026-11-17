@@ -60,6 +60,7 @@ import {
   useKeptPanel,
 } from "@repo/hooks/kept-drafts";
 import { KeptDraftNote } from "@/components/shared/kept-draft-note";
+import { ZIP_REFUSAL } from "@/lib/documents/folder-import";
 import {
   DOCUMENT_TYPE_NAME_MAX_LENGTH,
   DOCUMENT_TYPES_MAX,
@@ -76,9 +77,17 @@ import {
   Each string names the verdict, because it is the whole inline error under the
   file field rather than a toast body under a title that named it.
 */
-function uploadRejectionDescription(reason: "type" | "size"): string {
+function uploadRejectionDescription(
+  reason: "type" | "size",
+  filename: string,
+): string {
   if (reason === "size") {
     return `That file is too large. Chapter documents accept files up to ${MAX_UPLOAD_LABEL}.`;
+  }
+  // A zipped folder is a way forward, not a dead end (#5331): Import a folder
+  // takes the folder once it's unzipped.
+  if (/\.zip$/i.test(filename)) {
+    return ZIP_REFUSAL;
   }
   return "That file type is not allowed. Chapter documents accept PDFs, Office files, text, CSV, and common images (no SVG).";
 }
@@ -312,7 +321,7 @@ export function useDocumentUpload(
     if (isEmptyChannelAccessChoice(uploadDraft.whoCanSee ?? null)) return;
     const inspected = inspectUploadFile("document", file);
     if (!inspected.ok) {
-      setUploadError(uploadRejectionDescription(inspected.reason));
+      setUploadError(uploadRejectionDescription(inspected.reason, file.name));
       return;
     }
     setUploadError(null);

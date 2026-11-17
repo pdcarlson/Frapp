@@ -10,6 +10,8 @@ export interface ChapterDriveSyncResult {
   last_error?: string | null;
   synced_count?: number;
   skipped_count?: number;
+  /** Folders past the depth or folder cap, left unread (#5331). */
+  folders_left_out?: number;
   /** Set to bring the next sync forward (more to copy) or push it back. */
   sync_due_at?: string;
 }
