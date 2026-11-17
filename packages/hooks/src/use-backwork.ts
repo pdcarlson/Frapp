@@ -321,7 +321,7 @@ export type BackworkDraft = {
 };
 
 /** How one AI fill of a draft ended (`POST /v1/backwork/drafts/{id}/fill`). */
-export type BackworkDraftFillStatus =
+type BackworkDraftFillStatus =
   components["schemas"]["BackworkDraftFillResponseDto"]["status"];
 
 /**
