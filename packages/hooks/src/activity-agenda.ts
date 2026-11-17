@@ -1,5 +1,5 @@
 import { dayDelta, formatDayHeading } from "@repo/formatting";
-import { joinNames } from "@repo/validation";
+import { joinNames, roleColor, type RoleColorHex } from "@repo/validation";
 import {
   ACTIVITY_LIST_LIMIT,
   ACTIVITY_SECTION_NAMES,
@@ -12,6 +12,7 @@ import {
   type ActivitySection,
   type ActivityToDo,
 } from "./activity-rows";
+import { NOTIFICATION_TILE_HUE } from "./notification-rows";
 import { isSentBack } from "./task-card";
 
 /**
@@ -325,18 +326,8 @@ export function activityAgenda(
   now: Date = new Date(),
 ): ActivityAgenda {
   const todos = activityToDos(activity, now);
-  const bucketOf = (todo: ActivityToDo): { id: string; order: number } => {
-    if (todo.now) return { id: "now", order: -1 };
-    if (todo.overdue) return { id: "overdue", order: -2 };
-    if (!todo.at) return { id: "anytime", order: AGENDA_DAY_HORIZON + 1 };
-    // Earlier today, or a poll closing in the next minute: still today.
-    const days = Math.max(0, dayDelta(now, todo.at));
-    return days < AGENDA_DAY_HORIZON
-      ? { id: `day:${days}`, order: days }
-      : { id: "later", order: AGENDA_DAY_HORIZON };
-  };
   const placed = todos
-    .map((todo, index) => ({ todo, index, bucket: bucketOf(todo) }))
+    .map((todo, index) => ({ todo, index, bucket: agendaBucket(todo, now) }))
     .sort(
       (a, b) =>
         a.bucket.order - b.bucket.order ||
@@ -398,6 +389,26 @@ export function activityAgenda(
 }
 
 /**
+ * Which run of the To do list a to-do is filed under, and the run's order:
+ * Overdue, Now, a day (`day:<n>`, days from today), Later, No deadline. The
+ * week strip files by the same runs, so a day it jumps to is one the list
+ * draws.
+ */
+function agendaBucket(
+  todo: ActivityToDo,
+  now: Date,
+): { id: string; order: number } {
+  if (todo.now) return { id: "now", order: -1 };
+  if (todo.overdue) return { id: "overdue", order: -2 };
+  if (!todo.at) return { id: "anytime", order: AGENDA_DAY_HORIZON + 1 };
+  // Earlier today, or a poll closing in the next minute: still today.
+  const days = Math.max(0, dayDelta(now, todo.at));
+  return days < AGENDA_DAY_HORIZON
+    ? { id: `day:${days}`, order: days }
+    : { id: "later", order: AGENDA_DAY_HORIZON };
+}
+
+/**
  * A day's heading by how many days ahead it is, not by a row's own date: an
  * item from earlier that is neither overdue nor open (a time that passed
  * since the read) is listed with today's, and the heading still says Today.
@@ -421,6 +432,136 @@ function dayLabel(daysAhead: number, now: Date): string {
 function underOverdue(row: ActivityRow): ActivityRow {
   if (row.kind === "task" && isSentBack(row.task)) return row;
   return { ...row, badge: null };
+}
+
+/** A kind of to-do on the week strip, each one dot. */
+export type ActivityStripKind = Exclude<ActivityAgendaFilter, "all">;
+
+/**
+ * Each kind's dot (#5310), in the hue its tile wears elsewhere
+ * (`foundations.md` § A place's hue: a hue names a kind, never a state):
+ * events sky and tasks green, as Notifications tiles them, and polls and
+ * sign-ups violet. Never the accent, which marks the picked day, and never
+ * red, which is overdue.
+ */
+export const ACTIVITY_STRIP_HUE: Record<ActivityStripKind, RoleColorHex> = {
+  events: NOTIFICATION_TILE_HUE.events,
+  tasks: NOTIFICATION_TILE_HUE.tasks,
+  answers: roleColor("violet"),
+};
+
+const STRIP_KIND_ORDER: readonly ActivityStripKind[] = [
+  "events",
+  "tasks",
+  "answers",
+];
+
+/** The line of the week card a row counts under, by the narrowing's kinds. */
+const stripKindOf = (kind: ActivityRow["kind"]): ActivityStripKind | null =>
+  STRIP_KIND_ORDER.find((line) => FILTER_KINDS[line].includes(kind)) ?? null;
+
+/** One of a kind, for a day's spoken count; many is {@link FILTER_NOUN}. */
+const STRIP_NOUN_ONE: Record<ActivityStripKind, string> = {
+  events: "event",
+  tasks: "task",
+  answers: "poll or sign-up",
+};
+
+/** One day of the week strip over Activity's week card. */
+export interface ActivityStripDay {
+  /** The To do day it jumps to: `day:<n>`, days from today. */
+  id: string;
+  /** Local midnight. */
+  date: Date;
+  /** The kinds due that day, in a fixed order, one dot each. */
+  kinds: ActivityStripKind[];
+  /** Everything due that day, the week card's Next included. */
+  count: number;
+  /**
+   * The To do sections that hold the day's rows, in the order they are
+   * drawn: today's open check-ins sit under Now, ahead of Today. Empty when
+   * the day's one thing is the week card's Next.
+   */
+  sections: string[];
+  /** For a screen reader: "Thursday, November 19, 1 event, 1 task". */
+  spokenLabel: string;
+}
+
+/** How many days the strip draws: today and the six after it. */
+export const ACTIVITY_STRIP_DAYS = 7;
+
+/**
+ * The week strip (#5310, Paul's direction B for the Calendar rethink):
+ * today and the six days after it, each with a dot per kind due that day,
+ * as Fantastical's DayTicker and Things' Upcoming strip draw a week. It
+ * starts today rather than on Sunday because every day on it is a day To do
+ * lists, so pressing any of them can jump there; what is past due is To do's
+ * Overdue, not a dot on a day gone by.
+ *
+ * Counts every to-do, whatever line of the week card narrows the list, and
+ * the snoozed rows are already out of `activity` (`activityAwake`).
+ */
+export function activityWeekStrip(
+  activity: Activity,
+  now: Date = new Date(),
+  /**
+   * The week card's Next (`activityAgenda(...).next?.key`), which To do
+   * doesn't repeat, so it has no section to jump to.
+   */
+  cardKey: string | null = null,
+): ActivityStripDay[] {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days = Array.from({ length: ACTIVITY_STRIP_DAYS }, (_, offset) => ({
+    date: new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() + offset,
+    ),
+    perKind: new Map<ActivityStripKind, number>(),
+    count: 0,
+    sections: new Set<string>(),
+  }));
+  for (const todo of activityToDos(activity, now)) {
+    const kind = stripKindOf(todo.dated.kind);
+    if (!kind) continue;
+    // To do's own runs: Now is today's, a day is its own, and Overdue, Later
+    // and No deadline are on no day of the strip.
+    const { id } = agendaBucket(todo, now);
+    const offset =
+      id === "now"
+        ? 0
+        : id.startsWith("day:")
+          ? Number(id.slice("day:".length))
+          : null;
+    const day = offset === null ? undefined : days[offset];
+    if (!day) continue;
+    day.perKind.set(kind, (day.perKind.get(kind) ?? 0) + 1);
+    day.count += 1;
+    if (todo.dated.key !== cardKey) day.sections.add(id);
+  }
+  return days.map((day, offset) => {
+    const kinds = STRIP_KIND_ORDER.filter((kind) => day.perKind.has(kind));
+    const label = day.date.toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+    const parts = kinds.map((kind) => {
+      const n = day.perKind.get(kind) ?? 0;
+      return `${n} ${n === 1 ? STRIP_NOUN_ONE[kind] : FILTER_NOUN[kind]}`;
+    });
+    return {
+      id: `day:${offset}`,
+      date: day.date,
+      kinds,
+      count: day.count,
+      sections: ["now", `day:${offset}`].filter((id) => day.sections.has(id)),
+      spokenLabel: [
+        label,
+        ...(parts.length > 0 ? parts : ["nothing due"]),
+      ].join(", "),
+    };
+  });
 }
 
 /** What waits on the member's review, for the To review card. */

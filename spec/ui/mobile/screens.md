@@ -86,6 +86,13 @@ Web's page took the same shape, from the same model in `@repo/hooks`, later that
 The screen is drawn and checked for four people ([`principles.md` § Three people](../design-system/principles.md#three-people)): a member with nothing due, an average member, a committee chair and the president.
 Top to bottom:
 
+- **The week strip** (`components/activity/week-strip.tsx`; model `activityWeekStrip` in `@repo/hooks`; [#5310](https://github.com/frapplive/Frapp/issues/5310), Paul's direction B, 2026-11-17: "I hate the calendar page", "I'm open to a paradigm shift").
+  Seven columns, today and the six days after it, each its weekday initial, its date and a dot per kind due that day (one dot however many of that kind): events sky and tasks green, the hues their Notifications tiles wear, and polls and sign-ups violet. These are the first kind hues on Activity, which [`foundations.md` § A place's hue](../design-system/foundations.md#a-places-hue-2026-11-12) kept neutral until Paul's direction B (its note records the change).
+  Fantastical's DayTicker and Things' Upcoming strip are the comparables: the dots say how the week is shaped before a word is read.
+  It starts today rather than on Sunday because every day on it is a day To do lists, so any of them can be pressed; what is past due is To do's Overdue, not a dot on a day gone by.
+  Pressing a day with something on it scrolls To do to that day (to Now first, for today's open check-ins), and to the top when the day's one thing is the week card's Next; a narrowed list shows everything first. A day with nothing is drawn but not pressable.
+  The picked day wears the month grid's selected-day look (an accent tint and an accent border, never the solid fill Next's button holds), so the dots keep their hues; until a day is pressed, today is picked, and its weekday and date are in the accent either way. The initials are the month grid's (`lib/calendar-weekdays.ts`).
+  It counts every to-do the member hasn't snoozed, whatever line of the week card narrows the list.
 - **The week card** (`components/activity/week-card.tsx`; model `activityWeekSummary` and `activityAgenda` in `@repo/hooks`).
   One ring, done of total this week, from the read's `week` ([`../../behavior/activity.md` § Week](../../behavior/activity.md#week)), with the count inside it ("5" over "of 8") and a headline beside it ("3 left this week").
   Apple Fitness's rings and Bevel's daily dial are the comparables: one figure that closes as the work is done.
@@ -129,6 +136,7 @@ Top to bottom:
   An event the member has checked in to leaves the list.
   The row on the week card is not repeated here, and when it was the only one the section is not drawn.
   With nothing at all it says "Nothing to do right now."
+- **Calendar** ([#5310](https://github.com/frapplive/Frapp/issues/5310)): one row under To do that opens the chapter's month (s06), optional events included: the Events glyph in a lead tile in the Events hue (a place, so it keeps one hue), the word Calendar and a chevron. It needs none of Activity's read, so it is drawn while the page loads and under its error too. Calendar folds into Activity this way; until the tab swap (#5310 step 2) it opens the Calendar tab on its Calendar view at Month.
 - **Reminders** (#4957; what is listed is [`../../behavior/activity.md` § Reminders](../../behavior/activity.md#reminders)): the member's reminders on chat messages, a due one first with a `Due` badge. A row opens a sheet like a link's: the message's words, `Open message` (chat at the message, its thread for a reply) and `Done`, then the five presets under `Snooze` (`Change the time` while it still waits). A row whose channel the member lost shows only a note and Done.
 - **Waiting on others**, then **Links**: what the member made (the polls they posted, the events they made, the tasks they assigned, by kind, three of each then "Show all N"; open polls and unconfirmed tasks only) and the sign-up links posted for them, from the shared `activityGroups`.
   "Waiting on others" is the old "Made by you" renamed for what the member wants from it, on web too.
@@ -302,6 +310,7 @@ Not while editing a message, and not in a thread: the thread screen refuses a re
 
 Route: `(app)/(tabs)/events.tsx`.
 
+Reached from Activity's Calendar row too since 2026-11-17 ([#5310](https://github.com/frapplive/Frapp/issues/5310), step 1; step 2 moves it off the tab bar to a pushed month with no switchers and rewrites this section).
 Live — titled **Calendar**, as its tab is, since 2026-11-12 ([#4610](https://github.com/pdcarlson/Frapp/issues/4610); the route stays `events`). real `useEvents()` data, as a **List** or a **Calendar** under a List | Calendar switch that opens on whichever the member used last on this phone (per device, AsyncStorage: `lib/events/events-view.ts`; #3792, #3823).
 **List** (#3707): upcoming + still-checkable-in, today through the end of the 14th day after it, under written-out day headings (Today, Tomorrow, the weekday inside the week, then November 14: `formatDayHeading`), each in sentence case, caption / 600 in the foreground tone (`DayHeading` in `components/list-section.tsx`), as web's list draws them and as iOS Calendar's and Google Calendar's lists set their days;
 the Calendar view's picked day takes the same heading (the uppercase section eyebrow until 2026-11-13, #4138);
