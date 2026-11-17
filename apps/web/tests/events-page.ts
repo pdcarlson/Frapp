@@ -1,4 +1,6 @@
 import { vi } from "vitest";
+// The idle mutation and empty read every page harness here shares.
+import { idleMutation, loadedEmpty } from "./settings-harness";
 
 /**
  * The `@repo/hooks` stub the web Events page specs render against, in one place.
@@ -50,8 +52,6 @@ export const EVENT_TYPES = [
   },
 ];
 
-const idleMutation = () => ({ mutateAsync: vi.fn(), isPending: false });
-
 /** The editor's event-type picker: the list and its three idle mutations. */
 export function eventTypeHooks(types: unknown[] = EVENT_TYPES) {
   return {
@@ -98,8 +98,8 @@ export async function eventsPageHooks(overrides: Record<string, unknown> = {}) {
     useUpdateEvent: idleMutation,
     ...eventTypeHooks(),
     useRoles: () => ({ data: [{ id: "r1", name: "Exec" }], isError: false }),
-    useAttendance: () => ({ data: [], isPending: false, isError: false }),
-    useMembers: () => ({ data: [], isPending: false, isError: false }),
+    useAttendance: loadedEmpty,
+    useMembers: loadedEmpty,
     useUpdateAttendanceStatus: idleMutation,
     useAutoAbsent: idleMutation,
     useMyPermissions: () => ({
