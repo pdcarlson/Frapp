@@ -50,10 +50,7 @@ export function usePlayback(url: string | null): Playback {
   useEffect(() => release, [release]);
   // No link any more (the minutes were posted, or the recording removed).
   useEffect(() => {
-    if (!url) {
-      release();
-      setPlaying(false);
-    }
+    if (!url) release();
   }, [url, release]);
 
   const toggle = useCallback(() => {
@@ -89,7 +86,7 @@ export function usePlayback(url: string | null): Playback {
 
   return {
     available: !!module && !!url,
-    playing,
+    playing: playing && !!url,
     position,
     duration,
     failed,

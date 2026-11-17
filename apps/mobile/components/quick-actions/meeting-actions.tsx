@@ -236,7 +236,7 @@ export function useMeetingQuickActions({
    * Whether the member's own draft can be recorded straight away: it has no
    * recording, or only a failed one. Anything else (one uploading from
    * another device, transcribing, or ready) is the minutes screen's to
-   * handle, where Record asks before replacing it.
+   * handle, where the minutes open as they are.
    */
   async function freeToRecord(meetingId: string): Promise<boolean> {
     const { data } = await client.GET("/v1/meetings/{id}/recording", {

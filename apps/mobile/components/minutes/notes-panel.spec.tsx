@@ -186,7 +186,7 @@ describe("a recording's transcript, a source of its own (#4935)", () => {
   });
 
   it("drafts with no notes of the officer's own when the recording is ready", async () => {
-    const tree = render(draftState(), false, recordingState());
+    render(draftState(), false, recordingState());
     await draft();
     expect(hooks.request).toHaveBeenCalledWith({
       id: "m1",

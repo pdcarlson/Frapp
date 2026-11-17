@@ -60,7 +60,7 @@ export const MEETING_START_COPY = {
   start: "Start minutes",
   yours: "Your draft",
   hasRecording: (name: string) =>
-    `${name} already has a recording. Its minutes are open: record again from there.`,
+    `${name} already has a recording, so its minutes are open as they are.`,
 } as const;
 
 /** The minutes this member could open as theirs, by event. */

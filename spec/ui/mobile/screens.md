@@ -546,9 +546,10 @@ Route: `(app)/minutes.tsx`, `(app)/minutes-details.tsx`.
 Live (2026-11-12, #4415; the board draws no such screens), hidden while the `meetings` module is off for the beta.
 You gains a **Minutes** row (drafts the viewer may edit, then posted, newest first); an event's page ends in a row to its minutes; a "minutes posted" push opens them.
 `minutes-details` is a document to read: an eyebrow over each section the chapter's template keeps, no cards ([`../../behavior/meetings.md`](../../behavior/meetings.md) § Reading minutes).
-An officer who may edit a draft gets **Draft minutes** (a tall sheet for pasted notes, `components/minutes/notes-draft-sheet.tsx`, only where the server offers drafting and after the AI question) and **Post**, which posts at once, without asking first (Paul, 2026-11-16).
-Changing a section by hand is on the web, and one line under Post says so.
-Write minutes on an event is offered only where drafting is, since the phone has nothing else to write them with
+An officer who may edit a draft gets the recorder (`components/minutes/recorder.tsx`) and a notes box on the page itself (`components/minutes/notes-panel.tsx`, only where the server offers drafting), with one button pinned at the bottom (`ScreenShell`'s `footer`): the recorder's round pause and stop while it records, else **Post** once the minutes have words, which posts at once without asking first (Paul, 2026-11-16), else **Draft minutes** once notes are typed, else **Record** ([`../../behavior/meetings.md` § Recording in the app](../../behavior/meetings.md#recording-in-the-app)). A ready transcript opens on the page under a row, with the recording's play control (`components/minutes/recording-player.tsx`) while the audio is kept.
+Changed 2026-11-17 by pdcarlson (#5381): Draft minutes used to open a tall sheet, and the transcript another; Paul: "I don't want a pop-up sheet for everything."
+With nothing written and no drafting, one line says to write them on the web.
+An event's row reads Record minutes where the phone can record, else Write minutes, offered only where drafting is, since the phone has nothing else to write them with
 
 ### Suggested
 
