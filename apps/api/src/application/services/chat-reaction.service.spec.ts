@@ -240,6 +240,28 @@ describe('ChatReactionService', () => {
         'the audit log': { ...baseChannel, is_audit_log: true },
       };
 
+      it('still takes a sign-up claim from a reader who may not post in the channel', async () => {
+        mockChannelRepo.findById.mockResolvedValue({
+          ...baseChannel,
+          who_can_post: ['role-officer'],
+        });
+        mockMessageRepo.findById.mockResolvedValue(signupCard);
+        mockActionRepo.claimSignupSlots.mockResolvedValue({
+          action: { ...baseAction, action_type: 'signup' },
+          updated: false,
+        });
+
+        await expect(
+          reactions.recordMessageAction(
+            'msg-1',
+            'ch-1',
+            'user-1',
+            { action_type: 'signup', payload: { slot_ids: ['fri'] } },
+            null,
+          ),
+        ).resolves.toMatchObject({ deduplicated: false });
+      });
+
       // Who can post doesn't decide a card vote: a poll in #announcements is
       // for everyone who reads it, as the card offers it.
       it('still takes a vote from a reader who may not post in the channel', async () => {

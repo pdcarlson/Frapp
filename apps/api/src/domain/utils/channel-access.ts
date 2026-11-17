@@ -75,7 +75,8 @@ export interface ChannelAccessRecord {
  *   creator dropped from a read-only channel's posters must still be able to
  *   end their own poll.
  * - `answer`: fill in something already readable that every reader may
- *   answer (a form card's answers, #3926). Archive and the audit log apply,
+ *   answer (a form card's answers, #3926; a chat card's poll vote and a
+ *   sign-up claim, #4695). Archive and the audit log apply,
  *   as for `close`, but not who can post nor the Alumni rule: a form posted
  *   in an announcement channel is for everyone who can read it.
  */
@@ -283,8 +284,9 @@ export function channelAllowsThreads(
  *   only `*`.
  * - Unknown channel type: denied (guarded default, never falls open).
  *
- * A write (`post`, `vote`, `thread`) must also pass the read, and is refused
- * in an archived channel and in the audit log whatever the caller holds.
+ * A write (`post`, `vote`, `thread`, `close`, `answer`) must also pass the
+ * read, and is refused in an archived channel and in the audit log whatever
+ * the caller holds.
  * Then:
  *
  * - The Alumni rule, for `post` and `thread`: a holder of the Alumni role

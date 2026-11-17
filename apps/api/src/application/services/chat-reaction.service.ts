@@ -82,14 +82,6 @@ function assertCardPollVoteAllowed(
 const SIGNUPS_CLOSED = 'Sign-ups are closed';
 
 /**
- * A member's responses to a message: emoji reactions on the legacy
- * `message_reactions` table, and the `chat_message_actions` hot path that
- * carries reactions, card-poll votes and RSVPs.
- *
- * Split out of `ChatService` (#1380). It shares only the message-access check
- * and the block list with the send path, and never writes a message.
- */
-/**
  * The channel operation a card action is checked as (#4695). A poll vote and
  * a sign-up claim are `'answer'`, as a form's answers are: refused in an
  * archived channel and in the audit log, where the card can't be closed
@@ -105,6 +97,14 @@ function cardActionOperation(actionType: string): ChannelOperation {
     : 'read';
 }
 
+/**
+ * A member's responses to a message: emoji reactions on the legacy
+ * `message_reactions` table, and the `chat_message_actions` hot path that
+ * carries reactions, card-poll votes and RSVPs.
+ *
+ * Split out of `ChatService` (#1380). It shares only the message-access check
+ * and the block list with the send path, and never writes a message.
+ */
 @Injectable()
 export class ChatReactionService {
   constructor(
