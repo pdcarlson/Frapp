@@ -720,7 +720,9 @@ describe('MeetingDraftService', () => {
       await ask();
       await work();
       const [, , , save] = meetings.update.mock.calls[0];
-      expect(save.content.summary).toBe('The chapter approved a DJ for formal.');
+      expect(save.content.summary).toBe(
+        'The chapter approved a DJ for formal.',
+      );
     });
 
     it('stops the notes pass when a part of the draft fails', async () => {

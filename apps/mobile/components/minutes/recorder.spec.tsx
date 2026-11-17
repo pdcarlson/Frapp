@@ -49,8 +49,10 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
 }));
 const notice = vi.hoisted(() => ({
   present: vi.fn(),
-  props: null as { maxSeconds: number; onStart: () => void } | null,
+  rendered:
+    vi.fn<(props: { maxSeconds: number; onStart: () => void }) => void>(),
 }));
+const noticeProps = () => notice.rendered.mock.lastCall?.[0];
 vi.mock("@/components/minutes/recording-notice-sheet", async () => {
   const { forwardRef, useImperativeHandle } = await import("react");
   return {
@@ -58,7 +60,7 @@ vi.mock("@/components/minutes/recording-notice-sheet", async () => {
       props: { maxSeconds: number; onStart: () => void },
       ref,
     ) {
-      notice.props = props;
+      notice.rendered(props);
       useImperativeHandle(ref, () => ({ present: notice.present }));
       return null;
     }),
@@ -174,7 +176,6 @@ beforeEach(() => {
   openSettings.mockResolvedValue(undefined);
 });
 
-
 describe("the recorder on the minutes screen", () => {
   it("opens the notice on Record, and the microphone only on the notice's Start", async () => {
     const tree = render(IDLE);
@@ -182,8 +183,8 @@ describe("the recorder on the minutes screen", () => {
     expect(notice.present).toHaveBeenCalledTimes(1);
     expect(session.recorder.start).not.toHaveBeenCalled();
 
-    expect(notice.props?.maxSeconds).toBe(7200);
-    act(() => notice.props?.onStart());
+    expect(noticeProps()?.maxSeconds).toBe(7200);
+    act(() => noticeProps()?.onStart());
     expect(session.recorder.start).toHaveBeenCalledWith(
       { meetingId: "m1", eventName: "Chapter meeting", maxSeconds: 7200 },
       true,

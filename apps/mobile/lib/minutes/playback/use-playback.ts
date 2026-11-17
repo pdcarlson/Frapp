@@ -58,7 +58,6 @@ export function usePlayback(url: string | null): Playback {
     player.current?.remove();
     player.current = null;
     loadedUrl.current = null;
-    setPlaying(false);
   }, [clearLoadTimer]);
   useEffect(() => release, [release]);
   // No link any more (the minutes were posted, or the recording removed).
