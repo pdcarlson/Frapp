@@ -220,7 +220,16 @@ export function decidePush(input: PushDecisionInput): PushOutcome {
   ) {
     return 'skip-level';
   }
-  if (input.recipientIsPresent) return 'skip-presence';
+  // Presence is published by the readers' own clients on a topic every reader
+  // of the channel may publish to, so it can't prove who is reading. It still
+  // quiets ordinary traffic, where a wrong entry costs one push, but never an
+  // @mention or an announcement: a member who could forge another's presence
+  // would otherwise silence the pushes that matter most for everyone in the
+  // channel. A DM keeps the skip, since its only other reader is the sender.
+  const presenceCannotQuiet =
+    (input.hasMention && input.messageKind !== 'system_audit') ||
+    input.messageKind === 'announcement';
+  if (input.recipientIsPresent && !presenceCannotQuiet) return 'skip-presence';
   const level = resolveLevel(
     input.channel,
     input.messageKind,

@@ -536,6 +536,24 @@ describe('ChatPushWorkerService', () => {
   });
 
   it('skips recipients currently in the channel (presence)', async () => {
+    const general = { ...CHANNEL, id: 'ch-general', name: 'general' };
+    service.__setChannelForTest(general);
+    service.__setPresenceForTest(general.id, ['a']);
+    setMembers(['sender', 'a', 'b']);
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: general.id,
+      sender_id: 'sender',
+      content: 'Who is around tonight?',
+      kind: 'text',
+      mentions: [],
+      created_at: '',
+    });
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith('b', 'chap-1', expect.any(Object));
+  });
+
+  it('pushes an announcement and an @mention through presence', async () => {
     service.__setChannelForTest(ANNOUNCEMENT_CHANNEL);
     service.__setPresenceForTest(ANNOUNCEMENT_CHANNEL.id, ['a']);
     setMembers(['sender', 'a', 'b']);
@@ -548,8 +566,23 @@ describe('ChatPushWorkerService', () => {
       mentions: [],
       created_at: '',
     });
-    expect(notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith('a', 'chap-1', expect.any(Object));
     expect(notifyUser).toHaveBeenCalledWith('b', 'chap-1', expect.any(Object));
+
+    notifyUser.mockClear();
+    service.__setChannelForTest(CHANNEL);
+    service.__setPresenceForTest(CHANNEL.id, ['a']);
+    await service.handleMessage({
+      id: 'm2',
+      channel_id: CHANNEL.id,
+      sender_id: 'sender',
+      content: 'hello @a',
+      kind: 'text',
+      mentions: ['a'],
+      created_at: '',
+    });
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith('a', 'chap-1', expect.any(Object));
   });
 
   it('honors a per-channel off preference', async () => {

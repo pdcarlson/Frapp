@@ -148,10 +148,60 @@ describe('decidePush', () => {
   it('skips presence even if level=all', () => {
     expect(
       decidePush({
+        channel: ch('general'),
+        messageKind: 'text',
+        recipientIsPresent: true,
+        hasMention: false,
+        preferences: [],
+      }),
+    ).toBe('skip-presence');
+  });
+
+  // Presence is client-published, so it never silences the pushes that
+  // matter most: forging it must not quiet an @mention or an announcement.
+  it('pushes an @mention to a member shown as present', () => {
+    expect(
+      decidePush({
+        channel: ch('random'),
+        messageKind: 'text',
+        recipientIsPresent: true,
+        hasMention: true,
+        preferences: [],
+      }),
+    ).toBe('send');
+  });
+
+  it('pushes an announcement to a member shown as present', () => {
+    expect(
+      decidePush({
         channel: ch('announcements', { is_read_only: true }),
         messageKind: 'announcement',
         recipientIsPresent: true,
         hasMention: false,
+        preferences: [],
+      }),
+    ).toBe('send');
+  });
+
+  it('still lets presence quiet a DM', () => {
+    expect(
+      decidePush({
+        channel: ch('dm', { type: 'DM' }),
+        messageKind: 'text',
+        recipientIsPresent: true,
+        hasMention: false,
+        preferences: [],
+      }),
+    ).toBe('skip-presence');
+  });
+
+  it('presence does not lift a system_audit mention past the level', () => {
+    expect(
+      decidePush({
+        channel: ch('random'),
+        messageKind: 'system_audit',
+        recipientIsPresent: true,
+        hasMention: true,
         preferences: [],
       }),
     ).toBe('skip-presence');
