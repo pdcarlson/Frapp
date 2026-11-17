@@ -236,6 +236,9 @@ vi.mock("@repo/hooks", async () => {
     foldedSectionAnnouncement: actual.foldedSectionAnnouncement,
     sidebarMutedChannelIds: actual.sidebarMutedChannelIds,
     sidebarUnreadCounts: actual.sidebarUnreadCounts,
+    // #5277, #5300: threads with new replies count for arranging, for real.
+    channelsWithUnreadThreads: actual.channelsWithUnreadThreads,
+    withUnreadThreadChannels: actual.withUnreadThreadChannels,
     HIDE_MUTED_LABEL: actual.HIDE_MUTED_LABEL,
     NO_MATCHING_CHANNELS: actual.NO_MATCHING_CHANNELS,
     PIN_TO_TOP_LABEL: actual.PIN_TO_TOP_LABEL,

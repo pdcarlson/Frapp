@@ -58,22 +58,6 @@ export function useChannelThreads() {
 }
 
 /**
- * Which channels hold a listed thread with replies new to the member. Thread
- * replies never count toward a channel's own unread (chat README § Message
- * threads), so the list's Unread only filter and a folded section's total
- * read this too, or the only sign of those replies would be filtered away.
- */
-export function channelsWithUnreadThreads(
-  byChannel: ReadonlyMap<string, readonly MemberThread[]>,
-): Set<string> {
-  const ids = new Set<string>();
-  for (const [channelId, threads] of byChannel) {
-    if (threads.some((thread) => thread.unread_count > 0)) ids.add(channelId);
-  }
-  return ids;
-}
-
-/**
  * A channel's active threads, indented under its row (#5277, Paul
  * 2026-11-17), as Discord's channel list draws the threads you're in: a
  * curved connector from the channel's `#` into each thread, named by its

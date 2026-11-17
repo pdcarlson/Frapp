@@ -681,6 +681,8 @@ vi.mock("@repo/hooks", async () => ({
   useChannelAccessOptions: () => ({ data: [], isPending: false }),
   // The Forward dialog (#4907) mounts only once a row asks for it.
   useForwardMessage: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  // Threads under their channel in the rail (#5300): none listed here.
+  useMemberThreads: () => ({ data: [], dataUpdatedAt: 0 }),
   useMemberDisplayNames: () => ({
     byId: sidebarState.memberNames,
     nameFor: (id: string) => sidebarState.memberNames[id] ?? null,

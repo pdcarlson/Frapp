@@ -29,6 +29,8 @@ import {
   sidebarMutedChannelIds,
   sidebarSections,
   sidebarUnreadCounts,
+  withUnreadThreadChannels,
+  channelsWithUnreadThreads,
   useCategories,
   useChannelLatestMessages,
   useChannelNotificationPreferences,
@@ -83,7 +85,6 @@ import {
 } from "@/components/chat/home-header";
 import {
   ChannelThreadRows,
-  channelsWithUnreadThreads,
   useChannelThreads,
 } from "@/components/chat/channel-thread-rows";
 import { DisclosureGlyph, PlusGlyph } from "@/components/control-glyphs";
@@ -489,20 +490,10 @@ export default function ChatHomeScreen() {
   // channel whose thread has new replies (#5277), so Unread only keeps that
   // channel and its thread rows, and a folded section reads unread over it.
   // The rows' own badges still read the server's counts alone.
-  const arrangementUnread = useMemo(() => {
-    if (!unreadByChannelId || unreadThreadChannelIds.size === 0)
-      return unreadByChannelId;
-    const merged = new Map(unreadByChannelId);
-    for (const channelId of unreadThreadChannelIds) {
-      const counts = merged.get(channelId);
-      if ((counts?.unreadCount ?? 0) === 0)
-        merged.set(channelId, {
-          unreadCount: 1,
-          mentionCount: counts?.mentionCount ?? 0,
-        });
-    }
-    return merged;
-  }, [unreadByChannelId, unreadThreadChannelIds]);
+  const arrangementUnread = useMemo(
+    () => withUnreadThreadChannels(unreadByChannelId, unreadThreadChannelIds),
+    [unreadByChannelId, unreadThreadChannelIds],
+  );
   const threadAuthorName = useCallback(
     (userId: string) => memberNames[userId] ?? null,
     [memberNames],

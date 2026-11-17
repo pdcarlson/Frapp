@@ -50,6 +50,7 @@ import {
   useCategories,
   useChapterRoster,
   useMemberDisplayNames,
+  useMemberThreads,
   useRosterCatchUp,
   useMentionRoles,
   useMyPermissions,
@@ -80,6 +81,7 @@ import {
   useGifAvailability,
   useSetMessageReminder,
 } from "@repo/hooks";
+import { sidebarThreadsByChannel } from "@repo/chat-core/threads";
 import { setChannelLocked, syncLockedChannels } from "@repo/chat-core/density";
 import { typingLabel } from "@repo/chat-core/typing-label";
 import { attachmentRequestBody } from "@repo/chat-core/adapters";
@@ -2759,6 +2761,30 @@ export function ChatShell({
     },
     [activeChannelId, refetchChannels],
   );
+  // Threads under their channel in the rail (#5300, Paul 2026-11-17), as the
+  // phone draws them since #5277: the same list the header's All threads
+  // reads (one query), cut to each channel's active ones by the shared rule.
+  // The quiet window runs from when the list was read, which its
+  // minute-by-minute re-read keeps current.
+  const memberThreadsQuery = useMemberThreads();
+  const railThreads = useMemo(
+    () => ({
+      byChannel: sidebarThreadsByChannel(
+        memberThreadsQuery.data,
+        memberThreadsQuery.dataUpdatedAt,
+      ),
+      activeRootId: threadRootId,
+      nameFor,
+      onOpen: openThreadInChannel,
+    }),
+    [
+      memberThreadsQuery.data,
+      memberThreadsQuery.dataUpdatedAt,
+      threadRootId,
+      nameFor,
+      openThreadInChannel,
+    ],
+  );
 
   // Catch me up (#3946). Offered only where the server, the president's two
   // switches and the member's `ai:use` all allow it, and only on a channel a
@@ -3330,6 +3356,7 @@ export function ChatShell({
               channels={railChannels}
               categories={categories}
               unreadByChannelId={unreadByChannelId}
+              threads={railThreads}
               activeChannelId={activeChannelId}
               onHide={hideFromRail}
               rowActions={rowActions}
