@@ -1,14 +1,13 @@
 import type { ReactNode } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
-import { useGuardedBySwipe } from "@/lib/swipe-claim";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { pageSurfaces } from "@/lib/surfaces";
 
 /**
  * A screen header's icon action: the glyph inside a 36pt round on the card
- * fill, the round Chat home's Messages door and bell have drawn since the
- * 2026-11-06 glass direction (`spec/ui/mobile/patterns.md` § Screen headers).
+ * fill, the round Chat home's bell has drawn since the 2026-11-06 glass
+ * direction (`spec/ui/mobile/patterns.md` § Screen headers).
  *
  * Every header action on a screen draws in it (#4610, step 3). Until then
  * Calendar's subscribe, Messages' new message and Notifications' mark all
@@ -19,8 +18,6 @@ import { pageSurfaces } from "@/lib/surfaces";
  * a row or a bar, where the row already says it can be pressed.
  *
  * 36 plus 4 of slop on each side is the 44pt touch floor (foundations.md §2).
- * Inside a screen-wide swipe it drops a press that came from the swipe's own
- * touch (`lib/swipe-claim.ts`).
  */
 export function HeaderButton({
   label,
@@ -41,7 +38,7 @@ export function HeaderButton({
   badge?: HeaderBadge;
   /**
    * The glyph, at 20pt. `text.foreground` for an action that goes somewhere
-   * (Messages, the bell, New message, Subscribe); the chapter accent for one
+   * (Search, the bell, New message, Subscribe); the chapter accent for one
    * that acts on this screen (Edit, Mark all read), as iconography.md §6.1.5
    * gives a back-row slot.
    */
@@ -49,7 +46,6 @@ export function HeaderButton({
 }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const guardedPress = useGuardedBySwipe(onPress);
   return (
     <Pressable
       accessibilityRole="button"
@@ -64,7 +60,7 @@ export function HeaderButton({
         borderless: true,
         radius: 22,
       }}
-      onPress={guardedPress}
+      onPress={onPress}
       style={({ pressed }) => [
         styles.round,
         pressed && Platform.OS !== "android" ? styles.pressed : null,

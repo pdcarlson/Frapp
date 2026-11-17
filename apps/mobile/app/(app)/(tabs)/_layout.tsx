@@ -3,7 +3,7 @@ import type { BottomTabBarProps } from "expo-router/tabs";
 import {
   ActivityTabGlyph,
   ChatGlyph,
-  EventsGlyph,
+  MessagesGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
 import { YouTabAvatar } from "@/components/you-tab-avatar";
@@ -28,9 +28,12 @@ function renderTabBar(props: BottomTabBarProps) {
 
 /**
  * The 4-tab IA (spec/ui/mobile/navigation.md § Tab bar): Chat, Activity,
- * Calendar (the `events` route) and You, owner pick 2026-11-12 (#4610). The
- * task board left the bar for a pushed screen: a member's tasks are
- * Activity's first rows and dots on the calendar. You (#3839) is the member's
+ * Messages and You. The four tabs are the owner's pick of 2026-11-12
+ * (#4610); the third was Calendar (the `events` route) until #5310 (Paul's
+ * direction B, 2026-11-17) gave it to Messages, which had been a door on
+ * Chat home, and made Calendar a pushed month opened from Activity's
+ * Calendar row. The task board left the bar for a pushed screen in #4610: a
+ * member's tasks are Activity's first rows. You (#3839) is the member's
  * profile and the hub More used to be, drawn as their own avatar.
  *
  * There is no Home tab — chat is home. This navigator holds only the four
@@ -107,11 +110,11 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="events"
+          name="messages"
           options={{
-            title: SCREEN_TITLES.events,
+            title: SCREEN_TITLES.messages,
             tabBarIcon: ({ focused }) => (
-              <EventsGlyph {...glyphPaint(focused)} />
+              <MessagesGlyph {...glyphPaint(focused)} />
             ),
           }}
         />

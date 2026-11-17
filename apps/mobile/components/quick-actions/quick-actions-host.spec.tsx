@@ -339,9 +339,10 @@ describe("where the rest go", () => {
     expect(data.newMinutes).toHaveBeenCalledTimes(1);
   });
 
-  it("sends Host check-in to Events when nothing is coming up", () => {
+  it("sends Host check-in to the Calendar when nothing is coming up", () => {
     render();
     run("hostCheckIn");
-    expect(router.navigate).toHaveBeenCalledWith("/events");
+    // A pushed screen since #5310.
+    expect(router.push).toHaveBeenCalledWith("/events");
   });
 });

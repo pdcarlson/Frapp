@@ -222,7 +222,7 @@ export default function EventDetailsScreen() {
   if (!eventId) {
     return (
       <ScreenShell back={BACK_TO_EVENTS} title="Event">
-        <InlineNote>Open an event from the Calendar tab.</InlineNote>
+        <InlineNote>Open an event from the Calendar.</InlineNote>
       </ScreenShell>
     );
   }
@@ -362,7 +362,7 @@ export default function EventDetailsScreen() {
           keptDraft={editDraftName ?? undefined}
           onSaved={({ leave }) => {
             // A series save can replace the occurrence on screen with a new
-            // one; the Events list shows where it went.
+            // one; the Calendar shows where it went.
             if (leave) goBackTo(router, BACK_TO_EVENTS.href);
           }}
           onDeleted={() => goBackTo(router, BACK_TO_EVENTS.href)}
@@ -620,10 +620,11 @@ export function EventDetailSkeleton() {
 }
 
 /**
- * The rest of a repeating series under the occurrence on screen (#3707): the
- * Events list draws a series once, so this is where its other dates are. Its
- * caption is the cadence ("EVERY SUNDAY"), read off the series head, and each
- * date opens that occurrence; one renamed on its own carries its name. Read from the cached Events list (`useEvents`), which already
+ * The rest of a repeating series under the occurrence on screen (#3707), so
+ * its other dates are a tap away without paging the month. Its caption is the
+ * cadence ("EVERY SUNDAY"), read off the series head, and each date opens
+ * that occurrence; one renamed on its own carries its name. Read from the
+ * cached chapter events (`useEvents`), which already
  * holds every occurrence; nothing draws for a one-time event, or until the
  * list has loaded.
  */

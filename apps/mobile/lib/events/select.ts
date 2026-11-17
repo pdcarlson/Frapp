@@ -13,11 +13,8 @@
  * whole screen component into the scanner's bundle.
  */
 import {
-  collapseSeries,
   eventSeriesKey,
   selectOwnAttendance,
-  seriesCadenceOf,
-  splitByHorizon,
   type AttendanceRowStatus,
   type DeviceInstant,
 } from "@repo/hooks";
@@ -30,7 +27,7 @@ import {
   type EventAttachment,
   type EventAttendanceFields,
 } from "@repo/validation";
-import { formatDayHeading, localIsoDate, parseInstant } from "@repo/formatting";
+import { parseInstant } from "@repo/formatting";
 import { isRecord, str } from "@/lib/more/narrow";
 import { isCurrentOrUpcoming, sortEventsByStart } from "./format";
 
@@ -53,16 +50,16 @@ export interface EventRow {
   attendance: EventAttendanceFields;
   /**
    * The series rule (`WEEKLY` / `BIWEEKLY` / `MONTHLY`) on a series head,
-   * `null` on a generated occurrence or a one-off. The list collapses a series
-   * by it (`collapseSeries`), and the edit flow reads it (`seriesRuleOf` in
-   * `@repo/validation`'s `event-edit.ts`) to tell a series from a one-off.
+   * `null` on a generated occurrence or a one-off. A series' cadence line
+   * reads it (`seriesCadenceOf`), and the edit flow reads it (`seriesRuleOf`
+   * in `@repo/validation`'s `event-edit.ts`) to tell a series from a one-off.
    */
   recurrence_rule: string | null;
   /**
    * The series head's id on a generated occurrence, `null` on a head or a
-   * one-off. The list groups a series by it; the edit flow reads it to fetch
-   * the series parent and to ask whether a save covers this occurrence or the
-   * series.
+   * one-off. A series' cadence line groups a series by it; the edit flow
+   * reads it to fetch the series parent and to ask whether a save covers this
+   * occurrence or the series.
    */
   parent_event_id: string | null;
 }
@@ -127,7 +124,7 @@ function toRow(row: Record<string, unknown>): EventRow | null {
 
 /**
  * Rows for You's Host check-in row and the quick-actions host (s06 reads
- * `selectAllEventRows` and `selectEventList`): everything a member can still act on — upcoming, plus anything
+ * `selectAllEventRows`): everything a member can still act on — upcoming, plus anything
  * whose check-in window has not closed — soonest first.
  *
  * Past events are dropped deliberately. Attendance history is a reports
@@ -142,54 +139,15 @@ export function selectEventRows(data: unknown, now: Date): EventRow[] {
 
 /**
  * Every readable event, past ones included, soonest first: what the calendar
- * marks (each occurrence of a series on its own day, #3792), and what the
- * list collapses series from, since a series' rule lives on its head row and
- * the head may already have happened.
+ * marks (each occurrence of a series on its own day, #3792), and what a
+ * series' cadence is read from, since a series' rule lives on its head row
+ * and the head may already have happened.
  */
 export function selectAllEventRows(data: unknown): EventRow[] {
   const rows = (Array.isArray(data) ? data.filter(isRecord) : [])
     .map(toRow)
     .filter((row): row is EventRow => !!row);
   return sortEventsByStart(rows);
-}
-
-/**
- * One row of the s06 list: an event and, for a series, how often it meets.
- * @public Nothing imports it, but the exported `EventDayGroup` names it, and
- * the app emits declarations, so it has to stay exported.
- */
-export interface EventListEntry {
-  event: EventRow;
-  /** "Every Sunday" on a series' row, `null` on a one-time event. */
-  cadence: string | null;
-}
-
-/** The rows of one day under its written-out heading ("Tomorrow"). */
-export interface EventDayGroup {
-  /** The local calendar day, `YYYY-MM-DD`: a stable key. */
-  day: string;
-  heading: string;
-  entries: EventListEntry[];
-}
-
-function groupByDay(entries: EventListEntry[], now: Date): EventDayGroup[] {
-  const groups: EventDayGroup[] = [];
-  for (const entry of entries) {
-    const start = parseInstant(entry.event.start_time);
-    if (!start) continue;
-    const day = localIsoDate(start);
-    const last = groups[groups.length - 1];
-    if (last?.day === day) {
-      last.entries.push(entry);
-    } else {
-      groups.push({
-        day,
-        heading: formatDayHeading(entry.event.start_time, now) ?? day,
-        entries: [entry],
-      });
-    }
-  }
-  return groups;
 }
 
 /**
@@ -213,54 +171,6 @@ export function selectSeriesName(
     if (best === null || count > (counts.get(best) ?? 0)) best = name;
   }
   return best;
-}
-
-/**
- * s06's list (#3707): what a member can still act on, a repeating series once
- * as its next occurrence with "Every Sunday" beside it, grouped under
- * written-out day headings, split at the two-week horizon into `soon` and
- * `later`. Grouping and the horizon are `@repo/hooks`' `event-series.ts`,
- * which web's list reads too.
- *
- * A series meeting that has started and is still open for check-in is the
- * series' row while it runs: it carries the cadence, and next week's
- * occurrence stays off the list until it ends, so the series is never drawn
- * twice.
- *
- * Takes {@link selectAllEventRows}' rows, parsed once per payload, since this
- * reruns on every clock tick.
- */
-export function selectEventList(
-  rows: readonly EventRow[],
-  now: Date,
-): { soon: EventDayGroup[]; later: EventDayGroup[] } {
-  const nowMs = now.getTime();
-  const visible = collapseSeries(rows, nowMs).filter(({ event }) =>
-    isCurrentOrUpcoming(event.start_time, event.end_time, now),
-  );
-
-  // Series with a meeting under way: that meeting is the series' row.
-  const running = new Set<string>();
-  for (const { event, series } of visible) {
-    const key = eventSeriesKey(event);
-    if (key && series === null) running.add(key);
-  }
-
-  const shown = visible.filter(({ event, series }) => {
-    const key = eventSeriesKey(event);
-    return !(key && series !== null && running.has(key));
-  });
-
-  const withCadence = (entries: typeof shown): EventListEntry[] =>
-    entries.map(({ event }) => ({
-      event,
-      cadence: seriesCadenceOf(rows, event),
-    }));
-  const { soon, later } = splitByHorizon(shown, nowMs);
-  return {
-    soon: groupByDay(withCadence(soon), now),
-    later: groupByDay(withCadence(later), now),
-  };
 }
 
 /**

@@ -138,7 +138,16 @@ export function ActivityTabGlyph(props: TabGlyphProps) {
   return <TabGlyph name="activity" {...props} />;
 }
 
-/** Calendar (the `events` route): the calendar with day dots. */
+/**
+ * Messages: the nav set's `direct`, the paper plane web's sidebar draws
+ * beside Direct messages and Instagram draws on its inbox. Not a second
+ * speech bubble, which Chat's tab beside it already is (#4610, #5310).
+ */
+export function MessagesGlyph(props: TabGlyphProps) {
+  return <TabGlyph name="direct" {...props} />;
+}
+
+/** Events (the calendar with day dots): chat's event card, the composer's + sheet and the push ask. Off the tab bar since #5310. */
 export function EventsGlyph(props: TabGlyphProps) {
   return <TabGlyph name="events" {...props} />;
 }

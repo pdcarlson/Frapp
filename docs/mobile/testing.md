@@ -99,7 +99,7 @@ against the file tree, but neither proves the app _navigates_. On the first
 device run, check:
 
 - [ ] The app opens on **Chat** — chat is home, and there is no Home tab.
-- [ ] The tab bar shows exactly **four** tabs: Chat, Activity, Calendar, You
+- [ ] The tab bar shows exactly **four** tabs: Chat, Activity, Messages, You
       ([`navigation.md` § Tab bar](../../spec/ui/mobile/navigation.md#tab-bar--4-tabs-locked)).
 - [ ] Tab glyphs are **duotone at 24px** and the active one **recolors** rather
       than switching to a solid shape. You's glyph is your own avatar, ringed
@@ -107,7 +107,8 @@ device run, check:
 - [ ] Every **You** row does what the smoke checklist's
       [You row](interaction-smoke-checklist.md#2-primary-tab-routes) says.
 - [ ] **Profile** is the top of the You tab, with no screen of its own, and
-      Chat home's header shows Messages and the bell.
+      Chat home's header shows Search and the bell; Messages is tab 3, and
+      the Calendar opens from Activity's Calendar row.
 - [ ] A deleted path (`exp://.../--/points`, `--/task-center`) lands on home via
       `+not-found` instead of an error screen.
 - [ ] **`frapp://event-details` still resolves** — open

@@ -298,7 +298,7 @@ describe("Event details back row (#3022)", () => {
     routeId = undefined;
 
     const tree = render();
-    expect(screenText(tree)).toContain("Open an event from the Calendar tab.");
+    expect(screenText(tree)).toContain("Open an event from the Calendar.");
     expectBackRow(tree, "Calendar", "/events");
   });
 
@@ -661,6 +661,21 @@ describe("Event details editing", () => {
     expect(sheet.props.keptDraft).toBe(`event-edit:${EVENT.id as string}`);
   });
 
+  // #5310: the Calendar is a pushed screen, so leaving a deleted event pops
+  // back down to it rather than pushing a second Calendar over the event.
+  it("pops back to the Calendar once the event is deleted", () => {
+    permissions = ["*"];
+    const router = vi.mocked(expoRouter.useRouter)();
+    vi.mocked(router.dismissTo).mockClear();
+    vi.mocked(router.navigate).mockClear();
+    vi.mocked(router.push).mockClear();
+    const sheet = render().root.findByType(NewEventSheet);
+    act(() => sheet.props.onDeleted());
+    expect(router.dismissTo).toHaveBeenCalledWith("/events");
+    expect(router.navigate).not.toHaveBeenCalled();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
   it("drops a kept edit once the event is gone (#4872)", () => {
     const key = keptEditKey();
     writeKeptDraft(key, { name: "Chapter" });
@@ -743,8 +758,8 @@ describe("Event details editing", () => {
 });
 
 /**
- * #3707: the Events list draws a series once, so the occurrence's page lists
- * the series' other upcoming dates under its cadence.
+ * #3707: the occurrence's page lists the series' other upcoming dates under
+ * its cadence.
  */
 describe("Event details series (#3823)", () => {
   const weekly = (index: number) => {

@@ -20,9 +20,21 @@ tags:
 - tapOn: "Back to Activity"
 - assertVisible:
     id: "tab-activity"
+# The Calendar left the tab bar for Activity (#5310): its door is Activity's
+# Calendar row, and it goes back there.
 - tapOn:
-    id: "tab-events"
-- takeScreenshot: tab-events
+    id: "activity-calendar-row"
+- assertVisible: "Back to Activity"
+- takeScreenshot: calendar
+- tapOn: "Back to Activity"
+- assertVisible:
+    id: "tab-activity"
+# Messages took the Calendar's place as tab 3 (#5310).
+- tapOn:
+    id: "tab-messages"
+# Its search field, which only the Messages screen draws.
+- assertVisible: "Find or start a conversation"
+- takeScreenshot: tab-messages
 - tapOn:
     id: "tab-you"
 - takeScreenshot: tab-you
@@ -67,7 +79,7 @@ tags:
           id: "tab-you"
 - tapOn:
     id: "tab-index"
-# The inbox's bell is back beside Messages (#3839).
+# The inbox's bell is on Chat home's title row, beside Search (#3839, #5139).
 - tapOn: "Notifications"
 - assertVisible: "Back to Chat"
 - tapOn: "Back to Chat"

@@ -198,7 +198,7 @@ export function useQuickActionsHost({
               params: { eventId: next.id },
             });
           } else {
-            router.navigate("/events");
+            router.push("/events");
           }
           return;
         }

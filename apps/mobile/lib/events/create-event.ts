@@ -208,7 +208,7 @@ function nextQuarterHour(now: Date): Date {
 }
 
 /**
- * Where an event made from an hour of the Calendar's 3 days or Day grid
+ * Where an event made from an hour of the Calendar's Day grid
  * starts (#4818): that hour, or for the hour under way the next quarter
  * hour, since the form refuses a start that has passed. `null` for an hour
  * already over, which the grid doesn't offer.

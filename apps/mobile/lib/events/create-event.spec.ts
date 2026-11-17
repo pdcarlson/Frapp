@@ -411,7 +411,7 @@ describe("a member who can't edit events", () => {
   });
 });
 
-// #4818: an hour pressed in the Calendar's 3 days or Day grid.
+// #4818: an hour pressed in the Calendar's Day grid.
 describe("calendarHourStart", () => {
   const day = local(6, 0);
   it("starts a later hour on the hour", () => {

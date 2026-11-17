@@ -6,17 +6,14 @@ import {
   type CalendarBirthday,
 } from "@repo/hooks/calendar-birthdays";
 import {
-  CALENDAR_LAYERS,
   calendarTaskAccessibleLabel,
   type CalendarItem,
-  type CalendarLayer,
   type CalendarTask,
   type CalendarTaskState,
 } from "@repo/hooks/calendar-tasks";
 import { SignetTokens } from "@repo/theme/signet";
 import { DisclosureGlyph, ForwardGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_SIZE, LeadTile } from "@/components/lead-tile";
-import { Chip } from "@/components/filter-chips";
 import { PressableRow } from "@/components/list-section";
 import { createEventRowStyles } from "@/components/events/event-rows";
 import { CheckGlyph } from "@/components/tasks/task-glyphs";
@@ -276,10 +273,10 @@ function TaskRow({
 }
 
 /**
- * A task in the 3 days or Day view's All day strip (#4818), where a column
+ * A task in the Day screen's All day strip (#4818, #5310), where a column
  * is too narrow for a row: its mark and title. The member's own opens on
  * Tasks; one they assigned is read out with where it stands, and its
- * assignees are a tap away on Month's day list.
+ * assignees are a tap away on the month's day list.
  */
 export function CalendarTaskChip({
   item,
@@ -351,47 +348,6 @@ function TaskChip({
   );
 }
 
-/**
- * What the calendar shows, as chips that double as its key: each carries
- * the mark its kind is drawn with. Only kinds the member has are offered.
- */
-export function CalendarLayerChips({
-  offered,
-  shown,
-  onToggle,
-}: {
-  offered: ReadonlySet<CalendarLayer>;
-  shown: ReadonlySet<CalendarLayer>;
-  onToggle: (layer: CalendarLayer) => void;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
-  return (
-    <View
-      accessibilityRole="toolbar"
-      accessibilityLabel="Show on calendar"
-      style={styles.chips}
-    >
-      {CALENDAR_LAYERS.filter((layer) => offered.has(layer.value)).map(
-        (layer) => {
-          const on = shown.has(layer.value);
-          return (
-            <Chip
-              key={layer.value}
-              label={layer.label}
-              on={on}
-              accessibilityRole="switch"
-              accessibilityLabel={layer.label}
-              accessibilityState={{ checked: on }}
-              onPress={() => onToggle(layer.value)}
-            />
-          );
-        },
-      )}
-    </View>
-  );
-}
-
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     doneTitle: {
@@ -436,11 +392,6 @@ function createStyles(tokens: SignetTokens) {
       flex: 1,
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.foreground,
-    },
-    chips: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: tokens.spacing.sm,
     },
   });
 }

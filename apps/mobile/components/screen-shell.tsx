@@ -71,7 +71,7 @@ type ScreenShellProps = {
    * Trailing control rendered on the title row, right-aligned and vertically
    * centred against the title.
    *
-   * Chat home's Messages door and account avatar (`spec/ui/mobile/navigation.md`
+   * Chat home's Search and bell, a screen's own actions (`spec/ui/mobile/navigation.md`
    * § Global entries outside the tab bar). A create action is not one of these: it
    * floats bottom right (`createAction`).
    * Optional, so every existing call site is unaffected.

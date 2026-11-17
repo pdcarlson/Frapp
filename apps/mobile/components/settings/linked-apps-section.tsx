@@ -40,7 +40,7 @@ const MARK_SIZE = 18;
  * - Google Calendar: a tap connects (or reconnects); once connected, a tap
  *   offers Open Google Calendar and Disconnect. Google's sign-in comes back to
  *   Settings, and the row turns green.
- * - Calendar apps: the Subscribe sheet the Events tab opens, for Apple
+ * - Calendar apps: the Subscribe sheet the Calendar opens, for Apple
  *   Calendar and the rest, so Settings is a second way to it.
  * - Discord: linking happens on the web (Discord's sign-in returns to the web
  *   app), so the phone shows the state and says where.

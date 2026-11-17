@@ -373,7 +373,6 @@ vi.mock("@/lib/chapter-branding", () => ({
 }));
 
 import ChatHomeScreen from "@/app/(app)/(tabs)/index";
-import { FILTER_CHANNELS_LABEL } from "@repo/hooks";
 import * as Sentry from "@sentry/react-native";
 import { resetChannelsRefusedReport } from "@/lib/chat/channels-error";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -395,10 +394,6 @@ import { Toggle } from "@/components/toggle";
 import { Segmented } from "@/components/segmented";
 import { SetupChecklistView } from "@/components/chat/setup-checklist";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
-import { MessagesSwipeArea } from "@/components/chat/messages-swipe-area";
-import { HeaderButton } from "@/components/header-button";
-import { NavGlyph } from "@/components/nav-glyph";
-import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { DisclosureGlyph } from "@/components/control-glyphs";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { ErrorState, NoChapterState } from "@/components/state-block";
@@ -1771,137 +1766,31 @@ describe("Chat home's title (#2485)", () => {
 });
 
 /**
- * The header's right-hand pair: a door to Messages (owner, 2026-11-07, option
- * B) and the inbox's bell (#3362), back since #3839 in place of the member's
- * avatar and its menu, which became the You tab.
+ * The header's rounds: Search (#5139) and the inbox's bell (#3362), back
+ * since #3839 in place of the member's avatar and its menu, which became the
+ * You tab. The Messages door between them became the Messages tab (#5310).
  */
-/**
- * #4610 step 3: Chat home teaches the swipe to Messages. The area decides
- * when (`components/chat/messages-swipe-area.spec.tsx`); Chat home tells it
- * whose record to read, when the screen is at rest, and how many
- * conversations are unread, which is what earns the one reminder.
- */
-describe("Chat home hands the swipe area its hint (#4610)", () => {
-  const hint = (tree: ReactTestRenderer) =>
-    tree.root.findByType(MessagesSwipeArea).props.hint;
-
-  it("names the viewer, says the loaded list is at rest, and counts unread conversations", () => {
-    channelsData.value = [general, dmAlice, group];
-    unreadData.value = [
-      { channel_id: dmAlice.id, unread_count: 4, mention_count: 0 },
-      { channel_id: group.id, unread_count: 1, mention_count: 0 },
-      { channel_id: general.id, unread_count: 9, mention_count: 2 },
-    ];
-    channelsState.value = { ...channelsState.value, isSuccess: true };
-    expect(hint(render())).toEqual({
-      viewerId: VIEWER,
-      ready: true,
-      unreadConversations: 2,
-    });
-  });
-
-  it("is not at rest while the channel list is still loading", () => {
-    channelsState.value = {
-      ...channelsState.value,
-      isPending: true,
-      isSuccess: false,
-    };
-    expect(hint(render())).toMatchObject({ ready: false });
-  });
-});
-
-describe("Chat home header: Messages and the bell (#3839)", () => {
-  const push = () => vi.mocked(useRouter)().push;
+describe("Chat home header: Search and the bell (#3839, #5310)", () => {
   const byTestId = (tree: ReactTestRenderer, testID: string) =>
     tree.root.findAllByProps({ testID });
   const unreadNotification = (id: string, data?: unknown) =>
     ({ id, read_at: null, data }) as (typeof notificationsData.value)[number];
 
-  it("draws Messages, then the bell, and no avatar", () => {
+  it("draws Search, then the bell, and no Messages door or avatar", () => {
     const tree = render();
     const header = tree.root.findByType(ScreenShell).props.headerAction;
     const labels = tree.root
       .findAll(
         (node) =>
           (node.type as unknown) === "Pressable" &&
-          (node.props.accessibilityLabel === "Messages" ||
+          (node.props.accessibilityLabel === "Search" ||
+            node.props.accessibilityLabel === "Messages" ||
             node.props.accessibilityLabel === "Notifications" ||
             node.props.accessibilityLabel === "Your account"),
       )
       .map((node) => node.props.accessibilityLabel);
     expect(header).toBeTruthy();
-    expect(labels).toEqual(["Messages", "Notifications"]);
-  });
-
-  describe("Messages door", () => {
-    it("opens Messages", () => {
-      const tree = render();
-      act(() => pressableLabelled(tree, "Messages").props.onPress());
-
-      expect(push()).toHaveBeenCalledWith("/messages");
-    });
-
-    // #4610 step 3: it was a speech bubble, the Chat tab's own glyph, right
-    // above the Chat tab. Web's rail draws direct messages as this plane.
-    it("is a round header button with the paper plane web uses for direct messages", () => {
-      const tree = render();
-      const door = tree.root
-        .findAllByType(HeaderButton)
-        .find((node) => node.props.label === "Messages")!;
-      expect(door.findByType(NavGlyph).props.paths).toBe(NAV_GLYPHS.direct);
-    });
-
-    it("draws no badge while no conversation is unread", () => {
-      const tree = render();
-
-      expect(byTestId(tree, "messages-badge")).toHaveLength(0);
-      expect(
-        pressableLabelled(tree, "Messages").props.accessibilityValue,
-      ).toBeUndefined();
-    });
-
-    it("counts conversations with anything unread, in mention red, and reads it out", () => {
-      channelsData.value = [general, dmAlice, dmBobHidden, group];
-      unreadData.value = [
-        { channel_id: dmAlice.id, unread_count: 4, mention_count: 0 },
-        { channel_id: group.id, unread_count: 1, mention_count: 0 },
-        // A channel's unread belongs to its own row, not to Messages.
-        { channel_id: general.id, unread_count: 9, mention_count: 2 },
-      ];
-      const tree = render();
-      const [pill] = byTestId(tree, "messages-badge").filter(
-        (node) => (node.type as unknown) === "View",
-      );
-
-      // Two conversations, not five messages.
-      expect(screenTextOf(pill!)).toBe("2");
-      expect(JSON.stringify(pill!.props.style)).toContain(
-        signetDarkTokens.color.semantic.mention,
-      );
-      expect(
-        pressableLabelled(tree, "Messages").props.accessibilityValue,
-      ).toEqual({ text: "2 unread conversations" });
-    });
-
-    it("says one conversation in the singular", () => {
-      unreadData.value = [
-        { channel_id: dmAlice.id, unread_count: 1, mention_count: 0 },
-      ];
-      const tree = render();
-
-      expect(
-        pressableLabelled(tree, "Messages").props.accessibilityValue,
-      ).toEqual({ text: "1 unread conversation" });
-    });
-
-    it("counts nothing for a hidden conversation", () => {
-      unreadData.value = [
-        { channel_id: dmBobHidden.id, unread_count: 3, mention_count: 0 },
-      ];
-      const tree = render();
-
-      expect(byTestId(tree, "messages-badge")).toHaveLength(0);
-    });
+    expect(labels).toEqual(["Search", "Notifications"]);
   });
 
   describe("bell", () => {
@@ -1915,8 +1804,8 @@ describe("Chat home header: Messages and the bell (#3839)", () => {
     });
 
     it("draws the count in house gold, never the chapter accent, and reads it out", () => {
-      // A red accent, the case the fixed gold exists for: beside the Messages
-      // door's mention-red badge, an accent-filled count would read as one.
+      // A red accent, the case the fixed gold exists for: an accent-filled
+      // count would read as a mention.
       branding.current = { ...branding.unnamed, accentPrimary: "#D75748" };
       notificationsData.value = [
         unreadNotification("n-1"),
@@ -1962,7 +1851,9 @@ describe("Chat home header: Messages and the bell (#3839)", () => {
       const tree = render();
       act(() => pressableLabelled(tree, "Notifications").props.onPress());
 
-      expect(push()).toHaveBeenCalledWith("/notifications");
+      expect(vi.mocked(useRouter)().push).toHaveBeenCalledWith(
+        "/notifications",
+      );
     });
   });
 });
@@ -2484,126 +2375,6 @@ describe("Chat home pinned section headings (owner 2026-11-07)", () => {
     expect(pinned).toHaveLength(tree.root.findAllByType(StickyHeader).length);
     expect(pinned.length).toBeGreaterThanOrEqual(layout(tree).length);
     expect(pinned.every((type) => type === StickyHeader)).toBe(true);
-  });
-});
-
-/**
- * The swipe to Messages (#3774): a slide right to left on Chat home opens
- * it, beside the top-right door; only leftward starts it, and a vertical
- * move hands over to the list's scroll.
- */
-describe("Chat home: the swipe to Messages", () => {
-  type Pan = {
-    kind: string;
-    handlers: Record<string, (event: unknown, success?: boolean) => void>;
-    config?: Record<string, unknown>;
-  };
-  const pan = (tree: ReactTestRenderer) =>
-    tree.root
-      .findAllByType("GestureDetector" as unknown as React.ElementType)
-      .map((node) => node.props.gesture as Pan)
-      .find((gesture) => gesture.kind === "pan")!;
-
-  it("wraps Chat home, starts only leftward, and yields to a vertical move", () => {
-    const gesture = pan(render());
-    expect(gesture).toBeDefined();
-    const [left, right] = gesture.config?.activeOffsetX as [number, number];
-    expect(left).toBeLessThan(0);
-    expect(right).toBe(Number.MAX_SAFE_INTEGER);
-    expect(gesture.config?.failOffsetY).toEqual([-14, 14]);
-  });
-
-  it("opens Messages on a slide left, and nothing on a slide right", () => {
-    const push = vi.mocked(vi.mocked(useRouter)().push);
-    vi.mocked(push).mockClear();
-    const gesture = pan(render());
-    act(() =>
-      gesture.handlers.onEnd!({ translationX: 120, velocityX: 900 }, true),
-    );
-    expect(push).not.toHaveBeenCalled();
-    // A pan the system cancelled opens nothing, however far it went.
-    act(() =>
-      gesture.handlers.onEnd!({ translationX: -90, velocityX: 0 }, false),
-    );
-    expect(push).not.toHaveBeenCalled();
-    act(() =>
-      gesture.handlers.onEnd!({ translationX: -90, velocityX: 0 }, true),
-    );
-    expect(push).toHaveBeenCalledWith("/messages");
-  });
-
-  it("never also opens the channel the swipe started on", () => {
-    // Paul, 2026-11-12: a swipe into Messages from a channel row opened the
-    // channel too, on top of Messages. A full-width row never sees the
-    // finger leave it, so its release reads as a tap unless the swipe holds
-    // the touch.
-    const push = vi.mocked(vi.mocked(useRouter)().push);
-    const now = vi.spyOn(performance, "now").mockReturnValue(10_000);
-    try {
-      const tree = render();
-      const swipe = () => pan(tree);
-      const general = () =>
-        rowNamed(tree, "general").find(
-          (node) => (node.type as unknown) === "Pressable",
-        );
-      const door = () => pressableLabelled(tree, "Messages");
-      vi.mocked(push).mockClear();
-
-      act(() => swipe().handlers.onBegin!({}));
-      act(() => swipe().handlers.onStart!({}));
-      act(() =>
-        swipe().handlers.onEnd!({ translationX: -90, velocityX: 0 }, true),
-      );
-      // The row's release can land on either side of the pan's finalize,
-      // and late on a slow phone.
-      act(() => general().props.onPress());
-      act(() => swipe().handlers.onFinalize!({}, true));
-      now.mockReturnValue(10_900);
-      act(() => general().props.onPress());
-      // A flick that starts on the Messages door opens Messages once.
-      act(() => door().props.onPress());
-      expect(push).toHaveBeenCalledTimes(1);
-      expect(push).toHaveBeenCalledWith("/messages");
-      // Nor does the swipe's touch open the row's actions menu, which would
-      // hold the swipe while it is open.
-      act(() => general().props.onLongPress(undefined));
-      expect(swipe().config?.enabled).toBe(true);
-
-      // A slide that took the touch over but stopped short opens nothing.
-      vi.mocked(push).mockClear();
-      act(() => swipe().handlers.onBegin!({}));
-      act(() => swipe().handlers.onStart!({}));
-      act(() =>
-        swipe().handlers.onEnd!({ translationX: -30, velocityX: 0 }, true),
-      );
-      act(() => swipe().handlers.onFinalize!({}, true));
-      act(() => general().props.onPress());
-      expect(push).not.toHaveBeenCalled();
-
-      // The next touch is a plain tap: it never activates the pan, and the
-      // row opens at once.
-      act(() => swipe().handlers.onBegin!({}));
-      act(() => swipe().handlers.onFinalize!({}, false));
-      act(() => general().props.onPress());
-      expect(push).toHaveBeenCalledWith({
-        pathname: "/chat-thread",
-        params: { channelId: "c-general" },
-      });
-    } finally {
-      now.mockRestore();
-    }
-  });
-
-  it("holds while a menu is open over Chat home", () => {
-    const tree = render();
-    expect(pan(tree).config?.enabled).toBe(true);
-    const filter = tree.root.find(
-      (node) =>
-        node.props.accessibilityLabel === FILTER_CHANNELS_LABEL &&
-        typeof node.props.onPress === "function",
-    );
-    act(() => filter.props.onPress());
-    expect(pan(tree).config?.enabled).toBe(false);
   });
 });
 

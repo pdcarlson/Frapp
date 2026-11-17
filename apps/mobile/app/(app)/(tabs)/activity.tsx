@@ -107,7 +107,6 @@ import { useActivityReread } from "@/lib/activity/use-activity-reread";
 import { useAiSurfaces } from "@/lib/ai/availability";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { useRemindMessage } from "@/lib/chat/message-reminder";
-import { setCalendarRange, setEventsView } from "@/lib/events/events-view";
 import { openMessageLink } from "@/lib/chat/open-link";
 import { alertFailure } from "@/lib/failure-alert";
 import { pageSurfaces } from "@/lib/surfaces";
@@ -187,14 +186,10 @@ export default function ActivityScreen() {
     void recapDismissal.hydrate();
   }, []);
   const router = useRouter();
+  // Every destination is a pushed screen: the task board since #4610, and
+  // Calendar (the `events` route) since #5310.
   const openStanding = (destination: StandingDestination) => {
-    // Calendar (the `events` route) is a tab: go to it rather than stack a
-    // second copy. The task board is a pushed screen since #4610.
-    if (destination === "/events") {
-      router.navigate(destination);
-    } else {
-      router.push(destination);
-    }
+    router.push(destination);
   };
   // The Archive (#5127) in place of the page until the member goes back.
   // Read only while it is open; never stored.
@@ -1023,13 +1018,7 @@ function CalendarRow() {
       accessibilityRole="button"
       accessibilityLabel="Calendar"
       accessibilityHint="Opens the chapter's month."
-      onPress={() => {
-        // The month, not the List the tab may open on, until step 2 of
-        // #5310 makes the month the only view.
-        setEventsView("calendar");
-        setCalendarRange("month");
-        router.navigate("/events");
-      }}
+      onPress={() => router.push("/events")}
       testID="activity-calendar-row"
       style={({ pressed }) => [
         styles.calendarRow,

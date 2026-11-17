@@ -1,8 +1,9 @@
 /**
  * Repeating events as an Events list shows them: one row per series, and a
- * two-week horizon (#3707). Web's Events page and mobile's Events tab
- * (#3823) both read it, so both apps collapse a series, and draw the
- * horizon, the same way.
+ * two-week horizon (#3707). Web's Events page collapses a series and draws
+ * the horizon with it. The phone has no list since #5310: its Calendar and
+ * an event's page read only a series' cadence (`seriesCadenceOf`), as web's
+ * rows and event page do too.
  *
  * A series is stored as rows, one per meeting (the "Recurring events" rules
  * under [`spec/behavior/events.md` § Event Creation](../../../spec/behavior/events.md#event-creation)):

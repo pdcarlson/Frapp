@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "expo-router";
+import { Fragment, useCallback, useMemo, useRef, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Alert, StyleSheet, Text, View } from "react-native";
 // Only the ref's type: the field is `SearchField`, at the top of the screen as
 // on the Directory, so it needs no keyboard avoidance (#3354 guards fields a
@@ -40,7 +40,6 @@ import {
 } from "@repo/chat-core/channel-preview";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
-import { BACK_TO_CHAT } from "@/components/back-row";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import {
   ChannelListSkeleton,
@@ -81,9 +80,13 @@ const MEMBERS_WAITING_FOR_NETWORK =
   "Your chapter's members will load when you're back online.";
 
 /**
- * Messages: the member's direct and group messages on their own screen,
- * behind the door at the top right of Chat home (owner, 2026-11-07, option B
- * of the round-two redesign). Chat home lists only channels.
+ * Messages: the member's direct and group messages, the third tab since
+ * #5310 (Paul's direction B, 2026-11-17), as Instagram and LinkedIn give
+ * their inbox its own place in the bar. It was a pushed screen behind a door
+ * at the top right of Chat home (owner, 2026-11-07, option B of the
+ * round-two redesign) and a swipe left from it (#3774); the tab replaced
+ * both. Chat home lists only channels. The tab's badge counts conversations
+ * with anything unread (`lib/chat/unread-conversations.ts`).
  *
  * Newest conversation first, as every messaging app orders an inbox, and each
  * row keeps its last line: in a DM the last message is what the member is
@@ -145,15 +148,18 @@ export default function MessagesScreen() {
   // The member whose DM is being opened, so no second start runs meanwhile,
   // and a count of picks: any later pick (another row, another member) or
   // leaving the screen bumps it, so a slow start that lands after it opens
-  // nothing (web's search and the member sheet guard the same way).
+  // nothing (web's search and the member sheet guard the same way). A tab is
+  // never unmounted, so leaving is a blur: switching tabs or pushing a screen.
   const startingRef = useRef<string | null>(null);
   const pickSeq = useRef(0);
-  useEffect(() => {
-    const seq = pickSeq;
-    return () => {
-      seq.current += 1;
-    };
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      const seq = pickSeq;
+      return () => {
+        seq.current += 1;
+      };
+    }, []),
+  );
   const refresh = useRefetchAll([
     channelsQuery,
     unreadQuery,
@@ -346,7 +352,6 @@ export default function MessagesScreen() {
 
   return (
     <ScreenShell
-      back={BACK_TO_CHAT}
       keyboardShouldPersistTaps="handled"
       title="Messages"
       refresh={refresh}

@@ -200,7 +200,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import MessagesScreen from "@/app/(app)/messages";
+import MessagesScreen from "@/app/(app)/(tabs)/messages";
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
 import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState } from "@/components/state-block";
@@ -791,6 +791,26 @@ describe("Messages search (#4668)", () => {
     act(() => void rowNamed(tree, "Carol Alvarez").props.onPress());
     act(() => tree.unmount());
     await act(async () => resolve({ id: "c-dm-carol" }));
+    expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
+  });
+
+  // A tab is never unmounted: leaving it for another tab is a blur, and a
+  // thread that opened then would land over whatever tab they went to.
+  it("opens nothing when a slow start lands after the member switched tabs", async () => {
+    let resolve!: (value: unknown) => void;
+    startMutateAsync.mockReturnValue(new Promise((r) => (resolve = r)));
+    const router = (await import("expo-router")) as unknown as {
+      __blur: () => void;
+      __refocus: () => void;
+    };
+    const tree = render();
+    search(tree, "carol");
+    act(() => void rowNamed(tree, "Carol Alvarez").props.onPress());
+    act(() => router.__blur());
+    await act(async () => resolve({ id: "c-dm-carol" }));
+    // The file shares one focus flag, so the screen comes back before the
+    // test ends.
+    act(() => router.__refocus());
     expect(vi.mocked(useRouter)().push).not.toHaveBeenCalled();
   });
 

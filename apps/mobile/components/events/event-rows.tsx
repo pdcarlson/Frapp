@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
-import { formatPoints, formatPointsChip, parseInstant } from "@repo/formatting";
+import { formatPoints, parseInstant } from "@repo/formatting";
 import { useRequiredOfViewer } from "@repo/hooks";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import { SignetTokens } from "@repo/theme/signet";
@@ -11,14 +11,14 @@ import {
 } from "@/components/lead-tile";
 import { gutterBleed, PressableRow } from "@/components/list-section";
 import { NavGlyph } from "@/components/nav-glyph";
-import { AccentChip, HairlineChip } from "@/components/status-chip";
+import { HairlineChip } from "@/components/status-chip";
 import { formatEventClock, resolveCheckInWindow } from "@/lib/events/format";
 import type { EventRow } from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
-import { pageSurfaces } from "@/lib/surfaces";
 
 /**
- * The s06 event rows, shared by the List and the Calendar's day list (#3823).
+ * The s06 event row, under the picked day on the Calendar's month (#3823;
+ * the List and its next-event card went in #5310).
  *
  * The day is the heading above them ("Tomorrow", `formatDayHeading`), so a row
  * says only its time. The board's date block ("THU / 14") went with the day
@@ -72,61 +72,6 @@ function EventName({
         event.name
       )}
     </Text>
-  );
-}
-
-/**
- * The next event, as the page's one card: the name (with Mandatory beside
- * it), a muted "6:00 PM · Great Hall" line, then the points chip and the
- * check-in status. The name leads: it is the largest, heaviest text.
- */
-export function EventRowCard({
-  event,
-  cadence,
-  now,
-  onPress,
-}: {
-  event: EventRow;
-  cadence: string | null;
-  now: Date;
-  onPress: () => void;
-}) {
-  const { tokens } = useFrappTheme();
-  const styles = createEventRowStyles(tokens);
-  const required = useRequiredOfViewer()(event.attendance);
-  const meta = [clockOf(event), event.location].filter(Boolean).join(" · ");
-  const isOpen = useCheckInOpen(event, now);
-
-  return (
-    <PressableRow
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabelOf(event, cadence)}
-      accessibilityHint="View event details and check in."
-      onPress={onPress}
-      // The card is itself a card, so it lifts to the step above it on iOS;
-      // `PressableRow` rounds its Android ripple to the card's corners.
-      onCard
-      style={styles.card}
-    >
-      <View style={styles.body}>
-        <View style={styles.titleRow}>
-          <EventName event={event} cadence={cadence} style={styles.title} />
-          {required ? <HairlineChip label="Mandatory" /> : null}
-        </View>
-        {meta ? <Text style={styles.meta}>{meta}</Text> : null}
-
-        {event.point_value || isOpen ? (
-          <View style={styles.footer}>
-            {event.point_value ? (
-              <AccentChip label={formatPointsChip(event.point_value)} />
-            ) : null}
-            {isOpen ? (
-              <Text style={styles.openNow}>Check-in is open</Text>
-            ) : null}
-          </View>
-        ) : null}
-      </View>
-    </PressableRow>
   );
 }
 
@@ -218,18 +163,8 @@ function EventLeadTile() {
 }
 
 export function createEventRowStyles(tokens: SignetTokens) {
-  const surfaces = pageSurfaces(tokens);
   const lead = leadRowStyles(tokens);
   return StyleSheet.create({
-    card: {
-      flexDirection: "row",
-      gap: tokens.spacing.md,
-      borderRadius: tokens.radius.cardLarge,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: surfaces.card,
-      padding: tokens.spacing.lg,
-    },
     flatRow: {
       flexDirection: "row",
       alignItems: "center",
@@ -260,28 +195,11 @@ export function createEventRowStyles(tokens: SignetTokens) {
       fontFamily: typeRole(tokens.typography.role.body).fontFamily,
       color: tokens.color.text.mutedForeground,
     },
-    // The text column, on the card and beside a row's tile.
+    // The text column beside a row's tile.
     body: lead.text,
-    titleRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      flexWrap: "wrap",
-      gap: tokens.spacing.sm,
-    },
-    title: {
-      flexShrink: 1,
-      ...typeRole(tokens.typography.role.title),
-      color: tokens.color.text.foreground,
-    },
     meta: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
-    },
-    footer: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: tokens.spacing.sm,
-      marginTop: tokens.spacing.xs,
     },
     openNow: {
       ...typeRole({

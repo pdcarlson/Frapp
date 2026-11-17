@@ -136,6 +136,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Settings has a Linked apps page: Google Calendar, Discord and the ways you sign in each show a green check when connected, and red when they need reconnecting.",
       "Drafted minutes now come with full notes, topic by topic with every point and detail, and posted minutes keep the meeting's transcript for members to read and for Frapp AI to answer from.",
       "Sharing your birthday with your chapter is now one clearly labelled switch on your profile, shown once you enter the date.",
+      "While Ask Frapp works, you now see each step it takes and what it found, folded into one row you can tap open once the answer arrives.",
     ],
     web: [
       "Uploading a zip file in Documents now tells you to unzip it and use Import a folder.",
