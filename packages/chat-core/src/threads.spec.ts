@@ -11,6 +11,7 @@ import {
   outgoingGifOf,
   sendThreadReply,
   threadCardLabel,
+  sidebarThreadRowLabel,
   threadChipLabel,
   threadPreviewParts,
   memberThreadPreview,
@@ -756,5 +757,26 @@ describe("sidebarThreadsByChannel (#5277)", () => {
     const map = sidebarThreadsByChannel([...read, unread], NOW);
     expect(map.get("c1")?.map((t) => t.thread_root_id)).toContain("old-unread");
     expect(sidebarThreadsByChannel(undefined, NOW).size).toBe(0);
+  });
+});
+
+describe("sidebarThreadRowLabel (#5300)", () => {
+  test("names the thread and its channel, then muted and what's new", () => {
+    expect(
+      sidebarThreadRowLabel({
+        rootText: "grill is in my garage",
+        channelLabel: "#general",
+        muted: false,
+        unreadCount: 2,
+      }),
+    ).toBe("Thread: grill is in my garage, in #general, 2 new");
+    expect(
+      sidebarThreadRowLabel({
+        rootText: "dues",
+        channelLabel: "#exec",
+        muted: true,
+        unreadCount: 0,
+      }),
+    ).toBe("Thread: dues, in #exec, muted");
   });
 });
