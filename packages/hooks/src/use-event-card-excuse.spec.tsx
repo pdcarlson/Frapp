@@ -14,7 +14,7 @@ import {
 } from "./use-event-excuses";
 import { useListChapters } from "./use-chapters";
 import { useRoles } from "./use-roles";
-import { createHookWrapper } from "./test-utils";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 vi.mock("./use-chapters", () => ({ useListChapters: vi.fn() }));
 vi.mock("./use-roles", () => ({ useRoles: vi.fn() }));
@@ -35,9 +35,7 @@ describe("useEventCardExcuse (#4660)", () => {
   let get: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
     get = vi.fn(async (path: string) => {
       if (path === "/v1/events/{eventId}/excuses/me") {
         return {

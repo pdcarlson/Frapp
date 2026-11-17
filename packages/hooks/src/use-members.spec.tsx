@@ -13,7 +13,7 @@ import {
   useUpdateMemberRoles,
 } from "./use-members";
 import { SYSTEM_SENDER_ID } from "@repo/validation";
-import { createHookWrapper } from "./test-utils";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 import { memberAvatarTint, memberHashHue } from "./member-avatar-color";
 
 const MEMBERS_ENDPOINT = "/v1/members";
@@ -38,13 +38,7 @@ describe("useMembers", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
     activeChapterId = CHAPTER_ID;
   });
@@ -138,13 +132,7 @@ describe("useMemberSearch", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
     activeChapterId = CHAPTER_ID;
   });
@@ -205,9 +193,7 @@ describe("useChapterRoster / useMemberDisplayNames", () => {
   ];
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
     activeChapterId = CHAPTER_ID;
   });
@@ -414,9 +400,7 @@ describe("typistLabelFor (#4493)", () => {
     stubClient = {
       GET: get,
     };
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    const queryClient = createTestQueryClient();
     const { result } = renderHook(() => useMemberDisplayNames(), {
       wrapper: createWrapper(queryClient),
     });
@@ -451,9 +435,7 @@ describe("useRosterCatchUp", () => {
   ];
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = createTestQueryClient();
     vi.clearAllMocks();
     activeChapterId = CHAPTER_ID;
     resetRosterCatchUpForTests();
