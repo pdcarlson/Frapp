@@ -60,20 +60,15 @@ export type FinishJob<Doc> = {
 };
 
 /**
- * How long the small requests may go unanswered before the upload fails with
- * Retry instead of spinning: asking for the upload link, and saving the
- * draft. Both answer in well under a second when the API is reachable.
- */
-export const REQUEST_STALL_MS = 30_000;
-
-/**
- * How long the file's own upload may take: a minute, plus a second for every
- * 100 KB (about 0.8 Mbps), so the 50 MB cap gets close to ten minutes on a
- * slow connection while a typical file fails within a couple of minutes if
- * nothing moves.
+ * How long the file's own PUT may take, the one upload step the API client
+ * doesn't bound (its requests time out on their own). `fetch` reports no
+ * upload progress, so this caps the whole PUT rather than a quiet spell, and
+ * is generous on purpose: a minute, plus a second for every 32 KB (about
+ * 0.25 Mbps, a crowded campus network). A 3 MB file gets about two and a half
+ * minutes; one at the 100 MB cap, about fifty-five.
  */
 export function putStallMs(bytes: number): number {
-  return 60_000 + Math.ceil(bytes / 100_000) * 1_000;
+  return 60_000 + Math.ceil(bytes / 32_000) * 1_000;
 }
 
 /** What `storePdf` needs: the upload-url request, the PUT, and the checks. */
@@ -171,7 +166,7 @@ export async function finishUpload<Doc>(
   );
   await deps.assertChapter?.();
   signal?.throwIfAborted();
-  const saving = deps.confirm({
+  await deps.confirm({
     storage_path: storagePath,
     file_hash: fileHash,
     ...confirmFields(submission.fields, flatten ? "Redacted backwork" : file.name),
@@ -181,7 +176,6 @@ export async function finishUpload<Doc>(
     draft: true,
     ...(submission.unchecked ? { pages_checked: false } : {}),
   });
-  await within(saving, REQUEST_STALL_MS);
 }
 
 /**
@@ -228,7 +222,7 @@ export async function storePdf(
     await deps.assertChapter?.();
     signal?.throwIfAborted();
     try {
-      signed = await within(deps.requestUpload(request), REQUEST_STALL_MS);
+      signed = await deps.requestUpload(request);
       break;
     } catch (error) {
       const wait = RATE_LIMIT_WAITS_MS[attempt];
@@ -237,6 +231,8 @@ export async function storePdf(
     }
   }
   const { signedUrl, storagePath } = readSignedUpload(signed);
+  // Given up on while the link was requested: send nothing.
+  signal?.throwIfAborted();
   // Stopped when the queue gives up on the upload, or when it runs past its
   // own allowance; either way the PUT's fetch is dropped, not left running.
   const controller = new AbortController();

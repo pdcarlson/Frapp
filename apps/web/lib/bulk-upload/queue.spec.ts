@@ -445,6 +445,35 @@ describe("BulkUploadQueue", () => {
       expect(h.release).toHaveBeenCalledTimes(1);
     });
 
+    it("takes a stalled attempt that gets through during a Retry as done, and stops the Retry", async () => {
+      const h = await stalledUpload();
+      await vi.advanceTimersByTimeAsync(60_000);
+      const first = h.finishes.get("a.pdf")!;
+      h.queue.retry(h.idOf("a.pdf"));
+      const second = h.finishes.get("a.pdf")!;
+      const retrySignal = h.signals.get("a.pdf")!;
+      first.resolve();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.status("a.pdf")).toBe("done");
+      expect(retrySignal.aborted).toBe(true);
+      // The Retry then finding its own copy (a 409) changes nothing, and
+      // the document is freed once.
+      second.reject(new Error("409"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.status("a.pdf")).toBe("done");
+      expect(h.release).toHaveBeenCalledTimes(1);
+    });
+
+    it("stops an upload whose batch was discarded once the limit passes, and frees it when it settles", async () => {
+      const h = await stalledUpload();
+      h.queue.discard();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(h.signals.get("a.pdf")!.aborted).toBe(true);
+      h.finishes.get("a.pdf")!.reject(new DOMException("aborted", "AbortError"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.release).toHaveBeenCalledTimes(1);
+    });
+
     it("leaves an upload that answers in time alone", async () => {
       const h = await stalledUpload();
       h.finishes.get("a.pdf")!.resolve();

@@ -11,6 +11,7 @@ import { OFFLINE_COPY } from "@repo/validation";
 import {
   readRequestToken,
   refetchFailedReadsOnTokenRefresh,
+  SESSION_READ_TIMEOUT_MS,
   SIGN_IN_REFRESH_UNREACHABLE_MESSAGE,
 } from "./request-token";
 
@@ -30,6 +31,28 @@ describe("readRequestToken", () => {
       error: null,
     });
     await expect(readRequestToken(supabase)).resolves.toBe("tok");
+  });
+
+  // Staging, 2026-11-17: a refresh the network never answered held a bulk
+  // upload's requests, which the API client's timeout doesn't cover, forever.
+  it("fails a session read that never answers as a dropped connection", async () => {
+    vi.useFakeTimers();
+    try {
+      const supabase = {
+        auth: { getSession: vi.fn(() => new Promise(() => undefined)) },
+      } as unknown as Pick<SupabaseClient, "auth">;
+      const failure = readRequestToken(supabase).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await vi.advanceTimersByTimeAsync(SESSION_READ_TIMEOUT_MS);
+      const error = await failure;
+      expect(error).toBeInstanceOf(TypeError);
+      expect((error as Error).message).toBe(SIGN_IN_REFRESH_UNREACHABLE_MESSAGE);
+      expect(isRetryableFailure(error)).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("sends no token for a signed-out client", async () => {

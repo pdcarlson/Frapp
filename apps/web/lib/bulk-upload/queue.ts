@@ -126,7 +126,7 @@ export class BulkUploadQueue<P, S> {
   private pumping = false;
   private repump = false;
   /** The finish attempt each item is on, so a stalled attempt's late answer is told apart. */
-  private attempts = new Map<string, object>();
+  private attempts = new Map<string, AbortController>();
   private readonly lookahead: number;
   private readonly maxFinishing: number;
   private readonly maxPreparing: number;
@@ -392,20 +392,23 @@ export class BulkUploadQueue<P, S> {
   private runFinish(item: QueueItem<P, S>): void {
     const { prepared, submission } = item;
     if (!prepared || submission === undefined) return;
-    const attempt = {};
-    this.attempts.set(item.id, attempt);
-    const current = () => this.attempts.get(item.id) === attempt;
+    // The attempt's own controller, which is also how its answer is told
+    // apart from a later attempt's.
     const controller = new AbortController();
+    this.attempts.set(item.id, controller);
+    const current = () => this.attempts.get(item.id) === controller;
     const limit = this.options.stallAfterMs?.({ file: item.file, prepared });
     const timer =
       limit === undefined
         ? undefined
         : setTimeout(() => {
-            if (!current() || this.find(item.id)?.status !== "finishing") return;
-            // Given up on: a late answer from this attempt no longer decides
-            // the item, and Retry starts a new one.
-            this.attempts.delete(item.id);
+            if (!current()) return;
             controller.abort();
+            // Discarded while it ran: stopped, and freed when it settles.
+            if (!this.find(item.id)) return;
+            // Given up on: a late failure from this attempt no longer
+            // decides the item, and Retry starts a new one.
+            this.attempts.delete(item.id);
             this.patch(item.id, {
               status: "failed",
               failedStage: "finish",
@@ -425,10 +428,12 @@ export class BulkUploadQueue<P, S> {
         clearTimeout(timer);
         const live = this.find(item.id);
         if (!current()) {
-          // It got through after being called stalled. While nobody has
-          // pressed Retry it is simply done; a retry already running
-          // settles on its own.
-          if (live?.status !== "failed") return;
+          // Got through after it was called stalled. Removed since, whoever
+          // removed it freed it; done since, the attempt that got through
+          // did. Otherwise it is done now, and a Retry still running is
+          // stopped, since it would only find its own copy.
+          if (!live || live.status === "done") return;
+          this.attempts.get(item.id)?.abort();
         }
         this.attempts.delete(item.id);
         this.options.release?.(prepared);
@@ -438,12 +443,14 @@ export class BulkUploadQueue<P, S> {
             prepared: undefined,
             error: undefined,
             failedStage: undefined,
+            final: undefined,
           });
         }
       },
       (error: unknown) => {
         clearTimeout(timer);
-        // Already failed as stalled: this is that attempt's late answer.
+        // Called stalled, or overtaken by an earlier attempt that got
+        // through: this answer no longer decides the item.
         if (!current()) return;
         this.attempts.delete(item.id);
         // Discarded while it ran: nothing will retry it, so free it now.

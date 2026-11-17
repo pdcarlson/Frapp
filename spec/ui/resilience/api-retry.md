@@ -65,12 +65,12 @@ async function fetchWithRetry(fn, config = RETRY_CONFIG) {
 |-------------------|---------|-------|-------|
 | Read (GET) | 15s | Web 3x, transient failures only; mobile 1x (§ Reads) | Stale cache shown while retrying |
 | Write (POST/PATCH) | 20s | Web 2x, transient failures only; mobile 0x, 1x for the read stamps it sends on open (§ Writes) | Optimistic UI + rollback |
-| File upload (signed URL) | 60s | 1x | Large payloads |
+| File upload (signed URL) | Backwork bulk upload: 60s plus 1s per 32 KB; none elsewhere yet ([Uploads](uploads.md)) | 0x; the member retries | Large payloads |
 | Webhook (POST /webhooks) | 30s | 0x | Server-initiated, not user-facing |
 | Search (GET /search, GET /members/search) | 10s | 1x | Debounced input, non-critical |
 | Chat send (POST messages) | 10s | 3x | High priority, see [Sending messages](message-delivery.md#sending-messages) |
 | Slow work answered in the request (POST /ai/act, /ai/act/event-audience, /ai/catch-up, /discord-imports/{id}/discover) | 90s | As a write | The model or a Discord scan finishes before the response does; Ask streams, so its headers come first and it takes the write limit |
 
-`createFrappClient` applies the API rows to every request (`REQUEST_TIMEOUT_MS` in `packages/api-sdk/src/client.ts`, #3433); the upload and webhook rows are not its requests. A limit bounds the whole response, body included, except a streamed one (Ask), which it bounds only up to its headers. A request that runs out fails as a `TypeError` "Network request timed out" (React Native's own timeout shape), which carries no status, so it is retried as a dropped connection is (§ Reads, § Writes) and the screen shows its connection copy. A caller's own abort signal still cancels the request first.
+`createFrappClient` applies the API rows to every request (`REQUEST_TIMEOUT_MS` in `packages/api-sdk/src/client.ts`, #3433); the upload and webhook rows are not its requests. A limit bounds the whole response, body included, except a streamed one (Ask), which it bounds only up to its headers. A request that runs out fails as a `TypeError` "Network request timed out" (React Native's own timeout shape), which carries no status, so it is retried as a dropped connection is (§ Reads, § Writes) and the screen shows its connection copy. A caller's own abort signal still cancels the request first. On web, the limit starts after the request's token is read, so that read has its own: `readSession` in `apps/web/lib/auth/request-token.ts` fails a session read still waiting after 15s (one stuck behind a sign-in refresh the network never answers) with the same message as a refresh that could not reach Auth, which is retried as a dropped connection.
 
 ---

@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_BACKWORK_UPLOAD_BYTES } from "@repo/validation";
 import { EMPTY_FIELDS, type BulkFields } from "./fields";
 import {
-  REQUEST_STALL_MS,
   finishUpload,
   flattenedFileName,
   putStallMs,
@@ -274,61 +273,81 @@ describe("flattenedFileName", () => {
 });
 
 describe("finishUpload when a step stalls", () => {
-  const PENDING = Symbol("pending");
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  /**
-   * Steps the clock until `promise` settles, giving up past twice `ms`. Stepped, not
-   * one jump: hashing runs on real crypto before the timed step starts.
-   */
-  async function settleWithin(promise: Promise<unknown>, ms: number) {
-    let outcome: unknown = PENDING;
-    void promise.then(
-      () => (outcome = "resolved"),
-      (error: unknown) => (outcome = error),
-    );
-    for (let waited = 0; outcome === PENDING && waited <= 2 * ms; waited += 500) {
-      await new Promise((resolve) => setImmediate(resolve));
-      await vi.advanceTimersByTimeAsync(500);
-    }
-    return outcome;
+  /** A Blank Copy job, hashed before the clock is faked: nothing in it hashes again. */
+  async function blankJob(signal?: AbortSignal) {
+    return {
+      file: new File([ORIGINAL as BlobPart], "exam.pdf", { type: "application/pdf" }),
+      prepared: { bytes: ORIGINAL, hash: await sha256Hex(ORIGINAL), doc: DOC },
+      submission: { fields: { ...EMPTY_FIELDS, document_variant: "Blank Copy" }, boxes: {}, flatten: false },
+      signal,
+    };
   }
 
-  it("fails the upload-link request as stalled instead of waiting forever", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const { deps, put } = harness();
-    deps.requestUpload = vi.fn(() => new Promise<never>(() => undefined));
-    const error = await settleWithin(run({ document_variant: "Blank Copy" }, {}, deps), REQUEST_STALL_MS);
-    expect(error).toBeInstanceOf(UploadStalledError);
-    expect(put).not.toHaveBeenCalled();
-    expect(deps.confirm).not.toHaveBeenCalled();
-  });
-
-  it("stops a file upload that never finishes, and says so", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const { deps, put } = harness();
+  /** A PUT that never answers, and stops only when its signal aborts. */
+  function hangingPut(put: ReturnType<typeof harness>["put"]) {
     put.mockImplementation(
       ({ signal }) =>
         new Promise<void>((_, reject) => {
           signal.addEventListener("abort", () => reject(signal.reason));
         }),
     );
-    const error = await settleWithin(
-      run({ document_variant: "Blank Copy" }, {}, deps),
-      putStallMs(ORIGINAL.byteLength),
+  }
+
+  it("stops a file upload that never finishes, and says so", async () => {
+    const { deps, put } = harness();
+    hangingPut(put);
+    const job = await blankJob();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const outcome = finishUpload(job, deps).then(
+      () => "resolved",
+      (error: unknown) => error,
     );
-    expect(error).toBeInstanceOf(UploadStalledError);
+    await vi.advanceTimersByTimeAsync(putStallMs(ORIGINAL.byteLength) - 1);
+    expect(put.mock.calls[0]![0].signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await outcome).toBeInstanceOf(UploadStalledError);
     expect(put.mock.calls[0]![0].signal.aborted).toBe(true);
     expect(deps.confirm).not.toHaveBeenCalled();
   });
 
-  it("fails a draft save that never answers", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  it("stops the file upload when the queue gives up on it", async () => {
+    const { deps, put } = harness();
+    hangingPut(put);
+    const controller = new AbortController();
+    const outcome = finishUpload(await blankJob(controller.signal), deps).catch(
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(put).toHaveBeenCalled());
+    controller.abort();
+    await outcome;
+    expect(put.mock.calls[0]![0].signal.aborted).toBe(true);
+    expect(deps.confirm).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing when the queue gave up while the upload link was requested", async () => {
+    const { deps, put } = harness();
+    const controller = new AbortController();
+    deps.requestUpload = vi.fn(async () => {
+      controller.abort();
+      return {
+        upload_url: "https://storage.example/upload",
+        storage_path: "chapters/c1/backwork/r1/exam.pdf",
+      };
+    });
+    await expect(finishUpload(await blankJob(controller.signal), deps)).rejects.toThrow();
+    expect(put).not.toHaveBeenCalled();
+    expect(deps.confirm).not.toHaveBeenCalled();
+  });
+
+  it("asks for no upload link once the queue has given up", async () => {
     const { deps } = harness();
-    deps.confirm = vi.fn(() => new Promise<never>(() => undefined));
-    const error = await settleWithin(run({ document_variant: "Blank Copy" }, {}, deps), REQUEST_STALL_MS);
-    expect(error).toBeInstanceOf(UploadStalledError);
+    const controller = new AbortController();
+    controller.abort();
+    await expect(finishUpload(await blankJob(controller.signal), deps)).rejects.toThrow();
+    expect(deps.requestUpload).not.toHaveBeenCalled();
   });
 });
