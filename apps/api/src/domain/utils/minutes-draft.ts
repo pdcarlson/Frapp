@@ -128,8 +128,8 @@ export interface MinutesDraftPrompt {
 }
 
 /** The most roster lines a prompt carries, and roles named per member. */
-const ROSTER_MAX = 600;
-const ROLES_PER_MEMBER_MAX = 6;
+export const ROSTER_MAX = 600;
+export const ROLES_PER_MEMBER_MAX = 6;
 
 /** Each source is fenced: `<source id="S1" ...>` … `</source>`. */
 export const SOURCE_CLOSE = '</source>';

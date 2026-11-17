@@ -47,6 +47,23 @@ describe("the notes outline (#5410)", () => {
       parseMinutesNotes("Rush\n- Two events.\nThat was all for rush.")[2],
     ).toEqual({ kind: "line", head: null, text: "That was all for rush." });
   });
+
+  it("reads an officer's report with a bullet as lines, not topics", () => {
+    const report =
+      "Treasurer: collected $1,200 in dues\n- 5 members still owe\nSecretary report";
+    expect(parseMinutesNotes(report, { outline: false })).toEqual([
+      { kind: "line", head: "Treasurer", text: "collected $1,200 in dues" },
+      { kind: "point", depth: 0, text: "5 members still owe" },
+      { kind: "line", head: null, text: "Secretary report" },
+    ]);
+    // Even in the notes, a line that says something after its topic is a
+    // line with its topic in bold.
+    expect(parseMinutesNotes(report)[0]).toEqual({
+      kind: "line",
+      head: "Treasurer",
+      text: "collected $1,200 in dues",
+    });
+  });
 });
 
 describe("the notes are always on", () => {

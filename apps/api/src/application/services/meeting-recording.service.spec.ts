@@ -813,6 +813,33 @@ describe('MeetingRecordingService', () => {
       expect(harness.files.size).toBe(0);
     });
 
+    it('keeps the audio when another try of the same upload finished first', async () => {
+      const harness = setup();
+      const target = await transcribing(harness);
+      // Two tries after a lost lease: the other one writes the transcript
+      // and keeps the audio for playback while this one is still waiting.
+      harness.transcription.transcribe.mockImplementationOnce(async () => {
+        harness.recordings.row = {
+          ...harness.recordings.row!,
+          status: 'ready',
+          transcript: 'Speaker 1: Hi.',
+        };
+        return {
+          status: 'ok',
+          durationSeconds: 60,
+          utterances: [{ speaker: 'A', text: 'Hi.', startMs: 0, endMs: 1 }],
+        };
+      });
+      await expect(
+        harness.service.run(harness.context(target.upload_id)),
+      ).resolves.toBeUndefined();
+      expect(harness.recordings.row).toMatchObject({
+        status: 'ready',
+        storage_path: target.path,
+      });
+      expect([...harness.files]).toEqual([target.path]);
+    });
+
     it('never puts the file name, the link or the transcript in an error', async () => {
       const harness = setup();
       const target = await transcribing(harness);

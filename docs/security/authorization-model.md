@@ -410,7 +410,7 @@ URL:
 | `tasks` (task photos)                                            | `20261113040005_task_photos.sql`                       | images                                                 |
 | `reports`                                                        | `20260805133000_reports_bucket.sql`                    | `application/pdf`                                      |
 | `chat-archive` (Discord import media)                            | `20260823124000_chat_archive_bucket.sql`               | images, video, audio, documents, archives — **no SVG** |
-| `meeting-audio` (a meeting's recording, until it is transcribed) | `20261112210000_meeting_recordings.sql`                | audio                                                  |
+| `meeting-audio` (a meeting's recording, until the minutes post)  | `20261112210000_meeting_recordings.sql`                | audio                                                  |
 
 Clients never read a bucket directly; the API issues short-lived signed URLs after running the same
 route guards. Every bucket carries a MIME allowlist and a size cap. The table above summarizes the

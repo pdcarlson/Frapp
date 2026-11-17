@@ -233,13 +233,24 @@ interface Setup {
   stored?: Meeting;
   /** What the caller holds, for "Report this" (default: may record minutes). */
   permissions?: string[];
+  /** The notes pass's answer (default: none scripted, so it fails). */
+  notes?: ScriptedReply;
 }
 
 function setup(options: Setup = {}) {
   const drafts = new FakeDrafts();
   const notes = new FakeNotes();
   const seen: LanguageModelRequest[] = [];
+  const seenNotes: LanguageModelRequest[] = [];
   const model = new ScriptedLanguageModel({
+    ...(options.notes
+      ? {
+          'minutes.notes': (request: LanguageModelRequest) => {
+            seenNotes.push(request);
+            return options.notes!;
+          },
+        }
+      : {}),
     'minutes.draft': (request) => {
       seen.push(request);
       if (typeof options.reply === 'function') return options.reply(request);
@@ -345,6 +356,7 @@ function setup(options: Setup = {}) {
     registry,
     consent,
     seen,
+    seenNotes,
     ask,
     work,
   };
@@ -665,6 +677,67 @@ describe('MeetingDraftService', () => {
       await ask(`${NOTES}\n${talk}`);
       await expect(work()).rejects.toBeInstanceOf(AiRunFailure);
       expect(meetings.update).not.toHaveBeenCalled();
+    });
+
+    it('writes the summary and the Notes from the notes pass, topic by topic (#5410)', async () => {
+      const written = {
+        summary: 'The chapter met about formal and dues.',
+        topics: [
+          {
+            title: 'Formal',
+            points: [
+              {
+                text: 'Approved up to $1,200 for a DJ.',
+                details: ['Vote was 22 to 5.'],
+              },
+            ],
+          },
+          {
+            title: 'Dues',
+            points: [{ text: 'Six members still owe.', details: [] }],
+          },
+        ],
+      };
+      const { ask, work, meetings, seenNotes } = setup({
+        notes: { text: JSON.stringify(written), object: written },
+      });
+      await ask();
+      await work();
+      expect(seenNotes).toHaveLength(1);
+      const [, , , save] = meetings.update.mock.calls[0];
+      expect(save.content.summary).toBe(written.summary);
+      expect(save.content.discussion_log).toBe(
+        'Formal\n- Approved up to $1,200 for a DJ.\n  - Vote was 22 to 5.\n\nDues\n- Six members still owe.',
+      );
+      // Decisions still come from the checked draft.
+      expect(save.content.decisions).toHaveLength(1);
+    });
+
+    it('keeps the draft’s own summary when the notes pass fails', async () => {
+      const { ask, work, meetings } = setup({
+        notes: { text: 'not json', object: undefined },
+      });
+      await ask();
+      await work();
+      const [, , , save] = meetings.update.mock.calls[0];
+      expect(save.content.summary).toBe('The chapter approved a DJ for formal.');
+    });
+
+    it('stops the notes pass when a part of the draft fails', async () => {
+      const talk = Array.from(
+        { length: 1300 },
+        (_, i) => `We talked about the house for a while, point ${i}.`,
+      ).join(' ');
+      const { ask, work, seenNotes } = setup({
+        notes: { text: '{}', object: { summary: '', topics: [] } },
+        reply: (request) =>
+          String(request.messages[0].content).includes('This is part 2 of')
+            ? { text: 'not json', object: undefined }
+            : { text: JSON.stringify(DRAFTED), object: DRAFTED },
+      });
+      await ask(`${NOTES}\n${talk}`);
+      await expect(work()).rejects.toBeInstanceOf(AiRunFailure);
+      expect(seenNotes[0]?.signal?.aborted).toBe(true);
     });
 
     it('tells the editor what to check the draft against', async () => {

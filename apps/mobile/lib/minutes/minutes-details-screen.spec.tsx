@@ -414,11 +414,11 @@ describe("Minutes on the phone", () => {
     expect(state.notesSheet).toBe(0);
   });
 
-  it("puts Draft minutes at the bottom once notes are typed into empty minutes", async () => {
+  it("puts Draft minutes at the bottom once there is something to draft from (typed notes, a note-taker's, a transcript)", async () => {
     state.meeting = meeting({ content: EMPTY });
     const tree = render();
     expect(button(tree, MEETING_NOTES_COPY.draft)).toBeUndefined();
-    act(() => (state.notesProps?.onTyped as (typed: boolean) => void)(true));
+    act(() => (state.notesProps?.onDraftable as (draftable: boolean) => void)(true));
     await act(async () =>
       button(tree, MEETING_NOTES_COPY.draft).props.onPress(),
     );
@@ -440,6 +440,20 @@ describe("Minutes on the phone", () => {
     const tree = render();
     expect(button(tree, MEETING_COPY.post)).toBeDefined();
     expect(screenText(tree)).not.toContain(MEETING_COPY.writeOnWeb);
+  });
+
+  it("keeps Post at the bottom when the microphone was refused", () => {
+    state.recording = {
+      status: "none",
+      available: true,
+      blocked: null,
+      max_seconds: 7200,
+    };
+    state.row = recorderRow({
+      primary: { does: "open_settings", label: "Open Settings" },
+    });
+    const tree = render();
+    expect(button(tree, MEETING_COPY.post)).toBeDefined();
   });
 
   it("posts the version the server holds now, without asking first", async () => {

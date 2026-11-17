@@ -732,7 +732,7 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
     // it), it has no further use. The provider's copy goes either way, only
     // now that the transcript is stored: a try that died before this line
     // reads the same job again.
-    if (!written) await this.deleteAudio(path);
+    if (!written) await this.deleteAudioUnlessNamed(path);
     if (jobId) {
       await this.transcription.discard(MEETING_TRANSCRIPTION_TASK, jobId);
     }
@@ -820,9 +820,11 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
       },
     );
     // The path and the job are this upload's alone, so both go even when the
-    // row was replaced, or removed by the minutes being posted.
+    // row was replaced, or removed by the minutes being posted. The one
+    // exception is a row that still names the path: a try of the same upload
+    // that finished first and kept the audio for playback.
     if (recording.storage_path) {
-      await this.deleteAudio(recording.storage_path);
+      await this.deleteAudioUnlessNamed(recording.storage_path);
     }
     if (recording.provider_job_id) {
       await this.transcription.discard(
@@ -831,6 +833,17 @@ export class MeetingRecordingService implements AiRunHandler, OnModuleInit {
       );
     }
     return ended;
+  }
+
+  /**
+   * Deletes a file no recording names any more. A ready recording keeps its
+   * audio for playback, so a try that lost the race to it (two tries of one
+   * run after a lost lease) must not take its file.
+   */
+  private async deleteAudioUnlessNamed(path: string): Promise<void> {
+    const named = await this.recordings.pathsStillNamed([path]);
+    if (named.includes(path)) return;
+    await this.deleteAudio(path);
   }
 
   /** Deleting a file that is already gone is not an error; a real one waits for the sweep. */

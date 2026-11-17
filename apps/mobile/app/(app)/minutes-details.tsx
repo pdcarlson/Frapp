@@ -170,7 +170,7 @@ function LoadedMinutes({
   const notesRef = useRef<NotesPanelHandle>(null);
   const post = usePostMeeting();
   const [problem, setProblem] = useState<string | null>(null);
-  const [typed, setTyped] = useState(false);
+  const [draftable, setDraftable] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
 
   const isDraft = meeting.status === "draft";
@@ -267,15 +267,22 @@ function LoadedMinutes({
 
   // The one thing at the bottom (Paul, 2026-11-17): the recorder's controls
   // while it records or needs the officer, else Post once the minutes have
-  // words, else Draft minutes once something is typed, else Record.
+  // words, else Draft minutes once there is something to draft from, else
+  // the recorder's quieter steps (Record, Open Settings after a refusal),
+  // which never stand in the way of posting.
   const recorderFooter =
     recorderShown && (recorder.view.live || recorder.primary) ? (
       <RecorderControls row={recorder} />
     ) : null;
   const recordLeads = recorder.primary?.does === "record";
+  const recorderLeads =
+    !!recorder.view.live ||
+    (!!recorder.primary &&
+      recorder.primary.does !== "record" &&
+      recorder.primary.does !== "open_settings");
   let footer: ReactNode = null;
   if (finishing || heldHere) {
-    if (recorderFooter && !recordLeads) footer = recorderFooter;
+    if (recorderFooter && recorderLeads) footer = recorderFooter;
     else if (finishing && !busy && !drafting && !empty) {
       footer = (
         <SheetPrimaryButton
@@ -287,7 +294,7 @@ function LoadedMinutes({
           onAccent={accentOnPrimary}
         />
       );
-    } else if (finishing && draftState && typed && !busy && !drafting) {
+    } else if (finishing && draftState && draftable && !busy && !drafting) {
       footer = (
         <SheetPrimaryButton
           label={MEETING_NOTES_COPY.draft}
@@ -365,7 +372,7 @@ function LoadedMinutes({
             getVersion={async () => (await refetch())?.updated_at ?? null}
             onSettled={() => void refetch()}
             autoDraft={!!transcript && empty}
-            onTyped={setTyped}
+            onDraftable={setDraftable}
           />
         ) : null}
 

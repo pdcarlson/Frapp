@@ -78,21 +78,17 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * the version a draft builds on is read fresh from the server (`getVersion`)
  * each time one is asked for.
  *
- * A recording's transcript is notes too (§ Recording in the app). It goes
- * into an empty box by itself, once per recording, whether the sheet is open
- * or not, so the officer who taps "Open your notes" finds it there. Notes
- * they already typed are theirs, so then it waits behind "Add the
- * transcript". Clearing the notes removes the transcript with them, as web
- * does.
+ * A recording's transcript is a source of its own (§ Recording in the app,
+ * #4935): the draft reads it beside the notes, so it never goes into the box.
+ * Clearing the notes removes the recording with them, as web does.
  *
  * Notes are stored only when a draft is asked for, so what was typed before
  * then is kept past the minutes screen (`meeting-notes:<meetingId>`, #5041):
  * meeting notes are the costliest text in the app to lose to a back swipe.
  * Asking for a draft gives the kept copy up once the ask lands (the server
  * holds the notes then), and holds it out while the ask is in flight; Clear
- * gives it up too. Closing the sheet keeps it, as a swipe does any sheet's.
- * A kept copy comes back only over the stored notes it was typed over, and a
- * transcript put in by itself isn't kept (the server holds it).
+ * gives it up too. Leaving the screen keeps it, as a back swipe does.
+ * A kept copy comes back only over the stored notes it was typed over.
  */
 export interface NotesPanelHandle {
   /** Asks for a draft from these notes and the transcript. */
@@ -116,8 +112,12 @@ export interface NotesPanelProps {
    * waiting for a press, once.
    */
   autoDraft?: boolean;
-  /** Whether the box holds anything typed, for the screen's button. */
-  onTyped?: (typed: boolean) => void;
+  /**
+   * Whether there is anything to draft from (this officer's notes, another
+   * note-taker's, or a transcript), for the screen's Draft button, so a
+   * draft that failed can be asked for again.
+   */
+  onDraftable?: (draftable: boolean) => void;
 }
 
 export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
@@ -131,7 +131,7 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
     getVersion,
     onSettled,
     autoDraft = false,
-    onTyped,
+    onDraftable,
   },
   ref,
 ) {
@@ -310,13 +310,13 @@ export const NotesPanel = forwardRef<NotesPanelHandle, NotesPanelProps>(
 
   useImperativeHandle(ref, () => ({ draft: handleDraft }));
 
-  const typed = notes.trim() !== "";
-  const typedReported = useRef<boolean | null>(null);
+  const draftable = notes.trim() !== "" || othersWrote;
+  const draftableReported = useRef<boolean | null>(null);
   useEffect(() => {
-    if (typedReported.current === typed) return;
-    typedReported.current = typed;
-    onTyped?.(typed);
-  }, [typed, onTyped]);
+    if (draftableReported.current === draftable) return;
+    draftableReported.current = draftable;
+    onDraftable?.(draftable);
+  }, [draftable, onDraftable]);
 
   // A transcript just came in for minutes with nothing drafted: draft now.
   const autoAsked = useRef(false);

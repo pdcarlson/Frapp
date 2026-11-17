@@ -7,7 +7,7 @@ import type { RecorderState } from "./machine";
 
 /**
  * What the recording row on a meeting's minutes says and offers
- * (`components/minutes/recording-row.tsx`), worked out from the phone's
+ * (`components/minutes/recorder-controls.tsx`), worked out from the phone's
  * recorder and the server's record of the meeting's recording. Pure, so
  * every state the row can be in is covered by a spec.
  *

@@ -45,14 +45,17 @@ vi.mock("@/lib/chapter-branding", () => ({
 
 import { RecordingPlayer } from "./recording-player";
 
-function render(): ReactTestRenderer {
+function player(url: string) {
+  return (
+    <FrappThemeProvider>
+      <RecordingPlayer url={url} durationSeconds={2520} />
+    </FrappThemeProvider>
+  );
+}
+function render(url = "https://storage.test/a.aac"): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
-    tree = create(
-      <FrappThemeProvider>
-        <RecordingPlayer url="https://storage.test/a.aac" durationSeconds={2520} />
-      </FrappThemeProvider>,
-    );
+    tree = create(player(url));
   });
   return tree;
 }
@@ -111,5 +114,52 @@ describe("RecordingPlayer", () => {
     });
     native.available = true;
     expect(tree.toJSON()).toBeNull();
+  });
+
+  it("takes up a fresh link at the next press after a pause, from the same place", () => {
+    const tree = render("https://storage.test/a.aac?token=1");
+    act(() => control(tree, MEETING_RECORDER_COPY.playAudio).props.onPress());
+    act(() =>
+      native.listener?.({
+        playing: true,
+        currentTime: 600,
+        duration: 2519,
+        isLoaded: true,
+        didJustFinish: false,
+      }),
+    );
+    act(() => control(tree, MEETING_RECORDER_COPY.pauseAudio).props.onPress());
+    act(() =>
+      native.listener?.({
+        playing: false,
+        currentTime: 600,
+        duration: 2519,
+        isLoaded: true,
+        didJustFinish: false,
+      }),
+    );
+    // The minutes were read again: the server signed a new link.
+    act(() => tree.update(player("https://storage.test/a.aac?token=2")));
+    act(() => control(tree, MEETING_RECORDER_COPY.playAudio).props.onPress());
+    expect(native.player.remove).toHaveBeenCalledTimes(1);
+    expect(native.create).toHaveBeenLastCalledWith({
+      uri: "https://storage.test/a.aac?token=2",
+    });
+    expect(native.player.seekTo).toHaveBeenCalledWith(600);
+  });
+
+  it("says so when the audio never loads", () => {
+    vi.useFakeTimers();
+    try {
+      const tree = render();
+      act(() =>
+        control(tree, MEETING_RECORDER_COPY.playAudio).props.onPress(),
+      );
+      act(() => vi.advanceTimersByTime(15_000));
+      expect(native.player.remove).toHaveBeenCalledTimes(1);
+      expect(screenText(tree)).toContain(MEETING_RECORDER_COPY.audioGone);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -170,12 +170,13 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
   /** Still an officer who may write minutes when the run runs. */
   readonly runPermissions = [SystemPermissions.MEETINGS_RECORD];
   /**
-   * An officer is waiting on the page: two tries. A long meeting is drafted
-   * in parts side by side and then read over as a whole, so a try gets most
-   * of the five-minute lease (`AI_RUN_LEASE_MS`).
+   * An officer is waiting on the page: two tries. A try is the draft, the
+   * editor's read and the notes pass on the strongest model, which for a
+   * four-hour meeting writes for several minutes, so a try gets fifteen; the
+   * worker's heartbeat renews the lease (`AI_RUN_LEASE_MS`) while it runs.
    */
   readonly maxAttempts = 2;
-  readonly timeoutMs = 280_000;
+  readonly timeoutMs = 15 * 60 * 1000;
 
   constructor(
     @Inject(MEETING_DRAFT_REPOSITORY)
@@ -750,86 +751,100 @@ export class MeetingDraftService implements AiRunHandler, OnModuleInit {
     // transcript side by side. Beside it, the notes pass writes the meeting
     // up topic by topic from every source read whole (`minutes-notes.ts`).
     const parts = partRequests(request) ?? [request];
+    // Its own stop, so a draft that ends early never leaves it running (and
+    // billing) with nobody to read it. It never rejects: a notes pass that
+    // fails leaves the draft's own notes.
+    const notesStop = new AbortController();
+    const stopNotes = () => notesStop.abort();
+    signal?.addEventListener('abort', stopNotes, { once: true });
     const notesRun = this.gateway
       .generateObject(
         MINUTES_NOTES_TASK,
         {
           ...buildMinutesNotesPrompt(request),
           schema: MinutesNotesOutputSchema,
-          signal,
+          signal: notesStop.signal,
         },
         context,
       )
-      .catch((error: unknown) => {
-        if (signal?.aborted) throw error;
-        return null;
-      });
-    const results = await Promise.all(parts.map(draftOf));
-    const outputs: MeetingDraftOutput[] = [];
-    const usages: LanguageModelUsage[] = [];
-    for (const result of results) {
-      if (result.status !== 'ok') return result;
-      outputs.push(result.value);
-      usages.push(result.usage);
-    }
-    const noted = await notesRun;
-    const notes = noted?.status === 'ok' ? noted.value : null;
-    if (noted?.status === 'ok') usages.push(noted.usage);
-    /**
-     * The notes pass's summary and notes over the draft's own, when it
-     * wrote them. Without it (a failure, a refusal, the spend cap) the
-     * draft's own stand, so a draft is never lost to it.
-     */
-    const withNotes = (draft: MeetingDraftOutput): MeetingDraftOutput => {
-      if (!notes) return draft;
-      const outline = notesOutline(notes);
-      return {
-        ...draft,
-        summary: notes.summary.trim() || draft.summary,
-        discussion_log: outline || draft.discussion_log,
-      };
-    };
+      .catch(() => null);
+    try {
+      const results = await Promise.all(parts.map(draftOf));
+      const outputs: MeetingDraftOutput[] = [];
+      const usages: LanguageModelUsage[] = [];
+      for (const result of results) {
+        if (result.status !== 'ok') return result;
+        outputs.push(result.value);
+        usages.push(result.usage);
+      }
 
-    // Pass 2: the editor's read over the whole meeting
-    // (`minutes-draft-review.ts`). Several note-takers' conflicts are settled
-    // by the first pass and pass through untouched.
-    const reviewed = await this.gateway
-      .generateObject(
-        MINUTES_DRAFT_TASK,
-        {
-          ...buildReviewPrompt(request, outputs),
-          schema: ReviewedMinutesSchema,
-          signal,
-        },
-        context,
-      )
-      .catch((error: unknown) => {
-        // A cancelled run stays cancelled; any other failure of this pass
-        // (a timeout, a provider error) leaves the first pass standing.
-        if (signal?.aborted) throw error;
-        return null;
-      });
-    if (reviewed?.status === 'ok') {
-      usages.push(reviewed.usage);
+      // Pass 2: the editor's read over the whole meeting
+      // (`minutes-draft-review.ts`), while the notes pass is still writing.
+      // Several note-takers' conflicts are settled by the first pass and
+      // pass through untouched.
+      const reviewed = await this.gateway
+        .generateObject(
+          MINUTES_DRAFT_TASK,
+          {
+            ...buildReviewPrompt(request, outputs),
+            schema: ReviewedMinutesSchema,
+            signal,
+          },
+          context,
+        )
+        .catch((error: unknown) => {
+          // A cancelled run stays cancelled; any other failure of this pass
+          // (a timeout, a provider error) leaves the first pass standing.
+          if (signal?.aborted) throw error;
+          return null;
+        });
+
+      const noted = await notesRun;
+      signal?.throwIfAborted();
+      const notes = noted?.status === 'ok' ? noted.value : null;
+      if (noted?.status === 'ok') usages.push(noted.usage);
+      /**
+       * The notes pass's summary and notes over the draft's own, when it
+       * wrote them. Without it (a failure, a refusal, the spend cap) the
+       * draft's own stand, so a draft is never lost to it.
+       */
+      const withNotes = (draft: MeetingDraftOutput): MeetingDraftOutput => {
+        if (!notes) return draft;
+        const outline = notesOutline(notes);
+        return {
+          ...draft,
+          summary: notes.summary.trim() || draft.summary,
+          discussion_log: outline || draft.discussion_log,
+        };
+      };
+
+      if (reviewed?.status === 'ok') {
+        usages.push(reviewed.usage);
+        return {
+          status: 'ok',
+          value: withNotes(applyReview(outputs, reviewed.value)),
+          usage: usageOf(usages),
+        };
+      }
+      // The first pass is already paid for and already checked word for
+      // word, so whatever stopped the editor's read (a reply that didn't
+      // parse, a refusal, the spend cap reached on this call, an error)
+      // leaves its draft, with procedure taken out, rather than nothing.
+      const merged = mergeParts(outputs);
       return {
         status: 'ok',
-        value: withNotes(applyReview(outputs, reviewed.value)),
+        value: withNotes({
+          ...merged,
+          decisions: dropProcedure(merged.decisions),
+        }),
         usage: usageOf(usages),
       };
+    } finally {
+      // Settled by now on every path that read it; on any other (a part
+      // that failed or threw) this stops it.
+      notesStop.abort();
+      signal?.removeEventListener('abort', stopNotes);
     }
-    // The first pass is already paid for and already checked word for word,
-    // so whatever stopped the editor's read (a reply that didn't parse, a
-    // refusal, the spend cap reached on this call, an error) leaves its
-    // draft, with procedure taken out, rather than nothing.
-    const merged = mergeParts(outputs);
-    return {
-      status: 'ok',
-      value: withNotes({
-        ...merged,
-        decisions: dropProcedure(merged.decisions),
-      }),
-      usage: usageOf(usages),
-    };
   }
 
   /** The chapter's switch and the member's answer, for this task. */

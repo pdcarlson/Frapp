@@ -122,7 +122,12 @@ export const MEETING_TEXT_SECTIONS = [
 ] as const satisfies readonly MeetingSectionKey[];
 export type MeetingTextSection = (typeof MEETING_TEXT_SECTIONS)[number];
 
-export const MEETING_TEXT_MAX_LENGTH = 20_000;
+/**
+ * One section's limit. The notes of a four-hour meeting, topic by topic with
+ * their detail, run past 20,000 characters (#5410), so a section holds
+ * three times that.
+ */
+export const MEETING_TEXT_MAX_LENGTH = 60_000;
 export const MEETING_ITEM_TEXT_MAX_LENGTH = 1_000;
 export const MEETING_LIST_MAX_ITEMS = 100;
 export const MEETING_OTHER_LABEL_MAX_LENGTH = 60;
@@ -272,11 +277,16 @@ const TOPIC_MAX_LENGTH = 90;
  * its own line, its points under it as "- " bullets, two spaces deeper for
  * a sub-point), so web and phone draw the same structure. Text with no
  * bullets, typed by hand or written before the outline, reads line by line
- * as it always did.
+ * as it always did, and so does every section but the notes
+ * (`outline: false`): an officer's report that mixes "Treasurer: ..." lines
+ * with a bullet is not an outline, and its lines are not topics.
  */
-export function parseMinutesNotes(text: string): MinutesNoteLine[] {
+export function parseMinutesNotes(
+  text: string,
+  { outline = true }: { outline?: boolean } = {},
+): MinutesNoteLine[] {
   const raw = text.split("\n").filter((line) => line.trim().length > 0);
-  const outlined = raw.some((line) => BULLET.test(line));
+  const outlined = outline && raw.some((line) => BULLET.test(line));
   return raw.map((line): MinutesNoteLine => {
     const bullet = BULLET.exec(line);
     if (bullet) {
@@ -287,6 +297,12 @@ export function parseMinutesNotes(text: string): MinutesNoteLine[] {
       };
     }
     const trimmed = line.trim();
+    // "Treasurer: collected $1,200" leads with its topic and says something
+    // after it, so it is a line, not a topic heading, even in an outline.
+    const head = LEADING_TOPIC.exec(trimmed);
+    if (head) {
+      return { kind: "line", head: head[1] ?? null, text: head[2] ?? trimmed };
+    }
     if (
       outlined &&
       trimmed.length <= TOPIC_MAX_LENGTH &&
@@ -294,9 +310,6 @@ export function parseMinutesNotes(text: string): MinutesNoteLine[] {
     ) {
       return { kind: "topic", text: trimmed.replace(/:$/, "") };
     }
-    const head = LEADING_TOPIC.exec(trimmed);
-    return head
-      ? { kind: "line", head: head[1] ?? null, text: head[2] ?? trimmed }
-      : { kind: "line", head: null, text: trimmed };
+    return { kind: "line", head: null, text: trimmed };
   });
 }

@@ -779,7 +779,10 @@ function Minutes({
                 {view.content.summary}
               </p>
             ) : (
-              <LinesView text={view.content[key as MeetingTextSection]} />
+              <LinesView
+                text={view.content[key as MeetingTextSection]}
+                outline={key === "discussion_log"}
+              />
             )}
           </section>
         ))}
@@ -1002,8 +1005,8 @@ function ActionItemsView({
  * way Granola lays out meeting notes. A plain line that opens with its
  * topic ("Treasurer: ...") shows the topic in bold, so it can be skimmed.
  */
-function LinesView({ text }: { text: string }) {
-  const lines = parseMinutesNotes(text);
+function LinesView({ text, outline }: { text: string; outline: boolean }) {
+  const lines = parseMinutesNotes(text, { outline });
   return (
     <ul role="list" className="space-y-1.5 text-sm leading-relaxed">
       {lines.map((line, index) => {

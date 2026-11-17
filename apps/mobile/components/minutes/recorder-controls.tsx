@@ -14,7 +14,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The pieces of the phone's recorder on a meeting's minutes
- * (`recording-row.tsx`), redrawn after Paul's 2026-11-17 pass: "You don't
+ * (`app/(app)/minutes-details.tsx`), redrawn after Paul's 2026-11-17 pass: "You don't
  * need like four humongous buttons everywhere ... maybe you use icons, like a
  * pause button and a play button. Or make them small and in the corner, and
  * maybe show like the act of transcribing."

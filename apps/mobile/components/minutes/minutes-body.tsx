@@ -168,11 +168,18 @@ function Section({
       </>
     );
   }
+  // The summary is a paragraph, as on web.
+  if (sectionKey === "summary") {
+    return <Text style={styles.text}>{content.summary}</Text>;
+  }
   // The notes come as an outline: a topic over its "- " points, drawn the
-  // way web draws them (`minutes-page.tsx` LinesView).
+  // way web draws them (`minutes-page.tsx` LinesView). Other sections read
+  // line by line, with no topics.
   return (
     <View style={styles.lines}>
-      {parseMinutesNotes(content[sectionKey]).map((line, index) => {
+      {parseMinutesNotes(content[sectionKey], {
+        outline: sectionKey === "discussion_log",
+      }).map((line, index) => {
         if (line.kind === "topic") {
           return (
             <Text
