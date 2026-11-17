@@ -91,7 +91,18 @@ Paul asked on 2026-11-16 for full observability from the first day. Sentry (erro
 - **Audit logs.** Every deploy, traffic move and permission change is in the project's audit log (**Logging → Logs Explorer**, log name `cloudaudit.googleapis.com/activity`), on by default.
 - **Retention and cost.** Logs stay 30 days in the `_Default` bucket. Ingestion is free up to 50 GiB a month per project, far above the API's volume.
 
-Built with the deploy step, because each needs the service to exist: an uptime check on `/health/ready` every minute, email alerts to Paul for it, for a 5xx spike, for crashes and restarts, for memory near the limit and for an error-log spike, and Secret Manager's data-access audit log, so every secret read is recorded. Email is the pager ([`alert-routing.md`](../alert-routing.md)).
+**Uptime, alerts and secret reads** come from [`scripts/gcp/observability.sh`](../../../scripts/gcp/observability.sh), run once per project in Cloud Shell after the balancer exists: `bash scripts/gcp/observability.sh <staging|production> <project-id> <alert-email>`. The email is an argument because the repository is public. It makes one email channel, *Frapp alerts*, and sends every alert there. Email is the pager ([`alert-routing.md`](../alert-routing.md)). A rerun updates everything to match the script, so a changed threshold reaches a project by running it again.
+
+| What | Fires when |
+|---|---|
+| Uptime check *Frapp API (&lt;env&gt;) /health/ready* | Runs every minute from Google's checker regions, certificate validated. Its policy, *not answering*, fires when more than one region fails. |
+| *5xx burst* | More than 10 responses with a 5xx status in five minutes (Cloud Run's request count). |
+| *container crashed* | Cloud Run's system log shows a non-zero exit, a memory kill or a failed probe. At most one email per five minutes. |
+| *memory near the limit* | A container above 85% of its 1 GiB for five minutes. |
+| *error log burst* | More than 20 of the API's own log lines at ERROR or above in five minutes (the log-based metric `frapp_api_error_logs`; the request log's 5xx lines aren't counted twice). |
+| Secret Manager data-access audit log | Not an alert: every secret read, by the deploy or the service, lands in `cloudaudit.googleapis.com/data_access`. |
+
+Every policy closes itself a day after its condition clears. Sentry's own uptime and error-spike rules ([`alert-routing.md`](../alert-routing.md)) still run; Google's add what Sentry can't see: a host that doesn't answer at all, crash loops and memory. The thresholds and the crash-log patterns are a first guess, made before any production traffic; tune them in the script if they're noisy or quiet.
 
 ## Deploys
 
@@ -138,7 +149,7 @@ Production had no members on 2026-11-16, so Paul chose to bring it up the way st
 
 The daily release pin (`production-release-pin.yml`) reads the API's commit from `/health`, so it failed from step 1 until step 5's tag.
 
-**One public path.** The deploy sets the service's ingress to internal-and-cloud-load-balancing, so its `run.app` addresses, tagged or not, refuse every request from the internet that doesn't come through the balancer. Google's own services (Cloud Scheduler, Pub/Sub, Cloud Tasks) and the project's VPC can still reach `run.app`, with a shorter chain, so anything built later that calls the service from there should call the API host instead, and the planned uptime check watches the API host too. With one internet path there is one `X-Forwarded-For` chain, `CLIENT_IP, LOAD_BALANCER_IP` in Google's words, so `TRUST_PROXY_HOPS` in `apps/api/src/bootstrap.ts` is 2 on both environments. The probe below measured it on 2026-11-17, on both hosts: 2 with no forged entry, 3 with one. Render's count was 3 (Cloudflare and Render's own proxies); the API no longer runs there.
+**One public path.** The deploy sets the service's ingress to internal-and-cloud-load-balancing, so its `run.app` addresses, tagged or not, refuse every request from the internet that doesn't come through the balancer. Google's own services (Cloud Scheduler, Pub/Sub, Cloud Tasks) and the project's VPC can still reach `run.app`, with a shorter chain, so anything built later that calls the service from there should call the API host instead, and the uptime check ([§ Observability](#observability)) watches the API host too. With one internet path there is one `X-Forwarded-For` chain, `CLIENT_IP, LOAD_BALANCER_IP` in Google's words, so `TRUST_PROXY_HOPS` in `apps/api/src/bootstrap.ts` is 2 on both environments. The probe below measured it on 2026-11-17, on both hosts: 2 with no forged entry, 3 with one. Render's count was 3 (Cloudflare and Render's own proxies); the API no longer runs there.
 
 **Measuring the chain.** Send one request with no `X-Forwarded-For` and one with a single forged entry, each to a path of its own, then read their `xffCount` from the service's request log. The first is what the proxies append and should equal the hop count; the second should be one more. In Cloud Shell:
 
@@ -158,4 +169,4 @@ Both request logs, the balancer's and Cloud Run's, record the full URL with its 
 
 These land in [#5228](https://github.com/frapplive/Frapp/issues/5228)'s later steps, and each one updates this page when it ships.
 
-- **Observability** ([§ Observability](#observability)): the uptime check, the email alerts and Secret Manager's data-access audit log. They need the service, which the first staging deploy creates.
+- **Observability, run in each project** ([§ Observability](#observability)): the script exists; its first run in staging and production records the date here.
