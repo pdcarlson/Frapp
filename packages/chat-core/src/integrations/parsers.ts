@@ -12,8 +12,10 @@ import { dueEntryFields, parseDateEntryWithTime } from "@repo/formatting";
 import {
   POINTS_ADJUSTMENT_MAX,
   POINTS_REASON_MAX_LENGTH,
+  POLL_OPTION_MAX_LENGTH,
   POLL_OPTIONS_MAX,
   POLL_OPTIONS_MIN,
+  POLL_QUESTION_MAX_LENGTH,
   TASK_TITLE_MAX_LENGTH,
 } from "@repo/validation";
 
@@ -133,6 +135,13 @@ export function parsePollArgs(args: string): ParseResult<PollArgs> {
   if (question.length === 0) {
     return { ok: false, error: "Poll question cannot be empty" };
   }
+  // The New poll forms' lengths, which the API holds every poll card to.
+  if (question.length > POLL_QUESTION_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `Poll question is too long (max ${POLL_QUESTION_MAX_LENGTH} characters)`,
+    };
+  }
 
   let closesInMinutes = POLL_DEFAULT_CLOSE_MINUTES;
   const rawOptions: string[] = [];
@@ -163,6 +172,12 @@ export function parsePollArgs(args: string): ParseResult<PollArgs> {
     return {
       ok: false,
       error: `Polls support up to ${POLL_OPTIONS_MAX} options`,
+    };
+  }
+  if (options.some((option) => option.length > POLL_OPTION_MAX_LENGTH)) {
+    return {
+      ok: false,
+      error: `Each poll option can be at most ${POLL_OPTION_MAX_LENGTH} characters`,
     };
   }
 

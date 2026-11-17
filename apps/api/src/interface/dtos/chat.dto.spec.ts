@@ -3,7 +3,10 @@ import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { LIST_QUERY_LIMIT_MAX } from '#domain/constants/list-query-limits';
 import { VALIDATION_PIPE_OPTIONS } from '../pipes/validation-pipe.options';
 import {
+  ChatMessageActionDto,
+  CreateGroupDmDto,
   GetChannelMessagesQueryDto,
+  SendMessageDto,
   SetChapterChatLevelDto,
   UpdateChannelDto,
 } from './chat.dto';
@@ -165,6 +168,88 @@ describe('SetChapterChatLevelDto (#3840)', () => {
   // report a stored `off`, so the write must refuse it.
   it('refuses off', async () => {
     await expect(transform({ level: 'off' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+});
+
+/** Run a body through the global pipe as the route would. */
+function bodyTransform<T>(metatype: new () => T) {
+  const pipe = new ValidationPipe(VALIDATION_PIPE_OPTIONS);
+  return (body: Record<string, unknown>): Promise<T> =>
+    pipe.transform(body, { type: 'body', metatype });
+}
+
+describe('SendMessageDto metadata', () => {
+  const transform = bodyTransform(SendMessageDto);
+  const message = {
+    client_message_id: VALID_UUID,
+    content: 'Hello',
+  };
+
+  it('takes small client metadata', async () => {
+    await expect(
+      transform({ ...message, metadata: { draft_id: 'abc' } }),
+    ).resolves.toBeDefined();
+  });
+
+  // Every reader of the channel downloads the row, so the field is bounded.
+  it('refuses metadata over 16,384 characters as JSON', async () => {
+    await expect(
+      transform({ ...message, metadata: { blob: 'x'.repeat(16_400) } }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('ChatMessageActionDto', () => {
+  const transform = bodyTransform(ChatMessageActionDto);
+
+  it.each([
+    ['a reaction', { action_type: 'reaction:👍' }],
+    ['a skin-toned reaction', { action_type: 'reaction:👍🏽' }],
+    ['a vote', { action_type: 'vote', payload: { option_id: ['a', 'b'] } }],
+    [
+      'a sign-up claim with every slot of a full card',
+      {
+        action_type: 'signup',
+        payload: {
+          slot_ids: Array.from({ length: 20 }, (_, i) => `slot-${i}`),
+          note: 'x'.repeat(140),
+        },
+      },
+    ],
+  ])('takes %s', async (_label, body) => {
+    await expect(transform(body)).resolves.toBeDefined();
+  });
+
+  it.each([
+    ['an action type no app sends', { action_type: 'rsvp' }],
+    ['a reaction with no emoji', { action_type: 'reaction:' }],
+    ['a reaction with a space', { action_type: 'reaction:a b' }],
+    [
+      'a payload over 4,096 characters as JSON',
+      { action_type: 'vote', payload: { option_id: 'x'.repeat(4_100) } },
+    ],
+  ])('refuses %s', async (_label, body) => {
+    await expect(transform(body)).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('CreateGroupDmDto', () => {
+  const transform = bodyTransform(CreateGroupDmDto);
+  const ids = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, i) => `aaaaaaaa-aaaa-4aaa-8aaa-${String(i).padStart(12, '0')}`,
+    );
+
+  // A group DM holds up to 10 people, the creator included.
+  it('takes nine others', async () => {
+    await expect(transform({ member_ids: ids(9) })).resolves.toBeDefined();
+  });
+
+  it('refuses ten others', async () => {
+    await expect(transform({ member_ids: ids(10) })).rejects.toBeInstanceOf(
       BadRequestException,
     );
   });

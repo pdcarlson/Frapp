@@ -50,6 +50,15 @@ describe("parsePollArgs", () => {
     expect(r.ok).toBe(false);
   });
 
+  // The API holds every poll card to the New poll forms' lengths.
+  it("rejects a question or an option longer than the forms allow", () => {
+    expect(parsePollArgs(`"${"q".repeat(501)}" Mon Tue`).ok).toBe(false);
+    expect(parsePollArgs(`"Night?" ${"x".repeat(201)} Tue`).ok).toBe(false);
+    expect(
+      parsePollArgs(`"${"q".repeat(500)}" ${"x".repeat(200)} Tue`).ok,
+    ).toBe(true);
+  });
+
   it("rejects more than ten options", () => {
     const r = parsePollArgs('"Pick" a b c d e f g h i j k');
     expect(r.ok).toBe(false);

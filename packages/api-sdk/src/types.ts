@@ -1318,7 +1318,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Get or create a 1-on-1 DM channel */
+        /**
+         * Get or create a 1-on-1 DM channel
+         * @description A new DM is only with a member of your chapter (404 otherwise, whether or not the id is anyone), and never with yourself (400). Reopening a DM you already have always works. On the default write limit: opening a DM is how a member reopens one, so a lower ceiling would get in the way of an officer messaging new members one after another.
+         */
         post: operations["ChatController_getOrCreateDm_v1"];
         delete?: never;
         options?: never;
@@ -1335,7 +1338,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create a group DM channel */
+        /**
+         * Create a group DM channel
+         * @description Everyone in `member_ids` must be a member of your chapter (404 otherwise, naming no one). Each call makes a new conversation in every listed member's list, so it is held to 10 a minute.
+         */
         post: operations["ChatController_createGroupDm_v1"];
         delete?: never;
         options?: never;
@@ -1790,7 +1796,10 @@ export interface paths {
         /** List chat message reports for this chapter */
         get: operations["ChatReportController_listReports_v1"];
         put?: never;
-        /** Report a chat message (idempotent while a report stays open) */
+        /**
+         * Report a chat message (idempotent while a report stays open)
+         * @description Limited to 10 a minute per member: each report notifies every officer who reviews them.
+         */
         post: operations["ChatReportController_fileReport_v1"];
         delete?: never;
         options?: never;
@@ -7168,6 +7177,7 @@ export interface components {
             member_id: string;
         };
         CreateGroupDmDto: {
+            /** @description The other members of the chapter to add, at most 9: a group DM holds up to 10 people, you included. */
             member_ids: string[];
             name?: string;
         };
@@ -7322,10 +7332,12 @@ export interface components {
             /** @enum {string} */
             kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "rush" | "system_audit" | "imported" | "loading" | "announcement" | "signup" | "form" | "ask_answer" | "role_picker";
             gif?: components["schemas"]["MessageGifDto"];
+            /** @description A rich card's data. Once checked, at most 16384 characters as JSON for every kind but a form, which its own field limits bound. */
             payload?: Record<string, never>;
             reply_to_id?: string;
             /** Format: uuid */
             thread_root_id?: string;
+            /** @description Client annotations, at most 16384 characters as JSON. */
             metadata?: Record<string, never>;
             mention_picks?: components["schemas"]["MentionPickDto"][];
         };
@@ -7426,8 +7438,9 @@ export interface components {
             flag: "important" | "funny" | "interesting" | "question" | "hype" | "fyi";
         };
         ChatMessageActionDto: {
-            /** @description Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full), free-form for card actions. */
+            /** @description Action discriminator: `reaction:<emoji>` for an emoji reaction, `vote` for a poll vote (UPSERT), or `signup` for a sign-up sheet claim (payload `{ slot_ids: string[] }`, every slot the member holds; 400 on a card that is not a sign-up or an unknown slot, 409 when a slot is full). Anything else is a 400. */
             action_type: string;
+            /** @description The vote or claim (`{ option_id }` or `{ slot_ids, note? }`), at most 4096 characters as JSON. A reaction carries none and any sent is not stored. */
             payload?: Record<string, never>;
         };
         ReactionDto: {

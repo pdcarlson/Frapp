@@ -54,6 +54,7 @@ import {
   cardVoteSelection,
   type CardPollPayload,
 } from '#domain/utils/poll-vote-rules';
+import { isReactionActionType } from '#domain/utils/message-action-types';
 import {
   CreateChannelDto,
   SetChannelDisplayLockDto,
@@ -102,9 +103,6 @@ type SentMessage = Awaited<ReturnType<ChatService['sendMessage']>>;
 type RecordedMessageAction = Awaited<
   ReturnType<ChatReactionService['recordMessageAction']>
 >;
-
-/** The prefix every emoji reaction's `action_type` carries (`reaction:<emoji>`). */
-const REACTION_ACTION_PREFIX = 'reaction:';
 
 @ApiTags('Chat')
 @ApiBearerAuth()
@@ -416,7 +414,11 @@ export class ChatController {
   }
 
   @Post('dm')
-  @ApiOperation({ summary: 'Get or create a 1-on-1 DM channel' })
+  @ApiOperation({
+    summary: 'Get or create a 1-on-1 DM channel',
+    description:
+      'A new DM is only with a member of your chapter (404 otherwise, whether or not the id is anyone), and never with yourself (400). Reopening a DM you already have always works. On the default write limit: opening a DM is how a member reopens one, so a lower ceiling would get in the way of an officer messaging new members one after another.',
+  })
   // Get-or-create, and the result does not say which: reopening an existing
   // DM counts the same as starting one.
   @FeatureEvent('dm-opened')
@@ -432,7 +434,13 @@ export class ChatController {
   }
 
   @Post('group-dm')
-  @ApiOperation({ summary: 'Create a group DM channel' })
+  @ApiOperation({
+    summary: 'Create a group DM channel',
+    description:
+      "Everyone in `member_ids` must be a member of your chapter (404 otherwise, naming no one). Each call makes a new conversation in every listed member's list, so it is held to 10 a minute.",
+  })
+  // Not idempotent: every call adds a conversation to each member's list.
+  @ThrottleFanOutWrite()
   async createGroupDm(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -974,7 +982,7 @@ export class ChatController {
       result,
     }: FeatureEventInput<ChatMessageActionDto, RecordedMessageAction>) =>
       typeof body.action_type === 'string' &&
-      body.action_type.startsWith(REACTION_ACTION_PREFIX) &&
+      isReactionActionType(body.action_type) &&
       !result.deduplicated
         ? {}
         : null,

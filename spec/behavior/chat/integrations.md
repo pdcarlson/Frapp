@@ -189,6 +189,7 @@ Poll votes are written to `chat_message_actions` via `POST /v1/channels/messages
 Every user has **at most one** row with `action_type='vote'` per poll message (the dedupe unique index `(message_id, user_id, action_type)` is retained).
 Switching options is an upsert in effect, not in SQL: the insert raises the dedupe unique violation, which `recordMessageAction` catches and turns into an update of `payload.option_id` (and `created_at`) in place and returns a distinct response shape (`updated: true`) so the optimistic client can replay the tally.
 Emoji reactions (`action_type='reaction:<emoji>'`) keep the unique-violation → dedup path unchanged (one reaction per user per emoji, toggle to remove).
+The route takes only the three action types the apps send, `reaction:<emoji>`, `vote` and `signup` (400 otherwise), a `payload` of at most 4,096 characters as JSON (`MESSAGE_ACTION_PAYLOAD_MAX_CHARS`; the largest the apps send is a full sign-up claim, about 900), and stores no payload on a reaction.
 
 ## Sign-up sheet cards
 
@@ -201,7 +202,7 @@ It is the first of a series on the issue: headcount, closing and an end time (st
   Anyone who can post in the channel may post one: no permission and no module (Shawn's chat, 2026-11-12).
   Access follows the channel, as for every card.
 - **Checked on send.**
-  Unlike a poll card, whose payload is stored as sent, `ChatService.sendMessage` checks a sign-up card and stores it rebuilt from its known fields (`normalizeSignupCard` in `apps/api/src/domain/utils/signup-card-rules.ts`): a title, unique slot ids, named slots, limits in range.
+  As for a poll card (`normalizePollCard`, since 2026-11-17), `ChatService.sendMessage` checks a sign-up card and stores it rebuilt from its known fields (`normalizeSignupCard` in `apps/api/src/domain/utils/signup-card-rules.ts`): a title, unique slot ids, named slots, limits in range.
   Anything else is a 400 before anything is written.
   It must be, because the claim below trusts the stored slots.
 - **A claim.**

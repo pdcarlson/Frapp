@@ -20,6 +20,7 @@ import {
   signupClaimSlotIds,
 } from '#domain/utils/signup-card-rules';
 import { isCardClosed } from '#domain/utils/card-closing';
+import { isReactionActionType } from '#domain/utils/message-action-types';
 import {
   CHAT_MESSAGE_ACTION_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
@@ -190,7 +191,11 @@ export class ChatReactionService {
       throw new BadRequestException('Cannot act on a deleted message');
     }
 
-    const payload = input.payload ?? {};
+    // A reaction is its emoji and nothing else: no client sends it a payload,
+    // and every reader loads the row, so whatever one carries is not stored.
+    const payload = isReactionActionType(input.action_type)
+      ? {}
+      : (input.payload ?? {});
     const isVote = input.action_type === CARD_VOTE_ACTION_TYPE;
 
     // A claim on a sign-up card (#3926) has its own write: the slot limits are

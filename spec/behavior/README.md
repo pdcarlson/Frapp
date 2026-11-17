@@ -101,6 +101,8 @@ Routes whose cost or blast radius is not proportional to the request. Everything
 | `POST /v1/invites/preview` | 10/min | Token-guessing surface, the same as redeem. |
 | `POST /v1/integrations/dev-log` | 10/min | Token-guessing surface, and each call writes a message into a channel. Counted per caller IP: its bearer token is not a member's ([`chat/integrations.md`](chat/integrations.md#the-teams-dev-log-channel)). |
 | `POST /v1/events`, `PATCH /v1/events/:id` | 10/min | Each one pushes a notification to every member of the chapter. |
+| `POST /v1/chat/reports` | 10/min | Each new report notifies every officer who reviews reports. A member reporting a run of messages files ten a minute. |
+| `POST /v1/channels/group-dm` | 10/min | Each call makes a new conversation in every listed member's list. `POST /v1/channels/dm` keeps the default: it is get-or-create, and how a member reopens a DM. |
 | `POST /v1/ai/ask` | 10/min | Each question is a search and up to three model calls, held open as a stream, plus the request planning call for a member Frapp can act for ([`ai.md` § One conversation](ai.md#one-conversation)). The member's and the chapter's spend caps ([`ai.md`](ai.md#pricing)) bound the cost; this bounds the burst. |
 | `POST /v1/ai/catch-up` | 10/min | Each summary reads up to 300 messages and makes one model call ([`ai.md` § Catch me up](ai.md#catch-me-up)). The same spend caps bound the cost; this bounds the burst. |
 | `POST /v1/nudges/current` | 10/min | Opening Activity may write the member's nudge card, which is one model call ([`ai.md` § Nudges](ai.md#nudges)). A card already showing is returned without one. |

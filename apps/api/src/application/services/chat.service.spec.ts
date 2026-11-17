@@ -1432,6 +1432,57 @@ describe('ChatService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('refuses a DM with yourself and creates nothing', async () => {
+      await expect(
+        service.getOrCreateDm(
+          { chapter_id: 'ch-1', member_ids: ['user-1', 'user-1'] },
+          'user-1',
+        ),
+      ).rejects.toThrow("You can't start a DM with yourself");
+      expect(mockChannelRepo.createDm).not.toHaveBeenCalled();
+    });
+
+    // A new DM is only with a member of the chapter, and the refusal is the
+    // same whether the id is nobody or someone in another chapter.
+    it('refuses a new DM with someone outside the chapter, naming no one', async () => {
+      mockChannelRepo.findDm.mockResolvedValue(null);
+      mockMemberRepo.findByUserAndChapter.mockImplementation(
+        async (userId: string) => (userId === 'user-1' ? baseMember : null),
+      );
+
+      const refusal = await service
+        .getOrCreateDm(
+          { chapter_id: 'ch-1', member_ids: ['user-1', 'user-elsewhere'] },
+          'user-1',
+        )
+        .catch((error: unknown) => error);
+
+      expect(refusal).toBeInstanceOf(NotFoundException);
+      expect((refusal as Error).message).not.toContain('user-elsewhere');
+      expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+        'user-elsewhere',
+        'ch-1',
+      );
+      expect(mockChannelRepo.createDm).not.toHaveBeenCalled();
+    });
+
+    it('still reopens an existing DM with a member who has since left', async () => {
+      const dmChannel = {
+        ...baseChannel,
+        type: 'DM' as const,
+        member_ids: ['user-1', 'user-left'],
+      };
+      mockChannelRepo.findDm.mockResolvedValue(dmChannel);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.getOrCreateDm(
+          { chapter_id: 'ch-1', member_ids: ['user-1', 'user-left'] },
+          'user-1',
+        ),
+      ).resolves.toEqual(dmChannel);
+    });
   });
 
   describe('createGroupDm', () => {
@@ -1456,6 +1507,33 @@ describe('ChatService', () => {
       await expect(service.createGroupDm('ch-1', memberIds)).rejects.toThrow(
         BadRequestException,
       );
+    });
+
+    it('checks every member against the chapter', async () => {
+      mockChannelRepo.create.mockResolvedValue({
+        ...baseChannel,
+        type: 'GROUP_DM' as const,
+      });
+
+      await service.createGroupDm('ch-1', ['user-1', 'user-2', 'user-3']);
+
+      for (const userId of ['user-1', 'user-2', 'user-3']) {
+        expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+          userId,
+          'ch-1',
+        );
+      }
+    });
+
+    it('refuses a group with anyone outside the chapter and creates nothing', async () => {
+      mockMemberRepo.findByUserAndChapter.mockImplementation(
+        async (userId: string) => (userId === 'user-3' ? null : baseMember),
+      );
+
+      await expect(
+        service.createGroupDm('ch-1', ['user-1', 'user-2', 'user-3']),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockChannelRepo.create).not.toHaveBeenCalled();
     });
   });
 
@@ -3016,7 +3094,8 @@ describe('ChatService', () => {
           { id: 'a', label: 'The Lodge' },
           { id: 'b', label: 'Riverside' },
         ],
-        closes_at: '2999-01-01T00:00:00.000Z',
+        // Within the year ahead a card may end (`normalizeClosesAt`).
+        closes_at: new Date(Date.now() + 86_400_000).toISOString(),
       };
 
       it('drops closed_at and closed_by from a poll card a client posts, keeping the rest', async () => {
@@ -3053,6 +3132,127 @@ describe('ChatService', () => {
         expect(mockMessageRepo.create).toHaveBeenCalledWith(
           expect.objectContaining({ payload }),
         );
+      });
+    });
+
+    // A poll card is checked and rebuilt on send, as the sign-up, form and
+    // role picker cards are, and a client's card of any kind but a form is
+    // held to CHAT_CARD_PAYLOAD_MAX_CHARS.
+    describe('a client card is checked and bounded', () => {
+      beforeEach(() => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+      });
+
+      const sendCard = (
+        kind: 'poll' | 'announcement' | 'text',
+        payload: Record<string, unknown>,
+        extra: { system_originated?: boolean } = {},
+      ) =>
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Formal venue?',
+          kind,
+          payload,
+          ...extra,
+        });
+
+      it('stores a poll card as the apps build it, and only its known fields', async () => {
+        await sendCard('poll', {
+          question: '  Formal venue?  ',
+          options: [
+            { id: 'a', label: 'The Lodge', votes: 99 },
+            { id: 'b', label: 'Riverside' },
+          ],
+          closes_at: null,
+          choice_mode: 'multi',
+          tally: { a: 40 },
+        });
+
+        expect(mockMessageRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            payload: {
+              question: 'Formal venue?',
+              options: [
+                { id: 'a', label: 'The Lodge' },
+                { id: 'b', label: 'Riverside' },
+              ],
+              closes_at: null,
+              choice_mode: 'multi',
+            },
+          }),
+        );
+      });
+
+      it.each([
+        ['no question', { options: [] }],
+        [
+          'one option',
+          { question: 'Q', options: [{ id: 'a', label: 'Only' }] },
+        ],
+        [
+          'two options with one id',
+          {
+            question: 'Q',
+            options: [
+              { id: 'a', label: 'Yes' },
+              { id: 'a', label: 'No' },
+            ],
+          },
+        ],
+        [
+          'an option longer than the forms allow',
+          {
+            question: 'Q',
+            options: [
+              { id: 'a', label: 'x'.repeat(201) },
+              { id: 'b', label: 'No' },
+            ],
+          },
+        ],
+        [
+          'an unknown choice mode',
+          {
+            question: 'Q',
+            options: [
+              { id: 'a', label: 'Yes' },
+              { id: 'b', label: 'No' },
+            ],
+            choice_mode: 'ranked',
+          },
+        ],
+      ])(
+        'refuses a poll card with %s and writes nothing',
+        async (_l, payload) => {
+          await expect(sendCard('poll', payload)).rejects.toThrow(
+            BadRequestException,
+          );
+          expect(mockMessageRepo.create).not.toHaveBeenCalled();
+        },
+      );
+
+      it('refuses a client card over the size cap and writes nothing', async () => {
+        await expect(
+          sendCard('text', { filler: 'x'.repeat(16_400) }),
+        ).rejects.toThrow('This card is too long to post');
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('takes a card at the largest an app builds', async () => {
+        asAnnouncer();
+        await sendCard('announcement', { body: 'x'.repeat(4_000) });
+        expect(mockMessageRepo.create).toHaveBeenCalled();
+      });
+
+      it("does not hold the server's own cards to the cap", async () => {
+        await sendCard(
+          'text',
+          { filler: 'x'.repeat(16_400) },
+          { system_originated: true },
+        );
+        expect(mockMessageRepo.create).toHaveBeenCalled();
       });
     });
 
@@ -3242,6 +3442,14 @@ describe('ChatService', () => {
     });
 
     describe('module gate on card kinds (#2993)', () => {
+      const pollCard = {
+        question: 'Formal venue?',
+        options: [
+          { id: 'a', label: 'The Lodge' },
+          { id: 'b', label: 'Riverside' },
+        ],
+        closes_at: null,
+      };
       const sendPoll = (enabled_modules?: Record<string, boolean> | null) =>
         service.sendMessage({
           chapter_id: 'ch-1',
@@ -3249,7 +3457,7 @@ describe('ChatService', () => {
           sender_id: 'user-1',
           content: 'Formal venue?',
           kind: 'poll',
-          payload: { question: 'Formal venue?', options: [] },
+          payload: pollCard,
           enabled_modules,
         });
 
@@ -3298,6 +3506,7 @@ describe('ChatService', () => {
           sender_id: 'user-1',
           content: 'Formal venue?',
           kind: 'poll',
+          payload: pollCard,
           client_message_id: '11111111-1111-1111-1111-111111111111',
           enabled_modules: { polls: false },
         });
@@ -3321,6 +3530,7 @@ describe('ChatService', () => {
             sender_id: 'user-1',
             content: 'Formal venue?',
             kind: 'poll',
+            payload: pollCard,
             client_message_id: '22222222-2222-2222-2222-222222222222',
             enabled_modules: { polls: false },
           }),
@@ -5092,6 +5302,119 @@ describe('ChatService', () => {
   // `channels:manage` holder remove exactly the message it names — including
   // one in a DM they are not in — and nothing else. Run over the REAL
   // ChannelAccessService wired above, so the DM predicate is the one that ships.
+  // #3909: `#chapter-audit` is the chapter's record of officer changes. A
+  // delete, flag or pin of one of its lines is a `modify`, which the audit log
+  // refuses to every caller, `channels:manage` and the President included.
+  describe('a line in the audit log', () => {
+    const auditLog: ChatChannel = {
+      ...baseChannel,
+      name: 'chapter-audit',
+      is_read_only: true,
+      who_can_post: [],
+      is_audit_log: true,
+    };
+    const auditLine: ChatMessage = {
+      ...baseMessage,
+      sender_id: SYSTEM_SENDER_ID,
+      kind: 'system_audit',
+      content: 'Role updated',
+    };
+    const refusal = 'The audit log is read-only';
+
+    beforeEach(() => {
+      mockChannelRepo.findById.mockResolvedValue(auditLog);
+      mockMessageRepo.findById.mockResolvedValue(auditLine);
+      mockRbac.getChannelAccessHolder.mockResolvedValue(WILDCARD);
+    });
+
+    it('refuses a delete from a channels:manage holder and writes nothing', async () => {
+      await expect(
+        service.deleteMessage('msg-1', 'ch-1', 'user-2', true),
+      ).rejects.toThrow(refusal);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it("refuses a delete even from the line's own sender", async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...auditLine,
+        sender_id: 'user-1',
+      });
+      await expect(
+        service.deleteMessage('msg-1', 'ch-1', 'user-1', true),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a flag, and taking one off', async () => {
+      await expect(
+        service.setMessageFlag('msg-1', 'ch-1', 'user-2', true, 'important'),
+      ).rejects.toThrow(refusal);
+      mockMessageRepo.findById.mockResolvedValue({
+        ...auditLine,
+        flag: 'important',
+        flagged_by: 'user-2',
+      });
+      await expect(
+        service.clearMessageFlag('msg-1', 'ch-1', 'user-2', true),
+      ).rejects.toThrow(refusal);
+      expect(mockMessageRepo.compareAndSetFlag).not.toHaveBeenCalled();
+    });
+
+    it('refuses a pin and an unpin', async () => {
+      await expect(
+        service.pinMessage('msg-1', 'ch-1', 'user-2'),
+      ).rejects.toThrow(refusal);
+      mockMessageRepo.findById.mockResolvedValue({
+        ...auditLine,
+        is_pinned: true,
+      });
+      await expect(
+        service.unpinMessage('msg-1', 'ch-1', 'user-2'),
+      ).rejects.toThrow(refusal);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses an officer removing a reported line', async () => {
+      const grant = ReportedMessageGrant.fromOpenReport({
+        id: 'report-1',
+        chapter_id: 'ch-1',
+        message_id: 'msg-1',
+        channel_id: 'ch-chan-1',
+        reported_content: 'Role updated',
+        reported_sender_id: SYSTEM_SENDER_ID,
+        reported_author_name: null,
+        reason: 'harassment',
+        details: null,
+        status: 'open',
+        created_at: '2026-01-01T12:05:00.000Z',
+        resolved_at: null,
+        resolved_by: null,
+        reported_attachments: [],
+      });
+
+      await expect(
+        service.deleteReportedMessage(grant, 'ch-1', 'user-officer'),
+      ).rejects.toThrow(refusal);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('still lets a member delete their own message in an archived group DM', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'GROUP_DM',
+        member_ids: ['user-1', 'user-2'],
+        archived_at: '2026-01-01T00:00:00Z',
+      });
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockMessageRepo.update.mockResolvedValue({
+        ...baseMessage,
+        is_deleted: true,
+      });
+      await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
+      expect(mockMessageRepo.update).toHaveBeenCalled();
+    });
+  });
+
   describe('deleteReportedMessage (report-scoped removal)', () => {
     const OFFICER = 'user-officer';
     const dmChannel: ChatChannel = {

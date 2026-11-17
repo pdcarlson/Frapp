@@ -24,6 +24,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { SubscriptionExempt } from '../decorators/subscription.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   FeatureEvent,
   type FeatureEventInput,
@@ -98,11 +99,18 @@ export class ChatReportController {
    * Any member can report any message they can see, in a channel or a DM. The
    * service authorizes the message as a **read** through `ChannelAccessService`,
    * so the reachable set is exactly what the caller could already render.
+   *
+   * 10 a minute (`ThrottleFanOutWrite`) rather than the default 30: each new
+   * report notifies every officer who reviews reports. Ten is more than a
+   * member reporting a run of messages needs; the rest wait a minute.
    */
   @Post()
   @ApiOperation({
     summary: 'Report a chat message (idempotent while a report stays open)',
+    description:
+      'Limited to 10 a minute per member: each report notifies every officer who reviews them.',
   })
+  @ThrottleFanOutWrite()
   // Declared rather than inferred: without it the generated SDK types this
   // response `never` (the #1049 defect).
   @ApiCreatedResponse({ type: ChatReportDto })

@@ -282,6 +282,11 @@ A message thread (#3785) opened from the channel shows the same background behin
 - **Group DM:** User selects multiple members (up to 10).
   Creates a GROUP_DM-type channel.
   Chapter-scoped.
+- **Only with members of the chapter** (2026-11-17).
+  A new DM or group DM is refused unless everyone in it is a member of the caller's chapter: one 404 for an id that is no one and for someone in another chapter, naming no one.
+  `POST /v1/channels/group-dm` takes at most 9 others in `member_ids` (10 people with the creator) and is held to 10 a minute, since each call adds a conversation to every listed member's list.
+  A DM with yourself is a 400.
+  Reopening a DM you already have is unchanged, a member who has since left included, and `POST /v1/channels/dm` stays on the default write limit, since it is how a member reopens a conversation.
 - DMs appear in their own section of the channel list ("Direct messages" on web, `DIRECT` on mobile), not mixed with chapter channels, except that a DM the member pins moves up into Pinned beside pinned channels (§ Sidebar arrangement).
   - Changed in [#3774](https://github.com/pdcarlson/Frapp/issues/3774) by Shawn (`shawnatomklein-eng`), 2026-11-12, for web: DMs and group DMs left the channel list for a list of their own, opened by the nav's Direct messages row under Chat, so the channel list holds the chapter's channels only.
     A pinned DM pins within that list.
@@ -1508,6 +1513,7 @@ The rules, `POST /v1/chat/reports/{id}/remove-message` (`channels:manage` on top
   It never opens a channel read, a thread, a pin list or the channel row: `assertChannelAccess` and every list surface take no report, and the route returns the resolved report, never the message.
   What an officer knows about the message is the evidence snapshot the report already carried.
   The response does carry the message's `channel_id` — an id, which every channel route still refuses — so the client can blank that one cached timeline instead of refetching every timeline it holds.
+- **Not in the audit log** (2026-11-17): a report on one of `#chapter-audit`'s lines can't remove it (403), as no delete can (§ [The audit log is system-write only](#the-audit-log-is-system-write-only)); the officer dismisses it instead.
 - **In a 1:1 DM the removal can reveal the reporter to the sender** — the one inference § Report accepts.
   The sender sees their message removed, and the DM's other member is the only person who could have reported it.
   Accepted with this option (owner, 2026-09-22) as the cost of the chapter being able to act on a DM at all; the confirmation tells the officer before they remove: "The sender will see this message was removed.
@@ -1705,6 +1711,7 @@ Until 2026-11-09 it was gated like any read-only channel, and a member holding `
   a channel an officer or an import makes later with that name stays ordinary), and the push default (`builtInChannelDefault`) and the clients' system-channel glyph and row menu (`isSystemChannel`) still match the name ([#3910](https://github.com/pdcarlson/Frapp/issues/3910)).
 - **No member writes in it, whatever they hold.**
   `canAccessChannel` refuses every `post` and `vote` in a flagged channel ahead of the read-only gate, so `*` and every posting list are refused too (403, a quote reply included), and so are an upload URL and a poll.
+  It refuses a `modify` too (2026-11-17): nobody deletes, flags, pins or unpins one of its lines, `channels:manage` and the President included, and an officer can't remove a reported line through the report either (403 "The audit log is read-only. Only Frapp posts in it, and its entries can’t be removed, flagged or pinned."); such a report can still be dismissed.
   Reads and reactions are unaffected.
   The audit mirror (`ChatBridgeWorkerService`) inserts its `system_audit` rows through the message repository and never passes this gate, which is what leaves it the only writer.
   The Discord importer, the other server path that inserts history directly, refuses the audit log as a merge target (the mapping save and the import worker both check, and the worker also stops if a channel it creates turns out to be the audit log), and the web wizard never offers or defaults to it.

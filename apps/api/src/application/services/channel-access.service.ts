@@ -33,6 +33,15 @@ import type { ChannelOperation } from '#domain/utils/channel-access';
 import { RbacService, type ChapterMemberAccess } from './rbac.service';
 
 /**
+ * The refusal for any write in the audit log (`#chapter-audit`, #3909): a
+ * post, a thread reply, a vote, and a delete, flag or pin of one of its lines.
+ * Its own words rather than the generic "no access", since every member can
+ * read the channel and the generic answer would tell them something untrue.
+ */
+export const AUDIT_LOG_READ_ONLY_MESSAGE =
+  'The audit log is read-only. Only Frapp posts in it, and its entries can’t be removed, flagged or pinned.';
+
+/**
  * The projection `canAccessChannel` decides on. Spelled once so the single-read
  * path and the batch path cannot drift: adding a gating field to the predicate
  * and wiring it into only one call site would let the list admit a channel the
@@ -165,8 +174,10 @@ export class ReportedMessageGrant {
  * The first half of the grant arm of `ChannelAccessService.assertMessageAccess`:
  * what a grant may be used for, decided from the grant and the arguments alone.
  *
- * - **`'read'` only.** A report authorizes removing content, never authoring
- *   it; an edit or an upload URL is a `'post'` and a grant must not carry one.
+ * - **`'read'` or `'modify'` only.** A report authorizes removing content
+ *   (the removal is a `'modify'`, which the audit log still refuses), never
+ *   authoring it; an edit or an upload URL is a `'post'` and a grant must not
+ *   carry one.
  * - **The grant names this message, in this chapter.** The report was read
  *   chapter-scoped and its `message_id` fresh, so a mismatch is a caller
  *   pointing a real grant at a sibling message, or at another chapter —
@@ -178,7 +189,7 @@ function assertGrantNames(
   chapterId: string,
   operation: ChannelOperation,
 ): void {
-  if (operation !== 'read') {
+  if (operation !== 'read' && operation !== 'modify') {
     throw new ForbiddenException('A report does not grant write access');
   }
   if (grant.chapterId !== chapterId || grant.messageId !== messageId) {
@@ -255,6 +266,21 @@ export class ChannelAccessService {
     });
 
     if (!allowed) {
+      // A reader refused a write in the audit log is told why. Anyone who
+      // can't read it gets the generic answer, as for any other channel.
+      if (
+        channel.is_audit_log &&
+        operation !== 'read' &&
+        canAccessChannel({
+          channel: predicateChannel,
+          userId,
+          isChapterMember,
+          holder,
+          operation: 'read',
+        })
+      ) {
+        throw new ForbiddenException(AUDIT_LOG_READ_ONLY_MESSAGE);
+      }
       throw new ForbiddenException('You do not have access to this channel');
     }
 
@@ -395,7 +421,12 @@ export class ChannelAccessService {
     const message = await this.messageRepo.findById(messageId);
     if (!message) throw new NotFoundException('Message not found');
     if (grant) {
-      await this.assertGrantedMessageInChapter(message, chapterId, userId);
+      await this.assertGrantedMessageInChapter(
+        message,
+        chapterId,
+        userId,
+        operation,
+      );
       return message;
     }
     try {
@@ -429,11 +460,15 @@ export class ChannelAccessService {
    * - **The caller is a member of the chapter.** `ChapterGuard` already proved
    *   it on the request path; re-checking here keeps the predicate honest for
    *   any other caller, as `assertChannelAccess` does.
+   * - **A removal (`'modify'`) is not in the audit log**, which the predicate
+   *   refuses to every caller (#3909). A report on one of its lines can still
+   *   be filed and dismissed; it just can't take the line out of the record.
    */
   private async assertGrantedMessageInChapter(
     message: ChatMessage,
     chapterId: string,
     userId: string,
+    operation: ChannelOperation,
   ): Promise<void> {
     const channel = await this.channelRepo.findById(
       message.channel_id,
@@ -446,6 +481,9 @@ export class ChannelAccessService {
     );
     if (!member) {
       throw new ForbiddenException('You do not have access to this channel');
+    }
+    if (operation === 'modify' && channel.is_audit_log) {
+      throw new ForbiddenException(AUDIT_LOG_READ_ONLY_MESSAGE);
     }
   }
 
