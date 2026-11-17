@@ -1,5 +1,18 @@
-import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import {
+  forwardRef,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentRef,
+} from "react";
+import {
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+  type TextInput,
+} from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import { useFieldReveal, useUpdateUser } from "@repo/hooks";
 import {
@@ -90,8 +103,29 @@ import { BottomSheetScrollView } from "@/lib/sheet-scrollables";
  * `BottomSheetScrollView` as the sheet's direct child, which is the
  * combination `spec/ui/mobile/patterns.md` § Bottom sheets requires of a
  * scrollable sheet.
+ *
+ * ## It opens at the field that was tapped (#5280)
+ *
+ * The You tab's name and Details rows each name a field (`openAt`), and the
+ * sheet opens with that field in view and its input focused, the keyboard up:
+ * tapping Bio lands in the bio, not on Name with the bio four fields down.
+ * Slack's and LinkedIn's profile editors do the same from a tapped field. The
+ * scroll waits for the sheet to settle open (`onChange`): until then the
+ * library pins the scroll view in place (`lib/sheet-scrollables.tsx`), so an
+ * earlier `scrollTo` would be undone. It happens once per visit, so a
+ * keyboard moving the sheet later doesn't snap the member back to the field.
  */
 const SNAP_POINTS = ["88%"];
+
+/** A field the sheet can open at: each one that has an input. */
+export type EditProfileField = Exclude<ProfileDraftField, "birthdayVisibility">;
+
+/**
+ * Where an opened-at field may sit without scrolling: within the top third of
+ * the sheet, which no keyboard reaches, so the header and its Cancel stay in
+ * view for the first fields.
+ */
+const IN_VIEW_FRACTION = 1 / 3;
 
 const copy = PROFILE_FIELD_COPY;
 
@@ -106,8 +140,12 @@ const BIO_LINES = 3;
 
 export const EditProfileSheet = forwardRef<
   BottomSheetModal,
-  { profile: ViewerProfile | null }
->(function EditProfileSheet({ profile }, ref) {
+  {
+    profile: ViewerProfile | null;
+    /** The field to bring into view and focus once the sheet is open. */
+    openAt?: EditProfileField;
+  }
+>(function EditProfileSheet({ profile, openAt }, ref) {
   const closeSheet = useSheetClose(ref);
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
@@ -182,8 +220,40 @@ export const EditProfileSheet = forwardRef<
   // However the sheet closes mid-save (Cancel, a swipe, the scrim), the edits
   // stay until the save settles: the PATCH is already sent, and a failure has
   // to reopen on what was typed.
+  // Opening at a field (#5280): where each field's block sits in the scroll
+  // content, the input to focus, and whether this visit has been there yet.
+  const scrollRef = useRef<ComponentRef<typeof BottomSheetScrollView>>(null);
+  const inputs = useRef(new Map<EditProfileField, TextInput>());
+  const offsets = useRef(new Map<EditProfileField, number>());
+  const viewport = useRef({ height: 0, content: 0 });
+  const reachedOpenAt = useRef(false);
+
+  const anchor =
+    (...names: EditProfileField[]) =>
+    (event: LayoutChangeEvent) => {
+      for (const name of names) {
+        offsets.current.set(name, event.nativeEvent.layout.y);
+      }
+    };
+
+  const goToOpenAt = (index: number) => {
+    if (index < 0 || reachedOpenAt.current || openAt === undefined) return;
+    reachedOpenAt.current = true;
+    const y = offsets.current.get(openAt);
+    const { height, content } = viewport.current;
+    if (y !== undefined && y > height * IN_VIEW_FRACTION) {
+      // Just under the top edge, and never past the end of the content.
+      const top = Math.max(0, y - tokens.spacing.lg);
+      const end = content > height ? content - height : top;
+      scrollRef.current?.scrollTo({ y: Math.min(top, end), animated: true });
+    }
+    // A field is read-only while a save runs, so it takes no keyboard.
+    if (!updateUser.isPending) inputs.current.get(openAt)?.focus();
+  };
+
   const closed = () => {
     markClosed();
+    reachedOpenAt.current = false;
     if (updateUser.isPending) setFocused(null);
     else reset();
   };
@@ -229,7 +299,7 @@ export const EditProfileSheet = forwardRef<
   };
 
   const field = (
-    name: ProfileDraftField,
+    name: EditProfileField,
     label: string,
     options: {
       placeholder: string;
@@ -248,6 +318,8 @@ export const EditProfileSheet = forwardRef<
     },
   ) => (
     <View
+      // A field sharing a row is placed by its row's `anchor`.
+      onLayout={options.grow === undefined ? anchor(name) : undefined}
       style={[
         styles.fieldGroup,
         options.grow === undefined
@@ -259,6 +331,10 @@ export const EditProfileSheet = forwardRef<
     >
       <Text style={styles.label}>{label}</Text>
       <BottomSheetTextInput
+        ref={(input: TextInput | null | undefined) => {
+          if (input) inputs.current.set(name, input);
+          else inputs.current.delete(name);
+        }}
         value={shown[name]}
         onChangeText={edit(name)}
         // Read-only while a save runs: the save sent what was typed when Save
@@ -316,10 +392,18 @@ export const EditProfileSheet = forwardRef<
       backdropComponent={SheetScrim}
       handleComponent={SheetGrabber}
       onAnimate={onAnimate}
+      onChange={goToOpenAt}
       onDismiss={closed}
     >
       <SheetBackToClose onClose={closeSheet} />
       <BottomSheetScrollView
+        ref={scrollRef}
+        onLayout={(event) => {
+          viewport.current.height = event.nativeEvent.layout.height;
+        }}
+        onContentSizeChange={(_width, height) => {
+          viewport.current.content = height;
+        }}
         onAccessibilityEscape={closeSheet}
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
@@ -338,7 +422,7 @@ export const EditProfileSheet = forwardRef<
           maxLength: PHONE_MAX_LENGTH,
           hint: copy.phone.hint,
         })}
-        <View style={styles.row}>
+        <View style={styles.row} onLayout={anchor("major", "graduationYear")}>
           {field("major", copy.major.label, {
             placeholder: copy.major.placeholder,
             autoCapitalize: "words",
@@ -356,7 +440,10 @@ export const EditProfileSheet = forwardRef<
         {rowError(["major", "graduationYear"])}
         {/* The birthday (#4959): month, day and an optional year as digits,
             then the switch that shares it with the chapter (#5282). */}
-        <View style={styles.sectionHead}>
+        <View
+          style={styles.sectionHead}
+          onLayout={anchor("birthdayMonth", "birthdayDay", "birthdayYear")}
+        >
           <Text style={styles.sectionTitle}>{BIRTHDAY_COPY.label}</Text>
         </View>
         <View style={styles.row}>

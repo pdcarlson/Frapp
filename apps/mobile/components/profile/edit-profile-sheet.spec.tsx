@@ -3,6 +3,7 @@ import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
 import type { ViewerProfile } from "@/lib/more/profile";
 import { screenText } from "@/test/screen-text";
@@ -25,7 +26,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   useChapterBranding: () => ({ accent: "#F4CB63" }),
 }));
 
-import { EditProfileSheet } from "./edit-profile-sheet";
+import { EditProfileSheet, type EditProfileField } from "./edit-profile-sheet";
 
 const PROFILE: ViewerProfile = {
   displayName: "Alex Rivera",
@@ -673,5 +674,148 @@ describe("EditProfileSheet (#3387)", () => {
       saveButton(tree).props.onPress();
     });
     expect(mutate.mock.calls[0]![0]).toEqual({ bio: "Pre-med." });
+  });
+});
+
+/**
+ * #5280. The You tab's rows open the sheet at the field tapped: once the sheet
+ * settles open it scrolls that field into view and focuses it, once a visit.
+ */
+describe("EditProfileSheet opens at a field (#5280)", () => {
+  const scrollTo = vi.fn();
+  const focus = new Map<string, ReturnType<typeof vi.fn>>();
+  const { lg } = signetDarkTokens.spacing;
+
+  beforeEach(() => {
+    scrollTo.mockReset();
+    focus.clear();
+  });
+
+  function renderAt(openAt: EditProfileField, profile = PROFILE) {
+    let tree!: ReactTestRenderer;
+    act(() => {
+      tree = create(
+        <FrappThemeProvider>
+          <EditProfileSheet ref={ref} profile={profile} openAt={openAt} />
+        </FrappThemeProvider>,
+        {
+          createNodeMock: (element) => {
+            const type = element.type as unknown;
+            if (type === "BottomSheetModal")
+              return { dismiss, present: vi.fn() };
+            if (type === "BottomSheetScrollView") return { scrollTo };
+            if (type === "BottomSheetTextInput") {
+              const label = String(
+                (element.props as { accessibilityLabel?: string })
+                  .accessibilityLabel,
+              );
+              const spy = focus.get(label) ?? vi.fn();
+              focus.set(label, spy);
+              return { focus: spy };
+            }
+            return null;
+          },
+        },
+      );
+    });
+    mounted.push(tree);
+    act(() => {
+      modal(tree).props.onAnimate(-1, 0);
+    });
+    return tree;
+  }
+
+  /** What the layout pass reports: the sheet's height and its content's. */
+  function laidOut(tree: ReactTestRenderer, height: number, content: number) {
+    const scroll = tree.root.find(
+      (node) => (node.type as unknown) === "BottomSheetScrollView",
+    );
+    act(() => {
+      scroll.props.onLayout({ nativeEvent: { layout: { y: 0, height } } });
+      scroll.props.onContentSizeChange(0, content);
+    });
+  }
+
+  /** Places the block holding the field labelled `label` at `y`. */
+  function placed(tree: ReactTestRenderer, label: string, y: number) {
+    let block = input(tree, label).parent;
+    while (block && typeof block.props.onLayout !== "function") {
+      block = block.parent;
+    }
+    act(() => {
+      block!.props.onLayout({ nativeEvent: { layout: { y, height: 48 } } });
+    });
+  }
+
+  const settleOpen = (tree: ReactTestRenderer) =>
+    act(() => {
+      modal(tree).props.onChange(0);
+    });
+
+  it("waits for the sheet to settle open, then scrolls the field to the top and focuses it", () => {
+    const tree = renderAt("bio");
+    laidOut(tree, 600, 1400);
+    placed(tree, "Bio", 500);
+
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(focus.get("Bio")).not.toHaveBeenCalled();
+
+    settleOpen(tree);
+    expect(scrollTo).toHaveBeenCalledWith({ y: 500 - lg, animated: true });
+    expect(focus.get("Bio")).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes there once a visit, and again on the next visit", () => {
+    const tree = renderAt("bio");
+    laidOut(tree, 600, 1400);
+    placed(tree, "Bio", 500);
+
+    settleOpen(tree);
+    settleOpen(tree);
+    expect(focus.get("Bio")).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      modal(tree).props.onDismiss();
+    });
+    act(() => {
+      modal(tree).props.onAnimate(-1, 0);
+    });
+    settleOpen(tree);
+    expect(focus.get("Bio")).toHaveBeenCalledTimes(2);
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves a field near the top where it is, so the header stays in view", () => {
+    const tree = renderAt("displayName");
+    laidOut(tree, 600, 1400);
+    placed(tree, "Name", 72);
+
+    settleOpen(tree);
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect(focus.get("Name")).toHaveBeenCalledTimes(1);
+  });
+
+  it("never scrolls past the end of the content", () => {
+    const tree = renderAt("company", { ...PROFILE, graduationYear: 2020 });
+    laidOut(tree, 600, 1400);
+    placed(tree, "Company", 1300);
+
+    settleOpen(tree);
+    expect(scrollTo).toHaveBeenCalledWith({ y: 800, animated: true });
+    expect(focus.get("Company")).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a birthday at its month", () => {
+    const tree = renderAt("birthdayMonth");
+    settleOpen(tree);
+    expect(focus.get("Birthday month, 1 to 12")).toHaveBeenCalledTimes(1);
+    expect(focus.get("Birthday day")).not.toHaveBeenCalled();
+  });
+
+  it("raises no keyboard while a save runs, when the fields are read-only", () => {
+    isPending = true;
+    const tree = renderAt("phone");
+    settleOpen(tree);
+    expect(focus.get("Phone")).not.toHaveBeenCalled();
   });
 });

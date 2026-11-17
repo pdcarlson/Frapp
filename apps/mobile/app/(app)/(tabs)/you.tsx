@@ -1,4 +1,4 @@
-import { type ComponentType, useMemo, useRef } from "react";
+import { type ComponentType, useMemo, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -38,7 +38,10 @@ import {
 import { StatusChip } from "@/components/status-chip";
 import { StatusDot } from "@/components/account/status-dot";
 import { StatusSheet } from "@/components/account/status-sheet";
-import { EditProfileSheet } from "@/components/profile/edit-profile-sheet";
+import {
+  EditProfileSheet,
+  type EditProfileField,
+} from "@/components/profile/edit-profile-sheet";
 import { ErrorState } from "@/components/state-block";
 import {
   PointsLabel,
@@ -94,7 +97,8 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Tap what you want to change (#3711, Paul 2026-11-07: "The pencil button
  * isn't obvious; drop it"): the name, the bio and the rows that are the
- * member's to set open `EditProfileSheet`, and the photo edits in place. The
+ * member's to set open `EditProfileSheet` at the field tapped (#5280), and the
+ * photo edits in place. The
  * editable parts are drawn only once the profile has loaded, because a sheet
  * opened on the loading or error state would prefill blanks over fields
  * already set. The rows below the head never wait on the profile.
@@ -190,7 +194,12 @@ export default function YouScreen() {
   const profileFailed = userQuery.isError && userQuery.data === undefined;
   const profileLoaded = !userQuery.isPending && !profileFailed;
   const editSheetRef = useRef<BottomSheetModal>(null);
-  const openEditor = () => editSheetRef.current?.present();
+  // The field the sheet opens at: the one the member tapped (#5280).
+  const [editAt, setEditAt] = useState<EditProfileField>("displayName");
+  const openEditor = (field: EditProfileField) => {
+    setEditAt(field);
+    editSheetRef.current?.present();
+  };
   // Both sheets are hosted here, by the screen whose rows open them
   // (`spec/ui/mobile/patterns.md` § Bottom sheets).
   const statusSheetRef = useRef<BottomSheetModal>(null);
@@ -515,7 +524,11 @@ export default function YouScreen() {
       ) : null}
 
       {profileLoaded ? (
-        <EditProfileSheet ref={editSheetRef} profile={profile} />
+        <EditProfileSheet
+          ref={editSheetRef}
+          profile={profile}
+          openAt={editAt}
+        />
       ) : null}
       <StatusSheet ref={statusSheetRef} />
     </ScreenShell>
