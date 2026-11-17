@@ -39,7 +39,6 @@ import {
   type RecurrenceRule,
   type RepeatRule,
   type TaskRepeatEnd,
-  type TaskRepeatRule,
   type WeekdayCode,
   type ZonedCalendarDay,
 } from "./recurrence";
