@@ -33,6 +33,7 @@ const connection = (id: string, status: string) => ({
   last_error: null,
   synced_count: 0,
   skipped_count: 0,
+  folders_left_out: 0,
   created_at: '2026-11-16T00:00:00.000Z',
 });
 

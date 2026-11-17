@@ -33,6 +33,8 @@ export * from "./ask-entities";
 export * from "./ask-feedback";
 // An Ask Frapp answer posted to a channel (#4713).
 export * from "./ask-find";
+// What Ask opens on: the day, a greeting, the first-open starter (#4904).
+export * from "./ask-greeting";
 export * from "./ask-post";
 export * from "./ask-source-chip";
 export * from "./backwork";

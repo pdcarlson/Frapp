@@ -1,13 +1,10 @@
 /** @vitest-environment jsdom */
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { createFrappClient } from "@repo/api-sdk";
 import { CHAT_CATCH_UP_COPY, type ChatCatchUp } from "@repo/validation";
 import { aiConsentKey } from "./use-ai";
 import { useChatCatchUp, useChatCatchUpAvailable } from "./use-chat-catch-up";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const SUMMARY: ChatCatchUp = {
   status: "summarized",
@@ -43,18 +40,13 @@ const refusedWith = (error: { statusCode: number; code?: string }) => ({
 });
 
 function harness(client: Record<string, unknown>) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+  const queryClient = createTestQueryClient();
+  const Wrapper = createHookWrapper({
+    client,
+    queryClient,
+    chapterId: "chapter-1",
+    displayName: "CatchUpHookWrapper",
   });
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={client as unknown as ReturnType<typeof createFrappClient>}
-      chapterId="chapter-1"
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "CatchUpHookWrapper";
   return { queryClient, wrapper: Wrapper };
 }
 

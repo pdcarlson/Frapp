@@ -20,47 +20,33 @@ let permissions: string[] = [
   "roles:manage",
 ];
 
-vi.mock("@repo/hooks", () => ({
-  // A server with AI off: no AI row (#4308).
-  useAiConsent: () => ({ data: null }),
-  aiAvailableFrom: () => false,
-  isFirstAiReadInFlight: () => false,
-  useCurrentChapter: () => mockCurrentChapter(),
-  useMyPermissions: () => ({
-    data: { permissions: mockPermissions() },
-    isPending: false,
-    isError: false,
+vi.mock("@repo/hooks", async () =>
+  (await import("@/tests/settings-harness")).settingsHooks({
+    currentChapter: () => mockCurrentChapter(),
+    permissions: () => mockPermissions(),
+    orgConfig: () => mockOrgConfig(),
+    overrides: {
+      useSemesterRollover: () => ({
+        mutateAsync: mockRollover,
+        isPending: false,
+      }),
+    },
   }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  useSemesters: () => ({ data: [], isPending: false, isError: false }),
-  useSemesterRollover: () => ({ mutateAsync: mockRollover, isPending: false }),
-  useUploadChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useChannels: () => ({ data: [] }),
-  useOrgConfig: () => ({
-    data: mockOrgConfig(),
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePendingConfigKeys: () => new Set<string>(),
-}));
+);
 
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chap-1" }),
-}));
+vi.mock("@/lib/stores/chapter-store", async () =>
+  (await import("@/tests/settings-harness")).chapterStore(),
+);
 
-vi.mock("next/navigation", () => ({
-  // `tab=semester`: board `4d` gives Semester its own rail entry, so the
-  // rollover form no longer sits at the bottom of the default Chapter tab.
-  // Landing the page on the tab under test is also what the nav's own deep
-  // links do.
-  useSearchParams: () => new URLSearchParams("tab=semester"),
-}));
+// `tab=semester`: board `4d` gives Semester its own rail entry, so the
+// rollover form no longer sits at the bottom of the default Chapter tab.
+// Landing the page on the tab under test is also what the nav's own deep
+// links do.
+vi.mock("next/navigation", async () =>
+  (await import("@/tests/settings-harness")).navigation(
+    () => new URLSearchParams("tab=semester"),
+  ),
+);
 
 vi.mock("@/components/shared/can", () => ({
   Can: ({
@@ -75,9 +61,9 @@ vi.mock("@/components/shared/can", () => ({
     ) : null,
 }));
 
-vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
-}));
+vi.mock("@/lib/hooks/use-toast", async () =>
+  (await import("@/tests/settings-harness")).toastStub(),
+);
 
 const { SettingsPage } = await import("./settings-page");
 

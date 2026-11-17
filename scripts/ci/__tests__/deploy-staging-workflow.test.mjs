@@ -431,10 +431,10 @@ describe("deploy-staging.yml: the order", () => {
     const deploy = step("Deploy the commit to Render (staging)");
     assert.equal(deploy.if, "steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'render'");
     // Exactly one of the two ships the API, as the environment's apiHost says (#5228).
-    const cloudRun = step("Deploy the API to Cloud Run (staging)");
+    const cloudRun = step("Deploy the API to Cloud Run");
     assert.equal(
       cloudRun.if,
-      "inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true' && steps.ids.outputs.api_host == 'cloud-run'",
+      "steps.ids.outputs.api_host == 'cloud-run' && ((inputs.environment == 'staging' && steps.plan.outputs.deploy == 'true') || (inputs.environment == 'production' && !inputs.dry_run && inputs.scope != 'migrations-only'))",
     );
     assert.equal(cloudRun.env.get("DEPLOY_SHA"), "${{ inputs.sha }}");
     assert.equal(deploy.env.get("RENDER_SERVICE_ID"), "${{ steps.ids.outputs.render_service_id }}");

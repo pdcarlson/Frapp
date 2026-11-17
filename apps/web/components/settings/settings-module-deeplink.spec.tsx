@@ -38,58 +38,44 @@ const aiRead = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@repo/hooks", () => ({
-  useAiConsent: () => aiRead.current,
-  aiAvailableFrom: () => false,
-  // The shared rule, whose own spec pins it in `@repo/hooks`.
-  isFirstAiReadInFlight: (q: typeof aiRead.current) =>
-    q.isPending && q.fetchStatus === "fetching" && q.failureCount === 0,
-  useCurrentChapter: () => mockCurrentChapter(),
-  useMyPermissions: () => ({
-    data: { permissions: ["chapter-config:view", "chapter-config:manage"] },
-    isPending: false,
-    isError: false,
+vi.mock("@repo/hooks", async () =>
+  (await import("@/tests/settings-harness")).settingsHooks({
+    currentChapter: () => mockCurrentChapter(),
+    permissions: () => ["chapter-config:view", "chapter-config:manage"],
+    orgConfig: () => ({
+      org_archetype: "ifc",
+      enabled_modules: { events: false },
+    }),
+    overrides: {
+      useAiConsent: () => aiRead.current,
+      // The shared rule, whose own spec pins it in `@repo/hooks`.
+      isFirstAiReadInFlight: (q: typeof aiRead.current) =>
+        q.isPending && q.fetchStatus === "fetching" && q.failureCount === 0,
+    },
   }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  useSemesters: () => ({ data: [], isPending: false, isError: false }),
-  useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUploadChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useRemoveChapterLogo: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useChannels: () => ({ data: [] }),
-  useOrgConfig: () => ({
-    data: { org_archetype: "ifc", enabled_modules: { events: false } },
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePendingConfigKeys: () => new Set<string>(),
-  useRoles: () => ({ data: [], isPending: false, isError: false }),
-}));
+);
 
 // Mutable so a test can start with no active chapter, which is how zustand's
 // `persist` cold-starts before it rehydrates.
 let activeChapterId: string | null = "chap-1";
 
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (
-    selector: (s: { activeChapterId: string | null }) => unknown,
-  ) => selector({ activeChapterId }),
-}));
+vi.mock("@/lib/stores/chapter-store", async () =>
+  (await import("@/tests/settings-harness")).chapterStore(
+    () => activeChapterId,
+  ),
+);
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => searchParams,
-}));
+vi.mock("next/navigation", async () =>
+  (await import("@/tests/settings-harness")).navigation(() => searchParams),
+);
 
-vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
+vi.mock("@/components/shared/can", async () =>
+  (await import("@/tests/settings-harness")).canPassThrough(),
+);
 
-vi.mock("@/lib/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
-}));
+vi.mock("@/lib/hooks/use-toast", async () =>
+  (await import("@/tests/settings-harness")).toastStub(),
+);
 
 const { SettingsPage } = await import("./settings-page");
 

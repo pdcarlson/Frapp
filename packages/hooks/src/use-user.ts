@@ -9,6 +9,7 @@ import {
 import { useCallback } from "react";
 import type { components } from "@repo/api-sdk";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { displayNameOrNull } from "./display-names";
 import { usePermissionPreview } from "./permission-preview";
 
 /**
@@ -55,6 +56,23 @@ function userIdOf(data: unknown): string | null {
       ? ((data as { id?: unknown }).id ?? null)
       : null;
   return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
+/**
+ * The viewer's display name, or `null` until it is known or when it is blank.
+ * Narrowed at runtime for the reason {@link useViewerUserId} gives. Ask's
+ * greeting reads it (#4904).
+ */
+export function useViewerDisplayName(options?: {
+  enabled?: boolean;
+}): string | null {
+  const query = useCurrentUser(options);
+  const data: unknown = query.data;
+  const raw =
+    data && typeof data === "object" && "display_name" in data
+      ? (data as { display_name?: unknown }).display_name
+      : null;
+  return displayNameOrNull(typeof raw === "string" ? raw : null);
 }
 
 export function useUpdateUser() {

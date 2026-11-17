@@ -640,12 +640,6 @@ export const ASK_COPY = {
   name: "Ask Frapp",
   close: "Close Ask Frapp",
   placeholder: "Ask Frapp anything",
-  empty_title: "Ask about your chapter",
-  empty_body:
-    "Answers come from your chapter's documents, minutes and records, with a link to each source.",
-  /** Added for a member Frapp can also act for. */
-  empty_body_act:
-    "Or say what needs doing. You'll see exactly what will happen, and nothing changes until you confirm.",
   steps: {
     searching: "Searching your chapter's sources",
     reading: "Reading what it found",

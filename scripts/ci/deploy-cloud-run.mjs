@@ -223,7 +223,16 @@ export function buildService({ runtimeAccount, image, revision, sha, minInstance
           // cpuIdle false is instance-based billing: the CPU stays on between
           // requests, which the sweeps and chat workers need (cloud-run.md).
           resources: { limits: { cpu: "1", memory: "1Gi" }, cpuIdle: false, startupCpuBoost: true },
-          env: secrets.map(({ id, version }) => ({ name: id, valueSource: { secretKeyRef: { secret: id, version } } })),
+          env: [
+            // /health's `commit`, which every deploy check reads. Images built
+            // since #5203 carry it too, but an older commit's image doesn't,
+            // and Render used to set it at runtime, so a rollback that far
+            // back would otherwise never verify.
+            { name: "RENDER_GIT_COMMIT", value: sha.toLowerCase() },
+            ...secrets
+              .filter(({ id }) => id !== "RENDER_GIT_COMMIT")
+              .map(({ id, version }) => ({ name: id, valueSource: { secretKeyRef: { secret: id, version } } })),
+          ],
         },
       ],
     },

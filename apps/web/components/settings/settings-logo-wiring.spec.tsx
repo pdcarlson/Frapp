@@ -30,53 +30,40 @@ vi.mock("@/lib/downscale-image", () => ({
   ),
 }));
 
-vi.mock("@repo/hooks", () => ({
-  // A server with AI off: no AI row (#4308).
-  useAiConsent: () => ({ data: null }),
-  aiAvailableFrom: () => false,
-  isFirstAiReadInFlight: () => false,
-  useCurrentChapter: () => ({
-    data: chapter.current,
-    isPending: false,
-    isError: false,
+vi.mock("@repo/hooks", async () =>
+  (await import("@/tests/settings-harness")).settingsHooks({
+    currentChapter: () => ({
+      data: chapter.current,
+      isPending: false,
+      isError: false,
+    }),
+    permissions: () => ["*"],
+    orgConfig: () => ({
+      org_archetype: "ifc",
+      branding: { greek_letters: "ΦΓΔ" },
+    }),
+    overrides: {
+      useUploadChapterLogo: () => ({ mutateAsync: upload, isPending: false }),
+      useRemoveChapterLogo: () => ({ mutateAsync: remove, isPending: false }),
+    },
   }),
-  useMyPermissions: () => ({
-    data: { permissions: ["*"] },
-    isPending: false,
-    isError: false,
-  }),
-  usePermissionsCatalog: () => ({ data: [], isPending: false, isError: false }),
-  useSemesters: () => ({ data: [], isPending: false, isError: false }),
-  useSemesterRollover: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateChapter: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUploadChapterLogo: () => ({ mutateAsync: upload, isPending: false }),
-  useRemoveChapterLogo: () => ({ mutateAsync: remove, isPending: false }),
-  useCreatePortal: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useChannels: () => ({ data: [] }),
-  useOrgConfig: () => ({
-    data: { org_archetype: "ifc", branding: { greek_letters: "ΦΓΔ" } },
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-  usePatchOrgConfig: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  usePendingConfigKeys: () => new Set<string>(),
-}));
+);
 
-vi.mock("@/lib/stores/chapter-store", () => ({
-  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
-    selector({ activeChapterId: "chap-1" }),
-}));
+vi.mock("@/lib/stores/chapter-store", async () =>
+  (await import("@/tests/settings-harness")).chapterStore(),
+);
 
-vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(),
-}));
+vi.mock("next/navigation", async () =>
+  (await import("@/tests/settings-harness")).navigation(),
+);
 
-vi.mock("@/components/shared/can", () => ({
-  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
+vi.mock("@/components/shared/can", async () =>
+  (await import("@/tests/settings-harness")).canPassThrough(),
+);
 
-vi.mock("@/lib/hooks/use-toast", () => ({ useToast: () => ({ toast }) }));
+vi.mock("@/lib/hooks/use-toast", async () =>
+  (await import("@/tests/settings-harness")).toastStub(toast),
+);
 
 const { SettingsPage } = await import("./settings-page");
 const { downscaleImage } = await import("@/lib/downscale-image");

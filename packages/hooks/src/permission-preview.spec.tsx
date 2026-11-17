@@ -1,10 +1,10 @@
 import { renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import React from "react";
-import { FrappClientProvider } from "./use-frapp-client";
 import { PermissionPreviewProvider } from "./permission-preview";
 import { useMyPermissions } from "./use-user";
+import { createHookWrapper } from "./test-utils";
 
 /**
  * "View as a role" (#4072): a preview swaps what screens read, and leaves the
@@ -17,21 +17,15 @@ function wrapper(queryClient: QueryClient, preview: readonly string[] | null) {
       error: undefined,
     }),
   };
+  // The preview provider sits inside the helper's two providers, where the app
+  // mounts it.
+  const Providers = createHookWrapper({ client, queryClient, chapterId: "c1" });
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        client as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId="c1"
-    >
-      <QueryClientProvider client={queryClient}>
-        <PermissionPreviewProvider permissions={preview}>
-          {children}
-        </PermissionPreviewProvider>
-      </QueryClientProvider>
-    </FrappClientProvider>
+    <Providers>
+      <PermissionPreviewProvider permissions={preview}>
+        {children}
+      </PermissionPreviewProvider>
+    </Providers>
   );
   return Wrapper;
 }

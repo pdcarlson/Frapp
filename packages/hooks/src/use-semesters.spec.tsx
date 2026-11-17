@@ -1,22 +1,16 @@
-import React from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
-import type { createFrappClient } from "@repo/api-sdk";
 import { describe, expect, it, vi } from "vitest";
-import { FrappClientProvider } from "./use-frapp-client";
 import { useSemesterRollover } from "./use-semesters";
+import { createHookWrapper } from "./test-utils";
 
 function createWrapper(queryClient: QueryClient, mockClient: unknown) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      chapterId="chapter-1"
-      client={mockClient as ReturnType<typeof createFrappClient>}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "SemesterRolloverWrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    chapterId: "chapter-1",
+    displayName: "SemesterRolloverWrapper",
+  });
 }
 
 describe("useSemesterRollover", () => {

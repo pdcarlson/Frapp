@@ -2,6 +2,7 @@ import { renderHook, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useGetOrCreateDm } from "./use-chat";
+import { createTestQueryClient } from "./test-utils";
 
 const { mockPost } = vi.hoisted(() => ({ mockPost: vi.fn() }));
 
@@ -14,15 +15,6 @@ function makeWrapper(qc: QueryClient) {
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
   };
-}
-
-function makeClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  });
 }
 
 describe("useGetOrCreateDm channel-cache refresh (#316)", () => {
@@ -38,7 +30,7 @@ describe("useGetOrCreateDm channel-cache refresh (#316)", () => {
   // the refetch and leave the pre-DM list in place until a later background
   // fetch caught up — the fresh chat page would flash the wrong channel.
   it("refetches the channel list even with no mounted observer, and mutateAsync waits for it", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     let resolveChannelsRefetch!: (value: unknown) => void;
     const refetchChannels = vi.fn(
       () =>
@@ -94,7 +86,7 @@ describe("useGetOrCreateDm channel-cache refresh (#316)", () => {
   // observes ["channels"], and a refetch whose retry pauses offline must not
   // hold the mutation pending with it.
   it("with awaitRefetch false, resolves once the DM exists and still refetches the list", async () => {
-    const qc = makeClient();
+    const qc = createTestQueryClient();
     const refetchChannels = vi.fn(() => new Promise(() => {}));
     qc.setQueryDefaults(["channels"], { queryFn: refetchChannels });
     qc.setQueryData(["channels"], [{ id: "general" }]);

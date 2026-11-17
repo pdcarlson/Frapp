@@ -54,8 +54,8 @@ applies it — and then, depending on `scope`:
 
 | `scope`           | What happens                                                                                                                                                                                                | Use it when                                                                                                                           |
 | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `full` (default)  | Builds both Vercel bundles _before_ applying (a build failure then ships nothing), migrates, deploys the Supabase Edge Functions, deploys the same commit to Render, health-checks it, uploads the prebuilt bundles to Vercel, and tags `vX.Y.Z` | Almost always. Migrations and the code that needs them move together                                                                  |
-| `migrations-only` | Migrates, checks that the API it didn't redeploy still serves and answers its clients, and stops. No Edge Functions or Render deploy, no Vercel build, **no tag**                                                                                                                                           | Re-running an apply that failed partway; applying a backlog ahead of the code that needs it; applying on a schedule no deploy matches |
+| `full` (default)  | Builds both Vercel bundles _before_ applying (a build failure then ships nothing), migrates, deploys the Supabase Edge Functions, deploys the same commit's API (Cloud Run since #5228, Render before), health-checks it, uploads the prebuilt bundles to Vercel, and tags `vX.Y.Z` | Almost always. Migrations and the code that needs them move together                                                                  |
+| `migrations-only` | Migrates, checks that the API it didn't redeploy still serves and answers its clients, and stops. No Edge Functions or API deploy, no Vercel build, **no tag**                                                                                                                                           | Re-running an apply that failed partway; applying a backlog ahead of the code that needs it; applying on a schedule no deploy matches |
 
 There is also a **dry-run-only** mode that validates and rehearses, then stops
 without applying anything, under either scope.
@@ -326,7 +326,7 @@ migrations-only`**. It keeps every gate the full path has (SHA validation, the
 provider preflight, the replay, the working-tree fence) and stops after the apply
 and the checks that production still serves and answers its clients
 ([`ci-cd.md` § Deploy verification](../deployment/ci-cd.md#deploy-verification)): no
-Render deploy, no Vercel build, no tag. Production is then running
+API deploy, no Vercel build, no tag. Production is then running
 the previous code against the new schema until you come back with a `full` run,
 so the migration must be forward-compatible with the deployed API.
 

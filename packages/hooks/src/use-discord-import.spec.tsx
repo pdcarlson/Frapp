@@ -1,13 +1,12 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import React from "react";
 import {
   DISCORD_IMPORT_PROGRESS_POLL_MS,
   useDiscordImportProgress,
   useStartDiscordImport,
 } from "./use-discord-import";
-import { FrappClientProvider } from "./use-frapp-client";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 /**
  * The wire behaviour of two import hooks the web specs mock away: the date
@@ -16,28 +15,18 @@ import { FrappClientProvider } from "./use-frapp-client";
  */
 
 const createWrapper = (queryClient: QueryClient, mockClient: unknown) => {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={
-        mockClient as unknown as ReturnType<
-          typeof import("@repo/api-sdk").createFrappClient
-        >
-      }
-      chapterId="test-chapter"
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "Wrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    chapterId: "test-chapter",
+    displayName: "Wrapper",
+  });
 };
 
 let queryClient: QueryClient;
 
 beforeEach(() => {
-  queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  queryClient = createTestQueryClient();
 });
 
 describe("useStartDiscordImport (#2858)", () => {

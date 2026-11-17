@@ -683,6 +683,26 @@ describe("DocumentsPage subscription gating", () => {
     expect(await dialog.findByRole("alert")).toHaveTextContent(/too large/i);
     expect(mockRequestUpload).not.toHaveBeenCalled();
   });
+
+  it("tells a member with a .zip to unzip it and import the folder (#5331)", async () => {
+    // A dropped file skips the picker's filter, so the check is what answers.
+    const user = userEvent.setup({ applyAccept: false });
+    chapter.active();
+    render(<DocumentsPage />);
+    await user.click(uploadTrigger());
+
+    const dialog = within(screen.getByRole("dialog"));
+    const zipped = new File(["x"], "Chapter drive.zip", {
+      type: "application/zip",
+    });
+    await user.upload(dialog.getByLabelText(/^file$/i), zipped);
+    await user.click(dialog.getByRole("button", { name: /^upload$/i }));
+
+    expect(await dialog.findByRole("alert")).toHaveTextContent(
+      "Zip files can't be uploaded. Unzip it and use Import a folder.",
+    );
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+  });
 });
 
 describe("DocumentsPage upload allowlist", () => {

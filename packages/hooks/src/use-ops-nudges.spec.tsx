@@ -1,25 +1,19 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import type { createFrappClient } from "@repo/api-sdk";
-import React from "react";
 import { describe, expect, it, vi } from "vitest";
-import { FrappClientProvider } from "./use-frapp-client";
 import { useDismissOpsNudge } from "./use-members";
+import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
 const CHAPTER_ID = "chapter-abc";
 const DISMISS_PATH = "/v1/members/me/ops-nudges/dismiss";
 
 function makeWrapper(queryClient: QueryClient, mockClient: unknown) {
-  const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider
-      client={mockClient as unknown as ReturnType<typeof createFrappClient>}
-      chapterId={CHAPTER_ID}
-    >
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-    </FrappClientProvider>
-  );
-  Wrapper.displayName = "OpsNudgeWrapper";
-  return Wrapper;
+  return createHookWrapper({
+    client: mockClient,
+    queryClient,
+    chapterId: CHAPTER_ID,
+    displayName: "OpsNudgeWrapper",
+  });
 }
 
 /**
@@ -58,9 +52,7 @@ describe("useDismissOpsNudge serialization", () => {
       return Promise.resolve({ data: {}, error: undefined });
     });
 
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
+    const queryClient = createTestQueryClient();
     const { result } = renderHook(() => useDismissOpsNudge(), {
       wrapper: makeWrapper(queryClient, { PATCH }),
     });
@@ -86,9 +78,7 @@ describe("useDismissOpsNudge serialization", () => {
     const PATCH = vi
       .fn()
       .mockResolvedValue({ data: {}, error: undefined });
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
+    const queryClient = createTestQueryClient();
     const { result } = renderHook(() => useDismissOpsNudge(), {
       wrapper: makeWrapper(queryClient, { PATCH }),
     });

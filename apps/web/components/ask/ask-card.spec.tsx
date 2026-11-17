@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ASK_COPY, askSavedLine } from "@repo/validation";
+import { ASK_COPY, ASK_STARTER, askSavedLine } from "@repo/validation";
 
 /**
  * The Ask conversation's own rules: consent before the first question
@@ -26,6 +26,8 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@repo/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@repo/hooks")>()),
+  useViewerUserId: () => "me",
+  useViewerDisplayName: () => "Marcus Ellison",
   useAsk: () => ({
     exchanges: state.exchanges,
     working: state.exchanges.some(
@@ -74,6 +76,13 @@ function Card(props: Partial<Parameters<typeof AskCard>[0]>) {
 
 const open = (isOpen = true) => render(<Card open={isOpen} />);
 
+/** Opened, once the opening has read this browser's record and drawn. */
+async function openSettled() {
+  const view = open();
+  await screen.findByText(/^Good (morning|afternoon|evening)|^Hey /);
+  return view;
+}
+
 const DONE = {
   id: "turn-1",
   question: "When is the budget vote?",
@@ -113,6 +122,9 @@ const sent = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** The record that says this member has seen Ask's first-open starter. */
+const STARTER_SEEN = "frapp.web.ask-starter-seen:me";
+
 describe("AskCard", () => {
   beforeEach(() => {
     state.ask.mockReset().mockResolvedValue(undefined);
@@ -123,6 +135,8 @@ describe("AskCard", () => {
     state.consent.mockReset().mockResolvedValue(true);
     state.exchanges = [];
     state.savedUntil = null;
+    // Every open but the first-open spec's is a later one (#4904).
+    window.localStorage.setItem(STARTER_SEEN, "act");
     state.permissions = ["ai:use"];
     state.actions = null;
     state.suggestions = [];
@@ -151,9 +165,9 @@ describe("AskCard", () => {
       request: true,
     };
 
-    it("offers what the server built from the member's own account, and no preset", () => {
+    it("offers what the server built from the member's own account, and no preset", async () => {
       state.suggestions = [EVENT];
-      open();
+      await openSettled();
       expect(
         screen.getAllByRole("button").map((button) => button.textContent),
       ).toContain(EVENT.text);
@@ -161,13 +175,50 @@ describe("AskCard", () => {
       expect(screen.getAllByRole("listitem")).toHaveLength(1);
     });
 
-    it("opens plain for a member with nothing to ask about: the two lines and the field", () => {
-      open();
-      expect(screen.getByText(ASK_COPY.empty_title)).toBeInTheDocument();
+    it("opens plain for a member with nothing to ask about: the crest, the greeting and the field (#4904)", async () => {
+      await openSettled();
+      expect(
+        screen.getByText(/^Good (morning|afternoon|evening), Marcus\.$/),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Ask about your chapter")).toBeNull();
+      expect(screen.queryByText(ASK_STARTER.answer)).toBeNull();
+      // The name is still the dialog's, for a screen reader.
+      expect(
+        screen.getByRole("dialog", { name: ASK_COPY.name }),
+      ).toBeInTheDocument();
       expect(screen.queryByRole("list")).toBeNull();
       expect(
         screen.getByRole("textbox", { name: ASK_COPY.placeholder }),
       ).toBeInTheDocument();
+    });
+
+    it("opens a member's first time on the exchange that says what Frapp can do, once, the card staying mounted as AskHost keeps it", async () => {
+      window.localStorage.removeItem(STARTER_SEEN);
+      const view = render(<Card open />);
+      expect(
+        await screen.findByText("Hey Marcus, I'm Frapp."),
+      ).toBeInTheDocument();
+      expect(screen.getByText(ASK_STARTER.question)).toBeInTheDocument();
+      expect(screen.getByText(ASK_STARTER.answer)).toBeInTheDocument();
+      expect(screen.queryByText(ASK_STARTER.answer_act)).toBeNull();
+      expect(state.ask).not.toHaveBeenCalled();
+      // Recorded once drawn, as seen without the line about acting.
+      await waitFor(() =>
+        expect(window.localStorage.getItem(STARTER_SEEN)).toBe("ask"),
+      );
+      view.rerender(<Card open={false} />);
+      view.rerender(<Card open />);
+      expect(
+        await screen.findByText(/^Good (morning|afternoon|evening), Marcus\.$/),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(ASK_STARTER.answer)).toBeNull();
+    });
+
+    it("draws nothing of the opening while this browser's record is read, so the greeting never flashes first", () => {
+      window.localStorage.removeItem(STARTER_SEEN);
+      open();
+      expect(screen.queryByText(/^Good (morning|afternoon|evening)/)).toBeNull();
+      expect(screen.queryByText("Hey Marcus, I'm Frapp.")).toBeNull();
     });
 
     it("reads them only once the card is open", () => {
@@ -182,7 +233,7 @@ describe("AskCard", () => {
     it("sends a tapped question as a suggestion, never as words the member typed", async () => {
       state.permissions = ["ai:use", "ai:act"];
       state.suggestions = [EVENT, REQUEST];
-      open();
+      await openSettled();
       await userEvent
         .setup()
         .click(screen.getByRole("button", { name: EVENT.text }));
@@ -195,7 +246,7 @@ describe("AskCard", () => {
     it("sends the one request like typed words, so it comes back as a card", async () => {
       state.permissions = ["ai:use", "ai:act"];
       state.suggestions = [EVENT, REQUEST];
-      open();
+      await openSettled();
       await userEvent
         .setup()
         .click(screen.getByRole("button", { name: REQUEST.text }));
@@ -549,6 +600,7 @@ describe("a member Frapp can act for (#718)", () => {
     state.ask.mockReset().mockResolvedValue(undefined);
     state.exchanges = [];
     state.savedUntil = null;
+    window.localStorage.setItem(STARTER_SEEN, "act");
     state.permissions = ["ai:use", "ai:act"];
     state.actions = null;
     state.suggestions = [];
@@ -563,8 +615,9 @@ describe("a member Frapp can act for (#718)", () => {
 
   it("says Frapp can do things for them, and sends what they type as something that may end in a card", async () => {
     state.actions = ["create_task", "give_points"];
+    window.localStorage.removeItem(STARTER_SEEN);
     open();
-    expect(screen.getByText(new RegExp(ASK_COPY.empty_body_act))).toBeDefined();
+    expect(await screen.findByText(ASK_STARTER.answer_act)).toBeDefined();
     await userEvent
       .setup()
       .type(
@@ -583,9 +636,7 @@ describe("a member Frapp can act for (#718)", () => {
       state.actions = actions;
       const view = open();
       // The list only words the opening.
-      expect(
-        screen.queryByText(new RegExp(ASK_COPY.empty_body_act)),
-      ).toBeNull();
+      expect(screen.queryByText(ASK_STARTER.answer_act)).toBeNull();
       await userEvent
         .setup()
         .type(
@@ -603,7 +654,7 @@ describe("a member Frapp can act for (#718)", () => {
   it("answers only, for a member who does not hold the permission", async () => {
     state.permissions = ["ai:use"];
     open();
-    expect(screen.queryByText(new RegExp(ASK_COPY.empty_body_act))).toBeNull();
+    expect(screen.queryByText(ASK_STARTER.answer_act)).toBeNull();
     await userEvent
       .setup()
       .type(
