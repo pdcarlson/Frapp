@@ -73,7 +73,7 @@ import { editTargetOf } from "@/components/events/edit-target";
 import { useToast } from "@/lib/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { pointsLabel } from "@/components/events/event-labels";
-import { RepeatOptions } from "@/components/events/repeat-options";
+import { RepeatOptions } from "@/components/shared/repeat-options";
 import {
   Panel,
   PanelBody,

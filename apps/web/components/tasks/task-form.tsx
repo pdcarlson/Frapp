@@ -6,7 +6,14 @@ import { useMembers } from "@repo/hooks";
 import { dueEntryFields } from "@repo/formatting";
 import { memberLabel } from "@repo/hooks/display-names";
 import type { DispatchResult, TaskInput } from "@repo/chat-core/dispatch";
-import { TASK_PHOTOS_MAX, TASK_TITLE_MAX_LENGTH } from "@repo/validation";
+import {
+  TASK_PHOTOS_MAX,
+  TASK_TITLE_MAX_LENGTH,
+  taskRepeatRuleOf,
+  taskRepeatSummary,
+} from "@repo/validation";
+import { RepeatOptions } from "@/components/shared/repeat-options";
+import { firstDueOf } from "@/components/tasks/task-repeat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,6 +59,8 @@ export { taskDraftFrom, type TaskDraft } from "./task-draft";
 import { taskDraftFrom, type TaskDraft } from "./task-draft";
 
 type Missing = {
+  /** Why the Repeat pick can't be saved (#5119). */
+  repeat?: string;
   title?: boolean;
   titleTooLong?: boolean;
   assignee?: boolean;
@@ -71,6 +80,17 @@ export interface TaskFormProps {
    * with the draft; anything else is done, and the host reports a warning.
    */
   onPost: (input: TaskInput) => Promise<DispatchResult>;
+  /**
+   * Runs once the form is valid, before any photo is uploaded, with the
+   * write as it stands minus photo paths and whether new photos are on it:
+   * a step that can still back out (the scope prompt on a repeating task,
+   * #5119). `true` goes on; `false` stays open and says nothing; a string
+   * stays open and says it.
+   */
+  beforeSave?: (
+    input: TaskInput,
+    hasNewPhotos: boolean,
+  ) => Promise<boolean | string>;
   onDone: () => void;
   onDiscard: () => void;
   /**
@@ -84,6 +104,12 @@ export interface TaskFormProps {
     assigneeNote: (assigneeId: string) => React.ReactNode;
     /** The task whose stored reference photos the draft keeps (#4635). */
     taskId?: string;
+    /**
+     * The task is a copy of a live repeating series (#5119), so its Repeat
+     * can change. A task that doesn't repeat has no Repeat on an edit: a
+     * series starts with a new task.
+     */
+    repeats?: boolean;
   };
   /**
    * Opened on a suggested task (#4313) to change it before accepting: Accept
@@ -97,14 +123,15 @@ export interface TaskFormProps {
 /**
  * The chat composer's Task form (#3865, #3773 step 3), inside the + card
  * (#3983): Title, Assignee and Due date, the fields `CreateTaskDto` requires,
- * with Points and Description behind More options. A missing field is
- * outlined, named under it and focused on submit, never while typing. Repeat
- * and role assignees are #3661, which will give both apps one task form.
+ * with Points, Repeat (#5119) and Description behind More options. A missing
+ * field is outlined, named under it and focused on submit, never while
+ * typing. Role assignees are #4295 step 3.
  */
 export function TaskForm({
   initialDraft,
   onDraftChange,
   onPost,
+  beforeSave,
   onDone,
   onDiscard,
   editing,
@@ -160,6 +187,16 @@ export function TaskForm({
     }
     if (nextMissing.assignee) return assigneeRef.current?.focus();
     if (nextMissing.due || nextMissing.passed) return dueRef.current?.focus();
+    // The Repeat pick (#5119), read against the first due it repeats from.
+    const showRepeat = !suggestion && (!editing || editing.repeats);
+    const firstDue = firstDueOf(draft.dueDate, draft.repeat.timeZone);
+    const repeat =
+      showRepeat && firstDue ? taskRepeatRuleOf(draft.repeat, firstDue) : null;
+    if (repeat && !repeat.ok) {
+      setMissing((prev) => ({ ...prev, repeat: repeat.error }));
+      edit({ showMore: true });
+      return;
+    }
     const photoProblem = taskPhotosProblem(
       draft.photoFiles,
       TASK_PHOTOS_MAX - draft.keptPhotos.length,
@@ -169,8 +206,51 @@ export function TaskForm({
       edit({ showMore: true });
       return;
     }
+    // The write as it stands, photos aside, for `beforeSave` and `onPost`.
+    const base: TaskInput = {
+      title: trimmed,
+      description: draft.description.trim() || undefined,
+      assignee_id: draft.assigneeId,
+      // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003).
+      ...dueEntryFields(draft.dueDate),
+      subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
+      point_reward: suggestion ? undefined : parseGuardedInt(draft.points),
+      ...(suggestion ? {} : { proof_kind: draft.proofKind }),
+      // A new task sends a rule only when it repeats; an edit sends the
+      // rule as it should stand, null for "Doesn't repeat" (#5119).
+      ...(repeat?.ok
+        ? editing
+          ? { recurrence_rule: repeat.rule }
+          : repeat.rule
+            ? { recurrence_rule: repeat.rule }
+            : {}
+        : {}),
+    };
     setPosting(true);
     try {
+      if (beforeSave) {
+        const go = await beforeSave(
+          suggestion
+            ? base
+            : {
+                ...base,
+                reference_photo_paths: draft.keptPhotos.map(
+                  (photo) => photo.storage_path,
+                ),
+              },
+          !suggestion && draft.photoFiles.length > 0,
+        );
+        if (go !== true) {
+          if (typeof go === "string") {
+            toast({
+              title: "Couldn't save the task",
+              description: go,
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+      }
       // The photos go up first; the write carries their paths (#4635). An
       // edit sends the set as it should stand: the kept ones, then the new.
       let uploaded: string[] = [];
@@ -191,19 +271,8 @@ export function TaskForm({
         ...uploaded,
       ];
       const result = await onPost({
-        title: trimmed,
-        description: draft.description.trim() || undefined,
-        assignee_id: draft.assigneeId,
-        // "YYYY-MM-DD", or with a time "YYYY-MM-DDTHH:MM" (#4003).
-        ...dueEntryFields(draft.dueDate),
-        subtasks: draft.subtasks.length > 0 ? draft.subtasks : undefined,
-        point_reward: suggestion ? undefined : parseGuardedInt(draft.points),
-        ...(suggestion
-          ? {}
-          : {
-              reference_photo_paths: referencePhotoPaths,
-              proof_kind: draft.proofKind,
-            }),
+        ...base,
+        ...(suggestion ? {} : { reference_photo_paths: referencePhotoPaths }),
       });
       if (!result.ok) {
         toast({
@@ -225,10 +294,16 @@ export function TaskForm({
     }
   }
 
+  const showRepeat = !suggestion && (!editing || editing.repeats);
+  const firstDue = firstDueOf(draft.dueDate, draft.repeat.timeZone);
   const moreSummary = [
     ...(suggestion
       ? []
       : [pointsLabel(parseGuardedInt(draft.points) ?? 0) ?? "No points"]),
+    // How it repeats, right after the points: "5 points · Every Monday".
+    showRepeat && draft.repeat.preset !== "NONE" && firstDue
+      ? taskRepeatSummary(draft.repeat, firstDue)
+      : null,
     draft.description.trim() ? "Description" : "No description",
     ...(suggestion
       ? []
@@ -242,7 +317,9 @@ export function TaskForm({
               ? "Link required"
               : null,
         ].filter(Boolean)),
-  ].join(" · ");
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <form
@@ -379,6 +456,25 @@ export function TaskForm({
               />
             </div>
           )}
+          {showRepeat ? (
+            <div className="grid gap-1">
+              <RepeatOptions
+                forTasks
+                idPrefix={`${ids}-repeat`}
+                draft={draft.repeat}
+                start={firstDue}
+                showLength
+                disabled={posting || gate.controlProps().disabled}
+                onChange={(repeat) => {
+                  edit({ repeat });
+                  setMissing((prev) => ({ ...prev, repeat: undefined }));
+                }}
+              />
+              {missing.repeat ? (
+                <FieldError>{missing.repeat}</FieldError>
+              ) : null}
+            </div>
+          ) : null}
           <div className="grid gap-1">
             <Label htmlFor={`${ids}-description`}>Description</Label>
             <Textarea

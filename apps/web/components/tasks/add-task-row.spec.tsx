@@ -151,3 +151,41 @@ describe("AddTaskRow's photos (#4565, #4635)", () => {
     );
   });
 });
+
+describe("AddTaskRow's Repeat (#5119)", () => {
+  it("creates a weekly task with no end on the due day's weekday", async () => {
+    const onCreate = open();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Kitchen duty" },
+    });
+    fireEvent.click(screen.getByLabelText("Assignee"));
+    fireEvent.click(await screen.findByRole("option", { name: /Rush Chair/ }));
+    // Dec 31 2099 is a Thursday.
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "Dec 31 2099" },
+    });
+    fireEvent.click(screen.getByRole("radio", { name: "Weekly" }));
+    expect(screen.getByRole("radio", { name: "Never" })).toBeChecked();
+    expect(screen.getByText("Repeats until you stop it.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    await waitFor(() => expect(onCreate).toHaveBeenCalled());
+    expect(onCreate.mock.calls[0]![0].recurrence_rule).toMatch(
+      /^FREQ=WEEKLY;INTERVAL=1;BYDAY=TH;TZID=/,
+    );
+  });
+
+  it("sends no rule for a task that doesn't repeat", async () => {
+    const onCreate = open();
+    fireEvent.change(screen.getByLabelText("Task title"), {
+      target: { value: "Sweep" },
+    });
+    fireEvent.click(screen.getByLabelText("Assignee"));
+    fireEvent.click(await screen.findByRole("option", { name: /Rush Chair/ }));
+    fireEvent.change(screen.getByLabelText("Due date"), {
+      target: { value: "Dec 31 2099" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    await waitFor(() => expect(onCreate).toHaveBeenCalled());
+    expect(onCreate.mock.calls[0]![0].recurrence_rule).toBeUndefined();
+  });
+});

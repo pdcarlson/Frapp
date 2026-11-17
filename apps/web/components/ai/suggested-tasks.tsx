@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { noTaskRepeatDraft } from "@repo/validation";
 import { useMemo, useState } from "react";
 import { Pencil, X } from "lucide-react";
 import {
@@ -417,6 +418,8 @@ function SuggestedTaskRow({
       points: "",
       description: task.description ?? "",
       subtasks: task.subtasks,
+      // A suggestion's form has no Repeat (#5119).
+      repeat: noTaskRepeatDraft(),
       photoFiles: [],
       keptPhotos: [],
       proofKind: "none",

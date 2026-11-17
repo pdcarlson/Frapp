@@ -36,7 +36,10 @@ const {
   currentUserRefetch,
   membersRefetch,
   failedReadsKeepData,
+  deleteTaskMutate,
 } = vi.hoisted(() => ({
+  // The delete, by id or with a scope on a repeating task (#5119).
+  deleteTaskMutate: vi.fn(),
   // `GET /v1/users/me` and `GET /v1/members` failed with nothing cached
   // (#1346, #1209).
   currentUserFailed: { current: false },
@@ -198,7 +201,7 @@ vi.mock("@repo/hooks", async (importOriginal) => ({
   }),
   useConfirmTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useRejectTask: () => ({ mutateAsync: rejectTaskMutate, isPending: false }),
-  useDeleteTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteTask: () => ({ mutateAsync: deleteTaskMutate, isPending: false }),
   useUpdateTask: () => ({ mutateAsync: updateTaskMutate, isPending: false }),
   useAddSubtask: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteSubtask: () => ({ mutate: vi.fn(), isPending: false }),
@@ -1808,5 +1811,63 @@ describe("TasksBoard views and filters (#4295 step 5, #3617)", () => {
     const mine = region("Paul Carlson (you)");
     expect(within(mine).getByText("Waiting on an officer")).toBeVisible();
     expect(within(mine).getByText("In progress")).toBeVisible();
+  });
+});
+
+describe("TasksBoard repeating tasks (#5119)", () => {
+  const REPEATING = {
+    ...TASKS[0],
+    // A Monday copy far ahead, so it reads as still to come.
+    due_date: "2099-11-16",
+    series: {
+      recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO;TZID=America/New_York",
+      next_due_date: "2099-11-23",
+      ended: false,
+    },
+  };
+
+  beforeEach(() => {
+    chapter.active();
+    deleteTaskMutate.mockReset().mockResolvedValue(undefined);
+    tasksRef.current = [REPEATING];
+  });
+
+  it("says on the tile how it repeats and when it comes next", () => {
+    render(<TasksBoard />);
+    expect(screen.getByText("Every Monday · next Nov 23")).toBeInTheDocument();
+  });
+
+  it("says nothing once the series has ended", () => {
+    tasksRef.current = [
+      { ...REPEATING, series: { ...REPEATING.series, ended: true } },
+    ];
+    render(<TasksBoard />);
+    expect(screen.queryByText(/Every Monday/)).toBeNull();
+  });
+
+  it("asks whether to delete this task or stop it repeating", async () => {
+    render(<TasksBoard />);
+    fireEvent.click(deleteButtons()[0]!);
+    expect(
+      await screen.findByText("Delete a repeating task"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "All upcoming tasks" }));
+    await waitFor(() =>
+      expect(deleteTaskMutate).toHaveBeenCalledWith({
+        id: "task-todo",
+        scope: "series",
+      }),
+    );
+  });
+
+  it("deletes the one copy with This task only", async () => {
+    render(<TasksBoard />);
+    fireEvent.click(deleteButtons()[0]!);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "This task only" }),
+    );
+    await waitFor(() =>
+      expect(deleteTaskMutate).toHaveBeenCalledWith("task-todo"),
+    );
   });
 });

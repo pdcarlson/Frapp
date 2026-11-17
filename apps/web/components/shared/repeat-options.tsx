@@ -13,6 +13,7 @@ import {
   pickRepeatPreset,
   repeatCaption,
   repeatDays,
+  taskRepeatCaption,
   toggleRepeatDay,
   type MonthlyBy,
   type RepeatDraft,
@@ -25,12 +26,14 @@ import { SegmentedChoice } from "@/components/ui/segmented";
 import { cn } from "@/lib/utils";
 
 /**
- * The event editor's Repeat section (#4488, #3662): a preset row, and under a
- * cadence its options, open rather than behind Google Calendar's "Custom…"
- * step (Shawn, 2026-11-12): the weekday chips and "Every N weeks" for Weekly,
- * "Every N months" and what day for Monthly, and Ends (after N meetings, or
- * on a date) for every cadence. The state and the rule it makes are
- * `@repo/validation`'s `repeat-draft.ts`, which the phone's sheet shares.
+ * The Repeat section of the event editor (#4488, #3662) and the task forms
+ * (#5119): a preset row, and under a cadence its options, open rather than
+ * behind Google Calendar's "Custom…" step (Shawn, 2026-11-12): the weekday
+ * chips and "Every N weeks" for Weekly, "Every N months" and what day for
+ * Monthly, and Ends (after N, or on a date) for every cadence. A task's adds
+ * "Never" to Ends (`forTasks`), which an event series can't take. The state
+ * and the rule it makes are `@repo/validation`'s `repeat-draft.ts`, which the
+ * phone's sheets share.
  */
 export function RepeatOptions({
   draft,
@@ -39,16 +42,22 @@ export function RepeatOptions({
   disabled = false,
   showLength,
   series,
+  forTasks = false,
+  idPrefix = "event-repeat",
 }: {
   draft: RepeatDraft;
-  /** The series' first meeting, or `null` while the start isn't readable. */
+  /** The series' first meeting (or task), `null` while it isn't readable. */
   start: Date | null;
   onChange: (next: RepeatDraft) => void;
   disabled?: boolean;
   /** Whether to say how long the series runs (not for one already saved). */
   showLength: boolean;
-  /** On an edit, the series the change applies to (`repeatCaption`). */
+  /** On an event edit, the series the change applies to (`repeatCaption`). */
   series?: RepeatEditSeries;
+  /** A task's control: "Never" ends it, and it counts tasks (#5119). */
+  forTasks?: boolean;
+  /** Prefix for the fields' ids, unique on the page. */
+  idPrefix?: string;
 }) {
   const unit =
     draft.preset === "DAILY"
@@ -60,8 +69,11 @@ export function RepeatOptions({
   // caption steps the whole series, so it isn't worked out on every keystroke.
   const caption =
     start && (showLength || !draft.pristine)
-      ? repeatCaption(draft, start, series)
+      ? forTasks
+        ? taskRepeatCaption(draft, start)
+        : repeatCaption(draft, start, series)
       : null;
+  const counted = forTasks ? "times" : "meetings";
   const line = caption?.problem || showLength ? caption : null;
   const choices = start ? monthlyChoices(draft, start) : [];
   const days = start ? repeatDays(draft, start) : (draft.byDay ?? []);
@@ -118,9 +130,9 @@ export function RepeatOptions({
           ) : null}
 
           <div className="flex items-center gap-2 text-sm">
-            <label htmlFor="event-repeat-interval">Every</label>
+            <label htmlFor={`${idPrefix}-interval`}>Every</label>
             <Input
-              id="event-repeat-interval"
+              id={`${idPrefix}-interval`}
               inputMode="numeric"
               className="w-16 text-center"
               aria-label={`Repeat every how many ${unit}s`}
@@ -161,6 +173,9 @@ export function RepeatOptions({
               label="Ends"
               disabled={disabled || !start}
               options={[
+                ...(forTasks
+                  ? [{ value: "never" as const, label: "Never" }]
+                  : []),
                 { value: "count", label: "After" },
                 { value: "until", label: "On date" },
               ]}
@@ -172,10 +187,10 @@ export function RepeatOptions({
             {draft.endKind === "count" ? (
               <span className="flex items-center gap-2">
                 <Input
-                  id="event-repeat-count"
+                  id={`${idPrefix}-count`}
                   inputMode="numeric"
                   className="w-16 text-center"
-                  aria-label="Ends after how many meetings"
+                  aria-label={`Ends after how many ${counted}`}
                   value={draft.countInput}
                   disabled={disabled}
                   onChange={(event) =>
@@ -186,11 +201,11 @@ export function RepeatOptions({
                     )
                   }
                 />
-                meetings
+                {counted}
               </span>
-            ) : (
+            ) : draft.endKind === "until" ? (
               <DateField
-                id="event-repeat-until"
+                id={`${idPrefix}-until`}
                 aria-label="Ends on"
                 className="w-44"
                 lean="ahead"
@@ -200,7 +215,7 @@ export function RepeatOptions({
                   onChange(editRepeatDraft(draft, { until }))
                 }
               />
-            )}
+            ) : null}
           </div>
         </div>
       )}

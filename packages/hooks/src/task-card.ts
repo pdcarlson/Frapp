@@ -4,6 +4,7 @@ import {
   taskNeedsSignOff,
   taskSignedOffAutomatically,
   type TaskProofKind,
+  type TaskSeriesLine,
 } from "@repo/validation";
 import type { TaskStatus, TaskSubtask } from "./use-tasks";
 
@@ -425,6 +426,30 @@ export interface EditableCardTask {
    */
   photos: LiveTaskPhoto[];
   proof_kind: TaskProofKind;
+  /**
+   * How it repeats, on a copy of a repeating task (#5119): the edit shows
+   * its Repeat and asks "This task only" / "All upcoming tasks", as the
+   * board's does. `null` for a task that doesn't repeat.
+   */
+  series: TaskSeriesLine | null;
+}
+
+/** A task read's `series`, or `null` when it isn't one (#5119). */
+function readSeries(value: unknown): TaskSeriesLine | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  if (
+    typeof v.recurrence_rule !== "string" ||
+    typeof v.next_due_date !== "string" ||
+    typeof v.ended !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    recurrence_rule: v.recurrence_rule,
+    next_due_date: v.next_due_date,
+    ended: v.ended,
+  };
 }
 
 /**
@@ -457,5 +482,6 @@ export function readEditableCardTask(data: unknown): EditableCardTask | null {
     subtasks: Array.isArray(r.subtasks) ? (r.subtasks as TaskSubtask[]) : [],
     photos: live.photos,
     proof_kind: live.proof_kind,
+    series: readSeries(r.series),
   };
 }
