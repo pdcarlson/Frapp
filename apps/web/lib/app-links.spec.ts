@@ -5,6 +5,7 @@ import {
   androidAssetLinks,
   appLinksResponse,
   appleAppSiteAssociation,
+  deploymentNativeApp,
 } from "./app-links";
 
 const PLAY_KEY =
@@ -89,10 +90,14 @@ describe("the routes", () => {
     try {
       const aasa = aasaRoute();
       expect(aasa.status).toBe(200);
-      expect(await aasa.json()).toEqual(appleAppSiteAssociation("ABCDE12345"));
+      expect(await aasa.json()).toEqual(
+        appleAppSiteAssociation("ABCDE12345", deploymentNativeApp()),
+      );
       const links = assetLinksRoute();
       expect(links.status).toBe(200);
-      expect(await links.json()).toEqual(androidAssetLinks(PLAY_KEY));
+      expect(await links.json()).toEqual(
+        androidAssetLinks(PLAY_KEY, deploymentNativeApp()),
+      );
     } finally {
       vi.unstubAllEnvs();
     }
@@ -103,5 +108,25 @@ describe("the routes", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/json");
     expect(await response.json()).toEqual({ applinks: {} });
+  });
+});
+
+describe("each deployment names its own environment's app (2026-11-17)", () => {
+  it("names the store app on production and Frapp Staging everywhere else", () => {
+    expect(deploymentNativeApp("production").id).toBe("live.frapp.mobile");
+    expect(deploymentNativeApp("preview").id).toBe("live.frapp.mobile.staging");
+    expect(deploymentNativeApp(undefined).id).toBe("live.frapp.mobile.staging");
+  });
+
+  it("publishes the staging app's id on the staging origin's files", () => {
+    const staging = deploymentNativeApp("preview");
+    expect(appleAppSiteAssociation("ABCDE12345", staging)).toMatchObject({
+      applinks: {
+        details: [{ appIDs: ["ABCDE12345.live.frapp.mobile.staging"] }],
+      },
+    });
+    expect(androidAssetLinks(PLAY_KEY, staging)).toMatchObject([
+      { target: { package_name: "live.frapp.mobile.staging" } },
+    ]);
   });
 });

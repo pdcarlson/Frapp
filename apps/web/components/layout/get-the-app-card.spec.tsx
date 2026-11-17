@@ -6,6 +6,12 @@ const device = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/use-phone-platform", () => ({
   usePhonePlatform: () => device.phone,
+  // The store app, as on app.frapp.live (`nativeAppForOrigin`).
+  useNativeApp: () => ({
+    id: "live.frapp.mobile",
+    scheme: "frapp",
+    name: "Frapp",
+  }),
 }));
 
 import { GET_THE_APP_TITLE, GetTheAppCard } from "./get-the-app-card";

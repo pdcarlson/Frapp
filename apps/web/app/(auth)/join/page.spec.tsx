@@ -88,6 +88,12 @@ const device = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/use-phone-platform", () => ({
   usePhonePlatform: () => device.phone,
+  // The store app, as on app.frapp.live (`nativeAppForOrigin`).
+  useNativeApp: () => ({
+    id: "live.frapp.mobile",
+    scheme: "frapp",
+    name: "Frapp",
+  }),
 }));
 vi.mock("@/lib/auth/session", () => ({
   signOutCurrentSession: signOut,

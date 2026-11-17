@@ -214,9 +214,12 @@ export function useActivityRowActions({
         Alert.alert(row.title, failure.text, [
           { text: "Not now", style: "cancel" },
           {
-            text: "Enter code",
+            text: "Scan code",
             onPress: () =>
-              router.push({ pathname: "/check-in", params: { eventId } }),
+              router.push({
+                pathname: "/check-in",
+                params: { eventId, scan: "1" },
+              }),
           },
         ]);
         return;

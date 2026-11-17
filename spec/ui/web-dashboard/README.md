@@ -526,7 +526,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
   The rest of the row still opens the panel, where Reject, a send-back and the record's detail stay.
   `Vote` stays the row's ask and opens the panel, since a poll asks which option.
   So does `Check in` for an event with a check-in zone (`check_in_needs_location`), since it needs a location the web can't give: its panel says to check in from the phone.
-  So does `Check in` while an officer's check-in screen is up for the event (`check_in_needs_code`, [#4808](https://github.com/pdcarlson/Frapp/issues/4808)), since it needs the code the web can't scan: its panel says to point the phone's camera at the code.
+  So does `Check in` while an officer's check-in screen is up for the event (`check_in_needs_code`, [#4808](https://github.com/pdcarlson/Frapp/issues/4808)), since it needs the code the web can't scan: its panel says to point the phone's camera at the code. The officer whose own screen it is keeps Check in, since the server takes their own check-in without the code (2026-11-17, `events.md` § Check-In).
   They are paid-chapter writes: while the chapter's plan refuses them, no row draws a button and each opens its panel, whose notice says why; offline or while the chapter loads, the buttons show disabled, and a click on one opens the panel as the ask did.
   An overdue task is `destructive`; any other state is an `outline` or `success` badge.
   A task's state uses the shared task words every task surface uses.

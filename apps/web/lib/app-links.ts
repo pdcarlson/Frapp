@@ -1,4 +1,9 @@
-import { APP_LINK_PATHS, NATIVE_APP_ID } from "@repo/validation";
+import {
+  APP_LINK_PATHS,
+  PRODUCTION_NATIVE_APP,
+  STAGING_NATIVE_APP,
+  type NativeApp,
+} from "@repo/validation";
 
 /**
  * The two files that let an invite link open the app (#4002).
@@ -23,7 +28,29 @@ import { APP_LINK_PATHS, NATIVE_APP_ID } from "@repo/validation";
  * `NEXT_PUBLIC_*` at build (`scripts/ci/lib/vercel-build-env.mjs` lists both
  * as optional), so a changed value needs a web deploy. Each route is
  * prerendered (`dynamic = "force-static"`), so serving it runs no function.
+ *
+ * Each origin names its own environment's app (2026-11-17,
+ * `nativeAppForOrigin`): `app.frapp.live` the store app, the staging origin
+ * the Frapp Staging app, which claims `applinks:app.staging.frapp.live`
+ * (`apps/mobile/app.config.js`). So a staging check-in code scanned with the
+ * phone's camera opens the staging app, never the store app or the browser.
+ * The routes are still prerendered: a deployment serves one origin, and
+ * `VERCEL_ENV` says which ({@link deploymentNativeApp}).
  */
+
+/**
+ * The app this deployment's origin belongs to: the store app only on a Vercel
+ * production deployment, which serves `app.frapp.live` alone
+ * (`assert-production-public-env.js` fences its public values to that
+ * origin); the staging app on every other deployment.
+ */
+export function deploymentNativeApp(
+  vercelEnv: string | undefined = process.env.VERCEL_ENV,
+): NativeApp {
+  return vercelEnv === "production"
+    ? PRODUCTION_NATIVE_APP
+    : STAGING_NATIVE_APP;
+}
 
 /** What each claimed path is for, as the file says it to a reader. */
 const APP_LINK_COMMENTS: Record<(typeof APP_LINK_PATHS)[number], string> = {
@@ -65,6 +92,7 @@ function validFingerprints(raw: string | undefined): string[] {
  */
 export function appleAppSiteAssociation(
   appleTeamId: string | undefined,
+  app: NativeApp = PRODUCTION_NATIVE_APP,
 ): object | null {
   const teamId = validTeamId(appleTeamId);
   if (!teamId) return null;
@@ -72,7 +100,7 @@ export function appleAppSiteAssociation(
     applinks: {
       details: [
         {
-          appIDs: [`${teamId}.${NATIVE_APP_ID}`],
+          appIDs: [`${teamId}.${app.id}`],
           components: APP_LINK_PATHS.map((path) => ({
             "/": path,
             comment: APP_LINK_COMMENTS[path],
@@ -86,6 +114,7 @@ export function appleAppSiteAssociation(
 /** `assetlinks.json`, or null when no valid fingerprint is set. */
 export function androidAssetLinks(
   certSha256: string | undefined,
+  app: NativeApp = PRODUCTION_NATIVE_APP,
 ): object[] | null {
   const fingerprints = validFingerprints(certSha256);
   if (fingerprints.length === 0) return null;
@@ -94,7 +123,7 @@ export function androidAssetLinks(
       relation: ["delegate_permission/common.handle_all_urls"],
       target: {
         namespace: "android_app",
-        package_name: NATIVE_APP_ID,
+        package_name: app.id,
         sha256_cert_fingerprints: fingerprints,
       },
     },

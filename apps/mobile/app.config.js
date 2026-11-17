@@ -85,9 +85,12 @@
 // signs in to. `FRAPP_APP_VARIANT=staging`, which only eas.json's `staging`
 // profile sets, gives it its own name, scheme, bundle id and package
 // (STAGING_IDENTITY below; spec/ui/brand-identity.md § 1 lists them beside the
-// production ones). The variant drops the universal-link and App Link claims:
-// those name app.frapp.live, whose `/.well-known` files vouch only for the
-// production app, so the variant would fail verification and never open them.
+// production ones). The variant moves the universal-link and App Link claims
+// to the host of the profile's `EXPO_PUBLIC_APP_URL` (app.staging.frapp.live,
+// 2026-11-17), whose `/.well-known` files vouch for the staging app, so a
+// staging QR opens Frapp Staging; with no such host (unset, localhost, or the
+// production origin) it drops them, since app.frapp.live vouches only for the
+// production app.
 // Two fences keep the pair apart: the variant refuses every EAS profile but
 // `staging` (and that profile refuses to run without it), and it refuses the
 // production API and Supabase origins, so a binary called Frapp Staging can
@@ -540,12 +543,47 @@ function assertStagingVariantOrigins({ variant, apiUrl, supabaseUrl } = {}) {
   }
 }
 
-/** app.json's config as the staging variant: its own identity, no link claims. */
-function withStagingVariant(config, runtimeVersion) {
+/**
+ * The host the staging variant claims links on: its own dashboard's
+ * (`EXPO_PUBLIC_APP_URL`, `app.staging.frapp.live` on the staging profile), so
+ * a staging check-in code or invite scanned with the phone's camera opens
+ * Frapp Staging rather than the browser (2026-11-17). Null for anything that
+ * isn't an https origin other than production's, which the store app owns.
+ */
+function stagingLinkHost(appUrl) {
+  let url;
+  try {
+    url = new URL(String(appUrl || "").trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" || url.origin === PRODUCTION_APP_ORIGIN) {
+    return null;
+  }
+  return url.host;
+}
+
+/**
+ * app.json's config as the staging variant: its own identity, and app.json's
+ * link claims moved to the staging dashboard's host (none without one). The
+ * staging web's `/.well-known` files name this app (`apps/web/lib/app-links.ts`).
+ */
+function withStagingVariant(config, runtimeVersion, appUrl) {
+  const host = stagingLinkHost(appUrl);
   const ios = { ...config.ios };
-  delete ios.associatedDomains;
   const android = { ...config.android };
-  delete android.intentFilters;
+  if (host) {
+    ios.associatedDomains = [`applinks:${host}`];
+    android.intentFilters = (android.intentFilters ?? []).map((filter) => ({
+      ...filter,
+      data: (filter.data ?? []).map((entry) =>
+        entry.scheme === "https" ? { ...entry, host } : entry,
+      ),
+    }));
+  } else {
+    delete ios.associatedDomains;
+    delete android.intentFilters;
+  }
   return {
     ...config,
     name: STAGING_IDENTITY.name,
@@ -603,6 +641,7 @@ function applyMobileConfig(
             profile,
             version: appJsonConfig.version,
           }),
+          env.EXPO_PUBLIC_APP_URL,
         )
       : appJsonConfig;
   // Native-only: an update never carries google-services.json, so this one

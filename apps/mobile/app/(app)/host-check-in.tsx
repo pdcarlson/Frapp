@@ -13,6 +13,7 @@ import {
   useAttendance,
   useEvent,
   useMintCheckInToken,
+  useMyAttendance,
   usePermissionList,
   type DeviceInstant,
 } from "@repo/hooks";
@@ -28,8 +29,15 @@ import {
   useCheckInScreenReport,
   type ScreenPresence,
 } from "@/lib/events/check-in-screen-report";
-import { formatCountdown } from "@/lib/events/format";
-import { selectEventDetail, selectMintedToken } from "@/lib/events/select";
+import { formatCountdown, resolveCheckInWindow } from "@/lib/events/format";
+import {
+  selectEventDetail,
+  selectMintedToken,
+  selectMyAttendance,
+} from "@/lib/events/select";
+import { useOneTapCheckIn } from "@/lib/events/use-one-tap-check-in";
+import { SelfCheckInLink } from "@/components/events/self-check-in-link";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { MONO_FONT_FAMILY, typeRole, useFrappTheme } from "@/lib/theme";
 import { InlineNote } from "@/components/inline-note";
 import {
@@ -114,6 +122,14 @@ import {
  * after the computed rotation, on purpose: it asks half a second later,
  * because the computed rotation is early by the request's trip to the server
  * and asking exactly then could get the old window's code back.
+ *
+ * ## The host checks in here too
+ *
+ * The host can't scan the code their own phone is showing, so under the code
+ * a quiet "Check myself in" checks them in with one tap (2026-11-17,
+ * `useOneTapCheckIn`; the API takes the check-in of the officer whose screen
+ * is live without a code). It is there only while check-in is open and their
+ * own row reads as missing, and turns into "You're checked in" once it lands.
  *
  * ## This phone is the check-in zone
  *
@@ -284,6 +300,23 @@ export default function HostCheckInScreen() {
     canHost && focused && minted !== null,
   );
   const line = presenceLine(presence);
+  const { accent } = useChapterBranding();
+  const mine = useMyAttendance(canHost ? eventId : "");
+  const own = selectMyAttendance(mine.data);
+  // No Scan code from here: this screen's own code is the one in reach.
+  const self = useOneTapCheckIn(eventId);
+  // Only while check-in is open (the screen is up from before it opens) and
+  // once the host's own row has been read as missing, so a host already in
+  // never sees the button flash.
+  const checkInOpen =
+    event !== null &&
+    resolveCheckInWindow(
+      event.start_time,
+      event.end_time,
+      new Date(now.wall),
+      event.check_in_opens_minutes,
+    ).state === "open";
+  const showSelfCheckIn = checkInOpen && mine.isSuccess && !own;
 
   const [bodyWidth, setBodyWidth] = useState<number | null>(null);
   const qrSize =
@@ -456,11 +489,23 @@ export default function HostCheckInScreen() {
           </View>
 
           {minted ? (
-            <View style={styles.footer}>
-              <Text style={styles.manualLabel}>Show code</Text>
-              <Text selectable style={styles.manualCode}>
-                {minted.manualCode}
-              </Text>
+            <View style={styles.footerStack}>
+              <View style={styles.footer}>
+                <Text style={styles.manualLabel}>Show code</Text>
+                <Text selectable style={styles.manualCode}>
+                  {minted.manualCode}
+                </Text>
+              </View>
+              {own?.checkedInAt ? (
+                <Text style={styles.selfDone}>You&apos;re checked in</Text>
+              ) : showSelfCheckIn ? (
+                <SelfCheckInLink
+                  accent={accent}
+                  pending={self.pending}
+                  message={self.message}
+                  onPress={self.checkIn}
+                />
+              ) : null}
             </View>
           ) : null}
         </>
@@ -555,13 +600,23 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.text.foreground,
       textDecorationLine: "underline",
     },
+    footerStack: {
+      alignItems: "center",
+      paddingHorizontal: tokens.spacing["2xl"],
+      paddingBottom: tokens.spacing.xl,
+      gap: tokens.spacing.xs,
+    },
     footer: {
       flexDirection: "row",
       alignItems: "baseline",
       justifyContent: "center",
       gap: tokens.spacing.sm,
-      paddingHorizontal: tokens.spacing["2xl"],
-      paddingBottom: tokens.spacing.xl,
+    },
+    selfDone: {
+      minHeight: tokens.touch.minimum,
+      textAlignVertical: "center",
+      color: tokens.color.text.mutedForeground,
+      ...typeRole(tokens.typography.role.label),
     },
     manualLabel: {
       color: tokens.color.text.muted,

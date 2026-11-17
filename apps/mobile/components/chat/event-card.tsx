@@ -293,12 +293,16 @@ export function EventCard({
               />
             ) : scanInstead ? (
               <CardButton
-                label="Enter code"
+                label="Scan code"
+                variant="primary"
                 onPress={() => {
                   onNavigate?.();
+                  // Straight to the viewport (2026-11-17): it used to open
+                  // s18 at its "scan or type" choice, and the label said to
+                  // type a code, which a member can't know until they look.
                   router.push({
                     pathname: "/check-in",
-                    params: { eventId: payload.event_id },
+                    params: { eventId: payload.event_id, scan: "1" },
                   });
                 }}
                 disabled={blockedReason !== null}

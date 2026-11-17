@@ -31,6 +31,7 @@ const FORMAL: EventDetail = {
   event_type_id: "type-1",
   created_by: null,
   hasCheckInZone: false,
+  checkInNeedsCode: false,
   recurrence_rule: "WEEKLY",
   parent_event_id: null,
 };

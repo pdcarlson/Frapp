@@ -8,9 +8,9 @@ import {
   statusLabel,
 } from "@repo/validation";
 import { formatPointsChip } from "@repo/formatting";
-import { useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   eventSeriesKey,
@@ -36,6 +36,8 @@ import {
   useEventEditGrants,
 } from "@/components/events/new-event-sheet";
 import { type EventEditTarget } from "@/lib/events/edit-event";
+import { useOneTapCheckIn } from "@/lib/events/use-one-tap-check-in";
+import { SelfCheckInLink } from "@/components/events/self-check-in-link";
 import { BACK_TO_EVENTS } from "@/components/back-row";
 import { goBackTo } from "@/lib/href";
 import { useDropKeptSheetDraft } from "@/lib/kept-sheet-draft";
@@ -402,12 +404,14 @@ export default function EventDetailsScreen() {
  *   opens too, so the QR can be up when the first member arrives. Events have
  *   no creator or hosts list (#3762), so "host" is the permission. A host who
  *   attends still earns the points, so while the window is open and they
- *   aren't in yet, a quieter "Check myself in" under the button opens s18,
- *   where they type the code their own screen shows.
+ *   aren't in yet, a quieter "Check myself in" under the button checks them
+ *   in right there (2026-11-17, `useHostSelfCheckIn`): the API needs no code
+ *   from a host, whose own phone is showing it and can't scan it.
  * - **Open, for a guest.** One line saying to scan the code here or with the
- *   phone's camera (2026-11-13: the QR is a link the camera opens), and a
- *   quieter "Scan code" that opens s18 with its viewport up, where the typed
- *   code is one tap further for a camera that won't read it.
+ *   phone's camera (2026-11-13: the QR is a link the camera opens), and
+ *   **Scan code** as the card's button (2026-11-17; it was a quiet link),
+ *   which opens s18 with its viewport up, where the typed code is one tap
+ *   further for a camera that won't read it.
  *   Held back while their own row is first being read, so a checked-in
  *   member never sees it flash. Not while that read is paused offline: s18
  *   says what offline means for a check-in. A failed read shows it too (the
@@ -469,17 +473,19 @@ function CheckInCard({
   // The accent fill marks a card with something to do now.
   const active = (isOpen && !own) || hostable;
   const showScan = canScan && !canHost;
-  const openCheckIn = () =>
-    router.push({
-      pathname: "/check-in",
-      params: { eventId: event.id },
-    });
   // s18 with Scan code's viewport already up: the member tapped Scan code.
-  const openScanner = () =>
-    router.push({
-      pathname: "/check-in",
-      params: { eventId: event.id, scan: "1" },
-    });
+  const openScanner = useCallback(
+    () =>
+      router.push({
+        pathname: "/check-in",
+        params: { eventId: event.id, scan: "1" },
+      }),
+    [event.id, router],
+  );
+  // A drawn zone needs the member's location, which s18 gathers; anything
+  // else checks in from here in one tap unless a code is needed now.
+  const oneTap = !event.hasCheckInZone;
+  const tap = useOneTapCheckIn(event.id, openScanner);
 
   return (
     <View
@@ -531,18 +537,32 @@ function CheckInCard({
             }
           />
           {canScan ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={openCheckIn}
-              style={({ pressed }) => [
-                styles.selfCheckIn,
-                pressed ? styles.pressed : null,
-              ]}
-            >
-              <Text style={[styles.selfCheckInText, { color: accent }]}>
-                Check myself in
-              </Text>
-            </Pressable>
+            <SelfCheckInLink
+              accent={accent}
+              pending={tap.pending}
+              message={tap.message}
+              onPress={
+                oneTap
+                  ? tap.checkIn
+                  : () =>
+                      router.push({
+                        pathname: "/check-in",
+                        params: { eventId: event.id },
+                      })
+              }
+            />
+          ) : null}
+        </>
+      ) : showScan && oneTap && !event.checkInNeedsCode ? (
+        <>
+          <SheetPrimaryButton
+            label={tap.pending ? "Checking you in…" : "Check in"}
+            accent={accent}
+            onAccent={tokens.color.gold.onHouse}
+            onPress={tap.checkIn}
+          />
+          {tap.message ? (
+            <Text style={styles.zoneText}>{tap.message}</Text>
           ) : null}
         </>
       ) : showScan ? (
@@ -551,18 +571,12 @@ function CheckInCard({
             Scan the code on the officer&apos;s screen, here or with your
             phone&apos;s camera.
           </Text>
-          <Pressable
-            accessibilityRole="button"
+          <SheetPrimaryButton
+            label="Scan code"
+            accent={accent}
+            onAccent={tokens.color.gold.onHouse}
             onPress={openScanner}
-            style={({ pressed }) => [
-              styles.selfCheckIn,
-              pressed ? styles.pressed : null,
-            ]}
-          >
-            <Text style={[styles.selfCheckInText, { color: accent }]}>
-              Scan code
-            </Text>
-          </Pressable>
+          />
         </>
       ) : null}
     </View>
@@ -748,18 +762,6 @@ function createStyles(tokens: SignetTokens) {
     checkInMeta: {
       color: tokens.color.text.mutedForeground,
       ...typeRole(tokens.typography.role.caption),
-    },
-    // A text action under the card's button, centred, at the 44pt floor.
-    selfCheckIn: {
-      minHeight: tokens.touch.minimum,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    selfCheckInText: {
-      ...typeRole(tokens.typography.role.label),
-    },
-    pressed: {
-      opacity: 0.7,
     },
     zoneText: {
       color: tokens.color.text.mutedForeground,

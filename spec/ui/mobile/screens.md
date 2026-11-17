@@ -167,7 +167,7 @@ What else differs from web:
   **`Check in` is on the row of any event the member can check in to now** (open and not yet on the list), a zoned one included, since the phone can send the location web can't.
   The tap asks for the phone's position when the read says the event has a zone (`check_in_needs_location`), as the chat event card does, and otherwise sends the plain check-in; if the server answers that the event needs a location (a zone drawn since the read), it asks then and sends once more.
   A 409 means the member already has a row, which may be an officer's excused or absent mark, so the alert says only "You're already on the attendance list for this event." and the screen re-reads, after which the row shows which.
-  A location the member refuses, or a position outside the zone, is the alert in the card's words; once an officer's screen has shown the code, the alert offers Enter code, which opens s18 on that event.
+  A location the member refuses, or a position outside the zone, is the alert in the card's words; once an officer's screen has shown the code, the alert offers Scan code, which opens s18 on that event with its viewport up.
 - **Archive is an accent text button at the touch floor** at the foot of the screen, as Show all is ([#5127](https://github.com/frapplive/Frapp/issues/5127), Shawn, 2026-11-15; it replaced #4258's Archived polls). It swaps the screen's body for the Archive, web's ([`../web-dashboard/README.md` § Activity](../web-dashboard/README.md#activity)), until `‹ Activity` or Android's back button takes it back; pull to refresh re-reads the Archive while it is shown. Its rows open the same sheets.
   There are no file rows any more ([#4291](https://github.com/pdcarlson/Frapp/issues/4291)), so every row opens a sheet.
 - **A refusal is a line under the card**, since the phone has no toast.
@@ -347,8 +347,8 @@ a series time change from a generated occurrence is sent to the parent as the sa
 Only changed fields are sent.
 After a series save that rebuilds the occurrence on screen, or a delete, the screen returns to Events (`lib/events/edit-event.ts`, sharing `event-edit.ts` in `@repo/validation` with web).
 **Check-in card (#3703):** before the window it says only "Check-in opens at 7:50 PM" (with the day when it isn't today);
-a viewer who may host (`events:update`) gets Host check-in (s22) as the card's button, from before the window opens, with a quieter "Check myself in" under it while the window is open and they aren't in;
-a member who has checked in sees "Checked in at 7:52 PM" and the points instead of the camera line, and one an officer marked sees "Marked excused" (or absent, present) and no check-in, while a guest sees one line saying to scan the officer's code here or with the phone's camera and a quieter Scan code, which opens s18 with its viewport up (2026-11-13), read from their own row (`GET /v1/events/:eventId/attendance/me`)
+a viewer who may host (`events:update`) gets Host check-in (s22) as the card's button, from before the window opens, with a quieter "Check myself in" under it while the window is open and they aren't in, which checks them in right there with no code (2026-11-17; it used to open s18 to type the code their own screen showed);
+a member who has checked in sees "Checked in at 7:52 PM" and the points instead of the camera line, and one an officer marked sees "Marked excused" (or absent, present) and no check-in, while a guest sees one line saying to scan the officer's code here or with the phone's camera and Scan code as the card's button (2026-11-17; a quieter link before), which opens s18 with its viewport up (2026-11-13), read from their own row (`GET /v1/events/:eventId/attendance/me`)
 
 ### s08 Tasks + points
 
