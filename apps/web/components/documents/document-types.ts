@@ -25,6 +25,12 @@ export type ChapterDocument = {
    * narrows the folder's to the tiers, roles and groups it names.
    */
   who_can_see?: string[] | null;
+  /**
+   * On a Drive copy that Drive moved into a folder more people may see
+   * (#5220): that folder's id. The copy stays put until an officer opens it
+   * up. Null when the reader can't see that folder.
+   */
+  drive_held_folder_id?: string | null;
 };
 
 export type ChapterDocumentFolder = {
@@ -35,6 +41,8 @@ export type ChapterDocumentFolder = {
   pinned_at?: string | null;
   /** Who can see it (#3642 piece 1): `null` is everyone. */
   who_can_see?: string[] | null;
+  /** Set on a folder Google Drive sync made (#5220): Drive renames and deletes it. */
+  drive_folder_id?: string | null;
 };
 
 /**
@@ -47,5 +55,8 @@ export type FolderRow = {
   name: string;
   sort_order: number | null;
   pinned_at?: string | null;
-  who_can_see?: string[] | null;
+  who_can_see?:
+    | string[]
+    | null; /** Set on a folder Google Drive sync made (#5220): Drive renames and deletes it. */
+  drive_folder_id?: string | null;
 };

@@ -2,7 +2,6 @@ import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { BottomSheetModal, BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import {
-  FORM_END_PASSED_PROBLEM,
   FORM_QUESTION_TYPE_CHOICES,
   addFormOption,
   addFormQuestion,
@@ -19,6 +18,7 @@ import {
   setFormQuestion,
   type FormDraft,
 } from "@repo/chat-core/form-draft";
+import { CARD_END_PASSED_PROBLEM } from "@repo/chat-core/card-closing";
 import {
   buildFormMessage,
   isChoiceQuestion,
@@ -148,7 +148,7 @@ export const NewFormSheet = forwardRef<BottomSheetModal, NewFormSheetProps>(
       // Checked again now: an end time can pass while the sheet sits open.
       const fresh = checkFormDraft(draft);
       if (!fresh.ok) {
-        setFailure(fresh.problem ?? FORM_END_PASSED_PROBLEM);
+        setFailure(fresh.problem ?? CARD_END_PASSED_PROBLEM);
         return;
       }
       sending.current = true;

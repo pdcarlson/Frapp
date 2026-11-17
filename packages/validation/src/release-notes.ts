@@ -132,6 +132,8 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Officers can now only invite people into roles ranked below their own, and an invite stops working if the person who sent it can no longer give that role.",
       "What's new now shows in bold the lines that came with your latest update, so on a busy day you can spot what just arrived.",
       "Tapping a chat notification now opens the conversation right at the message it's about.",
+      "Drafted minutes from long meetings now catch every decision and action item, with a fuller summary.",
+      "Posting minutes no longer asks if you're sure.",
     ],
     web: [
       "Tasks now groups your own tasks as Today, This week and Later, and officers can switch between My tasks and All tasks, group the chapter's tasks by person, and filter them by assignee, status and due date.",
@@ -142,6 +144,11 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "Bulk backwork uploads now save as drafts only you can see, so you can fix a whole batch in one table and publish it when it's right.",
       "Whoever made an event sees a Start minutes card in the sidebar while it is on.",
       "Starting minutes asks one thing at a time, picks the meeting that is on now for you, and only needs a day for a meeting that was never on the calendar.",
+      "You can choose which tiers, roles or groups can see a Documents folder or a single file, and a lock marks the ones not everyone can see.",
+      "Bulk-uploaded backwork drafts now fill in their course, professor, term and type from the file's redacted pages, marked AI so you can check them before you publish.",
+      "Bulk upload now boxes the Name and ID lines, email addresses, ID numbers and members' names it finds on each PDF before you look, so you check the boxes instead of drawing them all.",
+      "Minutes save as you type, keep the meeting's name and Post pinned at the top, let you answer the draft's open questions right above the minutes, and let officers mark who was there when nobody checked in.",
+      "Bulk upload can save a whole folder at once: \"Save all the rest\" boxes each PDF where it found names and IDs and saves it as a private draft. Each one waits in the table for you to check its pages, add any box it missed, and only then is filled in by Frapp AI or published.",
     ],
     phone: [
       "The Calendar has its own + at the top for adding an event from any view, and on the Calendar it starts on the day you've picked, today or later.",
@@ -156,6 +163,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = Object.freeze([
       "You can take notes on someone else's meeting from its event, and the minutes draft reads everyone's notes and the recording and lists where they disagreed.",
       "Search has its own button on Chat home for everyone, with your recent searches, and Ask Frapp is now just for asking.",
       "Threads moved from the top of Chat home into the first row of your channel list, with the same count of new replies.",
+      "When you upload a document, you can choose which tiers, roles or groups can see it, and a lock marks the folders and files not everyone can see.",
     ],
   },
   {

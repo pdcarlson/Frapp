@@ -2,7 +2,7 @@
 
 The API is moving from Render to Google Cloud Run ([#5228](https://github.com/frapplive/Frapp/issues/5228)). Paul decided this on 2026-11-16, which changes [ADR-24](../../../spec/architecture/adr/adr-24.md) decision 1. This page is the runbook for the Google side. Until the cutover finishes, [`render.md`](render.md) still describes what serves traffic.
 
-**State (2026-11-16):** both projects have run the setup script (staging's project number is `211663803311`, production's is `930610426605`). The Infisical sync account isn't set up yet. Both ran the script before it turned on Vertex AI and gave `frapp-api-runtime` access to it, so both need one more run of the current script before the API can drop its Vertex key file. Nothing on Google serves traffic.
+**State (2026-11-17):** both projects have run the setup script (staging's project number is `211663803311`, production's is `930610426605`). Both have Infisical's sync account, and Infisical syncs each environment into its project ([`SECRETS_MANAGEMENT.md` § Cloud Run API](../../internal/environment/SECRETS_MANAGEMENT.md#cloud-run-api-synced-to-secret-manager)). Both ran the current script again on 2026-11-16, so `frapp-api-runtime` can call Vertex AI in each project without a key file. Staging deploys to Cloud Run ([§ Deploys](#deploys)) and `api-staging.frapp.live` reaches it through its load balancer ([§ Address](#address)); production still serves from Render.
 
 ## Shape
 
@@ -14,7 +14,7 @@ The API is moving from Render to Google Cloud Run ([#5228](https://github.com/fr
 | Instances | instance-based billing, min 0, max 1 | instance-based billing, min 1, max 1 |
 | Image | built once on GitHub, pushed to `us-east4-docker.pkg.dev/<nonprod>/frapp/api` | the same digest, copied to `us-east5-docker.pkg.dev/<prod>/frapp/api` |
 | Secrets | Infisical `staging`, synced to this project's Secret Manager | Infisical `prod`, synced to this project's Secret Manager |
-| Address | the staging API host, through Cloudflare | `api.frapp.live`, through Cloudflare |
+| Address ([§ Address](#address)) | `api-staging.frapp.live`, through a Google load balancer, the only public path | `api.frapp.live`, through a Google load balancer (planned) |
 
 **Why two regions.** The API makes several database calls per request, so each environment runs next to its Supabase project. `frapp-staging` is in AWS `us-east-1` (Virginia) and `frapp-prod` is in `us-east-2` (Ohio), both read through the Supabase API on 2026-11-16. Ashburn and Columbus are the Google regions in those metros. Render ran both environments in Ohio, so on Render staging always paid the trip to Virginia.
 
@@ -40,6 +40,7 @@ The API is moving from Render to Google Cloud Run ([#5228](https://github.com/fr
   - Infisical signs in as its own `infisical-us@infisical-us.iam.gserviceaccount.com` and impersonates this account.
   - Infisical requires the account's name to end with the first two parts of the Infisical organization id. That is how it keeps one customer from impersonating another customer's account.
   - Infisical's Secret Sync setup asks for Secret Manager Admin, so this account can read, change and delete every secret in its project.
+  - It also has Service Usage Viewer, which only shows which Google services are on. Infisical checks that Secret Manager is on before it lists a project for a sync, so without it the sync's project list is empty (found 2026-11-16).
 
 ## Secrets
 
@@ -98,10 +99,54 @@ Paul asked on 2026-11-16 for full observability from the first day. Sentry (erro
 
 Built with the deploy step, because each needs the service to exist: an uptime check on `/health/ready` every minute, email alerts to Paul for it, for a 5xx spike, for crashes and restarts, for memory near the limit and for an error-log spike, and Secret Manager's data-access audit log, so every secret read is recorded. Email is the pager ([`alert-routing.md`](../alert-routing.md)).
 
+## Deploys
+
+Staging deploys here from the staging deploy job ([`_deploy.yml`](../../../.github/workflows/_deploy.yml), step "Deploy the API to Cloud Run (staging)"), because [`.github/environments.json`](../../../.github/environments.json) gives staging `apiHost: cloud-run`. That replaces staging's Render step; production still deploys to Render until #5228's production step. The run:
+
+1. Builds the commit's image once, as before, and pushes it to GitHub's registry and then to the project's own registry (`<region>-docker.pkg.dev/<project>/frapp/api`), tagged with the commit. Cloud Run takes it by digest.
+2. Signs in as the project's `frapp-deployer` with GitHub's OIDC token, so no Google key is stored anywhere ([`scripts/ci/lib/gcp.mjs`](../../../scripts/ci/lib/gcp.mjs)). Google accepts the token only from this repository's `staging` environment. The job's `id-token: write` would let any step ask for that token, so the steps that install or build dependencies run without the two variables it takes, and the Vercel steps' environment leaves them out.
+3. Pins every secret in the project's Secret Manager to its current version, leaving out `PORT`, any secret with no enabled version, and any secret Infisical no longer holds: the sync never deletes one (deletion protection), so without this a value removed in Infisical would keep reaching the API. The log names each one left out.
+4. Writes the whole service with a new revision named `frapp-api-<commit>-<suffix>`. The previous revision keeps all traffic; the new one gets the `candidate` tag. The write also sets the service's ingress to internal-and-cloud-load-balancing, so only the balancer reaches it ([§ Address](#address)).
+5. Polls `candidate.<API host>/health/ready`, which the balancer sends to the tagged revision, until it reports the commit. If it never does, it drops the tag, so the failed revision answers nowhere, and the run fails with the previous revision still serving. Before the first write it checks that the candidate host resolves, and stops with nothing written if it doesn't.
+6. Moves all traffic to the new revision. The workflow's next step checks the API host (`API_HEALTHCHECK_URL`, from Infisical) serves the commit.
+
+[`deploy-cloud-run.mjs`](../../../scripts/ci/deploy-cloud-run.mjs) does steps 2 to 6, from the trusted ref's copy of `scripts/ci`, like the checks. The plan, and the run's served-commit and client checks that follow, read the same API host every client calls. Every check goes through the balancer, because the service's `run.app` addresses refuse anyone else. The deploy owns the service's settings (instances, CPU, memory, account, port, secrets), so a setting changed by hand in the console is put back by the next deploy. Change it in `environments.json` or the script instead.
+
+**Rolling back.** In the console, **Cloud Run → frapp-api → Revisions**, pick the previous revision and **Manage traffic** to send it 100%. The next deploy moves traffic to its own new revision again.
+
+## Address
+
+Each API host is to reach its service through a global external Application Load Balancer in the same project; until a host's A record moves, it still reaches Render. The balancer is set up by [`scripts/gcp/load-balancer.sh`](../../../scripts/gcp/load-balancer.sh) after the first deploy has created the service. Paul chose this on 2026-11-16 over a Cloud Run domain mapping, which Google calls a preview that isn't production-ready and doesn't offer in `us-east5`. The balancer is also where Cloud Armor, a second region or a CDN would attach. It costs about $18 a month per environment.
+
+The script makes a static address, a serverless backend pointing at `frapp-api` that logs every request, a Google-managed certificate held in Certificate Manager, HTTPS on port 443, and a 308 redirect to HTTPS on port 80 (calendar apps fetch a `webcal://` feed over plain HTTP). It also makes a second host, `candidate.<API host>`, with its own backend pointing at the revision tagged `candidate`, which is where the deploy checks a new revision before it takes traffic. That host's certificate is a wildcard for the API host, proved by the same challenge record. It is safe to run again, and each run prints where the certificates are.
+
+The certificate is proved by a DNS record rather than by traffic, so it is issued while the host still points at Render, and the host moves with no gap. Two records at Squarespace, in this order:
+
+1. The `_acme-challenge` CNAME the script prints. Adding it changes nothing else.
+2. Once a rerun says `certificateState: ACTIVE`, the host's A record pointing at the balancer's address, in place of its Render CNAME. This is the cutover. Moving it back is the rollback. Before it, `curl --resolve <host>:443:<address>` reaches the balancer with the real certificate.
+3. The `candidateRecord` the script prints: an A record for `candidate.<host>` at the same address. Add it, and wait for `candidateCertState: ACTIVE`, before a deploy that checks its candidate there, which is every deploy since [#5269](https://github.com/frapplive/Frapp/issues/5269).
+
+Staging's `api-staging.frapp.live` moved on 2026-11-17. Its rollback value is the CNAME `frapp-api-staging.onrender.com`.
+
+**One public path.** The deploy sets the service's ingress to internal-and-cloud-load-balancing, so its `run.app` addresses, tagged or not, refuse every request from the internet that doesn't come through the balancer. Google's own services (Cloud Scheduler, Pub/Sub, Cloud Tasks) and the project's VPC can still reach `run.app`, with a shorter chain, so anything built later that calls the service from there should call the API host instead, and the planned uptime check watches the API host too. With one internet path there is one `X-Forwarded-For` chain, `CLIENT_IP, LOAD_BALANCER_IP` in Google's words, so `TRUST_PROXY_HOPS` in `apps/api/src/bootstrap.ts` is 2 on staging. Staging's old Render service, `frapp-api-staging.onrender.com`, stays up as the rollback until Render is removed. It is a second way into staging's database, running its own older build with Render's count of 3, so a rollback to it needs no re-measuring, but a redeploy of current code to Render would.
+
+**Measuring the chain.** Send one request with no `X-Forwarded-For` and one with a single forged entry, each to a path of its own, then read their `xffCount` from the service's request log. The first is what the proxies append and should equal the hop count; the second should be one more. In Cloud Shell:
+
+```sh
+curl -s -o /dev/null https://api-staging.frapp.live/v1/xff-probe-0
+curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.1' https://api-staging.frapp.live/v1/xff-probe-1
+sleep 20
+gcloud logging read 'resource.type="cloud_run_revision" AND "xff-probe"' --project=<project-id> --freshness=10m --format=json \
+  | grep -oE 'xff-probe-[01]|xffCount[^0-9]{0,6}[0-9]+'
+```
+
+Both request logs, the balancer's and Cloud Run's, record the full URL with its query string and the caller's IP. That includes calendar feed tokens and OAuth callback codes, which [#5268](https://github.com/frapplive/Frapp/issues/5268) puts to Paul. Cloud Armor in front of the balancer is [#5270](https://github.com/frapplive/Frapp/issues/5270).
+
 ## Not built yet
 
 These land in [#5228](https://github.com/frapplive/Frapp/issues/5228)'s later steps, and each one updates this page when it ships.
 
-- **The deploy path.** It starts a revision with no traffic, checks that the revision's tagged URL reports the deployed commit, then moves traffic and records a GitHub Deployment. Rollback moves traffic back to the previous revision.
-- **Cloudflare in front of both API hosts.** This means re-measuring `TRUST_PROXY_HOPS` and reading the client address that Cloudflare forwards.
+- **Observability** ([§ Observability](#observability)): the uptime check, the email alerts and Secret Manager's data-access audit log. They need the service, which the first staging deploy creates.
+- **Production's deploy.** It copies the digest staging ran into production's registry and deploys it the same way, and records a GitHub Deployment.
+- **Production's address.** The same script, run for production, then the same three records for `api.frapp.live`. The script needs the service to exist, and a deploy closes `run.app` and checks `api.frapp.live`, which still reaches Render until its A record moves. So production's deploy step has to create the service before the host moves, without failing on Render's commit; that order is settled when the step is built.
 - **Removing Render.**

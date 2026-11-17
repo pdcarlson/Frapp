@@ -80,7 +80,10 @@ vi.mock("@/components/ai/suggested-events", () => ({
   useRecordPlannedEvent: () => async () => undefined,
 }));
 
-vi.mock("@repo/hooks", () => ({
+vi.mock("@repo/hooks", async () => ({
+  // The Subscribe menu reads the real shared Google Calendar copy (#4676);
+  // the hooks below override what this spec stubs.
+  ...(await import("@repo/hooks/use-google-calendar")),
   // The rule itself is the hook's own spec; here the page has to follow
   // whatever it answers (#4132).
   useRequiredOfViewer: () => requiredOfViewer.current,

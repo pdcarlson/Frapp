@@ -390,6 +390,19 @@ describe("finishing", () => {
 });
 
 describe("where it never opens", () => {
+  // On fake timers, so the control and the cases below wait the same span
+  // whatever the runner's load: a real sleep let a slow runner fail the
+  // control, and pass a case below before the tour had had its chance.
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+  /** Past the tour's 4 s wait for the channel list, after which it starts anyway. */
+  const settle = () => act(() => vi.advanceTimersByTimeAsync(5_000));
+
   it("opens, as the control for the cases below", async () => {
     render(<ChatScreen />);
     await settle();

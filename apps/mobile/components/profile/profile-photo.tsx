@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   AccessibilityInfo,
-  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   Image,
@@ -22,7 +21,11 @@ import { onlineManager } from "@tanstack/react-query";
 import { SignetTokens } from "@repo/theme/signet";
 import { usePressFeedback } from "@/components/list-section";
 import { CameraGlyph } from "@/components/service-hours/camera-glyph";
-import { useChapterBranding, type ChapterBranding } from "@/lib/chapter-branding";
+import { showActionMenu } from "@/lib/action-menu";
+import {
+  useChapterBranding,
+  type ChapterBranding,
+} from "@/lib/chapter-branding";
 import { pickAndSetProfilePhoto } from "@/lib/more/profile-photo";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -161,37 +164,24 @@ export function ProfilePhoto({
     // Without a chapter there is only Remove, and the choice says why.
     const canChoose = !!chapterId;
     const message = canChoose ? undefined : NO_CHAPTER_PHOTO_NOTE;
-    if (Platform.OS === "ios") {
-      const options = canChoose
-        ? [CHOOSE_PHOTO, REMOVE_PHOTO, "Cancel"]
-        : [REMOVE_PHOTO, "Cancel"];
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options,
-          message,
-          destructiveButtonIndex: options.indexOf(REMOVE_PHOTO),
-          cancelButtonIndex: options.indexOf("Cancel"),
-          userInterfaceStyle: "dark",
-        },
-        (index) => {
-          if (options[index] === CHOOSE_PHOTO) void change();
-          if (options[index] === REMOVE_PHOTO) confirmRemove();
-        },
-      );
-      return;
-    }
-    Alert.alert(
-      "Profile photo",
+    const choose = { label: CHOOSE_PHOTO, onPress: () => void change() };
+    const remove = {
+      label: REMOVE_PHOTO,
+      style: "destructive" as const,
+      onPress: confirmRemove,
+    };
+    // Android's dialog has a title, an explicit Cancel and its own order:
+    // Cancel, Remove photo, Choose photo.
+    showActionMenu({
       message,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: REMOVE_PHOTO, style: "destructive", onPress: confirmRemove },
-        ...(canChoose
-          ? [{ text: CHOOSE_PHOTO, onPress: () => void change() }]
-          : []),
-      ],
-      { cancelable: true },
-    );
+      rows: canChoose ? [choose, remove] : [remove],
+      userInterfaceStyle: "dark",
+      android: {
+        title: "Profile photo",
+        rows: canChoose ? [remove, choose] : [remove],
+        cancelButton: true,
+      },
+    });
   }
 
   // Something to do: a photo to add needs a chapter, a photo to remove

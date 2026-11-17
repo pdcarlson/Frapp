@@ -1,5 +1,9 @@
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsEnum,
+  IsUUID,
   IsLatitude,
   IsLongitude,
   IsNumber,
@@ -130,6 +134,44 @@ export class UpdateAttendanceDto {
   @IsOptional()
   @IsString()
   excuse_reason?: string;
+}
+
+/**
+ * Members marked by hand after an event (`events.md` § Marking attendance
+ * by hand). Absent isn't offered: nobody is marked absent by picking them.
+ */
+export class MarkAttendanceByHandDto {
+  @ApiProperty({ type: [String], format: 'uuid', maxItems: 1000 })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(1000)
+  @IsUUID('all', { each: true })
+  user_ids: string[];
+
+  @ApiProperty({ enum: ['PRESENT', 'LATE', 'EXCUSED'] })
+  @IsEnum(['PRESENT', 'LATE', 'EXCUSED'])
+  status: 'PRESENT' | 'LATE' | 'EXCUSED';
+}
+
+export class MarkAttendanceByHandResultDto {
+  @ApiProperty({
+    type: [String],
+    format: 'uuid',
+    description: 'The members given a row now.',
+  })
+  marked: string[];
+
+  @ApiProperty({
+    description:
+      'Picked members who already had a row (a check-in, an excuse, an earlier mark), kept as they were.',
+  })
+  already_marked: number;
+
+  @ApiProperty({
+    description:
+      "Picked members the event doesn't invite (its roles, alumni the event doesn't name, or not in the chapter), left unmarked.",
+  })
+  not_invited: number;
 }
 
 export class AutoAbsentResultDto {

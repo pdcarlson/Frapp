@@ -709,3 +709,38 @@ export function tierRows<
 export function isDriveCopy(doc: { drive_file_id?: string | null }): boolean {
   return typeof doc.drive_file_id === "string" && doc.drive_file_id !== "";
 }
+
+/** Under a folder's Who can see list: who passes it anyway (#3642 piece 1). */
+export const FOLDER_ALWAYS_LINE = "The President can always see it.";
+
+/** Under a file's list: its uploader passes too (a Drive copy has none). */
+export const FILE_ALWAYS_LINE =
+  "The President and whoever uploaded it can always see it.";
+
+/** What the lock on a file not everyone can see says to a screen reader. */
+export const LIMITED_LABEL = "Not everyone can see this";
+
+type AccessListed = { who_can_see?: readonly string[] | null };
+
+/**
+ * Which files draw the lock (#5216), on web and the phone alike: a file with
+ * its own list, one in a folder with a list, and one in a folder this member
+ * can't see. The last is a file they uploaded before losing that folder
+ * (`isOwnUpload` in the API): every folder a document names is registered
+ * (an upload registers it, and the folders table was backfilled), so a
+ * folder missing from the member's own list is one a list hides from them.
+ * Until the folders load (`null`), only a file's own list counts, so nothing
+ * draws a lock it then loses.
+ */
+export function limitedDocumentCheck(
+  folders: readonly ({ name: string } & AccessListed)[] | null,
+): (doc: { folder: string | null } & AccessListed) => boolean {
+  const limited = new Map(
+    (folders ?? []).map((folder) => [folder.name, folder.who_can_see != null]),
+  );
+  return (doc) => {
+    if (doc.who_can_see != null) return true;
+    if (!doc.folder || folders === null) return false;
+    return limited.get(doc.folder) ?? true;
+  };
+}

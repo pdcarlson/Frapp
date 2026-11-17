@@ -29,7 +29,6 @@ import {
   formPageNotice,
   formProblemCountLine,
   formResponseKey,
-  isFormClosed,
   readFormPayload,
   saveFormResponse,
   type FormAnswerEdits,
@@ -37,6 +36,7 @@ import {
   type FormPayload,
   type FormQuestion,
 } from "@repo/chat-core/forms";
+import { isCardClosed } from "@repo/chat-core/card-closing";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { useFrappClient, useNow, useQueryOnline } from "@repo/hooks";
 import {
@@ -175,7 +175,7 @@ function FormFillBody({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const now = useNow();
-  const closed = isFormClosed(payload, now);
+  const closed = isCardClosed(payload, now);
   const deadline = formDeadlineLine(payload, now);
 
   // Read again on open, whatever the card's copy's age (#4727): answers sent

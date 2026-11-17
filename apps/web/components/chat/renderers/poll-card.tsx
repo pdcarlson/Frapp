@@ -16,7 +16,6 @@ import {
   POLL_VOTE_ACTION_TYPE,
   canClosePoll,
   castPollVote,
-  isPollCardClosed,
   pollCardEyebrow,
   pollCardFooter,
   pollChoiceHint,
@@ -28,6 +27,7 @@ import {
   type PendingPollPicks,
   type PollOption,
 } from "@repo/chat-core/polls";
+import { isCardClosed } from "@repo/chat-core/card-closing";
 import { useMyPermissions, useNow } from "@repo/hooks";
 import { can } from "@repo/validation";
 
@@ -107,7 +107,7 @@ export function PollCard({
   // Closed by its deadline or, early, by its creator or a moderator (#3794). The server row's
   // `payload.closed_at` arrives as a Realtime UPDATE, so every open card
   // redraws closed the moment the creator closes it.
-  const isClosed = isPollCardClosed(payload, now);
+  const isClosed = isCardClosed(payload, now);
   const showClose =
     !!onClosePoll &&
     canClosePoll(message, payload, viewerId, now, {

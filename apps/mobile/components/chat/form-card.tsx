@@ -2,14 +2,13 @@ import { useMemo } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 import {
   CLOSE_FORM_LABEL,
-  canCloseForm,
   formAnsweredState,
   formCardAction,
   formDeadlineLine,
   formQuestionCountLine,
-  isFormClosed,
   readFormPayload,
 } from "@repo/chat-core/forms";
+import { canCloseCard, isCardClosed } from "@repo/chat-core/card-closing";
 import {
   VIEW_RESPONSES_LABEL,
   isFormCreator,
@@ -77,12 +76,12 @@ export function FormCard(props: FormCardProps) {
     );
   }
 
-  const closed = isFormClosed(payload, now);
+  const closed = isCardClosed(payload, now);
   const action = formCardAction(formAnsweredState(own.data), closed);
   const deadline = formDeadlineLine(payload, now);
   const showClose =
     !!onCloseForm &&
-    canCloseForm(message, payload, viewerId, now, canManageChannels);
+    canCloseCard(message, payload, viewerId, now, canManageChannels);
   const canOpen = isConfirmed && !!openForm;
 
   return (

@@ -8,7 +8,6 @@ import {
   canAddSignupSlot,
   canRemoveSignupSlot,
   checkSignupDraft,
-  SIGNUP_END_PASSED_PROBLEM,
   defaultSignupEnd,
   SIGNUP_FORMAT_CHOICES,
   removeSignupSlot,
@@ -17,6 +16,7 @@ import {
   type SignupDraftFormat,
   type SignupPayload,
 } from "@repo/chat-core/signups";
+import { CARD_END_PASSED_PROBLEM } from "@repo/chat-core/card-closing";
 import { localDateTimeToIso } from "@repo/chat-core/dispatch";
 import { localClock, localIsoDate } from "@repo/formatting";
 import {
@@ -93,7 +93,7 @@ export function SignupForm({
     // already closed.
     const fresh = checkSignupDraft(draft);
     if (!fresh.ok) {
-      setFailure(fresh.problem ?? SIGNUP_END_PASSED_PROBLEM);
+      setFailure(fresh.problem ?? CARD_END_PASSED_PROBLEM);
       return;
     }
     sending.current = true;

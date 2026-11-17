@@ -17,6 +17,8 @@ import {
   isEmailSendCapped,
   isExistingAccountSignUp,
   isIdentityCollisionError,
+  isSessionOver,
+  OAUTH_MEMBERSHIP_HINT,
 } from "./auth-error-copy";
 import { MemberFacingError } from "./error-copy";
 
@@ -285,5 +287,69 @@ describe("authFallbackCopy", () => {
       AUTH_FALLBACK_COPY,
     );
     expect(authFallbackCopy(authApiError("x", 401))).toBe(AUTH_FALLBACK_COPY);
+  });
+});
+
+/**
+ * auth-js's errors as `isAuthApiError` sees them: every `AuthError` carries
+ * the `__isAuthError` marker, and only `AuthApiError` has that name. The web
+ * and mobile `rejected-session` specs run the real supabase-js classes
+ * against this same function.
+ */
+function authJsError(name: string, status: number | undefined) {
+  return Object.assign(new Error(name), { __isAuthError: true, name, status });
+}
+
+describe("isSessionOver", () => {
+  it("keeps a session Auth still recognises", () => {
+    expect(isSessionOver({ data: { user: { id: "u1" } }, error: null })).toBe(
+      false,
+    );
+  });
+
+  it("ends a session Auth answers with no user, or refuses with a 4xx", () => {
+    expect(isSessionOver({ data: { user: null }, error: null })).toBe(true);
+    for (const status of [400, 401, 403, 404, 499]) {
+      expect(
+        isSessionOver({
+          data: { user: null },
+          error: authJsError("AuthApiError", status),
+        }),
+      ).toBe(true);
+    }
+  });
+
+  it("does not treat an outage, a 429 or a 5xx as a verdict", () => {
+    for (const status of [0, 399, 429, 500, 503]) {
+      expect(
+        isSessionOver({
+          data: { user: null },
+          error: authJsError("AuthApiError", status),
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it("reads only auth-js's own API errors", () => {
+    for (const error of [
+      authJsError("AuthRetryableFetchError", 0),
+      authJsError("AuthUnknownError", undefined),
+      authJsError("AuthSessionMissingError", 400),
+      // A look-alike without auth-js's marker, as `isAuthApiError` rejects it.
+      Object.assign(new Error("x"), { name: "AuthApiError", status: 403 }),
+      authJsError("AuthApiError", undefined),
+    ]) {
+      expect(isSessionOver({ data: { user: null }, error })).toBe(false);
+    }
+  });
+});
+
+describe("OAUTH_MEMBERSHIP_HINT", () => {
+  // Web's sign-in buttons and the phone's s01 both show it; the App Store
+  // review notes rely on it (`apps/mobile/store/README.md`).
+  it("keeps the line App Review was told about", () => {
+    expect(OAUTH_MEMBERSHIP_HINT).toBe(
+      "Invited at a university address? Open that link after you sign in. Membership follows this account, including Apple Hide My Email.",
+    );
   });
 });

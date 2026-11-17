@@ -2,7 +2,7 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { ActionSheetIOS, Alert } from "react-native";
+import { ActionSheetIOS, Alert, Platform } from "react-native";
 import * as expoRouter from "expo-router";
 import { useRouter } from "expo-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -2082,6 +2082,52 @@ describe("Activity screen (#3897)", () => {
       );
       sheet.mockRestore();
     });
+
+    // Pinned per platform (#5168): iOS's sheet names the row and keeps the
+    // system's appearance; Android's dialog names it in the body and draws
+    // only the first three times, because it drops a fourth button.
+    it("draws the snooze menu each platform's own way", async () => {
+      const sheet = vi
+        .spyOn(ActionSheetIOS, "showActionSheetWithOptions")
+        .mockImplementation(() => undefined);
+      const dialog = vi.spyOn(Alert, "alert").mockImplementation(() => {});
+      const platform = Platform as { OS: string };
+      const os = platform.OS;
+      try {
+        const tree = render();
+        // A Monday morning offers all four times, so the cap shows.
+        vi.useFakeTimers({ toFake: ["Date"], now: new Date(2026, 10, 16, 9) });
+        platform.OS = "ios";
+        await act(async () => {
+          rowPress(tree, "Food bank").props.onLongPress();
+        });
+        const [options] = sheet.mock.calls.at(-1)!;
+        expect(options.title).toMatch(/^Snooze “.+” until$/);
+        expect(options).not.toHaveProperty("userInterfaceStyle");
+        expect(options).not.toHaveProperty("destructiveButtonIndex");
+        expect(options.options).toHaveLength(5);
+        expect(options.cancelButtonIndex).toBe(4);
+
+        platform.OS = "android";
+        await act(async () => {
+          rowPress(tree, "Food bank").props.onLongPress();
+        });
+        const [title, message, buttons, extra] = dialog.mock.calls.at(-1)!;
+        expect(title).toBe("Snooze until");
+        expect(options.title).toBe(`Snooze “${message}” until`);
+        expect(buttons!.map((button) => button.text)).toEqual(
+          options.options.slice(0, 3),
+        );
+        expect(buttons!.every((button) => !("style" in button))).toBe(true);
+        expect(extra).toEqual({ cancelable: true });
+      } finally {
+        vi.useRealTimers();
+        platform.OS = os;
+        sheet.mockRestore();
+        dialog.mockRestore();
+      }
+    });
+
     it("is offered to a screen reader as the row's named action", async () => {
       const tree = render();
       const press = rowPress(tree, "Food bank");

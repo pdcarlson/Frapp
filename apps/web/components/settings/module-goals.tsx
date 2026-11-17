@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Plus, X } from "lucide-react";
 import {
   GOAL_ROLE_LIMIT,
@@ -14,7 +14,6 @@ import {
   useSetChapterGoals,
   type GoalSet,
 } from "@repo/hooks";
-import { matchesWordStarts, normalizeWords } from "@repo/hooks/fuzzy-match";
 import { ProfileSection } from "@/components/profile/profile-section";
 import {
   NumberRule,
@@ -23,17 +22,7 @@ import {
   readBounded,
 } from "@/components/settings/module-rules";
 import { FOCUS_RING } from "@/components/ui/focus";
-import {
-  Command,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { SearchablePicker } from "@/components/settings/searchable-picker";
 import { useToast } from "@/lib/hooks/use-toast";
 import { toRoleOptions, type RoleOption } from "@repo/hooks/chapter-roles";
 import { cn } from "@/lib/utils";
@@ -323,24 +312,9 @@ function AddRoleGoal({
   disabled: boolean;
   onAdd: (role: RoleOption) => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const commandRef = useRef<HTMLDivElement>(null);
-  const shown =
-    normalizeWords(query).length === 0
-      ? roles
-      : roles.filter((role) => matchesWordStarts(role.name, query));
-  const close = () => {
-    setOpen(false);
-    setQuery("");
-  };
-
   return (
-    <Popover
-      open={open}
-      onOpenChange={(next) => (next ? setOpen(true) : close())}
-    >
-      <PopoverTrigger asChild>
+    <SearchablePicker
+      trigger={
         <button
           type="button"
           disabled={disabled}
@@ -352,54 +326,18 @@ function AddRoleGoal({
           <Plus className="h-3.5 w-3.5" aria-hidden />
           Different goal for a role
         </button>
-      </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        className="w-max min-w-[14rem] max-w-[min(22rem,calc(100vw-2rem))] p-0"
-        onEscapeKeyDown={(event) => {
-          if (!query) return;
-          event.preventDefault();
-          setQuery("");
-        }}
-      >
-        <Command
-          ref={commandRef}
-          tabIndex={-1}
-          className="outline-none"
-          shouldFilter={false}
-          label={`Role for a different ${label.toLowerCase()}`}
-        >
-          <CommandInput
-            value={query}
-            onValueChange={setQuery}
-            placeholder="Find a role"
-            className="h-9 py-2 text-sm pointer-coarse:h-11 pointer-coarse:text-base"
-          />
-          <CommandList className="max-h-72 p-1">
-            {shown.length === 0 ? (
-              <p role="status" className="px-2 py-3 text-sm text-muted">
-                Nothing matches “{query.trim()}”.
-              </p>
-            ) : (
-              shown.map((role) => (
-                <CommandItem
-                  key={role.id}
-                  value={role.id}
-                  className="min-h-8 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base"
-                  onSelect={() => {
-                    onAdd(role);
-                    close();
-                  }}
-                >
-                  <span className="min-w-0 flex-1 break-words">
-                    {role.name}
-                  </span>
-                </CommandItem>
-              ))
-            )}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+      }
+      align="start"
+      label={`Role for a different ${label.toLowerCase()}`}
+      placeholder="Find a role"
+      items={roles}
+      nameOf={(role) => role.name}
+      keyOf={(role) => role.id}
+      itemClassName="min-h-8 text-sm pointer-coarse:min-h-11 pointer-coarse:text-base"
+      renderItem={(role) => (
+        <span className="min-w-0 flex-1 break-words">{role.name}</span>
+      )}
+      onPick={onAdd}
+    />
   );
 }

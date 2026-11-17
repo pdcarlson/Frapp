@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { StripePriceConsistencyService } from './stripe-price-consistency.service';
+import { StripePriceConsistencyService } from '../../infrastructure/billing/stripe-price-consistency.service';
 
 @Module({
   providers: [StripePriceConsistencyService],

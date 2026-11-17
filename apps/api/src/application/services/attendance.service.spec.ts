@@ -839,6 +839,136 @@ describe('AttendanceService', () => {
     });
   });
 
+  describe('markByHand', () => {
+    const member = (userId: string, roleIds: string[] = []) =>
+      ({ user_id: userId, role_ids: roleIds }) as never;
+
+    beforeEach(() => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.createMany.mockResolvedValue([]);
+      mockExcuseRepo.withdrawAtomic.mockResolvedValue(null);
+    });
+
+    it('fills in members with no row, keeps every existing row, and moves no points', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('u-1'),
+        member('u-2'),
+      ]);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([
+        { ...baseAttendance, user_id: 'u-2' },
+      ]);
+
+      const result = await service.markByHand(
+        'evt-1',
+        'ch-1',
+        ['u-1', 'u-2', 'u-1'],
+        'PRESENT',
+        'admin-1',
+      );
+
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledWith([
+        {
+          event_id: 'evt-1',
+          user_id: 'u-1',
+          status: 'PRESENT',
+          check_in_time: null,
+          excuse_reason: null,
+          marked_by: 'admin-1',
+        },
+      ]);
+      expect(mockAttendanceRepo.update).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+      // A pending excuse doesn't strand beside the new row.
+      expect(mockExcuseRepo.withdrawAtomic).toHaveBeenCalledWith(
+        'ch-1',
+        'evt-1',
+        'u-1',
+      );
+      expect(result).toEqual({
+        marked: ['u-1'],
+        already_marked: 1,
+        not_invited: 0,
+      });
+    });
+
+    it('leaves out non-members, members the roles leave out, and alumni the event does not name', async () => {
+      mockEventRepo.findById.mockResolvedValue({
+        ...baseEvent,
+        others_invited: false,
+        optional_role_ids: ['role-exec'],
+      });
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('exec', ['role-exec']),
+        member('new', ['role-new']),
+      ]);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([]);
+
+      const result = await service.markByHand(
+        'evt-1',
+        'ch-1',
+        ['exec', 'new', 'stranger'],
+        'PRESENT',
+        'admin-1',
+      );
+      expect(result).toEqual({
+        marked: ['exec'],
+        already_marked: 0,
+        not_invited: 2,
+      });
+
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('alum', ['role-alumni']),
+      ]);
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+      const alumni = await service.markByHand(
+        'evt-1',
+        'ch-1',
+        ['alum'],
+        'PRESENT',
+        'admin-1',
+      );
+      expect(alumni.not_invited).toBe(1);
+    });
+
+    it('writes only who still has no row when a check-in lands between the read and the write', async () => {
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        member('u-1'),
+        member('u-2'),
+      ]);
+      mockAttendanceRepo.findByEvent
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ ...baseAttendance, user_id: 'u-1' }]);
+      mockAttendanceRepo.createMany
+        .mockRejectedValueOnce(new Error('duplicate key'))
+        .mockResolvedValueOnce([]);
+
+      const result = await service.markByHand(
+        'evt-1',
+        'ch-1',
+        ['u-1', 'u-2'],
+        'LATE',
+        'admin-1',
+      );
+      expect(mockAttendanceRepo.createMany).toHaveBeenLastCalledWith([
+        expect.objectContaining({ user_id: 'u-2', status: 'LATE' }),
+      ]);
+      expect(result).toEqual({
+        marked: ['u-2'],
+        already_marked: 1,
+        not_invited: 0,
+      });
+    });
+
+    it('refuses an event outside the chapter', async () => {
+      mockEventRepo.findById.mockResolvedValue(null);
+      await expect(
+        service.markByHand('evt-1', 'ch-1', ['u-1'], 'PRESENT', 'admin-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockAttendanceRepo.createMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('updateStatus', () => {
     it('should update attendance status and set marked_by', async () => {
       const updated: EventAttendance = {

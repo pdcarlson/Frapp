@@ -2,7 +2,8 @@ import { MemberFacingError } from "@repo/hooks/error-copy";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { assembleFlatPdf, type FlatPage } from "./assemble";
 import type { BoxesByPage } from "./geometry";
-import { redactRenderedPage } from "./flatten-page";
+import { placedPageText, redactRenderedPage } from "./flatten-page";
+import { namePatterns, suggestPageBoxes, type RosterName } from "./suggest-boxes";
 
 /**
  * Browser-only pdf.js glue for backwork bulk upload (#3499): loading, page
@@ -117,6 +118,41 @@ export async function renderPagePreview(
     width: base.width,
     height: base.height,
   };
+}
+
+export type SuggestedBoxes = {
+  boxes: BoxesByPage;
+  /** Characters of text the file has; next to none means a scan, which has nothing to search. */
+  textLength: number;
+};
+
+/**
+ * Boxes suggested from the document's own text (`suggest-boxes.ts`), one page
+ * at a time with a yield between pages so the editor stays responsive. Runs on
+ * this device; nothing is sent anywhere. Stops between pages once `signal`
+ * aborts, so a document that left the editor doesn't keep the shared pdf.js
+ * worker busy.
+ */
+export async function suggestDocumentBoxes(
+  doc: PDFDocumentProxy,
+  names: readonly RosterName[],
+  signal?: AbortSignal,
+): Promise<SuggestedBoxes> {
+  const matchers = namePatterns(names);
+  const boxes: BoxesByPage = {};
+  let textLength = 0;
+  for (let number = 1; number <= doc.numPages; number += 1) {
+    signal?.throwIfAborted();
+    const page = await doc.getPage(number);
+    const base = page.getViewport({ scale: 1 });
+    const placed = await placedPageText(page, base);
+    page.cleanup();
+    for (const item of placed) textLength += item.str.trim().length;
+    const found = suggestPageBoxes({ width: base.width, height: base.height, items: placed }, matchers);
+    if (found.length > 0) boxes[number] = found;
+    await yieldToBrowser();
+  }
+  return { boxes, textLength };
 }
 
 export type FlattenOptions = {

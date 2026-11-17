@@ -7,7 +7,6 @@ import {
   canAddSignupSlot,
   canRemoveSignupSlot,
   checkSignupDraft,
-  SIGNUP_END_PASSED_PROBLEM,
   emptySignupDraft,
   SIGNUP_FORMAT_CHOICES,
   removeSignupSlot,
@@ -16,6 +15,7 @@ import {
   type SignupDraftFormat,
   type SignupPayload,
 } from "@repo/chat-core/signups";
+import { CARD_END_PASSED_PROBLEM } from "@repo/chat-core/card-closing";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   SIGNUP_NOTE_MAX_LENGTH,
@@ -126,7 +126,7 @@ export const NewSignupSheet = forwardRef<BottomSheetModal, NewSignupSheetProps>(
       // already closed.
       const fresh = checkSignupDraft(draft);
       if (!fresh.ok) {
-        setFailure(fresh.problem ?? SIGNUP_END_PASSED_PROBLEM);
+        setFailure(fresh.problem ?? CARD_END_PASSED_PROBLEM);
         return;
       }
       sending.current = true;

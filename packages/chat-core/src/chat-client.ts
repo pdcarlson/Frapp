@@ -1319,7 +1319,7 @@ export type ClosableCardKind = NonNullable<CloseCardArgs["kind"]>;
  * Close a sign-up card (#3926 step 2) or a form card (step 3) early: its
  * creator or a `channels:manage` holder, refused on a card already closed or
  * past its end time (`ChatService.closeCard`); the card offers it only when it
- * should work (`canCloseSignup` in `./signups`, `canCloseForm` in `./forms`).
+ * should work (`canCloseCard` in `./card-closing`).
  * Not optimistic, as {@link closePoll} isn't: the stamped row the server
  * returns is merged as the confirmation.
  */
