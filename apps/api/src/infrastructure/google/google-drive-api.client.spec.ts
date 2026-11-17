@@ -73,6 +73,49 @@ describe('GoogleDriveApiClient', () => {
     });
   });
 
+  it('reads one item with its Description and parents', async () => {
+    const client = new GoogleDriveApiClient(ACCOUNT);
+    withToken();
+    fetchMock.mockResolvedValueOnce(
+      json(200, {
+        id: 'f',
+        name: 'Folder',
+        mimeType: 'application/vnd.google-apps.folder',
+        description: 'frapp-k3x9qm2p',
+        parents: ['p1'],
+      }),
+    );
+
+    const item = await client.getItem('f');
+
+    expect(item).toMatchObject({
+      description: 'frapp-k3x9qm2p',
+      parents: ['p1'],
+    });
+    expect(
+      new URL(String(fetchMock.mock.calls[1][0])).searchParams.get('fields'),
+    ).toContain('description,parents');
+  });
+
+  // #5185: a code only this server can make, the same each time for one
+  // chapter and folder, different for another, and none without a key.
+  it('makes a stable connect code keyed by the account’s own key', () => {
+    const client = new GoogleDriveApiClient(ACCOUNT);
+    const code = client.proofCode('ch-1:folder');
+    expect(code).toMatch(/^frapp-[0-9a-hjkmnp-tv-z]{8}$/);
+    expect(client.proofCode('ch-1:folder')).toBe(code);
+    expect(client.proofCode('ch-2:folder')).not.toBe(code);
+    const other = generateKeyPairSync('rsa', { modulusLength: 2048 })
+      .privateKey.export({ type: 'pkcs8', format: 'pem' })
+      .toString();
+    expect(
+      new GoogleDriveApiClient({ ...ACCOUNT, privateKey: other }).proofCode(
+        'ch-1:folder',
+      ),
+    ).not.toBe(code);
+    expect(new GoogleDriveApiClient(null).proofCode('ch-1:folder')).toBeNull();
+  });
+
   it('reads every page of a folder, sizes as numbers', async () => {
     const client = new GoogleDriveApiClient(ACCOUNT);
     withToken();

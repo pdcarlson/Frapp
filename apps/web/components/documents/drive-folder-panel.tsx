@@ -151,7 +151,9 @@ function ConnectView({
       });
     } catch (caught) {
       // The API writes each refusal for the officer (not a folder link,
-      // not shared with Frapp yet, a file instead of a folder).
+      // not shared with Frapp yet, a file instead of a folder, connected to
+      // another chapter, or the code that shows the folder is this
+      // chapter's, to add to its name in Drive: #5185).
       setError(
         getErrorMessage(caught, "Couldn't connect. Try again.", {
           serverWritesForMembers: true,
@@ -180,6 +182,11 @@ function ConnectView({
             <Label htmlFor={inputId} className="text-body font-medium">
               2. Paste the folder&apos;s link
             </Label>
+            <p className="text-caption text-muted-foreground">
+              The first time, Frapp gives you a short code to add to the
+              folder&apos;s name in Drive, so it knows the folder is your
+              chapter&apos;s. Then connect again.
+            </p>
             <Input
               id={inputId}
               value={link}

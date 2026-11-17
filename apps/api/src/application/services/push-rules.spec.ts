@@ -148,13 +148,69 @@ describe('decidePush', () => {
   it('skips presence even if level=all', () => {
     expect(
       decidePush({
+        channel: ch('general'),
+        messageKind: 'text',
+        recipientIsPresent: true,
+        hasMention: false,
+        preferences: [],
+      }),
+    ).toBe('skip-presence');
+  });
+
+  // Presence is client-published, so it never silences an announcement:
+  // forging it must not quiet the chapter's URGENT push. Decided by the
+  // channel, so an ordinary post in #announcements counts too.
+  it('pushes an announcement to a member shown as present', () => {
+    expect(
+      decidePush({
         channel: ch('announcements', { is_read_only: true }),
         messageKind: 'announcement',
         recipientIsPresent: true,
         hasMention: false,
         preferences: [],
       }),
+    ).toBe('send');
+  });
+
+  it('pushes a plain post in #announcements to a member shown as present', () => {
+    expect(
+      decidePush({
+        channel: ch('announcements', { is_read_only: true }),
+        messageKind: 'text',
+        recipientIsPresent: true,
+        hasMention: false,
+        preferences: [],
+      }),
+    ).toBe('send');
+  });
+
+  it('lets presence quiet a thread reply under an announcement', () => {
+    expect(
+      decidePush({
+        channel: ch('announcements', { is_read_only: true }),
+        messageKind: 'text',
+        recipientIsPresent: true,
+        hasMention: false,
+        preferences: [],
+        thread: { followState: 'following' },
+      }),
     ).toBe('skip-presence');
+  });
+
+  it('lets presence quiet an @mention, a DM and a stray announcement kind', () => {
+    for (const input of [
+      { channel: ch('random'), messageKind: 'text', hasMention: true },
+      {
+        channel: ch('dm', { type: 'DM' }),
+        messageKind: 'text',
+        hasMention: true,
+      },
+      { channel: ch('random'), messageKind: 'announcement', hasMention: false },
+    ]) {
+      expect(
+        decidePush({ ...input, recipientIsPresent: true, preferences: [] }),
+      ).toBe('skip-presence');
+    }
   });
 
   it('sends on default announcements level', () => {
