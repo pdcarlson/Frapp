@@ -12,9 +12,9 @@ same-day reschedule is reminded about again (#1550).
 ## Promotion
 
 - **Purpose**: one function, `public.events_release_reminder_claims()`, and one
-  trigger, `events_release_reminder_claims` (`after update of start_time`,
-  `when old.start_time is distinct from new.start_time`). No column, key or data
-  change.
+  constraint trigger, `events_release_reminder_claims` (`after update of
+  start_time`, deferred to commit, `when old.start_time is distinct from
+  new.start_time`). No column, key or data change.
 - **Checks**:
   `select tgname from pg_trigger where tgrelid = 'public.events'::regclass and tgname = 'events_release_reminder_claims';`
   returns one row.

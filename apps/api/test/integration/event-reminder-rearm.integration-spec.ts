@@ -1,7 +1,12 @@
 // An event's pre-start reminder re-arms when its start time moves (#1550),
 // against the live trigger the unit specs can't see. The claim is the one the
-// sweep really takes (`claimDispatch`), and the event moves through the same
-// repository calls `EventService.update` and the series edits make.
+// sweep really takes (`claimDispatch`), and the event moves through
+// `SupabaseEventRepository.update`, the call `EventService.update` and the
+// series edit and split paths use to retime a row. (A regenerating series
+// edit doesn't retime rows: it rebuilds them under new ids, which carry no
+// claim.) The CI-run proof of the trigger body is the PGlite tier
+// scripts/pglite/tiers/event-reminder-rearm.mjs; the sweep's re-read after a
+// won claim is in the unit spec.
 //
 // Claims are written the same way by the API before and after #1550, so these
 // cases also stand for the deploy gap (migration applied, old API still
@@ -164,17 +169,5 @@ describeIntegration('Event reminder re-arm on reschedule (#1550)', () => {
       { threshold: 'AUTO_ABSENT', due_date: DAY },
     ]);
     expect(await claimReminder(siblingId)).toBe(false);
-  });
-
-  it('re-arms every occurrence a series edit moves in one write', async () => {
-    expect(await claimReminder(eventId)).toBe(true);
-    expect(await claimReminder(siblingId)).toBe(true);
-
-    await events.updateMany([eventId, siblingId], chapterId, {
-      start_time: at('19:00'),
-    });
-
-    expect(await claimReminder(eventId)).toBe(true);
-    expect(await claimReminder(siblingId)).toBe(true);
   });
 });

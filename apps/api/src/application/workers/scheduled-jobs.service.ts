@@ -726,10 +726,19 @@ export class ScheduledJobsService {
    * so the claim does not outlive the tick and an event that gains its first
    * required member later in the window is still reminded about.
    *
-   * **A reschedule re-arms it.** The claim key's date component is a `date`,
-   * so a move within one UTC day would reuse the key; the
-   * `events_release_reminder_claims` trigger deletes the claim whenever
-   * `start_time` changes (#1550), so the next tick claims for the new time.
+   * **A reschedule re-arms it (#1550).** The claim key's date component is a
+   * `date`, so a move within one UTC day would reuse the key. Two halves keep
+   * that from suppressing the reminder for the new time:
+   *
+   * - The `events_release_reminder_claims` trigger deletes the claim when
+   *   `start_time` changes, at the writer's commit, so the next tick claims
+   *   for the new time.
+   * - A tick that read the event before the move but claims after it would
+   *   re-create the old-time claim the trigger had nothing to delete, so the
+   *   time is read again once the claim is won. If it moved, the audience
+   *   resolves to nobody, which releases the claim, and the next tick sends
+   *   with the real time. It costs one single-row read per won claim, not
+   *   per losing tick.
    */
   private async notifyEventStartingSoon(
     event: SweepUpcomingEventRow,
@@ -752,6 +761,16 @@ export class ScheduledJobsService {
       threshold: 'EVENT_REMINDER',
       dueDate: startsOn,
       recipients: async () => {
+        const current = await this.repository.findEventStartTime(
+          event.chapter_id,
+          event.id,
+        );
+        if (
+          current === null ||
+          new Date(current).getTime() !== new Date(event.start_time).getTime()
+        ) {
+          return [];
+        }
         const [required, excused] = await Promise.all([
           this.attendanceService.resolveRequiredMembers(
             event.chapter_id,

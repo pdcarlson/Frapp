@@ -38,7 +38,9 @@ export const LANDMARKS = [
     // this trigger deletes the old claim (#1550). Pinned with its WHEN clause:
     // without it every save of an event inside the window (a name or location
     // edit) would re-send "starts in N minutes"; without the trigger the
-    // reschedule is silently never reminded. Neither shows up as an error.
+    // reschedule is silently never reminded. Deferred, so its delete sees a
+    // claim a sweep committed while the move was in flight. None of the three
+    // shows up as an error. The body's behavior is tiers/event-reminder-rearm.
     name: "moving an event's start_time releases its EVENT_REMINDER claim",
     sql: `select pg_get_triggerdef(t.oid) as def
             from pg_trigger t
@@ -47,6 +49,7 @@ export const LANDMARKS = [
     ok: (rows) =>
       rows.length === 1 &&
       /AFTER UPDATE OF start_time/i.test(rows[0].def ?? "") &&
+      /DEFERRABLE INITIALLY DEFERRED/i.test(rows[0].def ?? "") &&
       /old\.start_time IS DISTINCT FROM new\.start_time/i.test(
         rows[0].def ?? "",
       ),

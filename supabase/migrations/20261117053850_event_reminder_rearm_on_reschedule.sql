@@ -9,9 +9,17 @@
 -- The fix deletes the event's EVENT_REMINDER claims whenever its start_time
 -- actually changes, so the next sweep tick claims afresh for the new time.
 -- Tasks already do the same from TaskService.update (`releaseReminderClaims`,
--- #5306); for events it lives here because start_time has several writers
--- (EventService.update and the series edit, split and hand-off paths), and a
--- trigger is the one place none of them can forget.
+-- #5306); for events it lives here because start_time has more than one
+-- writer (EventService.update, and the series edit and split paths that retime
+-- the head or its successor), and a trigger is the one place none of them can
+-- forget. A series edit that regenerates occurrences doesn't update them: it
+-- rebuilds them under new ids, which carry no claim at all.
+--
+-- Deferred to the writer's commit, so the delete sees any claim a sweep tick
+-- committed while the update was in flight. A tick that read the event before
+-- the move and claims after the commit is the sweep's to catch: it reads
+-- start_time again once it wins the claim and releases the claim if the time
+-- moved (`ScheduledJobsService.notifyEventStartingSoon`).
 --
 -- Why not widen the claim key with the exact time: the old and new API would
 -- write differently shaped claims across the deploy gap and after an API-only
@@ -45,8 +53,9 @@ revoke execute on function public.events_release_reminder_claims()
   from public, anon, authenticated;
 
 drop trigger if exists events_release_reminder_claims on public.events;
-create trigger events_release_reminder_claims
+create constraint trigger events_release_reminder_claims
   after update of start_time on public.events
+  deferrable initially deferred
   for each row
   when (old.start_time is distinct from new.start_time)
   execute function public.events_release_reminder_claims();
