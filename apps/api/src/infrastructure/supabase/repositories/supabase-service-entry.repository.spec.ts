@@ -1,5 +1,7 @@
 import { SupabaseServiceEntryRepository } from './supabase-service-entry.repository';
+import type { FrappSupabaseClient } from '../database.types';
 import {
+  CHAPTER_A,
   CHAPTER_B,
   USER_SHARED,
   createTenantHarness,
@@ -157,6 +159,18 @@ describe('SupabaseServiceEntryRepository — tenant scope', () => {
     ).resolves.toBe(1);
   });
 
+  it('findByProofPath reads only the caller chapter entries', async () => {
+    const path = 'chapters/x/service/p/proof.pdf';
+    reseed((entry) => {
+      entry.proof_path = path;
+    });
+
+    const holder = await harness.expectTenantScoped(CHAPTER_B, () =>
+      repo.findByProofPath(CHAPTER_B, path),
+    );
+    expect(holder?.id).toBe(ENTRY_B);
+  });
+
   it('approveAtomic and leaderboard pass the chapter to their RPCs', async () => {
     harness = createTenantHarness({
       tables: seed(),
@@ -178,5 +192,100 @@ describe('SupabaseServiceEntryRepository — tenant scope', () => {
       expect.objectContaining({ p_chapter_id: CHAPTER_B }),
       expect.objectContaining({ p_chapter_id: CHAPTER_B }),
     ]);
+  });
+});
+
+/**
+ * A create resent after a lost response, racing the first past the service's
+ * lookup, meets `service_entries_chapter_proof_path_key`. The tenant harness
+ * cannot reach that: its `insert` appends unconditionally, so it never raises
+ * the `23505` the index does.
+ */
+describe('SupabaseServiceEntryRepository — create when the proof path is taken', () => {
+  const PATH = 'chapters/c/service/p/proof.jpg';
+  const holder = {
+    id: '0c000000-0000-4000-8000-0000000000f0',
+    chapter_id: CHAPTER_A,
+    user_id: USER_SHARED,
+    proof_path: PATH,
+  };
+
+  /**
+   * Minimal PostgREST double: `.insert(...).select().single()` answers with
+   * `insertError`, and the re-read's `.select().eq().eq().order().limit()
+   * .maybeSingle()` answers with `reread`. `filters` records its predicates.
+   */
+  function createClient(options: {
+    insertError: unknown;
+    reread: Record<string, unknown> | null;
+  }) {
+    const filters: Array<[string, unknown]> = [];
+    const builder: Record<string, unknown> = {
+      insert: jest.fn(() => builder),
+      select: jest.fn(() => builder),
+      order: jest.fn(() => builder),
+      limit: jest.fn(() => builder),
+      eq: jest.fn((column: string, value: unknown) => {
+        filters.push([column, value]);
+        return builder;
+      }),
+      single: jest.fn(() =>
+        Promise.resolve({ data: null, error: options.insertError }),
+      ),
+      maybeSingle: jest.fn(() =>
+        Promise.resolve({ data: options.reread, error: null }),
+      ),
+    };
+    const client = {
+      from: jest.fn(() => builder),
+    } as unknown as FrappSupabaseClient;
+    return { client, filters };
+  }
+
+  const insert = {
+    chapter_id: CHAPTER_A,
+    user_id: USER_SHARED,
+    date: '2026-05-01',
+    duration_minutes: 60,
+    description: 'Food bank',
+    proof_path: PATH,
+  };
+
+  it('returns the entry holding the path instead of surfacing 23505, read in the caller chapter', async () => {
+    const { client, filters } = createClient({
+      insertError: { code: '23505', message: 'duplicate key value' },
+      reread: holder,
+    });
+
+    await expect(
+      new SupabaseServiceEntryRepository(client).create(insert),
+    ).resolves.toEqual(holder);
+    expect(filters).toEqual([
+      ['chapter_id', CHAPTER_A],
+      ['proof_path', PATH],
+    ]);
+  });
+
+  it('rethrows when the holder vanished between the insert and the re-read', async () => {
+    const { client } = createClient({
+      insertError: { code: '23505', message: 'duplicate key value' },
+      reread: null,
+    });
+
+    await expect(
+      new SupabaseServiceEntryRepository(client).create(insert),
+    ).rejects.toMatchObject({ code: '23505' });
+  });
+
+  it('rethrows an error that is not a unique violation', async () => {
+    const { client, filters } = createClient({
+      insertError: { code: '23503', message: 'foreign key violation' },
+      reread: holder,
+    });
+
+    await expect(
+      new SupabaseServiceEntryRepository(client).create(insert),
+    ).rejects.toMatchObject({ code: '23503' });
+    expect(filters).toEqual([]);
   });
 });

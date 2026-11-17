@@ -15,8 +15,11 @@ import { isUnsafeStoragePath } from '#domain/utils/storage-path';
  * (`spec/behavior/service-hours.md` § Logging) and task photos reuse (#4565):
  * the client asks for a signed upload URL under a server-minted, chapter-bound
  * prefix, PUTs the bytes, then sends the returned storage path on its write,
- * which re-checks the path here before persisting it. One copy, so a fix to
- * either half reaches both features.
+ * which re-checks the path here before persisting it. Backwork is the third
+ * caller: it mints its own upload URLs, and its confirm and its page check
+ * re-check the path with `assertUploadedPathUnder`
+ * (`spec/behavior/backwork.md` § Storage). One copy, so a fix to either half
+ * reaches every feature that uses it.
  */
 
 /**

@@ -198,7 +198,9 @@ const DRAFT_FILE_URL_SECONDS = 300;
  * How long an AI fill's claim on a draft holds before another fill may take
  * it over. Well past a real fill (one download of at most 25 MB, a text read
  * and one model call), so it only matters when a fill was cut off by a
- * restart and never released its claim.
+ * restart and never released its claim. A fill gives up a minute before it
+ * (`AI_FILL_TIME_LIMIT_MS` in `backwork-fill.service.ts`), so a takeover never
+ * runs beside a fill that is still going.
  */
 export const AI_FILL_CLAIM_STALE_MS = 5 * 60_000;
 

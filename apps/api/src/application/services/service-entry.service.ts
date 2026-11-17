@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -42,6 +41,14 @@ import { logThrowable } from '../../infrastructure/observability/log-throwable';
 import { reportCaughtFailure } from '../../infrastructure/observability/report-caught-failure';
 
 const SERVICE_BUCKET = 'service';
+
+/**
+ * The create's answer when the proof path is already on another member's
+ * entry. Not "add it again": this member's own resend never sees it (it gets
+ * its saved entry back), so the way on is a file of their own.
+ */
+export const PROOF_PATH_TAKEN_MESSAGE =
+  "This proof file is on another member's service entry. Attach your own photo or file.";
 
 /**
  * Folder holding one chapter's service-proof uploads (trailing slash
@@ -132,10 +139,8 @@ export class ServiceEntryService {
   /**
    * Proof paths are client-echoed from the upload-url flow, so re-validate
    * server-side before persisting (`assertUploadedPathUnder`): inside the
-   * active chapter's service-proof prefix, naming an uploaded object, and not
-   * already another entry's proof. Each upload mints a fresh path, so a path
-   * in use means the same receipt sent twice; refusing it keeps one file to
-   * one entry, which is what lets deleting an entry delete its file.
+   * active chapter's service-proof prefix, and naming an uploaded object.
+   * Whether another entry already holds the path is `create`'s question.
    */
   private async assertValidProofPath(
     chapterId: string,
@@ -153,12 +158,25 @@ export class ServiceEntryService {
         missing: 'proof_path does not reference an uploaded proof file',
       },
     );
-    if (
-      (await this.serviceEntryRepo.countByProofPath(chapterId, proofPath)) > 0
-    ) {
-      throw new ConflictException(
-        'This receipt is already on another service entry. Add the photo or file again.',
-      );
+  }
+
+  /**
+   * An entry the caller is about to be handed because it already holds the
+   * proof path they sent: theirs is a resend of a create that saved, so it
+   * comes back as saved; another member's is refused.
+   *
+   * The refusal is a 400 on purpose. Shipped phone builds drop a held proof
+   * path on any 400 but the receipt policy's (`proofPathRefusedOf` in
+   * `apps/mobile/lib/more/service-proof.ts`) and upload the photo afresh on
+   * the next Submit, which is the only way forward; on a 409 they would keep
+   * resending the same path.
+   */
+  private assertOwnProofHolder(
+    holder: ServiceEntry,
+    input: CreateServiceEntryInput,
+  ): void {
+    if (holder.user_id !== input.user_id) {
+      throw new BadRequestException(PROOF_PATH_TAKEN_MESSAGE);
     }
   }
 
@@ -347,21 +365,41 @@ export class ServiceEntryService {
       await this.assertValidProofPath(input.chapter_id, proofPath);
     }
 
-    const entry = await this.serviceEntryRepo.create({
-      chapter_id: input.chapter_id,
-      user_id: input.user_id,
-      date: input.date,
-      duration_minutes,
-      description: description.trim(),
-      proof_path: proofPath,
-      status: 'PENDING',
-      reviewed_by: null,
-      review_comment: null,
-      points_awarded: false,
-      // `awarded_points` is left out on purpose: the column is null until
-      // approval, and naming it here would fail every create against a
-      // database that hasn't applied 20261112153700 yet (#3868).
-    });
+    // Each upload mints its own path, so an entry that already holds this one
+    // is almost always this member's own create, sent again because its
+    // response never arrived: the web create retries a failed request, and
+    // the phone's sheet resends with the path it kept. Answering with the
+    // saved entry keeps one receipt to one entry (which is what lets deleting
+    // an entry delete its file) without telling a member on a flaky
+    // connection that the entry they just logged failed. It is matched on the
+    // member and the path alone, not the other fields: a resend carries what
+    // was saved, and if the member changed a field on the phone's sheet before
+    // resending, the entry already saved stands, as it would have had its
+    // answer arrived (entries can't be edited; they delete it and log it
+    // again). Two creates racing past this read meet the
+    // unique index, and the repository hands the loser this same entry.
+    const existing = proofPath
+      ? await this.serviceEntryRepo.findByProofPath(input.chapter_id, proofPath)
+      : null;
+
+    const entry =
+      existing ??
+      (await this.serviceEntryRepo.create({
+        chapter_id: input.chapter_id,
+        user_id: input.user_id,
+        date: input.date,
+        duration_minutes,
+        description: description.trim(),
+        proof_path: proofPath,
+        status: 'PENDING',
+        reviewed_by: null,
+        review_comment: null,
+        points_awarded: false,
+        // `awarded_points` is left out on purpose: the column is null until
+        // approval, and naming it here would fail every create against a
+        // database that hasn't applied 20261112153700 yet (#3868).
+      }));
+    if (proofPath) this.assertOwnProofHolder(entry, input);
 
     // The `/hours log` slash command asks us to surface a read-only hours
     // card in chat. The card is server-originated (a client cannot forge
@@ -381,6 +419,11 @@ export class ServiceEntryService {
     // The one-liner cannot attach proof (the chat composer's Service hours
     // form can). The receipt-policy 400 above still fires for a slash create:
     // that is the correct UX, not a bypass of `wf_hours_receipt`.
+    //
+    // A resend answered with its saved entry asks for the card again:
+    // `sendMessage` dedupes on `client_message_id`, so a card that posted the
+    // first time is found rather than posted twice, and one that failed gets
+    // its second try.
     const cardPosted = await this.tryPostHoursCard(input, entry);
 
     return cardPosted === undefined

@@ -2,7 +2,6 @@ import * as caughtFailure from '../../infrastructure/observability/report-caught
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,7 +9,10 @@ import {
   MAX_UPLOAD_BYTES,
   SERVICE_RECEIPT_REQUIRED_MESSAGE,
 } from '@repo/validation';
-import { ServiceEntryService } from './service-entry.service';
+import {
+  PROOF_PATH_TAKEN_MESSAGE,
+  ServiceEntryService,
+} from './service-entry.service';
 import { SERVICE_ENTRY_REPOSITORY } from '#domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '#domain/repositories/service-entry.repository.interface';
 import type { ServiceEntry } from '#domain/entities/service-entry.entity';
@@ -91,6 +93,7 @@ describe('ServiceEntryService', () => {
       findByChapterFiltered: jest.fn(),
       leaderboard: jest.fn(),
       create: jest.fn(),
+      findByProofPath: jest.fn().mockResolvedValue(null),
       countByProofPath: jest.fn().mockResolvedValue(0),
       rejectIfPending: jest.fn(),
       approveAtomic: jest.fn(),
@@ -414,29 +417,94 @@ describe('ServiceEntryService', () => {
       expect(mockChapterWorkflows.getWorkflow).not.toHaveBeenCalled();
     });
 
-    it('refuses a proof file another entry already has', async () => {
+    describe('a proof file already on an entry', () => {
       const proofPath = 'chapters/ch-1/service/se-1/proof.pdf';
-      mockStorageProvider.listFiles.mockResolvedValue([proofPath]);
-      mockServiceEntryRepo.countByProofPath.mockResolvedValue(1);
-
-      const attempt = service.create({
+      const saved: ServiceEntry = { ...baseEntry, proof_path: proofPath };
+      const resend = {
         chapter_id: 'ch-1',
         user_id: 'user-1',
         date: '2026-02-26',
         duration_minutes: 60,
         description: 'Community cleanup',
         proof_path: proofPath,
+      };
+
+      beforeEach(() => {
+        mockStorageProvider.listFiles.mockResolvedValue([proofPath]);
       });
 
-      await expect(attempt).rejects.toThrow(ConflictException);
-      await expect(attempt).rejects.toThrow(
-        'This receipt is already on another service entry.',
-      );
-      expect(mockServiceEntryRepo.countByProofPath).toHaveBeenCalledWith(
-        'ch-1',
-        proofPath,
-      );
-      expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+      // A member on a flaky connection: the create saved, its answer was
+      // lost, and the web retry or the phone's resend sends the same path.
+      it('answers the same member with the entry already saved, not a second one', async () => {
+        mockServiceEntryRepo.findByProofPath.mockResolvedValue(saved);
+
+        await expect(service.create(resend)).resolves.toEqual(saved);
+        expect(mockServiceEntryRepo.findByProofPath).toHaveBeenCalledWith(
+          'ch-1',
+          proofPath,
+        );
+        expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('keeps the saved entry when the resend changed a field', async () => {
+        mockServiceEntryRepo.findByProofPath.mockResolvedValue(saved);
+
+        await expect(
+          service.create({ ...resend, duration_minutes: 90 }),
+        ).resolves.toEqual(saved);
+        expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+      });
+
+      it("asks for a resend's chat card again, which chat dedupes", async () => {
+        mockServiceEntryRepo.findByProofPath.mockResolvedValue(saved);
+
+        const result = await service.create({
+          ...resend,
+          channel_id: 'channel-1',
+          client_message_id: 'cmid-1',
+        });
+
+        expect(result).toEqual({ ...saved, card_posted: true });
+        expect(mockChatService.sendMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            client_message_id: 'cmid-1',
+            payload: expect.objectContaining({ entry_id: 'se-1' }),
+          }),
+        );
+      });
+
+      // 400, not 409: shipped phones drop a held path only on a 400.
+      it("refuses another member's proof file with a 400", async () => {
+        mockServiceEntryRepo.findByProofPath.mockResolvedValue({
+          ...saved,
+          user_id: 'user-2',
+        });
+
+        const attempt = service.create(resend);
+        await expect(attempt).rejects.toThrow(BadRequestException);
+        await expect(attempt).rejects.toThrow(PROOF_PATH_TAKEN_MESSAGE);
+        expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+      });
+
+      // Two creates raced past the lookup; the unique index stopped the
+      // second, and the repository handed back the entry that won.
+      it('answers a lost insert race with the winning entry when it is the same member', async () => {
+        mockServiceEntryRepo.create.mockResolvedValue(saved);
+
+        await expect(service.create(resend)).resolves.toEqual(saved);
+      });
+
+      it("refuses a lost insert race to another member's entry", async () => {
+        mockServiceEntryRepo.create.mockResolvedValue({
+          ...saved,
+          user_id: 'user-2',
+        });
+
+        await expect(service.create(resend)).rejects.toThrow(
+          PROOF_PATH_TAKEN_MESSAGE,
+        );
+        expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+      });
     });
 
     it('should reject whitespace-only proof when wf_hours_receipt is enabled', async () => {

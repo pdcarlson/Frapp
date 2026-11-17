@@ -10,8 +10,15 @@ import {
 import type { BackworkResource } from '#domain/entities/backwork.entity';
 import type { AiConsentService } from '../ai/ai-consent.service';
 import type { AiGatewayService } from '../ai/ai-gateway.service';
-import type { BackworkService } from '../backwork.service';
-import { BackworkFillService } from './backwork-fill.service';
+import {
+  AI_FILL_CLAIM_STALE_MS,
+  type BackworkService,
+} from '../backwork.service';
+import {
+  AI_FILL_TIME_LIMIT_MS,
+  BackworkFillService,
+  boundedFillSignal,
+} from './backwork-fill.service';
 
 const CHAPTER = 'chapter-1';
 const USER = 'user-1';
@@ -285,6 +292,94 @@ describe('BackworkFillService', () => {
     const failed = setup({ file: null });
     await expect(failed.run()).rejects.toBeInstanceOf(NotFoundException);
     expect(failed.release).toHaveBeenCalledTimes(1);
+  });
+
+  describe('the time limit on a claimed fill', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    /** Stands in for `AbortSignal.timeout`, so a spec can make it fire. */
+    function controlDeadline() {
+      const deadline = new AbortController();
+      const timeout = jest
+        .spyOn(AbortSignal, 'timeout')
+        .mockReturnValue(deadline.signal);
+      return { deadline, timeout };
+    }
+
+    function signalOf(gateway: { generateObject: jest.Mock }): AbortSignal {
+      const prompt = gateway.generateObject.mock.calls[0][1] as {
+        signal: AbortSignal;
+      };
+      return prompt.signal;
+    }
+
+    it('ends a minute inside the claim, so a takeover never runs beside a live fill', () => {
+      expect(AI_FILL_TIME_LIMIT_MS).toBeLessThanOrEqual(
+        AI_FILL_CLAIM_STALE_MS - 60_000,
+      );
+    });
+
+    it('runs the model call under the time limit, starting once the claim is held', async () => {
+      const { timeout } = controlDeadline();
+      const { run, gateway } = setup();
+      await run();
+      expect(timeout).toHaveBeenCalledWith(AI_FILL_TIME_LIMIT_MS);
+      expect(signalOf(gateway).aborted).toBe(false);
+    });
+
+    it('stops a model call still running at the limit, and lets the claim go', async () => {
+      const { deadline } = controlDeadline();
+      const { run, gateway, backwork, release } = setup();
+      gateway.generateObject.mockImplementation(
+        (..._args: unknown[]) =>
+          new Promise((_resolve, reject) => {
+            const { signal } = _args[1] as { signal: AbortSignal };
+            signal.addEventListener('abort', () => reject(signal.reason));
+            deadline.abort(new DOMException('limit', 'TimeoutError'));
+          }),
+      );
+      await expect(run()).rejects.toMatchObject({ name: 'TimeoutError' });
+      expect(backwork.applyAiFill).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    it('writes nothing when the limit passed while the model answered', async () => {
+      const { deadline } = controlDeadline();
+      const { run, gateway, backwork, release } = setup();
+      const answer = await gateway.generateObject();
+      gateway.generateObject.mockImplementation(async () => {
+        deadline.abort(new DOMException('limit', 'TimeoutError'));
+        return answer;
+      });
+      await expect(run()).rejects.toMatchObject({ name: 'TimeoutError' });
+      expect(backwork.applyAiFill).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledTimes(1);
+    });
+
+    it('still stops when the member leaves the page', async () => {
+      const left = new AbortController();
+      const { service, gateway } = setup();
+      await service.fill({
+        chapterId: CHAPTER,
+        userId: USER,
+        draftId: DRAFT,
+        now: NOW,
+        signal: left.signal,
+      });
+      const signal = signalOf(gateway);
+      expect(signal.aborted).toBe(false);
+      left.abort();
+      expect(signal.aborted).toBe(true);
+    });
+
+    it('fires on its own once the limit passes', async () => {
+      const signal = boundedFillSignal(undefined, 5);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(signal.aborted).toBe(true);
+      expect((signal.reason as Error).name).toBe('TimeoutError');
+    });
   });
 
   it('refuses before reading the file when the member has not said yes', async () => {

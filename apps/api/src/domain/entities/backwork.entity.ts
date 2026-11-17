@@ -111,8 +111,10 @@ export interface BackworkResource {
   draft_fields: BackworkDraftFields | null;
   /**
    * Set while an AI fill is reading this draft's file (#5233), so a second
-   * fill of the same draft waits its turn; null otherwise. Optional because a
-   * database without `20261117162505` has no such column.
+   * fill of the same draft waits its turn; null otherwise. Optional in the
+   * type, but `20261117162505` must be pushed before the API that uses it:
+   * fills claim it, and backwork search selects it by name
+   * (`BACKWORK_SEARCH_COLUMNS`), so both fail against a database without it.
    */
   ai_fill_started_at?: string | null;
 }

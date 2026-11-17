@@ -23,9 +23,32 @@ import {
 import { AiConsentService } from '../ai/ai-consent.service';
 import { aiConsentRefusal } from '../ai/ai-consent-refusal';
 import { AiGatewayService } from '../ai/ai-gateway.service';
-import { BackworkService } from '../backwork.service';
+import { AI_FILL_CLAIM_STALE_MS, BackworkService } from '../backwork.service';
 
 const TASK = 'backwork.fill';
+
+/**
+ * How long one fill may hold its draft's claim before it gives up: a minute
+ * under `AI_FILL_CLAIM_STALE_MS`, after which another request may take the
+ * claim over. Without it a fill could outlive its claim (the provider client
+ * waits up to ten minutes per attempt and retries twice, and the only other
+ * stop is the member leaving the page), so a takeover would read and write
+ * the draft beside a fill that is still running.
+ */
+export const AI_FILL_TIME_LIMIT_MS = AI_FILL_CLAIM_STALE_MS - 60_000;
+
+/**
+ * The signal a claimed fill runs under: aborted when the member leaves the
+ * page (`outer`) or when `limitMs` has passed since the claim, whichever
+ * comes first.
+ */
+export function boundedFillSignal(
+  outer: AbortSignal | undefined,
+  limitMs: number = AI_FILL_TIME_LIMIT_MS,
+): AbortSignal {
+  const deadline = AbortSignal.timeout(limitMs);
+  return outer ? AbortSignal.any([outer, deadline]) : deadline;
+}
 
 /**
  * How one fill ended:
@@ -68,8 +91,10 @@ export type BackworkFillResult =
  * 2. The draft: the caller's own only. One uploaded as-is is refused, since
  *    its stored file is the original; one with every field already set is
  *    marked `nothing_found` without reading its file, and one already marked
- *    `unreadable` is answered as it stands, since its file hasn't changed
- *    (a check that swaps the file in clears the mark).
+ *    `unreadable` is answered as it stands, since its file can't have
+ *    changed: only the check that comes before any fill swaps a draft's file
+ *    (`BackworkService.checkDraft`), so the uploader fills it by hand or
+ *    deletes it and uploads a smaller or text-based copy.
  * 3. The redacted file's text layer, which holds only the words outside its
  *    redaction boxes, read by one fill at a time per draft (a second request
  *    while one runs is refused, 409). A file over the extractor's size cap is
@@ -139,16 +164,25 @@ export class BackworkFillService {
       );
     }
     try {
-      return await this.readAndFill(draft, input, currentYear);
+      return await this.readAndFill(
+        draft,
+        { ...input, signal: boundedFillSignal(input.signal) },
+        currentYear,
+      );
     } finally {
       await release();
     }
   }
 
-  /** Steps 3 to 5, while this request holds the draft's fill claim. */
+  /**
+   * Steps 3 to 5, while this request holds the draft's fill claim. `signal`
+   * is bounded by {@link AI_FILL_TIME_LIMIT_MS}: it stops the model call, and
+   * a fill past it writes nothing, so a request that has since taken the
+   * claim over is never written over.
+   */
   private async readAndFill(
     draft: BackworkResource,
-    input: { chapterId: string; userId: string; signal?: AbortSignal },
+    input: { chapterId: string; userId: string; signal: AbortSignal },
     currentYear: number,
   ): Promise<BackworkFillResult> {
     const { chapterId, userId } = input;
@@ -186,7 +220,7 @@ export class BackworkFillService {
         system: backworkFillSystem(taxonomy, currentYear),
         messages: backworkFillMessages(text),
         schema: BackworkFillOutputSchema,
-        ...(input.signal === undefined ? {} : { signal: input.signal }),
+        signal: input.signal,
       },
       { chapterId, actingUserId: userId },
     );
@@ -201,7 +235,8 @@ export class BackworkFillService {
       return { status: 'invalid_output' };
     }
 
-    // 5.
+    // 5. Not past the time limit: the claim may be another request's by now.
+    input.signal.throwIfAborted();
     const checked = checkBackworkFill(generated.value, {
       draft: draft.draft_fields ?? {},
       isRedacted: draft.is_redacted,

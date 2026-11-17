@@ -15,6 +15,7 @@ import {
   useMergeDepartments,
   useBackworkCourses,
   useSaveBackworkCourse,
+  useFillBackworkDraft,
 } from "./use-backwork";
 import { createHookWrapper, createTestQueryClient } from "./test-utils";
 
@@ -528,6 +529,39 @@ const CHAPTER_ID = "chapter-abc";
       // broad prefix, not a narrower key, is deliberate here.
       expect(invalidateQueriesSpy).toHaveBeenCalledWith({
         queryKey: BACKWORK_KEY,
+      });
+    });
+  });
+
+  describe("useFillBackworkDraft", () => {
+    // The app retries a failure that may be transient (`retryMutation` in
+    // apps/web's query provider); a client set to retry stands in for it.
+    const retryingClient = () =>
+      new QueryClient({ defaultOptions: { mutations: { retry: 3, retryDelay: 0 } } });
+
+    it.each([
+      ["a fill of the draft still running", 409],
+      ["a lost answer from a fill that may have finished", 502],
+    ])("does not retry %s on its own", async (_why, status) => {
+      const post = vi.fn().mockResolvedValue({
+        data: undefined,
+        error: undefined,
+        response: { status, ok: false },
+      });
+      const { result } = renderHook(() => useFillBackworkDraft(), {
+        wrapper: createHookWrapper({
+          client: { POST: post },
+          queryClient: retryingClient(),
+          chapterId: CHAPTER_ID,
+        }),
+      });
+
+      await act(async () => {
+        await expect(result.current.mutateAsync("draft-1")).rejects.toBeTruthy();
+      });
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(post).toHaveBeenCalledWith("/v1/backwork/drafts/{id}/fill", {
+        params: { path: { id: "draft-1" } },
       });
     });
   });

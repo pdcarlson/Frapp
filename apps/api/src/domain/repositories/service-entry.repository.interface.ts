@@ -28,7 +28,23 @@ export interface IServiceEntryRepository {
     chapterId: string,
     range: { startDate?: string; endDate?: string },
   ): Promise<ServiceLeaderboardRow[]>;
+  /**
+   * Inserts the entry. When the insert meets
+   * `service_entries_chapter_proof_path_key` (another entry in the chapter
+   * already holds this `proof_path`), returns that entry instead, which may
+   * be another member's: whether the caller may have it is the service's
+   * call (`ServiceEntryService.create`).
+   */
   create(data: Partial<ServiceEntry>): Promise<ServiceEntry>;
+  /**
+   * The entry in the chapter whose proof is the file at this path, or null.
+   * The oldest one if entries from before a proof path was one entry's alone
+   * still share it.
+   */
+  findByProofPath(
+    chapterId: string,
+    proofPath: string,
+  ): Promise<ServiceEntry | null>;
   /**
    * Entries in the chapter whose proof is the file at this path: a proof
    * file belongs to one entry, and is deleted only once none points at it.
