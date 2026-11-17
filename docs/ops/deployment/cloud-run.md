@@ -48,6 +48,8 @@ Infisical stays the one place a value changes ([`SECRETS_MANAGEMENT.md`](../../i
 
 Cloud Run reads a secret-backed environment variable when an instance starts. So a value reaches the API only on a deploy, the deploy step pins each secret to the version that is current when it deploys. A copy that starts later, such as staging waking up, still uses the pinned version. So the rule is: change the value in Infisical, then redeploy.
 
+On staging, the redeploy is the next merge to `main` that changes something the API image is built from. Re-running **Deploy staging** for the commit staging already serves uploads web and landing again but leaves the API alone, because the deploy plan (`scripts/ci/plan-staging-deploy.mjs`) skips an image that hasn't changed, and nothing forces it. On 2026-11-17 the Google Calendar values reached staging that way: a re-run skipped the API, and #5380's merge loaded them. Production redeploys on every **Deploy production** dispatch.
+
 Cloud Run sets `PORT` itself and rejects it as a variable, so the deploy skips that one. The container still listens on 3001, and the service declares that port.
 
 The API reads every value from its environment. The read-at-boot path from #2506 is gone: Paul dropped it on 2026-11-16 for a sync, because Infisical's free plan can't stop a boot-time identity from reading every environment ([`SECRETS_MANAGEMENT.md` § Cloud Run API](../../internal/environment/SECRETS_MANAGEMENT.md#cloud-run-api-synced-to-secret-manager)).
