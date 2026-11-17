@@ -261,9 +261,11 @@ describe('GoogleDriveApiClient', () => {
     fetchMock
       .mockResolvedValueOnce(json(200, { access_token: 'runtime-token' }))
       .mockResolvedValueOnce(
+        // IAM Credentials' own error shape: `status`, no `errors` list.
         json(403, {
           error: {
-            errors: [{ reason: 'forbidden' }],
+            code: 403,
+            message: 'Permission iam.serviceAccounts.getAccessToken denied',
             status: 'PERMISSION_DENIED',
           },
         }),
@@ -272,6 +274,33 @@ describe('GoogleDriveApiClient', () => {
     await expect(client.getItem('f')).rejects.toMatchObject({
       kind: 'failed',
       status: 403,
+      reason: 'act_as_PERMISSION_DENIED',
+    });
+  });
+
+  it('names a missing runtime token, so the logs point at the platform, not Drive', async () => {
+    const client = new GoogleDriveApiClient(KEYLESS);
+    fetchMock.mockResolvedValueOnce(new Response('Not Found', { status: 404 }));
+
+    await expect(client.getItem('f')).rejects.toMatchObject({
+      kind: 'failed',
+      status: 404,
+      reason: 'no_runtime_token',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a quota on acting as the account a rate limit, so the sync backs off', async () => {
+    const client = new GoogleDriveApiClient(KEYLESS);
+    fetchMock
+      .mockResolvedValueOnce(json(200, { access_token: 'runtime-token' }))
+      .mockResolvedValueOnce(
+        json(429, { error: { code: 429, status: 'RESOURCE_EXHAUSTED' } }),
+      );
+
+    await expect(client.getItem('f')).rejects.toMatchObject({
+      kind: 'rate_limited',
+      reason: 'act_as_RESOURCE_EXHAUSTED',
     });
   });
 
@@ -326,31 +355,55 @@ describe('google-drive-config', () => {
     ).toBeNull();
   });
 
+  const onCloudRun = { ...keyless, K_SERVICE: 'frapp-api' };
+
   it('checks the keyless settings at boot', () => {
-    expect(validateGoogleDriveEnv(keyless)).toEqual([]);
+    expect(validateGoogleDriveEnv(onCloudRun)).toEqual([]);
     expect(
       validateGoogleDriveEnv({
         GOOGLE_DRIVE_SERVICE_ACCOUNT: KEYLESS.clientEmail,
+        K_SERVICE: 'frapp-api',
       }),
     ).toEqual([expect.stringContaining('needs GOOGLE_DRIVE_PROOF_SECRET')]);
     expect(
       validateGoogleDriveEnv({
-        ...keyless,
+        ...onCloudRun,
         GOOGLE_DRIVE_SERVICE_ACCOUNT: 'me@gmail.com',
       }),
     ).toEqual([expect.stringContaining('must be a service account address')]);
     expect(
       validateGoogleDriveEnv({
-        ...keyless,
+        ...onCloudRun,
         GOOGLE_DRIVE_PROOF_SECRET: 'short',
       }),
     ).toEqual([expect.stringContaining('at least 32 characters')]);
     expect(
       validateGoogleDriveEnv({
-        ...keyless,
+        ...onCloudRun,
         GOOGLE_DRIVE_CREDENTIALS_JSON: keyFile,
       }),
     ).toEqual([expect.stringContaining('not both')]);
+  });
+
+  it('fails boot on the keyless pair off Cloud Run, as Vertex AI does', () => {
+    expect(validateGoogleDriveEnv(onCloudRun)).toEqual([]);
+    expect(validateGoogleDriveEnv(keyless)).toEqual([
+      expect.stringContaining('Only Cloud Run'),
+    ]);
+  });
+
+  it('never keys codes with an empty private key', () => {
+    const empty = JSON.stringify({
+      type: 'service_account',
+      client_email: ACCOUNT.clientEmail,
+      private_key: '',
+    });
+    expect(
+      googleDriveServiceAccount({ GOOGLE_DRIVE_CREDENTIALS_JSON: empty }),
+    ).toBeNull();
+    expect(
+      validateGoogleDriveEnv({ GOOGLE_DRIVE_CREDENTIALS_JSON: empty }),
+    ).toEqual([expect.stringContaining('must be a service account key file')]);
   });
 
   it('fails boot on anything that isn’t one, without echoing it', () => {

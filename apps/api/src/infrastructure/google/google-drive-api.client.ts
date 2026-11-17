@@ -210,9 +210,10 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
     if (!account) {
       throw new GoogleDriveApiError('failed', null, 'not_configured');
     }
-    const token = account.privateKey
-      ? await this.keyFileToken(account.clientEmail, account.privateKey)
-      : await this.actAsToken(account.clientEmail);
+    const token =
+      account.privateKey !== null
+        ? await this.keyFileToken(account.clientEmail, account.privateKey)
+        : await this.actAsToken(account.clientEmail);
     this.token = token;
     return token.value;
   }
@@ -293,10 +294,15 @@ export class GoogleDriveApiClient implements IGoogleDriveApi {
       TIMEOUT_MS,
     );
     if (!response.ok) {
-      // A 403 here is the setup (the Token Creator grant, or the IAM
-      // Credentials API switched off), never a folder: it goes to the logs.
+      // A refusal here is the setup (the Token Creator grant, the account's
+      // address, or the IAM Credentials API switched off), never a folder:
+      // it goes to the logs tagged `act_as_`, and a quota keeps its back-off.
       const error = await apiError(response);
-      throw new GoogleDriveApiError('failed', error.status, error.reason);
+      throw new GoogleDriveApiError(
+        error.kind === 'rate_limited' ? 'rate_limited' : 'failed',
+        error.status,
+        `act_as_${error.reason}`,
+      );
     }
     const body = (await response.json()) as {
       accessToken?: unknown;
@@ -396,12 +402,17 @@ async function apiError(response: Response): Promise<GoogleDriveApiError> {
   const apiReason = (
     body as { error?: { errors?: { reason?: unknown }[] } } | null
   )?.error?.errors?.[0]?.reason;
+  // IAM Credentials answers in the newer shape: `error.status`, no `errors`.
+  const rpcStatus = (body as { error?: { status?: unknown } } | null)?.error
+    ?.status;
   const reason =
     typeof oauthError === 'string'
       ? oauthError
       : typeof apiReason === 'string'
         ? apiReason
-        : `http_${status}`;
+        : typeof rpcStatus === 'string'
+          ? rpcStatus
+          : `http_${status}`;
   if (status === 404)
     return new GoogleDriveApiError('not_found', status, reason);
   if (status === 429 || RATE_LIMIT_REASONS.has(reason)) {

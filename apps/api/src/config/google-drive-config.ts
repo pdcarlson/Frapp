@@ -46,7 +46,7 @@ export function googleDriveServiceAccount(
   const json = envSetting(env, 'GOOGLE_DRIVE_CREDENTIALS_JSON');
   const proofSecret = envSetting(env, 'GOOGLE_DRIVE_PROOF_SECRET');
   if (json) {
-    const parsed = parseServiceAccount(json);
+    const parsed = keyFile(json);
     if (!parsed) return null;
     const privateKey = parsed.private_key as string;
     return {
@@ -57,10 +57,16 @@ export function googleDriveServiceAccount(
   }
   const email = envSetting(env, 'GOOGLE_DRIVE_SERVICE_ACCOUNT');
   // Acting as the account takes the runtime's own identity, which only
-  // Cloud Run gives this API. Anywhere else Drive stays off, as Vertex AI
-  // does without its key file (`ai-config.ts`).
+  // Cloud Run gives this API. Anywhere else boot refuses it, as it refuses
+  // Vertex AI without its key file (`ai-config.ts`).
   if (!email || !proofSecret || !runsOnCloudRun(env)) return null;
   return { clientEmail: email, privateKey: null, proofSecret };
+}
+
+/** A key file with a real private key: an empty one would key codes with nothing. */
+function keyFile(json: string): Record<string, unknown> | null {
+  const parsed = parseServiceAccount(json);
+  return parsed && (parsed.private_key as string).trim() !== '' ? parsed : null;
 }
 
 /** Boot-time check, called from `validateEnv`. Never echoes a value. */
@@ -69,7 +75,7 @@ export function validateGoogleDriveEnv(env: Env): string[] {
   const json = envSetting(env, 'GOOGLE_DRIVE_CREDENTIALS_JSON');
   const email = envSetting(env, 'GOOGLE_DRIVE_SERVICE_ACCOUNT');
   const proofSecret = envSetting(env, 'GOOGLE_DRIVE_PROOF_SECRET');
-  if (json && !parseServiceAccount(json)) {
+  if (json && !keyFile(json)) {
     problems.push(
       'GOOGLE_DRIVE_CREDENTIALS_JSON must be a service account key file (JSON with type "service_account").',
     );
@@ -82,6 +88,11 @@ export function validateGoogleDriveEnv(env: Env): string[] {
   if (email && !SERVICE_ACCOUNT_EMAIL.test(email)) {
     problems.push(
       'GOOGLE_DRIVE_SERVICE_ACCOUNT must be a service account address (name@project.iam.gserviceaccount.com).',
+    );
+  }
+  if (email && !runsOnCloudRun(env)) {
+    problems.push(
+      'GOOGLE_DRIVE_SERVICE_ACCOUNT is set without GOOGLE_DRIVE_CREDENTIALS_JSON. Only Cloud Run signs in without a key file.',
     );
   }
   if (email && !proofSecret) {

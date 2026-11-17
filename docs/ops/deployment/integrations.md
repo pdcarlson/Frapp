@@ -499,7 +499,8 @@ connect it from Documents: within a minute its files appear there.
 | Symptom | Cause |
 | --- | --- |
 | The API won't boot: `GOOGLE_DRIVE_SERVICE_ACCOUNT needs GOOGLE_DRIVE_PROOF_SECRET`, or `must be a service account address` | Step 2 is half done, or holds something other than the address |
-| `available` stays `false` after the deploy | The deploy pinned the secrets before the sync reached Secret Manager (step 3 again), or the API isn't on Cloud Run |
-| Connecting says it couldn't reach Google Drive, and the API logs a `403` with `iamcredentials` or `no_runtime_token` | Step 1 didn't finish: `frapp-api-runtime` can't act as `frapp-docs`. Run it again |
+| The API won't boot: `Only Cloud Run signs in without a key file` | `GOOGLE_DRIVE_SERVICE_ACCOUNT` reached a laptop or another host; leave it unset there |
+| `available` stays `false` after the deploy | The deploy pinned the secrets before the sync reached Secret Manager: step 3 again |
+| Connecting says it couldn't reach Google Drive, and the API logs `Google Drive: failed (403): act_as_PERMISSION_DENIED` (or `failed (404): act_as_NOT_FOUND`, or `no_runtime_token`) | Step 1 didn't finish, or step 2's address is wrong: `frapp-api-runtime` can't act as `frapp-docs`. Run step 1 again and check the address |
 | Connecting says it couldn't reach Google Drive, or a connected folder stops syncing and the API reports `accessNotConfigured` | The Google Drive API is off in the project: step 1 |
 | Connecting says Frapp can't see the folder, though it is shared | It was shared with the other environment's `frapp-docs`, or with a person instead of the address |
