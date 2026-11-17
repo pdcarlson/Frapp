@@ -134,9 +134,11 @@ Production had no members on 2026-11-16, so Paul chose to bring it up the way st
 6. Set `GOOGLE_VERTEX_PROJECT` in Infisical `prod` to `cs-project-nyit2x59` ([§ Identities](#identities), the Vertex AI note), then deploy again so the new revision reads it. Not before step 4: with no key file, boot refuses that value anywhere but Cloud Run, and Infisical's Render sync would hand it to Render production too.
 7. Measure the chain with the probe below against `api.frapp.live`. Production's count is already 2, as staging's is.
 
+*Done 2026-11-17:* steps 1 to 5 by Deploy production run 44113979528, step 6 (the value was already set), and step 7 at 18:22 UTC, which measured 2 with no forged entry and 3 with one.
+
 The daily release pin (`production-release-pin.yml`) reads the API's commit from `/health`, so it failed from step 1 until step 5's tag.
 
-**One public path.** The deploy sets the service's ingress to internal-and-cloud-load-balancing, so its `run.app` addresses, tagged or not, refuse every request from the internet that doesn't come through the balancer. Google's own services (Cloud Scheduler, Pub/Sub, Cloud Tasks) and the project's VPC can still reach `run.app`, with a shorter chain, so anything built later that calls the service from there should call the API host instead, and the planned uptime check watches the API host too. With one internet path there is one `X-Forwarded-For` chain, `CLIENT_IP, LOAD_BALANCER_IP` in Google's words, so `TRUST_PROXY_HOPS` in `apps/api/src/bootstrap.ts` is 2 on staging. The probe below measured it on 2026-11-17: 2 with no forged entry, 3 with one. Render's count was 3 (Cloudflare and Render's own proxies); the API no longer runs there.
+**One public path.** The deploy sets the service's ingress to internal-and-cloud-load-balancing, so its `run.app` addresses, tagged or not, refuse every request from the internet that doesn't come through the balancer. Google's own services (Cloud Scheduler, Pub/Sub, Cloud Tasks) and the project's VPC can still reach `run.app`, with a shorter chain, so anything built later that calls the service from there should call the API host instead, and the planned uptime check watches the API host too. With one internet path there is one `X-Forwarded-For` chain, `CLIENT_IP, LOAD_BALANCER_IP` in Google's words, so `TRUST_PROXY_HOPS` in `apps/api/src/bootstrap.ts` is 2 on both environments. The probe below measured it on 2026-11-17, on both hosts: 2 with no forged entry, 3 with one. Render's count was 3 (Cloudflare and Render's own proxies); the API no longer runs there.
 
 **Measuring the chain.** Send one request with no `X-Forwarded-For` and one with a single forged entry, each to a path of its own, then read their `xffCount` from the service's request log. The first is what the proxies append and should equal the hop count; the second should be one more. In Cloud Shell:
 
@@ -157,4 +159,3 @@ Both request logs, the balancer's and Cloud Run's, record the full URL with its 
 These land in [#5228](https://github.com/frapplive/Frapp/issues/5228)'s later steps, and each one updates this page when it ships.
 
 - **Observability** ([§ Observability](#observability)): the uptime check, the email alerts and Secret Manager's data-access audit log. They need the service, which the first staging deploy creates.
-- **Production's last steps.** Steps 6 and 7 of [§ Production's first deploy](#productions-first-deploy), which are Paul's.
