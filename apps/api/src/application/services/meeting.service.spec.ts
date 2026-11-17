@@ -937,11 +937,11 @@ describe('MeetingService', () => {
   describe('template', () => {
     it('reads the default sections when the chapter saved none', async () => {
       await expect(service.getTemplate(CHAPTER)).resolves.toEqual([
-        'attendees',
         'summary',
-        'announcements',
         'decisions',
         'action_items',
+        'attendees',
+        'announcements',
       ]);
     });
 

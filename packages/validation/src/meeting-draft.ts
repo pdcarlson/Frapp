@@ -25,7 +25,7 @@ export const MEETING_NOTES_MAX_LENGTH = 160_000;
 export const MEETING_DRAFT_SOURCES_MAX_LENGTH = 200_000;
 
 /** The prompt this build ships, stamped on the usage ledger. */
-export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v3";
+export const MEETING_DRAFT_PROMPT_VERSION = "minutes-draft@v4";
 
 const DueDate = z
   .string()
@@ -155,8 +155,7 @@ export const MEETING_DRAFT_FAILURE_COPY: Readonly<
 > = {
   chapter_off:
     "Drafting from notes is turned off for your chapter. The president can turn it on in Chapter settings.",
-  consent_required:
-    "Turn on Frapp AI to draft from your notes.",
+  consent_required: "Turn on Frapp AI to draft from your notes.",
   spend_limit:
     "Your chapter has reached its AI limit for now. Your notes are saved, and you can write the minutes yourself below.",
   unavailable:

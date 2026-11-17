@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
   type SharedValue,
@@ -80,11 +80,6 @@ export type QuickActionsPanelProps = {
   onEditingChange: (editing: boolean) => void;
   onRun: (key: QuickActionKey) => void;
   onSave: (keys: readonly QuickActionKey[]) => void;
-  /**
-   * Drawn above the actions at rest: the Record meeting row (#5287), which
-   * is not one of them, so editing hides it rather than offering to move it.
-   */
-  header?: ReactNode;
 };
 
 /**
@@ -111,7 +106,6 @@ export function QuickActionsPanel({
   onEditingChange,
   onRun,
   onSave,
-  header,
 }: QuickActionsPanelProps) {
   const { tokens } = useFrappTheme();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
@@ -132,7 +126,6 @@ export function QuickActionsPanel({
         accessible={false}
         style={styles.body}
       >
-        {editing ? null : header}
         {editing ? (
           <EditGrid
             shown={shown}

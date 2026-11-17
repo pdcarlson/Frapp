@@ -64,6 +64,7 @@ import {
   InlineNote,
   inlineNoteActionClassName,
 } from "@/components/shared/inline-note";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -574,7 +575,7 @@ function Minutes({
             <h2 className="truncate text-xl font-bold leading-tight">
               {meeting.event_name}
             </h2>
-            <p className="truncate text-caption text-muted-foreground">
+            <p className="break-words text-caption text-muted-foreground">
               {typeLabel} meeting, {when}
               {posting
                 ? ", posting"
@@ -755,6 +756,7 @@ function Minutes({
                 <ActionItemsView
                   items={view.content.action_items}
                   nameFor={names.nameFor}
+                  viewerId={viewer?.id ?? null}
                 />
               )
             ) : editing ? (
@@ -771,10 +773,12 @@ function Minutes({
                   } as Partial<MeetingContent>)
                 }
               />
-            ) : (
+            ) : key === "summary" ? (
               <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-                {view.content[key as MeetingTextSection]}
+                {view.content.summary}
               </p>
+            ) : (
+              <LinesView text={view.content[key as MeetingTextSection]} />
             )}
           </section>
         ))}
@@ -911,24 +915,43 @@ function DecisionsView({ decisions }: { decisions: MeetingDecision[] }) {
     <ul role="list" className="list-disc space-y-2 pl-5 text-sm">
       {decisions.map((decision, index) => (
         <li key={index}>
-          <p className="whitespace-pre-wrap break-words">{decision.text}</p>
-          {decision.vote ? (
-            <p className="text-caption text-muted-foreground">
-              {voteLine(decision.vote)}
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p className="min-w-0 whitespace-pre-wrap break-words">
+              {decision.text}
             </p>
-          ) : null}
+            {decision.vote ? (
+              <Badge
+                variant="outline"
+                title={voteLine(decision.vote)}
+                aria-label={voteLine(decision.vote)}
+                className="tabular-nums"
+              >
+                {voteTally(decision.vote)}
+              </Badge>
+            ) : null}
+          </div>
         </li>
       ))}
     </ul>
   );
 }
 
+/** "22–5", with abstentions only when there were some: "22–5–1". */
+function voteTally(vote: NonNullable<MeetingDecision["vote"]>): string {
+  const counts = [vote.for, vote.against];
+  if (vote.abstain > 0) counts.push(vote.abstain);
+  return counts.join("–");
+}
+
 function ActionItemsView({
   items,
   nameFor,
+  viewerId,
 }: {
   items: MeetingActionItem[];
   nameFor: (userId: string) => string | null;
+  /** The reader, whose own items say so (a chair finds theirs at a glance). */
+  viewerId: string | null;
 }) {
   return (
     <ul role="list" className="list-disc space-y-2 pl-5 text-sm">
@@ -936,17 +959,54 @@ function ActionItemsView({
         const meta = [
           item.owner_user_id
             ? memberLabel(nameFor(item.owner_user_id), item.owner_user_id)
-            : null,
+            : "Nobody named yet",
           item.due_date ? `Due ${meetingDueLabel(item.due_date)}` : null,
         ].filter(Boolean);
+        const yours = !!viewerId && item.owner_user_id === viewerId;
         return (
           <li key={index}>
-            <p className="whitespace-pre-wrap break-words">{item.text}</p>
-            {meta.length > 0 ? (
-              <p className="text-caption text-muted-foreground">
-                {meta.join(" · ")}
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <p className="min-w-0 whitespace-pre-wrap break-words">
+                {item.text}
               </p>
-            ) : null}
+              {yours ? <Badge>Yours</Badge> : null}
+            </div>
+            <p className="text-caption text-muted-foreground">
+              {meta.join(" · ")}
+            </p>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * A section written one item per line (the discussion log, reports,
+ * announcements, business), as rows. A line that opens with its topic
+ * ("Rusty Pipes afterparty: ...", "Treasurer: ...") shows the topic in bold,
+ * so the body of the meeting can be skimmed.
+ */
+function LinesView({ text }: { text: string }) {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return (
+    <ul role="list" className="space-y-2 text-sm leading-relaxed">
+      {lines.map((line, index) => {
+        const head = /^([^:.]{2,60}):\s+(.+)$/.exec(line);
+        return (
+          <li key={index} className="break-words">
+            {head ? (
+              <>
+                <span className="font-semibold">{head[1]}</span>
+                {": "}
+                {head[2]}
+              </>
+            ) : (
+              line
+            )}
           </li>
         );
       })}
@@ -1012,7 +1072,7 @@ function DecisionsEditor({
       {decisions.map((decision, index) => (
         <div
           key={index}
-          className="space-y-2 rounded-lg border border-border p-3"
+          className="space-y-2 border-b border-border pb-3 last:border-b-0"
         >
           <div className="flex items-start gap-2">
             <GrowingTextarea
@@ -1131,7 +1191,7 @@ function ActionItemsEditor({
       {items.map((item, index) => (
         <div
           key={index}
-          className="space-y-2 rounded-lg border border-border p-3"
+          className="space-y-2 border-b border-border pb-3 last:border-b-0"
         >
           <div className="flex items-start gap-2">
             <GrowingTextarea
@@ -1180,7 +1240,7 @@ function ActionItemsEditor({
               <Label htmlFor={`${ids}-${index}-due`}>Due</Label>
               <DueDateField
                 id={`${ids}-${index}-due`}
-                placeholder="Friday"
+                placeholder="No date"
                 // An action item is due by a day: it stores no time.
                 withoutTime
                 value={item.due_date ?? ""}

@@ -25,7 +25,6 @@ import { AskBar } from "@/components/ask/ask-bar";
 import { GlassSurface } from "@/components/glass-surface";
 import { QuickActionsPanel } from "@/components/quick-actions/quick-actions-panel";
 import { useQuickActionsHost } from "@/components/quick-actions/quick-actions-host";
-import { RecordMeetingRow } from "@/components/quick-actions/record-meeting-row";
 import { useQuickActions } from "@/components/quick-actions/use-quick-actions";
 import { useActivity } from "@repo/hooks";
 import { useAiSurfaces } from "@/lib/ai/availability";
@@ -108,7 +107,7 @@ export function GlassTabBar({
   const own = useOwnStatus();
   const youStatus =
     own && own.status !== "online" ? MEMBER_STATUS_LABEL[own.status] : null;
-  const { run, ask, sheets, notice, record } = useQuickActionsHost({
+  const { run, ask, sheets, notice } = useQuickActionsHost({
     events: available.includes("hostCheckIn"),
   });
 
@@ -224,7 +223,8 @@ export function GlassTabBar({
   // Where each piece sits, open and folded.
   const row = FLOATING_TAB_BAR.height;
   const pillOpen = width - FLOATING_TAB_BAR.side - pillRight;
-  const askLeftFolded = FLOATING_TAB_BAR.side + row + FLOATING_TAB_BAR.actionGap;
+  const askLeftFolded =
+    FLOATING_TAB_BAR.side + row + FLOATING_TAB_BAR.actionGap;
   const askOpenWidth = width - FLOATING_TAB_BAR.side * 2;
   const askFoldedWidth = width - askLeftFolded * 2;
   const pillStyle = useAnimatedStyle(() => ({
@@ -244,11 +244,7 @@ export function GlassTabBar({
     ),
     width: interpolate(fold.get(), [0, 1], [askOpenWidth, askFoldedWidth]),
     bottom: interpolate(fold.get(), [0, 1], [askBarBottom, barBottom]),
-    height: interpolate(
-      fold.get(),
-      [0, 1],
-      [FLOATING_ASK_BAR.height, row],
-    ),
+    height: interpolate(fold.get(), [0, 1], [FLOATING_ASK_BAR.height, row]),
   }));
 
   const plusStyle = useAnimatedStyle(() => ({
@@ -309,17 +305,6 @@ export function GlassTabBar({
             onEditingChange={setEditing}
             onRun={runAction}
             onSave={save}
-            header={
-              record ? (
-                <RecordMeetingRow
-                  entry={record}
-                  onPress={() => {
-                    closePanel();
-                    record.onPress();
-                  }}
-                />
-              ) : null
-            }
           />
         </Animated.View>
       ) : null}

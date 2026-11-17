@@ -26555,15 +26555,15 @@
             "items": {
               "type": "string",
               "enum": [
-                "attendees",
                 "summary",
-                "announcements",
                 "decisions",
                 "action_items",
+                "discussion_log",
+                "attendees",
+                "announcements",
                 "officer_reports",
                 "old_business",
-                "new_business",
-                "discussion_log"
+                "new_business"
               ]
             }
           }
@@ -26786,15 +26786,15 @@
             "items": {
               "type": "string",
               "enum": [
-                "attendees",
                 "summary",
-                "announcements",
                 "decisions",
                 "action_items",
+                "discussion_log",
+                "attendees",
+                "announcements",
                 "officer_reports",
                 "old_business",
-                "new_business",
-                "discussion_log"
+                "new_business"
               ]
             }
           },

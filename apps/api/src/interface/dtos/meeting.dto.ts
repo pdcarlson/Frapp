@@ -775,7 +775,7 @@ export class MeetingRecordingDto {
 
 /**
  * What recording would do for the caller before any minutes exist (#5287):
- * the phone's + reads it to decide what Record meeting offers.
+ * the phone's + reads it to decide whether New minutes offers Record the meeting.
  */
 export class MeetingRecorderAvailabilityDto {
   @ApiProperty({

@@ -43,7 +43,6 @@ function render(
   editing = false,
   available: QuickActionKey[] = OFFICER,
   canEdit = true,
-  header: React.ReactNode = null,
 ): ReactTestRenderer {
   let tree!: ReactTestRenderer;
   act(() => {
@@ -55,7 +54,6 @@ function render(
           width={374}
           editing={editing}
           canEdit={canEdit}
-          header={header}
           {...props}
         />
       </FrappThemeProvider>,
@@ -153,22 +151,6 @@ describe("the panel at rest", () => {
     expect(props.onEditingChange).not.toHaveBeenCalled();
     act(() => button.props.onPress());
     expect(props.onRun).toHaveBeenCalledWith("message");
-  });
-
-  it("draws the Record meeting row above the actions, and hides it while editing (#5287)", () => {
-    const row = React.createElement("RecordMeetingRow");
-    const atRest = render(["message"], false, OFFICER, true, row);
-    expect(
-      atRest.root.findAll(
-        (node) => (node.type as unknown) === "RecordMeetingRow",
-      ),
-    ).toHaveLength(1);
-    const editing = render(["message"], true, OFFICER, true, row);
-    expect(
-      editing.root.findAll(
-        (node) => (node.type as unknown) === "RecordMeetingRow",
-      ),
-    ).toHaveLength(0);
   });
 
   it("says how to add actions when the member removed them all", () => {
