@@ -12,7 +12,7 @@ const router = () => ({
   navigate: vi.fn(),
   dismissTo: vi.fn(),
 });
-const TABS = ["/", "/activity", "/events", "/you", "/events?focus=1"];
+const TABS = ["/", "/activity", "/messages", "/you", "/messages?focus=1"];
 
 describe("openHref", () => {
   it.each(TABS)("pops down to the tab %s", (href) => {
@@ -27,7 +27,9 @@ describe("openHref", () => {
     const r = router();
     openHref(r, "/dues" as never);
     openHref(r, { pathname: "/event-details", params: { id: "e1" } } as never);
-    expect(r.push).toHaveBeenCalledTimes(2);
+    // The Calendar is a pushed screen since #5310.
+    openHref(r, "/events" as never);
+    expect(r.push).toHaveBeenCalledTimes(3);
     expect(r.dismissTo).not.toHaveBeenCalled();
   });
 

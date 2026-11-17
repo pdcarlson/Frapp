@@ -768,7 +768,7 @@ The #489 decision above, that a reply lands in the timeline, still holds for Rep
   A thread row is one line, the parent's words as the All threads row's title reads them; it reads unread (bold, the leading pip, no number) while it has new replies and muted while muted, and a tap opens the thread with its channel under it, as a thread push's tap does, so back returns to the channel and its topic carries the live replies.
   Active is one rule in `sidebarThreadsByChannel` (`@repo/chat-core/threads`), over the newest 50 the list holds: every thread with new replies, uncapped, then read ones with activity in the last three days (Discord's default auto-archive; Frapp archives nothing), newest first, up to five per channel.
   Because a thread reply never counts toward its channel, the channel list on both surfaces counts a channel with an unread thread as unread for arranging only (`withUnreadThreadChannels`, `@repo/hooks`): Unread only keeps it and a folded section reads unread over it, while the row's own badge stays the server's.
-  The Messages door counts a group DM whose thread has new replies, and Messages draws no thread rows under search results.
+  The phone's Messages tab counts a group DM whose thread has new replies, and Messages draws no thread rows under search results.
   A failed read says so in one line on Chat home, and the pull re-reads it.
   A channel with none draws nothing under it, so there is no Threads entry, no empty state and no sheet; a thread that has dropped off is still on its parent's thread card.
   The list is the same `GET /v1/threads` read, re-read once a minute and right after the member reads a thread.

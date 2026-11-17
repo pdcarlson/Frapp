@@ -40,7 +40,6 @@ import {
 } from "@repo/chat-core/channel-preview";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
-import { BACK_TO_CHAT } from "@/components/back-row";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import {
   ChannelListSkeleton,
@@ -81,9 +80,13 @@ const MEMBERS_WAITING_FOR_NETWORK =
   "Your chapter's members will load when you're back online.";
 
 /**
- * Messages: the member's direct and group messages on their own screen,
- * behind the door at the top right of Chat home (owner, 2026-11-07, option B
- * of the round-two redesign). Chat home lists only channels.
+ * Messages: the member's direct and group messages, the third tab since
+ * #5310 (Paul's direction B, 2026-11-17), as Instagram and LinkedIn give
+ * their inbox its own place in the bar. It was a pushed screen behind a door
+ * at the top right of Chat home (owner, 2026-11-07, option B of the
+ * round-two redesign) and a swipe left from it (#3774); the tab replaced
+ * both. Chat home lists only channels. The tab's badge counts conversations
+ * with anything unread (`lib/chat/unread-conversations.ts`).
  *
  * Newest conversation first, as every messaging app orders an inbox, and each
  * row keeps its last line: in a DM the last message is what the member is
@@ -346,7 +349,6 @@ export default function MessagesScreen() {
 
   return (
     <ScreenShell
-      back={BACK_TO_CHAT}
       keyboardShouldPersistTaps="handled"
       title="Messages"
       refresh={refresh}

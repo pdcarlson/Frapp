@@ -200,7 +200,7 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import MessagesScreen from "@/app/(app)/messages";
+import MessagesScreen from "@/app/(app)/(tabs)/messages";
 import { ChannelListSkeleton, ChannelRow } from "@/components/chat/channel-row";
 import { ScreenShell } from "@/components/screen-shell";
 import { ErrorState } from "@/components/state-block";

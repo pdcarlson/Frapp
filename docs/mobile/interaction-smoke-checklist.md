@@ -60,8 +60,8 @@ in the S2 nav restructure (#957) — see
 |---|---|---|
 | Chat (`/`) | Open #general thread preview | Opens `chat-thread` route |
 | Chat (`/`) | The bell beside Messages | Opens Notifications, with `‹ Chat`; its count is house gold and leaves out chat |
-| Events (`/(app)/(tabs)/events`) | Open event details | Opens `event-details` route |
-| Any tab | The + beside the tab bar | Opens the quick-actions panel; New task (shown only with `tasks:manage` and `members:view`) and New event (shown only with `events:create` and `members:view`) open their sheets over the current tab, and a create confirms above the bar. The Calendar tab also draws its own New event + in its header, after Subscribe, for the same viewers (#5113). Press and hold the panel to edit it |
+| Calendar (`/(app)/events`, from Activity's Calendar row) | Open event details; press the picked day's heading | Opens `event-details`; the heading pushes `calendar-day` for that day |
+| Any tab | The + beside the tab bar | Opens the quick-actions panel; New task (shown only with `tasks:manage` and `members:view`) and New event (shown only with `events:create` and `members:view`) open their sheets over the current tab, and a create confirms above the bar. The Calendar also draws its own New event + in its header, after Subscribe, for the same viewers (#5113). Press and hold the panel to edit it |
 | You (`/(app)/(tabs)/you`) | Your name, a Details row that is yours to set, and Status | The name and the row open the edit sheet; Status opens the status sheet |
 | You (`/(app)/(tabs)/you`) | Each row | Opens selected route. The exception is Host check-in (shown with `events:update`): with no upcoming event it reads "No upcoming event" and is disabled |
 
@@ -69,7 +69,7 @@ in the S2 nav restructure (#957) — see
 
 | Screen | Control | Expected outcome |
 |---|---|---|
-| Event details | `‹ Calendar` above the title, opened from Calendar | Slides back to the Calendar tab. Opened from Chat home's Up next the row reads `‹ Chat` and lands there; opened cold from a notification or a `frapp://` link it reads `‹ Chat` and lands on Chat home |
+| Event details | `‹ Calendar` above the title, opened from Calendar | Slides back to the Calendar. Opened from Chat home's Up next the row reads `‹ Chat` and lands there; opened cold from a notification or a `frapp://` link it reads `‹ Chat` and lands on Chat home |
 | Study hours, Service hours, Dues, Documents, Directory, Settings | `‹ You` above the title | Slides back to the You tab |
 | Every screen past the four tabs (a channel, event details, each You page, Notifications, Check in, Host check-in) | iOS: swipe right from the left edge. Android: back button, or the back gesture | Goes back to the screen that opened it (a channel to the channel list), the same place its drawn `‹`, back capsule or ✕ goes. No screen ignores the swipe |
 | Chat thread | Open a photo, zoom in, drag it from near the left edge; then close the viewer and swipe from the edge | The drag pans the photo and the thread stays; once the viewer is closed the swipe goes back to the channel list. Android back with the viewer open closes the viewer only |

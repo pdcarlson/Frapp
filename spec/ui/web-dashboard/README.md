@@ -607,7 +607,7 @@ What the read returns, and who sees which row, is [`../../behavior/activity.md`]
     The Channels list then holds channels only, and the Direct messages list holds DMs and group DMs, with Pinned above them and Hidden conversations below, no heading of its own, and no officer reordering (a DM has no place in the chapter's order).
     Channels land on their last channel as before; Direct messages open only the DM the member last had open there, and with none ask them to pick one, since opening one they didn't pick would mark it read unseen ([`spec/behavior/chat/README.md`](../../behavior/chat/README.md) § Where Chat opens).
     `/chat`'s top-bar title follows the list ([§ Top bar](#top-bar)).
-    The Chat row lights for channels and @-mentions; the Direct messages row carries a mention-red count of conversations with anything unread, the count the phone's Messages door shows.
+    The Chat row lights for channels and @-mentions; the Direct messages row carries a mention-red count of conversations with anything unread, the count the phone's Messages tab shows.
     The list on screen is a cookie read on the server, `/chat?view=direct` and `/chat?view=channels` name it in a link, a bare `/chat` (Chat's own link, or Back to it) shows channels, and a link, notification, Find hit or bookmark that opens a DM moves the panel to Direct messages (and the reverse), so the open conversation is always on the list.
     With none, the thread column says how to start one: "Find someone to message" opens the people search ([#4668](https://github.com/pdcarlson/Frapp/issues/4668); until then it linked to the Directory's Message).
     Below 1056px both rows are links to `/chat`, and the list on screen marks which is the current page.

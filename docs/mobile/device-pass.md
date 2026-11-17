@@ -43,7 +43,7 @@ the smoke account set up first), so row 18 still walks the You rows by hand.
 
 | # | Phone | Do | Expect | From |
 |---|---|---|---|---|
-| 3 | Both | Open Chat home and leave it alone for two seconds. Then swipe left slowly, and back (Android: back) | The first time only, the screen slides a little to the left by itself with `Swipe left for Messages` and settles back; nothing else on the screen moves. Under your finger the screen gives a little and shows the edge of Messages, and Messages slides in on release. Scrolling the list up and down never opens it | #4448, #4610 |
+| 3 | Both | With a direct message unread, look at the tab bar, then tap Messages | The third tab is Messages with a red count of unread conversations; it opens your conversations with no back row. Calendar opens from the Calendar row at the foot of Activity's To do | #5310 |
 | 4 | Both | Long-press a channel, then one near the bottom of the list | A haptic, and the channel actions menu opens by your finger, not off screen. Android back closes it | #3636, #3523 |
 | 5 | Both | Arrange channels, drag one channel down, then back | A haptic on pickup, the row follows your finger, the order holds after you leave and come back | #4479 |
 

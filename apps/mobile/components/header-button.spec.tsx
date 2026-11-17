@@ -2,11 +2,10 @@
 import React from "react";
 import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { View } from "react-native";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { flatStyle } from "@/test/flat-style";
-import { createSwipeClaim, SwipeClaimProvider } from "@/lib/swipe-claim";
 import { FrappThemeProvider } from "@/lib/theme";
 import {
   HEADER_BUTTON_HIT_SLOP,
@@ -32,24 +31,21 @@ function render(
     value?: string;
     disabled?: boolean;
   } = {},
-  wrap: (node: React.ReactNode) => React.ReactNode = (node) => node,
 ) {
   let tree!: ReactTestRenderer;
   act(() => {
     tree = create(
       <FrappThemeProvider>
-        {wrap(
-          <HeaderButton
-            label="New message"
-            hint="Opens the Directory to pick someone."
-            onPress={props.onPress ?? (() => undefined)}
-            badge={props.badge}
-            value={props.value}
-            disabled={props.disabled}
-          >
-            <View testID="glyph" />
-          </HeaderButton>,
-        )}
+        <HeaderButton
+          label="New message"
+          hint="Opens the Directory to pick someone."
+          onPress={props.onPress ?? (() => undefined)}
+          badge={props.badge}
+          value={props.value}
+          disabled={props.disabled}
+        >
+          <View testID="glyph" />
+        </HeaderButton>
       </FrappThemeProvider>,
     );
   });
@@ -126,19 +122,5 @@ describe("HeaderButton", () => {
     expect(pressable.props.accessibilityValue).toEqual({ text: "3 unread" });
     expect(pressable.props.accessibilityState).toEqual({ disabled: true });
     expect(pressable.props.disabled).toBe(true);
-  });
-
-  it("drops a press that came from a screen-wide swipe's own touch", () => {
-    const onPress = vi.fn();
-    const claim = createSwipeClaim(() => 0);
-    const tree = render({ onPress }, (node) => (
-      <SwipeClaimProvider value={claim}>{node}</SwipeClaimProvider>
-    ));
-    claim.claim();
-    act(() => button(tree).props.onPress());
-    expect(onPress).not.toHaveBeenCalled();
-    claim.begin();
-    act(() => button(tree).props.onPress());
-    expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

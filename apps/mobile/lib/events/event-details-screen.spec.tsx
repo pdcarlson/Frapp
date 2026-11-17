@@ -292,7 +292,7 @@ describe("Event details back row (#3022)", () => {
     routeId = undefined;
 
     const tree = render();
-    expect(screenText(tree)).toContain("Open an event from the Calendar tab.");
+    expect(screenText(tree)).toContain("Open an event from the Calendar.");
     expectBackRow(tree, "Calendar", "/events");
   });
 

@@ -34,6 +34,10 @@ import { activityCountChip } from "@/lib/activity/count-chip";
 import { useActivityRereadOnTab } from "@/lib/activity/use-activity-reread";
 import { TabLabel } from "@/components/tab-glyphs";
 import { useTourAnchor } from "@/components/onboarding/tour";
+import {
+  unreadConversationsSpoken,
+  useUnreadConversationCount,
+} from "@/lib/chat/unread-conversations";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   FLOATING_ASK_BAR,
@@ -47,18 +51,17 @@ import {
 import { useScreenReaderOn } from "@/lib/screen-reader";
 import { useReduceMotion } from "@/lib/use-reduce-motion";
 import { selectionHaptic } from "@/lib/haptics";
-import { useOverlayPresence } from "@/lib/overlay-presence";
 import type { QuickActionKey } from "@/lib/quick-actions";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The four tabs, in order (`spec/ui/mobile/navigation.md` § Tab bar): Chat,
- * Activity, Calendar (the `events` route) and You (#3839), since 2026-11-12
- * (#4610). The navigator holds only these (`app/(app)/(tabs)/_layout.tsx`);
+ * Activity, Messages and You (#3839), since 2026-11-12 (#4610); the third
+ * was Calendar (the `events` route) until #5310. The navigator holds only these (`app/(app)/(tabs)/_layout.tsx`);
  * every other screen is pushed on the stack above it and covers the bar
  * (`spec/ui/mobile/navigation.md` § Going back).
  */
-export const TAB_ROUTES = ["index", "activity", "events", "you"] as const;
+export const TAB_ROUTES = ["index", "activity", "messages", "you"] as const;
 
 /** The pill's radius: half its height, so its ends are round. */
 const PILL_RADIUS = FLOATING_TAB_BAR.height / 2;
@@ -97,9 +100,16 @@ export function GlassTabBar({
   // return to the tabs from a pushed screen, on every visit to Activity, and
   // on every return to the app.
   const needsYou = activityCountChip(useActivity().data);
+  // Messages' tab carries the count of conversations with anything unread,
+  // which Chat home's Messages door carried until the tab replaced it (#5310).
+  const unreadConversations = useUnreadConversationCount();
+  const unreadConversationsLabel =
+    unreadConversationsSpoken(unreadConversations);
   const reduceMotion = useReducedMotion();
   const { shown, available, save, ready } = useQuickActions();
-  // Two of the first-run tour's stops: the + and the You tab.
+  // Three of the first-run tour's stops: the Messages tab, the + and the
+  // You tab.
+  const messagesAnchor = useTourAnchor("messages");
   const plusAnchor = useTourAnchor("quickActions");
   const youAnchor = useTourAnchor("you");
   // The status a member picked (#3845) shows on the You tab's avatar, so the
@@ -123,8 +133,6 @@ export function GlassTabBar({
   const [openOn, setOpenOn] = useState<string | null>(null);
   if (openOn !== null && openOn !== focusedRoute.key) setOpenOn(null);
   const open = openOn === focusedRoute.key;
-  // The panel covers the screen without unfocusing it, as a sheet does.
-  useOverlayPresence(open);
   const [editing, setEditing] = useState(false);
 
   // The + turns into an X as the panel opens.
@@ -367,15 +375,23 @@ export function GlassTabBar({
             return (
               <Pressable
                 key={route.key}
-                ref={name === "you" ? youAnchor : undefined}
+                ref={
+                  name === "you"
+                    ? youAnchor
+                    : name === "messages"
+                      ? messagesAnchor
+                      : undefined
+                }
                 accessibilityRole="tab"
                 accessibilityState={{ selected: focused }}
                 accessibilityLabel={
                   name === "activity" && needsYou
                     ? `${label}, ${needsYou.spoken}`
-                    : name === "you" && youStatus
-                      ? `${label}, ${youStatus}`
-                      : label
+                    : name === "messages" && unreadConversationsLabel
+                      ? `${label}, ${unreadConversationsLabel}`
+                      : name === "you" && youStatus
+                        ? `${label}, ${youStatus}`
+                        : label
                 }
                 testID={`tab-${route.name}`}
                 onPress={() => {
@@ -420,6 +436,27 @@ export function GlassTabBar({
                       ]}
                     >
                       {needsYou.label}
+                    </Text>
+                  </View>
+                ) : null}
+                {name === "messages" && unreadConversations > 0 ? (
+                  // Mention red, as the Messages door's count was: a direct
+                  // message addresses the member (foundations.md §5).
+                  <View
+                    testID="tab-messages-badge"
+                    pointerEvents="none"
+                    style={[
+                      styles.badge,
+                      { backgroundColor: tokens.color.semantic.mention },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        { color: tokens.color.semantic.mentionForeground },
+                      ]}
+                    >
+                      {unreadConversations > 99 ? "99+" : unreadConversations}
                     </Text>
                   </View>
                 ) : null}

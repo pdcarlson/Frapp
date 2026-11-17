@@ -99,7 +99,7 @@ against the file tree, but neither proves the app _navigates_. On the first
 device run, check:
 
 - [ ] The app opens on **Chat** — chat is home, and there is no Home tab.
-- [ ] The tab bar shows exactly **four** tabs: Chat, Activity, Calendar, You
+- [ ] The tab bar shows exactly **four** tabs: Chat, Activity, Messages, You
       ([`navigation.md` § Tab bar](../../spec/ui/mobile/navigation.md#tab-bar--4-tabs-locked)).
 - [ ] Tab glyphs are **duotone at 24px** and the active one **recolors** rather
       than switching to a solid shape. You's glyph is your own avatar, ringed

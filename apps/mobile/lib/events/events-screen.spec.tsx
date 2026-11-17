@@ -15,14 +15,9 @@ import { DisclosureGlyph, ForwardGlyph } from "@/components/control-glyphs";
 import { LEAD_TILE_SIZE, LeadTile } from "@/components/lead-tile";
 import { NavGlyph } from "@/components/nav-glyph";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  CALENDAR_RANGE_STORAGE_KEY,
-  EVENTS_VIEW_STORAGE_KEY,
-  resetCalendarLayersForTests,
-  resetCalendarRangeForTests,
-  resetEventsViewForTests,
-} from "@/lib/events/events-view";
+import * as expoRouter from "expo-router";
+import { ScreenShell } from "@/components/screen-shell";
+import { BACK_TO_ACTIVITY, BACK_TO_EVENTS } from "@/components/back-row";
 import type { NewEventDraft } from "@/lib/events/create-event";
 import { selectCalendarTasks } from "@repo/hooks/calendar-tasks";
 import {
@@ -30,13 +25,13 @@ import {
   type MemberBirthday,
 } from "@repo/hooks/calendar-birthdays";
 import { localIsoDate } from "@repo/formatting";
-import { expectRoundedRipple } from "@/test/pressable-row";
 import { InlineNote } from "@/components/inline-note";
 import { drawnText, screenText } from "@/test/screen-text";
 
 /**
- * s06, rendered. It renders `app/(app)/(tabs)/events.tsx` but lives here: a spec
- * under `app/` ships as a route module (`lib/routes.spec.ts`).
+ * s06, rendered: the Calendar's month (`app/(app)/events.tsx`) and the Day
+ * screen it pushes (`app/(app)/calendar-day.tsx`, #5310). They live here: a
+ * spec under `app/` ships as a route module (`lib/routes.spec.ts`).
  */
 
 const START = new Date("2026-09-25T18:00:00Z");
@@ -161,7 +156,15 @@ vi.mock("@/lib/chapter-branding", () => ({
   }),
 }));
 
-import EventsScreen from "@/app/(app)/(tabs)/events";
+// The Day screen's `day` param; `undefined` is none.
+let dayParam: string | undefined;
+vi.mocked(expoRouter.useLocalSearchParams).mockImplementation(
+  (): Record<string, string> =>
+    dayParam === undefined ? {} : { day: dayParam },
+);
+
+import EventsScreen from "@/app/(app)/events";
+import CalendarDayScreen from "@/app/(app)/calendar-day";
 
 const mounted: ReactTestRenderer[] = [];
 
@@ -176,6 +179,38 @@ function render(): ReactTestRenderer {
   });
   mounted.push(tree);
   return tree;
+}
+
+function renderDay(day?: Date): ReactTestRenderer {
+  dayParam = day ? localIsoDate(day) : undefined;
+  let tree!: ReactTestRenderer;
+  act(() => {
+    tree = create(
+      <FrappThemeProvider>
+        <CalendarDayScreen />
+      </FrappThemeProvider>,
+    );
+  });
+  mounted.push(tree);
+  return tree;
+}
+
+const longDay = (day: Date) =>
+  day.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+
+/** Picks `day` on the month, by its square. */
+function pickDay(tree: ReactTestRenderer, day: Date) {
+  const cell = tree.root.find(
+    (node) =>
+      typeof node.props.onPress === "function" &&
+      node.props.accessibilityState?.selected !== undefined &&
+      String(node.props.accessibilityLabel).startsWith(longDay(day)),
+  );
+  act(() => cell.props.onPress());
 }
 
 /** The flattened style of the one `Text` that draws exactly `text`. */
@@ -198,9 +233,8 @@ const skeletons = (tree: ReactTestRenderer) =>
   tree.root.findAll((node) => node.props.accessibilityRole === "progressbar");
 
 beforeEach(() => {
-  resetEventsViewForTests();
-  resetCalendarLayersForTests();
-  resetCalendarRangeForTests();
+  dayParam = undefined;
+  vi.mocked(vi.mocked(expoRouter.useRouter)().push).mockClear();
   newEventSheet.props = null;
   newEventSheet.presented = 0;
   tasks = [];
@@ -283,28 +317,9 @@ describe("Events header New event", () => {
     permissions = [];
   });
 
-  it("opens New event on the sheet's own default from the List", () => {
+  it("starts the event on the day picked on the month", () => {
     permissions = ["*"];
     const tree = render();
-    act(() => createButton(tree)!.props.onPress());
-    expect(newEventSheet.props?.template?.start).toBeNull();
-    expect(newEventSheet.presented).toBe(1);
-    permissions = [];
-  });
-
-  it("starts the event on the day picked in the Calendar", () => {
-    permissions = ["*"];
-    const tree = render();
-    act(() =>
-      tree.root
-        .find(
-          (node) =>
-            node.props.accessibilityRole === "radio" &&
-            node.props.accessibilityLabel === "Calendar" &&
-            typeof node.props.onPress === "function",
-        )
-        .props.onPress(),
-    );
     // Today picked: today, never the sheet's roll to tomorrow
     // (`pickedDayStart` has its own spec for the hours).
     act(() => createButton(tree)!.props.onPress());
@@ -318,20 +333,6 @@ describe("Events header New event", () => {
       new Date(now.getFullYear(), now.getMonth() + 1, 1, 19),
     );
     expect(newEventSheet.presented).toBe(2);
-
-    // A day picked in Calendar doesn't follow the member to the List.
-    act(() =>
-      tree.root
-        .find(
-          (node) =>
-            node.props.accessibilityRole === "radio" &&
-            node.props.accessibilityLabel === "List" &&
-            typeof node.props.onPress === "function",
-        )
-        .props.onPress(),
-    );
-    act(() => createButton(tree)!.props.onPress());
-    expect(newEventSheet.props?.template?.start).toBeNull();
     permissions = [];
   });
 });
@@ -351,79 +352,12 @@ describe("Events list clock (#2101)", () => {
   });
 });
 
-describe("Event card", () => {
-  it("leads with the name, not the place", () => {
-    events = [{ ...EVENT, location: "Chapter House — Great Room" }];
-    const tree = render();
-
-    const name = styleOf(tree, "Chapter meeting");
-    const meta = screenText(tree)
-      .split("\n")
-      .find((line) => line.endsWith("· Chapter House — Great Room"));
-    expect(meta).toBeDefined();
-    const place = styleOf(tree, meta as string);
-
-    expect(name.fontSize).toBe(signetDarkTokens.typography.role.title.size);
-    expect(Number(name.fontSize)).toBeGreaterThan(Number(place.fontSize));
-    expect(place.color).toBe(signetDarkTokens.color.text.mutedForeground);
-  });
-
-  // The day is the heading over the rows now (#3707), so the card says only
-  // its time; the board's "THU / 14" date block went with the headings.
-  it("puts the card under its written-out day heading, with no date block", () => {
-    const tree = render();
-    const text = screenText(tree);
-    // Mounted eleven minutes before the start: the same local day in most
-    // zones, the day before in a few, so either heading is right.
-    expect(text).toMatch(/^(Today|Tomorrow)$/m);
-    expect(text.indexOf("Chapter meeting")).toBeGreaterThan(
-      text.search(/^(Today|Tomorrow)$/m),
-    );
-    expect(text).not.toMatch(/^Tmrw$/m);
-  });
-
-  it("answers a press with a lift and a ripple, not a fade", () => {
-    const tree = render();
-    const [card] = tree.root.findAll(
-      (node) =>
-        node.props.accessibilityLabel === "Open Chapter meeting" &&
-        typeof node.props.style === "function",
-    );
-    const held = StyleSheet.flatten(card.props.style({ pressed: true }));
-
-    // The suite's stub is iOS: the card lifts one rung up the surface ladder.
-    expect(held.backgroundColor).toBe(signetDarkTokens.color.surface.card);
-    expect(held).not.toHaveProperty("opacity");
-    // The ripple is rounded by a parent clip with the card's radius
-    // (`PressableRow`); the card's own `overflow` would leave it square.
-    const { clip } = expectRoundedRipple(
-      card,
-      signetDarkTokens.radius.cardLarge,
-    );
-    // The card has no margins, so the clip adds none and the card stays put.
-    expect(Object.keys(clip).filter((key) => key.startsWith("margin"))).toEqual(
-      [],
-    );
-  });
-
-  it("paints Mandatory as quiet hairline metadata and points in the accent", () => {
-    events = [{ ...EVENT, is_mandatory: true, point_value: 10 }];
-    const tree = render();
-
-    // The hairline kind, as web's row (#3822, #4132): muted text, no fill.
-    expect(styleOf(tree, "Mandatory").color).toBe(
-      signetDarkTokens.color.text.mutedForeground,
-    );
-    expect(styleOf(tree, "+10 pts").color).toBe(ACCENT);
-  });
-});
-
 /**
  * From the owner's 2026-11-04 Android test feedback: s06 carried its own
  * spinner-in-a-card state blocks, and with no active chapter `useEvents`
  * never runs, so the spinner never stopped.
  */
-describe("Events list states", () => {
+describe("Calendar states", () => {
   it("asks for a chapter instead of loading forever without one", () => {
     chapterId = null;
     query = { isPending: true, isError: false, isFetching: false };
@@ -437,10 +371,10 @@ describe("Events list states", () => {
     query = { isPending: true, isError: false, isFetching: true };
     const tree = render();
 
-    // One region, named for what loads, shaped as the event cards.
+    // One region, named for what loads, shaped as the month.
     expect(skeletons(tree)).toHaveLength(1);
     expect(skeletons(tree)[0]!.props.accessibilityLabel).toBe(
-      "Loading chapter events",
+      "Loading the calendar",
     );
     expect(screenText(tree)).not.toMatch(/Loading/);
   });
@@ -543,12 +477,11 @@ describe("Events list states", () => {
 });
 
 /**
- * The owner's 2026-11-05 pick: the next event is the page's one card, and the
- * rest sit flush on the floor, with points in the meta line as web writes
- * them. Since #3707 they sit under day headings, two weeks of them, with the
- * rest behind Later.
+ * The picked day's rows, flush on the floor (owner pick 2026-11-05), each as
+ * Activity draws an event (#4679), with points in the meta line as web
+ * writes them.
  */
-describe("Events after the first", () => {
+describe("Calendar day rows", () => {
   const at = (days: number) => new Date(START.getTime() + days * 86_400_000);
   const make = (id: string, days: number, extra: object = {}) => ({
     ...EVENT,
@@ -557,51 +490,6 @@ describe("Events after the first", () => {
     start_time: at(days).toISOString(),
     end_time: new Date(at(days).getTime() + 3_600_000).toISOString(),
     ...extra,
-  });
-
-  it("heads each day, and keeps everything past two weeks behind Later", () => {
-    events = [
-      make("a", 0),
-      make("b", 2),
-      make("c", 10, { point_value: 15, location: "Library" }),
-      make("d", 20),
-    ];
-    const tree = render();
-    let text = screenText(tree);
-    const weekday = at(2).toLocaleDateString(undefined, { weekday: "long" });
-    expect(text).toMatch(new RegExp(`^${weekday}$`, "m"));
-    expect(text.indexOf("Event b")).toBeGreaterThan(text.indexOf(weekday));
-    // A count read as text is written out, as web writes it (#4135).
-    expect(text).toMatch(/Library · 15 points/);
-    expect(text).not.toContain("+15 pts");
-    // Day 20 is past the horizon: one Later row offers it, folded, with
-    // web's count beside it (#4135).
-    expect(text).toContain("Later");
-    expect(text).toContain("1 event");
-    expect(text).not.toContain("Event d");
-
-    const later = tree.root.find(
-      (node) =>
-        typeof node.props.onPress === "function" &&
-        node.props.accessibilityLabel === "Later, 1 event",
-    );
-    expect(later.props.accessibilityState).toEqual({ expanded: false });
-    act(() => later.props.onPress());
-    text = screenText(tree);
-    expect(text).toContain("Event d");
-    // Open now, to a screen reader and to the eye: the chevron turns down.
-    expect(later.props.accessibilityState).toEqual({ expanded: true });
-    expect(
-      later.findAll((node) => (node.type as unknown) === DisclosureGlyph)[0]
-        ?.props.direction,
-    ).toBe("down");
-  });
-
-  it("says when nothing falls in the next two weeks", () => {
-    events = [make("far", 30)];
-    const text = screenText(render());
-    expect(text).toContain("Nothing in the next two weeks.");
-    expect(text).toContain("1 event");
   });
 
   // A weekly "Chapter" series meeting today and every 7 days after.
@@ -614,32 +502,10 @@ describe("Events after the first", () => {
       }),
     );
 
-  it('draws a weekly series once, as "Chapter · Every …" (#3823)', () => {
-    const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
-    events = weeklySeries(13);
-    const tree = render();
-    const rows = tree.root.findAll(
-      (node) =>
-        (node.type as unknown) === "Pressable" &&
-        String(node.props.accessibilityLabel).startsWith("Open Chapter"),
-    );
-    expect(rows).toHaveLength(1);
-    expect(drawnText(rows[0]!)).toContain(`Chapter · Every ${weekday}`);
-    // Nothing waits in Later: the other twelve live on the event's page.
-    expect(screenText(tree)).not.toContain("Later");
-  });
-
-  it("says a series meeting's cadence on its Calendar day too", () => {
+  it('says a series meeting\'s cadence on its day, "Chapter · Every …" (#3823)', () => {
     const weekday = START.toLocaleDateString(undefined, { weekday: "long" });
     events = weeklySeries(4);
     const tree = render();
-    const calendar = tree.root.find(
-      (node) =>
-        node.props.accessibilityRole === "radio" &&
-        node.props.accessibilityLabel === "Calendar" &&
-        typeof node.props.onPress === "function",
-    );
-    act(() => calendar.props.onPress());
     const row = tree.root.find(
       (node) =>
         (node.type as unknown) === "Pressable" &&
@@ -652,6 +518,7 @@ describe("Events after the first", () => {
   it("draws a later row with no card fill and Mandatory as a hairline", () => {
     events = [make("a", 0), make("b", 2, { is_mandatory: true })];
     const tree = render();
+    pickDay(tree, at(2));
     const row = tree.root.find(
       (node) =>
         (node.type as unknown) === "Pressable" &&
@@ -671,8 +538,16 @@ describe("Events after the first", () => {
   });
 
   it("draws a later row as Activity draws an event: a tile, the name in the label role, a chevron (#4679)", () => {
-    events = [make("a", 0), make("b", 2, { is_mandatory: true })];
+    events = [
+      make("a", 0),
+      make("b", 2, {
+        is_mandatory: true,
+        point_value: 15,
+        location: "Library",
+      }),
+    ];
     const tree = render();
+    pickDay(tree, at(2));
     const rowOf = (name: string) =>
       tree.root.find(
         (node) =>
@@ -694,9 +569,17 @@ describe("Events after the first", () => {
       false,
       true,
     ]);
-    expect(styleOf(tree, "Event b").fontSize).toBe(
-      signetDarkTokens.typography.role.label.size,
-    );
+    expect(
+      (
+        StyleSheet.flatten(
+          row.findAll(
+            (node) =>
+              (node.type as unknown) === "Text" &&
+              node.props.children === "Event b",
+          )[0]!.props.style,
+        ) as TextStyle
+      ).fontSize,
+    ).toBe(signetDarkTokens.typography.role.label.size);
     // The tile holds the Events glyph, the one Activity leads an event with.
     expect(tiles[0]!.findByType(NavGlyph).props.paths).toBe(NAV_GLYPHS.events);
     // The tile row's frame: the tile sets the height, so the small padding
@@ -704,9 +587,9 @@ describe("Events after the first", () => {
     expect(
       StyleSheet.flatten(row.props.style({ pressed: false })).paddingVertical,
     ).toBe(signetDarkTokens.spacing.sm);
-    // The next event's card is not a tile row: it keeps its own shape.
-    expect(rowOf("Event a").findAllByType(LeadTile)).toHaveLength(0);
-    expect(rowOf("Event a").findAllByType(ForwardGlyph)).toHaveLength(0);
+    // A count read as text is written out, as web writes it (#4135).
+    expect(screenText(tree)).toMatch(/Library · 15 points/);
+    expect(screenText(tree)).not.toContain("+15 pts");
   });
 
   it("splits a day's rows by hairlines, none above the first, and bleeds into the gutter", () => {
@@ -718,6 +601,7 @@ describe("Events after the first", () => {
       }),
     ];
     const tree = render();
+    pickDay(tree, at(2));
     const pressableOf = (name: string) =>
       tree.root.find(
         (node) =>
@@ -736,19 +620,42 @@ describe("Events after the first", () => {
   });
 });
 
-/** #3792 / #3823: a List | Calendar switch that opens on the last one used. */
-describe("Events view switch", () => {
-  const viewSwitch = (tree: ReactTestRenderer, label: string) =>
-    tree.root.find(
-      (node) =>
-        node.props.accessibilityRole === "radio" &&
-        node.props.accessibilityLabel === label &&
-        typeof node.props.onPress === "function",
-    );
+/**
+ * #3792, and #5310 (Paul, 2026-11-17: "I hate the calendar page"): the month
+ * is the whole screen. No List | Calendar switch, no Month | 3 days | Day,
+ * no chips: the month row, the grid and the picked day's list.
+ */
+describe("Calendar month", () => {
+  it("is a pushed screen, its way back Activity", () => {
+    const shell = render().root.findByType(ScreenShell);
+    expect(shell.props.title).toBe("Calendar");
+    expect(shell.props.back).toEqual(BACK_TO_ACTIVITY);
+  });
 
-  it("switches to a month calendar, marks event days, and remembers the pick", () => {
+  it("draws no switcher and no chips above the month", () => {
+    tasks = [
+      {
+        id: "t-mine",
+        title: "Clean the kitchen",
+        assignee_id: "me",
+        created_by: "m1",
+        due_date: localIsoDate(MOUNTED_AT),
+        status: "TODO",
+      },
+    ];
     const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
+    for (const role of ["radio", "radiogroup", "switch", "toolbar"]) {
+      expect(
+        tree.root.findAll((node) => node.props.accessibilityRole === role),
+      ).toHaveLength(0);
+    }
+    for (const label of ["List", "3 days", "Day", "My tasks", "Events"]) {
+      expect(screenText(tree)).not.toMatch(new RegExp(`^${label}$`, "m"));
+    }
+  });
+
+  it("marks event days on a month calendar", () => {
+    const tree = render();
 
     const month = START.toLocaleDateString(undefined, {
       month: "long",
@@ -762,10 +669,6 @@ describe("Events view switch", () => {
           String(node.props.testID).startsWith("event-title-"),
       ),
     ).toHaveLength(1);
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      EVENTS_VIEW_STORAGE_KEY,
-      "calendar",
-    );
   });
 
   it("writes a day's events by title in its square, a required one in the accent", () => {
@@ -781,7 +684,6 @@ describe("Events view switch", () => {
       },
     ];
     const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
     const titles = tree.root.findAll(
       (node) =>
         (node.type as unknown) === "Text" &&
@@ -805,7 +707,6 @@ describe("Events view switch", () => {
 
   it("leaves off the weeks at the end with no day of the month", () => {
     const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
     const month = new Date(START.getFullYear(), START.getMonth(), 1);
     const last = new Date(START.getFullYear(), START.getMonth() + 1, 0);
     const weeks = Math.ceil((month.getDay() + last.getDate()) / 7);
@@ -819,28 +720,10 @@ describe("Events view switch", () => {
     expect(dayButtons).toHaveLength(weeks * 7);
   });
 
-  it("opens on Calendar after a restart when Calendar was the last pick", async () => {
-    // A fresh process: the screen's own subscription reads storage.
-    vi.mocked(AsyncStorage.getItem).mockResolvedValueOnce("calendar");
-    const tree = render();
-    // Let the stored read land; nothing here calls hydrate by hand.
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(AsyncStorage.getItem).toHaveBeenCalledWith(EVENTS_VIEW_STORAGE_KEY);
-    expect(viewSwitch(tree, "Calendar").props.accessibilityState.checked).toBe(
-      true,
-    );
-    expect(screenText(tree)).toContain(
-      START.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
-    );
-  });
-
-  it("says nothing is scheduled in Calendar too, for a chapter with no events", () => {
+  it("says nothing is scheduled under the month, for a chapter with no events", () => {
     permissions = ["*"];
     events = [];
     const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
     expect(screenText(tree)).toContain(
       "Nothing scheduled yet. Tap + to add the first event.",
     );
@@ -848,7 +731,7 @@ describe("Events view switch", () => {
     permissions = [];
   });
 
-  it("says nothing is scheduled in Calendar for a chapter with only past events", () => {
+  it("says nothing is scheduled for a chapter with only past events", () => {
     permissions = ["*"];
     events = [
       {
@@ -861,8 +744,6 @@ describe("Events view switch", () => {
       },
     ];
     const tree = render();
-    expect(screenText(tree)).toContain("Nothing scheduled yet.");
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
     expect(screenText(tree)).toContain(
       "Nothing scheduled yet. Tap + to add the first event.",
     );
@@ -871,7 +752,6 @@ describe("Events view switch", () => {
 
   it("keeps a picked day and its month together as the clock moves on", () => {
     const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
     const month = START.toLocaleDateString(undefined, {
       month: "long",
       year: "numeric",
@@ -882,7 +762,7 @@ describe("Events view switch", () => {
         String(node.props.accessibilityLabel).includes(", 1 event, "),
     );
     act(() => day.props.onPress());
-    // Six weeks on, the tab still mounted.
+    // Six weeks on, the screen still mounted.
     act(() => {
       vi.advanceTimersByTime(42 * 86_400_000);
     });
@@ -892,14 +772,13 @@ describe("Events view switch", () => {
 
   it("follows the clock to a new day until the member picks one", () => {
     const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
     const heading = () =>
       tree.root
         .findAllByType("Text" as never)
         .map((node) => node.props.children)
         .filter((text) => text === "Today" || text === "Yesterday");
     expect(heading()).toContain("Today");
-    // A day and a half later, the tab still mounted.
+    // A day and a half later, the screen still mounted.
     act(() => {
       vi.advanceTimersByTime(36 * 3_600_000);
     });
@@ -909,7 +788,6 @@ describe("Events view switch", () => {
 
   it("turns the month with the chevrons and lists the chosen day's events", () => {
     const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
     const next = START.getMonth() + 1;
     const nextLabel = new Date(START.getFullYear(), next, 1).toLocaleDateString(
       undefined,
@@ -940,15 +818,33 @@ describe("Events view switch", () => {
   });
 });
 
-/** #4144: the member's tasks and the ones they assigned, on the Calendar. */
-describe("Tasks on the Calendar", () => {
-  const viewSwitch = (tree: ReactTestRenderer, label: string) =>
-    tree.root.find(
+/** #5310: the hour grid lives on the Day screen, opened from the heading. */
+describe("Calendar day heading", () => {
+  it("opens the picked day's hour grid", () => {
+    const tree = render();
+    const later = new Date(
+      MOUNTED_AT.getFullYear(),
+      MOUNTED_AT.getMonth(),
+      MOUNTED_AT.getDate() + 2,
+    );
+    pickDay(tree, later);
+    const heading = tree.root.find(
       (node) =>
-        node.props.accessibilityRole === "radio" &&
-        node.props.accessibilityLabel === label &&
+        node.props.testID === "calendar-day-heading" &&
         typeof node.props.onPress === "function",
     );
+    expect(heading.props.accessibilityLabel).toMatch(/, open the day$/);
+    expect(heading.findAllByType(DisclosureGlyph)).toHaveLength(1);
+    act(() => heading.props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/calendar-day",
+      params: { day: localIsoDate(later) },
+    });
+  });
+});
+
+/** #4144: the member's tasks and the ones they assigned, on the Calendar. */
+describe("Tasks on the Calendar", () => {
   const pressable = (tree: ReactTestRenderer, label: string) =>
     tree.root.find(
       (node) =>
@@ -989,7 +885,6 @@ describe("Tasks on the Calendar", () => {
   it("lists the day's tasks under its events, with where they stand", () => {
     withTasks();
     const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
 
     const text = screenText(tree);
     expect(text).toContain("Clean the kitchen");
@@ -1047,7 +942,6 @@ describe("Tasks on the Calendar", () => {
   it("opens an assigned task in place to show each assignee", () => {
     withTasks();
     const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
     expect(screenText(tree)).not.toContain("Ana Ruiz");
 
     act(() =>
@@ -1080,21 +974,6 @@ describe("Tasks on the Calendar", () => {
     );
   });
 
-  it("turns a kind off from its chip and remembers it", () => {
-    withTasks();
-    const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
-
-    act(() => pressable(tree, "My tasks").props.onPress());
-    expect(screenText(tree)).not.toContain("Clean the kitchen");
-    expect(screenText(tree)).toContain("Dues form");
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      "frapp.events.calendar-layers",
-      // What's hidden (#4959), so a layer added later starts on.
-      JSON.stringify({ hidden: ["mine"] }),
-    );
-  });
-
   describe("birthdays (#4959)", () => {
     function withBirthday() {
       birthdays = [
@@ -1108,10 +987,9 @@ describe("Tasks on the Calendar", () => {
       ];
     }
 
-    it("lists a shared birthday on its day, marks the day, and offers the chip", () => {
+    it("lists a shared birthday on its day and marks the day", () => {
       withBirthday();
       const tree = render();
-      act(() => viewSwitch(tree, "Calendar").props.onPress());
 
       expect(screenText(tree)).toContain("Dana Lowe");
       expect(screenText(tree)).toContain("Birthday");
@@ -1121,48 +999,33 @@ describe("Tasks on the Calendar", () => {
           (node) => node.props.testID === `birthday-mark-${key}`,
         ).length,
       ).toBeGreaterThan(0);
-      expect(pressable(tree, "Birthdays")).toBeTruthy();
-    });
-
-    it("hides birthdays from their chip", () => {
-      withBirthday();
-      const tree = render();
-      act(() => viewSwitch(tree, "Calendar").props.onPress());
-
-      act(() => pressable(tree, "Birthdays").props.onPress());
-      expect(screenText(tree)).not.toContain("Dana Lowe");
-    });
-
-    it("shows birthdays to a member whose saved chips predate them", async () => {
-      withBirthday();
-      await AsyncStorage.setItem(
-        "frapp.events.calendar-layers",
-        JSON.stringify(["events", "mine", "assigned"]),
-      );
-      resetCalendarLayersForTests();
-      const tree = render();
-      act(() => viewSwitch(tree, "Calendar").props.onPress());
-
-      expect(screenText(tree)).toContain("Dana Lowe");
     });
   });
 
-  it("offers no chips to a member with no tasks", () => {
-    const tree = render();
-    act(() => viewSwitch(tree, "Calendar").props.onPress());
-    expect(screenText(tree)).not.toContain("My tasks");
+  // #5310: no layer chips, so every kind shows, always.
+  it("shows the member's tasks, the ones they assigned and birthdays together", () => {
+    withTasks();
+    birthdays = [
+      {
+        id: "m2",
+        display_name: "Dana Lowe",
+        avatar_url: null,
+        birthday_month: MOUNTED_AT.getMonth() + 1,
+        birthday_day: MOUNTED_AT.getDate(),
+      },
+    ];
+    const text = screenText(render());
+    expect(text).toContain("Clean the kitchen");
+    expect(text).toContain("Assigned by you · 1 of 2 done");
+    expect(text).toContain("Dana Lowe");
   });
 });
 
-/** #4818: 3 days and Day beside Month, the hour grids. */
-describe("Calendar 3 days and Day", () => {
-  const radio = (tree: ReactTestRenderer, label: string) =>
-    tree.root.find(
-      (node) =>
-        node.props.accessibilityRole === "radio" &&
-        node.props.accessibilityLabel === label &&
-        typeof node.props.onPress === "function",
-    );
+/**
+ * #4818's Day, the hour grid, as its own screen pushed from the month's day
+ * heading since #5310 (the 3 days range went then).
+ */
+describe("Calendar day screen", () => {
   const pressable = (tree: ReactTestRenderer, label: string) =>
     tree.root.find(
       (node) =>
@@ -1190,45 +1053,33 @@ describe("Calendar 3 days and Day", () => {
   const plusDays = (day: Date, n: number) =>
     new Date(day.getFullYear(), day.getMonth(), day.getDate() + n);
 
-  function openRange(label: "3 days" | "Day"): ReactTestRenderer {
-    const tree = render();
-    act(() => radio(tree, "Calendar").props.onPress());
-    act(() => radio(tree, label).props.onPress());
-    return tree;
-  }
-
-  it("draws three days from today and remembers the pick", () => {
-    const tree = openRange("3 days");
-    const first = today();
-    expect(dayColumns(tree)).toEqual(
-      [0, 1, 2].map((n) => localIsoDate(plusDays(first, n))),
-    );
-    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      CALENDAR_RANGE_STORAGE_KEY,
-      "3day",
-    );
+  it("is titled for its day, its way back the Calendar", () => {
+    const day = plusDays(today(), 1);
+    const shell = renderDay(day).root.findByType(ScreenShell);
+    expect(shell.props.title).toBe(longDay(day));
+    expect(shell.props.back).toEqual(BACK_TO_EVENTS);
   });
 
-  it("opens on the stored range after a restart", async () => {
-    vi.mocked(AsyncStorage.getItem).mockImplementation(async (key) =>
-      key === CALENDAR_RANGE_STORAGE_KEY
-        ? "day"
-        : key === EVENTS_VIEW_STORAGE_KEY
-          ? "calendar"
-          : null,
-    );
-    const tree = render();
-    await act(async () => {
-      await Promise.resolve();
+  it("draws today for a missing or malformed day", () => {
+    expect(dayColumns(renderDay())).toEqual([localIsoDate(today())]);
+    dayParam = "2026-02-30";
+    act(() => {
+      mounted.push(
+        create(
+          <FrappThemeProvider>
+            <CalendarDayScreen />
+          </FrappThemeProvider>,
+        ),
+      );
     });
-    vi.mocked(AsyncStorage.getItem).mockResolvedValue(null);
-    expect(radio(tree, "Day").props.accessibilityState.checked).toBe(true);
-    expect(dayColumns(tree)).toEqual([localIsoDate(today())]);
+    expect(dayColumns(mounted[mounted.length - 1]!)).toEqual([
+      localIsoDate(today()),
+    ]);
   });
 
   it("draws the event as a block on its day, which opens it", () => {
-    const tree = openRange("3 days");
     const start = new Date(EVENT.start_time);
+    const tree = renderDay(start);
     const key = localIsoDate(start);
     const block = tree.root.find(
       (node) =>
@@ -1236,32 +1087,15 @@ describe("Calendar 3 days and Day", () => {
         node.props.testID === `time-grid-block-${EVENT.id}-${key}`,
     );
     expect(block.props.accessibilityLabel).toMatch(/^Open Chapter meeting, /);
+    act(() => block.props.onPress());
+    expect(vi.mocked(expoRouter.useRouter)().push).toHaveBeenCalledWith({
+      pathname: "/event-details",
+      params: { id: EVENT.id },
+    });
   });
 
-  it("steps by the range with the chevrons", () => {
-    const tree = openRange("3 days");
-    act(() => pressable(tree, "Next 3 days").props.onPress());
-    expect(dayColumns(tree)[0]).toBe(localIsoDate(plusDays(today(), 3)));
-    act(() => radio(tree, "Day").props.onPress());
-    act(() => pressable(tree, "Previous day").props.onPress());
-    expect(dayColumns(tree)).toEqual([localIsoDate(plusDays(today(), 2))]);
-  });
-
-  it("opens a day from its 3 days heading in the Day view", () => {
-    const tree = openRange("3 days");
-    const second = plusDays(today(), 1);
-    const label = `Open ${second.toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    })}`;
-    act(() => pressable(tree, label).props.onPress());
-    expect(radio(tree, "Day").props.accessibilityState.checked).toBe(true);
-    expect(dayColumns(tree)).toEqual([localIsoDate(second)]);
-  });
-
-  it("marks now in today's column only, and moves to the new day at midnight", () => {
-    const tree = openRange("3 days");
+  it("marks now on today, and with no day picked follows the clock to the next", () => {
+    const tree = renderDay();
     const [line] = nowLines(tree);
     expect(nowLines(tree)).toHaveLength(1);
     // The line sits inside today's column.
@@ -1270,16 +1104,18 @@ describe("Calendar 3 days and Day", () => {
       parent = parent.parent;
     expect(parent?.props.testID).toBe(`time-grid-day-${localIsoDate(today())}`);
 
-    // A day and a half on, the tab still mounted: the grid follows the clock
-    // to the new today, and the line is drawn there.
+    // A day and a half on, still mounted: the grid follows the clock to the
+    // new today, and the line is drawn there.
     act(() => {
       vi.advanceTimersByTime(36 * 3_600_000);
     });
     expect(dayColumns(tree)[0]).toBe(localIsoDate(today()));
     expect(nowLines(tree)).toHaveLength(1);
+    // Another day has no now line.
+    expect(nowLines(renderDay(plusDays(today(), 1)))).toHaveLength(0);
   });
 
-  it("puts an event of a day or more in the All day strip on each day it covers", () => {
+  it("puts an event of a day or more in the All day strip on a day it covers", () => {
     const first = today();
     events = [
       {
@@ -1300,7 +1136,7 @@ describe("Calendar 3 days and Day", () => {
         ).toISOString(),
       },
     ];
-    const tree = openRange("3 days");
+    const tree = renderDay(plusDays(first, 1));
     expect(screenText(tree)).toContain("All day");
     expect(
       tree.root.findAll(
@@ -1308,25 +1144,18 @@ describe("Calendar 3 days and Day", () => {
           node.props.accessibilityLabel === "Open Retreat, all day" &&
           typeof node.props.onPress === "function",
       ),
-    ).toHaveLength(3);
+    ).toHaveLength(1);
   });
 
   const hourText = (hour: number) =>
     new Date(2000, 0, 1, hour).toLocaleTimeString(undefined, {
       hour: "numeric",
     });
-  const longDay = (day: Date) =>
-    day.toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    });
 
   it("opens New event at a pressed hour for a member who can create", () => {
     permissions = ["*"];
-    const tree = openRange("Day");
-    act(() => pressable(tree, "Next day").props.onPress());
     const day = plusDays(today(), 1);
+    const tree = renderDay(day);
     expect(newEventSheet.props).toBeNull();
     act(() =>
       pressable(
@@ -1341,21 +1170,9 @@ describe("Calendar 3 days and Day", () => {
     permissions = [];
   });
 
-  it("starts the header's New event on the day on screen in Day (#5113)", () => {
-    permissions = ["*"];
-    const tree = openRange("Day");
-    act(() => pressable(tree, "Next day").props.onPress());
-    act(() => createButton(tree)!.props.onPress());
-    const day = plusDays(today(), 1);
-    expect(newEventSheet.props?.template?.start).toEqual(
-      new Date(day.getFullYear(), day.getMonth(), day.getDate(), 19),
-    );
-    permissions = [];
-  });
-
   it("offers no hour that is already over", () => {
     permissions = ["*"];
-    const tree = openRange("Day");
+    const tree = renderDay(today());
     const now = new Date();
     const hasSlot = (hour: number) =>
       tree.root.findAll(
@@ -1369,9 +1186,9 @@ describe("Calendar 3 days and Day", () => {
     }
     expect(hasSlot(now.getHours())).toBe(true);
     // Yesterday has none at all.
-    act(() => pressable(tree, "Previous day").props.onPress());
+    const yesterday = renderDay(plusDays(today(), -1));
     expect(
-      tree.root.findAll((node) =>
+      yesterday.root.findAll((node) =>
         String(node.props.accessibilityLabel).startsWith("Create event on"),
       ),
     ).toHaveLength(0);
@@ -1380,7 +1197,7 @@ describe("Calendar 3 days and Day", () => {
 
   it("offers no hour to press for a member who can't create", () => {
     permissions = [];
-    const tree = openRange("Day");
+    const tree = renderDay(today());
     expect(
       tree.root.findAll((node) =>
         String(node.props.accessibilityLabel).startsWith("Create event on"),
@@ -1427,7 +1244,7 @@ describe("Calendar 3 days and Day", () => {
         end_time: at(20, 30),
       },
     ];
-    const tree = openRange("3 days");
+    const tree = renderDay(day);
     const [long, overlap] = ["long", "overlap"].map((id) =>
       blocks(tree).find((node) => node.props.testID.includes(id))!,
     );
@@ -1442,7 +1259,7 @@ describe("Calendar 3 days and Day", () => {
   });
 
   it("draws the now line at the time now", () => {
-    const tree = openRange("Day");
+    const tree = renderDay(today());
     const now = new Date();
     const [line] = nowLines(tree);
     expect(StyleSheet.flatten(line!.props.style).top).toBe(
@@ -1462,41 +1279,15 @@ describe("Calendar 3 days and Day", () => {
         status: "TODO",
       },
     ];
-    const tree = openRange("Day");
+    const tree = renderDay(today());
     expect(screenText(tree)).toContain("All day");
     expect(screenText(tree)).toContain("Clean the kitchen");
   });
 
   it("says when a block's event is mandatory", () => {
     events = [{ ...EVENT, is_mandatory: true }];
-    const tree = openRange("3 days");
+    const tree = renderDay(new Date(EVENT.start_time));
     const [block] = blocks(tree);
     expect(block!.props.accessibilityLabel).toMatch(/, mandatory$/);
-  });
-
-  it("says nothing is scheduled over the grid, pointing a creator at an hour", () => {
-    permissions = ["*"];
-    events = [];
-    const tree = openRange("3 days");
-    expect(screenText(tree)).toContain(
-      "Nothing scheduled yet. Tap an hour to add the first event.",
-    );
-    permissions = [];
-  });
-
-  it("names both years when three days cross New Year", () => {
-    // Day by day to Dec 30 in any zone, then three days from there.
-    const tree = openRange("Day");
-    const now = today();
-    const first = new Date(now.getFullYear(), 11, 30);
-    while (dayColumns(tree)[0] !== localIsoDate(first)) {
-      act(() => pressable(tree, "Next day").props.onPress());
-    }
-    act(() => radio(tree, "3 days").props.onPress());
-    const short = (day: Date) =>
-      day.toLocaleDateString(undefined, { month: "short" });
-    expect(screenText(tree)).toContain(
-      `${short(first)} ${now.getFullYear()} – ${short(plusDays(first, 2))} ${now.getFullYear() + 1}`,
-    );
   });
 });

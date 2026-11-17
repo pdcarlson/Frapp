@@ -12,7 +12,7 @@ export function asRoute(path: string): Href {
 const TAB_PATHS: ReadonlySet<string> = new Set([
   "/",
   "/activity",
-  "/events",
+  "/messages",
   "/you",
 ]);
 

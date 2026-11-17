@@ -472,8 +472,8 @@ describe("UpNextStrip rows", () => {
 });
 
 describe("formatDayWord", () => {
-  // The strip and the Events tab's day headings say a day the same way.
-  it("is the Events tab's day heading, the year included outside this one", () => {
+  // The strip and the Calendar's day headings say a day the same way.
+  it("is the Calendar's day heading, the year included outside this one", () => {
     for (const day of [
       at(2026, 7, 16),
       at(2026, 7, 17),

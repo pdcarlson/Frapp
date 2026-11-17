@@ -39,7 +39,9 @@ function longDay(day: Date): string {
 }
 
 /**
- * The Calendar's 3 days and Day views on the phone (#4818), drawn as web's
+ * One day's hour grid on the phone (#4818), the Day screen pushed from the
+ * Calendar month's day heading since #5310 (the 3 days range and the
+ * Month | 3 days | Day switch went then), drawn as web's
  * Week and Day are (`apps/web/components/events/events-time-grid.tsx`) and as
  * Google Calendar's phone app draws them: an hour gutter at the left, a
  * column per day, each timed event a block at its start and as tall as it
@@ -53,25 +55,22 @@ function longDay(day: Date): string {
  * today, so a tab left open past midnight moves both together.
  */
 export function EventsTimeGrid({
-  days,
+  day,
   events,
   now,
   tasksByDay,
   onOpen,
   onOpenTask,
-  onOpenDay,
   canCreate,
   onCreateAt,
 }: {
-  /** The columns, each at local midnight: three for 3 days, one for Day. */
-  days: Date[];
+  /** The day, at local midnight. */
+  day: Date;
   events: EventRow[];
   now: Date;
   tasksByDay: Map<string, CalendarItem[]>;
   onOpen: (id: string) => void;
   onOpenTask: (taskId: string) => void;
-  /** A column's heading opens that day in the Day view (3 days only). */
-  onOpenDay?: (day: Date) => void;
   canCreate: boolean;
   onCreateAt: (day: Date, hour: number) => void;
 }) {
@@ -84,14 +83,13 @@ export function EventsTimeGrid({
   const hourLabels = useMemo(() => HOURS.map(hourLabel), []);
 
   const columns = useMemo(
-    () => timeGridColumns(days, events, tasksByDay),
-    [days, events, tasksByDay],
+    () => timeGridColumns([day], events, tasksByDay),
+    [day, events, tasksByDay],
   );
 
   const hasStrip = columns.some(
     (column) => column.allDay.length > 0 || column.tasks.length > 0,
   );
-  const isDayView = days.length === 1;
 
   // Opened at 8 AM once; stepping the range keeps where the member scrolled,
   // as web's does.
@@ -119,9 +117,7 @@ export function EventsTimeGrid({
             weekday: "short",
           });
           const heading = (
-            <View
-              style={[styles.heading, isDayView ? styles.headingStart : null]}
-            >
+            <View style={[styles.heading, styles.headingStart]}>
               <Text
                 style={[styles.weekday, isToday ? styles.weekdayToday : null]}
               >
@@ -141,17 +137,7 @@ export function EventsTimeGrid({
               </View>
             </View>
           );
-          return onOpenDay && !isDayView ? (
-            <Pressable
-              key={key}
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${longDay(day)}`}
-              onPress={() => onOpenDay(day)}
-              style={styles.column}
-            >
-              {heading}
-            </Pressable>
-          ) : (
+          return (
             <View
               key={key}
               accessible

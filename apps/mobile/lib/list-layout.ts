@@ -5,9 +5,8 @@ import {
 
 /**
  * List or Grid, for a screen that offers both (#4175): the last one the
- * member picked on this phone, per screen. Kept the way the Events tab keeps
- * List/Calendar (`lib/events/events-view.ts`, #3823): per device, in
- * AsyncStorage, which the owner said is enough for a view choice.
+ * member picked on this phone, per screen: per device, in AsyncStorage,
+ * which the owner said is enough for a view choice (#3823).
  *
  * Per screen, not one switch for the app: a member who wants the Directory as
  * faces may still want Tasks as rows, the way Finder and Google Drive keep a

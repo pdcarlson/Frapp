@@ -72,14 +72,12 @@ import {
 import { can } from "@repo/validation";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChapterMark } from "@/components/chapter-mark";
-import { MessagesSwipeArea } from "@/components/chat/messages-swipe-area";
 import { useRefetchAll } from "@/components/pull-to-refresh";
 import { PushReminder } from "@/components/notifications/push-reminder";
 import { useTourAnchor, useTourReady } from "@/components/onboarding/tour";
 import { ScreenShell, StickyHeader } from "@/components/screen-shell";
 import { selectFromChapterLevel } from "@/components/chat/notification-level-control";
 import {
-  MessagesButton,
   NotificationsButton,
   SearchButton,
 } from "@/components/chat/home-header";
@@ -224,17 +222,13 @@ export default function ChatHomeScreen() {
   useEffect(() => {
     if (channelsQuery.data) syncLockedChannels(allChannels);
   }, [channelsQuery.data, allChannels]);
-  // Chat home lists channels only; direct messages live behind the Messages
-  // door at the top right (owner, 2026-11-07).
+  // Chat home lists channels only; direct messages have their own tab,
+  // Messages (#5310; a door at the top right from 2026-11-07 until then).
   const channels = useMemo(
     () =>
       listedChannels(allChannels).filter(
         (channel) => !isDirectChannel(channel),
       ),
-    [allChannels],
-  );
-  const directChannels = useMemo(
-    () => listedChannels(allChannels).filter(isDirectChannel),
     [allChannels],
   );
   // One map for the rows' badges and the arrangement alike, so a folded
@@ -470,22 +464,11 @@ export default function ChatHomeScreen() {
       }),
     [notificationPrefsQuery.data, notificationPrefsQuery.isError],
   );
-  // The Messages door's badge: conversations with anything unread. A muted
-  // DM counts too: anything unread in a DM addresses the member, and that
-  // gets past a mute, as it does on the row and for push (§ Sidebar
-  // arrangement, Hide muted).
-  // A group DM whose thread has new replies counts too (#5277): those rows
-  // sit behind the door, and thread replies never count toward the
-  // conversation's own unread.
+  // Channels whose threads have replies new to the member (#5277).
   const unreadThreadChannelIds = useMemo(
     () => channelsWithUnreadThreads(threadsByChannel),
     [threadsByChannel],
   );
-  const unreadConversations = directChannels.filter(
-    (channel) =>
-      (unreadByChannelId?.get(channel.id)?.unreadCount ?? 0) > 0 ||
-      unreadThreadChannelIds.has(channel.id),
-  ).length;
   // What the arrangement reads as unread: the server's counts, plus one for a
   // channel whose thread has new replies (#5277), so Unread only keeps that
   // channel and its thread rows, and a folded section reads unread over it.
@@ -750,7 +733,7 @@ export default function ChatHomeScreen() {
     </View>
   );
 
-  const screen = (
+  return (
     <ScreenShell
       title={chapterName ?? "Frapp"}
       titleMark={<ChapterMark />}
@@ -769,11 +752,11 @@ export default function ChatHomeScreen() {
       }}
       headerAction={
         <View style={styles.headerActions}>
-          {/* Search (#5139), the Messages door, then the inbox's bell
-              (#3362). The member's avatar is the You tab since #3839;
-              threads sit under their channels since #5277. */}
+          {/* Search (#5139), then the inbox's bell (#3362). The member's
+              avatar is the You tab since #3839, threads sit under their
+              channels since #5277, and the Messages door became the
+              Messages tab in #5310. */}
           <SearchButton />
-          <MessagesButton unreadConversations={unreadConversations} />
           <NotificationsButton />
         </View>
       }
@@ -1135,22 +1118,6 @@ export default function ChatHomeScreen() {
         }}
       />
     </ScreenShell>
-  );
-  // Swipe left to Messages (#3774), beside the top-right door.
-  return (
-    <MessagesSwipeArea
-      enabled={!filterMenu.visible && !menuTarget}
-      // The hint that teaches the swipe plays only on a Chat home at rest
-      // (`lib/chat/messages-hint.ts`): in front, its list drawn, and the
-      // launch jump to the last channel settled.
-      hint={{
-        viewerId,
-        ready: isFocused && listAnswered && !holdingForLaunch,
-        unreadConversations,
-      }}
-    >
-      {screen}
-    </MessagesSwipeArea>
   );
 }
 

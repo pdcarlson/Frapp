@@ -5,6 +5,7 @@ import { withTiming } from "react-native-reanimated";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FrappThemeProvider } from "@/lib/theme";
+import { signetDarkTokens } from "@repo/theme/signet";
 
 const device = vi.hoisted(() => ({ bottomInset: 0 }));
 vi.mock("react-native-safe-area-context", () => ({
@@ -32,6 +33,13 @@ vi.mock("@/lib/activity/use-activity-reread", () => ({
 }));
 vi.mock("@repo/hooks", () => ({
   useActivity: () => ({ data: activity.data }),
+}));
+// Messages' count has its own spec (`lib/chat/unread-conversations.spec.tsx`);
+// the bar only draws and names it (#5310).
+const unreadConversations = vi.hoisted(() => ({ count: 0 }));
+vi.mock("@/lib/chat/unread-conversations", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/chat/unread-conversations")>()),
+  useUnreadConversationCount: () => unreadConversations.count,
 }));
 
 // The You tab's avatar has its own spec (`you-tab-avatar.spec.tsx`); the bar
@@ -97,13 +105,13 @@ type Route = { key: string; name: string; params?: object };
 const ROUTES: Route[] = [
   { key: "index-1", name: "index" },
   { key: "activity-1", name: "activity" },
-  { key: "events-1", name: "events" },
+  { key: "messages-1", name: "messages" },
   { key: "you-1", name: "you" },
 ];
 const TITLES: Record<string, string> = {
   index: "Chat",
   activity: "Activity",
-  events: "Calendar",
+  messages: "Messages",
   you: "You",
 };
 
@@ -217,7 +225,7 @@ describe("the bar (#3344)", () => {
 
   it("names a picked status on the You tab, and says nothing of Online (#3839)", () => {
     const youLabel = () =>
-      pressables(render("events").root).find(
+      pressables(render("messages").root).find(
         (node) =>
           node.props.accessibilityRole === "tab" &&
           node.props.testID === "tab-you",
@@ -232,13 +240,13 @@ describe("the bar (#3344)", () => {
   });
 
   it("draws the four tabs in order, the focused one selected", () => {
-    const tabs = pressables(render("events").root).filter(
+    const tabs = pressables(render("messages").root).filter(
       (node) => node.props.accessibilityRole === "tab",
     );
     expect(tabs.map((tab) => tab.props.accessibilityLabel)).toEqual([
       "Chat",
       "Activity",
-      "Calendar",
+      "Messages",
       "You",
     ]);
     expect(tabs.map((tab) => tab.props.accessibilityState.selected)).toEqual([
@@ -273,11 +281,45 @@ describe("the bar (#3344)", () => {
     ).toBeDefined();
   });
 
+  // #5310: Messages took the third slot from Calendar, with the count the
+  // Messages door on Chat home carried, in mention red.
+  it("puts the unread conversations on Messages' tab, in mention red, and says them", () => {
+    const badge = (tree: ReactTestRenderer) =>
+      tree.root.findAll(
+        (node) =>
+          typeof node.type === "string" &&
+          node.props.testID === "tab-messages-badge",
+      );
+    unreadConversations.count = 0;
+    let tree = render();
+    expect(badge(tree)).toHaveLength(0);
+    expect(byLabel(tree.root, "Messages")).toBeDefined();
+
+    unreadConversations.count = 2;
+    try {
+      tree = render();
+      const [pill] = badge(tree);
+      expect(pill).toBeDefined();
+      expect(flat(pill!.props.style).backgroundColor).toBe(
+        signetDarkTokens.color.semantic.mention,
+      );
+      expect(
+        byLabel(tree.root, "Messages, 2 unread conversations"),
+      ).toBeDefined();
+      unreadConversations.count = 1;
+      expect(
+        byLabel(render().root, "Messages, 1 unread conversation"),
+      ).toBeDefined();
+    } finally {
+      unreadConversations.count = 0;
+    }
+  });
+
   it("holds the badge's count fresh, leaving Activity's own re-read to it", () => {
     // The hook itself is pinned in `use-activity-reread.spec.tsx`.
     rereadOnTab.mockClear();
-    render("events");
-    expect(rereadOnTab).toHaveBeenLastCalledWith("events-1", false);
+    render("messages");
+    expect(rereadOnTab).toHaveBeenLastCalledWith("messages-1", false);
     render("activity");
     expect(rereadOnTab).toHaveBeenLastCalledWith("activity-1", true);
   });
@@ -381,7 +423,7 @@ describe("the +", () => {
   it("closes when the member moves to another screen", () => {
     const tree = render();
     act(() => plus(tree.root)!.props.onPress());
-    act(() => tree.update(element("events")));
+    act(() => tree.update(element("messages")));
     expect(panel(tree.root)).toBeUndefined();
     // And stays closed on the way back.
     act(() => tree.update(element("index")));
@@ -425,7 +467,7 @@ describe("the Ask Frapp bar", () => {
 
   it("sits 8pt above the tab bar, as wide as the bar and its + together, on every tab", () => {
     quick.hasAsk = true;
-    for (const tab of ["index", "activity", "events", "you"]) {
+    for (const tab of ["index", "activity", "messages", "you"]) {
       const tree = render(tab);
       // No inset: the tab bar's top is 12 + 62 off the edge.
       expect(placed(tree.root)).toMatchObject({
@@ -545,7 +587,7 @@ describe("the fold", () => {
 
   it("folds the tabs to the current one and brings Ask into the row, leaving the + where it was", async () => {
     quick.hasAsk = true;
-    const tree = await renderSettled("events");
+    const tree = await renderSettled("messages");
     const plusBefore = flat(plus(tree.root)!.parent!.props.style);
     act(() => setBarFolded(true));
 
@@ -563,7 +605,7 @@ describe("the fold", () => {
 
     // The folded round names the tab it stands for, and opens the tabs.
     const round = tree.root.findByProps({ testID: "tab-folded" });
-    expect(round.props.accessibilityLabel).toBe("Calendar, show all tabs");
+    expect(round.props.accessibilityLabel).toBe("Messages, show all tabs");
     act(() => round.props.onPress());
     expect(flat(pill(tree.root).props.style).width).toBe(
       402 - 14 - (14 + 62 + 10),
@@ -581,15 +623,15 @@ describe("the fold", () => {
     ).toHaveLength(1);
     act(() => onActivity.unmount());
 
-    const onCalendar = await renderSettled("events");
+    const onMessages = await renderSettled("messages");
     act(() => setBarFolded(true));
     expect(
-      onCalendar.root.findAllByProps({ testID: "tab-folded-dot" }),
+      onMessages.root.findAllByProps({ testID: "tab-folded-dot" }),
     ).toHaveLength(1);
     expect(
-      onCalendar.root.findByProps({ testID: "tab-folded" }).props
+      onMessages.root.findByProps({ testID: "tab-folded" }).props
         .accessibilityLabel,
-    ).toMatch(/^Calendar, show all tabs, Activity: /);
+    ).toMatch(/^Messages, show all tabs, Activity: /);
   });
 
   it("gives the tabs back their touches only once they are back in place", async () => {

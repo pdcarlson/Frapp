@@ -7,7 +7,7 @@ import { AccessibilityInfo, Platform } from "react-native";
  * says no: react-native-web answers true in every browser, which would make
  * every web build look screen-read.
  */
-export async function readScreenReaderOn(): Promise<boolean> {
+async function readScreenReaderOn(): Promise<boolean> {
   if (Platform.OS === "web") return false;
   try {
     return await AccessibilityInfo.isScreenReaderEnabled();
