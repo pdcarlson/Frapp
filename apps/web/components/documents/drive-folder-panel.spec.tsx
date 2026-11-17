@@ -70,6 +70,7 @@ const connected = (
     last_synced_at: null,
     synced_count: 12,
     skipped_count: 2,
+    folders_left_out: 0,
     syncing: false,
     who_can_see: null,
     ...over,
@@ -221,6 +222,28 @@ describe("DriveFolderPanel", () => {
 
     await user.click(screen.getByRole("button", { name: "Sync now" }));
     expect(syncNow).toHaveBeenCalled();
+  });
+
+  it("says plainly when folders were too deep or too many to read (#5331)", async () => {
+    status = connected({ folders_left_out: 3 });
+    const user = userEvent.setup();
+    render(<DriveFolderPanel gate={gate} />);
+
+    await user.click(screen.getByRole("button", { name: "Google Drive" }));
+    expect(screen.getByText("Not read")).toBeInTheDocument();
+    expect(screen.getByText("3 folders")).toBeInTheDocument();
+    expect(
+      screen.getByText(/the files in these aren.t in Documents/),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no Not read line when every folder was read", async () => {
+    status = connected();
+    const user = userEvent.setup();
+    render(<DriveFolderPanel gate={gate} />);
+
+    await user.click(screen.getByRole("button", { name: "Google Drive" }));
+    expect(screen.queryByText("Not read")).toBeNull();
   });
 
   it("says when Frapp lost access, with the address to share it with again", async () => {

@@ -35,16 +35,26 @@ import { listNoWiderThan } from '#domain/utils/document-access';
 import { DOCUMENTS_BUCKET } from '../chapter-document.service';
 import { toReportableError } from '../../../infrastructure/observability/reportable-error';
 
-/** Folder levels read: the folder itself and two below it. */
-const DRIVE_MAX_DEPTH = 3;
+/**
+ * Folder levels read: the folder itself and nine below it (#5331; until then
+ * three, which left most of a real chapter drive out). Past it, folders are
+ * counted in `folders_left_out` rather than read.
+ */
+export const DRIVE_MAX_DEPTH = 10;
 /** Files a folder brings into Documents at most; the rest are skipped. */
 export const DRIVE_MAX_FILES = 500;
 /** Files copied (new or changed) per pass; a bigger change takes a few passes. */
 export const DRIVE_COPY_BUDGET = 20;
-/** Folders listed per pass, so a folder of folders can't stall a pass. */
-const DRIVE_MAX_FOLDERS = 100;
+/**
+ * Folders listed per pass, so a folder of folders can't stall a pass. Each is
+ * one Drive list call (more past 1,000 items), so a pass costs at most this
+ * many calls before any copying, every 15 minutes.
+ */
+export const DRIVE_MAX_FOLDERS = 300;
 /** A Frapp folder name's longest. */
 const FOLDER_NAME_MAX = 100;
+/** Stands for the middle of a synced folder's path too long to name whole. */
+const ELLIPSIS = '…';
 /** Google's own types Frapp turns into files people can open anywhere. */
 const EXPORTS: Record<string, { mime: string; extension: string }> = {
   'application/vnd.google-apps.document': {
@@ -183,7 +193,8 @@ export class GoogleDriveSyncService {
       throw new GoogleDriveApiError('not_found', null, 'not_a_folder');
     }
 
-    const { planned, folders, skipped, complete } = await this.plan(root);
+    const { planned, folders, skipped, complete, foldersLeftOut } =
+      await this.plan(root);
     // Folders first: a rename re-files the copies in it, so they are read
     // after.
     const filedIn = await this.syncFolders(connection, folders);
@@ -278,6 +289,7 @@ export class GoogleDriveSyncService {
       last_error: null,
       synced_count: filed,
       skipped_count: skipped + unreadable,
+      folders_left_out: foldersLeftOut,
       ...(more ? { sync_due_at: now.toISOString() } : {}),
     });
     return more ? 'more' : 'synced';
@@ -285,13 +297,16 @@ export class GoogleDriveSyncService {
 
   /**
    * The folder tree as folders and files Documents should hold, parents
-   * before their children, and how many files it can't.
+   * before their children (shallow levels first, so a cap leaves out the
+   * deepest), how many files it can't, and how many folders it didn't read.
    */
   private async plan(root: GoogleDriveItem): Promise<{
     planned: PlannedFile[];
     folders: PlannedFolder[];
     skipped: number;
     complete: boolean;
+    /** Folders past the depth or folder cap, whose files weren't read. */
+    foldersLeftOut: number;
   }> {
     const planned: PlannedFile[] = [];
     const folders: PlannedFolder[] = [
@@ -304,12 +319,16 @@ export class GoogleDriveSyncService {
     let skipped = 0;
     let complete = true;
     let listed = 0;
+    let foldersLeftOut = 0;
     const queue: { id: string; depth: number }[] = [{ id: root.id, depth: 0 }];
     const seen = new Set<string>([root.id]);
     while (queue.length > 0) {
       const next = queue.shift()!;
       if (listed >= DRIVE_MAX_FOLDERS) {
+        // This folder and every one still waiting go unread. Their copies
+        // and synced folders stay until a full read.
         complete = false;
+        foldersLeftOut += queue.length + 1;
         break;
       }
       listed += 1;
@@ -331,16 +350,20 @@ export class GoogleDriveSyncService {
       }
       for (const item of children) {
         if (item.mimeType === GOOGLE_DRIVE_FOLDER_MIME) {
-          // Deeper levels, and a folder shared into itself, are left out.
-          if (next.depth + 1 < DRIVE_MAX_DEPTH && !seen.has(item.id)) {
-            seen.add(item.id);
-            folders.push({
-              driveId: item.id,
-              parentDriveId: next.id,
-              name: cleanName(item.name) || 'Untitled folder',
-            });
-            queue.push({ id: item.id, depth: next.depth + 1 });
+          // A folder shared into itself is read once.
+          if (seen.has(item.id)) continue;
+          seen.add(item.id);
+          if (next.depth + 1 >= DRIVE_MAX_DEPTH) {
+            // Too deep: counted, so the panel can say files were left out.
+            foldersLeftOut += 1;
+            continue;
           }
+          folders.push({
+            driveId: item.id,
+            parentDriveId: next.id,
+            name: cleanName(item.name) || 'Untitled folder',
+          });
+          queue.push({ id: item.id, depth: next.depth + 1 });
           continue;
         }
         const file = planFile(item, next.id);
@@ -351,7 +374,7 @@ export class GoogleDriveSyncService {
         planned.push(file);
       }
     }
-    return { planned, folders, skipped, complete };
+    return { planned, folders, skipped, complete, foldersLeftOut };
   }
 
   /**
@@ -633,11 +656,32 @@ function place(
   return { folder: copy.folder, held: target.id };
 }
 
-/** A synced folder's name: its path from the connected folder, capped. */
-function folderPath(parent: string | null, name: string): string {
-  return (parent ? `${parent} / ${name}` : name)
-    .slice(0, FOLDER_NAME_MAX)
-    .trim();
+/**
+ * A synced folder's name: its path from the connected folder. A path too long
+ * for a folder name keeps its first folder and as many of its last as fit,
+ * with "…" between ("Chapter files / … / 2025 / Flyers"), so deep folders
+ * stay told apart by their own names rather than cut off mid-path.
+ */
+export function folderPath(parent: string | null, name: string): string {
+  const full = parent ? `${parent} / ${name}` : name;
+  if (full.length <= FOLDER_NAME_MAX) return full.trim();
+  const parts = full.split(' / ');
+  const head = parts[0];
+  const tail: string[] = [];
+  for (let i = parts.length - 1; i > 0; i -= 1) {
+    // A parent already shortened carries its own "…".
+    if (parts[i] === ELLIPSIS) continue;
+    const candidate = [head, ELLIPSIS, parts[i], ...tail].join(' / ');
+    if (candidate.length > FOLDER_NAME_MAX) break;
+    tail.unshift(parts[i]);
+  }
+  if (tail.length === 0) {
+    // Even the first and last names together are too long: the last wins.
+    return `${ELLIPSIS} / ${parts[parts.length - 1]}`
+      .slice(0, FOLDER_NAME_MAX)
+      .trim();
+  }
+  return [head, ELLIPSIS, ...tail].join(' / ');
 }
 
 /** `wanted`, or `wanted (2)` and up when another folder has the name. */

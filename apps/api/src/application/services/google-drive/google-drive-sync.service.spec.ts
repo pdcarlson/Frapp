@@ -15,8 +15,11 @@ import type {
 import type { ChapterDriveConnection } from '#domain/entities/chapter-drive-connection.entity';
 import {
   DRIVE_COPY_BUDGET,
+  DRIVE_MAX_DEPTH,
   DRIVE_MAX_FILES,
+  DRIVE_MAX_FOLDERS,
   GoogleDriveSyncService,
+  folderPath,
   planFile,
 } from './google-drive-sync.service';
 
@@ -51,6 +54,7 @@ const connection = (
   last_error: null,
   synced_count: 0,
   skipped_count: 0,
+  folders_left_out: 0,
   created_at: NOW.toISOString(),
   who_can_see: null,
   ...over,
@@ -277,24 +281,86 @@ describe('GoogleDriveSyncService', () => {
     ]);
   });
 
-  it('leaves out folders past three levels, unsupported types and oversized files', async () => {
+  it('leaves out unsupported types and oversized files', async () => {
     tree[ROOT] = [
-      folder('a', 'A'),
       item({ id: 'form', mimeType: 'application/vnd.google-apps.form' }),
       item({ id: 'zip', name: 'x.zip', mimeType: 'application/zip' }),
       item({ id: 'big', size: 26 * 1024 * 1024 }),
     ];
-    tree.a = [folder('b', 'B')];
-    tree.b = [folder('c', 'C')];
-    tree.c = [item({ id: 'too-deep' })];
 
     await service.process(connection(), NOW);
 
-    expect(drive.listChildren).not.toHaveBeenCalledWith('c');
     expect(documents.create).not.toHaveBeenCalled();
     expect(connections.finishSync).toHaveBeenCalledWith(
       'conn-1',
-      expect.objectContaining({ synced_count: 0, skipped_count: 3 }),
+      expect.objectContaining({
+        synced_count: 0,
+        skipped_count: 3,
+        folders_left_out: 0,
+      }),
+    );
+  });
+
+  it('brings in a file five folders down, in a folder named by its path (#5331)', async () => {
+    // Shawn's chapter drive: folders inside folders inside folders.
+    tree[ROOT] = [folder('a', 'Rush')];
+    tree.a = [folder('b', '2025')];
+    tree.b = [folder('c', 'Events')];
+    tree.c = [folder('d', 'Flyers')];
+    tree.d = [item({ id: 'deep-file', name: 'Bid day.pdf' })];
+
+    await expect(service.process(connection(), NOW)).resolves.toBe('synced');
+
+    expect(documents.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Bid day',
+        folder: 'Chapter files / Rush / 2025 / Events / Flyers',
+      }),
+    );
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ synced_count: 1, folders_left_out: 0 }),
+    );
+  });
+
+  it('counts folders past the depth cap instead of dropping them without a word', async () => {
+    // A chain of folders one deeper than the cap reads.
+    let parent = ROOT;
+    for (let level = 1; level <= DRIVE_MAX_DEPTH; level += 1) {
+      tree[parent] = [folder(`level-${level}`, `L${level}`)];
+      parent = `level-${level}`;
+    }
+    tree[parent] = [item({ id: 'too-deep' })];
+
+    await service.process(connection(), NOW);
+
+    expect(drive.listChildren).toHaveBeenCalledWith(
+      `level-${DRIVE_MAX_DEPTH - 1}`,
+    );
+    expect(drive.listChildren).not.toHaveBeenCalledWith(
+      `level-${DRIVE_MAX_DEPTH}`,
+    );
+    expect(documents.create).not.toHaveBeenCalled();
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ folders_left_out: 1 }),
+    );
+  });
+
+  it('counts the folders it had no turn to read past the folder cap, and keeps their copies', async () => {
+    tree[ROOT] = Array.from({ length: DRIVE_MAX_FOLDERS + 4 }, (_, i) =>
+      folder(`sub-${i}`, `Sub ${i}`),
+    );
+    documents.findDriveCopies.mockResolvedValue([copy({})]);
+
+    await service.process(connection(), NOW);
+
+    // The connected folder and the first 299 below it are read; five aren't.
+    expect(drive.listChildren).toHaveBeenCalledTimes(DRIVE_MAX_FOLDERS);
+    expect(documents.delete).not.toHaveBeenCalled();
+    expect(connections.finishSync).toHaveBeenCalledWith(
+      'conn-1',
+      expect.objectContaining({ folders_left_out: 5 }),
     );
   });
 
@@ -802,6 +868,42 @@ describe('GoogleDriveSyncService', () => {
     drive.getItem.mockResolvedValue(item({ id: ROOT }));
 
     await expect(service.process(connection(), NOW)).resolves.toBe('no_access');
+  });
+});
+
+describe('folderPath', () => {
+  it('joins a path that fits as it is', () => {
+    expect(folderPath('Chapter files / Rush', 'Flyers')).toBe(
+      'Chapter files / Rush / Flyers',
+    );
+    expect(folderPath(null, 'Chapter files')).toBe('Chapter files');
+  });
+
+  it('keeps the first folder and the last ones that fit when a path is too long', () => {
+    const parent = [
+      'Town in Fiji',
+      'Recruitment and new member education',
+      'Fall 2025 rush week planning',
+      'Day three',
+    ].join(' / ');
+    const name = folderPath(parent, 'Flyers and posters');
+
+    expect(name.length).toBeLessThanOrEqual(100);
+    expect(name).toBe(
+      'Town in Fiji / … / Fall 2025 rush week planning / Day three / Flyers and posters',
+    );
+    // A child of a shortened folder keeps shortening the same way.
+    const child = folderPath(name, 'Final versions for print');
+    expect(child.length).toBeLessThanOrEqual(100);
+    expect(child.startsWith('Town in Fiji / … / ')).toBe(true);
+    expect(child.endsWith(' / Final versions for print')).toBe(true);
+    expect(child.match(/…/g)).toHaveLength(1);
+  });
+
+  it('keeps the last name when even it and the first are too long together', () => {
+    const name = folderPath('A'.repeat(60), 'B'.repeat(60));
+    expect(name.length).toBeLessThanOrEqual(100);
+    expect(name.startsWith('… / BBB')).toBe(true);
   });
 });
 

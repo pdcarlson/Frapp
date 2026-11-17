@@ -11539,6 +11539,8 @@ export interface components {
             synced_count: number;
             /** @description Files the last sync left out: a type Documents does not take, over 25 MB, or past 500 files */
             skipped_count: number;
+            /** @description Folders the last sync did not read, because they sit more than nine levels below the connected folder or past its first 300 folders. The files in them are not in Documents. */
+            folders_left_out: number;
             /** @description Whether a sync is due or running now */
             syncing: boolean;
             /** @description Who sees what it brings in (#5220): the list its top folder in Documents started with. Null for everyone who can open Documents. The folder's own list counts from then on. */
