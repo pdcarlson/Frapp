@@ -51,10 +51,11 @@ export class HealthController {
     private readonly stripePriceConsistency: StripePriceConsistencyService,
   ) {}
 
-  // Render's `healthCheckPath` (render.yaml) points at this route. It must
-  // always return 2xx — a degraded 503 here would make Render treat the
-  // instance as unhealthy and can trigger a rollback, which is a deliberate
-  // dashboard-side decision this endpoint must not make unilaterally.
+  // Liveness: it must always return 2xx while the process is up. A degraded
+  // 503 here would read as a dead instance to anything probing liveness (a
+  // platform health check, the deploy's commit poll), and replacing or
+  // rolling back an instance is a deliberate decision this endpoint must not
+  // make unilaterally. Readiness is `/health/ready`.
   @Get('health')
   @ApiOperation({
     summary: 'Liveness check (always 2xx while the process is up)',

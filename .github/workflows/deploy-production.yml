@@ -346,21 +346,18 @@ jobs:
   # that calls a workflow can't) and no secret of its own.
   #
   # A caller's `env:` does not reach a called workflow, which is why this file
-  # has none: `_deploy.yml` reads the Render and Vercel ids from
+  # has none: `_deploy.yml` reads the Google Cloud and Vercel ids from
   # `.github/environments.json` itself (#2806).
   deploy:
     name: Migrate, then ship Render + Vercel
     needs: validate
     uses: ./.github/workflows/_deploy.yml
-    # `_deploy.yml`'s job asks for `packages: write` to push the API image
-    # (#2506), and a called job may not ask for more than its caller grants.
-    # Production builds its image without pushing it there, so it goes unused
-    # here. `id-token: write` signs the job in to Google Cloud for the Cloud Run
-    # deploy (#5228). The job keeps its Render-era name because the deploy
-    # alert and the development log find its runs by it.
+    # `id-token: write` signs the job in to Google Cloud for the Cloud Run
+    # deploy (#5228), and a called job may not ask for more than its caller
+    # grants. The job keeps its Render-era name because the deploy alert and
+    # the development log find its runs by it.
     permissions:
       contents: read
-      packages: write
       id-token: write
     secrets: inherit
     with:
@@ -615,7 +612,6 @@ jobs:
         env:
           DEPLOY_RESULT: ${{ needs.deploy.result }}
           RELEASE_RESULT: ${{ needs.release.result }}
-          RENDER_DEPLOY_ID: ${{ needs.deploy.outputs.render-deploy-id }}
           CLOUD_RUN_REVISION: ${{ needs.deploy.outputs.cloud-run-revision }}
           REPLAY_OUTCOME: ${{ needs.deploy.outputs.replay-outcome }}
           APPLIED: ${{ needs.deploy.outputs.applied }}
@@ -632,8 +628,8 @@ jobs:
           {
             # The heading, not just a row: this summary gets linked and
             # screenshotted as evidence that a SHA shipped, and a dry run's table
-            # otherwise reads `Migrate + deploy: success` with `Render deploy id:
-            # none` as the only tell. Same ambiguity `run-name` was changed to
+            # otherwise reads `Migrate + deploy: success` with `Cloud Run revision:
+            # not reported` as the only tell. Same ambiguity `run-name` was changed to
             # remove, one level down — and a dry run now looks even more like a
             # ship, because it builds.
             if [ "$DRY_RUN" = "true" ]; then
@@ -666,11 +662,7 @@ jobs:
             # workflow's outputs, which a failed call may not carry back.
             echo "| Migrations applied | \`${APPLIED:-not reported}\` |"
             echo "| Migration rehearsal | \`${REPLAY_OUTCOME:-not reported}\` |"
-            if [ -n "${RENDER_DEPLOY_ID:-}" ]; then
-              echo "| Render deploy id | \`$RENDER_DEPLOY_ID\` |"
-            else
-              echo "| Cloud Run revision | \`${CLOUD_RUN_REVISION:-not reported}\` |"
-            fi
+            echo "| Cloud Run revision | \`${CLOUD_RUN_REVISION:-not reported}\` |"
             echo "| Release tag | \`${RELEASE_RESULT:-skipped}\` |"
             echo ""
             if [ "$REPLAY_OUTCOME" = "nothing-pending" ]; then

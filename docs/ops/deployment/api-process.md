@@ -1,41 +1,8 @@
-## 5. Render Setup (API)
+# API process
 
-Create **two** Render Web Services: one for production, one for staging.
+What runs inside the API's one process besides its HTTP routes, and the health check every deploy reads. Where the process runs, and how it deploys, is [`cloud-run.md`](cloud-run.md). Until [#5228](https://github.com/frapplive/Frapp/issues/5228) (2026-11-17) the API ran on Render, and this page was Render's setup guide; the Render-only parts went with it.
 
-### 5.1 Create Services
-
-1. Go to https://dashboard.render.com → **New** → **Web Service**.
-2. Connect your GitHub repo.
-
-| Setting             | Production                                                                                                                                                                      | Staging                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| **Name**            | `frapp-api-prod`                                                                                                                                                                | `frapp-api-staging`                                     |
-| **Service ID**      | `renderServiceId` of `production` in [`.github/environments.json`](../../../.github/environments.json) ([why there](../../../spec/environments/README.md#environment-identity)) | `renderServiceId` of `staging` there                    |
-| **Branch**          | `main`                                                                                                                                                                          | `main`                                                  |
-| **Auto-Deploy**     | **No** — deploys are API-driven by commit                                                                                                                                       | **No** — same, from `deploy-staging.yml` (#2505, #2803) |
-| **Root Directory**  | (leave empty — Dockerfile uses repo root)                                                                                                                                       | (same)                                                  |
-| **Runtime**         | Docker                                                                                                                                                                          | Docker                                                  |
-| **Dockerfile Path** | `apps/api/Dockerfile`                                                                                                                                                           | `apps/api/Dockerfile`                                   |
-| **Instance Type**   | Starter ($7/mo) or Free                                                                                                                                                         | Free                                                    |
-
-### 5.2 Environment Variables
-
-As with Vercel ([environment variables](vercel.md#42-environment-variables-per-project)), these are **not entered by hand in the Render dashboard**. Infisical holds
-the canonical values and its syncs push them into `frapp-api-staging` and `frapp-api-prod`
-(`render-api-staging` and `render-api-production`); the dashboard is the destination. See
-[`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md) for the sync setup
-and [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md) for the full variable list.
-The full per-environment grid — every variable the API reads, with its `dev` / `staging` / `prod` value — is
-[`ENV_REFERENCE.md` § "Canonical Variables — The Complete Grid"](../../internal/environment/ENV_REFERENCE.md#canonical-variables--the-complete-grid),
-plus its § "API-Only Settings" and § "CD Secrets (Deploy Workflows Only)" subsections. Do not restate it here:
-each sync reads path `/` and pushes the **whole** source environment ([`SECRETS_MANAGEMENT.md`](../../internal/environment/SECRETS_MANAGEMENT.md#5-configure-secret-syncs) § 5), so any short list understates what the service holds.
-
-### 5.3 Custom Domains
-
-- Production: `api.frapp.live` → point to `frapp-api-prod.onrender.com`
-- Staging: `api-staging.frapp.live` → point to `frapp-api-staging.onrender.com`
-
-### 5.4 Health Check
+## Health check
 
 The API exposes `GET /health`, which answers `200` whether or not its dependency probes pass
 ([`health.controller.ts`](../../../apps/api/src/interface/controllers/health.controller.ts)). It
@@ -43,66 +10,23 @@ never throws, so a `200` proves the process booted and Nest is serving, not that
 reachable. The JSON body is the liveness payload in
 [`spec/behavior/observability.md` § Health Check](../../../spec/behavior/observability.md#health-check).
 
-> **This section previously claimed Render auto-detects the health check from the Dockerfile
-> `HEALTHCHECK` directive. That claim is unverified and the configuration contradicts it.** Render
-> exposes a per-service `healthCheckPath` setting, and on 2026-08-21 the live `frapp-api-staging`
-> service reported `healthCheckPath: ""` — empty — while [`render.yaml`](../../../render.yaml)
-> declares `healthCheckPath: /health` for both API services. So the blueprint is **not** applied to
-> that service, whatever Render does with the Dockerfile directive.
->
-> What Render actually does with `HEALTHCHECK`, and whether an empty `healthCheckPath` disables
-> health-gated deploys, is **not established here** — `render.com` is unreachable from agent
-> sessions (egress-blocked), so it was not checked against Render's documentation. Confirm before
-> relying on either behaviour. Reconciling the drift is tracked on #1160.
->
-> **2026-09-06:** the drift was closed from the other side. `PATCH /v1/services/{id}` set
-> `healthCheckPath: /health` on **both** `frapp-api-staging` and `frapp-api-prod` (read back as
-> `/health` on each), so the live services now match the blueprint. The open question above was
-> also settled that day from Render's own documentation
-> ([render.com/docs/health-checks](https://render.com/docs/health-checks), read from an unrestricted
-> session): with an **empty** `healthCheckPath` Render's probe is a plain **TCP socket check** on the
-> open port; with a path set it sends `GET <path>` and treats `2xx`/`3xx` within five seconds as
-> healthy. On a new deploy Render routes no traffic to the new instances until all of them pass, and
-> **cancels the deploy** if they have not within 15 minutes. So the empty value never disabled
-> deploy gating — it gated on "opened a port" rather than "answered HTTP". The page does not mention
-> the Dockerfile `HEALTHCHECK` directive at all, so whether Render reads it remains unestablished.
-> `/health` is the right value here because it is the plain liveness probe that always 2xxs; the
-> readiness half is the `/health/ready` smoke loop in `deploy-production.yml`.
->
-> **2026-09-28 (#2805):** that loop is gone. Both environments' deploys now run
-> `verify-served-commit.mjs` in the shared `_deploy.yml` job, which requires `/health/ready` to
-> answer 2xx **and** report the deployed commit.
->
-> **2026-09-08:** `scripts/ci/production-guardrails.mjs` asserts the live
-> `serviceDetails.healthCheckPath` on `frapp-api-prod` is `/health`, daily at 07:15
-> and as the `deploy-production.yml` preflight. Empty (TCP-only) and `/health/ready`
-> both fail the run. The alert title was not renamed — it is the lookup key.
->
-> **2026-09-08 (later):** `scripts/ci/staging-conformance.mjs` asserts the same
-> nested field on `frapp-api-staging`, daily at 07:30. This path is Render's
-> HTTP gate on every staging deploy. Missing
-> `RENDER_API_KEY` is SKIPPED, not a pass.
->
-> **2026-09-09:** the same daily job now also asserts `frapp-api-staging`
-> `autoDeploy: "yes"` and `branch: "main"` (top-level fields on the live
-> GET). A dashboard click that turns auto-deploy off, or points the service
-> at another branch, freezes staging while healthCheckPath and Auth
-> assertions stay green on a stale host. Production-guardrails still asserts
-> the inverse (`autoDeploy: "no"`) under its own alert title — do not fold
-> that expected value into this suite.
->
-> **2026-09-25 ([#2505](https://github.com/pdcarlson/Frapp/issues/2505)):
-> reversed.** Staging now expects `autoDeploy: "no"`, like production.
-> `deploy-api.yml` deploys `frapp-api-staging` by commit through the Render
-> API, after CI and `migrate-staging`, so auto-deploy is no longer what keeps
-> staging current. Left on, it builds every push before either gate, and its
-> deploy races the one `deploy-api.yml` creates. The `branch: "main"`
-> assertion stands. Since [#2803](https://github.com/pdcarlson/Frapp/issues/2803)
-> that workflow is `deploy-staging.yml`; the reasoning is unchanged.
+Readiness is `GET /health/ready`, which answers `503` when a dependency is degraded. Every deploy
+reads it, and its `commit`, twice: the Cloud Run deploy polls the new revision on the candidate host
+before moving traffic ([`cloud-run.md` § Deploys](cloud-run.md#deploys)), and `verify-served-commit.mjs`
+then requires the API host itself to answer `2xx` **and** report the deployed commit.
 
-### 5.5 In-process chat workers (Chunk 05)
+The deploy workflows take that host from **Infisical**, injected at job time
+([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../internal/environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
 
-Two background workers run inside the API Render service via NestJS `OnApplicationBootstrap` hooks — `ChatBridgeWorkerModule` (audit-log → `#chapter-audit` mirroring) and `ChatPushWorkerModule` (chat push fanout). Both open Supabase Realtime subscriptions with the service-role key on boot.
+- `API_HEALTHCHECK_URL`, in both `staging` and `prod` (`https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves; why the two paths differ is [`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check). Set it to the `/health` URL, not `/health/ready`.
+
+On Render, `/health` was also the platform's own `healthCheckPath`, and the daily checks asserted it
+was set (an empty one was only a TCP check). Cloud Run has no such setting in use: the deploy's
+candidate check is the gate.
+
+## In-process chat workers
+
+Two background workers run inside the API process via NestJS `OnApplicationBootstrap` hooks — `ChatBridgeWorkerModule` (audit-log → `#chapter-audit` mirroring) and `ChatPushWorkerModule` (chat push fanout). Both open Supabase Realtime subscriptions with the service-role key on boot.
 
 **A subscription the server ends is reopened (#3365).** realtime-js rejoins a channel after a `CHANNEL_ERROR` or `TIMED_OUT` by itself (after 1 s, 2 s and 5 s, then every 10 s, or as soon as the socket reopens), but never after a `CLOSED`: when the server closes a channel, nothing joins it again. Until #3365 that stopped chat pushes, or the audit mirror, until the next deploy, with one warn line. Both workers now subscribe through `WorkerSubscription` (`apps/api/src/application/workers/worker-subscription.ts`; `realtime-js-contract.spec.ts` beside it pins the realtime-js behaviour it relies on against the real library). On a `CLOSED` it frees the topic and opens it again on a fresh channel, waiting 1 s and doubling up to 60 s while reopens keep closing, and it never stops trying. Every failure logs `<worker>: <topic> <status>` at warn, with the socket's close code when it has one. A failure that recovers is not reported to Sentry (#3906): production's socket is cut every few hours with close code `1006` (no close frame, so not a graceful close by the Realtime server or realtime-js's own heartbeat timeout) and rejoins in about a second, and until #3906 each of those sent a warning per worker. A subscription that goes 60 s without `SUBSCRIBED`, from boot or from its first failure, is an outage: it reports `<worker> realtime subscription is down; <what stopped> are not being sent` at error level, and repeats it every 10 minutes while the outage lasts. It is measured in time, not in failures, because a socket outage gives each channel one `CHANNEL_ERROR` however long it lasts. That error event is the signal that a worker is down, since `/health/ready` leaves the subscriptions out by decision ([`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check)); who it notifies is [`alert-routing.md` § Chat worker subscriptions](../alert-routing.md#chat-worker-subscriptions). A subscription that keeps dropping never becomes an outage, because each recovery restarts the 60 s clock, so three drops inside 30 minutes report `<worker> realtime subscription keeps dropping; <what stopped> are lost each time` as a warning (fingerprint `['worker-subscription-unstable', <worker>]`), at most once per 30 minutes per replica. Production's routine cuts never fill that window: its log showed 15 on 2026-11-06 and 11-07, the closest two 20 minutes apart and no three inside an hour. Inserts made while a subscription is down are lost, not late, because postgres_changes does not replay: a message sent in the gap gets no push, and an audit row no mirror. That holds for the second or so of a routine rejoin too.
 
@@ -115,20 +39,20 @@ The claim is at most once. It is never released, so if the winning replica is ki
 
 Still per replica: the push worker's burst bundler, which counts in-process, so a burst whose messages land on different replicas bundles less (extra pushes in a burst, never a duplicate of one message). Also its presence subscriptions: every replica joins a channel's presence on the first message it hears there, won or not, so any replica can read who is in the channel. Each replica keeps at most 80 open (`MAX_PRESENCE_CHANNELS`) and closes the one whose last message is oldest to open another, because every channel a process opens shares one Supabase client and Supabase refuses joins past 100 per client (#2507). A refused or timed-out join logs `chat-push: presence join <status> for <channel>` at once. It reports `chat-push presence join failed` to Sentry only if the channel is still unjoined 60 s later (`PRESENCE_JOIN_GRACE_MS`, the same threshold as the subscription outage above), at most once per 10 minutes per replica. The Realtime socket drops (`socket closed: 1006`) and realtime-js rejoins within seconds every few hours, so the log line alone is routine; the Sentry event means a refusal or an outage (#3473). And the channel cache (below).
 
-This is the deliberate default for now per [**ADR-09**](../../../spec/architecture/adr/adr-09.md) (Push worker host = in-process API). The workers should be split into a standalone Render service when **either** condition is sustained:
+This is the deliberate default for now per [**ADR-09**](../../../spec/architecture/adr/adr-09.md) (Push worker host = in-process API). The workers should be split into a service of their own when **either** condition is sustained:
 
 - `p99 fanout latency > 1s` (from the `chat_messages` INSERT to `notifyUser` returning), **or**
 - `worker-loop CPU > 40%` of the API instance over a 10-minute window.
 
 The latency half is the `chat.push.fanout` Sentry transaction (op `chat.push`): one per message the replica claimed, from the row's `created_at` to the end of its fan-out, so it includes Realtime's delivery lag. It carries three counts: `chat.push.recipients`, `chat.push.sent` and `chat.push.presence_channels` (the open presence channels at that moment). Read the watermark over transactions with `chat.push.sent` above 0: a message that pushed nobody (no audience, everyone muted or reading) is a transaction too, and a fast one. The span starts on arrival instead of `created_at` when that timestamp is unreadable, in the future, or more than 10 minutes old (a redelivery after a long reconnect), so those late messages read short. It is sampled at `SENTRY_TRACES_SAMPLE_RATE` like every other transaction, and nothing alerts on it yet (#2507). The CPU half has no measure.
 
-When the split happens, deploy `ChatPushWorkerModule` (and `ChatBridgeWorkerModule` if needed) as a separate Render Background Worker reading from the same secrets; no code changes are required beyond a new entry point that boots just those modules.
+When the split happens, deploy `ChatPushWorkerModule` (and `ChatBridgeWorkerModule` if needed) as a separate Cloud Run service reading from the same secrets; no code changes are required beyond a new entry point that boots just those modules.
 
-### 5.6 In-process scheduled jobs
+## In-process scheduled jobs
 
-`ScheduledJobsModule` runs nine `@Cron` sweeps inside the API Render service: attendance auto-absent (hourly), poll-expiry announcement (every 5 minutes), pre-event reminders (every 5 minutes), invoice and task due/overdue reminders (hourly, each sent once in the member's own 9 AM to noon, #4788), timed-task reminders (every 5 minutes, #4003), which first makes the next copy of each repeating task whose latest copy is due (#5119), generated-report retention (hourly), the stale-palette sweep (hourly), which recomputes each chapter's stored accent palette when the accent engine has changed since it was written ([`accent-engine.md` § 4](../../../spec/ui/design-system/accent-engine.md#4-caching-and-persistence), #1165), and the chat report evidence sweep (hourly), which deletes the attachments a resolved chat report held when the release at resolve time did not finish ([`chat/README.md` § Report](../../../spec/behavior/chat/README.md#report), #2481). They are registered against the `ScheduleModule.forRoot()` in `app.module.ts`.
+`ScheduledJobsModule` runs nine `@Cron` sweeps inside the API process: attendance auto-absent (hourly), poll-expiry announcement (every 5 minutes), pre-event reminders (every 5 minutes), invoice and task due/overdue reminders (hourly, each sent once in the member's own 9 AM to noon, #4788), timed-task reminders (every 5 minutes, #4003), which first makes the next copy of each repeating task whose latest copy is due (#5119), generated-report retention (hourly), the stale-palette sweep (hourly), which recomputes each chapter's stored accent palette when the accent engine has changed since it was written ([`accent-engine.md` § 4](../../../spec/ui/design-system/accent-engine.md#4-caching-and-persistence), #1165), and the chat report evidence sweep (hourly), which deletes the attachments a resolved chat report held when the release at resolve time did not finish ([`chat/README.md` § Report](../../../spec/behavior/chat/README.md#report), #2481). They are registered against the `ScheduleModule.forRoot()` in `app.module.ts`.
 
-**These reach multi-replica safety the same way as the [§5.5 chat workers](#55-in-process-chat-workers-chunk-05), from a different trigger.** The chat workers receive every Realtime event on every replica and claim each one before acting. A `@Cron` handler instead fires on **every replica, on every tick**. Multi-instance safety therefore comes from the database, not the topology: each unit of work claims a row in `scheduled_notification_dispatches`, unique on `(entity_type, entity_id, threshold, due_date)`, and only the replica that wins the insert acts. Reminders cannot be double-sent, and auto-absent runs once per event rather than once per replica per hour.
+**These reach multi-replica safety the same way as the [chat workers](#in-process-chat-workers), from a different trigger.** The chat workers receive every Realtime event on every replica and claim each one before acting. A `@Cron` handler instead fires on **every replica, on every tick**. Multi-instance safety therefore comes from the database, not the topology: each unit of work claims a row in `scheduled_notification_dispatches`, unique on `(entity_type, entity_id, threshold, due_date)`, and only the replica that wins the insert acts. Reminders cannot be double-sent, and auto-absent runs once per event rather than once per replica per hour.
 
 **The report-retention sweep is the exception, and deliberately takes no claim.** The claim exists to stop a _duplicate side effect_ — the same reminder sent twice. Deleting a storage object is idempotent: both replicas list before either deletes, so the loser issues `remove()` against keys that are already gone, and Supabase reports success for those (verified against the local stack: `remove()` on a missing key returns no error and an empty result array). It needs no dispatch row, and adding one would only make the sweep skip work after a crash. It also reads its work list from storage rather than the `chapters` table — it lists the chapter folders under the `reports` bucket — so its cost scales with chapters that have _exported_, not with chapters that exist, and a prefix whose chapter row was deleted still gets reaped.
 
@@ -148,9 +72,9 @@ When the split happens, deploy `ChatPushWorkerModule` (and `ChatBridgeWorkerModu
 
 Consequences worth knowing before scaling the API service:
 
-- **Keep the API at one instance for now.** Adding replicas no longer multiplies the sweeps' notifications or the §5.5 chat workers' pushes and audit mirrors (#2846), but two things still assume one instance, and one of them is a disclosure path:
+- **Keep the API at one instance for now.** Adding replicas no longer multiplies the sweeps' notifications or the chat workers' pushes and audit mirrors (#2846), but two things still assume one instance, and one of them is a disclosure path:
   - **The push worker's channel cache is per process** (`ChannelCacheService`, 30 s TTL). It holds each channel's `member_ids` and `required_permissions`, the inputs that decide who is pushed a 200-character preview, and a channel write evicts it only in the process that served the write. On two replicas, a member removed from a private channel can still be pushed a preview for up to 30 s by the replica that did not see the removal (#2917).
-  - **The request throttler counts per process** (`ThrottlerModule.forRoot` in `app.module.ts` passes no `storage`, so `@nestjs/throttler` keeps the counts in memory). N replicas multiply both the read and the write limit by N, and every deploy or restart starts each count from zero, which nothing logs. These limits are what stand in front of invite redeem and every unauthenticated route (#2307). Either accept the weaker limit, or share the counts first: `forRoot` also takes `{ throttlers, storage }`, where `storage` implements Nest's `ThrottlerStorage`, so a shared store is a change to that one call. No Render Key Value instance exists in the workspace (read 2026-09-30), and the store's failure mode (fail open into no limit, or fail every request) has to be chosen before one is wired in. `frapp-api-prod` runs one instance (`numInstances: 1`, starter plan, read 2026-09-30).
+  - **The request throttler counts per process** (`ThrottlerModule.forRoot` in `app.module.ts` passes no `storage`, so `@nestjs/throttler` keeps the counts in memory). N replicas multiply both the read and the write limit by N, and every deploy or restart starts each count from zero, which nothing logs. These limits are what stand in front of invite redeem and every unauthenticated route (#2307). Either accept the weaker limit, or share the counts first: `forRoot` also takes `{ throttlers, storage }`, where `storage` implements Nest's `ThrottlerStorage`, so a shared store is a change to that one call. No shared store exists yet, and the store's failure mode (fail open into no limit, or fail every request) has to be chosen before one is wired in. Each environment's Cloud Run service runs at most one instance ([`cloud-run.md` § Shape](cloud-run.md#shape)).
   - The burst bundler and presence subscriptions above cost extra pushes, not correctness.
 - The stale-palette sweep has no window at all, so a missed tick only delays it: every stale row stays in its candidate set until it is written.
 - Five of the six notification and retention sweeps are self-healing across missed ticks — auto-absent looks back 24 hours, poll-expiry announcement also looks back 24 hours, overdue reminders 7 days, and due-soon reminders accept the due date itself as a late catch-up — so a deploy that skips a tick delays reminders rather than dropping them. Report retention re-derives what is expired from each object's stored-at timestamp on every tick, so missed ticks delay a delete rather than skipping it. A _persistent_ read failure is a different matter and is deliberately audible: the report-retention sweep logs a warning naming how many chapter prefixes it skipped, another if any object carries no stored-at timestamp (which it keeps rather than guessing), and an info line when it finds no chapter prefixes at all — the storage layer reports a missing bucket as an empty folder, so an unprovisioned or renamed `reports` bucket would otherwise be the one persistent failure that logged nothing. A sweep that silently reaps nothing forever would otherwise be indistinguishable from a healthy one.
@@ -160,42 +84,4 @@ Consequences worth knowing before scaling the API service:
 - The claim is taken _before_ sending. If every delivery for a claim fails it is released and retried next tick; if only some recipients fail the claim is kept and the shortfall is logged, so a partial failure is visible but never re-spams the recipients who did get it. Both the claim insert and the compensating delete bind `chapter_id` from the sweep row, so a failed send in one chapter cannot drop another chapter's claim.
 - Timing is UTC. No `TZ` is set on the API service, so a fixed-hour cron runs on UTC and date arithmetic that reads the server clock is UTC-based. Setting `TZ` on the service would shift both together; do it deliberately, not incidentally. The task and invoice reminder sweeps don't depend on it: they run hourly and send in each member's own morning ([`notifications.md` § Daily Task and Invoice Reminders](../../../spec/behavior/notifications.md#daily-task-and-invoice-reminders), #4788), as the birthday post sweep and the weekly recap push do.
 
-Splitting these into a standalone Render Background Worker is not currently warranted — the sweeps are short, and the two 5-minute ones do bounded, indexed window queries — but if they are split, they must not run in _both_ places at once unless each keeps its own multi-replica guard: the dispatch claim for the reminder, poll-expiry and auto-absent sweeps, idempotent deletes for report retention, the compare-and-set write for the stale-palette sweep and the repeating-task step, the `birthday_posts` claim for the birthday post sweep, and the `activity_recap_pushes` claim for the recap push. For the claiming sweeps, the claim is the only thing preventing duplicate work.
-
-### 5.7 Deploy Hooks (for GitHub Actions)
-
-No deploy hook is used. Both API services deploy by commit through the Render API with `RENDER_API_KEY` (a GitHub environment secret): `deploy-production.yml` for `frapp-api-prod`, and `deploy-staging.yml` for `frapp-api-staging` (by commit since [#2505](https://github.com/pdcarlson/Frapp/issues/2505)), both through the `_deploy.yml` job they call. A deploy hook can't name a commit; it builds the branch tip. A hook URL is also a bearer credential, so don't store one anywhere.
-
-The one value the deploy workflows still take from **Infisical**, not GitHub, injected at job time ([`SECRETS_MANAGEMENT.md` § GitHub Actions is not a sync](../../internal/environment/SECRETS_MANAGEMENT.md#github-actions-is-not-a-sync)):
-
-- `API_HEALTHCHECK_URL` → smoke-check URL, in both `staging` and `prod` (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`). The deploy workflows append `/ready` to this value themselves (`.../health/ready`) rather than polling `/health` directly, and staging's also requires the response's `commit` to be the deployed SHA; why the two differ is [`observability.md` § Health Check](../../../spec/behavior/observability.md#health-check). Set this secret to the `/health` URL, not `/health/ready` — the `/ready` suffix is added at call time.
-
-**Don't create or store a deploy hook for either service**; [`ENV_REFERENCE.md`](../../internal/environment/ENV_REFERENCE.md) gives the reason. Earlier revisions of these docs told operators to store one. The production hook was stored and synced onward, and was regenerated and its copies removed on 2026-09-24 ([#2540](https://github.com/pdcarlson/Frapp/issues/2540)). The staging hook, stored in Infisical `staging` until #2505, gets the same treatment in [#2679](https://github.com/pdcarlson/Frapp/issues/2679). Staging's auto-deploy, the other half of that issue, read **off** on 2026-09-29 (Render API).
-
-### 5.8 Image-backed service (#2506)
-
-Render builds a git-backed service's image itself, and every build spends the workspace's pipeline
-minutes: 500 a month on Hobby, which staging's deploys used up on 2026-11-16, after which every
-staging deploy failed until the month reset. An **image-backed** service builds nothing. The deploy
-job builds the commit's image on a GitHub runner (free, the repo being public), pushes it to
-`apiImage` in [`.github/environments.json`](../../../.github/environments.json)
-(`ghcr.io/frapplive/frapp-api`) tagged with the commit, and asks Render to deploy it by digest
-(`imageUrl`; [`deploy-render-production.mjs`](../../../scripts/ci/deploy-render-production.mjs)),
-since a tag can be pushed again between the build and Render's pull.
-Which kind each environment's service is, is its `renderDeploySource` there: `commit` or `image`.
-
-Render can't turn one kind of service into the other, so moving an environment means a new service
-and a repointed domain. `/health`'s `commit` comes from the image, which the build stamps with
-`RENDER_GIT_COMMIT`, since Render sets that only on a git-backed service.
-
-**State (2026-11-16): superseded.** Paul moved the API to Cloud Run instead
-([`cloud-run.md`](cloud-run.md), [#5228](https://github.com/frapplive/Frapp/issues/5228)), so no
-environment moves to an image-backed Render service. Staging's deploys still build and push the image
-on every API deploy, and both services are still git-backed. A trial image-backed service,
-`frapp-api-staging-image` (`srv-dbtlikl6e07s73c6gg5g`, Free, Ohio), was made on 2026-11-16 and serves
-nothing; delete it in Render (**Settings → Delete Web Service**). The plan for it had the API read
-its config from Infisical when it started; Paul dropped that the same day
-([`SECRETS_MANAGEMENT.md` § Cloud Run API](../../internal/environment/SECRETS_MANAGEMENT.md#cloud-run-api-synced-to-secret-manager)),
-and the code is gone.
-
----
+Splitting these into a service of their own is not currently warranted — the sweeps are short, and the two 5-minute ones do bounded, indexed window queries — but if they are split, they must not run in _both_ places at once unless each keeps its own multi-replica guard: the dispatch claim for the reminder, poll-expiry and auto-absent sweeps, idempotent deletes for report retention, the compare-and-set write for the stale-palette sweep and the repeating-task step, the `birthday_posts` claim for the birthday post sweep, and the `activity_recap_pushes` claim for the recap push. For the claiming sweeps, the claim is the only thing preventing duplicate work.

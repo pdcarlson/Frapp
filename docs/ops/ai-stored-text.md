@@ -71,7 +71,7 @@ If the variable was changed while a window was still open, nothing more is kept 
 
 ### Setting the key
 
-The value is `<key id>:<base64 of 32 random bytes>`, for example an id of `k1`. Generate the bytes with `openssl rand -base64 32`. It is an app secret, so it goes in Infisical, never on Render directly ([`SECRETS_MANAGEMENT.md`](../internal/environment/SECRETS_MANAGEMENT.md)). Production and staging get different keys.
+The value is `<key id>:<base64 of 32 random bytes>`, for example an id of `k1`. Generate the bytes with `openssl rand -base64 32`. It is an app secret, so it goes in Infisical, never in Secret Manager directly ([`SECRETS_MANAGEMENT.md`](../internal/environment/SECRETS_MANAGEMENT.md)). Production and staging get different keys.
 
 To rotate: put the new key first and keep the old one after it, separated by a comma. New rows seal with the first key and old rows still open. Drop the old key once no row sealed with it is left: 30 days at most, since a report keeps its row that long (14 days for the diagnostics window). The report receipt of an Ask answer or a channel summary is sealed with the same key and is accepted for 7 days, so keep an old key at least that long too.
 

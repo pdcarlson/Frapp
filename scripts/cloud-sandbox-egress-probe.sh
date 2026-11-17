@@ -128,7 +128,7 @@ write_unknown_manifest() {
 # docs/ci-cd/agent-infra.md, "a project URL is not secret material" — secret-scanning.md
 # states no such rule); the anon/service keys are, and are not here.
 PROBES="
-staging_api|https://api-staging.frapp.live/health|reachable|staging API (Render)
+staging_api|https://api-staging.frapp.live/health|reachable|staging API (Cloud Run)
 staging_web|https://app.staging.frapp.live|reachable|staging web dashboard
 staging_landing|https://staging.frapp.live|reachable|staging landing site
 staging_supabase|https://hnoyzpidbmizhbqaiity.supabase.co|reachable|frapp-staging Supabase

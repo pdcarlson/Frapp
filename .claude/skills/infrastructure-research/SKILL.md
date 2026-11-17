@@ -1,7 +1,7 @@
 ---
 name: infrastructure-research
 description: >
-  Gather runtime truth from provider APIs (GitHub, Supabase, Render, Vercel, Infisical) when
+  Gather runtime truth from provider APIs (GitHub, Supabase, Vercel, Infisical, Google Cloud) when
   investigating deployment state, CI failures, environment configuration, secret sync, or service
   health. Use before proposing any infrastructure change, when reviewing PRs that touch CI or
   deploys, when debugging staging/production issues, or when checking whether secrets are in sync.
@@ -24,10 +24,10 @@ changes, update it there, not here.
 
 ## Which channel to use
 
-From a cloud session, use the provider's MCP connector (GitHub, Supabase, Render, Vercel) whenever
+From a cloud session, use the provider's MCP connector (GitHub, Supabase, Vercel) whenever
 it has a tool for the question:
 
-- Direct `fetch` to Render, Vercel, Sentry, PostHog and the Supabase Management API is blocked by
+- Direct `fetch` to Vercel, Sentry, PostHog and the Supabase Management API is blocked by
   the sandbox allowlist. MCP doesn't go through the allowlist.
 - The GitHub MCP is the only sanctioned write path for issues, PRs, and comments.
 
@@ -121,40 +121,25 @@ From a session, use the Supabase MCP (`list_projects`, `list_migrations`). A ref
 project it belongs to, so look up refs by project name with `list_projects`. Never use one from
 memory.
 
-## Render: API deployment status and logs
+## Cloud Run: API deployment status and logs
 
-From a session, use the Render MCP (`list_services`, `list_deploys`, `get_deploy`, `list_logs`)
-and pass `workspaceId` on every call. It starts with no workspace selected, and `list_workspaces`
-returns two: Frapp's is **Paul's workspace**, `tea-d6lqqdpaae7s73f60uj0`; the other (`Web Sci 2G`)
-is unrelated, so never pick one by position. Frapp's services in it:
+The API runs on Google Cloud Run since [#5228](https://github.com/frapplive/Frapp/issues/5228)
+(2026-11-17): service `frapp-api` in each environment's Google Cloud project, which
+[`.github/environments.json`](../../../.github/environments.json) names under `cloudRun`. A session
+has no Google connector or key, so it can't read revisions or logs itself:
 
-| Service | Id |
-| --- | --- |
-| `frapp-api-prod` | `srv-d6lqu41aae7s73f62df0` |
-| `frapp-api-staging` | `srv-d6lqsq75r7bs73c2fdc0` |
+- **What a deploy did** is in its GitHub Actions run (`actions_list`, `get_job_logs`): the
+  "Deploy the API to Cloud Run" step logs the revision it made, the candidate check and the
+  traffic move.
+- **Logs and revisions** are read by Paul, in the console (**Cloud Run → frapp-api**, or
+  **Logging → Logs Explorer**) or Cloud Shell (`gcloud logging read …`). Give him the exact query;
+  [`cloud-run.md` § Observability](../../../docs/ops/deployment/cloud-run.md#observability) has the
+  log names and fields.
 
-(Read 2026-11-11 with `list_workspaces` and `list_services`.)
+Until 2026-11-17 the API ran on Render. Frapp has nothing there now, even if a Render connector is
+still attached.
 
-**Logs** ([#4096](https://github.com/pdcarlson/Frapp/issues/4096)). `list_logs` takes
-`resource: [<service id>]` and the same `workspaceId`. Narrow it with `type: ["app"]` (the API's
-own lines), `text` (a Sentry event's `request_id` tag, such as `req_…`, finds that request's line),
-`level`, `statusCode`, `path`, and `startTime` / `endTime` (RFC 3339, within the last 30 days);
-`limit` is at most 100, and while `hasMore` is true, pass back `nextStartTime` / `nextEndTime` for
-the next page. A request line carries `requestId`, `method`, `path`, `statusCode` and `latencyMs`,
-not the error's message. Lines hold raw user and chapter ids, so quote ids from them only in this
-chat, never in an issue or PR. Checked 2026-11-11: a `text` filter on four production request ids
-returned their four lines.
-
-On a laptop, with a Render API key of your own in `RENDER_API_KEY`:
-
-```bash
-curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
-  "https://api.render.com/v1/services?type=web_service&limit=10" | python3 -m json.tool
-curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
-  "https://api.render.com/v1/services/<service_id>/deploys?limit=5" | python3 -m json.tool
-```
-
-Health checks. The `commit` field is the build Render serves:
+Health checks. The `commit` field is the commit the API serves:
 
 ```bash
 curl -s https://api-staging.frapp.live/health   # Staging; also from a session with live-staging egress
@@ -272,8 +257,8 @@ done
 
 ## Infisical sync map
 
-The sync map shows which Infisical environment feeds which Render service (the Vercel syncs are
-deleted; web and landing builds inject Infisical themselves). It lives
+The sync map shows which Infisical environment feeds which Google project's Secret Manager, for
+the API (the Vercel syncs are deleted; web and landing builds inject Infisical themselves). It lives
 in [`SECRETS_MANAGEMENT.md`](../../../docs/internal/environment/SECRETS_MANAGEMENT.md) under
 "5. Configure Secret Syncs". Read and update it there. It's a dated copy of the dashboard, so if the
 two disagree, the doc is wrong: fix it and update its date.
@@ -291,7 +276,7 @@ config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal
      `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`.
 - **Is staging healthy?**
   1. Read `https://api-staging.frapp.live/health`, including `commit`.
-  2. Check Render deploys for recent failures.
+  2. Check recent **Deploy staging** runs for failures (`actions_list`).
   3. Check that the newest web and landing Vercel deployments match the latest green CI on `main`.
      CI runs first, then both projects build, so allow time before calling a host stale.
   4. Compare Infisical `staging` key names against
@@ -310,5 +295,5 @@ config to find) is under ["GitHub Actions is not a sync"](../../../docs/internal
 - **Are secrets in sync?**
   1. List key names per Infisical environment. The scope traps above apply.
   2. Compare them against `ENV_REFERENCE.md`.
-  3. Confirm that each Render sync is active. There is no Vercel sync to check: both pairs were
+  3. Confirm that each Secret Manager sync is active. There is no Vercel sync to check: both pairs were
      deleted on 2026-09-28 (`SECRETS_MANAGEMENT.md` §5).

@@ -424,7 +424,8 @@ publishing status In production, user type External:
    `GOOGLE_CALENDAR_CLIENT_SECRET`; in prod, the production client's. And
    `GOOGLE_CALENDAR_TOKEN_KEY`, a different key per environment, made with
    `echo "k1:$(openssl rand -base64 32)"`. All three or none: the API refuses
-   to boot on a partial set. Redeploy the API after the sync reaches Render.
+   to boot on a partial set. Redeploy the API after the sync reaches Secret Manager: each
+   deploy pins the secret versions it finds.
 
 **Verify after setup.** `GET /v1/google-calendar` (signed in, any chapter)
 answers `"available": true`. Then connect from the web Subscribe menu: Google's
@@ -471,7 +472,7 @@ client. Owner-only, in the `signet-frapp` Google Cloud project.
 4. **Store each in Infisical** as `GOOGLE_DRIVE_CREDENTIALS_JSON`, the whole
    file's contents: the staging account's in staging, the production
    account's in prod. Delete the downloaded files. Redeploy the API after the
-   sync reaches Render.
+   sync reaches Secret Manager: each deploy pins the secret versions it finds.
 
 **Verify after setup.** `GET /v1/google-drive` (signed in as an officer with Manage documents)
 answers `"available": true` with the account's email. In a test chapter, share
