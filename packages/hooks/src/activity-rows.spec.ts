@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { closesAtHasPassed } from "@repo/formatting";
+import { CLOSES_AT_CASES, closesAtHasPassed } from "@repo/formatting";
 import { NAV_GLYPHS } from "@repo/theme/nav-glyphs";
 import {
   ACTIVITY_GLYPH_NAV,
@@ -23,25 +23,13 @@ import {
 } from "./activity-rows";
 
 /**
- * The shared deadline cases (#5242): the same table runs through
- * `closesAtHasPassed` in `@repo/formatting`, chat-core's `isCardClosed` and
- * hooks' `activityPollIsOpen` / `activityCardIsOpen`, so a caller that stops
- * calling the shared rule, or the rule itself changing its boundary, fails.
+ * The shared deadline cases (#5242): `CLOSES_AT_CASES` from `@repo/formatting`
+ * also runs through chat-core's `isCardClosed`, so an Activity row agrees with
+ * the chat card on every case, and the guard below keeps both helpers calling
+ * the shared rule rather than a copy of it.
  */
-const DEADLINE_END = "2026-11-12T12:00:00.000Z";
-const DEADLINE_AT = Date.parse(DEADLINE_END);
-const DEADLINE_CASES = [
-  ["before its end time", DEADLINE_END, DEADLINE_AT - 1, false],
-  ["exactly at its end time", DEADLINE_END, DEADLINE_AT, true],
-  ["after its end time", DEADLINE_END, DEADLINE_AT + 1, true],
-  ["with no end time (undefined)", undefined, DEADLINE_AT, false],
-  ["with no end time (null)", null, DEADLINE_AT, false],
-  ["with an empty end time", "", DEADLINE_AT, false],
-  ["with an unparseable end time", "soon", DEADLINE_AT, false],
-] as const;
-
 describe("Activity's poll and card rows share the deadline rule (#5242)", () => {
-  it.each(DEADLINE_CASES)("%s", (_label, closesAt, now, passed) => {
+  it.each(CLOSES_AT_CASES)("%s", (_label, closesAt, now, passed) => {
     const at = new Date(now);
     // The Activity read's closes_at is `string | null`: no undefined.
     const closes_at = closesAt ?? null;
@@ -51,6 +39,21 @@ describe("Activity's poll and card rows share the deadline rule (#5242)", () => 
     );
     expect(activityCardIsOpen({ closes_at }, at)).toBe(!passed);
   });
+});
+
+describe("the deadline rule has one owner (#5242)", () => {
+  const source = readFileSync(join(__dirname, "activity-rows.ts"), "utf8");
+  it.each(["activityPollIsOpen", "activityCardIsOpen"])(
+    "%s calls closesAtHasPassed, with no comparison of its own",
+    (name) => {
+      const start = source.indexOf(`export function ${name}(`);
+      expect(start, `${name} is declared`).toBeGreaterThanOrEqual(0);
+      const body = source.slice(start, source.indexOf("\n}\n", start));
+      expect(body).toContain("closesAtHasPassed(");
+      expect(body).not.toMatch(/getTime\(\)\s*(<=|<|>=|>)/);
+      expect(body).not.toContain("parseInstant(");
+    },
+  );
 });
 
 const task = (overrides: Record<string, unknown> = {}) => ({

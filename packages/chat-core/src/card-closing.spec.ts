@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { closesAtHasPassed } from "@repo/formatting";
+import { CLOSES_AT_CASES, closesAtHasPassed } from "@repo/formatting";
 import { SIGNUP_CLOSES_AT_MAX_AHEAD_DAYS } from "@repo/validation";
 import {
   CARD_END_PASSED_PROBLEM,
@@ -34,29 +34,28 @@ const row = {
 } as const;
 
 /**
- * The shared deadline cases (#5242): the same table runs through
- * `closesAtHasPassed` in `@repo/formatting`, chat-core's `isCardClosed` and
- * hooks' `activityPollIsOpen` / `activityCardIsOpen`, so a caller that stops
- * calling the shared rule, or the rule itself changing its boundary, fails.
+ * The shared deadline cases (#5242): `CLOSES_AT_CASES` from `@repo/formatting`
+ * also runs through hooks' Activity rows, so a chat card agrees with the
+ * shared boundary on every case, and the guard below keeps `isCardClosed`
+ * calling the shared rule rather than a copy of it.
  */
-const DEADLINE_END = "2026-11-12T12:00:00.000Z";
-const DEADLINE_AT = Date.parse(DEADLINE_END);
-const DEADLINE_CASES = [
-  ["before its end time", DEADLINE_END, DEADLINE_AT - 1, false],
-  ["exactly at its end time", DEADLINE_END, DEADLINE_AT, true],
-  ["after its end time", DEADLINE_END, DEADLINE_AT + 1, true],
-  ["with no end time (undefined)", undefined, DEADLINE_AT, false],
-  ["with no end time (null)", null, DEADLINE_AT, false],
-  ["with an empty end time", "", DEADLINE_AT, false],
-  ["with an unparseable end time", "soon", DEADLINE_AT, false],
-] as const;
-
 describe("isCardClosed shares the deadline rule (#5242)", () => {
-  it.each(DEADLINE_CASES)("%s", (_label, closesAt, now, passed) => {
+  it.each(CLOSES_AT_CASES)("%s", (_label, closesAt, now, passed) => {
     expect(closesAtHasPassed(closesAt, now)).toBe(passed);
     expect(isCardClosed({ closes_at: closesAt, closed_at: null }, now)).toBe(
       passed,
     );
+  });
+});
+
+describe("the deadline rule has one owner (#5242)", () => {
+  it("isCardClosed calls closesAtHasPassed, with no comparison of its own", () => {
+    // The function's own (transpiled) source, so this needs no file access.
+    const body = isCardClosed.toString();
+    // Transpiled, the call reads `(0, import.closesAtHasPassed)(…)`.
+    expect(body).toMatch(/closesAtHasPassed\)?\(/);
+    expect(body).not.toMatch(/getTime\(\)\s*(<=|<|>=|>)/);
+    expect(body).not.toContain("parseInstant(");
   });
 });
 
