@@ -33,6 +33,7 @@ import { MeetingDraftService } from './meeting-draft.service';
 import type { MeetingService } from './meeting.service';
 import type { MeetingNotesService } from './meeting-notes.service';
 import type { MinutesSource } from '#domain/utils/minutes-draft';
+import { meetingRetentionCutoff } from '#domain/constants/meeting-retention';
 import type { RbacService } from './rbac.service';
 
 const CHAPTER = 'ch-1';
@@ -839,6 +840,10 @@ describe('MeetingDraftService', () => {
     expect(deleted).toBe(3);
     expect(drafts.deleteRequestedBefore).toHaveBeenCalledWith(
       '2026-11-12T00:00:00.000Z',
+    );
+    // The same window as the notes and recording sweeps, not a copy of it (#5200).
+    expect(drafts.deleteRequestedBefore).toHaveBeenCalledWith(
+      meetingRetentionCutoff(now).toISOString(),
     );
     expect(notes.deleteExpired).toHaveBeenCalledWith(now);
   });
