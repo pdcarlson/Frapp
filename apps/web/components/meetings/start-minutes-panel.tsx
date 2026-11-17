@@ -16,7 +16,8 @@ import {
   MEETING_TYPE_LABELS,
   STANDARDS_MEETING_NOTE,
   can,
-  checkInWindowBounds,
+  likelyMeeting,
+  DEFAULT_MEETING_NAME,
   type MeetingType,
 } from "@repo/validation";
 import {
@@ -39,7 +40,6 @@ import {
   useKeptFormDraft,
 } from "@repo/hooks/kept-drafts";
 import {
-  DEFAULT_MEETING_NAME,
   InlineChange,
   OffCalendarMeetingFields,
   QuietLine,
@@ -104,39 +104,6 @@ function freshMinutesDraft(): MinutesDraft {
     audience: "everyone",
     roleIds: [],
   };
-}
-
-/**
- * The meeting New minutes opens on (#5219): one on now, else the newest one
- * that has started and has no minutes. Null when every recent one has them.
- */
-export function likelyMeeting(
-  events: EventRow[],
-  withMinutes: ReadonlySet<string>,
-  now: number,
-): EventRow | null {
-  const open = events.filter((event) => !withMinutes.has(event.id));
-  // "On" is its check-in window, as the live-meeting card reads it.
-  const on = open.find((event) => {
-    const start = new Date(event.start_time);
-    const end = new Date(event.end_time ?? "");
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      return false;
-    }
-    const { opensAt, closesAt } = checkInWindowBounds(
-      start,
-      end,
-      event.check_in_opens_minutes,
-    );
-    return opensAt.getTime() <= now && now <= closesAt.getTime();
-  });
-  if (on) return on;
-  return (
-    open
-      .filter((event) => Date.parse(event.start_time) <= now)
-      .sort((a, b) => Date.parse(b.start_time) - Date.parse(a.start_time))[0] ??
-    null
-  );
 }
 
 /**

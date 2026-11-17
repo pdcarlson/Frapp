@@ -18,6 +18,7 @@ import {
   type MinutesAudience,
 } from "@/components/meetings/minutes-audience";
 import { cn } from "@/lib/utils";
+import { DEFAULT_MEETING_NAME } from "@repo/validation";
 
 /** What a meeting with no event needs before its quiet event can be made. */
 export type OffCalendarMeeting = {
@@ -30,9 +31,6 @@ export type OffCalendarMeeting = {
   audience: MinutesAudience;
   roleIds: string[];
 };
-
-/** The name a meeting gets when the officer types none (#5219). */
-export const DEFAULT_MEETING_NAME = "Chapter meeting";
 
 /** The start a past day takes when no earlier event of that name has one. */
 const EVENING_START = "19:00";

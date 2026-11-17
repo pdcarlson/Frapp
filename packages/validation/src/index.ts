@@ -116,6 +116,8 @@ export * from "./meeting-copy";
 // states and the words each failure shows.
 export * from "./meeting-draft";
 export * from "./meeting-recording";
+// Which meeting new minutes start on: web's New minutes and the phone's + (#5287).
+export * from "./meeting-start";
 // ── Meeting minutes (#4312) ──────────────────────────────────────────────────
 export * from "./meetings";
 // Member nudges (#4781): the one card on Activity the AI writes for a member.

@@ -24,6 +24,10 @@ import {
 } from "@/components/documents/upload-document-sheet";
 import { NewEventSheet } from "@/components/events/new-event-sheet";
 import { reportRouteError } from "@/components/route-error";
+import {
+  useMeetingQuickActions,
+  type RecordMeetingEntry,
+} from "@/components/quick-actions/meeting-actions";
 import { LogHoursSheet } from "@/components/service-hours/log-hours-sheet";
 import { NewTaskSheet } from "@/components/tasks/new-task-sheet";
 import { taskCreatedLine } from "@/lib/tasks/create-task";
@@ -65,6 +69,8 @@ export function useQuickActionsHost({
   sheets: ReactNode;
   /** The last create's confirmation, for a few seconds, or `null`. */
   notice: string | null;
+  /** The Record meeting row above the grid, or `null` for this member. */
+  record: RecordMeetingEntry | null;
 } {
   const router = useRouter();
   const chapterId = useActiveChapterId() ?? null;
@@ -106,6 +112,8 @@ export function useQuickActionsHost({
     setNotice((prev) => ({ id: (prev?.id ?? 0) + 1, text }));
     AccessibilityInfo.announceForAccessibility(text);
   }, []);
+  const meetings = useMeetingQuickActions({ confirm });
+  const { newMinutes } = meetings;
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => {
@@ -179,6 +187,12 @@ export function useQuickActionsHost({
         case "study":
           router.push("/study");
           return;
+        case "newMinutes":
+          newMinutes();
+          return;
+        case "search":
+          router.push("/search");
+          return;
         case "hostCheckIn": {
           // The event an officer would host: the soonest still checkable-in,
           // as You's Host check-in row picks it.
@@ -195,13 +209,14 @@ export function useQuickActionsHost({
         }
       }
     },
-    [eventsQuery.data, openSheet, router],
+    [eventsQuery.data, openSheet, router, newMinutes],
   );
 
   const ask = useCallback(() => openSheet("ask"), [openSheet]);
 
   const sheets = (
     <>
+      {meetings.sheets}
       {mounted.has("ask") ? (
         <AskSheetBoundary
           key={`ask-${chapterId ?? "none"}`}
@@ -272,7 +287,13 @@ export function useQuickActionsHost({
     </>
   );
 
-  return { run, ask, sheets, notice: notice?.text ?? null };
+  return {
+    run,
+    ask,
+    sheets,
+    notice: notice?.text ?? null,
+    record: meetings.record,
+  };
 }
 
 /** Catches a sheet's render error, reports it, and lets the host drop it. */

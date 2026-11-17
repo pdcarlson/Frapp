@@ -4,6 +4,7 @@ import { useId, useMemo, useState } from "react";
 import { codeOf } from "@repo/api-sdk";
 import { useEvents, useLinkMeetingEvent, useMeetings } from "@repo/hooks";
 import {
+  DEFAULT_MEETING_NAME,
   MEETING_ENTRY_COPY,
   MEETING_NOTE_TAKERS_COPY,
   meetingWhenLabel,
@@ -12,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { FOCUS_RING_OFFSET } from "@/components/ui/focus";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 import {
-  DEFAULT_MEETING_NAME,
   OffCalendarMeetingFields,
   offCalendarSpan,
   type OffCalendarMeeting,
