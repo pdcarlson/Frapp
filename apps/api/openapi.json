@@ -26930,11 +26930,11 @@
         "properties": {
           "summary": {
             "type": "string",
-            "maxLength": 60000
+            "maxLength": 20000
           },
           "announcements": {
             "type": "string",
-            "maxLength": 60000
+            "maxLength": 20000
           },
           "decisions": {
             "maxItems": 100,
@@ -26952,19 +26952,19 @@
           },
           "officer_reports": {
             "type": "string",
-            "maxLength": 60000
+            "maxLength": 20000
           },
           "old_business": {
             "type": "string",
-            "maxLength": 60000
+            "maxLength": 20000
           },
           "new_business": {
             "type": "string",
-            "maxLength": 60000
+            "maxLength": 20000
           },
           "discussion_log": {
             "type": "string",
-            "maxLength": 60000
+            "maxLength": 20000
           }
         }
       },

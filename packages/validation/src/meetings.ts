@@ -123,11 +123,12 @@ export const MEETING_TEXT_SECTIONS = [
 export type MeetingTextSection = (typeof MEETING_TEXT_SECTIONS)[number];
 
 /**
- * One section's limit. The notes of a four-hour meeting, topic by topic with
- * their detail, run past 20,000 characters (#5410), so a section holds
- * three times that.
+ * One section's limit. A four-hour meeting's notes can run past it, and the
+ * notes outline is then cut at a whole point (`notesOutline`). Raising it
+ * widens a response field that shipped phone builds read, which the
+ * shipped-contract check refuses, so it waits on #5418.
  */
-export const MEETING_TEXT_MAX_LENGTH = 60_000;
+export const MEETING_TEXT_MAX_LENGTH = 20_000;
 export const MEETING_ITEM_TEXT_MAX_LENGTH = 1_000;
 export const MEETING_LIST_MAX_ITEMS = 100;
 export const MEETING_OTHER_LABEL_MAX_LENGTH = 60;
