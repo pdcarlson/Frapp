@@ -233,7 +233,7 @@ describe("DriveFolderPanel", () => {
     expect(screen.getByText("Not read")).toBeInTheDocument();
     expect(screen.getByText("3 folders")).toBeInTheDocument();
     expect(
-      screen.getByText(/the files in these aren.t in Documents/),
+      screen.getByText(/and any folders inside them.*aren.t\s+in Documents/s),
     ).toBeInTheDocument();
   });
 

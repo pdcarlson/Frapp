@@ -31,7 +31,7 @@ export class GoogleDriveConnectionDto {
   skipped_count: number;
   @ApiProperty({
     description:
-      'Folders the last sync did not read, because they sit more than nine levels below the connected folder or past its first 300 folders. The files in them are not in Documents.',
+      'The top-most folders the last sync did not read, because they sit more than nine levels below the connected folder or past its first 300 folders. They and any folders inside them, and their files, are not in Documents; folders inside them are not counted.',
   })
   folders_left_out: number;
   @ApiProperty({ description: 'Whether a sync is due or running now' })

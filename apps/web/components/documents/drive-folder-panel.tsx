@@ -412,9 +412,10 @@ function ConnectedView({
               <dd>
                 {folderCount(connection.folders_left_out)}
                 <span className="block text-caption text-muted-foreground">
-                  Frapp reads up to 10 levels of folders and 300 folders in
-                  all, so the files in these aren&apos;t in Documents. Move
-                  them higher up in Drive, or connect a smaller folder.
+                  These, and any folders inside them, are past Frapp&apos;s
+                  limit of 10 levels or 300 folders, so their files aren&apos;t
+                  in Documents. Move them higher up in Drive, or connect a
+                  smaller folder.
                 </span>
               </dd>
             </>
@@ -424,10 +425,10 @@ function ConnectedView({
         {held.length > 0 ? <HeldCopies held={held} gate={gate} /> : null}
 
         <p className="text-caption text-muted-foreground">
-          Changes in the folder reach Documents within 15 minutes. Subfolders
-          at every level become folders here, named by their path, and keep
-          who can see them when renamed in Drive.
-          To rename, remove or delete anything, do it in Google Drive.
+          Changes in the folder reach Documents within 15 minutes. Subfolders up
+          to 10 levels down become folders here, named by their path, and keep
+          who can see them when renamed in Drive. To rename, remove or delete
+          anything, do it in Google Drive.
         </p>
       </PanelBody>
       <PanelFooter>
