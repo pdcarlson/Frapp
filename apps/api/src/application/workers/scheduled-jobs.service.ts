@@ -1199,25 +1199,32 @@ export class ScheduledJobsService {
    * `notifications` rows scoped to a chapter they no longer belong to. The
    * assignee needs no such check: an unfinished task is their own record, and
    * `markAutoAbsent`-style membership churn does not reassign it.
+   *
+   * That check is resolved lazily, behind the claim (#5307): an overdue task
+   * stays in the sweep's lookback for days, and only the first tick can send,
+   * so reading the assigner's membership before claiming paid one
+   * `chapter_members` read per tick per replica for nothing. A failed read is
+   * a `warning`, as it was before: the claim is released and the task stays
+   * in the lookback for days, so the next tick retries and nothing is lost.
    */
-  private async notifyTaskOverdue(task: SweepTaskRow) {
-    const recipients = [task.assignee_id];
-
-    if (task.created_by !== task.assignee_id) {
-      const assigner = await this.memberRepo.findByUserAndChapter(
-        task.created_by,
-        task.chapter_id,
-      );
-      if (assigner) recipients.push(task.created_by);
-    }
-
+  private notifyTaskOverdue(task: SweepTaskRow) {
     return this.claimAndNotify({
       chapterId: task.chapter_id,
       entityType: 'TASK',
       entityId: task.id,
       threshold: 'OVERDUE',
       dueDate: task.due_date,
-      recipients,
+      recipients: async () => {
+        if (task.created_by === task.assignee_id) return [task.assignee_id];
+        const assigner = await this.memberRepo.findByUserAndChapter(
+          task.created_by,
+          task.chapter_id,
+        );
+        return assigner
+          ? [task.assignee_id, task.created_by]
+          : [task.assignee_id];
+      },
+      resolveFailureLevel: 'warning',
       title: task.title,
       body: `Overdue · was due ${formatDueDate(task.due_date)}`,
       category: 'tasks',
@@ -1244,11 +1251,12 @@ export class ScheduledJobsService {
    * the spec requires both the assignee and the assigner to hear about it.
    *
    * `recipients` may be a **thunk**, resolved only once the claim is won. The
-   * invoice and task sweeps already hold their recipient ids by the time they
-   * get here, so they pass an array; a sweep whose audience costs a query —
-   * the pre-event reminder reads the whole chapter roster — passes a function
+   * invoice sweeps and the task due-soon sweeps already hold their recipient
+   * ids on the row, so they pass an array; a sweep whose audience costs a
+   * query — the pre-event reminder reads the whole chapter roster, the
+   * overdue-task push reads the assigner's membership — passes a function
    * instead, and the losing ticks then cost one failed insert rather than a
-   * roster read they throw away. Resolving to an empty list is treated as
+   * read they throw away. Resolving to an empty list is treated as
    * "delivered to zero" below, so the claim is released rather than stranded.
    */
   private async claimAndNotify(params: {
@@ -1258,6 +1266,12 @@ export class ScheduledJobsService {
     threshold: DispatchThreshold;
     dueDate: string;
     recipients: string[] | (() => Promise<string[]>);
+    /**
+     * How a rejected thunk reports. `error` (the default) suits a reminder
+     * whose window is a few ticks wide, where a release is close to dropped
+     * work; a sweep that will retry for days passes `warning`.
+     */
+    resolveFailureLevel?: 'error' | 'warning';
     title: string;
     body: string;
     category: string;
@@ -1284,7 +1298,7 @@ export class ScheduledJobsService {
           : params.recipients;
     } catch (error) {
       reportCaughtFailure(this.logger, {
-        level: 'error',
+        level: params.resolveFailureLevel ?? 'error',
         site: `scheduled-reminder-resolve-recipients:${sweep}`,
         message: `${params.entityType} ${params.entityId} (${params.threshold}): could not resolve recipients`,
         error,
