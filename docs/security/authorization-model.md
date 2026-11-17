@@ -237,7 +237,7 @@ a client that genuinely reads the table directly.
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
 | **API only** (RLS on, no policy → default-deny; service-role bypasses) | Every table the query above returns, plus `members`\*, `users`\* and `member_custom_field_values`\*. Of those, `events`†, `event_attendance`† and `notifications`† also emit a change ping. | Query rows + 3 |
 | **RLS enforces** (read directly by a user-JWT client)                  | `chat_message_actions`, `chat_messages`                                                                                                                                                     | 2              |
-| **RLS enforces** (policy present, defense-in-depth)                    | `chat_notification_preferences`, `chapter_audit_log`‡                                                                                                                                       | 2              |
+| **RLS enforces** (policy present, defense-in-depth)                    | `chapter_audit_log`‡                                                                                                                                                                   | 1              |
 
 \* carries a non-widening policy — see the notes below.
 ‡ `audit_log_no_update` / `audit_log_no_delete` are deny-only (`using (false)`), making the log append-only for any non-service role.
@@ -251,9 +251,9 @@ does, so publishing these three would have opened them to direct browser reads a
 enforcing layer out of the API. Topics are authorised by `realtime_messages_scoped_select` on
 `realtime.messages` (§ "The policies that do exist").
 
-### The policies that do exist (11 statements)
+### The policies that do exist (10 statements)
 
-**Counting convention.** `11` counts individual policy _statements_ — rows in `pg_policies` — not
+**Counting convention.** `10` counts individual policy _statements_ — rows in `pg_policies` — not
 rows in the table below, several of which name two policies each. That ambiguity is what let the
 number drift unnoticed before, so it is now stated rather than derived.
 
@@ -261,17 +261,18 @@ Reconciled against hosted `frapp-staging` on 2026-08-27
 (`select schemaname, count(*) from pg_policies group by schemaname`):
 **10 in `public` + 1 in `realtime` = 11** at that read. Migration `20260906203000` (#1552)
 adds a second `realtime` policy, so the expected hosted figure was **10 + 2 = 12**. Migration
-`20261112280000` (#724, #4513) drops `chat_message_actions_insert`, so it is now **9 + 2 = 11**, the
-count the heading and the PGlite check carry. The promotion log records that migration as
+`20261112280000` (#724, #4513) drops `chat_message_actions_insert`, making it **9 + 2 = 11**, and
+`20261117174649` (#4839) drops `chat_notification_preferences_select_own`, so it is now **8 + 2 = 10**,
+the count the heading and the PGlite check carry. The promotion log records that migration as
 applied; the hosted catalog has not been re-read since 2026-08-27 (unverified).
 
-The PGlite CI substrate sees **9**, every `public` one. The two absences are schema-gated rather
+The PGlite CI substrate sees **8**, every `public` one. The two absences are schema-gated rather
 than drift: `realtime.messages` needs a `realtime` schema PGlite does not have.
 `auth_admin_can_read_users` and `auth_admin_can_read_members`, created only inside
 `if exists (select 1 from pg_roles where rolname = 'supabase_auth_admin')`
 (`20260802120000_active_chapter_jwt_claim.sql:137`), are present since the harness creates that
 role before applying migrations (#1557). `scripts/pglite/tiers/policy-inventory.mjs` pins the `public`
-set **by name, command and roles**, so each of these fails CI: adding or dropping one of those 9,
+set **by name, command and roles**, so each of these fails CI: adding or dropping one of those 8,
 flipping one from `SELECT` to `ALL`, or changing its `TO` clause. The last case is dropping
 `to authenticated` from `chat_messages_select`, which would bind it to `anon` on hosted. Because
 that set still cannot see a policy _rewritten in place_, the check also rejects any permissive
@@ -282,15 +283,15 @@ miss the write path entirely: a `FOR INSERT` policy has a NULL
 `qual` and carries its whole predicate in `with_check`, and on a `FOR ALL` policy it is `with_check`
 that gates writes. So `using (auth.role() = 'service_role') with check (true)` — name, command and
 qualifier all unchanged — would otherwise have passed clean while letting any client insert arbitrary
-rows. That matters most for `member_custom_field_values_service_role`, which is `FOR ALL` and, like
-`chat_notification_preferences_select_own`, has no other coverage anywhere in the repo.
+rows. That matters most for `member_custom_field_values_service_role`, which is `FOR ALL` and has no
+other coverage anywhere in the repo.
 
 This is a tripwire for the obvious rewrite, not a proof: it catches the literal spellings
 (`true`, `(true)`, `1=1`), and an adversarial `using (id = id)` would still pass.
 
 Note the limit of the guard: this inventory does **not** cover the two policies it cannot see.
 Dropping `realtime_messages_scoped_select` or `realtime_messages_scoped_insert` would leave it
-printing its clean `(9 here, 11 hosted)`. The `11` is derived from the pinned list plus those
+printing its clean `(8 here, 10 hosted)`. The `10` is derived from the pinned list plus those
 two, so it would then be reporting a hosted figure that is itself wrong. Both are exercised
 instead by `apps/web/lib/realtime/change-topics.spec.ts`, which replays the migrations on its own
 PGlite with a stand-in `realtime` schema ([§ 5.2](#52-the-realtime-carrier-was-never-connected--resolved-2026-08-16-867)).
@@ -301,7 +302,6 @@ PGlite with a stand-in `realtime` schema ([§ 5.2](#52-the-realtime-carrier-was-
 | `chat_messages`                 | `_select`                                                            | `auth.role() = 'authenticated' AND can_read_chat_message(id) AND kind <> 'imported'` — the same predicate applied to the message row itself, plus the imported-archive exclusion. Introduced by `20260816140000_realtime_carrier_repair.sql` so the chat `postgres_changes` subscription can receive rows, then **superseded by `20260823123000_chat_imported_kind_semantics.sql`**, which added the third conjunct: Realtime evaluates this policy per subscriber, so it is what stops a bulk archive import fanning a frame per row to every open client. RLS is the only gate, as above                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `realtime.messages`             | `realtime_messages_scoped_select`, `realtime_messages_scoped_insert` | **SELECT** authorises five private topics by prefix — the three change-ping topics (`notif:` / `events:` / `attendance:`) and, since 2026-09-06 (#1552, migration `20260906203000`), the two presence topics: the Directory's `presence:chapter:<chapterId>` behind chapter membership (`realtime_can_read_chapter_scope`, as `events:` already was) and chat's `chat:channel:<channelId>` behind **`can_read_chat_channel`** — the channel half of `can_read_chat_message`, extracted so the message RLS and the realtime authorisation share one definition of "may read this channel" (PUBLIC to the chapter, PRIVATE/DM/GROUP_DM to `member_ids`, ROLE_GATED by permission, a ROLE_GATED channel with no requirement to nobody). Chapter membership alone would have exposed DM presence chapter-wide. **INSERT** authorises `extension = 'presence'` on `presence:chapter:` and `presence` **or** `broadcast` on `chat:channel:` (typing is a client broadcast), each behind the same predicate as its SELECT arm; the change-ping topics are receive-only. Both `case`s end in `else false`: any other topic is denied on a private channel and must ship a branch here before it can go private. **Presence stays advisory even now:** the policies see the topic and the message extension, not the presence payload, so a member who may read a channel can still publish an entry naming another member of it. Since #3845 a chapter entry also carries a picked status and a custom line, so such a forged entry can put a status and words under another member's name, not only mark them online (accepted for now; [`chat/README.md`](../../spec/behavior/chat/README.md) § Online/offline presence). What is closed is the anon-key outsider, in both directions, on both topics. Because of that, presence never quiets a post in an announcements channel (`decidePush`, 2026-11-17); elsewhere a forged entry quiets its target's pushes in that channel until the forger leaves it |
 | `chat_message_actions`          | `_delete`                                                            | `to authenticated`, `starts_with(action_type, 'reaction:') AND chat_action_is_callers(user_id)`: a member takes back their own reaction, the one direct write both apps make (ADR-05). Since `20261112280000` (#724, #4513). Before it, this policy and an `_insert` policy found the caller through a plain `users` subselect, which sees no rows under `users`' default-deny, so neither ever matched and removing a reaction silently did nothing. `chat_action_is_callers` is `SECURITY DEFINER` and answers only whether the id is the caller's own. There is no `_insert` or `_update` policy, and INSERT and UPDATE are revoked from `anon` and `authenticated`: reactions, votes and sign-up claims are written by the API as `service_role` after its channel, poll and slot checks. Proven by execution in the client-writes tier of `chat-black-box.mjs`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `chat_notification_preferences` | `_select_own`                                                        | Own rows only                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `chapter_audit_log`             | `_no_update`, `_no_delete`                                           | `using (false)` — append-only, tightens rather than widens                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | `member_custom_field_values`    | `_service_role`                                                      | `auth.role() = 'service_role'` — explicit rather than implicit; no non-service access                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | `users`, `members`              | `auth_admin_can_read_*`                                              | `to supabase_auth_admin` only — lets the custom-access-token hook read the `active_chapter_id` claim. Not reachable by `anon`/`authenticated`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
@@ -558,11 +558,11 @@ The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests 
 
 ### RLS enforcement (`scripts/pglite/`)
 
-Four tables are covered black-box, by reading them as unprivileged probe roles rather than by
+Five tables are covered black-box, by reading them as unprivileged probe roles rather than by
 pattern-matching the policy expression: `rls_probe`, a member of `authenticated`, for a signed-in
 client, and `rls_probe_anon`, a member of `anon` and not of `authenticated`, for the anon key. The
 first two tables are the ones where **RLS is the only gate**
-(a browser or mobile Supabase client reads them directly, including over Realtime); the last two are
+(a browser or mobile Supabase client reads them directly, including over Realtime); the last three are
 read only through the service-role client, and are covered because a policy appearing on them at all
 would be the regression:
 
@@ -572,9 +572,11 @@ would be the regression:
 | `chat_messages`        | membership/tenancy matrix (#977) + the imported-archive exclusion (#974) + a post-archive tenancy re-check (#977)                                                                                                                                                                                                                                                 |
 | `members`              | default-deny: every probe identity reads 0 rows (#423)                                                                                                                                                                                                                                                                                                            |
 | `financial_invoices`   | default-deny: every probe identity reads 0 rows (#423)                                                                                                                                                                                                                                                                                                            |
+| `chat_notification_preferences`| default-deny: every probe identity reads 0 rows (#4839)                                                                                                                                                                                                                                                                                                            |
 
-The last two are the inverse assertion. Neither carries a policy a client role can reach —
-`financial_invoices` has none at all, and `members`' only policy is `to supabase_auth_admin`, a role
+The last three are the inverse assertion. None carries a policy a client role can reach —
+`financial_invoices` has none at all, `chat_notification_preferences` has had none since
+`20261117174649` dropped a select-own policy that never matched (#4839), and `members`' only policy is `to supabase_auth_admin`, a role
 no client request can assume — so the property under test is that they stay unreadable. Each is
 guarded against passing vacuously: both probes' `SELECT` privilege is asserted, and the fixture rows are
 asserted present as owner, before any zero-row claim is made. The probe read itself is unscoped, so
@@ -582,7 +584,7 @@ a policy leaking some _other_ chapter's rows fails too.
 
 Because the probe reads with `SELECT` only, it is structurally blind to a permissive **write**
 policy (`for insert with check (true)` leaves every read assertion green, and Supabase's default
-`grant all … to anon, authenticated` is never revoked at table level). So each of the two also
+`grant all … to anon, authenticated` is never revoked at table level). So each of the three also
 carries a catalog assertion that it holds **no client-reachable policy of any command shape**,
 which covers INSERT/UPDATE/DELETE/ALL without a write probe per command.
 
@@ -614,10 +616,9 @@ before it was fixed:
   a single `ERR`, and the default-deny tier never ran. Now each affected scenario reports its own
   `MISS`, and the tiers after it still run.
 
-**This is four tables, not the whole schema.** A permissive policy added to any of the other
+**This is five tables, not the whole schema.** A permissive policy added to any of the other
 RLS-enabled tables changes no assertion in the harness; the every-public-table invariant covers
-`relrowsecurity` only, not what the policies do. `chat_notification_preferences` is the known gap —
-it carries a client-reachable `SELECT` policy with no black-box coverage (tracked separately).
+`relrowsecurity` only, not what the policies do.
 
 **Grants that come from hosted's default privileges are modelled** (#3052, #830, 2026-11-07).
 Hosted Supabase grants `anon`, `authenticated` and `service_role` access to every table, sequence

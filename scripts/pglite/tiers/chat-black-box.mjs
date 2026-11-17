@@ -59,6 +59,7 @@ if (readSeeded) {
       -- privilege. See the default-deny tier at the end of this block.
       grant select on public.members to rls_probe;
       grant select on public.financial_invoices to rls_probe;
+      grant select on public.chat_notification_preferences to rls_probe;
       grant execute on function public.can_read_chat_message(uuid) to rls_probe;
 
       -- The anon key's reader (ANON_KEY). A member of anon and NOT of
@@ -76,6 +77,7 @@ if (readSeeded) {
       grant select on public.chat_messages to rls_probe_anon;
       grant select on public.members to rls_probe_anon;
       grant select on public.financial_invoices to rls_probe_anon;
+      grant select on public.chat_notification_preferences to rls_probe_anon;
     `);
 
     // userA: chapter A, in member_ids of PRIVATE/DM/GROUP_DM, holds chat:secret.
@@ -644,12 +646,16 @@ if (readSeeded) {
       }
     }
 
-    // ─── members / financial_invoices: default-deny enforcement (#423) ───────
+    // ─── members / financial_invoices / chat_notification_preferences: default-deny (#423, #4839)
     //
     // The two tiers above cover the tables that carry a client-reachable
-    // policy. These two carry none, and that is the point rather than a gap:
+    // policy. These three carry none, and that is the point rather than a gap:
     //
     //   - `financial_invoices` has no policy anywhere in the tree.
+    //   - `chat_notification_preferences` has had none since 20261117174649
+    //     dropped `_select_own`, whose `users` subselect never matched (#4839).
+    //     Its rows are each member's own, so "a signed-in reader sees nothing"
+    //     here includes their own preferences: no client reads the table.
     //   - `members`' only policy, `auth_admin_can_read_members`, is
     //     `to supabase_auth_admin`, the role Supabase Auth runs the
     //     custom-access-token hook as. It exists here since #1557 created that
@@ -657,7 +663,7 @@ if (readSeeded) {
     //     its absence.
     //
     // Under RLS, no reachable policy means default-deny, and per ADR-11 the API
-    // reads both tables exclusively through the service-role client, which
+    // reads these tables exclusively through the service-role client, which
     // bypasses RLS entirely. So the assertion that carries the value is the
     // negative one: a signed-in reader sees NOTHING, including in their own
     // chapter. The day a migration adds `using (true)`, or a chapter-scoped
@@ -669,11 +675,9 @@ if (readSeeded) {
     // enforceable form of the same intent is the deny below.
     //
     // Scope, stated so nobody reads more into it than it proves: this covers
-    // THESE TWO TABLES. A permissive policy added to any of the other ~46
+    // THESE THREE TABLES. A permissive policy added to any of the other
     // RLS-enabled tables changes no assertion here — the every-public-table
     // invariant (`schema-and-rls-smoke.mjs`) checks `relrowsecurity`, not what the policies do.
-    // `chat_notification_preferences` is the known uncovered one: it carries a
-    // client-reachable SELECT policy and only a name-set + tautology tripwire.
     //
     // A bare "sees zero rows" check would be worthless on its own — a missing
     // GRANT, a fixture that never inserted, or a typo'd table name each produce
@@ -682,7 +686,7 @@ if (readSeeded) {
     // is held, the rows exist when read as owner, the catalog carries no
     // client-reachable policy of any command shape, and only then that the
     // probe sees none of the rows.
-    console.log("\n=== members / financial_invoices default-deny (black-box, SET ROLE) ===");
+    console.log("\n=== members / financial_invoices / chat_notification_preferences default-deny (black-box, SET ROLE) ===");
     // Seeded in its own savepoint. A future NOT NULL column on
     // financial_invoices would otherwise raise straight past the header just
     // printed, into the tier-wide catch, and the log would show this heading
@@ -696,6 +700,9 @@ if (readSeeded) {
         insert into financial_invoices (id, chapter_id, user_id, title, amount, due_date) values
           ('${F.invA}', '${F.chapA}', '${F.userAId}', 'Chapter A dues', 15000, '2026-01-31'),
           ('${F.invB}', '${F.chapB}', '${F.userBId}', 'Chapter B dues', 25000, '2026-01-31');
+        insert into chat_notification_preferences (user_id, chapter_id, scope, scope_kind, level) values
+          ('${F.userAId}', '${F.chapA}', 'kind', 'system_audit', 'off'),
+          ('${F.userBId}', '${F.chapB}', 'kind', 'system_audit', 'all');
       `);
       await db.exec("release savepoint deny_seed;");
     } catch (e) {
@@ -703,7 +710,7 @@ if (readSeeded) {
       miss();
       await db.exec("rollback to savepoint deny_seed; release savepoint deny_seed;");
       console.log(
-        `SKIP  members / financial_invoices default-deny — fixture seed failed, 0 of its assertions ran` +
+        `SKIP  default-deny tables — fixture seed failed, 0 of its assertions ran` +
           `\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
       );
     }
@@ -716,7 +723,7 @@ if (readSeeded) {
     // uppercased one). A third addition would fail here, in a tier its author
     // never touched, with a message naming neither the seed block nor the
     // literal to bump.
-    const DENY_TABLES = ["members", "financial_invoices"];
+    const DENY_TABLES = ["members", "financial_invoices", "chat_notification_preferences"];
 
     const DENY_READERS = [
       { who: "a chapter-A member reading their own chapter", as: signedIn(F.userAAuth) },
@@ -797,7 +804,7 @@ if (readSeeded) {
       // permissive UPDATE policy any signed-in client could rewrite
       // `members.role_ids` and grant itself permissions.
       //
-      // Both tables are supposed to carry NO policy a client role can reach,
+      // These tables are supposed to carry NO policy a client role can reach,
       // in any command shape, so assert exactly that from the catalog — it
       // covers INSERT/UPDATE/DELETE/ALL without needing a write probe per
       // command. A policy bound to `supabase_auth_admin` alone is excluded

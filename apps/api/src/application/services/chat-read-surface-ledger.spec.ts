@@ -515,7 +515,7 @@ const DIRECT_READ_LEDGER: Record<string, Entry & { creates: number }> = {
     {
       creates: 1,
       status: 'no-foreign-content',
-      why: "Select-own only: the caller's own preferences.",
+      why: "Dropped by 20261117174649 (#4839): its `users` subselect never matched, and no client reads the table, so it is default-deny and only the API reads it, as service_role. When it existed it was select-own only: the caller's own preferences.",
     },
   'realtime.messages realtime_messages_scoped_select': {
     creates: 2,
